@@ -7,7 +7,7 @@ function fixture(owner){
  const ctx={character:{id:'character'},chat:{id:'chat',bindedPersona:owner==='LIA'?'lia-live-persona::x':'persona',message:[{data:'private transcript'}]},profile:{selectedPersona:'persona',personas:[{id:'persona',personaPrompt:'private profile'}]}};
  const shard={scopeKey:scope.scopeKey,livePersonaId:'lia-live-persona::x',ledgers:[],liveState:[]};
  const raw=JSON.stringify(shard),index={schema:'lia.live_persona_index.v2',entries:{[scope.scopeKey]:{storageKey:'shard',digest:hash(raw),livePersonaId:shard.livePersonaId}}};
- const state={authority:1,mode:'plugin_only',busy:false,alive:true,cacheComplete:true,writes:0,clears:0,reads:[],data:new Map(owner==='LIA'?[['index',JSON.stringify(index)],['shard',raw],['legacy',null]]:[['cold',null],['run',null]])};
+ const state={authority:1,mode:'plugin_only',busy:false,alive:true,cacheComplete:true,writes:0,clears:0,reads:[],data:new Map(owner==='LIA'?[['proof',null]]:[['cold',null],['run',null]])};
  const cache={bindings:{[scope.scopeKey]:structuredClone(shard),other:{scopeKey:'other',data:'keep'}}};
  const derived={lastPreview:{identity:{characterId:'character',chatId:'chat'},snapshot:'derived'},compatibilitySuite:{derived:true},compatibilityCheckedAt:1,compatibilityAcknowledgedAt:1};
  const storage={captureReadOnlyAuthorityFence(){const n=state.authority;return{assertCurrent(){if(n!==state.authority)throw Error('AUTHORITY_CHANGED');}}},async inspectLocalHealthSnapshot(s,key,options){assert.equal(options.strictPhysical,true);assert.equal(s.scopeId,scope.scopeId);state.reads.push(key);return{raw:state.data.get(key)??null,mode:state.mode,binding:JSON.stringify([scope.scopeId,state.mode,state.authority])}},setItem(){state.writes++;throw Error('FORBIDDEN_WRITE')}};
@@ -17,14 +17,14 @@ function fixture(owner){
  assert.equal(fs.existsSync(file),true,owner+' owner adapter source must exist');
  vm.runInContext(fs.readFileSync(file,'utf8')+'\nglobalThis.create='+ (owner==='LIA'?'createMemorySuiteLiaHealthAdapter':'createMemorySuiteRetraceHealthAdapter')+';',c);
  const adapter=c.create({storage,readContext:async consume=>typeof consume==='function'?consume(structuredClone(ctx)):structuredClone(ctx),scopeFor:()=>scope,
-   indexKey:'index',indexSchema:index.schema,keyFor:()=> 'shard',legacyKey:'legacy',hash,
+   proofKey:'proof',
    keysFor:()=>[{key:'cold',schema:'cold.v1'},{key:'run',schema:'run.v1'}],
    validateJournal:chat=>({available:!chat.memorySessionBridge||chat.memorySessionBridge.valid===true,reason:chat.memorySessionBridge?'valid':'handoff_journal_absent'}),
    cache:owner==='LIA'?{getStore:()=>cache,getComplete:()=>state.cacheComplete,setComplete:value=>{state.cacheComplete=value}}:derived,
    isBusy:()=>state.busy,isAlive:()=>state.alive});
  return{adapter,state,scope,ctx,cache,derived,index,shard};
 }
-for(const owner of ['LIA','RETRACE']){
+for(const owner of ['RETRACE']){
  test(owner+': auxiliary same-scope metadata cannot invalidate the fixed health inventory',async()=>{
   const f=fixture(owner),key=(owner==='LIA'?'shard':'cold')+':source-edit-consent:v1';
   f.state.data.set(key,JSON.stringify({schema:'memory-suite.source-edit-consent.v1',owner,scopeKey:f.scope.scopeKey,tasks:{}}));
@@ -36,5 +36,10 @@ for(const owner of ['LIA','RETRACE']){
  test(owner+': failed reads, nonlocal mode and malformed metadata remain unknown',async()=>{for(const kind of ['mode','malformed']){const f=fixture(owner);if(kind==='mode')f.state.mode='server_only';else f.state.data.set(owner==='LIA'?'index':'cold','{invalid json');assert.equal((await f.adapter.inspect()).known,false);assert.equal((await f.adapter.preview()).allowed,false);assert.equal(f.state.clears,0)}});
  test(owner+': profile/source/persona/context changes invalidate private permit',async()=>{for(const change of [f=>f.ctx.profile.selectedPersona='different',f=>f.ctx.chat.message[0].data='edit',f=>f.ctx.chat.bindedPersona='other',f=>f.ctx.character.id='other']){const f=fixture(owner),t=await f.adapter.preview();change(f);assert.equal((await f.adapter.repair(t)).status,'blocked');assert.equal(f.state.clears,0)}});
 }
-test('LIA: unindexed, mismatched or legacy binding is not treated as validated current metadata',async()=>{for(const change of [f=>f.state.data.set('legacy','{"bindings":{"s":{}}}'),f=>f.state.data.set('shard',JSON.stringify({...f.shard,livePersonaId:'other'})),f=>{f.index.entries[f.scope.scopeKey].digest='wrong';f.state.data.set('index',JSON.stringify(f.index));},f=>f.state.data.delete('index')]){const f=fixture('LIA');change(f);assert.equal((await f.adapter.preview()).allowed,false);assert.equal(f.state.clears,0)}});
+test('LIA: inspection is read-only, has no cache to clear, and reports a bad proof store or nonlocal mode as unknown',async()=>{
+ const f=fixture('LIA'),before=JSON.stringify([f.ctx,[...f.state.data]]);
+ assert.equal((await f.adapter.inspect()).known,true);assert.equal((await f.adapter.preview()).allowed,false);
+ assert.equal(JSON.stringify([f.ctx,[...f.state.data]]),before);assert.equal(f.state.writes,0);
+ for(const change of [g=>{g.state.mode='server_only'},g=>g.state.data.set('proof','{invalid'),g=>g.state.data.set('proof','[]'),g=>g.state.data.set('proof','{"proofs":[]}')]){const g=fixture('LIA');change(g);assert.equal((await g.adapter.inspect()).known,false);assert.equal(g.state.writes,0);}
+});
 test('RETRACE: scope/schema mismatch or corrupt journal cannot produce a clear permit',async()=>{for(const change of [f=>f.state.data.set('cold',JSON.stringify({schema:'cold.v1',scopeKey:'other'})),f=>f.state.data.set('run',JSON.stringify({schema:'wrong',scopeKey:f.scope.scopeKey})),f=>f.ctx.chat.memorySessionBridge={valid:false}]){const f=fixture('RETRACE');change(f);assert.equal((await f.adapter.preview()).allowed,false);assert.equal(f.state.clears,0)}});

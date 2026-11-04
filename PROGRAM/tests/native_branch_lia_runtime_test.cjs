@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (Live Persona fork on native chat branch).'); process.exit(0);
 const assert=require('node:assert/strict');const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 const {clone,branch}=require('./fixtures/native_branch_fixture.cjs');
 (async()=>{const f=await createFixture('official');try{

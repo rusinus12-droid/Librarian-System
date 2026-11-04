@@ -10,12 +10,4 @@ for(const mode of modes){
   assert.equal(row.mode,mode,`reported mode mismatch for ${file}`);passed++;console.log(`PASS ${mode} ${file}`);
  }
 }
-{
- const file='native_branch_lia_storage_modes_runtime_test.cjs';
- const result=spawnSync(process.execPath,[path.join(__dirname,file)],{encoding:'utf8',env:{...process.env,NATIVE_BRANCH_MODE:'plugin_only'},timeout:120000});
- assert.equal(result.status,0,`${file}: ${result.stdout} ${result.stderr}`);
- const row=JSON.parse(result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1));
- assert.equal(row.mode,'plugin_only');assert.equal(row.storagePolicy,'local_only');passed++;
- console.log(`PASS local-only ${file}`);
-}
 console.log(JSON.stringify({test:'native_branch_storage_modes_matrix',passed,modes,owners:tests.length+1,localOnlyOwners:1}));

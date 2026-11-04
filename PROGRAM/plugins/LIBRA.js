@@ -1,87 +1,12 @@
 //@name libra
-//@display-name LIBRA v2.6.24
+//@display-name LIBRA v2.6.25
 //@api 3.0
-//@version 2.6.24
+//@version 2.6.25
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
-//@arg enable_gui string true|false
 //@arg evidence_link_index_enabled string true|false; Stage 1 read-only evidence link index. Default false: no build, no storage write, no timer
 //@arg lore_link_index_enabled string true|false; Stage 2 read-only lore reference link index. Default false: no build, no storage write, no timer
-//@arg debug string true|false
-//@arg model_presets_json string JSON object of saved LLM provider presets
-//@arg provider_presets_json string Alternate provider-preset JSON input
-//@arg default_preset string Default LLM preset name
-//@arg risuai_aux_allow_plugins string true|false — allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg story_arc_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg response_lore_enabled string true|false — shared LIBRA consumers use unified full-body lore retrieval; default true
-//@arg response_lore_start_count int Adaptive lore frontier starting count; default 8, expands toward the 128 ceiling
-//@arg response_lore_max_items int Maximum lore items per consumer after adaptive expansion; default 48, hard ceiling 128
-//@arg response_lore_max_chars int Lore material character budget per consumer view; default 12000
-//@arg final_delivery_for_gradia string true|false — advanced: while GRADIA reads LIBRA, also give the response model the recall GRADIA used; default true
-//@arg live_context_enabled string true|false — exact completed U+A live context; Classic also requires classic_live_tail_enabled; default true
-//@arg live_tail_max_turns int 1-4 — recent completed dialogue turns, independent of memory commits; default 4
-//@arg live_tail_max_chars int Recent dialogue character budget; default 24000
-//@arg bootstrap_references_enabled string true|false — before the first current-session canonical memory, provide persona/character/activated lore background; default true
-//@arg bootstrap_reference_max_chars int Bootstrap Reference Pack character budget; default 7000
-//@arg classic_live_tail_enabled string true|false — advanced opt-in to append recent dialogue to Classic direct injection; default false
-//@arg librarian_preset string LLM preset for Librarian; blank inherits the existing Ariadne binding or shared default
-//@arg enable_librarian string optional true|false; blank preserves previous explicit memory enable choice
-//@arg ariadne_preset string Legacy model-binding input; inherited only when no Librarian binding exists
-//@arg character_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg world_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg plot_ito_preset string Retired and ignored; kept only so an old saved value is not lost
-//@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks Ariadne memory stages may read
-//@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks Ariadne must not read
-//@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries Ariadne must not read
-//@arg llm_provider string Fallback LLM provider
-//@arg llm_url string Fallback LLM URL or full endpoint
-//@arg llm_key string Fallback LLM API key / token / Vertex service-account JSON
-//@arg llm_model string Fallback LLM model
-//@arg llm_temp string Fallback LLM temperature
-//@arg llm_timeout int Fallback LLM timeout ms
-//@arg llm_timeout_ms int Alternate fallback timeout alias
-//@arg llm_max_completion_tokens int Fallback LLM max completion tokens
-//@arg llm_request_format string chat_completions|responses
-//@arg llm_reasoning_preset string auto|off|gpt|openrouter|gemini|gemini_budget|claude|claude_budget|deepseek|kimi|glm|ollama|custom
-//@arg llm_reasoning_effort string none|minimal|low|medium|high|xhigh|max
-//@arg llm_reasoning_budget_tokens int Reasoning budget tokens
-//@arg llm_thinking_type string enabled|disabled
-//@arg llm_glm_thinking_type string Provider-specific GLM thinking alias
-//@arg llm_glm_thinking string Alternate GLM thinking alias
-//@arg llm_service_tier string off|auto|default|flex|priority|scale
-//@arg llm_stream string true|false
-//@arg llm_prompt_cache string auto|off
-//@arg custom_service_tier_passthrough string true|false
-//@arg vertex_flex_mode string off|provisioned_then_flex|flex_only
-//@arg llm_extra_body_json string Additional fallback request body JSON
-//@arg embedding_enabled string true|false
-//@arg embedding_provider string openai|voyageai|voyage_context|gemini|vertex|cohere|jina|mistral|bedrock|dashscope|openai_compat|ollama|lmstudio|localai|tei|custom_http
-//@arg embedding_url string Embedding API endpoint
-//@arg embedding_key string Embedding API key
-//@arg embedding_model string Embedding model
-//@arg embedding_timeout_ms int Embedding request timeout ms
-//@arg embedding_dimensions string auto|integer
-//@arg embedding_batch_size string auto|integer
-//@arg embedding_max_retries int 0|1|2
-//@arg embedding_input_mode string automatic|manual
-//@arg embedding_query_task string Provider-specific query task
-//@arg embedding_document_task string Provider-specific document task
-//@arg embedding_query_prefix string Query prefix
-//@arg embedding_document_prefix string Document prefix
-//@arg embedding_normalize_vectors string true|false
-//@arg embedding_custom_request_template string JSON request template for Custom HTTP embedding
-//@arg embedding_custom_response_path string Vector response path
-//@arg embedding_custom_error_path string Error response path
-//@arg embedding_custom_method string POST|GET
-//@arg embed_provider string Embedding provider alternate argument
-//@arg embed_url string Embedding URL alternate argument
-//@arg embed_key string Embedding key alternate argument
-//@arg embed_model string Embedding model alternate argument
-//@arg embed_timeout int Embedding timeout alternate argument
-//@arg backend_hosting_token string Hosting bridge token backup; normally managed by the LIBRA GUI
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -1560,7 +1485,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.24';
+  const PLUGIN_VERSION = '2.6.25';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4741,7 +4666,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The server address is kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const SAVED_SERVER_URL_KEY = `__memory_suite_internal_server_url_v1__:${namespace}`;
+  const readSavedServerUrl = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_URL_KEY);
+      return value === undefined || value === null ? '' : String(value).trim();
+    } catch (_) { return ''; }
+  };
+  const writeSavedServerUrl = async value => {
+    const storage = rawPluginStorage();
+    await storage.setItem(SAVED_SERVER_URL_KEY, String(value));
+    if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
+    return true;
+  };
   const getArgumentValue = async (names, fallback = '') => {
+    if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
       for (const api of apiCandidates()) {
         try {
@@ -4756,6 +4696,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const setArgumentValue = async (name, value) => {
+    if (urlArguments.includes(name) && rawPluginStorage()) return await writeSavedServerUrl(value);
     let lastError = null;
     for (const api of apiCandidates()) {
       try {
@@ -15379,7 +15320,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const aliases = {
       turnWindow: 'turn_window', maxRecentChars: 'max_recent_chars', maxPreviousStageChars: 'max_previous_stage_chars',
       maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode', injectionMode: 'injection_mode',
-      finalDeliveryForGradia: 'final_delivery_for_gradia', responseFamily: 'response_family', libraResponseMode: 'libra_response_mode', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
+      memoryStateAutoApply: 'memory_state_auto_apply', finalDeliveryForGradia: 'final_delivery_for_gradia', responseFamily: 'response_family', libraResponseMode: 'libra_response_mode', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
       bootstrapReferencesEnabled: 'bootstrap_references_enabled', bootstrapReferenceMaxChars: 'bootstrap_reference_max_chars', classicLiveTailEnabled: 'classic_live_tail_enabled',
       responseLoreEnabled: 'response_lore_enabled', responseLoreStartCount: 'response_lore_start_count', responseLoreMaxItems: 'response_lore_max_items', responseLoreMaxChars: 'response_lore_max_chars',
       risuAuxAllowPlugins: 'risuai_aux_allow_plugins',
@@ -17752,6 +17693,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const responseFamily = normalizeResponseFamily(await runtimeCfg('response_family', ''), legacyInjectionMode);
     const libraResponseMode = normalizeLibraResponseMode(await runtimeCfg('libra_response_mode', ''), legacyInjectionMode);
     const liveContextEnabled = false; // Retired: completed-turn evidence comes from Micro memory.
+    const memoryStateAutoApply = asBool(await runtimeCfg('memory_state_auto_apply', 'true'), true);
     const finalDeliveryForGradia = asBool(await runtimeCfg('final_delivery_for_gradia', 'true'), true);
     const liveTailMaxTurns = clampInt(await runtimeCfg('live_tail_max_turns', DEFAULT_LIVE_TAIL_MAX_TURNS), 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS);
     const liveTailMaxChars = clampInt(await runtimeCfg('live_tail_max_chars', DEFAULT_LIVE_TAIL_MAX_CHARS), LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS);
@@ -17859,6 +17801,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       libraResponseMode,
       injectionMode,
       liveContextEnabled,
+      memoryStateAutoApply,
       finalDeliveryForGradia,
       liveTailMaxTurns,
       liveTailMaxChars,
@@ -60884,7 +60827,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         rows.push(row);internal.set(id,{...data,row,record,index});
       };
       // Rejected facts were never stored and historical facts are not State, so neither is a review target.
-      const pending=asArray(head?.unifiedApplied?.pending).filter(p=>p.fact&&!['memory_record_quarantined','not_direct_current_fact'].includes(p.reason));
+      const pending=asArray(head?.unifiedApplied?.pending).filter(p=>p.fact&&p.reason!=='memory_record_quarantined');
       const currentPairs=buildPairs(context.chat,scope.scopeKey);
       for(const ref of fullContinuityRefs(manifest)){
         const selected=pending.filter(p=>p.memoryId===ref.memoryId&&Number(p.revision)===Number(ref.revision));
@@ -60908,8 +60851,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           for(const p of expanded){
             const fact=asArray(record.canonicalArtifact?.facts).find(f=>f.tempFactId===p.fact);if(!fact)continue;
             const c=UNIFIED_CLAIMS[fact.claimKind],domain=STATE_PIPELINE_DOMAIN_HEAD_KEYS[fact.domain];
-            const supported=view.authority?.exactBasis===true&&c?.field&&fact.certainty==='confirmed'&&fact.temporalRole==='current_sequence'
-              &&MEMORY_REVIEW_AUTO_REASONS.includes(p.reason);
+            // Automatic use has no content conditions: the user decides afterwards, in the review.
+            const supported=view.authority?.exactBasis===true&&!!c?.field;
             add('canonical',record,fact.tempFactId,{claim:fact,quote:asArray(fact.evidenceSpans).map(s=>s.quote).join('\n'),reason:p.reason,
               stateEligible:!!supported,domain,field:c?.field||'',pending:p,ref});
           }
@@ -60932,8 +60875,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const conflicted=asArray(active.record.claims).some(other=>other!==claim&&digest(other.stateIntent?.target)===digest(intent.target)&&other.stateIntent?.domain===intent.domain&&other.stateIntent?.field===intent.field&&digest(other.stateIntent?.value)!==digest(intent.value));
           const reason=admission?.reason||(conflicted?'micro_same_turn_field_conflict':'');
           if(!reason&&!policy.decisions[memoryReviewId('micro',active.record,index)])continue;
-          const eligible=view.authority?.exactBasis===true&&isPlainObject(claim.stateIntent)&&!!head&&claim.temporalRole==='current'&&claim.certainty==='confirmed'&&claim.epistemicStatus==='observed'
-            &&!/(source|receipt|scope|worldline|cutoff|reconciliation|read_failed|unavailable|correction|registry)/.test(reason);
+          // Only a failed read holds a claim back: it says nothing about the claim, and the record may not be current.
+          const eligible=view.authority?.exactBasis===true&&isPlainObject(claim.stateIntent)&&!!head&&!/(receipt|scope|worldline|cutoff|reconciliation|read_failed|unavailable)/.test(reason);
           add('micro',active.record,index,{claim,quote:claim.evidence?.exactQuote,reason,stateEligible:eligible,domain:STATE_PIPELINE_DOMAIN_HEAD_KEYS[intent.domain],field:intent.field,active});
         }
       }
@@ -60953,6 +60896,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const broad=new Set([key.manifest(scope),key.continuityState(scope),key.stateWorldlineMeta(scope),key.entityRegistry(scope)]);
       for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)&&(k===catalog.policy.key||catalog.rows.length)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
       const applied=[],rejected=[],blocked=[],reviewTransitions=[];
+      const autoApply=(await loadSettings()).memoryStateAutoApply!==false;
       const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
       // A user-confirmed value outranks an automatic value of the same turn; newer evidence still wins across turns.
       const writers=new Map();
@@ -60961,12 +60905,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
         row.stateOutcome=row.status==='rejected'?'rejected':row.stateEligible?'pending':'not_applicable';
         if(row.status==='rejected'){rejected.push(row);continue;}
         if(!row.stateEligible)continue;
+        // With automatic use off, only what the user approved reaches State; the rest waits in the review.
+        const heldForReview=row.kind!=='micro'||asArray(view.head?.microProjection?.pendingClaims).some(p=>p.turn===row.turn&&p.claimIndex===item.index);
+        if(row.status==='automatic'&&!autoApply&&heldForReview){row.stateOutcome='not_applied';continue;}
         try{
           let domain=row.domain,targetId='',field=row.field,value,clear=false,sourceRow=null,reviewAdditive=null;
           if(row.kind==='canonical'){
             const fact=item.claim,c=UNIFIED_CLAIMS[fact.claimKind];
-            if(asArray(fact.dependsOn).some(id=>!asArray(item.record.canonicalArtifact.facts).some(f=>f.tempFactId===id&&f.certainty==='confirmed'&&f.temporalRole==='current_sequence')))throw Error('dependency_unverified');
-            const selectedFact={...clone(fact),dependsOn:[]};
+            const selectedFact={...clone(fact),certainty:'confirmed',temporalRole:'current_sequence',dependsOn:[]};
             const artifact={...clone(item.record.canonicalArtifact),facts:[selectedFact],stateBindings:[{factTempId:fact.tempFactId,typedValueField:c.value,stateDomain:fact.domain,stateField:c.field}]};
             const memory={...item.record,canonicalArtifact:artifact};memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
             const projected=buildUnifiedStateCandidate(memory,{head,registry:catalog.registry,ref:item.ref,logicalWorldlineId:catalog.worldlineId},manifest);
@@ -60994,9 +60940,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if(!clear&&domain!=='relationships'&&domain!=='narrative'){
               const typed=microStateValueForField({domain:domain==='characters'?'character':'world',field,value,quote:item.claim.evidence.exactQuote,subjectId:targetId,
                 resolve:(name,type)=>{const entity=resolve(name);return entity&&(!type||entity.type===type)?entity:null;}});
-              if(!typed.ok)throw Error(typed.reason);
-              value=typed.value;if(typed.additive)reviewAdditive=[typed.value];
-            }else if(!clear&&typeof value==='string'&&!canonicalEntityNameBoundToEvidence(value,item.claim.evidence.exactQuote))throw Error('state_value_not_source_bound');
+              if(typed.ok){value=typed.value;if(typed.additive)reviewAdditive=[typed.value];}
+            }
           }
           let target=domain==='narrative'?head.narrative:asArray(head[domain]).find(r=>r.id===targetId);
           if(!target&&sourceRow){head[domain]=[...asArray(head[domain]),clone(sourceRow)];target=head[domain].at(-1);}
@@ -73856,8 +73801,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
               // Held facts the review projection applies automatically are not a warning, and a
               // rejected fact (memory_record_quarantined) has nothing to apply. Only the rest waits.
               const heldRows = asArray(latest?.head?.unifiedApplied?.pending).filter(p => p.fact && p.reason !== 'memory_record_quarantined');
-              const autoApplied = heldRows.filter(p => MEMORY_REVIEW_AUTO_REASONS.includes(p.reason));
-              const waiting = heldRows.filter(p => !MEMORY_REVIEW_AUTO_REASONS.includes(p.reason));
+              const autoApplyOn = (await loadSettings()).memoryStateAutoApply !== false;
+              const autoApplied = autoApplyOn ? heldRows : [];
+              const waiting = autoApplyOn ? [] : heldRows;
               const pending = incomplete && (!latest.head || string(latest.status || '') !== 'partial' || waiting.length > 0);
               const stateWarnings = asArray(state.canonicalJob?.stateWarnings).filter(row => row.startTurn !== event.startTurn);
               if (pending) stateWarnings.push({ startTurn: event.startTurn, endTurn: event.endTurn,
@@ -84068,7 +84014,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         for(const notice of guiAsArray(job.stateNotices)){
           result.append(summary(`T${notice.startTurn}–T${notice.endTurn} 상태 반영`,guiEl('span',{class:'badge badge--ok',text:'자동 반영'}),
-            `검증 규칙만으로 확정하지 못한 ${Number(notice.autoApplied||0)}건을 자동 반영했습니다. 검토하지 않아도 그대로 사용됩니다.`,
+            `보류된 ${Number(notice.autoApplied||0)}건을 자동 반영했습니다. 검토하지 않아도 그대로 사용됩니다.`,
             guiEl('button',{class:'btn btn--sm',type:'button',style:'grid-column:1 / -1;justify-self:start;',text:'자동 반영 검토 열기',onClick:()=>{Gui.canonicalJobMinimized=true;renderCanonicalJobSurface(job);openMemoryReviewDialog();}})));
         }
         for(const warning of guiAsArray(job.stateWarnings)){
@@ -84331,6 +84277,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     maxInjectionChars: settings.maxInjectionChars,
     injectionPosition: settings.injectionPosition,
     failureMode: settings.failureMode,
+    memoryStateAutoApply: settings.memoryStateAutoApply !== false,
     finalDeliveryForGradia: settings.finalDeliveryForGradia !== false,
     responseFamily: normalizeResponseFamily(settings.responseFamily, settings.injectionMode),
     libraResponseMode: normalizeLibraResponseMode(settings.libraResponseMode, settings.injectionMode),
@@ -84798,6 +84745,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         max_injection_chars: String(runtime.maxInjectionChars),
         injection_position: runtime.injectionPosition,
         failure_mode: runtime.failureMode,
+        memory_state_auto_apply: String(runtime.memoryStateAutoApply !== false),
         final_delivery_for_gradia: String(runtime.finalDeliveryForGradia !== false),
         response_family: responseModeState.responseFamily,
         libra_response_mode: responseModeState.libraResponseMode,
@@ -89382,7 +89330,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         buildCanonicalTool('버전 · 실행 기록', '정본 후보를 비교하고 실행 이력을 봅니다.', () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); })
       ]),
       guiEl('div', { class: 'mem-tools__group' }, [guiEl('span', { class: 'mem-tools__label', text: '점검 · 복구' }),
-        buildCanonicalTool('기억·상태 자동 반영 검토', '보류됐다가 자동 반영된 항목을 확인하고 확정·반려합니다.', () => openMemoryReviewDialog()),
+        buildCanonicalTool('기억·상태 자동 반영 검토', '보류됐다가 자동 반영된 항목을 확인하고 영구 승인하거나 반영 거부합니다.', () => openMemoryReviewDialog()),
         buildCanonicalTool('상태 점검 및 자동 복구', '누락·실패 구간을 찾아 복구합니다.', () => void openLibraMemoryMaintenanceDialog()),
         buildCanonicalTool('복구 · 재구축', '백업 복원과 재구축 설정으로 이동합니다.', () => selectBookSettingsRoomSection('recovery'))
       ])
@@ -91384,7 +91332,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const valid=()=>Gui.visible&&body.isConnected&&canonicalReaderBindingKey(binding)===canonicalReaderBindingKey(canonicalReaderBinding());
     const riskLabel={high:'높음',medium:'중간',low:'낮음'},riskBadge={high:'badge--danger',medium:'badge--warn',low:'badge--ok'};
     const levelLabel={rules_verified:'상태 규칙까지 검증',source_verified:'원문·저장·범위 검증',additional_verification_pending:'추가 검증 미완'};
-    const decisionLabel={automatic:'자동 반영',confirmed:'사용자 확정',rejected:'반려'},decisionBadge={automatic:'badge--info',confirmed:'badge--ok',rejected:''};
+    const decisionLabel={automatic:'자동 반영',confirmed:'영구 승인',rejected:'반영 거부'},decisionBadge={automatic:'badge--info',confirmed:'badge--ok',rejected:''};
     const domainLabel={characters:'인물',world:'세계',relationships:'관계',narrative:'서사'};
     const stateReasonLabel=reason=>/explicit_user_correction/.test(reason)?'사용자 교정이 우선합니다.':/newer_state/.test(reason)?'더 최근 근거가 우선합니다.':/target|registry|reference/.test(reason)?'대상·참조 연결을 확인하지 못했습니다.':/source/.test(reason)?'값이 원문과 일치하는지 확인하지 못했습니다.':'상태 형식이나 근거를 확인하지 못했습니다.';
     const stateText=row=>{
@@ -91418,7 +91366,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if(!out?.ok)throw Error('저장 확인 실패');for(const id of batch)selected.delete(id);completed+=out.count;
           catalog=await globalThis.__LIBRA__.listMemoryReviews();if(!valid())return;status.textContent=`${completed} / ${ids.length}개 저장 완료`;
         }
-        await refreshGuiSnapshot(false);if(valid()){render();status.textContent=`${completed}개를 ${{automatic:'자동 반영으로 되돌렸습니다',confirmed:'확정했습니다',rejected:'반려했습니다'}[value]}. 저장 후 다시 읽었습니다.`;}
+        await refreshGuiSnapshot(false);if(valid()){render();status.textContent=`${completed}개를 ${{automatic:'자동 반영으로 되돌렸습니다',confirmed:'영구 승인했습니다',rejected:'반영 거부했습니다'}[value]}. 저장 후 다시 읽었습니다.`;}
       }
       catch(error){if(valid()){render();status.textContent=`변경 중단 · ${completed}개 저장 완료 · ${String(error.code||error.message||error)}`;}}
       finally{busy=false;if(valid())sync();}
@@ -91430,7 +91378,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const renderSummary=()=>{
       const rows=guiAsArray(catalog?.rows),n=value=>rows.filter(row=>row.status===value).length;
       const high=rows.filter(row=>row.status!=='rejected'&&row.risk==='high').length;
-      summary.replaceChildren(...[['자동 반영',n('automatic'),'badge--info'],['사용자 확정',n('confirmed'),'badge--ok'],['반려',n('rejected'),''],['사용 중 위험 높음',high,high?'badge--danger':'']]
+      summary.replaceChildren(...[['자동 반영',n('automatic'),'badge--info'],['영구 승인',n('confirmed'),'badge--ok'],['반영 거부',n('rejected'),''],['사용 중 위험 높음',high,high?'badge--danger':'']]
         .map(([label,value,tone])=>guiEl('span',{class:`badge ${tone}`.trim(),text:`${label} ${value}`})));
     };
     const card=row=>{
@@ -91472,14 +91420,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const turnChip=guiEl('button',{class:'btn btn--sm',type:'button',hidden:true,onClick:()=>{turn=0;limit=40;render();}});
     const actions=guiEl('div',{class:'cluster',dataset:{memoryReviewActions:'true'}},[
       selectAllButton,clearButton,count,guiEl('span',{style:{flex:'1 1 0'}}),
-      ...[['confirmed','선택 확정','btn btn--sm btn--primary'],['rejected','선택 반려','btn btn--sm btn--danger'],['automatic','자동 반영으로 되돌리기','btn btn--sm']].map(([value,label,cls])=>guiEl('button',{class:cls,type:'button',text:label,disabled:true,dataset:{reviewDecision:value},onClick:()=>void save(value)}))
+      ...[['confirmed','선택 영구 승인','btn btn--sm btn--primary'],['rejected','선택 반영 거부','btn btn--sm btn--danger'],['automatic','자동 반영으로 되돌리기','btn btn--sm']].map(([value,label,cls])=>guiEl('button',{class:cls,type:'button',text:label,disabled:true,dataset:{reviewDecision:value},onClick:()=>void save(value)}))
     ]);
     const filter=(label,options,initial,onChange)=>guiEl('label',{class:'field'},[guiEl('span',{class:'label',text:label}),guiEl('select',{class:'select','aria-label':label,onChange:event=>{onChange(event.target.value);limit=40;render();}},options.map(([value,text])=>guiEl('option',{value,text,selected:value===initial})))]);
     body.append(
-      guiEl('p',{class:'muted',style:{margin:0},text:'검증 규칙만으로 확정하지 못해 보류됐다가 자동 반영된 항목입니다. 검토하지 않아도 그대로 사용되며, 잘못된 항목만 반려하면 기억 검색과 상태에서 빠집니다. 확정한 값은 같은 턴의 다른 값보다 우선합니다.'}),
+      guiEl('p',{class:'muted',style:{margin:0},text:'보류됐던 항목을 조건 없이 상태에 자동 반영한 목록입니다. 검토하지 않아도 그대로 사용되며, 반영 거부하면 기억 검색과 상태에서 빠지고, 영구 승인한 값은 같은 턴의 다른 값보다 우선합니다.'}),
       guiEl('div',{class:'cluster',style:{justifyContent:'space-between'}},[summary,guiEl('div',{class:'cluster',style:{gap:'6px'}},[turnChip,guiEl('button',{class:'btn btn--sm',type:'button',text:'다시 읽기',onClick:()=>void reload()})])]),
       guiEl('div',{class:'grid',style:{gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'8px'}},[
-        filter('검토 상태',[['automatic','자동 반영'],['confirmed','사용자 확정'],['rejected','반려'],['all','전체']],decision,v=>decision=v),
+        filter('검토 상태',[['automatic','자동 반영'],['confirmed','영구 승인'],['rejected','반영 거부'],['all','전체']],decision,v=>decision=v),
         filter('위험도',[['all','전체'],['high','높음'],['medium','중간'],['low','낮음']],risk,v=>risk=v),
         filter('검증 수준',[['all','전체'],...Object.entries(levelLabel)],level,v=>level=v),
         filter('기억 종류',[['all','전체'],['micro','Micro 기억'],['canonical','정본 보류 사실']],kind,v=>kind=v)]),
@@ -93470,7 +93418,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const absorbed=decisions.filter(row=>row.disposition==='absorbed'),replaced=decisions.filter(row=>row.status==='superseded');
     return guiEl('section',{class:pending.length?'note note--warn':'note',dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
       guiEl('h3',{text:`현재 상태 · 반영 ${decisions.filter(row=>row.status==='admitted'&&row.disposition!=='absorbed').length}개${absorbed.length?` · 정본·교정에 반영 ${absorbed.length}개`:''}${replaced.length?` · 이후 변경으로 대체 ${replaced.length}개`:''} · 보류 ${pending.length}개`}),
-      rejected.length?guiEl('p',{class:'hint',text:`사용자 반려 ${rejected.length}개 · 기억 검색과 상태 반영에서 제외했습니다.`}):null,
+      rejected.length?guiEl('p',{class:'hint',text:`반영 거부 ${rejected.length}개 · 기억 검색과 상태 반영에서 제외했습니다.`}):null,
       !decisions.length?guiEl('p',{text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):null,
       ...[...absorbed,...replaced].map(row=>guiEl('p',{dataset:{microStateDisposition:row.disposition},
         text:`기록 ${Number(row.claimIndex)+1} · ${row.disposition==='absorbed'?'현재 정본·교정에 반영돼 있습니다.':'이후 정본·교정으로 대체됐습니다.'}`})),
@@ -94809,6 +94757,7 @@ advanced
         guiEl('div',{},[guiEl('b',{text:'임베딩'}),guiEl('span',{text:'실제 저장 상태 확인 필요'})])
       ]),
       guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
+      card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
       card('GRADIA 호환','GRADIA가 LIBRA를 읽는 동안 검색은 GRADIA 요청 때 한 번만 합니다.',[runtimeToggle('finalDeliveryForGradia','GRADIA 사용 시 최종 응답 모델에도 기억 전달','끄면 LIBRA 회상은 GRADIA 초안 단계에서만 쓰입니다.')]),
       card('복구 · 진단','기존 확인·복구 조건과 대상 보호를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('현재 상태 적용…','state'),routeButton('교정 관리…','general'),routeButton('분기 · 재구축…','recovery'),routeButton('실행 기록…','logs')])])
     ]);

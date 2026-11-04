@@ -9,7 +9,7 @@ const expose = source => source
     'if (typeof document === "undefined") return parseLLMResult(preservedLLMResultText || "");'
   )
   .replace(
-    '      getLiveSyncCaptureState:',
+    '      getScopePersonaCatalog:',
     `auditSetDraft: raw => { preservedLLMResultText = String(raw || ''); },
       auditSaveNew: async () => saveEditedResultAsNewPersona(),
       auditGeneratedUpsert: async ctx => upsertGeneratedPersona(ctx, { personaPrompt: 'generated synthetic probe', generationMode: 'classic' }),
@@ -23,7 +23,7 @@ const expose = source => source
         }));
       },
       auditReadLogs: async () => await readLogStore(true),
-      getLiveSyncCaptureState:`
+      getScopePersonaCatalog:`
   );
 
 const VALID = JSON.stringify({

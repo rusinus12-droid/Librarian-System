@@ -17,7 +17,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'program-manifest.js
 const activeNamespaces = ['flashback', 'hayaku', 'libra', 'lia', 'retrace'];
 
 assert.match(retrace, releasePattern("^\\/\\/@version {retrace}\\s*$", "m"), 'RE:TRACE GRADIA-free version');
-assert.ok(retrace.includes("const ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra', 'lia']);"), 'RE:TRACE negotiates exactly the four active peers');
+assert.ok(retrace.includes("const ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra']);"), 'RE:TRACE negotiates exactly the three active peers');
 assert.ok(retrace.includes("const MEMORY_SUITE_SCOPE_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'retrace']);"), 'RE:TRACE manages exactly five server namespaces');
 for (const forbidden of [
   '//@allowed-ipc serial_gradation_agents_for_rp',

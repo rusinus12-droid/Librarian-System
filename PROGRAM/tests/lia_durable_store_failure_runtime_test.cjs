@@ -6,7 +6,7 @@ const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
 
 // Run the actual plugin and its Storage bridge. Only expose existing functions;
 // storage faults are injected at the host boundary, never into the code under test.
-const expose = source => source.replace('      getLiveSyncCaptureState:', `
+const expose = source => source.replace('      getScopePersonaCatalog:', `
       auditDurable: {
         readStoredResultVault, writeStoredResultVault,
         readWorldBlueprintVault, writeWorldBlueprintVault,
@@ -21,7 +21,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
         presetCache: () => preservedVisualAssetPresetStore,
         seedPresetCache: value => { preservedVisualAssetPresetStore = value; }
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 let fixture, api, host, original;
 const stores = [

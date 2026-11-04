@@ -57,8 +57,8 @@ test('Global duplicate storage cleanup test for LIBRA, HAYAKU, and Flashback', a
       ]);
 
       const legacyStore = {
-        async getItem(k) { return storeMap.has(k) ? JSON.stringify(storeMap.get(k)) : null; },
-        async setItem(k, v) { storeMap.set(k, typeof v === 'string' ? JSON.parse(v) : v); return true; },
+        async getItem(k) { if (!storeMap.has(k)) return null; const v = storeMap.get(k); return String(k).startsWith('__memory_suite_internal_server_url_v1__:') ? v : JSON.stringify(v); },
+        async setItem(k, v) { let parsed = v; if (typeof v === 'string') { try { parsed = JSON.parse(v); } catch (_) {} } storeMap.set(k, parsed); return true; },
         async removeItem(k) { storeMap.delete(k); return true; },
         async keys() { return Array.from(storeMap.keys()); }
       };

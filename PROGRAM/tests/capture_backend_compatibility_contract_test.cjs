@@ -65,14 +65,7 @@ assert.match(flashback, /Runtime\.captureBackend !== FLASHBACK_CAPTURE_BACKENDS\
 assert.match(flashback, /removeRisuScriptHandler\('output', Runtime\.legacyScriptOutputHandler\)/);
 assert.match(flashback, /getCaptureBackendState: captureBackendSnapshot/);
 
-// LIA manual-only policy retains explicit analysis and source/ledger guards.
-// The committed-output listener only offers a manual-update notice; it never
-// becomes an automatic capture backend and no update runs before consent.
-assert.match(lia, /async function registerLiveSyncCaptureBackend\(\) \{\s*liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS\.NONE;\s*liveSyncCaptureFallbackReason = "manual_only_notification";\s*if\s*\(typeof api\.addRisuChatListener\s*!==\s*"function"\)\s*return false;\s*liveSyncOutputListener\s*=\s*event\s*=>\s*\{\s*void maybeNotifyLiaUpdate\(event\)/);
-assert.doesNotMatch(lia, /liveSyncCaptureBackend\s*=\s*LIVE_SYNC_CAPTURE_BACKENDS\.(?!NONE\b)/, 'LIA never selects an automatic capture backend');
-assert.match(lia, /const approved\s*=\s*await showLiaUpdateNotice\(expected[^)]*\);\s*if\s*\(!approved\s*\|\|\s*pluginUnloaded\)\s*\{[^}]*return;\s*\}[\s\S]{0,400}runLiaMockupAction\('update-five'/, 'manual update runs only after explicit consent');
-assert.match(lia, /async function maybeFailoverSilentLiveSyncBackend\(\) \{ return false; \}/);
-assert.match(lia, /verifyLivePersonaBatchStillCurrent/);
-assert.match(lia, /validateLivePersonaLedger/);
+// LIA does not watch chat output: it has no automatic work to do on a new turn.
+assert.doesNotMatch(lia, /\.addRisuChatListener\(|registerLiveSyncCaptureBackend\(|runManualLivePersonaAnalysis\(/);
 
 process.stdout.write('capture_backend_compatibility_contract_test: PASS\n');

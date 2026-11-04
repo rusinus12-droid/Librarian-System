@@ -4,8 +4,8 @@ const source=fs.readFileSync(path.join(__dirname,'../plugins/LIA_Persona_Linker.
 const begin=source.indexOf('  let loreLimitSaveInFlight = false;'),end=source.indexOf('  function getRuntimeApi()',begin);assert.ok(begin>0&&end>begin);
 function harness(initial='620',options={}) {
   let value=initial,reads=0,writes=[];
-  const api={async getArgument(){reads++;if(options.readFailure)throw Error('read_failure');return value;},async setArgument(key,next){writes.push(next);if(options.write) return await options.write({next,writes,set:v=>value=v});value=next;return true;}};
-  const ctx=vm.createContext({api});vm.runInContext(source.slice(begin,end)+'\nglobalThis.save=saveLoreCharacterLimit;',ctx);
+  const api={pluginStorage:{async getItem(){reads++;if(options.readFailure)throw Error('read_failure');return value;},async setItem(key,next){writes.push(next);if(options.write) return await options.write({next,writes,set:v=>value=v});value=next;return true;}}};
+  const ctx=vm.createContext({api,LIA_LORE_CHAR_LIMIT_KEY:'lore-limit'});vm.runInContext(source.slice(begin,end)+'\nglobalThis.save=saveLoreCharacterLimit;',ctx);
   return {save:ctx.save,api,value:()=>value,writes,reads:()=>reads};
 }
 (async()=>{

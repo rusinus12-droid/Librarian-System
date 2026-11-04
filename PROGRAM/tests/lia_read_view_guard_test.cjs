@@ -8,7 +8,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{p
  values.set('liaPersonaIllustrationConfigV1',JSON.stringify({runtimeAttachEnabled:true}));
  values.set('liaPersonaVisualAssetStoreV1',JSON.stringify({version:1,sets:{fixture:{personaKey:'fixture',personaId:liveChat.bindedPersona,personaName:'Source Persona',images:{neutral:{emotion:'neutral',assetPath:'image.png',assetName:'persona_neutral'}}}}}));
 }});try{
- const t=f.context.__guardTest;const root={innerHTML:''};f.context.document={getElementById:id=>id==='dpg-preview-root'?root:null,querySelectorAll:()=>[]};
+ const t=f.context.__guardTest;const root={innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]};f.context.document={getElementById:id=>id==='dpg-preview-root'?root:null,querySelectorAll:()=>[]};
  const a=deferred(),b=deferred();let call=0;t.setContextReader(()=>++call===1?a.promise:b.promise);
  t.setRender(ctx=>ctx.name);t.setBinder(()=>{});t.setPicker(async()=>{});
  const first=t.refreshPreview({skipCapture:true}),second=t.refreshPreview({skipCapture:true});

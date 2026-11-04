@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.19
+//@display-name GRADIA v0.28.20
 //@api 3.0
-//@version 0.28.19
+//@version 0.28.20
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -11,89 +11,6 @@
 /* v0.25.81 aligns GRADIA with RE:TRACE peer-compatibility v1 and makes all next-session state handoff source-immutable: Narrative Archive preparation no longer empties or rewrites the source scope, source Story Arc/Writer/Narrative fingerprints are proven unchanged across prepare/adopt, and future GRADIA versions are negotiated by stable protocol/features instead of exact version gates. */
 /* v0.25.49 fixes the button-only Input Writer GUI capability probe that was referenced by the composer/delivery flow but missing from both the source feature branch and the merged canonical build. v0.25.48 merges the explicit button-only Input Writer flow while preserving the shared Narrative Archive, local Float32 vector tier, and RE:TRACE summary-only handoff contract. */
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
-//@arg mode string off|lite|normal
-//@arg multi_pipeline_mode string lightweight|heavyweight — lightweight combines analysis and drafting in one call per stage; heavyweight separates them
-//@arg writing_mode string novel|rp — top-level writing control; novel is author-directed full-cast fiction, rp is strict player-controlled user-agency protection
-//@arg shadow_draft_mode string classic|input_inclusive|author_directed — compatibility draft key; RP keeps the legacy author_directed storage value but applies the strict player-controlled contract
-//@arg turn_window int Legacy global recent-turn fallback; migrated once into each stage slot
-//@arg max_recent_chars int Legacy global context fallback; migrated once into each stage slot
-//@arg max_previous_stage_chars int Maximum latest same-turn draft characters available to the next serial AIDE
-//@arg max_injection_chars int Preferred final-overlay budget; expands only when needed to preserve the complete draft and required synthesis contract
-//@arg gradation_mode string full_draft — SHADOW ACT writes the first full draft and serial AIDEs patch the latest same-turn draft
-//@arg output_mode string draft_guided — final draft is handed to the normal host response
-//@arg internal_draft_language string korean|english|japanese — fixed language for generated draft prose, AIDE patch prose, and final scene realization
-//@arg built_in_style_preset string unified_stylepack
-//@arg injection_position string before_last_user|first_system|last_system
-//@arg failure_mode string soft|degraded|hard
-//@arg stage_timeout_ms int Global stage timeout (ms) for stage slots without their own timeout
-//@arg model_presets_json string JSON object of saved model presets
-//@arg provider_presets_json string LIBRA/RE-compatible alias for model_presets_json
-//@arg provider_presets_risuai_enabled string Reserved LIBRA-compatible flag: true|false
-//@arg default_preset string Default model preset name
-//@arg shadow_act_preset string Model preset for SHADOW ACT
-//@arg character_aide_preset string Model preset for Character AIDE
-//@arg world_aide_preset string Model preset for World AIDE
-//@arg plot_aide_preset string Model preset for Plot AIDE
-//@arg input_assist_preset string Optional model preset for the per-turn Input Manager
-//@arg user_intent_ooc_preset string Optional model preset for the target-selectable Creative Direction OOC
-//@arg input_assist_mode string off|user_focus|npc_focus|offscreen_focus|random — active-mode carrier; Novel non-off opens three perspectives, RP non-off opens three player-action choices
-//@arg memory_budget_chars int Memory owners may hand GRADIA for one run; set by the work-scale profile or by custom
-//@arg rp_impersonation_scope string persona|persona_cast|all — RP detail mode: what the AI may not invent; persona only, persona and other characters, or everything
-//@arg rp_input_assist_mode string off|user_focus — remembered RP-mode action-choice adviser state; user_focus means enabled
-//@arg input_assist_scope string full_pipeline|standalone
-//@arg input_assist_target_chars string 300|500|800|1000|omakase
-//@arg input_assist_confirmation_mode string direct|confirm
-//@arg input_assist_lore_activation_mode string unified — legacy-compatible carrier; all previous values migrate to the single unified lore retrieval engine
-//@arg information_transfer_mode string draft_only — private stage analysis is never handed off
-//@arg nsfw_mode string off|soft|direct|explicit — shared mature-scene guidance for Input Writer, SHADOW ACT and all three AIDEs
-//@arg nsfw_guidance_enabled string true|false — apply selected NSFW guidance to input candidates and internal drafts
-//@arg nsfw_inject_final_request string true|false — forward mature-scene guidance to RisuAI's final response request when enabled
-//@arg lore_activation_mode string unified — single lore retrieval engine combining RisuAI host selection, activation-key evidence, BM25F/Jaccard/entity retrieval, RRF and MMR
-//@arg lore_reranker_top_k int Adaptive lore starting count per SHADOW/AIDE stage; GRADIA expands beyond it when protected evidence, uncovered anchors, flat relevance clusters, or available context require more lore; default 8
-//@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks GRADIA may read
-//@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks GRADIA must not read
-//@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries GRADIA must never read
-//@arg aide_stage_order string JSON/comma-separated order for Character, World, Plot AIDE; SHADOW ACT is always first
-//@arg llm_provider string Fallback main LLM provider
-//@arg llm_url string Fallback main LLM URL
-//@arg llm_key string Fallback main LLM API key / Vertex bearer token / JSON placeholder
-//@arg llm_model string Fallback main LLM model
-//@arg llm_temp string Fallback main LLM temperature
-//@arg llm_timeout int Fallback main LLM timeout ms
-//@arg llm_timeout_ms int RE-compatible fallback timeout alias
-//@arg llm_max_completion_tokens int Fallback main LLM max completion tokens
-//@arg llm_request_format string Fallback request format: chat_completions|responses
-//@arg llm_reasoning_preset string Fallback reasoning preset: auto|off|gpt|openrouter|gemini|gemini_budget|claude|claude_budget|deepseek|kimi|glm|ollama|custom
-//@arg llm_reasoning_effort string Fallback reasoning effort: none|minimal|low|medium|high|xhigh|max
-//@arg llm_reasoning_budget_tokens int Fallback reasoning budget tokens (-1 enables dynamic Gemini budget)
-//@arg llm_thinking_type string Fallback thinking toggle: enabled|disabled
-//@arg llm_glm_thinking_type string Backward-compatible GLM thinking type alias
-//@arg llm_glm_thinking string Fallback GLM thinking alias
-//@arg llm_service_tier string Fallback service tier: off|auto|default|flex|priority|scale
-//@arg custom_service_tier_passthrough string LIBRA-compatible custom provider service_tier passthrough: true|false
-//@arg vertex_flex_mode string LIBRA-compatible Vertex Flex mode: off|provisioned_then_flex|flex_only
-//@arg llm_stream string Fallback stream flag: true|false
-//@arg enable_shadow_act string true|false
-//@arg enable_character_aide string true|false
-//@arg enable_world_aide string true|false
-//@arg enable_plot_aide string true|false
-//@arg shadow_prompt_extra string Legacy SHADOW ACT addendum; automatically merged into the user creative instruction
-//@arg character_prompt_extra string Legacy Character AIDE addendum; automatically merged into the user creative instruction
-//@arg world_prompt_extra string Legacy World AIDE addendum; automatically merged into the user creative instruction
-//@arg plot_prompt_extra string Legacy Plot AIDE addendum; automatically merged into the user creative instruction
-//@arg shadow_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg character_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg world_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg plot_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg shadow_prompt_custom string SHADOW ACT creative instruction for analysis and writing; built-in structure is always preserved
-//@arg character_prompt_custom string Character AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg world_prompt_custom string World AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg plot_prompt_custom string Plot AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg llm_extra_body_json string Fallback extra JSON body merged into provider requests
-//@arg debug_log string true|false
-//@arg shadow_include_risu_context string Legacy RAG toggle; migrated once into per-stage RisuAI reference switches
-//@arg shadow_risu_context_max_chars int Legacy RAG context fallback; migrated once into per-stage context limits
-//@arg enable_gui string true|false
 
 /*
  * Serial Gradation Agents for RP v0.23.3
@@ -938,7 +855,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.19';
+  const PLUGIN_VERSION = '0.28.20';
   
   
   

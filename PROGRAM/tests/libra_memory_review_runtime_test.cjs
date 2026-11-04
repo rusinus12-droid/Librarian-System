@@ -79,6 +79,16 @@ async function conflictingClaims(onReady){
   assert.equal(f.values.get(savedPolicy[0]),savedPolicy[1],'failed write retains previous verified decisions');
   const restarted=await create('LIBRA','Full',{initialValues:[...f.values],initialChat:structuredClone(chat.message)});
   try{const p=await restarted.api.listMemoryReviews();assert.equal(p.rows.find(r=>r.id===first.id).status,'rejected');assert.equal(p.rows.find(r=>r.id===second.id).risk,'high');assert.equal((await restarted.api.debugLoadContinuityStateForResponse()).head.world.find(r=>r.name==='도서관').state.doorStatus,'닫혔다');}finally{await restarted.close();}
+  // With automatic use off, nothing reaches State until the user approves it; the items still wait in the review.
+  await decide([first.id],'automatic');
+  const manualArgs=async k=>({memory_state_auto_apply:'false',memory_suite_server_mode:'plugin_only',enable_gui:'true'})[String(k)]??'';
+  const manual=await create('LIBRA','Full',{initialValues:[...f.values],initialChat:structuredClone(chat.message),host:{getArgument:manualArgs,getArg:manualArgs}});
+  try{const before=await manual.api.listMemoryReviews();assert.ok(before.rows.some(r=>r.id===second.id&&r.status==='automatic'&&r.stateOutcome==='not_applied'),'an undecided item waits: '+JSON.stringify(before.rows.map(r=>[r.status,r.stateOutcome,r.stateEligible])));
+    assert.equal(Object.hasOwn((await manual.api.debugLoadContinuityStateForResponse()).head.world.find(r=>r.name==='도서관').state,'doorStatus'),false,'automatic use is off');
+    await manual.api.setMemoryReviewDecision({scopeKey:before.scopeKey,previewDigest:before.previewDigest,ids:[second.id],status:'confirmed'});
+    assert.equal((await manual.api.debugLoadContinuityStateForResponse()).head.world.find(r=>r.name==='도서관').state.doorStatus,'닫혔다','approval applies it');
+    await manual.api.setMemoryReviewDecision({...(p=>({scopeKey:p.scopeKey,previewDigest:p.previewDigest}))(await manual.api.listMemoryReviews()),ids:[second.id],status:'automatic'});
+  }finally{await manual.close();}
   if(onReady)await onReady(f);
   assert.equal(calls,modelCalls,'review decisions never call a provider');
   chat.message[11].data+=' 수정된 원문.';assert.equal((await f.api.listMemoryReviews()).rows.length,0,'edited raw source cannot be auto approved');

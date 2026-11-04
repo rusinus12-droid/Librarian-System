@@ -127,8 +127,6 @@ const range = (startTurn, status) => ({ startTurn, endTurn: startTurn + 4, statu
   assert.ok(L.includes("runLibraColdStartWithConfirm()"), 'cold start asks first via runLibraColdStartWithConfirm');
   assert.ok(!L.includes("text: '수동 콜드스타트', onClick: () => { void runCanonicalGuiCommand("), 'manual cold start no longer starts without confirmation');
   assert.ok(L.includes("if (typeof scheduleLibraAttentionRefresh === 'function') scheduleLibraAttentionRefresh('chat_output');"));
-  for (const arg of ['story_arc_preset', 'character_ito_preset', 'world_ito_preset', 'plot_ito_preset'])
-    assert.ok(L.includes(`//@arg ${arg} string Retired and ignored;`), arg);
   assert.ok(L.includes('PERSISTED_AGENT_STAGE_DEFS.filter(def=>!LEGACY_MEMORY_STAGE_DEFS.some('), 'retired stages are not reported as orphan connections');
   console.log('PASS libra_zero_touch_attention_test');
 })().catch(error => { console.error(error); process.exit(1); });

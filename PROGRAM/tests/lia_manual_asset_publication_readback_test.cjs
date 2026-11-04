@@ -6,7 +6,7 @@ const {createMemorySuiteServer}=require(path.join(p,'server/server.cjs'));
 const transport=require('./helpers/inprocess-review-transport.cjs');
 const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64');
 const ASSETS='liaPersonaVisualAssetStoreV1';
-const expose=s=>s.replace('      getLiveSyncCaptureState:',`      auditAssets:{importPersonaVisualAssetImage,readPersonaVisualAssetStore,writePersonaVisualAssetStore,writePersonaVisualAssetBackup,readPersonaVisualAssetBackup,ensurePersonaVisualAssetAvailable,bridge:MemorySuiteStorageBridge},\n      getLiveSyncCaptureState:`);
+const expose=s=>s.replace('      getScopePersonaCatalog:',`      auditAssets:{importPersonaVisualAssetImage,readPersonaVisualAssetStore,writePersonaVisualAssetStore,writePersonaVisualAssetBackup,readPersonaVisualAssetBackup,ensurePersonaVisualAssetAvailable,bridge:MemorySuiteStorageBridge},\n      getScopePersonaCatalog:`);
 (async()=>{const results=[];
 for(const mode of ['plugin_only','server_only','mirror'])for(const fault of ['false','dropped','mismatch','success']){
  const dir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'lia-store-')),app=createMemorySuiteServer({dataDir:dir,autoBackup:false,computeEnabled:false,port:47631});const calls=[],route=transport(app,calls);let f;

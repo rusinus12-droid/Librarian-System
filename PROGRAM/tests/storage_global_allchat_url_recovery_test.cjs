@@ -1,15 +1,16 @@
 'use strict';
+const savedUrl=async(f,v)=>await f.host.pluginStorage.getItem('__memory_suite_internal_server_url_v1__:'+v[0])||await f.host.getArgument('memory_suite_server_url');
 const assert=require('node:assert/strict');const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 (async()=>{const failures=[];for(const v of variants){
  const target=await fixture(v);let source;const url='http://127.0.0.1:47632';try{
   source=await fixture(v,{transportFactory:base=>(u,o)=>new URL(u).port==='47632'?target.host.nativeFetch(u,o):base(u,o)});
   let once=false;const stop=source.bridge.subscribeSyncJob(job=>{if(job?.phase==='prepared'&&!once){once=true;target.app.repositories[v[0]].database.prepare("INSERT INTO kv (space,key,value_json,revision,deleted,digest,updated_at) VALUES ('plugin',?, ?,1,0,'fixture-digest',?)").run('unknown-foreign-owner','"bad"',Date.now());}});
-  await assert.rejects(()=>source.bridge.setGlobalMode('server_only',{url}));stop();assert.equal(await source.host.getArgument('memory_suite_server_url'),'http://127.0.0.1:47631','changed target discovery cannot persist URL');console.log('PASS '+v[0]+' fresh alternate target blocks before URL');
+  await assert.rejects(()=>source.bridge.setGlobalMode('server_only',{url}));stop();assert.equal(await savedUrl(source,v),'http://127.0.0.1:47631','changed target discovery cannot persist URL');console.log('PASS '+v[0]+' fresh alternate target blocks before URL');
  }catch(e){failures.push(v[0]+' target: '+(e.stack||e));}finally{await source?.close();await target.close();}
  const next=await fixture(v);let crash=true,main,fresh;try{
   main=await fixture(v,{transportFactory:base=>(u,o)=>new URL(u).port==='47632'?next.host.nativeFetch(u,o):base(u,o)});
-  const set=main.host.setArgument;main.host.setArgument=async(k,value)=>{await set(k,value);if(crash&&k==='memory_suite_server_url'){crash=false;throw Error('CRASH_AFTER_URL_WRITE');}};
-  await assert.rejects(()=>main.bridge.setGlobalMode('server_only',{url}));assert.equal(await main.host.getArgument('memory_suite_server_url'),url);assert.equal(main.bridge.getSyncJob().status,'paused');await main.bridge.dispose();
+  const set=main.host.pluginStorage.setItem.bind(main.host.pluginStorage);main.host.pluginStorage.setItem=async(k,value)=>{const out=await set(k,value);if(crash&&String(k).startsWith('__memory_suite_internal_server_url_v1__:')){crash=false;throw Error('CRASH_AFTER_URL_WRITE');}return out;};
+  await assert.rejects(()=>main.bridge.setGlobalMode('server_only',{url}));assert.equal(await savedUrl(main,v),url);assert.equal(main.bridge.getSyncJob().status,'paused');await main.bridge.dispose();
   fresh=await fixture(v,{app:main.app,values:main.values,url,transportFactory:base=>(u,o)=>new URL(u).port==='47632'?next.host.nativeFetch(u,o):base(u,o)});const result=await fresh.bridge.setGlobalMode('server_only',{url});assert.equal(result.completeKnownScopes,true);const rows=next.app.repositories[v[0]].database.prepare('SELECT key FROM kv WHERE deleted=0').all();assert(rows.some(r=>r.key===v[0]+'.A'));assert.notEqual(main.bridge.getSyncJob()?.serverPins?.source?.dataInstanceId,undefined);console.log('PASS '+v[0]+' distinct DATA URL crash resumes');
  }catch(e){failures.push(v[0]+' crash: '+(e.stack||e));}finally{await fresh?.close();await main?.close();await next.close();}
  let paused=false,failNew=false;const r=await fixture(v,{writeFault:async(k,value)=>{if(k!==`__memory_suite_internal_sync_job_v1__:${v[0]}`)return;const j=JSON.parse(value);if(!paused&&j.checkpoints?.A){paused=true;throw Error('scope_checkpoint_pause');}if(failNew&&j.phase==='prepared')throw Error('new_prepared_journal_failure');}});

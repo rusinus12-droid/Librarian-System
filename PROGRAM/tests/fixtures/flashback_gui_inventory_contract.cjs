@@ -5,8 +5,9 @@ const sorted=xs=>plain(xs).sort();
 const unique=(xs,label)=>assert.equal(new Set(xs).size,xs.length,label+' must be unique');
 function check({api,html,source}){
  const t=api._test,fields=t.flashbackArgumentSettingFields,readOnly=t.flashbackReadOnlyArgumentSettings,special=t.flashbackSpecialArguments,rows=t.flashbackArgumentSettingRows();
- const declared=[...source.matchAll(/^\/\/@arg\s+(\S+)/gm)].map(m=>m[1]);
  const names=rows.map(r=>r.name),roNames=readOnly.map(r=>r.name);
+ // Settings are no longer declared as plugin arguments; the settings rows and special policies are the inventory.
+ const declared=[...names,...special.map(r=>r.name)];
  for(const [xs,label] of [[declared,'declared ARGs'],[names,'normal rows'],[roNames,'read-only policies'],[special.map(r=>r.name),'special policies'],[fields.map(r=>r.name),'editable fields']])unique(xs,label);
  assert.deepEqual(sorted([...names,...special.map(r=>r.name)]),sorted(declared),'every declared ARG has exactly one audit policy');
  assert.ok(readOnly.every(p=>names.includes(p.name)),'read-only policies reference normal settings');

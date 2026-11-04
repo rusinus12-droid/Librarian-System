@@ -11,7 +11,6 @@ const source = fs.readFileSync(path.join(root, 'plugins', 'HAYAKU_Locator_Contin
 const version=source.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1];
 assert.ok(version, 'plugin must declare a semantic version');
 assert.ok(source.includes(`const PLUGIN_VERSION = '${version}';`), 'header and runtime versions must agree');
-assert.match(source, /\/\/@arg hayaku_memory_language string ko\|en\|ja\|zh\|source; blank uses source/);
 // The approved mockup Settings page (5e1db38) replaced the old long-form option
 // copy with short descriptions plus a friendly value-label map; the Auto policy
 // itself is verified at runtime below.

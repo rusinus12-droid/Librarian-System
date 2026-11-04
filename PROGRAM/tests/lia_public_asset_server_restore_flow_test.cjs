@@ -48,7 +48,7 @@ async function waitFor(check, label, timeout = 30000) {
   throw new Error(`timeout:${label}`);
 }
 
-const expose = source => source.replace('      getLiveSyncCaptureState:', `
+const expose = source => source.replace('      getScopePersonaCatalog:', `
       restoreFlowAudit: {
         bridge: MemorySuiteStorageBridge,
         importLegacyImage: bytes => getContext().then(async ctx => {
@@ -61,7 +61,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
         readStoredResultVault, readPersonaVisualAssetStore,
         readPersonaVisualAssetBackup, ensurePersonaVisualAssetAvailable
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 async function createRealm(url, diskRows, hostAssets, options = {}) {
   const callbacks = {};

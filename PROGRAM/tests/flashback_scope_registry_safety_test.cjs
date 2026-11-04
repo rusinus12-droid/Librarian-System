@@ -134,7 +134,7 @@ assert.match(scan, /uniqueMembers\.length === 0/);
 assert.match(scan, /emptyRegistryShellObservations >= 2/);
 assert.match(scan, /kind: emptyRegistryShellCandidate \? 'registry_only_shell' : 'chat_memory'/);
 assert.match(scan, /verified_empty_registry_shell_two_scans/);
-assert.match(retrace, /const scopeManagerPairableKinds = new Set\(\['chat_memory', 'packet_ledger', 'canonical_memory', 'live_persona', 'analysis_recovery'\]\)/);
+assert.match(retrace, /const scopeManagerPairableKinds = new Set\(\['chat_memory', 'packet_ledger', 'canonical_memory', 'proof_only', 'analysis_recovery'\]\)/);
 assert.match(retrace, /const scopeManagerPairable = scope => scopeManagerPairableKinds\.has\(scope\?\.kind\)/);
 assert.match(retrace, /emptyRegistryShellVerified: scope\.descriptor\?\.emptyRegistryShellVerified === true/);
 

@@ -36,11 +36,10 @@ for (const [name, version, namespaceMarker] of cases) {
     assert.equal((text.match(/^\/\/@arg memory_suite_server_mode /gm) || []).length, 0, 'LIA has no active server-mode argument');
     assert.ok(/storagePolicy\s*:\s*['"]local_only['"]/.test(text), 'LIA uses its explicit local-only policy');
   } else {
-    assert.equal((text.match(/^\/\/@arg memory_suite_server_mode /gm) || []).length, 1, `${name} server mode arg`);
+    assert.equal((text.match(/^\/\/@arg memory_suite_server_/gm) || []).length, 0, `${name} keeps no server setting in plugin arguments`);
   }
   assert.ok(text.includes('deletePluginStorageAfterServerVerification'), `${name} guarded pluginStorage delete`);
   assert.ok(text.includes('restorePluginStorage'), `${name} server-to-pluginStorage recovery`);
-  assert.equal((text.match(/^\/\/@arg memory_suite_server_url /gm) || []).length, 1, `${name} server URL arg`);
   assert.equal((text.match(/^\/\/@arg memory_suite_bootstrap_key /gm) || []).length, 0, `${name} has no manual bootstrap key arg`);
   assert.equal((text.match(/^\/\/@arg .*compute.*(?:token|pairing|secret|key)/gmi) || []).length, 0, `${name} has no manual Compute credential arg`);
   assert.ok(!text.includes('data-mscx-key'), `${name} has no manual bootstrap key input`);
@@ -65,7 +64,8 @@ for (const [name, version, namespaceMarker] of cases) {
   assert.ok(text.includes('새 스코프의 기본값은 플러그인 단독'), `${name} new-scope default UI`);
   assert.ok(text.includes('MemorySuiteStorageBridge.dispose?.()'), `${name} unload disposes its storage bridge`);
   assert.ok(text.includes('requireRestoreValidation:true') || text.includes('requireRestoreValidation: true'), `${name} owner restore validator is fail-closed`);
-  assert.ok(text.includes('resolveRestoreDependencies:'), `${name} explicitly resolves current-scope dependencies`);
+  // LIA has one proof store and no per-scope shards, so it has no restore dependency to resolve.
+  if (name !== 'LIA_Persona_Linker.js') assert.ok(text.includes('resolveRestoreDependencies:'), `${name} explicitly resolves current-scope dependencies`);
   assert.ok(text.includes('validateRestore:'), `${name} validates restored owner semantics`);
 }
 
@@ -116,16 +116,16 @@ assert.ok(lia.includes('disposeRegistrationHandle(registeredUnloadRegistration)'
 for (const key of [
   'dynamicPersonaLorebookGeneratorResultVault',
   'liaPersonaLinkerWorldBlueprintVaultV1',
-  'liaPersonaLinkerLivePersonaIndexV2',
+  'liaPersonaRequestProofV1',
   'liaPersonaVisualAssetStoreV1',
   'liaPersonaVisualAssetPresetStoreV1'
 ]) assert.ok(lia.includes(key), `LIA routed key ${key}`);
-assert.match(lia, /pluginPrefixes:\s*\[LIVE_PERSONA_SCOPE_STORAGE_PREFIX\s*,\s*PERSONA_VISUAL_ASSET_BACKUP_PREFIX\]/);
+assert.match(lia, /pluginPrefixes:\s*\[PERSONA_VISUAL_ASSET_BACKUP_PREFIX\]/);
 assert.ok(lia.includes('liaPersonaIllustrationConfigV1'));
 assert.ok(lia.includes('await api.setDatabase({ personas: nextPersonas });'), 'actual RisuAI Persona DB mutation must remain local');
 assert.ok(!lia.slice(lia.indexOf("namespace: 'lia'"), lia.indexOf('async function waitForPluginStorage')).includes('personas'), 'RisuAI Persona objects must not be routed as server KV');
 assert.ok(lia.includes("if (key === LLM_CONFIG_STORAGE_KEY || key === LOG_STORAGE_KEY) return { kind: 'global' };"), 'LIA connection/UI config remains local');
-assert.ok(lia.includes('scopedContainer: true'), 'LIA index/proof containers are projected per scope');
+assert.ok(lia.includes('scopedContainer: true'), 'LIA proof containers are projected per scope');
 assert.ok(lia.includes("error.code = 'LIA_STORAGE_JSON_INVALID'"), 'LIA bridge rejects malformed storage JSON instead of normalizing to an empty object');
 
 

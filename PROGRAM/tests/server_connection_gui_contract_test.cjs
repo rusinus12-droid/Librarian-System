@@ -154,6 +154,7 @@ async function main() {
       currentScopeProvider: async () => ({ scopeId: 'gui-scope-a', scopeKey: 'gui-scope-a', label: 'GUI Scope A' })
     });
     bridge.createPluginStorageProxy(legacy);
+    const savedServerUrl = async () => await legacy.getItem('__memory_suite_internal_server_url_v1__:hayaku');
 
     assert.equal(await bridge.getMode(), 'plugin_only', 'plugin-only remains default');
     const test = await bridge.testConnection(baseUrl);
@@ -166,7 +167,7 @@ async function main() {
     assert.equal(configured.to.mode, 'server_only');
     assert.equal(configured.to.url, baseUrl);
     assert.equal(args.memory_suite_server_mode, '', 'scope mode must leave the untouched global ARG unchanged');
-    assert.equal(args.memory_suite_server_url, baseUrl);
+    assert.equal(await savedServerUrl(), baseUrl);
 
     await assert.rejects(
       () => bridge.configureConnection({ mode: 'server_only', url: 'http://127.0.0.1:65530' }),
@@ -205,7 +206,7 @@ async function main() {
       () => bridge.configureConnection({ mode:'server_only', url:conflictingUrl }),
       error => error?.code === 'MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE'
     );
-    assert.equal(args.memory_suite_server_url, baseUrl, 'failed mode transition rolls the plugin-global URL back');
+    assert.equal(await savedServerUrl(), baseUrl, 'failed mode transition rolls the plugin-global URL back');
     assert.equal(await bridge.getMode(), 'plugin_only', 'failed mode transition does not commit mirror mode');
 
     process.stdout.write('server_connection_gui_contract_test: PASS\n');

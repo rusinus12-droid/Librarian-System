@@ -1,12 +1,10 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.29.4
+//@version 0.29.5
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
 //@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_url string Legacy LIA recovery server URL; blank uses http://127.0.0.1:47630
 //@arg max_lore_entries int Legacy lore breadth base; v0.22.15 keeps the protected + reranked Top-K lore pipeline
-//@arg max_lore_chars int Maximum characters copied from each lorebook entry as generation context
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
 async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, payload) {
   const readTarget = async () => {
@@ -166,9 +164,11 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
     }
   };
 }
+
 /* End RisuAI native-branch target storage preparation */
 
 /* Manual-only candidate: explicit five-turn analysis; no ordinary request/output tracking. Server storage and existing Persona data are preserved. */
+/* v0.29.5 removes Live Persona. LIA no longer tracks turns, forks personas or keeps per-chat binding stores; a chat is bound to a persona directly, a RE:TRACE next session keeps that binding, and data left by older versions is ignored. A data refresh keeps the page position. */
 /* v0.26.66 / Pocket Studio: light responsive home, grouped bottom navigation, preserved persona and storage actions. */
 /* v0.26.62 requires semantic Persona name/prompt readback and rejects explicit host write failures before committing Live Persona progress. */
 /* Core-quality patch: Lore Reranker v2 replaces flat substring weighting with exact-anchor + rare-term BM25F-style scoring and splits protected lore into hard constraints (always retained) versus soft always/constant lore (budgeted inside Top-K). */
@@ -211,7 +211,7 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 (async () => {
   // Canonical LIA mockup CSS/DOM transplanted verbatim; suite.js demo behavior is intentionally excluded.
   const LIA_MOCKUP_CSS = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n\n/* LIA 전용: \"라일락 주머니\" — 모바일 우선, 카드 1열, 큰 터치 영역, 한 화면 한 일 */\n.t-lia .page-body{max-width:760px;margin:0 auto;width:100%}\n.pocket{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center;padding:18px;border:1px solid var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft)}\n.avatar{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font:800 24px var(--font-display);border:3px solid #fff}\n.avatar--sm{width:44px;height:44px;font-size:17px;border-width:2px}\n.avatar--b{background:#3d7258}.avatar--c{background:#8a5f17}.avatar--d{background:#ab3453}.avatar--n{background:#6f6580}\n.pocket h2{margin:0;font:800 20px/1.25 var(--font-display);letter-spacing:-.03em}\n.pocket p{margin:3px 0 0;font-size:13px;color:var(--text2)}\n.pocket__act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}\n.pocket__act .btn{flex:1 1 140px}\n/* 연결 상태: 색만으로 구분하지 않도록 아이콘 + 글자를 항상 함께 */\n.bind{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);background:var(--surface);color:var(--text2)}\n.bind--here{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.bind--other{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.bind--none{border-style:dashed}\n.legend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:12px;color:var(--text3)}\n.pcard{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\nbutton.pcard:hover{border-color:var(--accent-line);background:var(--surface2)}\n.pcard b{display:block;font-size:14.5px}.pcard small{display:block;font-size:12.5px;color:var(--text3);margin-top:1px}\n.pcard__side{display:grid;gap:6px;justify-items:end}\n.big-choice{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:14px;align-items:center;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);width:100%;text-align:left;color:var(--text)}\n.big-choice:hover{border-color:var(--accent);background:var(--accent-soft)}\n.big-choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.big-choice b{display:block;font-size:15px}.big-choice span{font-size:12.5px;color:var(--text2)}\n.big-choice .row__icon{width:44px;height:44px;border-radius:50%}\n.big-choice .pick{font-size:12px;font-weight:700;color:var(--text3)}\n.big-choice.is-on .pick{color:var(--accent-ink)}\n.mode-panel{display:none}.mode-panel.is-on{display:block}\n.emo-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}\n.emo{display:grid;gap:6px;justify-items:center;padding:12px 6px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);font-size:12px;text-align:center;color:var(--text);width:100%}\nbutton.emo:hover{border-color:var(--accent-line);background:var(--surface2)}\n.emo .avatar{width:48px;height:48px;font-size:20px}\n.emo.is-done{border-color:var(--ok-line)}.emo.is-todo{border-style:dashed;color:var(--text3)}\n.emo.is-master{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}\n.emo .avatar.todo{background:var(--surface3);color:var(--text3)}\n.base-frame{display:grid;grid-template-columns:96px minmax(0,1fr);gap:16px;align-items:center}\n.base-frame .avatar{width:96px;height:96px;font-size:36px;border-radius:var(--r-md)}\n.back{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--accent-ink);font:700 13px var(--font-sans);padding:6px 0;margin-bottom:6px;min-height:36px}\n.turns{display:flex;gap:6px}.turns i{flex:1;height:10px;border-radius:99px;background:var(--surface3);border:1px solid var(--border2)}.turns i.on{background:var(--accent);border-color:var(--accent)}\n.jargon{font-size:12px;color:var(--text3)}\n.confirm-inline{display:none;margin-top:10px}.confirm-inline.is-open{display:block}\n.fld{display:grid;gap:6px;padding:12px 0;border-top:1px solid var(--border)}\n.fld:first-child{border-top:0}\n.fld__head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}\n.fld__head label{font-weight:700;font-size:13px}.fld__key{font:11.5px var(--font-mono);color:var(--text3)}\n.fld__act{display:flex;gap:12px;align-items:center;flex-wrap:wrap}\n.fld__act .check{font-size:12.5px;color:var(--text2)}\n.diff-row{display:grid;grid-template-columns:90px minmax(0,1fr);gap:4px 12px;padding:10px 0;border-top:1px solid var(--border);font-size:12.5px}\n.diff-row:first-child{border-top:0}\n.diff-row del{color:var(--danger-ink);background:var(--danger-soft);text-decoration:line-through;padding:0 3px;border-radius:3px}\n.diff-row ins{color:var(--ok-ink);background:var(--ok-soft);text-decoration:none;padding:0 3px;border-radius:3px}\n.chk-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:99px;border:1px solid var(--border2);font-size:12px;font-weight:650;background:var(--surface)}\n.chk-chip.ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.chk-chip.warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.target-card{display:grid;gap:10px;padding:16px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface)}\n.target-card h3{margin:0;font-size:14.5px}\n.target-card h3 small{font-weight:500;color:var(--text3);margin-left:6px}\n.lock-card dl{margin:0}\n.ver{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.ver:first-child{border-top:0}.ver b{font-size:13.5px}.ver small{display:block;color:var(--text3);font-size:12.5px}\n@container app (max-width:640px){.emo-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.pcard{grid-template-columns:44px minmax(0,1fr)}.pcard__side{grid-column:1/-1;justify-items:start;grid-auto-flow:column;justify-content:start}.base-frame{grid-template-columns:72px minmax(0,1fr)}.base-frame .avatar{width:72px;height:72px;font-size:28px}.big-choice{grid-template-columns:44px minmax(0,1fr)}.big-choice .pick{display:none}.diff-row{grid-template-columns:1fr}}\n@container app (max-width:640px){.topbar .brand__ver{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}\n\n/* Center only the painted plugin window in the fullscreen host container. */\nhtml,body{margin:0;height:100%;overflow:hidden;background:transparent!important;color-scheme:normal}\n.stage{height:100dvh;padding:16px;align-items:center;overflow:hidden;background:transparent}\n.frame{height:min(830px,100%);min-height:0}\n#bind-list .big-choice{grid-template-columns:44px minmax(0,1fr) auto;gap:12px;padding:12px;text-align:left;min-width:0;width:100%}\n#bind-list .persona-copy{min-width:0;overflow-wrap:anywhere}\n#bind-list .persona-copy small{display:block;color:var(--text3);font-size:12px}\n#bind-list .persona-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;line-height:1.5;font-size:12.5px}\n@container app (max-width:640px){#bind-list .big-choice{grid-template-columns:36px minmax(0,1fr);gap:10px}#bind-list .big-choice>.pick{display:block;grid-column:2}#bind-list .avatar{width:36px;height:36px}}\n";
-  const LIA_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"user\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">LIA</div><div class=\"brand__ver\">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>\n    <div class=\"scope\"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok\" title=\"LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다\"><i></i>LIA 자료 local_only</span>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu=\"\" aria-label=\"더 보기\" aria-expanded=\"false\" aria-haspopup=\"menu\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button data-lia-refresh=\"\"><i data-i=\"refresh\"></i>새로 읽기</button><button data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button><button data-lia-close=\"\"><i data-i=\"x\"></i>닫기</button></div></div>\n  <button class=\"btn btn--icon\" type=\"button\" data-lia-close=\"\" aria-label=\"LIA 닫기\" title=\"닫기\"><svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"m6 6 12 12M18 6 6 18\"></path></svg></button></header>\n\n  <nav class=\"sidebar\" aria-label=\"LIA 메뉴\">\n    <button class=\"nav-item\" data-go=\"mine\" data-short=\"내 페르소나\" data-unsaved-for=\"assets\"><i data-i=\"user\"></i><span class=\"nav-text\">내 페르소나</span></button>\n    <button class=\"nav-item\" data-go=\"make\" data-short=\"만들기\"><i data-i=\"spark\"></i><span class=\"nav-text\">만들기</span></button>\n    <button class=\"nav-item\" data-go=\"shelf\" data-short=\"보관함\" data-unsaved-for=\"edit\"><i data-i=\"shelf\"></i><span class=\"nav-text\">보관함</span><span class=\"count\" id=\"nav-shelf-n\">4</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-short=\"설정\"><i data-i=\"sliders\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>용어</b><span>원본 = RisuAI Persona · Live = 이 채팅이 소유하는 갱신용 복사본</span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  \n  <section class=\"page is-active\" data-page=\"mine\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Now</div><h1 class=\"page-title\">내 페르소나</h1><p class=\"page-desc\">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"pocket\" id=\"pocket\"></div>\n\n      <div class=\"card card--tight\" id=\"upd-card\">\n        <div class=\"card__head\"><div><h2 class=\"card__title\">다음 수동 갱신 범위</h2><p class=\"card__desc\">자동 분석·갱신은 하지 않습니다. LIA로 연결한 Persona에 마지막 처리 지점 다음의 <b>완결된 User+Assistant 5쌍</b>이 쌓이면 갱신 여부를 묻습니다. 동의할 때만 한 번 분석·반영하며, 수동 갱신 버튼으로도 실행할 수 있습니다.</p></div><span class=\"badge badge--warn\" id=\"upd-badge\">3 / 5쌍</span></div>\n        <div class=\"turns\" id=\"upd-dots\" aria-label=\"3 / 5쌍\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i></div>\n        <p class=\"hint\" style=\"margin-top:8px\" id=\"upd-hint\">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>\n      </div>\n\n      <div class=\"note\"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>\n\n      <div>\n        <div class=\"section-title\"><h2>선택할 수 있는 Persona <span class=\"muted\" style=\"font-weight:500\">(RisuAI Persona로 채택한 것)</span></h2></div>\n        <div class=\"stack stack--sm\" id=\"mine-list\"></div>\n        <div class=\"legend\" style=\"margin-top:10px\"><span>✓ 이 채팅에 연결됨</span><span>🔒 다른 채팅이 관리 중인 Live Persona</span><span>＋ 연결 안 됨</span></div>\n      </div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"make\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Create</div><h1 class=\"page-title\">Persona 만들기</h1><p class=\"page-desc\">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>\n    <div class=\"stack\" data-detail-root=\"\">\n      <div class=\"stack stack--sm\" role=\"group\" aria-label=\"생성 모드\">\n        <button class=\"big-choice is-on\" data-select-row=\"classic\"><span class=\"row__icon\"><i data-i=\"user\"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"random\"><span class=\"row__icon\"><i data-i=\"spark\"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"character\"><span class=\"row__icon\"><i data-i=\"users\"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"conversation\"><span class=\"row__icon\"><i data-i=\"chat\"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class=\"pick\">선택</span></button>\n      </div>\n\n      <div class=\"card\">\n        <div class=\"mode-panel is-on\" data-detail=\"classic\"><div class=\"stack stack--sm\">\n          <div class=\"field\"><label>Source Persona</label><select class=\"select\" id=\"src-sel\" data-no-track=\"\"></select><span class=\"hint\" id=\"src-hint\">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-classic\" data-run-job=\"job-gen\"><i data-i=\"spark\"></i><span>Persona 만들기</span></button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"random\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>\n          <div class=\"field\"><label for=\"random-concept\">컨셉 (선택)</label><textarea class=\"textarea\" id=\"random-concept\" rows=\"2\" data-no-track=\"\" placeholder=\"예) 북쪽 항구 도시의 약재상 견습생\"></textarea></div>\n          <div class=\"note\"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"random-cand-go\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;random&quot;, &quot;mode&quot;: &quot;랜덤 신규 생성&quot;}\"><i data-i=\"spark\"></i>후보 3개 만들기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"character\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;character&quot;, &quot;mode&quot;: &quot;등장인물 추출&quot;}\"><i data-i=\"users\"></i>등장인물 후보 찾기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"conversation\"><div class=\"stack stack--sm\">\n          <div class=\"kv-line\"><dl class=\"kv\"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-conv\" data-run-job=\"job-gen\"><i data-i=\"chat\"></i>대화에서 추출</button></div></div></div>\n      </div>\n\n      <details class=\"card card--flat\"><summary style=\"cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center\">사용할 자료 · 세계관 분석 (고급)</summary>\n        <div class=\"stack stack--sm\" style=\"margin-top:12px\">\n          <dl class=\"kv\"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>\n          <div class=\"field\"><label for=\"lia-max-chars\">자료 항목별 최대 문자 수</label><input class=\"input\" id=\"lia-max-chars\" type=\"number\" min=\"240\" max=\"3000\" step=\"1\" value=\"1200\"><span class=\"hint\" id=\"lia-max-chars-hint\">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>\n          <label class=\"check\"><input id=\"lia-rich-profile\" type=\"checkbox\" checked=\"\"><span>상세 프로필 사용 <span class=\"hint\">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"세계관을 분석합니다. (시안)\">세계관 분석</button><button class=\"btn btn--sm\" data-toast=\"세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)\">재분석</button><button class=\"btn btn--sm\" data-open=\"sheet-evidence\">근거 검토</button></div>\n        </div></details>\n\n      <div class=\"note\"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"shelf\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Vault</div><h1 class=\"page-title\">보관함</h1><p class=\"page-desc\">생성 직후 자동 보관된 결과 <b id=\"shelf-n\">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"search\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" placeholder=\"이름·특징으로 찾기\" aria-label=\"보관함 검색\"></div>\n      <div class=\"list\" id=\"shelf-list\"></div>\n      <div class=\"empty\" id=\"shelf-empty\" hidden=\"\"><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>\n      <div class=\"note\"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class=\"muted\" style=\"margin:2px 0 8px\">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class=\"btn btn--sm\" data-go=\"recover\">이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"settings\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">텍스트 AI</h2><p class=\"card__desc\">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class=\"badge badge--ok\">연결됨 (표본)</span></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>제공자</label><select class=\"select\"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"https://api.example.com/v1\"></div>\n          <div class=\"field\"><label>모델</label><input class=\"input\" value=\"model-name\"></div>\n          <div class=\"field\"><label>API 키</label><input class=\"input\" type=\"password\" value=\"\" placeholder=\"저장된 키가 있습니다\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"연결 테스트 성공 (시안)\">연결 테스트</button></div>\n          <details><summary style=\"cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center\">고급 옵션</summary><p class=\"hint\">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>\n        </div></div>\n      \n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">저장 위치와 전송</h2><p class=\"card__desc\">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>\n        <dl class=\"kv\"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>\n        <div class=\"setting\" style=\"margin-top:12px\"><div><div class=\"setting__name\">진단</div><div class=\"setting__desc\">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class=\"btn btn--sm\" data-toast=\"진단을 마쳤습니다. (읽기 전용, 시안)\">진단 실행</button></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>에셋 ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>에셋 ZIP 가져오기</button><button class=\"btn\" data-toast=\"디버그 JSON을 내보냈습니다. (시안)\">디버그 JSON</button><button class=\"btn\" data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"edit\" data-track=\"\" id=\"edit-root\">\n    <input type=\"hidden\" id=\"ed-view-dirty\" value=\"0\" data-dirty-key=\"view-drafts\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Edit · <span data-fill=\"ver\">v3</span> · <span data-fill=\"mode\">클래식 생성</span></div><h1 class=\"page-title\" data-fill=\"name\">세라 하운</h1><p class=\"page-desc\">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill=\"statusText\">채택됨 · 이 채팅에 연결됨</b></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ed\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"all\">전체 23개 항목</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rev\">검토</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ver\">버전·기록</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"out\">채택·연결·삭제</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"sum\" data-group=\"ed\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">장기 Persona 요약</h2><p class=\"card__desc\">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>\n          <div class=\"stack stack--sm\">\n            <div class=\"field\"><label>이름</label><input class=\"input\" data-key=\"name\" value=\"세라 하운\"></div>\n            <div class=\"field\"><label>역할/직업</label><input class=\"input\" data-key=\"role\" value=\"왕실 기록실 사서\"></div>\n            <div class=\"field\"><label>성격</label><textarea class=\"textarea\" rows=\"2\" data-key=\"personality\">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>\n            <div class=\"field\"><label>말투</label><textarea class=\"textarea\" rows=\"2\" data-key=\"speech\">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>\n          </div></div>\n        <div class=\"card card--flat\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 상태 (일시적)</h2><p class=\"card__desc\">위치·소지품 같은 일시적 상태는 장기 PersonaSpec과 분리되어 Live Persona 갱신에서 관리됩니다.</p></div></div>\n          <div id=\"live-persona-state\"><p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona의 Live 상태를 불러오는 중</p></div></div>\n      </div></div>\n\n      <div data-subpanel=\"all\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"seg\" id=\"ed-lang\" role=\"group\" aria-label=\"보기 언어\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역</button></div><p class=\"hint\" id=\"ed-lang-note\" style=\"margin:0\">보관된 원문을 편집합니다.</p>\n        <p class=\"hint\">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>\n        <div class=\"card card--tight\">\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-name\">이름</label><code class=\"fld__key\">name</code></div><input class=\"input\" id=\"f-name\" data-key=\"name\" value=\"세라 하운\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"name\" aria-label=\"이름 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"name\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-gender\">성별</label><code class=\"fld__key\">gender</code></div><input class=\"input\" id=\"f-gender\" data-key=\"gender\" value=\"여성\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"gender\" aria-label=\"성별 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"gender\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-age\">나이</label><code class=\"fld__key\">age</code></div><input class=\"input\" id=\"f-age\" data-key=\"age\" value=\"29세\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"age\" aria-label=\"나이 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"age\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speciesRace\">종족</label><code class=\"fld__key\">speciesRace</code></div><input class=\"input\" id=\"f-speciesRace\" data-key=\"speciesRace\" value=\"인간\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speciesRace\" aria-label=\"종족 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speciesRace\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-origin\">출신</label><code class=\"fld__key\">origin</code></div><input class=\"input\" id=\"f-origin\" data-key=\"origin\" value=\"북쪽 도서 도시 ‘하운’\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"origin\" aria-label=\"출신 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"origin\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-role\">역할/직업</label><code class=\"fld__key\">role</code></div><input class=\"input\" id=\"f-role\" data-key=\"role\" value=\"왕실 기록실 사서\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"role\" aria-label=\"역할/직업 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"role\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-appearance\">외모</label><code class=\"fld__key\">appearance</code></div><input class=\"input\" id=\"f-appearance\" data-key=\"appearance\" value=\"짙은 회색 외투, 은색 열쇠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"appearance\" aria-label=\"외모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"appearance\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-personality\">성격</label><code class=\"fld__key\">personality</code></div><input class=\"input\" id=\"f-personality\" data-key=\"personality\" value=\"신중하지만 약속을 가볍게 여기지 않는다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"personality\" aria-label=\"성격 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"personality\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-visibleSide\">겉으로 보이는 면</label><code class=\"fld__key\">visibleSide</code></div><input class=\"input\" id=\"f-visibleSide\" data-key=\"visibleSide\" value=\"차분하고 예의 바름\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"visibleSide\" aria-label=\"겉으로 보이는 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"visibleSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-hiddenSide\">숨은 면</label><code class=\"fld__key\">hiddenSide</code></div><input class=\"input\" id=\"f-hiddenSide\" data-key=\"hiddenSide\" value=\"기록되지 않은 일에 대한 집착\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"hiddenSide\" aria-label=\"숨은 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"hiddenSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-internalContradiction\">내적 모순</label><code class=\"fld__key\">internalContradiction</code></div><input class=\"input\" id=\"f-internalContradiction\" data-key=\"internalContradiction\" value=\"비밀을 지키려다 진실을 외면한다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"internalContradiction\" aria-label=\"내적 모순 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"internalContradiction\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-background\">배경</label><code class=\"fld__key\">background</code></div><input class=\"input\" id=\"f-background\" data-key=\"background\" value=\"기록실에서 자라 외부와 거리를 둠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"background\" aria-label=\"배경 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"background\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speech\">말투</label><code class=\"fld__key\">speech</code></div><input class=\"input\" id=\"f-speech\" data-key=\"speech\" value=\"짧고 낮은 어조\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speech\" aria-label=\"말투 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speech\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-motivation\">동기/욕망</label><code class=\"fld__key\">motivation</code></div><input class=\"input\" id=\"f-motivation\" data-key=\"motivation\" value=\"사라진 기록의 행방을 찾는 것\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"motivation\" aria-label=\"동기/욕망 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"motivation\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipStyle\">관계 방식</label><code class=\"fld__key\">relationshipStyle</code></div><input class=\"input\" id=\"f-relationshipStyle\" data-key=\"relationshipStyle\" value=\"거리를 두되 한번 믿으면 끝까지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipStyle\" aria-label=\"관계 방식 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipStyle\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipToCharacter\">{{char}}와의 접점</label><code class=\"fld__key\">relationshipToCharacter</code></div><input class=\"input\" id=\"f-relationshipToCharacter\" data-key=\"relationshipToCharacter\" value=\"열쇠를 맡긴 첫 의뢰인\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipToCharacter\" aria-label=\"{{char}}와의 접점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipToCharacter\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-preferences\">선호/취향</label><code class=\"fld__key\">preferences</code></div><input class=\"input\" id=\"f-preferences\" data-key=\"preferences\" value=\"오래된 종이 냄새, 식은 차\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"preferences\" aria-label=\"선호/취향 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"preferences\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-conflictRepair\">갈등/회복</label><code class=\"fld__key\">conflictRepair</code></div><input class=\"input\" id=\"f-conflictRepair\" data-key=\"conflictRepair\" value=\"말수가 줄었다가 사실부터 정리해 사과\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"conflictRepair\" aria-label=\"갈등/회복 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"conflictRepair\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-skills\">기술/강점</label><code class=\"fld__key\">skills</code></div><input class=\"input\" id=\"f-skills\" data-key=\"skills\" value=\"고문서 판독, 암기\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"skills\" aria-label=\"기술/강점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"skills\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-limitations\">한계/약점</label><code class=\"fld__key\">limitations</code></div><input class=\"input\" id=\"f-limitations\" data-key=\"limitations\" value=\"몸싸움에 약함\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"limitations\" aria-label=\"한계/약점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"limitations\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-knowledgeBoundary\">지식 경계</label><code class=\"fld__key\">knowledgeBoundary</code></div><input class=\"input\" id=\"f-knowledgeBoundary\" data-key=\"knowledgeBoundary\" value=\"왕실 외부 소식은 소문 수준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"knowledgeBoundary\" aria-label=\"지식 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"knowledgeBoundary\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-boundaries\">RP 경계</label><code class=\"fld__key\">boundaries</code></div><input class=\"input\" id=\"f-boundaries\" data-key=\"boundaries\" value=\"직접 묘사하지 않을 수위 설정은 보관 결과 기준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"boundaries\" aria-label=\"RP 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"boundaries\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-worldFitNotes\">세계관 적합 메모</label><code class=\"fld__key\">worldFitNotes</code></div><input class=\"input\" id=\"f-worldFitNotes\" data-key=\"worldFitNotes\" value=\"보름달 전 개방 금지 규칙을 인지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"worldFitNotes\" aria-label=\"세계관 적합 메모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"worldFitNotes\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n        </div>\n      </div></div>\n\n      <div data-subpanel=\"rev\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">검사 결과</h2><p class=\"card__desc\">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>\n          <div class=\"cluster\" id=\"rv-chips\"></div>\n          <p class=\"muted\" style=\"margin:10px 0 0;font-size:13px\" id=\"rv-note\"></p></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">수정 미리보기</h2><p class=\"card__desc\">적용 전에 바뀔 내용을 확인합니다.</p></div></div>\n          <div id=\"rv-diff\"></div>\n          <div class=\"cluster\" style=\"margin-top:10px\" id=\"rv-acts\"><button class=\"btn btn--primary\" id=\"rv-apply\">초안에 적용</button><button class=\"btn\" id=\"rv-ignore\">무시</button></div></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">밀도 변환</h2><p class=\"card__desc\">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>\n          <div class=\"choices\" id=\"ed-density\"><button class=\"choice\"><b>Full</b><span>전체 항목</span></button><button class=\"choice is-on\"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class=\"choice\"><b>Compact</b><span>짧게 압축</span></button></div></div>\n      </div></div>\n\n      <div data-subpanel=\"ver\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"list\" id=\"ver-list\">\n          <div class=\"ver\"><span class=\"badge badge--ok\">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class=\"btn btn--sm\" data-toast=\"v3를 열었습니다. (시안)\">열기</button></div>\n          <div class=\"ver\"><span class=\"badge\">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class=\"btn btn--sm\" data-toast=\"v2와 비교합니다. (시안)\">비교</button></div>\n          <div class=\"ver\"><span class=\"badge\">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class=\"btn btn--sm\" data-toast=\"v1에서 파생본을 만들었습니다. (시안)\">파생본 만들기</button></div>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" id=\"btn-persona-blueprint\" data-open=\"sheet-persona-blueprint\">생성 Blueprint</button><button class=\"btn\" id=\"btn-persona-json\" data-open=\"sheet-persona-json\">JSON 보기</button></div>\n      </div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-blueprint\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spb-title\"><div class=\"eyebrow\">World blueprint</div><h2 id=\"spb-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">생성 Blueprint</h2><p class=\"muted\" id=\"spb-target\" style=\"margin:0 0 10px;font-size:13px\"></p><div class=\"list\" id=\"spb-items\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-json\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spj-title\"><div class=\"eyebrow\">PersonaSpec</div><h2 id=\"spj-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">PersonaSpec JSON</h2><p class=\"muted\" id=\"spj-target\" style=\"margin:0 0 10px;font-size:13px\"></p><pre id=\"spj-content\" style=\"max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)\"></pre><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n      <div data-subpanel=\"out\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"target-card\"><h3>① LIA 보관함 <small>‘<span data-fill=\"name\">세라 하운</span>’ · 자동 보관됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--sm btn--danger\" id=\"btn-del-vault\" data-open=\"sheet-del-vault\">보관함에서 삭제…</button></div></div>\n        <div class=\"target-card\"><h3>② RisuAI Persona로 채택 <small data-fill=\"adoptText\">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>\n          <div class=\"field\"><label>채택할 내용</label><div class=\"seg\" id=\"ad-lang\" role=\"group\" aria-label=\"채택본\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역본</button></div></div>\n          <div class=\"choices\" id=\"ad-mode\"><button class=\"choice is-on\"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class=\"choice\"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>\n          <dl class=\"kv\" style=\"margin:0\"><dt>밀도</dt><dd id=\"ad-density-label\">Standard</dd></dl><p class=\"hint\" style=\"margin:0\">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class=\"hint\" id=\"adopt-diff\" hidden=\"\" style=\"margin:0\"></p><div class=\"note\"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>\n          <p class=\"hint\" id=\"hint-adopt\" hidden=\"\" style=\"color:var(--danger-ink)\">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"btn-adopt\" data-toast=\"‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)\">채택하기</button><button class=\"btn btn--sm btn--danger\" id=\"btn-del-persona\" data-open=\"sheet-del-persona\">생성한 Persona 정리…</button></div><p class=\"hint\" id=\"hint-del-persona\" hidden=\"\">아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden=\"\"></div></div>\n        <div class=\"target-card\"><h3>③ 현재 채팅에 연결 <small data-fill=\"bindText\">이 채팅에 연결됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">연결하면 이 채팅에서 이 Persona(및 Live 복사본)가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>\n          <div class=\"cluster\"><button class=\"btn\" id=\"btn-bind\" data-open=\"sheet-bind\"><i data-i=\"link\"></i>이 채팅에 연결…</button><button class=\"btn btn--sm btn--danger\" id=\"btn-unbind\" data-open=\"sheet-unbind\">연결 해제…</button></div><p class=\"hint\" id=\"hint-bind\" hidden=\"\">RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"update\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Manual update</div><h1 class=\"page-title\">수동 갱신</h1><p class=\"page-desc\">두 가지 서로 다른 검토가 있습니다. 근거와 반영 대상이 다릅니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"up\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"five\">다음 5턴 갱신</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"full\">전체 대화 변화 검토</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"five\" data-group=\"up\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">처리 범위</h2><p class=\"card__desc\">마지막 처리 지점 다음의 <b>완결된 5쌍</b>만 한 번 분석해 Live Persona를 갱신합니다.</p></div><span class=\"badge badge--ok\" id=\"upd2-badge\">준비됨</span></div>\n          <dl class=\"kv\"><dt>범위</dt><dd id=\"upd2-range\">TURN 6~10 · 다음 5턴만 분석합니다.</dd><dt>정책</dt><dd>자동 갱신 꺼짐 · 수동 실행만</dd><dt>대상</dt><dd id=\"upd2-target\">이 채팅 소유 Live Persona</dd></dl>\n          <div class=\"note\" style=\"margin-top:12px\">결과별 체크 승인 단계는 없습니다. 한 번 실행하면 분석 결과가 Live Persona에 반영되고, 기록에 남습니다. 실행 전 바인딩은 기록에서 <b>복원</b>할 수 있습니다.</div>\n          <p class=\"hint\" id=\"upd2-why\" hidden=\"\" style=\"margin:10px 0 0\"></p><div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"upd-go\" data-run-job=\"job-update\"><i data-i=\"sync\"></i>다음 5턴 갱신 실행</button></div></div>\n        <div class=\"card card--tight\"><div class=\"card__head\"><div><h2 class=\"card__title\">갱신 기록</h2></div></div>\n          <div class=\"list\" id=\"upd-hist\"></div></div>\n      </div></div>\n      <div data-subpanel=\"full\" data-group=\"up\"><div class=\"stack\">\n        <div class=\"note\"><b>다른 기능입니다.</b> 채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 Live Persona가 아니라 <b>초안</b>에 반영됩니다.</div>\n        <div class=\"list\">\n          <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"chg\" data-key=\"\" data-chg-key=\"speech\" data-chg-val=\"짧고 낮은 어조. 말끝을 줄임표로 흐린다.\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">말투 — 줄임표가 늘어남</div><div class=\"row__meta\">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>\n          <label class=\"row\"><input type=\"checkbox\" class=\"chg\" data-chg-key=\"preferences\" data-chg-val=\"오래된 종이 냄새, 따뜻한 차\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">선호 — 차를 즐기게 됨</div><div class=\"row__meta\">근거: User 메시지 #77 · 근거 1건</div></div></label>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" data-toast=\"사용자 작성 메시지 전체를 비교합니다. (시안)\">변화 후보 찾기</button><button class=\"btn btn--primary\" id=\"chg-go\">선택 후보를 초안에 반영</button><span class=\"hint\" id=\"chg-hint\"></span></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  \n\n  \n  <section class=\"page\" data-page=\"recover\">\n    <button class=\"back\" data-go=\"settings\"><i data-i=\"back\" data-size=\"sm\"></i>설정</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Recovery</div><h1 class=\"page-title\">이전 자료 복구</h1><p class=\"page-desc\">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>검사</b></div><div class=\"step is-active\"><span class=\"step__no\">2</span><b>결과·충돌</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>가져오기</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>읽기 확인</b></div></div>\n    <div class=\"stack\">\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class=\"muted\" style=\"margin:2px 0 0\">목록·Live shard·이미지 조각을 검증했습니다. (표본)</p></div></div>\n      <div class=\"list\">\n        <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"rc\" data-name=\"카엘 로웬\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">카엘 로웬 <span class=\"badge badge--ok\">충돌 없음</span></div><div class=\"row__meta\">Live shard 검증됨 · 이미지 조각 12/12</div></div></label>\n        <label class=\"row\"><input type=\"checkbox\" class=\"rc\" data-name=\"세라 하운\" data-conflict=\"1\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">세라 하운 <span class=\"badge badge--warn\">로컬과 충돌</span></div><div class=\"row__meta\">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>\n        <div class=\"row\"><span class=\"row__icon\"><i data-i=\"alert\"></i></span><div><div class=\"row__title\">리오넬 <span class=\"badge badge--danger\">가져올 수 없음</span></div><div class=\"row__meta\">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>\n      </div>\n      <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"rc-go\">선택 항목 가져오기</button><span class=\"hint\" id=\"rc-hint\"></span><button class=\"btn\" data-go=\"settings\">취소</button></div>\n    </div>\n  </section>\n\n  </div>\n  <footer class=\"savebar\" id=\"savebar\" hidden=\"\">\n    <div class=\"savebar__copy\"><b data-save-title=\"\">모든 변경이 저장되어 있습니다</b><span data-save-desc=\"\">값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert=\"\" disabled=\"\">변경 취소</button><button class=\"btn btn--primary\" data-save=\"\" disabled=\"\">저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIA 하단 메뉴\"></nav>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bind\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sb-t\">\n    <div class=\"eyebrow\">Connect</div><h2 id=\"sb-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\">이 채팅에서 쓸 Persona</h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" id=\"bind-list\"></div>\n    <p class=\"hint\" style=\"margin-top:10px\">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button><button class=\"btn btn--primary\" id=\"btn-bind-go\" data-close=\"\" data-act=\"bind-go\" data-toast=\"‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)\">연결하기</button></div><p class=\"hint\" id=\"bind-hint\" style=\"margin:6px 0 0\" hidden=\"\"></p><div hidden=\"\"></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spm-t\">\n    <div class=\"eyebrow\">RisuAI Persona</div><h2 id=\"spm-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 관리</h2>\n    <dl class=\"kv\" id=\"spm-kv\"></dl>\n    <p class=\"hint\" id=\"spm-note\" style=\"margin:8px 0 0\"></p>\n    <div class=\"stack stack--sm\" id=\"spm-act\" style=\"margin-top:12px\"></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-unbind\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"su-t\">\n    <div class=\"eyebrow\">Unlink</div><h2 id=\"su-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 채팅에서 ‘<span data-fill=\"name\">세라 하운</span>’ 연결을 해제할까요?</h2>\n    <div class=\"note\"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger\" data-close=\"\" data-act=\"unbind\" data-toast=\"‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)\">연결 해제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-vault\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdv-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete vault item</div><h2 id=\"sdv-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">보관함의 ‘<span data-fill=\"name\">카엘 로웬</span>’ 항목을 삭제할까요?</h2>\n    <p class=\"muted\" style=\"margin:0 0 8px;font-size:13px\">삭제 대상: 최신 <span data-fill=\"ver\">v1</span> 포함 버전 <span data-fill=\"verCount\">1</span>개 · <span data-fill=\"mode\">랜덤 신규 생성</span> · <span data-fill=\"adoptNote\">채택 전</span></p><div class=\"note note--danger\"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class=\"hint\" style=\"margin:8px 0 0\" data-fill=\"afterVault\"></p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-vault\" data-toast=\"‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)\" data-then-go=\"shelf\">보관함에서 삭제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdp-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Clean up Persona</div><h2 id=\"sdp-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">LIA가 만든 RisuAI Persona ‘<span data-fill=\"name\">세라 하운</span>’ 항목을 정리할까요?</h2>\n    <div class=\"note note--danger\"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill=\"vaultAfter\">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-persona\" data-toast=\"RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)\">Persona 정리</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-restore\" data-require=\"range\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sr-t\">\n    <div class=\"eyebrow\">Restore binding</div><h2 id=\"sr-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">갱신 전 바인딩으로 되돌릴까요?</h2>\n    <p class=\"muted\" style=\"font-size:13px\"><span data-fill=\"range\">TURN 1~5</span> 갱신 이전의 ‘<span data-fill=\"name\">세라 하운</span>’ Live Persona 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-act=\"upd-restore\" data-toast=\"{range} 갱신 이전 상태로 복원했습니다. 기록은 남아 있습니다. (시안)\">복원</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-evidence\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sev-t\">\n    <div class=\"eyebrow\">World blueprint</div><h2 id=\"sev-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">세계관 분석 근거</h2>\n    <div class=\"list\"><div class=\"row\"><div><div class=\"row__title\">보름달 전 개방 금지</div><div class=\"row__meta\">Character Lore #3 · 근거 확인됨</div></div></div><div class=\"row\"><div><div class=\"row__title\">왕실 기록실 출입 규칙</div><div class=\"row__meta\">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"dlg-cand\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dc-t\">\n    <div class=\"eyebrow\">Candidates</div><h2 id=\"dc-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\"><span data-variant=\"default random\">새 인물 후보를 하나 고르세요</span><span data-variant=\"character\" hidden=\"\">Persona로 바꿀 등장인물을 고르세요</span></h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class=\"hint\" id=\"random-cand-context\" hidden=\"\" style=\"margin:0 0 12px\"></p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"default random\">\n      <button class=\"big-choice is-on\" data-select-row=\"c1\" data-cand=\"{&quot;pid&quot;:&quot;mira&quot;,&quot;name&quot;:&quot;미라&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--c\">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c2\" data-cand=\"{&quot;pid&quot;:&quot;tobi&quot;,&quot;name&quot;:&quot;토비&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--b\">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c3\" data-cand=\"{&quot;pid&quot;:&quot;har&quot;,&quot;name&quot;:&quot;하르&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--d\">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"character\" hidden=\"\">\n      <button class=\"big-choice is-on\" data-select-row=\"h1\" data-cand=\"{&quot;pid&quot;:&quot;rowen&quot;,&quot;name&quot;:&quot;정원사 로웬&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--b\">로</div><div><b>정원사 로웬</b><span>캐릭터 카드 · 로어 2건 · 최근 대화 근거 6건</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"h2\" data-cand=\"{&quot;pid&quot;:&quot;archivist&quot;,&quot;name&quot;:&quot;왕실 기록관&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--n\">기</div><div><b>왕실 기록관</b><span>로어 1건 · 직접 근거 적음</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">취소</button><button class=\"btn btn--primary\" id=\"btn-cand-go\" data-close=\"\" data-run-job=\"job-gen\">이 후보로 상세 생성</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-cand\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jc-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jc-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">후보를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>후보 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>정리</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-open=\"dlg-cand\">후보 보기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-gen\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jg-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jg-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">새 Persona</span>’ 초안을 만들고 있어요</h2><p class=\"muted\" style=\"margin:0 0 6px;font-size:12.5px\" data-fill=\"mode\">생성 모드</p>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>검사</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>보관</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-go=\"edit\">‘<span data-fill=\"name\">새 Persona</span>’ 초안 열기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-update\" data-cancel-until=\"3\" data-require=\"name\" data-start-from=\"upd-go\" aria-hidden=\"true\" data-job-labels=\"계획과 처리 범위를 확인하는 중|다음 5턴을 분석하는 중|Live Persona 갱신 내용을 만드는 중|기록과 바인딩을 저장하는 중|갱신을 마쳤습니다. 갱신 기록에서 이전 바인딩으로 복원할 수 있습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"ju-t\"><div class=\"eyebrow\">Manual update</div><h2 id=\"ju-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">TURN 6~10을 분석하고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>계획</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>분석</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>갱신안</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>저장</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">저장이 시작되기 전까지만 취소할 수 있습니다. 저장 중에는 취소 버튼이 동작하지 않습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-go=\"mine\">내 페르소나로</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-more\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"더보기\"><div data-more-list=\"\"></div></div></div>\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const LIA_MOCKUP_APP_HTML = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"user\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">LIA</div><div class=\"brand__ver\">Persona Linker · 시안 (제품 v0.26.83 기준)</div></div></div>\n    <div class=\"scope\"><b>이 채팅</b><span>›</span><span>세라 · 북쪽 정원</span></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok\" title=\"LIA 자료는 영구 저장 정책상 이 기기(local_only)에 둡니다\"><i></i>LIA 자료 local_only</span>\n    <div class=\"menu\"><button class=\"btn btn--icon\" data-menu=\"\" aria-label=\"더 보기\" aria-expanded=\"false\" aria-haspopup=\"menu\"><i data-i=\"more\"></i></button>\n      <div class=\"menu__panel\"><button data-lia-refresh=\"\"><i data-i=\"refresh\"></i>새로 읽기</button><button data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button><button data-lia-close=\"\"><i data-i=\"x\"></i>닫기</button></div></div>\n  <button class=\"btn btn--icon\" type=\"button\" data-lia-close=\"\" aria-label=\"LIA 닫기\" title=\"닫기\"><svg class=\"ic\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"><path d=\"m6 6 12 12M18 6 6 18\"></path></svg></button></header>\n\n  <nav class=\"sidebar\" aria-label=\"LIA 메뉴\">\n    <button class=\"nav-item\" data-go=\"mine\" data-short=\"내 페르소나\" data-unsaved-for=\"assets\"><i data-i=\"user\"></i><span class=\"nav-text\">내 페르소나</span></button>\n    <button class=\"nav-item\" data-go=\"make\" data-short=\"만들기\"><i data-i=\"spark\"></i><span class=\"nav-text\">만들기</span></button>\n    <button class=\"nav-item\" data-go=\"shelf\" data-short=\"보관함\" data-unsaved-for=\"edit\"><i data-i=\"shelf\"></i><span class=\"nav-text\">보관함</span><span class=\"count\" id=\"nav-shelf-n\">4</span></button>\n    <button class=\"nav-item\" data-go=\"settings\" data-short=\"설정\"><i data-i=\"sliders\"></i><span class=\"nav-text\">설정</span></button>\n    <div class=\"side-foot\"><b>용어</b><span>Persona = RisuAI Persona</span></div>\n  </nav>\n\n  <main class=\"main\"><div class=\"page-body\">\n\n  \n  <section class=\"page is-active\" data-page=\"mine\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Now</div><h1 class=\"page-title\">내 페르소나</h1><p class=\"page-desc\">이 채팅에 연결된 Persona와 갱신 상태를 한 곳에서 봅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"pocket\" id=\"pocket\"></div>\n\n      <div class=\"card card--tight\" id=\"upd-card\">\n        \n        <div class=\"turns\" id=\"upd-dots\" aria-label=\"3 / 5쌍\"><i class=\"on\"></i><i class=\"on\"></i><i class=\"on\"></i><i></i><i></i></div>\n        <p class=\"hint\" style=\"margin-top:8px\" id=\"upd-hint\">3/5턴 · 완료된 대화 2턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.</p>\n      </div>\n\n      <div class=\"note\"><b>연결이 없으면</b> RisuAI의 기본 Persona가 그대로 적용됩니다. LIA는 RisuAI 기본 Persona 선택을 바꾸지 않습니다.</div>\n\n      <div>\n        <div class=\"section-title\"><h2>선택할 수 있는 Persona <span class=\"muted\" style=\"font-weight:500\">(RisuAI Persona로 채택한 것)</span></h2></div>\n        <div class=\"stack stack--sm\" id=\"mine-list\"></div>\n        <div class=\"legend\" style=\"margin-top:10px\"><span>✓ 이 채팅에 연결됨</span><span>＋ 연결 안 됨</span></div>\n      </div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"make\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Create</div><h1 class=\"page-title\">Persona 만들기</h1><p class=\"page-desc\">어떤 근거로 만들지 먼저 고릅니다. 모드마다 입력과 필요한 단계가 다릅니다.</p></div></div>\n    <div class=\"stack\" data-detail-root=\"\">\n      <div class=\"stack stack--sm\" role=\"group\" aria-label=\"생성 모드\">\n        <button class=\"big-choice is-on\" data-select-row=\"classic\"><span class=\"row__icon\"><i data-i=\"user\"></i></span><div><b>클래식 생성</b><span>기존 Source Persona를 현재 세계에 맞게 재해석</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"random\"><span class=\"row__icon\"><i data-i=\"spark\"></i></span><div><b>랜덤 신규 생성</b><span>세계관 안에서 완전히 새로운 인물을 창작 · 후보 3개 중 선택</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"character\"><span class=\"row__icon\"><i data-i=\"users\"></i></span><div><b>등장인물 추출</b><span>단일 캐릭터·거대 시뮬봇에서 인물을 분리해 User Persona로 변환</span></div><span class=\"pick\">선택</span></button>\n        <button class=\"big-choice\" data-select-row=\"conversation\"><span class=\"row__icon\"><i data-i=\"chat\"></i></span><div><b>대화에서 추출</b><span>현재 채팅의 사용자 작성 메시지만 분석해 실제 플레이 Persona를 추출</span></div><span class=\"pick\">선택</span></button>\n      </div>\n\n      <div class=\"card\">\n        <div class=\"mode-panel is-on\" data-detail=\"classic\"><div class=\"stack stack--sm\">\n          <div class=\"field\"><label>Source Persona</label><select class=\"select\" id=\"src-sel\" data-no-track=\"\"></select><span class=\"hint\" id=\"src-hint\">성격·외모·배경의 출발점이 되는 RisuAI Persona입니다. 고른 Persona가 결과의 출발점이 됩니다.</span></div>\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">선택한 Persona를 이 세계의 자연스러운 인물로 다시 배치합니다. 핵심은 보존하고 세계관에 맞게 재해석합니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-classic\" data-run-job=\"job-gen\"><i data-i=\"spark\"></i><span>Persona 만들기</span></button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"random\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">이 캐릭터와 로어의 <b>세계 규칙만</b> 참고해 새로운 유저 인물을 만듭니다. Source Persona는 쓰지 않습니다.</p>\n          <div class=\"field\"><label for=\"random-concept\">컨셉 (선택)</label><textarea class=\"textarea\" id=\"random-concept\" rows=\"2\" data-no-track=\"\" placeholder=\"예) 북쪽 항구 도시의 약재상 견습생\"></textarea></div>\n          <div class=\"note\"><b>순서</b> 컨셉 → <b>후보 3개</b> → 하나 선택 → 상세 생성. 후보를 고르기 전에는 아무것도 보관되지 않습니다.</div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"random-cand-go\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;random&quot;, &quot;mode&quot;: &quot;랜덤 신규 생성&quot;}\"><i data-i=\"spark\"></i>후보 3개 만들기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"character\"><div class=\"stack stack--sm\">\n          <p class=\"muted\" style=\"margin:0;font-size:13px\">캐릭터 카드·로어·<b>최근 대화(Assistant/NPC 포함)</b>에서 등장인물을 분리합니다. 선택한 <b>한 인물의 직접 근거만</b> User Persona로 변환하며 다른 인물 설정은 섞지 않습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" data-run-job=\"job-cand\" data-ctx=\"{&quot;variant&quot;: &quot;character&quot;, &quot;mode&quot;: &quot;등장인물 추출&quot;}\"><i data-i=\"users\"></i>등장인물 후보 찾기</button></div></div></div>\n        <div class=\"mode-panel\" data-detail=\"conversation\"><div class=\"stack stack--sm\">\n          <div class=\"kv-line\"><dl class=\"kv\"><dt>사용자 작성 메시지</dt><dd>214개 중 최근 120개(최대 약 32,000자)를 증거로 사용</dd><dt>제외</dt><dd>AI/NPC가 유저를 묘사한 내용은 증거에서 완전히 제외</dd></dl></div>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"mk-conv\" data-run-job=\"job-gen\"><i data-i=\"chat\"></i>대화에서 추출</button></div></div></div>\n      </div>\n\n      <details class=\"card card--flat\"><summary style=\"cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center\">사용할 자료 · 세계관 분석 (고급)</summary>\n        <div class=\"stack stack--sm\" style=\"margin-top:12px\">\n          <dl class=\"kv\"><dt>Character Lore</dt><dd>ON · 항목 7개 사용</dd><dt>모듈</dt><dd>활성 모듈 2개</dd><dt>Blueprint</dt><dd>세계관 분석 완료 · 근거 검토 가능</dd></dl>\n          <div class=\"field\"><label for=\"lia-max-chars\">자료 항목별 최대 문자 수</label><input class=\"input\" id=\"lia-max-chars\" type=\"number\" min=\"240\" max=\"3000\" step=\"1\" value=\"1200\"><span class=\"hint\" id=\"lia-max-chars-hint\">캐릭터·모듈 설명과 로어 수집에 적용합니다. 범위 240~3000자. RisuAI ARG와 같은 값을 사용합니다.</span></div>\n          <label class=\"check\"><input id=\"lia-rich-profile\" type=\"checkbox\" checked=\"\"><span>상세 프로필 사용 <span class=\"hint\">— 항목별 문자 한도 안에서 상세 설정을 함께 참고</span></span></label>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"세계관을 분석합니다. (시안)\">세계관 분석</button><button class=\"btn btn--sm\" data-toast=\"세계관을 다시 분석합니다. 기존 분석은 교체됩니다. (시안)\">재분석</button><button class=\"btn btn--sm\" data-open=\"sheet-evidence\">근거 검토</button></div>\n        </div></details>\n\n      <div class=\"note\"><b>AI 제공자로 자료가 전송됩니다.</b> 캐릭터 설명·로어·선택한 대화가 설정한 AI에 보내집니다. 논리 요청 수는 보통 클래식·대화 추출 2회, 랜덤·등장인물 추출 3회이며, 캐시를 쓰면 줄고 출력 복구·재시도가 있으면 늘어납니다.</div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"shelf\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Vault</div><h1 class=\"page-title\">보관함</h1><p class=\"page-desc\">생성 직후 자동 보관된 결과 <b id=\"shelf-n\">4</b>개입니다. 열어서 검토하고, 마음에 들면 RisuAI Persona로 채택합니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"search\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" placeholder=\"이름·특징으로 찾기\" aria-label=\"보관함 검색\"></div>\n      <div class=\"list\" id=\"shelf-list\"></div>\n      <div class=\"empty\" id=\"shelf-empty\" hidden=\"\"><b>보관함이 비어 있습니다</b><span>‘만들기’에서 Persona를 만들면 자동으로 이곳에 보관됩니다.</span></div>\n      <div class=\"note\"><b>보관함 삭제 ≠ Persona 삭제.</b> 보관함 항목을 지워도 이미 채택한 RisuAI Persona와 채팅 연결은 그대로입니다. 세 가지 삭제는 각각 다른 화면에서 따로 확인합니다.</div>\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>예전 버전에서 저장한 자료가 있나요?</b><p class=\"muted\" style=\"margin:2px 0 8px\">검사 결과를 먼저 보고, 충돌을 확인한 뒤 직접 가져옵니다.</p><button class=\"btn btn--sm\" data-go=\"recover\">이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"settings\" data-track=\"\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Settings</div><h1 class=\"page-title\">설정</h1><p class=\"page-desc\">바꾼 값은 아래 저장 막대에서 한 번에 저장합니다. 저장 전에는 적용되지 않습니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">텍스트 AI</h2><p class=\"card__desc\">Persona 생성·갱신·검사에 쓰는 모델입니다.</p></div><span class=\"badge badge--ok\">연결됨 (표본)</span></div>\n        <div class=\"stack stack--sm\">\n          <div class=\"field\"><label>제공자</label><select class=\"select\"><option>OpenAI 호환</option><option>Anthropic</option><option>Google</option></select></div>\n          <div class=\"field\"><label>Endpoint URL</label><input class=\"input\" value=\"https://api.example.com/v1\"></div>\n          <div class=\"field\"><label>모델</label><input class=\"input\" value=\"model-name\"></div>\n          <div class=\"field\"><label>API 키</label><input class=\"input\" type=\"password\" value=\"\" placeholder=\"저장된 키가 있습니다\"></div>\n          <div class=\"cluster\"><button class=\"btn btn--sm\" data-toast=\"연결 테스트 성공 (시안)\">연결 테스트</button></div>\n          <details><summary style=\"cursor:pointer;font-weight:650;min-height:36px;display:flex;align-items:center\">고급 옵션</summary><p class=\"hint\">제공자별 추가 요청 옵션이 이곳에 모입니다.</p></details>\n        </div></div>\n      \n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">저장 위치와 전송</h2><p class=\"card__desc\">무엇이 어디에 있고, 무엇이 밖으로 나가는지 구분해서 보여줍니다.</p></div></div>\n        <dl class=\"kv\"><dt>LIA 자료</dt><dd>LIA의 영구 저장 정책은 <b>local_only</b> — 이 기기에 둡니다.</dd><dt>Persona · 원본 이미지</dt><dd>RisuAI가 관리하는 저장 규칙을 따릅니다.</dd><dt>생성할 때</dt><dd>선택한 자료가 설정한 <b>AI 제공자로 전송</b>됩니다.</dd></dl>\n        <div class=\"setting\" style=\"margin-top:12px\"><div><div class=\"setting__name\">진단</div><div class=\"setting__desc\">연결·워크플로·저장 상태를 읽기 전용으로 점검합니다. 아무것도 바꾸지 않습니다.</div></div><button class=\"btn btn--sm\" data-toast=\"진단을 마쳤습니다. (읽기 전용, 시안)\">진단 실행</button></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" data-toast=\"에셋 ZIP을 내보냈습니다. (시안)\"><i data-i=\"download\"></i>에셋 ZIP 내보내기</button><button class=\"btn\" data-toast=\"ZIP 파일을 선택하세요 (시안)\"><i data-i=\"upload\"></i>에셋 ZIP 가져오기</button><button class=\"btn\" data-toast=\"디버그 JSON을 내보냈습니다. (시안)\">디버그 JSON</button><button class=\"btn\" data-go=\"recover\"><i data-i=\"db\"></i>이전 자료 복구</button></div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"edit\" data-track=\"\" id=\"edit-root\">\n    <input type=\"hidden\" id=\"ed-view-dirty\" value=\"0\" data-dirty-key=\"view-drafts\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Edit · <span data-fill=\"ver\">v3</span> · <span data-fill=\"mode\">클래식 생성</span></div><h1 class=\"page-title\" data-fill=\"name\">세라 하운</h1><p class=\"page-desc\">보관 결과를 검토하고, 마음에 들면 RisuAI Persona로 채택합니다. 현재 상태: <b data-fill=\"statusText\">채택됨 · 이 채팅에 연결됨</b></p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"ed\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"all\">전체 23개 항목</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rev\">검토</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ver\">버전·기록</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"out\">채택·연결·삭제</button></div>\n    <div class=\"stack\">\n      <div data-subpanel=\"sum\" data-group=\"ed\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">장기 Persona 요약</h2><p class=\"card__desc\">PersonaSpec의 핵심만 보여줍니다. 모든 항목은 ‘전체 23개 항목’에서 편집합니다.</p></div></div>\n          <div class=\"stack stack--sm\">\n            <div class=\"field\"><label>이름</label><input class=\"input\" data-key=\"name\" value=\"세라 하운\"></div>\n            <div class=\"field\"><label>역할/직업</label><input class=\"input\" data-key=\"role\" value=\"왕실 기록실 사서\"></div>\n            <div class=\"field\"><label>성격</label><textarea class=\"textarea\" rows=\"2\" data-key=\"personality\">신중하지만 약속을 가볍게 여기지 않는다.</textarea></div>\n            <div class=\"field\"><label>말투</label><textarea class=\"textarea\" rows=\"2\" data-key=\"speech\">짧고 낮은 어조. 확신이 없을 때는 말을 줄인다.</textarea></div>\n          </div></div>\n        \n      </div></div>\n\n      <div data-subpanel=\"all\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"seg\" id=\"ed-lang\" role=\"group\" aria-label=\"보기 언어\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역</button></div><p class=\"hint\" id=\"ed-lang-note\" style=\"margin:0\">보관된 원문을 편집합니다.</p>\n        <p class=\"hint\">23개 항목 모두 잠그거나 항목별로 다시 만들 수 있습니다. 잠근 항목은 재생성에서 바뀌지 않습니다.</p>\n        <div class=\"card card--tight\">\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-name\">이름</label><code class=\"fld__key\">name</code></div><input class=\"input\" id=\"f-name\" data-key=\"name\" value=\"세라 하운\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"name\" aria-label=\"이름 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"name\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-gender\">성별</label><code class=\"fld__key\">gender</code></div><input class=\"input\" id=\"f-gender\" data-key=\"gender\" value=\"여성\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"gender\" aria-label=\"성별 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"gender\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-age\">나이</label><code class=\"fld__key\">age</code></div><input class=\"input\" id=\"f-age\" data-key=\"age\" value=\"29세\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"age\" aria-label=\"나이 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"age\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speciesRace\">종족</label><code class=\"fld__key\">speciesRace</code></div><input class=\"input\" id=\"f-speciesRace\" data-key=\"speciesRace\" value=\"인간\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speciesRace\" aria-label=\"종족 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speciesRace\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-origin\">출신</label><code class=\"fld__key\">origin</code></div><input class=\"input\" id=\"f-origin\" data-key=\"origin\" value=\"북쪽 도서 도시 ‘하운’\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"origin\" aria-label=\"출신 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"origin\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-role\">역할/직업</label><code class=\"fld__key\">role</code></div><input class=\"input\" id=\"f-role\" data-key=\"role\" value=\"왕실 기록실 사서\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"role\" aria-label=\"역할/직업 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"role\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-appearance\">외모</label><code class=\"fld__key\">appearance</code></div><input class=\"input\" id=\"f-appearance\" data-key=\"appearance\" value=\"짙은 회색 외투, 은색 열쇠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"appearance\" aria-label=\"외모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"appearance\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-personality\">성격</label><code class=\"fld__key\">personality</code></div><input class=\"input\" id=\"f-personality\" data-key=\"personality\" value=\"신중하지만 약속을 가볍게 여기지 않는다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"personality\" aria-label=\"성격 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"personality\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-visibleSide\">겉으로 보이는 면</label><code class=\"fld__key\">visibleSide</code></div><input class=\"input\" id=\"f-visibleSide\" data-key=\"visibleSide\" value=\"차분하고 예의 바름\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"visibleSide\" aria-label=\"겉으로 보이는 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"visibleSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-hiddenSide\">숨은 면</label><code class=\"fld__key\">hiddenSide</code></div><input class=\"input\" id=\"f-hiddenSide\" data-key=\"hiddenSide\" value=\"기록되지 않은 일에 대한 집착\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"hiddenSide\" aria-label=\"숨은 면 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"hiddenSide\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-internalContradiction\">내적 모순</label><code class=\"fld__key\">internalContradiction</code></div><input class=\"input\" id=\"f-internalContradiction\" data-key=\"internalContradiction\" value=\"비밀을 지키려다 진실을 외면한다\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"internalContradiction\" aria-label=\"내적 모순 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"internalContradiction\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-background\">배경</label><code class=\"fld__key\">background</code></div><input class=\"input\" id=\"f-background\" data-key=\"background\" value=\"기록실에서 자라 외부와 거리를 둠\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"background\" aria-label=\"배경 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"background\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-speech\">말투</label><code class=\"fld__key\">speech</code></div><input class=\"input\" id=\"f-speech\" data-key=\"speech\" value=\"짧고 낮은 어조\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"speech\" aria-label=\"말투 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"speech\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-motivation\">동기/욕망</label><code class=\"fld__key\">motivation</code></div><input class=\"input\" id=\"f-motivation\" data-key=\"motivation\" value=\"사라진 기록의 행방을 찾는 것\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"motivation\" aria-label=\"동기/욕망 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"motivation\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipStyle\">관계 방식</label><code class=\"fld__key\">relationshipStyle</code></div><input class=\"input\" id=\"f-relationshipStyle\" data-key=\"relationshipStyle\" value=\"거리를 두되 한번 믿으면 끝까지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipStyle\" aria-label=\"관계 방식 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipStyle\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-relationshipToCharacter\">{{char}}와의 접점</label><code class=\"fld__key\">relationshipToCharacter</code></div><input class=\"input\" id=\"f-relationshipToCharacter\" data-key=\"relationshipToCharacter\" value=\"열쇠를 맡긴 첫 의뢰인\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"relationshipToCharacter\" aria-label=\"{{char}}와의 접점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"relationshipToCharacter\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-preferences\">선호/취향</label><code class=\"fld__key\">preferences</code></div><input class=\"input\" id=\"f-preferences\" data-key=\"preferences\" value=\"오래된 종이 냄새, 식은 차\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"preferences\" aria-label=\"선호/취향 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"preferences\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-conflictRepair\">갈등/회복</label><code class=\"fld__key\">conflictRepair</code></div><input class=\"input\" id=\"f-conflictRepair\" data-key=\"conflictRepair\" value=\"말수가 줄었다가 사실부터 정리해 사과\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"conflictRepair\" aria-label=\"갈등/회복 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"conflictRepair\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-skills\">기술/강점</label><code class=\"fld__key\">skills</code></div><input class=\"input\" id=\"f-skills\" data-key=\"skills\" value=\"고문서 판독, 암기\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"skills\" aria-label=\"기술/강점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"skills\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-limitations\">한계/약점</label><code class=\"fld__key\">limitations</code></div><input class=\"input\" id=\"f-limitations\" data-key=\"limitations\" value=\"몸싸움에 약함\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"limitations\" aria-label=\"한계/약점 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"limitations\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-knowledgeBoundary\">지식 경계</label><code class=\"fld__key\">knowledgeBoundary</code></div><input class=\"input\" id=\"f-knowledgeBoundary\" data-key=\"knowledgeBoundary\" value=\"왕실 외부 소식은 소문 수준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"knowledgeBoundary\" aria-label=\"지식 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"knowledgeBoundary\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-boundaries\">RP 경계</label><code class=\"fld__key\">boundaries</code></div><input class=\"input\" id=\"f-boundaries\" data-key=\"boundaries\" value=\"직접 묘사하지 않을 수위 설정은 보관 결과 기준\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"boundaries\" aria-label=\"RP 경계 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"boundaries\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n<div class=\"fld\"><div class=\"fld__head\"><label for=\"f-worldFitNotes\">세계관 적합 메모</label><code class=\"fld__key\">worldFitNotes</code></div><input class=\"input\" id=\"f-worldFitNotes\" data-key=\"worldFitNotes\" value=\"보름달 전 개방 금지 규칙을 인지\"><div class=\"fld__act\"><label class=\"check\"><input type=\"checkbox\" data-lock=\"worldFitNotes\" aria-label=\"세계관 적합 메모 잠금\"><span>잠금</span></label><button class=\"btn btn--sm\" data-regen=\"worldFitNotes\"><i data-i=\"refresh\" data-size=\"sm\"></i>다시 만들기</button></div></div>\n        </div>\n      </div></div>\n\n      <div data-subpanel=\"rev\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">검사 결과</h2><p class=\"card__desc\">생성 직후 자동 실행된 점검입니다. (표본)</p></div></div>\n          <div class=\"cluster\" id=\"rv-chips\"></div>\n          <p class=\"muted\" style=\"margin:10px 0 0;font-size:13px\" id=\"rv-note\"></p></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">수정 미리보기</h2><p class=\"card__desc\">적용 전에 바뀔 내용을 확인합니다.</p></div></div>\n          <div id=\"rv-diff\"></div>\n          <div class=\"cluster\" style=\"margin-top:10px\" id=\"rv-acts\"><button class=\"btn btn--primary\" id=\"rv-apply\">초안에 적용</button><button class=\"btn\" id=\"rv-ignore\">무시</button></div></div>\n        <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">밀도 변환</h2><p class=\"card__desc\">RisuAI Persona로 채택할 때 길이를 선택합니다. 채택 옵션이라 저장 막대와 별개이며, 바꾸면 ‘채택·연결·삭제’에서 다시 채택할 수 있습니다.</p></div></div>\n          <div class=\"choices\" id=\"ed-density\"><button class=\"choice\"><b>Full</b><span>전체 항목</span></button><button class=\"choice is-on\"><b>Standard</b><span>핵심 중심 (기본)</span></button><button class=\"choice\"><b>Compact</b><span>짧게 압축</span></button></div></div>\n      </div></div>\n\n      <div data-subpanel=\"ver\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"list\" id=\"ver-list\">\n          <div class=\"ver\"><span class=\"badge badge--ok\">현재</span><div><b>v3 · 수정 방금</b><small>수동 편집 · 항목 2개 변경</small></div><button class=\"btn btn--sm\" data-toast=\"v3를 열었습니다. (시안)\">열기</button></div>\n          <div class=\"ver\"><span class=\"badge\">v2</span><div><b>v2 · 어제</b><small>항목 재생성 · ‘성격’</small></div><button class=\"btn btn--sm\" data-toast=\"v2와 비교합니다. (시안)\">비교</button></div>\n          <div class=\"ver\"><span class=\"badge\">v1</span><div><b>v1 · 3일 전</b><small>클래식 생성 · 원본: 세라 하운</small></div><button class=\"btn btn--sm\" data-toast=\"v1에서 파생본을 만들었습니다. (시안)\">파생본 만들기</button></div>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" id=\"btn-persona-blueprint\" data-open=\"sheet-persona-blueprint\">생성 Blueprint</button><button class=\"btn\" id=\"btn-persona-json\" data-open=\"sheet-persona-json\">JSON 보기</button></div>\n      </div></div>\n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-blueprint\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spb-title\"><div class=\"eyebrow\">World blueprint</div><h2 id=\"spb-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">생성 Blueprint</h2><p class=\"muted\" id=\"spb-target\" style=\"margin:0 0 10px;font-size:13px\"></p><div class=\"list\" id=\"spb-items\"></div><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona-json\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spj-title\"><div class=\"eyebrow\">PersonaSpec</div><h2 id=\"spj-title\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">PersonaSpec JSON</h2><p class=\"muted\" id=\"spj-target\" style=\"margin:0 0 10px;font-size:13px\"></p><pre id=\"spj-content\" style=\"max-height:48vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px var(--font-mono)\"></pre><div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n      <div data-subpanel=\"out\" data-group=\"ed\"><div class=\"stack\">\n        <div class=\"target-card\"><h3>① LIA 보관함 <small>‘<span data-fill=\"name\">세라 하운</span>’ · 자동 보관됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">생성 직후 PersonaSpec·검사 결과·버전·Blueprint 스냅샷이 자동으로 보관되었습니다. RisuAI Persona는 아직 바뀌지 않았습니다.</p>\n          <div class=\"cluster\"><button class=\"btn btn--sm btn--danger\" id=\"btn-del-vault\" data-open=\"sheet-del-vault\">보관함에서 삭제…</button></div></div>\n        <div class=\"target-card\"><h3>② RisuAI Persona로 채택 <small data-fill=\"adoptText\">채택됨 · RisuAI Persona ‘세라 하운’</small></h3>\n          <div class=\"field\"><label>채택할 내용</label><div class=\"seg\" id=\"ad-lang\" role=\"group\" aria-label=\"채택본\"><button aria-pressed=\"true\">원문</button><button aria-pressed=\"false\">번역본</button></div></div>\n          <div class=\"choices\" id=\"ad-mode\"><button class=\"choice is-on\"><b>현재 채팅 전용</b><span>이 채팅에서만 쓰는 Persona로 저장</span></button><button class=\"choice\"><b>새 Persona로 저장</b><span>RisuAI에 별도 Persona를 추가</span></button></div>\n          <dl class=\"kv\" style=\"margin:0\"><dt>밀도</dt><dd id=\"ad-density-label\">Standard</dd></dl><p class=\"hint\" style=\"margin:0\">밀도는 ‘검토’ 탭의 밀도 변환에서 바꿉니다.</p><p class=\"hint\" id=\"adopt-diff\" hidden=\"\" style=\"margin:0\"></p><div class=\"note\"><b>기본 Persona는 덮어쓰지 않습니다.</b> 기본 Persona 선택도 LIA가 바꾸지 않습니다. 채택은 <b>저장된 버전</b>과 위 옵션을 기준으로 하며, 채택한 내용은 보관함 수정본과 따로 보존됩니다.</div>\n          <p class=\"hint\" id=\"hint-adopt\" hidden=\"\" style=\"color:var(--danger-ink)\">저장하지 않은 변경이 있어 채택할 수 없습니다. 먼저 아래 저장 막대에서 저장하세요.</p>\n          <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"btn-adopt\" data-toast=\"‘{name}’ 채택본을 RisuAI Persona로 저장했습니다. (시안)\">채택하기</button><button class=\"btn btn--sm btn--danger\" id=\"btn-del-persona\" data-open=\"sheet-del-persona\">생성한 Persona 정리…</button></div><p class=\"hint\" id=\"hint-del-persona\" hidden=\"\">아직 채택하지 않아 정리할 RisuAI Persona가 없습니다.</p><div hidden=\"\"></div></div>\n        <div class=\"target-card\"><h3>③ 현재 채팅에 연결 <small data-fill=\"bindText\">이 채팅에 연결됨</small></h3><p class=\"muted\" style=\"margin:0;font-size:13px\">연결하면 이 채팅에서 이 Persona가 쓰입니다. 채택 여부와 상관없이 따로 바꿀 수 있습니다.</p>\n          <div class=\"cluster\"><button class=\"btn\" id=\"btn-bind\" data-open=\"sheet-bind\"><i data-i=\"link\"></i>이 채팅에 연결…</button><button class=\"btn btn--sm btn--danger\" id=\"btn-unbind\" data-open=\"sheet-unbind\">연결 해제…</button></div><p class=\"hint\" id=\"hint-bind\" hidden=\"\">RisuAI Persona로 먼저 채택해야 채팅에 연결할 수 있습니다.</p></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  <section class=\"page\" data-page=\"update\">\n    <button class=\"back\" data-go=\"mine\"><i data-i=\"back\" data-size=\"sm\"></i>내 페르소나</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Review</div><h1 class=\"page-title\">전체 대화 변화 검토</h1><p class=\"page-desc\">채팅 전체의 User 작성 메시지를 현재 PersonaSpec과 비교합니다.</p></div></div>\n    \n    <div class=\"stack\">\n      \n      <div data-subpanel=\"full\" data-group=\"up\" class=\"is-active\"><div class=\"stack\">\n        <div class=\"note\">채팅 전체의 <b>User 작성 메시지</b>를 현재 PersonaSpec과 비교해 변화 후보를 찾습니다. 선택한 후보는 <b>초안</b>에 반영됩니다.</div>\n        <div class=\"list\">\n          <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"chg\" data-key=\"\" data-chg-key=\"speech\" data-chg-val=\"짧고 낮은 어조. 말끝을 줄임표로 흐린다.\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">말투 — 줄임표가 늘어남</div><div class=\"row__meta\">근거: User 메시지 #41, #58 · 변화 후보</div></div></label>\n          <label class=\"row\"><input type=\"checkbox\" class=\"chg\" data-chg-key=\"preferences\" data-chg-val=\"오래된 종이 냄새, 따뜻한 차\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">선호 — 차를 즐기게 됨</div><div class=\"row__meta\">근거: User 메시지 #77 · 근거 1건</div></div></label>\n        </div>\n        <div class=\"cluster\"><button class=\"btn\" data-toast=\"사용자 작성 메시지 전체를 비교합니다. (시안)\">변화 후보 찾기</button><button class=\"btn btn--primary\" id=\"chg-go\">선택 후보를 초안에 반영</button><span class=\"hint\" id=\"chg-hint\"></span></div>\n      </div></div>\n    </div>\n  </section>\n\n  \n  \n\n  \n  <section class=\"page\" data-page=\"recover\">\n    <button class=\"back\" data-go=\"settings\"><i data-i=\"back\" data-size=\"sm\"></i>설정</button>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Recovery</div><h1 class=\"page-title\">이전 자료 복구</h1><p class=\"page-desc\">검사 → 결과·충돌 확인 → 직접 가져오기 → 읽기 확인 순서입니다. 가져오기 전까지 아무것도 바뀌지 않습니다.</p></div></div>\n    <div class=\"steps\" style=\"margin-bottom:16px\"><div class=\"step is-done\"><span class=\"step__no\">✓</span><b>검사</b></div><div class=\"step is-active\"><span class=\"step__no\">2</span><b>결과·충돌</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>가져오기</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>읽기 확인</b></div></div>\n    <div class=\"stack\">\n      <div class=\"banner banner--info\"><span class=\"banner__icon\"><i data-i=\"info\"></i></span><div><b>읽기 전용 검사를 마쳤습니다.</b><p class=\"muted\" style=\"margin:2px 0 0\">목록·이미지 조각을 검증했습니다. (표본)</p></div></div>\n      <div class=\"list\">\n        <label class=\"row\"><input type=\"checkbox\" checked=\"\" class=\"rc\" data-name=\"카엘 로웬\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">카엘 로웬 <span class=\"badge badge--ok\">충돌 없음</span></div><div class=\"row__meta\">이미지 조각 12/12</div></div></label>\n        <label class=\"row\"><input type=\"checkbox\" class=\"rc\" data-name=\"세라 하운\" data-conflict=\"1\" data-no-track=\"\" style=\"width:20px;height:20px;accent-color:var(--accent)\"><div><div class=\"row__title\">세라 하운 <span class=\"badge badge--warn\">로컬과 충돌</span></div><div class=\"row__meta\">이 기기에 더 최근 버전(v3)이 있습니다. 가져오면 덮어쓸 수 있습니다.</div></div></label>\n        <div class=\"row\"><span class=\"row__icon\"><i data-i=\"alert\"></i></span><div><div class=\"row__title\">리오넬 <span class=\"badge badge--danger\">가져올 수 없음</span></div><div class=\"row__meta\">이미지 조각 일부가 검증에 실패했습니다.</div></div></div>\n      </div>\n      <div class=\"cluster\"><button class=\"btn btn--primary\" id=\"rc-go\">선택 항목 가져오기</button><span class=\"hint\" id=\"rc-hint\"></span><button class=\"btn\" data-go=\"settings\">취소</button></div>\n    </div>\n  </section>\n\n  </div>\n  <footer class=\"savebar\" id=\"savebar\" hidden=\"\">\n    <div class=\"savebar__copy\"><b data-save-title=\"\">모든 변경이 저장되어 있습니다</b><span data-save-desc=\"\">값을 바꾸면 이곳에서 한 번에 저장합니다.</span></div>\n    <div class=\"cluster\"><button class=\"btn\" data-revert=\"\" disabled=\"\">변경 취소</button><button class=\"btn btn--primary\" data-save=\"\" disabled=\"\">저장</button></div>\n  </footer>\n  </main>\n\n  <nav class=\"tabbar\" aria-label=\"LIA 하단 메뉴\"></nav>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-bind\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sb-t\">\n    <div class=\"eyebrow\">Connect</div><h2 id=\"sb-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\">이 채팅에서 쓸 Persona</h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">‘세라 · 북쪽 정원’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.</p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" id=\"bind-list\"></div>\n    <p class=\"hint\" style=\"margin-top:10px\">RisuAI 기본 Persona 선택은 LIA가 바꾸지 않습니다. 연결을 풀면 기본 Persona가 그대로 적용됩니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button><button class=\"btn btn--primary\" id=\"btn-bind-go\" data-close=\"\" data-act=\"bind-go\" data-toast=\"‘{name}’ Persona를 이 채팅에 연결했습니다. 한 채팅에는 하나만 연결되며 다른 채팅은 그대로입니다. (시안)\">연결하기</button></div><p class=\"hint\" id=\"bind-hint\" style=\"margin:6px 0 0\" hidden=\"\"></p><div hidden=\"\"></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"spm-t\">\n    <div class=\"eyebrow\">RisuAI Persona</div><h2 id=\"spm-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">세라 하운</span>’ 관리</h2>\n    <dl class=\"kv\" id=\"spm-kv\"></dl>\n    <p class=\"hint\" id=\"spm-note\" style=\"margin:8px 0 0\"></p>\n    <div class=\"stack stack--sm\" id=\"spm-act\" style=\"margin-top:12px\"></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-unbind\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"su-t\">\n    <div class=\"eyebrow\">Unlink</div><h2 id=\"su-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">이 채팅에서 ‘<span data-fill=\"name\">세라 하운</span>’ 연결을 해제할까요?</h2>\n    <div class=\"note\"><b>삭제가 아닙니다.</b> Persona와 보관함 항목은 그대로 두고, 이 채팅의 연결과 갱신 연결만 풀립니다. 이후에는 RisuAI 기본 Persona가 적용됩니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger\" data-close=\"\" data-act=\"unbind\" data-toast=\"‘{name}’ 연결을 해제했습니다. 이제 기본 Persona가 적용됩니다. (시안)\">연결 해제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-vault\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdv-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Delete vault item</div><h2 id=\"sdv-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">보관함의 ‘<span data-fill=\"name\">카엘 로웬</span>’ 항목을 삭제할까요?</h2>\n    <p class=\"muted\" style=\"margin:0 0 8px;font-size:13px\">삭제 대상: 최신 <span data-fill=\"ver\">v1</span> 포함 버전 <span data-fill=\"verCount\">1</span>개 · <span data-fill=\"mode\">랜덤 신규 생성</span> · <span data-fill=\"adoptNote\">채택 전</span></p><div class=\"note note--danger\"><b>보관 결과만 지웁니다.</b> 버전·검사 결과·Blueprint 스냅샷이 사라집니다. 이미 채택한 RisuAI Persona와 채팅 연결에는 영향이 없습니다. 되돌릴 수 없습니다.</div><p class=\"hint\" style=\"margin:8px 0 0\" data-fill=\"afterVault\"></p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-vault\" data-toast=\"‘{name}’ 보관함 항목을 삭제했습니다. {afterVault} (시안)\" data-then-go=\"shelf\">보관함에서 삭제</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-del-persona\" data-require=\"pid\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sdp-t\">\n    <div class=\"eyebrow\" style=\"color:var(--danger-ink)\">Clean up Persona</div><h2 id=\"sdp-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">LIA가 만든 RisuAI Persona ‘<span data-fill=\"name\">세라 하운</span>’ 항목을 정리할까요?</h2>\n    <div class=\"note note--danger\"><b>RisuAI의 Persona 하나가 삭제됩니다.</b> 이 채팅에 연결되어 있으면 먼저 연결이 풀립니다. <span data-fill=\"vaultAfter\">보관함 항목은 그대로 남습니다.</span> 기본 Persona와 직접 만든 Persona는 정리 대상이 아닙니다.</div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--danger-solid\" data-close=\"\" data-act=\"del-persona\" data-toast=\"RisuAI Persona ‘{name}’ 항목을 정리했습니다. {vaultAfter} (시안)\">Persona 정리</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-restore\" data-require=\"range\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sr-t\">\n    <div class=\"eyebrow\">Restore binding</div><h2 id=\"sr-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">갱신 전 바인딩으로 되돌릴까요?</h2>\n    <p class=\"muted\" style=\"font-size:13px\"><span data-fill=\"range\">TURN 1~5</span> 갱신 이전의 ‘<span data-fill=\"name\">세라 하운</span>’ Persona 상태로 복원합니다. 이후 갱신 기록은 남습니다.</p>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\" data-autofocus=\"\">취소</button><button class=\"btn btn--primary\" data-close=\"\" data-act=\"upd-restore\" data-toast=\"{range} 갱신 이전 상태로 복원했습니다. 기록은 남아 있습니다. (시안)\">복원</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  \n  <div class=\"overlay overlay--bottom\" id=\"sheet-evidence\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"sev-t\">\n    <div class=\"eyebrow\">World blueprint</div><h2 id=\"sev-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">세계관 분석 근거</h2>\n    <div class=\"list\"><div class=\"row\"><div><div class=\"row__title\">보름달 전 개방 금지</div><div class=\"row__meta\">Character Lore #3 · 근거 확인됨</div></div></div><div class=\"row\"><div><div class=\"row__title\">왕실 기록실 출입 규칙</div><div class=\"row__meta\">모듈 ‘왕국 연대기’ · 근거 확인됨</div></div></div></div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">닫기</button></div></div></div>\n\n  \n  <div class=\"overlay overlay--bottom\" id=\"dlg-cand\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dc-t\">\n    <div class=\"eyebrow\">Candidates</div><h2 id=\"dc-t\" style=\"margin:2px 0 4px;font:800 19px var(--font-display)\"><span data-variant=\"default random\">새 인물 후보를 하나 고르세요</span><span data-variant=\"character\" hidden=\"\">Persona로 바꿀 등장인물을 고르세요</span></h2>\n    <p class=\"muted\" style=\"margin:0 0 12px;font-size:13px\">고르기 전에는 보관되지 않습니다. 고른 후보만 상세 생성으로 넘어갑니다.</p><p class=\"hint\" id=\"random-cand-context\" hidden=\"\" style=\"margin:0 0 12px\"></p>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"default random\">\n      <button class=\"big-choice is-on\" data-select-row=\"c1\" data-cand=\"{&quot;pid&quot;:&quot;mira&quot;,&quot;name&quot;:&quot;미라&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--c\">약</div><div><b>약재상 견습생 ‘미라’</b><span>항구 도시에서 약초를 다루는 17세</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c2\" data-cand=\"{&quot;pid&quot;:&quot;tobi&quot;,&quot;name&quot;:&quot;토비&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--b\">순</div><div><b>순회 서기 ‘토비’</b><span>성을 오가며 문서를 옮기는 서기</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"c3\" data-cand=\"{&quot;pid&quot;:&quot;har&quot;,&quot;name&quot;:&quot;하르&quot;,&quot;mode&quot;:&quot;랜덤 신규 생성&quot;}\"><div class=\"avatar avatar--sm avatar--d\">등</div><div><b>등대지기 ‘하르’</b><span>폭풍 경보를 책임지는 은퇴 선원</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"stack stack--sm\" data-detail-root=\"\" data-variant=\"character\" hidden=\"\">\n      <button class=\"big-choice is-on\" data-select-row=\"h1\" data-cand=\"{&quot;pid&quot;:&quot;rowen&quot;,&quot;name&quot;:&quot;정원사 로웬&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--b\">로</div><div><b>정원사 로웬</b><span>캐릭터 카드 · 로어 2건 · 최근 대화 근거 6건</span></div><span class=\"pick\">선택</span></button>\n      <button class=\"big-choice\" data-select-row=\"h2\" data-cand=\"{&quot;pid&quot;:&quot;archivist&quot;,&quot;name&quot;:&quot;왕실 기록관&quot;,&quot;mode&quot;:&quot;등장인물 추출&quot;}\"><div class=\"avatar avatar--sm avatar--n\">기</div><div><b>왕실 기록관</b><span>로어 1건 · 직접 근거 적음</span></div><span class=\"pick\">선택</span></button>\n    </div>\n    <div class=\"dialog__actions\"><button class=\"btn\" data-close=\"\">취소</button><button class=\"btn btn--primary\" id=\"btn-cand-go\" data-close=\"\" data-run-job=\"job-gen\">이 후보로 상세 생성</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-cand\" aria-hidden=\"true\" data-inherit-ctx=\"\" data-job-labels=\"세계관 규칙과 자료를 모으는 중|후보를 만드는 중|후보를 정리하는 중|후보가 준비됐어요. 하나를 고르세요.\">\n    <div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jc-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jc-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">후보를 만들고 있어요</h2>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>후보 생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>정리</b></div></div>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-open=\"dlg-cand\">후보 보기</button></div></div></div>\n\n  \n  <div class=\"overlay\" id=\"job-gen\" data-require=\"pid\" aria-hidden=\"true\" data-job-labels=\"선택한 자료를 정리하는 중|AI에게 Persona 초안을 요청하는 중|세계관·Agency 검사를 하는 중|보관함에 자동 보관하는 중|완료했어요. 보관함의 초안을 열어 검토하세요. 아직 RisuAI Persona는 바뀌지 않았습니다.\">\n    <div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"jg-t\"><div class=\"eyebrow\">Working</div><h2 id=\"jg-t\" style=\"margin:2px 0 8px;font:800 19px var(--font-display)\">‘<span data-fill=\"name\">새 Persona</span>’ 초안을 만들고 있어요</h2><p class=\"muted\" style=\"margin:0 0 6px;font-size:12.5px\" data-fill=\"mode\">생성 모드</p>\n      <div class=\"progress\" style=\"margin:12px 0\"><i style=\"--v:0%\"></i></div><p class=\"muted\" data-job-msg=\"\">준비하는 중</p>\n      <div class=\"steps\" style=\"margin-top:12px\"><div class=\"step\"><span class=\"step__no\">1</span><b>자료</b></div><div class=\"step\"><span class=\"step__no\">2</span><b>생성</b></div><div class=\"step\"><span class=\"step__no\">3</span><b>검사</b></div><div class=\"step\"><span class=\"step__no\">4</span><b>보관</b></div></div>\n      <p class=\"hint\" style=\"margin-top:10px\">요청 횟수는 모드·캐시·재시도에 따라 달라집니다. 취소해도 이미 전송된 요청은 처리 중일 수 있습니다.</p>\n      <div class=\"dialog__actions\"><button class=\"btn\" data-job-cancel=\"\" data-close=\"\">취소</button><button class=\"btn btn--primary\" data-job-done=\"\" data-close=\"\" hidden=\"\" data-then-go=\"edit\">‘<span data-fill=\"name\">새 Persona</span>’ 초안 열기</button></div></div></div>\n\n  \n  \n\n  \n  \n\n  \n  \n\n  <div class=\"overlay overlay--bottom\" id=\"sheet-more\" aria-hidden=\"true\"><div class=\"sheet\" role=\"dialog\" aria-modal=\"true\" aria-label=\"더보기\"><div data-more-list=\"\"></div></div></div>\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
   const RISU_API_ALIASES = Object.freeze(["risuai", "Risuai", "risuApi", "risuAPI", "RisuAI"]);
   const resolveRisuApi = () => {
     for (const alias of RISU_API_ALIASES) {
@@ -251,10 +251,10 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const LLM_SECRET_BACKUP_SCHEMA = "lia.provider_secret_backup.v1";
   const RESULT_VAULT_STORAGE_KEY = "dynamicPersonaLorebookGeneratorResultVault";
   const WORLD_BLUEPRINT_STORAGE_KEY = "liaPersonaLinkerWorldBlueprintVaultV1";
-  const LIVE_PERSONA_STORAGE_KEY = "liaPersonaLinkerLivePersonaSyncV1";
-  const LIVE_PERSONA_INDEX_STORAGE_KEY = "liaPersonaLinkerLivePersonaIndexV2";
-  const LIVE_PERSONA_SCOPE_STORAGE_PREFIX = "liaPersonaLinkerLivePersonaScopeV2::";
-  const LIVE_PERSONA_INDEX_SCHEMA = "lia.live_persona_index.v2";
+  
+  
+  
+  
   const PERSONA_PROOF_STORAGE_KEY = "liaPersonaRequestProofV1";
   const LOG_STORAGE_KEY = "liaPersonaLinkerLogsV1";
   const ILLUSTRATION_CONFIG_STORAGE_KEY = "liaPersonaIllustrationConfigV1";
@@ -274,40 +274,35 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.29.4";
+const PLUGIN_VERSION = "0.29.5";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
   const PERSONA_PROOF_MAX_SCOPES = 96;
-  const LIVE_PERSONA_NOTE_MARKER = "Managed by LIA Live Persona Sync.";
-  const LIVE_PERSONA_ID_PREFIX = "lia-live-persona";
-  const LIVE_PROMPT_START = "[LIA LIVE PERSONA STATE START]";
-  const LIVE_PROMPT_END = "[LIA LIVE PERSONA STATE END]";
-  const LIVE_SYNC_BATCH_SIZE = 5;
-  const LIVE_SYNC_LEDGER_MAX = 80;
-  const LIVE_SYNC_STATE_MAX = 24;
-  const LIVE_SYNC_CORE_MAX = 14;
-  const LIVE_SYNC_CAPTURE_BACKENDS = Object.freeze({
-    NONE: "none",
-    CHAT_OUTPUT_V3: "chat_output_v3",
-    SCRIPT_OUTPUT_LEGACY: "script_output_legacy",
-    AFTER_REQUEST_RECONCILE: "after_request_reconcile",
-  });
-  const LIVE_SYNC_OUTPUT_REVISION_MAX = 256;
-  const LIVE_SYNC_OUTPUT_COALESCE_MS = 650;
-  const LIVE_SYNC_REQUEUE_DELAY_MS = 90;
-  const LIVE_SYNC_LAST_REQUEST_TARGET_TTL_MS = 180000;
-  const LIVE_SYNC_SOURCE_SUPERSEDED_CODE = "LIA_LIVE_SYNC_SOURCE_SUPERSEDED";
-  const LIVE_PERSONA_DISPLAY_NAME_VERSION = 2;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   const PERSONA_BINDING_MANAGER_VERSION = 6;
   const RETRACE_PLUGIN_ID = "flashback_hayaku_bridge";
   const LIA_HANDOFF_IPC_SCHEMA = "lia-persona-handoff-ipc-v1";
   const LIA_HANDOFF_REQUEST_CHANNEL = "lia_persona_handoff_request_v1";
   const LIA_HANDOFF_RESPONSE_CHANNEL = "lia_persona_handoff_response_v1";
-  const LIA_HANDOFF_RECEIPT_SCHEMA = "lia.live_persona_handoff.receipt.v1";
-  const RETRACE_PEER_COMPATIBILITY_SCHEMA = "retrace.peer_compatibility.v1";
-  const RETRACE_PEER_PROTOCOL_MAJOR = 1;
-  const LIA_SESSION_HANDOFF_CONTRACT = "lia.live_persona_handoff_immutable_source.v1";
+  
+  
+  
+  
   const MAX_RESULT_VAULT_ITEMS = 60;
   const MAX_WORLD_BLUEPRINT_ITEMS = 24;
   // Historical distribution identity only. World-lore rerank runs locally; no LIA runtime
@@ -375,29 +370,29 @@ const PLUGIN_VERSION = "0.29.4";
   let visualAssetObjectUrls = new Set();
   let visualAssetRestoreEpoch = 0;
   let preservedPersonaEvolutionSelection = new Set();
-  let cachedLivePersonaStore = null;
-  let cachedLivePersonaStoreComplete = false;
-  let livePersonaStorePromise = null;
+  
+  
+  
   let cachedIllustrationConfig = null;
   let cachedPersonaVisualAssetStoreEmpty = null;
   let personaVisualBackupMutationQueue = Promise.resolve();
-  const liveSyncInFlightScopes = new Set();
-  const liveSyncRequeueByScope = new Map();
-  const liveSyncOutputTurnRevisions = new Map();
-  const liveSyncScheduledChecks = new Map();
-  const livePersonaForkInFlight = new Map();
+  
+  
+  
+  
+  
   let personaDatabaseMutationQueue = Promise.resolve();
-  let liveSyncOutputListener = null;
-  let liveSyncLegacyOutputHandler = null;
-  let liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS.NONE;
-  let liveSyncCaptureFallbackReason = "";
-  let liveSyncCaptureObservedRuns = 0;
-  let liveSyncCaptureLastEventAt = 0;
-  let liveSyncCaptureHealthPending = null;
-  let liveSyncCaptureHealthChecks = 0;
-  let liveSyncCaptureSilentFailovers = 0;
-  let liveSyncLastRequestTarget = null;
-  let liveSyncLastOutputCapture = null;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   let cachedPersonaProofStore = null;
   let personaProofStorePromise = null;
   let personaProofBeforeReplacer = null;
@@ -503,49 +498,7 @@ const PLUGIN_VERSION = "0.29.4";
     ],
     additionalProperties: false,
   });
-  const LIVE_PERSONA_DELTA_JSON_SCHEMA = Object.freeze({
-    type: "object",
-    properties: {
-      summary: { type: "string" },
-      liveState: {
-        type: "array",
-        maxItems: LIVE_SYNC_STATE_MAX,
-        items: {
-          type: "object",
-          properties: {
-            key: { type: "string" },
-            category: { type: "string" },
-            value: { type: "string" },
-            durability: { type: "string", enum: ["active", "persistent"] },
-            confidence: { type: "integer", minimum: 0, maximum: 100 },
-            evidence: { type: "array", items: { type: "string" } }
-          },
-          required: ["key", "category", "value", "durability", "confidence", "evidence"],
-          additionalProperties: false
-        }
-      },
-      coreCandidates: {
-        type: "array",
-        maxItems: 12,
-        items: {
-          type: "object",
-          properties: {
-            field: { type: "string" },
-            value: { type: "string" },
-            confidence: { type: "integer", minimum: 0, maximum: 100 },
-            authority: { type: "string", enum: ["user", "objective", "assistant"] },
-            evidence: { type: "array", items: { type: "string" } },
-            rationale: { type: "string" }
-          },
-          required: ["field", "value", "confidence", "authority", "evidence", "rationale"],
-          additionalProperties: false
-        }
-      },
-      ignoredTransient: { type: "array", items: { type: "string" } }
-    },
-    required: ["summary", "liveState", "coreCandidates", "ignoredTransient"],
-    additionalProperties: false
-  });
+  
 
   const RANDOM_CANDIDATE_JSON_SCHEMA = Object.freeze({
     type: "object",
@@ -979,11 +932,9 @@ const PLUGIN_VERSION = "0.29.4";
     let runtimeInfo = null;
     let runtimeCtx = null;
     let db = null;
-    let liveBinding = null;
     let proof = null;
     try { runtimeInfo = await api.getRuntimeInfo?.(); } catch (_) {}
     try { runtimeCtx = await getLiveRuntimeContext(); db = runtimeCtx?.db || null; } catch (_) {}
-    try { if (runtimeCtx) liveBinding = await readLivePersonaBindingForContext(runtimeCtx); } catch (_) {}
     try { if (runtimeCtx) proof = await readPersonaProofForContext(runtimeCtx); } catch (_) {}
     const selected = selectedPersonaSnapshotFromDb(db || {});
     const boundId = String(runtimeCtx?.chat?.bindedPersona || "").trim();
@@ -1005,9 +956,6 @@ const PLUGIN_VERSION = "0.29.4";
         dynamicId: boundId,
         dynamicName: boundPersona?.name || "",
       },
-      liveBinding,
-      livePersonaStorage: { mode: 'scope_sharded_v2', indexKey: LIVE_PERSONA_INDEX_STORAGE_KEY },
-      liveSyncCapture: liveSyncCaptureBackendSnapshot(),
       requestProof: proof,
       provider: {
         provider: cfg.provider,
@@ -1238,8 +1186,12 @@ const PLUGIN_VERSION = "0.29.4";
     return "";
   }
 
+  // Kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const LIA_LORE_CHAR_LIMIT_KEY = 'liaPersonaLoreCharLimitV1';
   async function readIntArg(name, fallback, min, max) {
-    const raw = await api.getArgument?.(name);
+    const saved = name === 'max_lore_chars' ? await api.pluginStorage?.getItem?.(LIA_LORE_CHAR_LIMIT_KEY) : null;
+    const raw = saved ?? await api.getArgument?.(name);
+    if (raw == null || raw === '') return fallback;
     const num = Number(raw);
     if (!Number.isFinite(num)) return fallback;
     return Math.min(max, Math.max(min, Math.floor(num)));
@@ -1250,15 +1202,15 @@ const PLUGIN_VERSION = "0.29.4";
     const next = Number(value);
     if (!Number.isInteger(next) || next < 240 || next > 3000) throw new Error('240~3000 사이의 정수를 입력해 주세요.');
     if (loreLimitSaveInFlight) throw new Error('자료 길이 설정을 저장 중입니다.');
-    const read = api.getArgument?.bind(api);
-    const write = (api.setArgument || api.setArg)?.bind(api);
-    if (!read || !write) throw new Error('호스트의 ARG 읽기·쓰기 API를 사용할 수 없습니다.');
+    const read = async () => await api.pluginStorage?.getItem?.(LIA_LORE_CHAR_LIMIT_KEY);
+    const write = async (_name, nextValue) => await api.pluginStorage?.setItem?.(LIA_LORE_CHAR_LIMIT_KEY, nextValue);
+    if (!api.pluginStorage?.getItem || !api.pluginStorage?.setItem) throw new Error('RisuAI 플러그인 저장소를 사용할 수 없습니다.');
     loreLimitSaveInFlight = true;
     try {
       const before = await read('max_lore_chars');
       try {
-        if (await write('max_lore_chars', String(next)) === false) throw new Error('ARG 저장이 거절되었습니다.');
-        if (String(await read('max_lore_chars')) !== String(next)) throw new Error('ARG 저장값 재읽기가 일치하지 않습니다.');
+        if (await write('max_lore_chars', String(next)) === false) throw new Error('저장이 거절되었습니다.');
+        if (String(await read('max_lore_chars')) !== String(next)) throw new Error('저장값 재읽기가 일치하지 않습니다.');
       } catch (error) {
         try {
           await write('max_lore_chars', before ?? '');
@@ -1469,7 +1421,7 @@ function createMemorySuiteHostLineage() {
   return Object.freeze({ schema, marker, prefix, inspect, normalize, render, countPairs, fingerprint, prefixRevision, same });
 }
 /* END LIBRARIAN HOST LINEAGE SDK */
-const MemorySuiteHostLineage = createMemorySuiteHostLineage();
+
 
 /* LIBRARIAN SYSTEM STORAGE SDK v1.8.24
  * Scope-routed durable storage client shared by Flashback, HAYAKU, LIBRA, LIA and RE:TRACE.
@@ -8821,7 +8773,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
 const memorySuiteLiaScopeDescriptorForContext = ctx => {
-  const scopeKey = ctx ? livePersonaScopeKey(ctx) : '';
+  const scopeKey = ctx ? liaScopeKey(ctx) : '';
   if (!scopeKey) return null;
   const characterId = String(ctx?.char?.id || ctx?.char?.chaId || '');
   const chatId = String(ctx?.chat?.id || ctx?.chat?.chatId || '');
@@ -8857,7 +8809,6 @@ const memorySuiteLiaScopedEnvelope = (field, scope) => ({
 const LIA_SHARED_DURABLE_RESTORE_KEYS = Object.freeze(new Set([
   RESULT_VAULT_STORAGE_KEY,
   WORLD_BLUEPRINT_STORAGE_KEY,
-  LIVE_PERSONA_STORAGE_KEY,
   PERSONA_VISUAL_ASSET_STORAGE_KEY,
   PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY
 ]));
@@ -8865,9 +8816,7 @@ const memorySuiteLiaIsSharedDurableRestoreKey = key => LIA_SHARED_DURABLE_RESTOR
   || String(key || '').startsWith(PERSONA_VISUAL_ASSET_BACKUP_PREFIX);
 const memorySuiteLiaIsRecognizedRestoreKey = key => {
   const value = String(key || '');
-  return value === LIVE_PERSONA_INDEX_STORAGE_KEY
-    || value === PERSONA_PROOF_STORAGE_KEY
-    || value.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)
+  return value === PERSONA_PROOF_STORAGE_KEY
     || memorySuiteLiaIsSharedDurableRestoreKey(value);
 };
 const memorySuiteLiaSharedDurableRoute = key => ({
@@ -8878,17 +8827,6 @@ const memorySuiteLiaSharedDurableRoute = key => ({
 const memorySuiteLiaResolveKeyScope = async ({ key, currentScope, registry }) => {
   const scope = currentScope || null;
   if (key === LLM_CONFIG_STORAGE_KEY || key === LOG_STORAGE_KEY) return { kind: 'global' };
-  if (key.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)) {
-    const storageSuffix = key.slice(LIVE_PERSONA_SCOPE_STORAGE_PREFIX.length);
-    const candidates = [scope, ...Object.values(registry?.entries || {})].filter(item => item?.scopeId);
-    const owner = candidates.find(item => hashText(String(item.scopeKey || item.scopeId || '')).slice(0, 24) === storageSuffix);
-    if (owner) return { kind:'scope',...owner };
-    // A hashed shard cannot safely be assigned to the open chat merely because
-    // its owner is absent from the registry. Keep it under an isolated alias;
-    // the scoped index dependency resolver can still restore the exact shard.
-    return { kind:'scope',scopeId:`lia-shard:${storageSuffix}`,scopeKey:`lia-shard:${storageSuffix}`,aliases:[storageSuffix],label:`LIA shard ${storageSuffix}` };
-  }
-  if (key === LIVE_PERSONA_INDEX_STORAGE_KEY) return scope?.scopeId ? memorySuiteLiaScopedEnvelope('entries', scope) : null;
   if (key === PERSONA_PROOF_STORAGE_KEY) return scope?.scopeId ? memorySuiteLiaScopedEnvelope('proofs', scope) : null;
   if (memorySuiteLiaIsSharedDurableRestoreKey(key)) {
     // These stores are plugin-global durable user data, not one chat's private
@@ -8924,21 +8862,6 @@ const memorySuiteLiaRestoreArrayOrItems = value => {
   if (parsed && typeof parsed === 'object' && Array.isArray(parsed.items)) return { parsed, items:parsed.items };
   return { parsed, items:null };
 };
-async function memorySuiteLiaResolveRestoreDependencies(context = {}) {
-  const candidates = Array.isArray(context.serverCandidates) ? context.serverCandidates : [];
-  const indexRow = candidates.find(row => row?.space === 'plugin' && row?.logicalKey === LIVE_PERSONA_INDEX_STORAGE_KEY);
-  if (!indexRow) return { dependencies:[], warnings:['lia_restore_index_root_absent'], metrics:{ livePersonaShard:0 } };
-  const index = memorySuiteLiaRestoreObject(await context.serverRead('plugin', indexRow.remoteKey));
-  if (String(index.schema || '') !== LIVE_PERSONA_INDEX_SCHEMA || !index.entries || typeof index.entries !== 'object' || Array.isArray(index.entries)) {
-    throw new Error('lia_restore_live_persona_index_invalid');
-  }
-  const scopeKey = String(context?.scope?.scopeKey || context?.scope?.scopeId || '');
-  const entry = index.entries[scopeKey];
-  if (!entry) return { dependencies:[], metrics:{ livePersonaShard:0, indexPresent:true } };
-  const storageKey = String(entry.storageKey || '');
-  if (!storageKey.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)) throw new Error('lia_restore_live_persona_storage_key_invalid');
-  return { dependencies:[{ space:'plugin', remoteKey:storageKey, logicalKey:storageKey, reason:'lia.current_scope_index.storageKey' }], metrics:{ livePersonaShard:1, indexPresent:true } };
-}
 async function memorySuiteLiaValidateRestore(context = {}) {
   if (String(context.phase || '') !== 'complete') return { ok:true, warnings:['lia_owner_validation_deferred_until_complete'] };
   const errors = [];
@@ -8957,7 +8880,6 @@ async function memorySuiteLiaValidateRestore(context = {}) {
     scopeKey,
     recognizedCandidates:recognizedCandidates.length,
     recognizedRemoved:recognizedRemoved.length,
-    indexedBinding:false,
     sharedStores:0,
     sharedStoreItems:0,
     sharedTombstones:recognizedRemoved.filter(memorySuiteLiaIsSharedDurableRestoreKey).length,
@@ -8984,28 +8906,6 @@ async function memorySuiteLiaValidateRestore(context = {}) {
     }
   };
 
-  const indexRow = candidates.find(row => row?.space === 'plugin' && row?.logicalKey === LIVE_PERSONA_INDEX_STORAGE_KEY);
-  let index = null;
-  if (indexRow) {
-    try { index = memorySuiteLiaRestoreObject(await physicalRead(LIVE_PERSONA_INDEX_STORAGE_KEY)); }
-    catch (error) { errors.push({ code:'lia_restore_index_json_invalid', detail:String(error?.message || error) }); }
-    if (index && (String(index.schema || '') !== LIVE_PERSONA_INDEX_SCHEMA || !index.entries || typeof index.entries !== 'object' || Array.isArray(index.entries))) errors.push('lia_restore_index_schema_invalid');
-  }
-  const entry = index?.entries?.[scopeKey] || null;
-  metrics.indexedBinding = Boolean(entry);
-  if (entry) {
-    const storageKey = String(entry.storageKey || '');
-    if (!storageKey.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)) errors.push('lia_restore_binding_storage_key_invalid');
-    if (!candidateKeys.has(storageKey)) errors.push({ code:'lia_restore_binding_dependency_missing', key:storageKey });
-    let raw = null;
-    let binding = null;
-    try {
-      raw = await physicalRead(storageKey);
-      binding = memorySuiteLiaRestoreObject(raw);
-    } catch (error) { errors.push({ code:'lia_restore_binding_json_invalid', key:storageKey, detail:String(error?.message || error) }); }
-    if (!binding || String(binding.scopeKey || '') !== scopeKey) errors.push('lia_restore_binding_scope_mismatch');
-    if (typeof raw === 'string' && entry.digest && hashText(raw) !== String(entry.digest)) errors.push('lia_restore_binding_digest_mismatch');
-  }
   for (const row of candidates.filter(item => item?.space === 'plugin' && item?.logicalKey === PERSONA_PROOF_STORAGE_KEY)) {
     try {
       const proof = memorySuiteLiaRestoreObject(await physicalRead(row.logicalKey));
@@ -9035,16 +8935,6 @@ async function memorySuiteLiaValidateRestore(context = {}) {
     metrics.sharedStoreItems += normalized.length;
   });
 
-  await validateSharedJson(LIVE_PERSONA_STORAGE_KEY, async raw => {
-    const parsed = memorySuiteLiaRestoreJson(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('lia_restore_legacy_live_persona_store_invalid');
-    if (parsed.version != null && Number(parsed.version) > PERSONA_BINDING_MANAGER_VERSION) throw new Error('lia_restore_legacy_live_persona_future_version');
-    if (parsed.bindings != null && (!parsed.bindings || typeof parsed.bindings !== 'object' || Array.isArray(parsed.bindings))) throw new Error('lia_restore_legacy_live_persona_bindings_invalid');
-    const sourceBindings = parsed.bindings && typeof parsed.bindings === 'object' && !Array.isArray(parsed.bindings) ? Object.keys(parsed.bindings) : [];
-    const normalized = normalizeLivePersonaStore(parsed);
-    if (sourceBindings.length > 0 && Object.keys(normalized.bindings || {}).length === 0) throw new Error('lia_restore_legacy_live_persona_normalization_empty');
-    metrics.sharedStoreItems += Object.keys(normalized.bindings || {}).length;
-  });
 
   let restoredVisualAssetStore = null;
   await validateSharedJson(PERSONA_VISUAL_ASSET_STORAGE_KEY, async raw => {
@@ -9150,9 +9040,6 @@ async function memorySuiteLiaValidateRestore(context = {}) {
     // Storage validation is read-only; invalidating RAM/UI caches merely ensures
     // the next read observes the freshly restored pluginStorage rows rather than
     // pre-recovery objects. No Persona, chat or durable store is mutated here.
-    cachedLivePersonaStore = null;
-    cachedLivePersonaStoreComplete = false;
-    livePersonaStorePromise = null;
     cachedPersonaProofStore = null;
     personaProofStorePromise = null;
     cachedPersonaVisualAssetStoreEmpty = null;
@@ -9174,12 +9061,13 @@ function createLiaLegacyServerRecovery(bridge) {
   const comparable = value => JSON.stringify(value ?? null);
   const same = (left, right) => comparable(left) === comparable(right);
   const fail = (code, detail = null) => { const error = new Error(code); error.code = code; if (detail) error.detail = detail; throw error; };
-  const fieldFor = key => key === LIVE_PERSONA_INDEX_STORAGE_KEY ? 'entries' : key === PERSONA_PROOF_STORAGE_KEY ? 'proofs' : '';
+  const fieldFor = key => key === PERSONA_PROOF_STORAGE_KEY ? 'proofs' : '';
   const decode = key => {
     const marker = '::memory-suite-scope:v1:';
     const at = key.indexOf(marker);
     if (at < 0) return { key, scopeId:'' };
     const logical = key.slice(0, at);
+    if (!memorySuiteLiaIsRecognizedRestoreKey(logical)) return { key:logical, scopeId:'' };
     if (!fieldFor(logical)) fail('LIA_RECOVERY_SCOPED_KEY_UNSUPPORTED');
     let scopeId = '';
     try { scopeId = decodeURIComponent(key.slice(at + marker.length)); } catch (_) { fail('LIA_RECOVERY_SCOPE_INVALID'); }
@@ -9213,14 +9101,7 @@ function createLiaLegacyServerRecovery(bridge) {
   };
   const validate = async values => {
     const candidates = [...values.keys()].map(key=>({space:'plugin',logicalKey:key,remoteKey:key}));
-    const index = values.has(LIVE_PERSONA_INDEX_STORAGE_KEY) ? memorySuiteLiaRestoreObject(values.get(LIVE_PERSONA_INDEX_STORAGE_KEY)) : null;
-    const scopes = new Set(Object.keys(index?.entries || {}));
-    for (const [key, value] of values) if (key.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)) {
-      const shard = memorySuiteLiaRestoreObject(value);
-      if (!shard.scopeKey || livePersonaScopeStorageKey(shard.scopeKey) !== key) fail('LIA_RECOVERY_SHARD_SCOPE_INVALID',key);
-      scopes.add(shard.scopeKey);
-    }
-    if (!scopes.size) scopes.add('lia:legacy-shared-recovery');
+    const scopes = new Set(['lia:legacy-shared-recovery']);
     const metrics = [];
     for (const scopeId of scopes) {
       const result = await memorySuiteLiaValidateRestore({phase:'complete',preview:true,scope:{scopeId,scopeKey:scopeId},serverCandidates:candidates,removedKeys:[],readback:async(_space,key)=>values.get(key)??null});
@@ -9266,26 +9147,8 @@ function createLiaLegacyServerRecovery(bridge) {
       try { records.push({key,value:mergeContainer(key,expectedValue,value,true),expectedValue}); }
       catch (error) { if (error.code !== 'LIA_RECOVERY_LOCAL_CONFLICT') throw error; conflicts.push(key); }
     }
-    // A merged index can retain untouched local scopes. Their existing shards
-    // join the validation witness, never the remote import or overwrite set.
-    if (!conflicts.length) {
-      const planned = new Map(records.map(row=>[row.key,row]));
-      const mergedIndex = planned.has(LIVE_PERSONA_INDEX_STORAGE_KEY) ? memorySuiteLiaRestoreObject(planned.get(LIVE_PERSONA_INDEX_STORAGE_KEY).value) : null;
-      for (const entry of Object.values(mergedIndex?.entries || {})) {
-        const key = String(entry?.storageKey || '');
-        if (!key.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX)) fail('LIA_RECOVERY_SHARD_SCOPE_INVALID',key);
-        if (planned.has(key)) continue;
-        const value = clone(await bridge.ownerLegacyRead('plugin',key));
-        if (value == null) fail('LIA_RECOVERY_LOCAL_DEPENDENCY_MISSING',key);
-        const row = {key,value,expectedValue:clone(value)};
-        records.push(row); planned.set(key,row);
-      }
-      await validate(new Map(records.map(row=>[row.key,row.value])));
-    }
-    const remoteIndex = values.has(LIVE_PERSONA_INDEX_STORAGE_KEY) ? memorySuiteLiaRestoreObject(values.get(LIVE_PERSONA_INDEX_STORAGE_KEY)) : null;
-    const indexedShards = new Set(Object.values(remoteIndex?.entries || {}).map(entry=>String(entry?.storageKey || '')));
-    const unindexedShards = [...values.keys()].filter(key=>key.startsWith(LIVE_PERSONA_SCOPE_STORAGE_PREFIX) && !indexedShards.has(key)).length;
-    const summary = Object.freeze({schema:'lia.legacy-recovery-preview.v1',validated:true,readOnly:true,unindexedShards,records:values.size,serverRecords:sourceRows.length,conflicts:Object.freeze(conflicts),unsupportedServerRecords:Object.freeze(unsupported),retainedServerTombstones:listing.tombstones.length,scopeCount:metrics.length,imageChunks:metrics[0]?.visualAssetBackupChunks || 0,serverWrites:0});
+    if (!conflicts.length) await validate(new Map(records.map(row=>[row.key,row.value])));
+    const summary = Object.freeze({schema:'lia.legacy-recovery-preview.v1',validated:true,readOnly:true,records:values.size,serverRecords:sourceRows.length,conflicts:Object.freeze(conflicts),unsupportedServerRecords:Object.freeze(unsupported),retainedServerTombstones:listing.tombstones.length,scopeCount:metrics.length,imageChunks:metrics[0]?.visualAssetBackupChunks || 0,serverWrites:0});
     if (ticketRevision !== revision || publishing) fail('LIA_RECOVERY_PREVIEW_STALE');
     active = {summary,records,values};
     return summary;
@@ -9303,7 +9166,6 @@ function createLiaLegacyServerRecovery(bridge) {
       }});
       // Only a confirmed local publication invalidates the ordinary in-memory caches.
       if (result.verified !== true) fail('LIA_RECOVERY_LOCAL_READBACK_FAILED');
-      cachedLivePersonaStore = null; cachedLivePersonaStoreComplete = false; livePersonaStorePromise = null;
       cachedPersonaProofStore = null; personaProofStorePromise = null; cachedPersonaVisualAssetStoreEmpty = null;
       visualAssetRestoreEpoch += 1; revokeVisualAssetObjectUrls();
       return result;
@@ -9316,18 +9178,17 @@ function createLiaLegacyServerRecovery(bridge) {
 const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   storagePolicy:'local_only', autoMigratePlugin:false, autoMigrateLocal:false, startupDiagnostics:false,
   namespace:'lia', displayName:'LIA: Persona Linker', pluginId:'lia_persona_linker', pluginVersion:PLUGIN_VERSION, managementButton:false,
-  pluginKeys:[LLM_CONFIG_STORAGE_KEY,RESULT_VAULT_STORAGE_KEY,WORLD_BLUEPRINT_STORAGE_KEY,LIVE_PERSONA_STORAGE_KEY,LIVE_PERSONA_INDEX_STORAGE_KEY,PERSONA_PROOF_STORAGE_KEY,LOG_STORAGE_KEY,PERSONA_VISUAL_ASSET_STORAGE_KEY,PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY],
-  pluginPrefixes:[LIVE_PERSONA_SCOPE_STORAGE_PREFIX,PERSONA_VISUAL_ASSET_BACKUP_PREFIX],
+  pluginKeys:[LLM_CONFIG_STORAGE_KEY,RESULT_VAULT_STORAGE_KEY,WORLD_BLUEPRINT_STORAGE_KEY,PERSONA_PROOF_STORAGE_KEY,LOG_STORAGE_KEY,PERSONA_VISUAL_ASSET_STORAGE_KEY,PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY],
+  pluginPrefixes:[PERSONA_VISUAL_ASSET_BACKUP_PREFIX],
   excludedKeys:[LLM_SECRET_STORAGE_KEY,LLM_SECRET_SYNCED_STORAGE_KEY,ILLUSTRATION_CONFIG_STORAGE_KEY],
   excludedContains:['secret','credential','api_key','access_token','hosting_token'],
   enterOwnerOperation: () => liaHealthRecovery?.enterMutation() || (() => {}),
   currentScopeProvider:memorySuiteLiaCurrentScope, resolveKeyScope:memorySuiteLiaResolveKeyScope,
   preResolveKeyScope:true,
-  resolveRestoreDependencies:memorySuiteLiaResolveRestoreDependencies,
   validateRestore:memorySuiteLiaValidateRestore,
   requireRestoreValidation:true,
   // LIA can have durable plugin-global Vault/Blueprint/asset data even when the
-  // current chat has no Live Persona shard. The owner validator above rejects a
+  // current chat has no proof yet. The owner validator above rejects a
   // truly empty snapshot, so dependency/tombstone-only recovery remains fail-closed.
   allowEmptyRestore:true
 });
@@ -10629,17 +10490,11 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     };
   }
 
-  function isLivePersona(persona) {
-    return String(persona?.id || "").startsWith(`${LIVE_PERSONA_ID_PREFIX}::`)
-      || String(persona?.note || "").includes(LIVE_PERSONA_NOTE_MARKER);
-  }
+  
 
-  function livePersonaDisplayName(sourceName = "") {
-    const name = String(sourceName || "");
-    return name.trim() ? name : "Persona";
-  }
+  
 
-  function livePersonaScopeKey(ctx = {}) {
+  function liaScopeKey(ctx = {}) {
     const char = ctx.char || {};
     const chat = ctx.chat || {};
     const charKey = String(char.chaId || char.id || char.name || ctx.charIndex || "character").trim();
@@ -10647,181 +10502,22 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     return `char:${charKey}|chat:${chatKey}`;
   }
 
-  function stripLivePersonaState(prompt = "") {
-    const text = String(prompt || "");
-    const start = text.indexOf(LIVE_PROMPT_START);
-    if (start < 0) return text.trim();
-    const end = text.indexOf(LIVE_PROMPT_END, start);
-    if (end < 0) return text.slice(0, start).trim();
-    return `${text.slice(0, start)}${text.slice(end + LIVE_PROMPT_END.length)}`.trim();
-  }
+  
 
-  function normalizeLiveStateItem(item, index = 0) {
-    if (!item || typeof item !== "object") return null;
-    const value = limitText(compact(item.value || item.text || ""), 700);
-    if (!value) return null;
-    const category = compact(item.category || "state") || "state";
-    const key = compact(item.key || `${category}-${hashText(value).slice(0, 10)}-${index}`);
-    return {
-      key,
-      category,
-      value,
-      durability: String(item.durability || "active").toLowerCase() === "persistent" ? "persistent" : "active",
-      confidence: Math.max(0, Math.min(100, Number(item.confidence || 0) || 0)),
-      evidence: unique(asArray(item.evidence).map((x) => limitText(compact(x), 360)), 8),
-    };
-  }
+  
 
-  function normalizeLiveCoreItem(item, index = 0) {
-    if (!item || typeof item !== "object") return null;
-    const field = compact(item.field || "evolution");
-    const value = limitText(compact(item.value || item.proposedValue || ""), 900);
-    if (!value) return null;
-    return {
-      id: String(item.id || `live-core-${hashText(`${field}|${value}`).slice(0, 12)}-${index}`),
-      field,
-      value,
-      confidence: Math.max(0, Math.min(100, Number(item.confidence || 0) || 0)),
-      authority: ["user", "objective", "assistant"].includes(String(item.authority || "").toLowerCase()) ? String(item.authority).toLowerCase() : "assistant",
-      evidence: unique(asArray(item.evidence).map((x) => limitText(compact(x), 360)), 10),
-      rationale: compact(item.rationale || ""),
-      promotedAt: String(item.promotedAt || item.promoted_at || ""),
-      promotedBatchEnd: Number(item.promotedBatchEnd || item.promoted_batch_end || 0) || 0,
-    };
-  }
+  
 
-  const LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V1 = "lia_pair_index_text_v1";
-  const LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2 = "lia_pair_stable_message_v2";
+  
+  
 
-  function normalizeLivePersonaBinding(raw) {
-    if (!raw || typeof raw !== "object") return null;
-    const scopeKey = String(raw.scopeKey || raw.scope_key || "").trim();
-    if (!scopeKey) return null;
-    const ledgers = asArray(raw.ledgers).map((item) => ({
-      id: String(item?.id || `live-ledger::${randomId()}`),
-      startPair: Number(item?.startPair || 0) || 0,
-      endPair: Number(item?.endPair || 0) || 0,
-      fingerprints: asArray(item?.fingerprints).map((x) => String(x || "")),
-      fingerprintSchema: String(item?.fingerprintSchema || item?.fingerprint_schema || LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V1),
-      createdAt: String(item?.createdAt || item?.created_at || ""),
-      summary: String(item?.summary || ""),
-      liveStateAfter: asArray(item?.liveStateAfter).map(normalizeLiveStateItem).filter(Boolean).slice(0, LIVE_SYNC_STATE_MAX),
-      coreOverlayAfter: asArray(item?.coreOverlayAfter).map(normalizeLiveCoreItem).filter(Boolean).slice(0, LIVE_SYNC_CORE_MAX),
-      coreCandidateHistoryAfter: item?.coreCandidateHistoryAfter && typeof item.coreCandidateHistoryAfter === "object" ? item.coreCandidateHistoryAfter : {},
-      ignoredTransient: unique(asArray(item?.ignoredTransient).map((x) => compact(x)), 20),
-      sourceRevision: item?.sourceRevision && typeof item.sourceRevision === "object" ? {
-        schema: String(item.sourceRevision.schema || ""),
-        sourceFingerprint: String(item.sourceRevision.sourceFingerprint || ""),
-        outputTurnKey: String(item.sourceRevision.outputTurnKey || ""),
-        outputRevision: Math.max(0, Number(item.sourceRevision.outputRevision || 0) || 0),
-        captureBackend: String(item.sourceRevision.captureBackend || ""),
-      } : null,
-    })).filter((item) => item.startPair > 0 && item.endPair >= item.startPair).slice(-LIVE_SYNC_LEDGER_MAX);
-    return {
-      scopeKey,
-      hostLineage: raw.hostLineage ? MemorySuiteHostLineage.normalize(raw.hostLineage) : null,
-      nativeBranchState: raw.nativeBranchState && typeof raw.nativeBranchState === 'object' ? {
-        schema: 'lia.native_branch_state.v1', verified: raw.nativeBranchState.verified === true,
-        reason: String(raw.nativeBranchState.reason || ''),
-        sourceScopeKey: String(raw.nativeBranchState.sourceScopeKey || ''),
-        sharedPairs: Math.max(0, Number(raw.nativeBranchState.sharedPairs || 0)),
-        stateThroughPair: Math.max(0, Number(raw.nativeBranchState.stateThroughPair || 0)),
-        pendingPrefixPairs: Math.max(0, Number(raw.nativeBranchState.pendingPrefixPairs || 0)),
-        storageBinding: raw.nativeBranchState.storageBinding && typeof raw.nativeBranchState.storageBinding === 'object' ? { ...raw.nativeBranchState.storageBinding } : null,
-        latestParentHeadCopied: false
-      } : null,
-      enabled: raw.enabled === true,
-      policy: String(raw.policy || "conservative") === "auto" ? "auto" : "conservative",
-      externalChangePolicy: String(raw.externalChangePolicy || raw.external_change_policy || "safe") === "follow" ? "follow" : "safe",
-      managerVersion: Math.max(1, Number(raw.managerVersion || raw.manager_version || 1) || 1),
-      displayNameVersion: Math.max(1, Number(raw.displayNameVersion || raw.display_name_version || 1) || 1),
-      previousBinding: (() => {
-        const prev = raw.previousBinding || raw.previous_binding;
-        if (prev && typeof prev === "object") {
-          return {
-            hadExplicitBinding: prev.hadExplicitBinding === true || prev.had_explicit_binding === true,
-            personaId: String(prev.personaId || prev.persona_id || "").trim(),
-            capturedAt: String(prev.capturedAt || prev.captured_at || ""),
-            legacyInferred: prev.legacyInferred === true || prev.legacy_inferred === true,
-          };
-        }
-        const legacySourceId = String(raw.sourcePersonaId || raw.source_persona_id || "").trim();
-        return legacySourceId ? {
-          hadExplicitBinding: !legacySourceId.startsWith("index:"),
-          personaId: legacySourceId.startsWith("index:") ? "" : legacySourceId,
-          capturedAt: String(raw.createdAt || raw.created_at || ""),
-          legacyInferred: true,
-        } : null;
-      })(),
-      pendingBindingChange: raw.pendingBindingChange && typeof raw.pendingBindingChange === "object" ? JSON.parse(JSON.stringify(raw.pendingBindingChange)) : null,
-      bindingStatus: String(raw.bindingStatus || raw.binding_status || "unknown"),
-      lastObservedBindingId: String(raw.lastObservedBindingId || raw.last_observed_binding_id || "").trim(),
-      lastBindingCheckAt: String(raw.lastBindingCheckAt || raw.last_binding_check_at || ""),
-      bindingError: String(raw.bindingError || raw.binding_error || ""),
-      lastObservedSelectedPersonaId: String(raw.lastObservedSelectedPersonaId || raw.last_observed_selected_persona_id || "").trim(),
-      lastObservedSelectedPersonaKey: String(raw.lastObservedSelectedPersonaKey || raw.last_observed_selected_persona_key || "").trim(),
-      lastSelectedPersonaCheckAt: String(raw.lastSelectedPersonaCheckAt || raw.last_selected_persona_check_at || ""),
-      legacyNativeMirrorWarning: raw.legacyNativeMirrorWarning === true || raw.legacy_native_mirror_warning === true,
-      sourcePersonaId: String(raw.sourcePersonaId || raw.source_persona_id || "").trim(),
-      sourcePersonaIndex: Number.isInteger(Number(raw.sourcePersonaIndex)) ? Number(raw.sourcePersonaIndex) : -1,
-      sourcePersonaName: String(raw.sourcePersonaName || "").trim(),
-      livePersonaId: String(raw.livePersonaId || raw.live_persona_id || "").trim(),
-      livePersonaName: String(raw.livePersonaName || "").trim(),
-      originalSnapshot: raw.originalSnapshot && typeof raw.originalSnapshot === "object" ? raw.originalSnapshot : null,
-      basePersonaPrompt: String(raw.basePersonaPrompt || raw.base_persona_prompt || "").trim(),
-      basePromptHash: String(raw.basePromptHash || ""),
-      lastAppliedPromptHash: String(raw.lastAppliedPromptHash || ""),
-      anchorPairCount: Math.max(0, Number(raw.anchorPairCount || 0) || 0),
-      lastProcessedPairCount: Math.max(0, Number(raw.lastProcessedPairCount || 0) || 0),
-      liveState: asArray(raw.liveState).map(normalizeLiveStateItem).filter(Boolean).slice(0, LIVE_SYNC_STATE_MAX),
-      coreOverlay: asArray(raw.coreOverlay).map(normalizeLiveCoreItem).filter(Boolean).slice(0, LIVE_SYNC_CORE_MAX),
-      coreCandidateHistory: raw.coreCandidateHistory && typeof raw.coreCandidateHistory === "object" ? raw.coreCandidateHistory : {},
-      ledgers,
-      worldBlueprint: normalizeWorldBlueprint(raw.worldBlueprint),
-      lastProcessedAt: String(raw.lastProcessedAt || ""),
-      lastError: String(raw.lastError || ""),
-      disabledReason: String(raw.disabledReason || ""),
-      nextRetryAt: Math.max(0, Number(raw.nextRetryAt || 0) || 0),
-      forkedFromScopeKey: String(raw.forkedFromScopeKey || raw.forked_from_scope_key || "").trim(),
-      forkedFromLivePersonaId: String(raw.forkedFromLivePersonaId || raw.forked_from_live_persona_id || "").trim(),
-      forkReason: String(raw.forkReason || raw.fork_reason || "").trim(),
-      handoffTransferId: String(raw.handoffTransferId || raw.handoff_transfer_id || "").trim(),
-      handoffSourceChatId: String(raw.handoffSourceChatId || raw.handoff_source_chat_id || "").trim(),
-      createdAt: String(raw.createdAt || ""),
-      updatedAt: String(raw.updatedAt || ""),
-    };
-  }
+  
 
-  function normalizeLivePersonaStore(raw) {
-    let parsed = raw;
-    if (typeof raw === "string") {
-      try { parsed = JSON.parse(raw); } catch (_) { parsed = {}; }
-    }
-    const input = parsed && typeof parsed === "object" ? parsed : {};
-    const bindings = {};
-    const source = input.bindings && typeof input.bindings === "object" ? input.bindings : {};
-    for (const [key, value] of Object.entries(source)) {
-      const binding = normalizeLivePersonaBinding({ ...(value || {}), scopeKey: value?.scopeKey || key });
-      if (binding) bindings[binding.scopeKey] = binding;
-    }
-    return { version: PERSONA_BINDING_MANAGER_VERSION, bindings };
-  }
+  
 
-  function livePersonaScopeStorageKey(scopeKey) {
-    return `${LIVE_PERSONA_SCOPE_STORAGE_PREFIX}${hashText(String(scopeKey || '')).slice(0, 24)}`;
-  }
+  
 
-  async function readLivePersonaIndex(storage) {
-    const raw = storage?.getItem ? await storage.getItem(LIVE_PERSONA_INDEX_STORAGE_KEY) : null;
-    let parsed = raw;
-    if (typeof raw === 'string' && raw.trim()) {
-      try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
-    }
-    const entries = parsed?.schema === LIVE_PERSONA_INDEX_SCHEMA && parsed.entries && typeof parsed.entries === 'object' && !Array.isArray(parsed.entries)
-      ? parsed.entries
-      : {};
-    return { schema: LIVE_PERSONA_INDEX_SCHEMA, version: 2, updatedAt: String(parsed?.updatedAt || ''), entries };
-  }
+  
 
   function storageWriteExplicitlyFailed(result) {
     if (result === false) return true;
@@ -10879,211 +10575,17 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     return true;
   }
 
-  async function writeLivePersonaIndex(storage, index) {
-    if (!storage?.setItem) throw new Error('RisuAI pluginStorage가 아직 준비되지 않았습니다.');
-    const entries = index?.entries && typeof index.entries === 'object' ? index.entries : {};
-    if (!Object.keys(entries).length) {
-      const existing = await storage.getItem?.(LIVE_PERSONA_INDEX_STORAGE_KEY);
-      if (existing !== null && existing !== undefined && existing !== '') {
-        await removePluginStorageItemChecked(storage, LIVE_PERSONA_INDEX_STORAGE_KEY, 'live_persona_empty_index_remove');
-      }
-      return { schema: LIVE_PERSONA_INDEX_SCHEMA, version: 2, updatedAt: new Date().toISOString(), entries: {} };
-    }
-    const payload = {
-      schema: LIVE_PERSONA_INDEX_SCHEMA,
-      version: 2,
-      updatedAt: new Date().toISOString(),
-      entries
-    };
-    await setPluginStorageItemChecked(storage, LIVE_PERSONA_INDEX_STORAGE_KEY, JSON.stringify(payload), 'live_persona_index_write');
-    return payload;
-  }
+  
 
-  async function writeSplitLivePersonaStoreRaw(storage, store, existingIndex = null, options = {}) {
-    const normalized = normalizeLivePersonaStore(store);
-    const index = existingIndex || await readLivePersonaIndex(storage);
-    const nextEntries = {};
-    const touched = [];
-    const remember = async storageKey => {
-      if (touched.some(row => row.storageKey === storageKey)) return;
-      touched.push({ storageKey, before: await storage.getItem?.(storageKey) });
-    };
-    const rollback = async cause => {
-      const failures = [];
-      for (const row of touched.slice().reverse()) {
-        try {
-          if (row.before === null || row.before === undefined || row.before === '') {
-            await removePluginStorageItemChecked(storage, row.storageKey, 'live_persona_shard_rollback_remove', { missingOk: true });
-          } else {
-            await setPluginStorageItemChecked(storage, row.storageKey, row.before, 'live_persona_shard_rollback_restore');
-            const readback = await storage.getItem?.(row.storageKey);
-            if (hashText(String(readback ?? '')) !== hashText(String(row.before ?? ''))) throw new Error('rollback_readback_mismatch');
-          }
-        } catch (error) { failures.push(`${row.storageKey}:${error?.message || error}`); }
-      }
-      if (failures.length) {
-        const error = new Error(`LIA_LIVE_PERSONA_BINDING_ROLLBACK_INCOMPLETE:${failures.length}`);
-        error.code = 'LIA_LIVE_PERSONA_BINDING_ROLLBACK_INCOMPLETE';
-        error.cause = cause;
-        error.failures = failures;
-        throw error;
-      }
-      throw cause;
-    };
-    try {
-      for (const [scopeKey, rawBinding] of Object.entries(normalized.bindings || {})) {
-        const binding = normalizeLivePersonaBinding({ ...(rawBinding || {}), scopeKey: rawBinding?.scopeKey || scopeKey });
-        if (!binding) continue;
-        const storageKey = livePersonaScopeStorageKey(binding.scopeKey);
-        const serialized = JSON.stringify(binding);
-        const digest = hashText(serialized);
-        const previous = index.entries?.[binding.scopeKey];
-        if (options.preserveOtherScopes && binding.scopeKey !== options.preserveOtherScopes) {
-          const original = await storage.getItem?.(storageKey);
-          let decoded; try { decoded = typeof original === 'string' ? JSON.parse(original) : original; } catch (_) {}
-          if (!previous || previous.storageKey !== storageKey || typeof original !== 'string'
-            || previous.digest !== hashText(original)
-            || JSON.stringify(normalizeLivePersonaBinding(decoded)) !== serialized) throw new Error('LIA_HANDOFF_SIBLING_READBACK_MISMATCH');
-          // Source normalization is a different operation. A fork cannot rewrite
-          // the source shard or its existing index identity as a side effect.
-          nextEntries[binding.scopeKey] = { ...previous };
-          continue;
-        }
-        if (!previous || previous.digest !== digest || previous.storageKey !== storageKey) {
-          await remember(storageKey);
-          await setPluginStorageItemChecked(storage, storageKey, serialized, 'live_persona_shard_write');
-        }
-        nextEntries[binding.scopeKey] = {
-          storageKey,
-          digest,
-          livePersonaId: String(binding.livePersonaId || ''),
-          updatedAt: String(binding.updatedAt || new Date().toISOString())
-        };
-      }
-      for (const [scopeKey, previous] of Object.entries(index.entries || {})) {
-        if (nextEntries[scopeKey]) continue;
-        if (options.preserveOtherScopes) throw new Error('LIA_HANDOFF_SIBLING_MISSING');
-        const storageKey = previous?.storageKey || livePersonaScopeStorageKey(scopeKey);
-        await remember(storageKey);
-        await removePluginStorageItemChecked(storage, storageKey, 'live_persona_removed_shard_delete', { missingOk: true });
-      }
-      const persistedIndex = await writeLivePersonaIndex(storage, { entries: nextEntries });
-      cachedLivePersonaStore = normalized;
-      cachedLivePersonaStoreComplete = true;
-      return { store: normalizeLivePersonaStore(normalized), index: persistedIndex };
-    } catch (error) {
-      const durableIndex = await readLivePersonaIndex(storage).catch(() => null);
-      const expectedIndexDigest = hashText(JSON.stringify(Object.entries(nextEntries).sort(([a], [b]) => a.localeCompare(b))));
-      const durableIndexDigest = durableIndex
-        ? hashText(JSON.stringify(Object.entries(durableIndex.entries || {}).sort(([a], [b]) => a.localeCompare(b))))
-        : '';
-      if (durableIndex && durableIndexDigest === expectedIndexDigest) {
-        cachedLivePersonaStore = normalized;
-        cachedLivePersonaStoreComplete = true;
-        return { store: normalizeLivePersonaStore(normalized), index: durableIndex, recoveredFromIndeterminateWrite: true };
-      }
-      return await rollback(error);
-    }
-  }
+  
 
-  async function migrateLegacyLivePersonaStore(storage) {
-    const raw = storage?.getItem ? await storage.getItem(LIVE_PERSONA_STORAGE_KEY) : null;
-    let parsed = raw;
-    if (typeof raw === 'string' && raw.trim()) {
-      try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
-    }
-    const legacy = normalizeLivePersonaStore(parsed || {});
-    if (!Object.keys(legacy.bindings || {}).length) return null;
-    const result = await writeSplitLivePersonaStoreRaw(storage, legacy, { schema: LIVE_PERSONA_INDEX_SCHEMA, version: 2, entries: {} });
-    try { await storage.removeItem?.(LIVE_PERSONA_STORAGE_KEY); } catch (_) {}
-    appendDebugLog('storage', 'live_persona_store_migrated_v2', { bindings: Object.keys(legacy.bindings || {}).length }, 'info');
-    return result.store;
-  }
+  
 
-  async function readLivePersonaStore(force = false) {
-    if (!force && cachedLivePersonaStore && cachedLivePersonaStoreComplete) return normalizeLivePersonaStore(cachedLivePersonaStore);
-    if (livePersonaStorePromise) return livePersonaStorePromise;
-    livePersonaStorePromise = (async () => {
-      try {
-        const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-        if (!storage?.getItem) return normalizeLivePersonaStore({});
-        let index = await readLivePersonaIndex(storage);
-        if (!Object.keys(index.entries || {}).length) {
-          const rawLegacy = await storage.getItem(LIVE_PERSONA_STORAGE_KEY);
-          const parsedLegacy = typeof rawLegacy === 'string' && rawLegacy.trim() ? JSON.parse(rawLegacy) : rawLegacy;
-          const legacy = normalizeLivePersonaStore(parsedLegacy || {});
-          const migrated = Object.keys(legacy.bindings || {}).length ? legacy : null;
-          if (migrated) {
-            cachedLivePersonaStore = normalizeLivePersonaStore(migrated);
-            cachedLivePersonaStoreComplete = true;
-            return normalizeLivePersonaStore(migrated);
-          }
-          index = await readLivePersonaIndex(storage);
-        }
-        const bindings = {};
-        const rows = Object.entries(index.entries || {});
-        for (let offset = 0; offset < rows.length; offset += 12) {
-          const batch = rows.slice(offset, offset + 12);
-          const loaded = await Promise.all(batch.map(async ([scopeKey, meta]) => {
-            const raw = await storage.getItem(meta?.storageKey || livePersonaScopeStorageKey(scopeKey));
-            let parsed = raw;
-            if (typeof raw === 'string' && raw.trim()) {
-              try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
-            }
-            const binding = normalizeLivePersonaBinding({ ...(parsed || {}), scopeKey: parsed?.scopeKey || scopeKey });
-            return [scopeKey, binding];
-          }));
-          for (const [scopeKey, binding] of loaded) if (binding) bindings[scopeKey] = binding;
-        }
-        cachedLivePersonaStore = normalizeLivePersonaStore({ version: PERSONA_BINDING_MANAGER_VERSION, bindings });
-        cachedLivePersonaStoreComplete = true;
-      } catch (_) {
-        cachedLivePersonaStore = normalizeLivePersonaStore({});
-        cachedLivePersonaStoreComplete = false;
-      }
-      return normalizeLivePersonaStore(cachedLivePersonaStore);
-    })().finally(() => { livePersonaStorePromise = null; });
-    return livePersonaStorePromise;
-  }
+  
 
-  async function readLivePersonaBindingByScopeKey(scopeKey, force = false, storageOverride = null) {
-    const key = String(scopeKey || '').trim();
-    if (!key) return null;
-    const isolatedRead = Boolean(storageOverride);
-    if (!isolatedRead && !force && cachedLivePersonaStoreComplete && cachedLivePersonaStore?.bindings) {
-      return normalizeLivePersonaBinding(cachedLivePersonaStore.bindings[key] || null);
-    }
-    if (!isolatedRead && !force && cachedLivePersonaStore?.bindings?.[key]) return normalizeLivePersonaBinding(cachedLivePersonaStore.bindings[key]);
-    const storage = storageOverride || await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.getItem) return null;
-    const index = await readLivePersonaIndex(storage);
-    const meta = index.entries?.[key];
-    if (!meta) {
-      if (isolatedRead) return null;
-      const store = await readLivePersonaStore(force);
-      return normalizeLivePersonaBinding(store.bindings[key] || null);
-    }
-    const raw = await storage.getItem(meta.storageKey || livePersonaScopeStorageKey(key));
-    let parsed = raw;
-    if (typeof raw === 'string' && raw.trim()) {
-      try { parsed = JSON.parse(raw); } catch (_) { parsed = null; }
-    }
-    const binding = normalizeLivePersonaBinding({ ...(parsed || {}), scopeKey: parsed?.scopeKey || key });
-    if (binding && !isolatedRead) {
-      const store = normalizeLivePersonaStore(cachedLivePersonaStore || {});
-      store.bindings[key] = binding;
-      cachedLivePersonaStore = store;
-    }
-    return binding;
-  }
+  
 
-  async function writeLivePersonaStore(store) {
-    const normalized = normalizeLivePersonaStore(store);
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.setItem) throw new Error('RisuAI pluginStorage가 아직 준비되지 않았습니다.');
-    const result = await writeSplitLivePersonaStoreRaw(storage, normalized);
-    return result.store;
-  }
+  
 
 
   function withPersonaDatabaseMutationLock(task) {
@@ -11092,12 +10594,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     return run;
   }
 
-  function strictLiaOwnedLivePersona(persona, expectedId = "") {
-    const id = String(persona?.id || "").trim();
-    if (!id.startsWith(`${LIVE_PERSONA_ID_PREFIX}::`)) return false;
-    if (expectedId && id !== String(expectedId).trim()) return false;
-    return String(persona?.note || "").includes(LIVE_PERSONA_NOTE_MARKER);
-  }
+  
 
   function personaIdentityForSelection(persona) {
     if (!persona || typeof persona !== "object") return null;
@@ -11343,7 +10840,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (!personaDatabaseRowsMatchExceptIndex(snapshot.personas, nextPersonas, options.changedIndex)) {
         throw personaDatabaseMutationError(operation, "unexpected_persona_row_change");
       }
-    } else if (operation === "live_remove" || operation === "generated_cleanup") {
+    } else if (operation === "generated_cleanup") {
       const removedCounts = personaDatabaseRemovedRowKeyCounts(beforeRowCounts, nextRowCounts);
       if (!removedCounts || !personaDatabaseRowKeyCountsEqual(removedCounts, options.expectedRemovedCounts)) {
         throw personaDatabaseMutationError(operation, "unexpected_persona_removal");
@@ -11361,37 +10858,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     if (!untouchedRowSnapshots) throw personaDatabaseMutationError(operation, "untouched_persona_snapshot_invalid");
     if (typeof api.setDatabase !== "function") {
       throw personaDatabaseMutationError(operation, "database_write_unavailable", "LIA_PERSONA_WRITE_UNAVAILABLE");
-    }
-    if (typeof options.commitGuard === "function") {
-      const guard = await options.commitGuard();
-      if (!guard?.ok) {
-        const error = new Error(`Persona manual commit cancelled: ${guard?.reason || "stale"}`);
-        error.code = LIVE_SYNC_SOURCE_SUPERSEDED_CODE;
-        error.guard = guard;
-        throw error;
-      }
-      // The source guard awaits host/storage work. Preserve the original
-      // whole-Persona-array optimistic concurrency check after that await too.
-      const commitSnapshot = await readPersonaDatabaseSnapshot(operation, snapshot.guard);
-      if (commitSnapshot.signature !== snapshot.signature) throw personaDatabaseMutationError(operation, "snapshot_changed", "LIA_PERSONA_DATABASE_CONFLICT");
-    }
-    // Final observation order: database data, active selection, synchronous
-    // action guards, then the host write invocation. These separate host reads
-    // are not a globally atomic CAS; do not add another awaited read here.
-    if (typeof options.commitSelectionGuard === "function") {
-      const selection = await options.commitSelectionGuard();
-      if (!selection?.ok) {
-        const error = new Error(`Persona manual selection changed: ${selection?.reason || "scope_changed"}`);
-        error.code = LIVE_SYNC_SOURCE_SUPERSEDED_CODE;
-        error.guard = selection;
-        throw error;
-      }
-    }
-    if (typeof options.commitFence === "function" && options.commitFence() !== true) {
-      const error = new Error("Persona manual commit cancelled.");
-      error.code = LIVE_SYNC_SOURCE_SUPERSEDED_CODE;
-      error.guard = { reason: "manual_cancelled" };
-      throw error;
     }
     let writeResult;
     try { writeResult = await api.setDatabase({ personas: nextPersonas }); }
@@ -11456,536 +10922,49 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     return { safe, selected, dynamicId, dynamicIndex, dynamicPersona };
   }
 
-  async function freshCharacterForPersonaReferenceScan(ctx = {}) {
-    try {
-      const charIndex = Number.isInteger(Number(ctx?.charIndex)) ? Number(ctx.charIndex) : Number(await api.getCurrentCharacterIndex?.()) || 0;
-      return await api.getCharacterFromIndex?.(charIndex) || await api.getCharacter?.() || ctx?.char || null;
-    } catch (_) {
-      return ctx?.char || null;
-    }
-  }
+  
 
-  async function readLivePersonaIndexWithMigration(storage) {
-    let index = await readLivePersonaIndex(storage);
-    if (!Object.keys(index.entries || {}).length) {
-      await migrateLegacyLivePersonaStore(storage).catch(() => null);
-      index = await readLivePersonaIndex(storage);
-    }
-    return index;
-  }
+  
 
-  async function readLivePersonaOwnerBinding(options = {}) {
-    const currentScopeKey = String(options.currentScopeKey || '').trim();
-    const sourceChatId = String(options.sourceChatId || '').trim();
-    const livePersonaId = String(options.livePersonaId || '').trim();
-    if (!sourceChatId && !livePersonaId) return null;
-    const storage = options.storage || await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.getItem) return null;
-    const index = options.readOnly === true ? await readLivePersonaIndex(storage) : await readLivePersonaIndexWithMigration(storage);
-    const rows = Object.entries(index.entries || {}).filter(([scopeKey]) => scopeKey && scopeKey !== currentScopeKey);
-    const chatMarker = sourceChatId ? `|chat:${sourceChatId}` : '';
-    const ranked = rows.map(([scopeKey, meta]) => ({
-      scopeKey,
-      meta: meta || {},
-      score: (sourceChatId && scopeKey.endsWith(chatMarker) ? 8 : 0)
-        + (livePersonaId && String(meta?.livePersonaId || '') === livePersonaId ? 4 : 0)
-    })).filter(item => {
-      if (sourceChatId && livePersonaId) return item.score >= 12;
-      if (sourceChatId) return item.score >= 8;
-      if (livePersonaId) return item.score >= 4;
-      return false;
-    }).sort((a, b) => b.score - a.score || String(b.meta?.updatedAt || '').localeCompare(String(a.meta?.updatedAt || '')));
-    for (const item of ranked) {
-      const binding = await readLivePersonaBindingByScopeKey(item.scopeKey, true, options.storage || null);
-      if (!binding) continue;
-      if (sourceChatId && livePersonaBindingChatId(binding) !== sourceChatId) continue;
-      if (livePersonaId && binding.livePersonaId !== livePersonaId) continue;
-      return binding;
-    }
-    return null;
-  }
+  
 
-  async function livePersonaReferenceSnapshot(ctx, livePersonaId, excludeScopeKey = "") {
-    const wanted = String(livePersonaId || "").trim();
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    const index = storage?.getItem ? await readLivePersonaIndexWithMigration(storage) : { entries: {} };
-    const bindingRefs = Object.entries(index.entries || {})
-      .filter(([scopeKey, meta]) => scopeKey !== excludeScopeKey && String(meta?.livePersonaId || '') === wanted)
-      .map(([scopeKey]) => scopeKey);
-    const char = await freshCharacterForPersonaReferenceScan(ctx);
-    const chatRefs = asArray(char?.chats).map((chat, index) => ({
-      index,
-      id: String(chat?.id || chat?.chatId || "").trim(),
-      personaId: String(chat?.bindedPersona || chat?.boundPersona || chat?.personaId || "").trim(),
-    })).filter((entry) => entry.personaId === wanted);
-    return { bindingRefs, chatRefs, referenced: bindingRefs.length > 0 || chatRefs.length > 0 };
-  }
+  
 
-  async function upsertPersonaFresh(persona, guardContext = null) {
-    if (!persona || typeof persona !== "object") throw new Error("저장할 Persona가 없습니다.");
-    const id = String(persona.id || "").trim();
-    if (!id) throw new Error("Persona ID가 없습니다.");
-    return await withPersonaDatabaseMutationLock(async () => {
-      // Never write selectedPersona here. RisuAI selection is an independent user
-      // action; writing a previously-read index can roll a native Persona switch back.
-      const snapshot = await readPersonaDatabaseForMutation("upsert", guardContext);
-      const db = snapshot.db;
-      const personas = snapshot.personas.slice();
-      const index = personas.findIndex((item) => String(item?.id || "").trim() === id);
-      appendDebugLog("persona_db", "upsert_start", { personaId: id, personaName: persona?.name || "", beforeCount: personas.length, existingIndex: index, selectedPersona: Number(db?.selectedPersona) });
-      if (index >= 0) {
-        const nextPersona = { ...personas[index], ...persona, id };
-        if (nativeSelectedPersonaMutationWouldDesync(db, index, personas[index], nextPersona)) {
-          appendDebugLog("persona_db", "selected_persona_mutation_blocked", { operation: "upsert", personaId: id, personaName: personas[index]?.name || persona?.name || "", index, selectedPersona: Number(db?.selectedPersona) }, "warn");
-          appendOperationLog("persona_safety", `RisuAI 기본 Persona 직접 갱신을 차단했습니다: ${personas[index]?.name || persona?.name || id}`, { personaId: id, operation: "upsert" }, "warn");
-          throw nativeSelectedPersonaMutationError(personas[index], "Persona 갱신");
-        }
-        personas[index] = nextPersona;
-      } else personas.push({ ...persona, id });
-      const verify = await writePersonaArrayMutation("upsert", snapshot, personas);
-      const verifyPersonas = verify.personas;
-      const verifyIndex = verifyPersonas.findIndex((item) => String(item?.id || "").trim() === id);
-      if (verifyIndex < 0) throw new Error("Persona 저장 직후 RisuAI readback에서 대상 Persona가 사라졌습니다.");
-      const expected = personas.find((item) => String(item?.id || "").trim() === id);
-      const actual = verifyPersonas[verifyIndex];
-      // An existing ID proves existence, not adoption of the new Persona.
-      // Void host returns are valid only when the intended content reads back.
-      const mismatch = ["name", "personaPrompt"].filter((field) =>
-        Object.prototype.hasOwnProperty.call(expected, field)
-        && String(actual?.[field] ?? "") !== String(expected[field] ?? ""));
-      if (mismatch.length) {
-        const error = new Error(`Persona 저장 readback 불일치: ${mismatch.join(", ")}. 이전 처리 범위를 유지합니다.`);
-        error.code = "LIA_PERSONA_READBACK_MISMATCH";
-        error.fields = mismatch;
-        throw error;
-      }
-      appendDebugLog("persona_db", "upsert_success", { personaId: id, personaName: verifyPersonas[verifyIndex]?.name || persona?.name || "", created: index < 0, verifyIndex, afterCount: verifyPersonas.length, selectedPersona: Number(verify?.selectedPersona) }, "info");
-      return { created: index < 0, index: verifyIndex, persona: verifyPersonas[verifyIndex] };
-    });
-  }
+  
 
-  async function mutatePersonaFresh(personaId, mutator, guardContext = null, options = {}) {
-    const wanted = String(personaId || "").trim();
-    return await withPersonaDatabaseMutationLock(async () => {
-      const snapshot = await readPersonaDatabaseForMutation("mutate", guardContext);
-      const db = snapshot.db;
-      const personas = snapshot.personas.slice();
-      const index = personas.findIndex((item) => String(item?.id || "").trim() === wanted);
-      if (index < 0) throw new Error("채팅 전용 Live Persona가 삭제되었거나 찾을 수 없습니다.");
-      appendDebugLog("persona_db", "mutate_start", { personaId: wanted, personaName: personas[index]?.name || "", index, personaCount: personas.length, selectedPersona: Number(db?.selectedPersona) });
-      const next = await mutator({ ...personas[index] }, db);
-      if (!next || typeof next !== "object") throw new Error("Persona 갱신 결과가 올바르지 않습니다.");
-      const nextPersona = { ...personas[index], ...next, id: wanted };
-      if (nativeSelectedPersonaMutationWouldDesync(db, index, personas[index], nextPersona)) {
-        appendDebugLog("persona_db", "selected_persona_mutation_blocked", { operation: "mutate", personaId: wanted, personaName: personas[index]?.name || "", index, selectedPersona: Number(db?.selectedPersona) }, "warn");
-        appendOperationLog("persona_safety", `RisuAI 기본 Persona 백그라운드 갱신을 차단했습니다: ${personas[index]?.name || wanted}`, { personaId: wanted, operation: "mutate" }, "warn");
-        throw nativeSelectedPersonaMutationError(personas[index], "Live Persona 갱신");
-      }
-      personas[index] = nextPersona;
-      // Persona content updates preserve array order, so selectedPersona must not
-      // be rewritten. This prevents a background Live revision from undoing a
-      // Persona the user just selected in RisuAI.
-      const verify = await writePersonaArrayMutation("mutate", snapshot, personas, options);
-      const verified = verify.personas.find((item) => String(item?.id || "").trim() === wanted);
-      if (!verified) throw new Error("Live Persona 갱신 직후 RisuAI readback에서 대상 Persona가 사라졌습니다.");
-      const expected = nextPersona;
-      const actual = verified;
-      // An existing ID proves existence, not adoption of the new Persona.
-      // Void host returns are valid only when the intended content reads back.
-      const mismatch = ["name", "personaPrompt"].filter((field) =>
-        Object.prototype.hasOwnProperty.call(expected, field)
-        && String(actual?.[field] ?? "") !== String(expected[field] ?? ""));
-      if (mismatch.length) {
-        const error = new Error(`Persona 저장 readback 불일치: ${mismatch.join(", ")}. 이전 처리 범위를 유지합니다.`);
-        error.code = "LIA_PERSONA_READBACK_MISMATCH";
-        error.fields = mismatch;
-        throw error;
-      }
-      appendDebugLog("persona_db", "mutate_success", { personaId: wanted, personaName: verified?.name || "", selectedPersona: Number(verify?.selectedPersona), personaCount: asArray(verify?.personas).length }, "info");
-      return verified;
-    });
-  }
+  
 
-  async function removeLiaLivePersonaIfUnreferenced(ctx, livePersonaId, options = {}) {
-    const wanted = String(livePersonaId || "").trim();
-    if (!wanted.startsWith(`${LIVE_PERSONA_ID_PREFIX}::`)) return { removed: false, reason: "not_lia_live_id" };
-    return await withPersonaDatabaseMutationLock(async () => {
-      appendDebugLog("persona_db", "live_remove_check", { personaId: wanted, excludeScopeKey: String(options.excludeScopeKey || ""), fallbackPersonaId: String(options.fallbackPersonaId || "") });
-      const refs = await livePersonaReferenceSnapshot(ctx, wanted, String(options.excludeScopeKey || ""));
-      if (refs.referenced) {
-        appendDebugLog("persona_db", "live_remove_blocked_referenced", { personaId: wanted, refs }, "warn");
-        return { removed: false, reason: "still_referenced", refs };
-      }
-      const snapshot = await readPersonaDatabaseForMutation("live_remove", ctx);
-      const db = snapshot.db;
-      const personas = snapshot.personas.slice();
-      const removeIndex = personas.findIndex((item) => String(item?.id || "").trim() === wanted);
-      if (removeIndex < 0) return { removed: false, reason: "already_missing" };
-      if (!strictLiaOwnedLivePersona(personas[removeIndex], wanted)) {
-        return { removed: false, reason: "ownership_not_verified" };
-      }
-      const selectedIndex = snapshot.selectedPersona;
-      // RisuAI native Persona UI keeps a separate mirror for the currently selected
-      // Persona. Removing that Persona or anything before it would shift the native
-      // selected index without synchronizing that mirror. Keep the orphan instead.
-      if (Number.isInteger(selectedIndex) && selectedIndex >= 0 && removeIndex <= selectedIndex) {
-        appendDebugLog("persona_db", "cleanup_blocked_index_shift", { personaId: wanted, removeIndex, selectedPersona: selectedIndex, reason: removeIndex === selectedIndex ? "native_default_selected" : "would_shift_native_default_index" }, "warn");
-        appendOperationLog("persona_safety", `Live Persona 자동 정리를 보류했습니다: ${personas[removeIndex]?.name || wanted}`, { personaId: wanted, removeIndex, selectedPersona: selectedIndex }, "warn");
-        return { removed: false, reason: removeIndex === selectedIndex ? "native_default_selected" : "would_shift_native_default_index" };
-      }
-      const kept = personas.filter((_, index) => index !== removeIndex);
-      await writePersonaArrayMutation("live_remove", snapshot, kept, {
-        expectedRemovedCounts: personaDatabaseRowKeyCounts([personas[removeIndex]]),
-      });
-      appendDebugLog("persona_db", "live_remove_success", { personaId: wanted, removeIndex, beforeCount: personas.length, afterCount: kept.length, selectedPersona: selectedIndex }, "info");
-      appendOperationLog("live_persona_remove", `참조되지 않는 LIA Live Persona를 정리했습니다: ${personas[removeIndex]?.name || wanted}`, { personaId: wanted }, "info");
-      return { removed: true, reason: "unreferenced_lia_live_removed" };
-    });
-  }
+  
 
-  async function readLivePersonaBindingForContext(ctx) {
-    return await readLivePersonaBindingByScopeKey(livePersonaScopeKey(ctx));
-  }
+  
 
-  function cachedEnabledLivePersonaBindingState() {
-    if (!cachedLivePersonaStoreComplete || !cachedLivePersonaStore?.bindings) return null;
-    for (const raw of Object.values(cachedLivePersonaStore.bindings)) {
-      const binding = normalizeLivePersonaBinding(raw);
-      if (binding?.enabled === true) return true;
-    }
-    return false;
-  }
+  
 
-  async function verifyDurableLivePersonaBindingReadback(storage, expectedBinding, expectedDigest = '') {
-    const expected = normalizeLivePersonaBinding(expectedBinding);
-    if (!expected) throw new Error('Cannot verify an invalid Live Persona binding.');
-    if (typeof storage?.getItem !== 'function') throw new Error('RisuAI pluginStorage is not readable.');
-    const storageKey = livePersonaScopeStorageKey(expected.scopeKey);
-    const freshIndex = await readLivePersonaIndex(storage);
-    const indexEntry = freshIndex.entries?.[expected.scopeKey];
-    if (!indexEntry || typeof indexEntry !== 'object') {
-      throw new Error(`Live Persona durable readback failed: target scope is absent from the owner index (${expected.scopeKey}).`);
-    }
-    if (String(indexEntry.storageKey || '') !== storageKey) {
-      throw new Error(`Live Persona durable readback failed: target shard key mismatch (${expected.scopeKey}).`);
-    }
-    const indexedDigest = String(indexEntry.digest || '');
-    if (!indexedDigest || (expectedDigest && indexedDigest !== expectedDigest)) {
-      throw new Error(`Live Persona durable readback failed: target digest mismatch (${expected.scopeKey}).`);
-    }
-    if (String(indexEntry.livePersonaId || '') !== expected.livePersonaId) {
-      throw new Error(`Live Persona durable readback failed: target Live Persona identity mismatch (${expected.scopeKey}).`);
-    }
-    const rawShard = await storage.getItem(storageKey);
-    if (rawShard === null || rawShard === undefined || rawShard === '') {
-      throw new Error(`Live Persona durable readback failed: target shard is missing (${expected.scopeKey}).`);
-    }
-    let parsedShard = rawShard;
-    let serializedShard = '';
-    if (typeof rawShard === 'string') {
-      serializedShard = rawShard;
-      try { parsedShard = JSON.parse(rawShard); } catch (_) { parsedShard = null; }
-    } else {
-      try { serializedShard = JSON.stringify(rawShard); } catch (_) { serializedShard = ''; }
-    }
-    if (!serializedShard || hashText(serializedShard) !== indexedDigest) {
-      throw new Error(`Live Persona durable readback failed: owner index/shard digest mismatch (${expected.scopeKey}).`);
-    }
-    const stored = normalizeLivePersonaBinding(parsedShard);
-    if (!stored || stored.scopeKey !== expected.scopeKey || stored.livePersonaId !== expected.livePersonaId) {
-      throw new Error(`Live Persona durable readback failed: stored binding identity mismatch (${expected.scopeKey}).`);
-    }
-    for (const field of ['forkedFromScopeKey', 'forkedFromLivePersonaId', 'handoffSourceChatId', 'handoffTransferId']) {
-      if (String(stored[field] || '') !== String(expected[field] || '')) {
-        throw new Error(`Live Persona durable readback failed: stored handoff lineage mismatch (${field}).`);
-      }
-    }
-    return {
-      durableReadbackVerified: true,
-      binding: stored,
-      storageKey,
-      digest: indexedDigest,
-      indexEntry: { ...indexEntry },
-    };
-  }
+  
 
-  async function writeLivePersonaBinding(binding, options = {}) {
-    const normalized = normalizeLivePersonaBinding(binding);
-    if (!normalized) throw new Error('Live Persona binding이 올바르지 않습니다.');
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.setItem) throw new Error('RisuAI pluginStorage가 아직 준비되지 않았습니다.');
-    // The store document is shared by EVERY scope, so a binding write is a whole-store
-    // read-modify-write. Without serialization two writers touching DIFFERENT scopes race:
-    //
-    //     A: reads { chat-1 }      B: reads { chat-1 }
-    //     A: writes { chat-1, chat-2 }
-    //     B: writes { chat-1, chat-3 }   -> chat-2 is gone
-    //
-    // The lock key is therefore the STORE, not the individual scope: two writes for different
-    // scopes still conflict because they publish the same document.
-    //
-    // `withPersonaDatabaseMutationLock` is this scope's own serial queue (there is a
-    // `serializeMutation` per-key tail elsewhere in this file, but it lives in a different
-    // IIFE and is NOT in scope here). The read happens INSIDE the critical section, so each
-    // writer computes its document from what the previous writer committed.
-    return await withPersonaDatabaseMutationLock(() => writeLivePersonaBindingUnlocked(normalized, options, storage));
-  }
+  
 
-  async function writeLivePersonaBindingUnlocked(normalized, options, storage) {
-    const index = await readLivePersonaIndexWithMigration(storage);
-    const storageKey = livePersonaScopeStorageKey(normalized.scopeKey);
-    const serialized = JSON.stringify(normalized);
-    const digest = hashText(serialized);
-    const store = await readLivePersonaStore(true);
-    if (!cachedLivePersonaStoreComplete) throw new Error('Live Persona owner store is incomplete; binding write is blocked.');
-    const pending = store.bindings[normalized.scopeKey]?.pendingBindingChange;
-    if (pending && normalized.pendingBindingChange?.id !== pending.id && options.completeChangeId !== pending.id) {
-      throw new Error('LIA_BINDING_CHANGE_PENDING');
-    }
-    store.bindings[normalized.scopeKey] = normalized;
-    await writeSplitLivePersonaStoreRaw(storage, store, index, options.preserveSiblingBytes === true ? { preserveOtherScopes: normalized.scopeKey } : {});
-    const readback = await verifyDurableLivePersonaBindingReadback(storage, normalized, digest);
-    const cached = normalizeLivePersonaStore(cachedLivePersonaStore || {});
-    cached.bindings[normalized.scopeKey] = readback.binding;
-    cachedLivePersonaStore = cached;
-    return readback;
-  }
+  
 
-  function storedLivePersonaSourceName(binding) {
-    return String(binding?.sourcePersonaName || binding?.originalSnapshot?.name || "").trim();
-  }
+  
 
-  async function migrateLegacyLivePersonaDisplayNames() {
-    const store = await readLivePersonaStore(true);
-    if (!cachedLivePersonaStoreComplete) {
-      return { ok: false, reason: "binding_store_unavailable", scannedBindings: 0, renamedPersonas: 0, updatedBindings: 0, skippedBindings: 0, failedBindings: 0 };
-    }
-    const bindings = Object.values(store.bindings || {}).map(normalizeLivePersonaBinding).filter(Boolean);
-    if (!bindings.length) {
-      return { ok: true, reason: "no_bindings", scannedBindings: 0, renamedPersonas: 0, updatedBindings: 0, skippedBindings: 0, failedBindings: 0 };
-    }
-    const migrationCandidates = bindings.filter((binding) => (
-      Number(binding.displayNameVersion || 0) < LIVE_PERSONA_DISPLAY_NAME_VERSION
-      || String(binding.livePersonaName || "").trim() !== storedLivePersonaSourceName(binding)
-    ));
-    if (!migrationCandidates.length) {
-      return { ok: true, reason: "already_current", scannedBindings: bindings.length, renamedPersonas: 0, updatedBindings: 0, skippedBindings: 0, failedBindings: 0 };
-    }
+  
 
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const personas = asArray(db?.personas);
-    const groups = new Map();
-    let skippedBindings = 0;
-    let failedBindings = 0;
-    for (const binding of migrationCandidates) {
-      const livePersonaId = String(binding.livePersonaId || "").trim();
-      const targetName = storedLivePersonaSourceName(binding);
-      if (!livePersonaId || !targetName) {
-        skippedBindings += 1;
-        appendDebugLog("migration", "live_name_skip_missing_identity", { scopeKey: binding.scopeKey, livePersonaId, hasSourceName: Boolean(targetName) }, "warn");
-        continue;
-      }
-      const group = groups.get(livePersonaId) || { livePersonaId, rows: [], targetNames: new Set() };
-      group.rows.push({ binding, targetName });
-      group.targetNames.add(targetName);
-      groups.set(livePersonaId, group);
-    }
+  
 
-    let renamedPersonas = 0;
-    let updatedBindings = 0;
-    let alreadyCurrent = 0;
-    for (const group of groups.values()) {
-      if (group.targetNames.size !== 1) {
-        skippedBindings += group.rows.length;
-        appendDebugLog("migration", "live_name_skip_conflicting_sources", { livePersonaId: group.livePersonaId, targetNames: [...group.targetNames], scopes: group.rows.map((row) => row.binding.scopeKey) }, "warn");
-        continue;
-      }
-      const targetName = [...group.targetNames][0];
-      const legacyName = `${targetName}_LIVE`;
-      const candidate = personas.find((item) => String(item?.id || "").trim() === group.livePersonaId) || null;
-      if (!candidate) {
-        skippedBindings += group.rows.length;
-        appendDebugLog("migration", "live_name_skip_persona_missing", { livePersonaId: group.livePersonaId, targetName, scopes: group.rows.map((row) => row.binding.scopeKey) }, "warn");
-        continue;
-      }
-      if (!strictLiaOwnedLivePersona(candidate, group.livePersonaId)) {
-        skippedBindings += group.rows.length;
-        appendDebugLog("migration", "live_name_skip_ownership_unverified", { livePersonaId: group.livePersonaId, personaName: candidate?.name || "", targetName }, "warn");
-        continue;
-      }
-      const candidateName = String(candidate.name || "").trim();
-      if (candidateName !== targetName && candidateName !== legacyName) {
-        skippedBindings += group.rows.length;
-        appendDebugLog("migration", "live_name_skip_nonlegacy_name", { livePersonaId: group.livePersonaId, personaName: candidateName, expectedLegacyName: legacyName, targetName }, "info");
-        continue;
-      }
+  
 
-      if (candidateName === legacyName) {
-        try {
-          const migratedPersona = await mutatePersonaFresh(group.livePersonaId, (currentPersona) => {
-            if (!strictLiaOwnedLivePersona(currentPersona, group.livePersonaId)) {
-              const error = new Error("Live Persona name migration ownership verification failed.");
-              error.code = "LIA_LIVE_NAME_MIGRATION_OWNERSHIP_FAILED";
-              throw error;
-            }
-            const freshName = String(currentPersona?.name || "").trim();
-            if (freshName === targetName) return currentPersona;
-            if (freshName !== legacyName) {
-              const error = new Error("Live Persona name changed during migration.");
-              error.code = "LIA_LIVE_NAME_MIGRATION_CONFLICT";
-              throw error;
-            }
-            return { ...currentPersona, name: targetName };
-          }, { db });
-          if (String(migratedPersona?.name || "").trim() !== targetName || !strictLiaOwnedLivePersona(migratedPersona, group.livePersonaId)) {
-            throw new Error("Live Persona name migration readback verification failed.");
-          }
-          renamedPersonas += 1;
-        } catch (error) {
-          failedBindings += group.rows.length;
-          appendDebugLog("migration", "live_name_migration_failed", { livePersonaId: group.livePersonaId, legacyName, targetName, error: errorForLog(error) }, "warn");
-          continue;
-        }
-      } else {
-        alreadyCurrent += group.rows.length;
-      }
+  
 
-      for (const row of group.rows) {
-        const binding = row.binding;
-        if (binding.livePersonaName === targetName && Number(binding.displayNameVersion || 0) >= LIVE_PERSONA_DISPLAY_NAME_VERSION) continue;
-        try {
-          binding.livePersonaName = targetName;
-          binding.displayNameVersion = LIVE_PERSONA_DISPLAY_NAME_VERSION;
-          binding.updatedAt = new Date().toISOString();
-          await writeLivePersonaBinding(binding);
-          updatedBindings += 1;
-        } catch (error) {
-          failedBindings += 1;
-          appendDebugLog("migration", "live_name_binding_write_failed", { scopeKey: binding.scopeKey, livePersonaId: group.livePersonaId, targetName, error: errorForLog(error) }, "warn");
-        }
-      }
-    }
+  
 
-    const result = { ok: failedBindings === 0, reason: failedBindings ? "partial_failure" : "complete", scannedBindings: bindings.length, renamedPersonas, updatedBindings, alreadyCurrent, skippedBindings, failedBindings };
-    if (renamedPersonas > 0) {
-      appendOperationLog("live_persona_name_migration", `기존 Live Persona ${renamedPersonas}개의 _LIVE 이름을 원본 표시명으로 안전하게 승계했습니다.`, result, "ok");
-    }
-    if (failedBindings > 0) {
-      appendOperationLog("live_persona_name_migration", `Live Persona 이름 승계 ${failedBindings}건을 완료하지 못했습니다. 다음 시작 시 안전하게 다시 시도합니다.`, result, "warn");
-    }
-    appendDebugLog("migration", "live_name_migration_complete", result, failedBindings ? "warn" : "info");
-    return result;
-  }
+  
 
-  async function deleteLivePersonaBinding(scopeKey) {
-    const key = String(scopeKey || '').trim();
-    if (!key) return;
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    if (!storage?.setItem) return;
-    // Same whole-store read-modify-write as `writeLivePersonaBinding`, therefore the same lock:
-    // a delete for one scope and a write for another publish the SAME document.
-    await withPersonaDatabaseMutationLock(async () => {
-      const index = await readLivePersonaIndexWithMigration(storage);
-      const store = await readLivePersonaStore(true);
-      delete store.bindings[key];
-      await writeSplitLivePersonaStoreRaw(storage, store, index);
-    });
-  }
+  
 
-  function isAssistantTurnMessage(item) {
-    if (!item || isUserAuthoredMessage(item)) return false;
-    const role = String(item?.role || "").trim().toLowerCase();
-    if (["assistant", "char", "bot", "model", "ai"].includes(role)) return Boolean(messageText(item));
-    if (item?.is_user === false || item?.isUser === false) return Boolean(messageText(item));
-    return !role && Boolean(messageText(item));
-  }
+  
 
-  function livePersonaStableMessageIdentity(item = {}, index = -1) {
-    const candidates = [
-      ["chatId", item?.chatId], ["id", item?.id], ["messageId", item?.messageId], ["msgId", item?.msgId],
-      ["m_id", item?.m_id], ["uid", item?.uid], ["uuid", item?.uuid],
-      ["generationInfo.generationId", item?.generationInfo?.generationId], ["generationId", item?.generationId],
-      ["memo", (typeof item?.memo === "string" || typeof item?.memo === "number") ? item.memo : ""]
-    ];
-    for (const [source, raw] of candidates) {
-      const id = String(raw == null ? "" : raw).trim().slice(0, 180);
-      if (id) return { id, source, stable: true, canonical: source === "chatId" };
-    }
-    return { id: `index:${Math.max(0, Number(index || 0))}`, source: "index", stable: false, canonical: false };
-  }
-
-  function livePersonaPairFingerprintV2(user, assistant) {
-    const userIdentity = livePersonaStableMessageIdentity(user?.raw || {}, user?.index);
-    const assistantIdentity = livePersonaStableMessageIdentity(assistant?.raw || {}, assistant?.index);
-    const userDigest = hashText(`user|${user?.text || ""}`);
-    const assistantDigest = hashText(`assistant|${assistant?.text || ""}`);
-    return {
-      schema: LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2,
-      fingerprint: hashText([
-        userIdentity.id || `content:${userDigest}`, userDigest,
-        assistantIdentity.id || `content:${assistantDigest}`, assistantDigest
-      ].join("\u0001")),
-      userIdentity, assistantIdentity, userDigest, assistantDigest
-    };
-  }
-
-  function buildCompletedTurnPair(pendingUser, assistant, pairIndex) {
-    const legacyFingerprint = hashText(`${pendingUser.index}|${pendingUser.text}\n---A---\n${assistant.index}|${assistant.text}`);
-    const stableFingerprint = livePersonaPairFingerprintV2(pendingUser, assistant);
-    return {
-      pairIndex,
-      user: { index: pendingUser.index, text: pendingUser.text, messageId: stableFingerprint.userIdentity.id, messageIdentitySource: stableFingerprint.userIdentity.source },
-      assistant: { index: assistant.index, text: assistant.text, messageId: stableFingerprint.assistantIdentity.id, messageIdentitySource: stableFingerprint.assistantIdentity.source },
-      fingerprint: stableFingerprint.fingerprint,
-      fingerprintSchema: stableFingerprint.schema,
-      legacyFingerprint,
-      userDigest: stableFingerprint.userDigest,
-      assistantDigest: stableFingerprint.assistantDigest,
-    };
-  }
-
-  function collectCompletedTurnPairs(chat) {
-    const messages = asArray(chat?.message || chat?.messages || chat?.data);
-    const pairs = [];
-    let pendingUser = null;
-    for (let index = 0; index < messages.length; index += 1) {
-      const item = messages[index];
-      if (item?.disabled === true || item?.isComment === true) continue;
-      const text = messageText(item);
-      if (!text) continue;
-      if (isUserAuthoredMessage(item)) {
-        pendingUser = { index, text, raw: item };
-        continue;
-      }
-      if (pendingUser && isAssistantTurnMessage(item)) {
-        const assistant = { index, text, raw: item };
-        const pairIndex = pairs.length + 1;
-        pairs.push(buildCompletedTurnPair(pendingUser, assistant, pairIndex));
-        pendingUser = null;
-      }
-    }
-    return pairs;
-  }
-
-  function liveSyncCaptureBackendSnapshot() {
-    return {
-      backend: liveSyncCaptureBackend,
-      registered: liveSyncCaptureBackend !== LIVE_SYNC_CAPTURE_BACKENDS.NONE,
-      observedRuns: Math.max(0, Number(liveSyncCaptureObservedRuns || 0) || 0),
-      lastEventAt: Math.max(0, Number(liveSyncCaptureLastEventAt || 0) || 0),
-      fallbackReason: String(liveSyncCaptureFallbackReason || ""),
-      healthChecks: Math.max(0, Number(liveSyncCaptureHealthChecks || 0) || 0),
-      silentFailovers: Math.max(0, Number(liveSyncCaptureSilentFailovers || 0) || 0),
-      healthPending: liveSyncCaptureHealthPending ? sanitizeLogValue(liveSyncCaptureHealthPending) : null,
-      trackedTurnRevisions: liveSyncOutputTurnRevisions.size,
-      scheduledScopes: liveSyncScheduledChecks.size,
-      inFlightScopes: Array.from(liveSyncInFlightScopes).slice(-16),
-      requeueScopes: Array.from(liveSyncRequeueByScope.keys()).slice(-16),
-      lastOutputCapture: liveSyncLastOutputCapture ? { ...liveSyncLastOutputCapture } : null,
-    };
-  }
-
-  function normalizeLiveSyncTarget(raw = {}) {
+  function normalizeScopeTarget(raw = {}) {
     const source = raw && typeof raw === "object" ? raw : {};
     const characterIndex = Number(source.characterIndex ?? source.charIndex);
     const chatIndex = Number(source.chatIndex);
@@ -11999,231 +10978,31 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     };
   }
 
-  function recentLiveSyncRequestTarget() {
-    const target = normalizeLiveSyncTarget(liveSyncLastRequestTarget || {});
-    if (target.characterIndex < 0 || target.chatIndex < 0) return null;
-    if (target.capturedAt && Date.now() - target.capturedAt > LIVE_SYNC_LAST_REQUEST_TARGET_TTL_MS) return null;
-    return target;
-  }
+  
 
-  function livePersonaPairForAssistantIndex(chat, messageIndex) {
-    const wanted = Number(messageIndex);
-    if (!Number.isInteger(wanted) || wanted < 0) return null;
-    const messages = asArray(chat?.message || chat?.messages || chat?.data);
-    let pendingUser = null;
-    let pairIndex = 0;
-    for (let index = 0; index <= wanted && index < messages.length; index += 1) {
-      const item = messages[index];
-      if (item?.disabled === true || item?.isComment === true) continue;
-      const text = messageText(item);
-      if (!text) continue;
-      if (isUserAuthoredMessage(item)) {
-        pendingUser = { index, text, raw: item };
-        continue;
-      }
-      if (pendingUser && isAssistantTurnMessage(item)) {
-        pairIndex += 1;
-        if (index === wanted) return buildCompletedTurnPair(pendingUser, { index, text, raw: item }, pairIndex);
-        pendingUser = null;
-      }
-    }
-    return null;
-  }
+  
 
-  function collectCompletedTurnPairRange(chat, startPairValue, pairCountValue) {
-    const startPair = Math.max(1, Number(startPairValue || 1) || 1);
-    const pairCount = Math.max(1, Number(pairCountValue || LIVE_SYNC_BATCH_SIZE) || LIVE_SYNC_BATCH_SIZE);
-    const endPair = startPair + pairCount - 1;
-    const messages = asArray(chat?.message || chat?.messages || chat?.data);
-    const batch = [];
-    let pendingUser = null;
-    let pairIndex = 0;
-    for (let index = 0; index < messages.length; index += 1) {
-      const item = messages[index];
-      if (item?.disabled === true || item?.isComment === true) continue;
-      const text = messageText(item);
-      if (!text) continue;
-      if (isUserAuthoredMessage(item)) {
-        pendingUser = { index, text, raw: item };
-        continue;
-      }
-      if (pendingUser && isAssistantTurnMessage(item)) {
-        pairIndex += 1;
-        if (pairIndex >= startPair && pairIndex <= endPair) {
-          batch.push(buildCompletedTurnPair(pendingUser, { index, text, raw: item }, pairIndex));
-        }
-        pendingUser = null;
-        if (pairIndex >= endPair) break;
-      }
-    }
-    return batch;
-  }
+  
 
-  function livePersonaLogicalTurnKey(scopeKey, pair, messageIndex) {
-    const userIdentity = String(pair?.user?.messageId || `index:${Number(pair?.user?.index || 0)}`).trim();
-    return `${String(scopeKey || "")}|user:${userIdentity}|assistant-slot:${Math.max(0, Number(messageIndex || 0) || 0)}`;
-  }
+  
 
-  function livePersonaBatchSourceFingerprint(batch = []) {
-    return hashText(asArray(batch).map((pair) => [
-      Number(pair?.pairIndex || 0),
-      String(pair?.fingerprint || ""),
-      String(pair?.userDigest || ""),
-      String(pair?.assistantDigest || ""),
-    ].join("\u0001")).join("\u0002"));
-  }
+  
 
-  function markLiveSyncRequeue() {
-    // Retired: manual actions never enqueue another analysis.
-    return false;
-  }
+  
 
-  function outputCaptureStillCurrent(capture = null) {
-    if (!capture?.turnKey) return { ok: true, reason: "no_output_revision_contract" };
-    const current = liveSyncOutputTurnRevisions.get(String(capture.turnKey));
-    if (!current) return { ok: true, reason: "revision_evicted_batch_hash_authoritative" };
-    if (Number(current.revision || 0) !== Number(capture.revision || 0)
-      || String(current.contentHash || "") !== String(capture.contentHash || "")) {
-      return { ok: false, reason: "output_revision_superseded", current };
-    }
-    return { ok: true, reason: "output_revision_current", current };
-  }
+  
 
-  function processLiveSyncChatOutputEvent() {
-    // Persisted enabled flags are historical metadata, not execution authority.
-    return { skipped: true, reason: "manual_only" };
-  }
+  
 
-  function renderLivePersonaPrompt(binding) {
-    const base = stripLivePersonaState(binding?.basePersonaPrompt || binding?.originalSnapshot?.personaPrompt || "");
-    const core = asArray(binding?.coreOverlay).map(normalizeLiveCoreItem).filter(Boolean);
-    const state = asArray(binding?.liveState).map(normalizeLiveStateItem).filter(Boolean);
-    if (!core.length && !state.length) return base;
-    const lines = [
-      LIVE_PROMPT_START,
-      "## Chat-specific Persona Evolution",
-      "These facts belong only to the currently linked RP chat. They may override older conflicting static details while this chat remains active, but must not grant unsupported control over {{char}} or NPCs.",
-    ];
-    if (core.length) {
-      lines.push("", "### Persistent Evolution");
-      for (const item of core) lines.push(`- ${item.field}: ${item.value}`);
-    }
-    if (state.length) {
-      lines.push("", "### Current RP State");
-      for (const item of state) lines.push(`- [${item.category}] ${item.value}${item.durability === "persistent" ? " (persistent current state)" : ""}`);
-    }
-    lines.push("", "Current RP State is contextual rather than immutable biography. Resolved injuries, temporary roles, short-lived goals, equipment, relationship tensions, and other state should disappear when later chat evidence resolves them.", LIVE_PROMPT_END);
-    return [base, lines.join("\n")].filter(Boolean).join("\n\n").trim();
-  }
+  
 
-  function normalizeLiveDelta(raw) {
-    const parsed = parseJsonObject(raw);
-    // Storage readers remain permissive for old records. New model output must
-    // satisfy the delta contract before normalization can hide malformed rows:
-    // a valid empty array may clear state, but a malformed response must not.
-    const object = value => value && typeof value === "object" && !Array.isArray(value);
-    const text = value => typeof value === "string" && value.trim().length > 0;
-    const strings = value => Array.isArray(value) && value.every(item => typeof item === "string");
-    const confidence = value => Number.isInteger(value) && value >= 0 && value <= 100;
-    if (!object(parsed) || typeof parsed.summary !== "string"
-      || !Array.isArray(parsed.liveState) || parsed.liveState.length > LIVE_SYNC_STATE_MAX
-      || !Array.isArray(parsed.coreCandidates) || parsed.coreCandidates.length > 12
-      || !strings(parsed.ignoredTransient)) return null;
-    if (!parsed.liveState.every(item => object(item)
-      && text(item.key) && text(item.category) && text(item.value)
-      && ["active", "persistent"].includes(item.durability)
-      && confidence(item.confidence) && strings(item.evidence))) return null;
-    if (!parsed.coreCandidates.every(item => object(item)
-      && text(item.field) && text(item.value) && confidence(item.confidence)
-      && ["user", "objective", "assistant"].includes(item.authority)
-      && strings(item.evidence) && typeof item.rationale === "string")) return null;
-    return {
-      summary: String(parsed.summary || "").trim(),
-      liveState: asArray(parsed.liveState).map(normalizeLiveStateItem).filter(Boolean).slice(0, LIVE_SYNC_STATE_MAX),
-      coreCandidates: asArray(parsed.coreCandidates).map(normalizeLiveCoreItem).filter(Boolean).slice(0, 12),
-      ignoredTransient: unique(asArray(parsed.ignoredTransient).map((x) => compact(x)), 24),
-    };
-  }
+  
 
-  function liveCoreCandidateFingerprint(item) {
-    return `${String(item?.field || "").trim().toLowerCase()}|${compact(item?.value || "").toLowerCase()}`;
-  }
+  
 
-  function applyLiveCoreCandidates(binding, candidates, batchEnd) {
-    const history = { ...(binding.coreCandidateHistory || {}) };
-    const overlay = asArray(binding.coreOverlay).map(normalizeLiveCoreItem).filter(Boolean);
-    const identityFields = new Set(["name", "gender", "speciesRace", "age", "origin"]);
-    const seen = new Set();
-    for (const candidate of asArray(candidates).map(normalizeLiveCoreItem).filter(Boolean)) {
-      const fp = liveCoreCandidateFingerprint(candidate);
-      if (!fp) continue;
-      seen.add(fp);
-      const previous = history[fp] || {};
-      const consecutive = Number(previous.lastBatchEnd || 0) === Number(batchEnd || 0) - LIVE_SYNC_BATCH_SIZE;
-      const streak = consecutive ? Number(previous.streak || 0) + 1 : 1;
-      history[fp] = {
-        field: candidate.field,
-        value: candidate.value,
-        authority: candidate.authority,
-        streak,
-        lastBatchEnd: batchEnd,
-        maxConfidence: Math.max(Number(previous.maxConfidence || 0), candidate.confidence),
-        evidence: unique([...(previous.evidence || []), ...candidate.evidence], 16),
-      };
-      const authorityOk = !identityFields.has(candidate.field) || candidate.authority === "user";
-      if (binding.policy === "auto" && authorityOk && candidate.confidence >= 90 && streak >= 2) {
-        const existingIndex = overlay.findIndex((item) => String(item.field).toLowerCase() === String(candidate.field).toLowerCase());
-        const promoted = { ...candidate, promotedAt: new Date().toISOString(), promotedBatchEnd: batchEnd };
-        if (existingIndex >= 0) overlay[existingIndex] = promoted;
-        else overlay.push(promoted);
-      }
-    }
-    for (const [fp, item] of Object.entries(history)) {
-      if (!seen.has(fp) && Number(item.lastBatchEnd || 0) < Number(batchEnd || 0) - LIVE_SYNC_BATCH_SIZE * 3) delete history[fp];
-    }
-    return { history, overlay: overlay.slice(-LIVE_SYNC_CORE_MAX) };
-  }
+  
 
-  function validateLivePersonaLedger(binding, pairs) {
-    const valid = [];
-    let invalidated = false;
-    let identityMigrated = false;
-    for (const ledger of asArray(binding.ledgers)) {
-      const slice = pairs.slice(ledger.startPair - 1, ledger.endPair);
-      const fingerprintSchema = String(ledger.fingerprintSchema || LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V1);
-      const fingerprints = slice.map((pair) => fingerprintSchema === LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2
-        ? pair.fingerprint
-        : pair.legacyFingerprint);
-      if (fingerprints.length !== ledger.fingerprints.length || fingerprints.some((fp, index) => fp !== ledger.fingerprints[index])) {
-        invalidated = true;
-        break;
-      }
-      if (fingerprintSchema !== LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2) {
-        ledger.fingerprints = slice.map((pair) => pair.fingerprint);
-        ledger.fingerprintSchema = LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2;
-        identityMigrated = true;
-      }
-      valid.push(ledger);
-    }
-    if (pairs.length < Number(binding.anchorPairCount || 0)) {
-      binding.anchorPairCount = pairs.length;
-      binding.lastProcessedPairCount = pairs.length;
-      binding.ledgers = [];
-      binding.liveState = [];
-      binding.coreOverlay = [];
-      binding.coreCandidateHistory = {};
-      return { binding, invalidated: true, identityMigrated };
-    }
-    if (invalidated || valid.length !== asArray(binding.ledgers).length) {
-      const last = valid[valid.length - 1] || null;
-      binding.ledgers = valid;
-      binding.lastProcessedPairCount = last ? last.endPair : binding.anchorPairCount;
-      binding.liveState = last ? asArray(last.liveStateAfter).map(normalizeLiveStateItem).filter(Boolean) : [];
-      binding.coreOverlay = last ? asArray(last.coreOverlayAfter).map(normalizeLiveCoreItem).filter(Boolean) : [];
-      binding.coreCandidateHistory = last?.coreCandidateHistoryAfter && typeof last.coreCandidateHistoryAfter === "object" ? last.coreCandidateHistoryAfter : {};
-    }
-    return { binding, invalidated, identityMigrated };
-  }
+  
 
   const LIA_HOST_CONTEXT_TIMEOUT_MS = 1800;
   async function boundedLiaHostContextCall(label, operation, fallback = null) {
@@ -12267,7 +11046,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
   }
 
   async function getLiveRuntimeContextForTarget(targetValue = null, options = {}) {
-    const target = normalizeLiveSyncTarget(targetValue || {});
+    const target = normalizeScopeTarget(targetValue || {});
     if (options.requireFreshSource === true) {
       // Captured snapshots are useful for display, never evidence that a source
       // revision is current. Missing/rejected/timed-out host reads fail closed.
@@ -12312,579 +11091,37 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     };
   }
 
-  function livePersonaBatchRevisionSnapshot(runtimeCtx, batch, outputCapture = null) {
-    const target = normalizeLiveSyncTarget({
-      characterIndex: runtimeCtx?.charIndex,
-      chatIndex: runtimeCtx?.chatIndex,
-      charSnapshot: runtimeCtx?.char,
-      chatSnapshot: runtimeCtx?.chat,
-      scopeKey: livePersonaScopeKey(runtimeCtx),
-      capturedAt: Date.now(),
-    });
-    return {
-      schema: "lia.live_sync_batch_revision.v1",
-      scopeKey: target.scopeKey,
-      target,
-      startPair: Number(batch?.[0]?.pairIndex || 0),
-      endPair: Number(batch?.[batch.length - 1]?.pairIndex || 0),
-      pairCount: asArray(batch).length,
-      sourceFingerprint: livePersonaBatchSourceFingerprint(batch),
-      prefixFingerprint: MemorySuiteHostLineage.prefixRevision(runtimeCtx?.chat, Number(batch?.[batch.length - 1]?.pairIndex || 0)),
-      fingerprints: asArray(batch).map((pair) => String(pair?.fingerprint || "")),
-      outputCapture: outputCapture ? { ...outputCapture } : null,
-      capturedAt: Date.now(),
-    };
-  }
+  
 
-  async function verifyLivePersonaBatchStillCurrent(snapshotValue = {}) {
-    const snapshot = snapshotValue && typeof snapshotValue === "object" ? snapshotValue : {};
-    const revision = outputCaptureStillCurrent(snapshot.outputCapture || null);
-    if (!revision.ok) return { ok: false, reason: revision.reason, revision };
-    const runtimeCtx = await getLiveRuntimeContextForTarget(snapshot.target || null, { requireFreshSource: true });
-    if (!runtimeCtx.sourceReadCurrent) return { ok: false, reason: "source_read_unavailable" };
-    const scopeKey = livePersonaScopeKey(runtimeCtx);
-    if (!scopeKey || scopeKey !== String(snapshot.scopeKey || "")) {
-      return { ok: false, reason: "scope_changed", scopeKey };
-    }
-    const startPair = Math.max(1, Number(snapshot.startPair || 1) || 1);
-    const pairCount = Math.max(1, Number(snapshot.pairCount || LIVE_SYNC_BATCH_SIZE) || LIVE_SYNC_BATCH_SIZE);
-    const batch = collectCompletedTurnPairRange(runtimeCtx.chat, startPair, pairCount);
-    if (batch.length !== pairCount) return { ok: false, reason: "batch_incomplete", runtimeCtx, pairs: batch, batch };
-    const sourceFingerprint = livePersonaBatchSourceFingerprint(batch);
-    if (sourceFingerprint !== String(snapshot.sourceFingerprint || "")) {
-      return { ok: false, reason: "batch_source_changed", runtimeCtx, pairs: batch, batch, sourceFingerprint };
-    }
-    if (snapshot.prefixFingerprint && snapshot.prefixFingerprint !== MemorySuiteHostLineage.prefixRevision(runtimeCtx.chat, Number(snapshot.endPair || 0))) {
-      return { ok: false, reason: 'batch_antecedent_changed', runtimeCtx, pairs: batch, batch, sourceFingerprint };
-    }
-    return { ok: true, reason: "batch_revision_current", runtimeCtx, pairs: batch, batch, sourceFingerprint };
-  }
+  
 
-  function livePersonaBindingChatId(binding) {
-    const scopeKey = String(binding?.scopeKey || "");
-    const marker = "|chat:";
-    const at = scopeKey.lastIndexOf(marker);
-    return at >= 0 ? scopeKey.slice(at + marker.length) : "";
-  }
+  
 
-  function findLivePersonaOwnerBinding(store, options = {}) {
-    const currentScopeKey = String(options.currentScopeKey || "").trim();
-    const sourceChatId = String(options.sourceChatId || "").trim();
-    const livePersonaId = String(options.livePersonaId || "").trim();
-    const bindings = Object.values(store?.bindings || {}).map(normalizeLivePersonaBinding).filter(Boolean);
-    const candidates = bindings.filter((binding) => binding.scopeKey !== currentScopeKey);
-    if (sourceChatId) {
-      const byChat = candidates.find((binding) => livePersonaBindingChatId(binding) === sourceChatId);
-      if (byChat && (!livePersonaId || byChat.livePersonaId === livePersonaId)) return byChat;
-    }
-    if (livePersonaId) return candidates.find((binding) => binding.livePersonaId === livePersonaId) || null;
-    return null;
-  }
+  
 
-  async function getLiveRuntimeContextForChatId(targetChatId) {
-    const wanted = String(targetChatId || "").trim();
-    if (!wanted) throw new Error("targetChatId가 필요합니다.");
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const charIndex = Number(await api.getCurrentCharacterIndex?.()) || 0;
-    let char = await api.getCharacterFromIndex?.(charIndex);
-    if (!char) char = await api.getCharacter?.();
-    const chats = asArray(char?.chats);
-    const chatIndex = chats.findIndex((chat) => String(chat?.id || chat?.chatId || "").trim() === wanted);
-    if (chatIndex < 0) throw new Error(`대상 채팅을 찾을 수 없습니다: ${wanted}`);
-    let chat = await api.getChatFromIndex?.(charIndex, chatIndex);
-    if (!chat) chat = chats[chatIndex];
-    return { db: db || {}, charIndex, chatIndex, char: char || {}, chat: chat || {} };
-  }
-
-  function liaRetraceCompatibility() {
-    return {
-      schema: RETRACE_PEER_COMPATIBILITY_SCHEMA,
-      protocolMajor: RETRACE_PEER_PROTOCOL_MAJOR,
-      protocolMinor: 0,
-      pluginId: "lia_persona_linker",
-      pluginVersion: PLUGIN_VERSION,
-      peerRole: "live_persona_state",
-      features: {
-        inspect: true,
-        nextSessionHandoff: true,
-        sourceImmutableHandoff: true,
-        durableTargetReadback: true,
-        idempotentHandoff: true,
-        inheritedStateUsable: true
-      },
-      handoff: {
-        contract: LIA_SESSION_HANDOFF_CONTRACT,
-        receiptSchemas: [LIA_HANDOFF_RECEIPT_SCHEMA],
-        sourceMutationAllowed: false,
-        sourceCompactionAllowed: false,
-        physicalCopyRequired: false
-      }
-    };
-  }
+  
 
 
-  async function inspectLiaForRetrace() {
-    const ctx = await getLiveRuntimeContext();
-    const scopeKey = livePersonaScopeKey(ctx);
-    const binding = normalizeLivePersonaBinding(await readLivePersonaBindingForContext(ctx));
-    const livePersonaId = String(binding?.livePersonaId || ctx?.chat?.bindedPersona || "").trim();
-    const available = Boolean(binding && livePersonaId && isLivePersona({ id: livePersonaId, note: LIVE_PERSONA_NOTE_MARKER }));
-    return {
-      schema: "lia.retrace.inspect.v1",
-      pluginVersion: PLUGIN_VERSION,
-      available,
-      scopeKey,
-      chatId: String(ctx?.chat?.id || ctx?.chat?.chatId || "").trim(),
-      livePersonaId,
-      bindingStatus: String(binding?.bindingStatus || ""),
-      lastProcessedPairCount: Math.max(0, Number(binding?.lastProcessedPairCount || 0) || 0),
-      compatibility: liaRetraceCompatibility(),
-      integrity: {
-        ok: !available || (String(binding?.scopeKey || "") === scopeKey && String(binding?.livePersonaId || "") === livePersonaId),
-        sourceImmutableHandoff: true
-      }
-    };
-  }
 
-  async function liaSourceHandoffIntegritySnapshot(sourceBindingInput, sourceChatIdValue = "") {
-    const sourceBinding = normalizeLivePersonaBinding(sourceBindingInput);
-    if (!sourceBinding) return { fingerprint: "", reason: "source_binding_missing" };
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    const storageKey = livePersonaScopeStorageKey(sourceBinding.scopeKey);
-    const rawBinding = storage?.getItem ? await storage.getItem(storageKey) : null;
-    const rawText = typeof rawBinding === "string" ? rawBinding : JSON.stringify(rawBinding ?? null);
-    const index = storage?.getItem ? await readLivePersonaIndex(storage) : { entries: {} };
-    const indexEntry = index?.entries?.[sourceBinding.scopeKey] || null;
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const sourcePersona = asArray(db?.personas).find((item) => String(item?.id || "").trim() === String(sourceBinding.livePersonaId || "").trim()) || null;
-    const sourceChatId = String(sourceChatIdValue || livePersonaBindingChatId(sourceBinding) || "").trim();
-    let sourceChatPersonaId = "";
-    if (sourceChatId) {
-      try {
-        const sourceCtx = await getLiveRuntimeContextForChatId(sourceChatId);
-        sourceChatPersonaId = String(sourceCtx?.chat?.bindedPersona || sourceCtx?.chat?.boundPersona || sourceCtx?.chat?.personaId || "").trim();
-      } catch (_) {}
-    }
-    const core = {
-      scopeKey: sourceBinding.scopeKey,
-      storageKey,
-      bindingHash: hashText(rawText),
-      indexEntryHash: hashText(JSON.stringify(indexEntry ?? null)),
-      livePersonaId: String(sourceBinding.livePersonaId || ""),
-      livePersonaHash: hashText(JSON.stringify(sourcePersona ?? null)),
-      sourceChatId,
-      sourceChatPersonaId
-    };
-    return { ...core, fingerprint: hashText(JSON.stringify(core)), reason: "ok" };
-  }
 
-  function requestedLivePersonaForkLineage(sourceBinding, options = {}) {
-    return {
-      forkedFromScopeKey: String(sourceBinding?.scopeKey || '').trim(),
-      forkedFromLivePersonaId: String(options.sourceLivePersonaId || sourceBinding?.livePersonaId || '').trim(),
-      handoffSourceChatId: String(options.sourceChatId || livePersonaBindingChatId(sourceBinding) || '').trim(),
-      handoffTransferId: String(options.transferId || '').trim(),
-    };
-  }
 
-  function livePersonaForkLineageMatches(binding, sourceBinding, options = {}) {
-    const expected = requestedLivePersonaForkLineage(sourceBinding, options);
-    const actual = {
-      forkedFromScopeKey: String(binding?.forkedFromScopeKey || '').trim(),
-      forkedFromLivePersonaId: String(binding?.forkedFromLivePersonaId || '').trim(),
-      handoffSourceChatId: String(binding?.handoffSourceChatId || '').trim(),
-      handoffTransferId: String(binding?.handoffTransferId || '').trim(),
-    };
-    const mismatches = Object.keys(expected).filter((field) => actual[field] !== expected[field]);
-    return { matches: mismatches.length === 0, expected, actual, mismatches };
-  }
+  
 
-  function projectNativeBranchPersonaState(targetCtx, sourceBinding) {
-    const lineage = MemorySuiteHostLineage.inspect(targetCtx?.char, targetCtx?.chat);
-    if (lineage.kind !== 'native_branch') return null;
-    const pairs = collectCompletedTurnPairs(targetCtx.chat).slice(0, lineage.commonPrefixPairs);
-    const sourceAnchor = Math.max(0, Number(sourceBinding.anchorPairCount || 0));
-    const result = { hostLineage: lineage, anchorPairCount: Math.min(sourceAnchor, pairs.length),
-      lastProcessedPairCount: Math.min(sourceAnchor, pairs.length), ledgers: [], liveState: [], coreOverlay: [], coreCandidateHistory: {},
-      receipt: { schema: 'lia.native_branch_state.v1', verified: false, reason: 'native_branch_prefix_unverified',
-        sourceScopeKey: sourceBinding.scopeKey, sharedPairs: pairs.length, stateThroughPair: 0,
-        pendingPrefixPairs: pairs.length, latestParentHeadCopied: false } };
-    const sourceCharacterScope = String(sourceBinding.scopeKey || '').split('|chat:')[0];
-    if (sourceCharacterScope !== `char:${lineage.characterId}`) { result.receipt.reason = 'persona_owner_character_mismatch'; return result; }
-    if (lineage.inheritanceEligible !== true || lineage.parentChatId !== livePersonaBindingChatId(sourceBinding)) return result;
-    // An inherited anchor can contain predecessor state with no historical checkpoint.
-    // Do not invent that checkpoint from the parent's current Head.
-    if (sourceBinding.forkedFromScopeKey && sourceAnchor > 0 && sourceBinding.nativeBranchState?.verified !== true) {
-      result.receipt.reason = 'inherited_persona_anchor_unverified'; return result;
-    }
-    if (sourceAnchor > pairs.length) { result.receipt.reason = 'branch_precedes_persona_anchor'; return result; }
-    let cursor = sourceAnchor, gap = false;
-    for (const ledger of asArray(sourceBinding.ledgers)) {
-      if (ledger.startPair > pairs.length || ledger.endPair > pairs.length) break;
-      if (ledger.startPair !== cursor + 1) { gap = true; break; }
-      const slice = pairs.slice(ledger.startPair - 1, ledger.endPair);
-      const fingerprints = slice.map(pair => ledger.fingerprintSchema === LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2 ? pair.fingerprint : pair.legacyFingerprint);
-      if (slice.length !== ledger.endPair - ledger.startPair + 1 || fingerprints.length !== ledger.fingerprints.length
-        || fingerprints.some((fp, index) => fp !== ledger.fingerprints[index])) { gap = true; break; }
-      result.ledgers.push(JSON.parse(JSON.stringify(ledger)));
-      result.liveState = asArray(ledger.liveStateAfter).map(normalizeLiveStateItem).filter(Boolean);
-      result.coreOverlay = asArray(ledger.coreOverlayAfter).map(normalizeLiveCoreItem).filter(Boolean);
-      result.coreCandidateHistory = JSON.parse(JSON.stringify(ledger.coreCandidateHistoryAfter || {}));
-      cursor = ledger.endPair;
-    }
-    const expected = sourceAnchor + Math.floor(Math.max(0, Math.min(Number(sourceBinding.lastProcessedPairCount || 0), pairs.length) - sourceAnchor) / LIVE_SYNC_BATCH_SIZE) * LIVE_SYNC_BATCH_SIZE;
-    const verified = !gap && cursor >= expected;
-    result.lastProcessedPairCount = cursor;
-    result.receipt = { ...result.receipt, verified,
-      reason: verified ? 'verified_prefix_persona_checkpoint' : 'persona_prefix_ledger_missing_or_changed',
-      stateThroughPair: cursor, pendingPrefixPairs: Math.max(0, pairs.length - cursor) };
-    return result;
-  }
+  
 
-  async function forkLivePersonaBindingToContext(targetCtx, sourceBindingInput, options = {}) {
-    const sourceBinding = normalizeLivePersonaBinding(sourceBindingInput);
-    if (!sourceBinding) throw new Error("Fork할 Source Live Persona binding이 없습니다.");
-    const targetScopeKey = livePersonaScopeKey(targetCtx);
-    if (!targetScopeKey || targetScopeKey === sourceBinding.scopeKey) {
-      return { adopted: false, verified: true, reason: "same_scope", binding: sourceBinding };
-    }
-    const nativeBranch = projectNativeBranchPersonaState(targetCtx, sourceBinding);
-    if (nativeBranch?.receipt.reason === 'persona_owner_character_mismatch') throw new Error('lia_native_branch_owner_character_mismatch');
-    const targetRows = targetCtx?.chat?.message || [];
-    const revalidateNativePersonaFork = async () => {
-      if (!nativeBranch) return;
-      const fresh = await getLiveRuntimeContextForChatId(String(targetCtx.chat.id || targetCtx.chat.chatId));
-      const rows = fresh?.chat?.message || [];
-      const proof = MemorySuiteHostLineage.inspect(fresh?.char, fresh?.chat);
-      if (livePersonaScopeKey(fresh) !== targetScopeKey || rows.length !== targetRows.length
-        || !rows.every((row, index) => MemorySuiteHostLineage.same(row, targetRows[index]))
-        || (nativeBranch.hostLineage.inheritanceEligible === true && (proof.inheritanceEligible !== true
-          || proof.parentChatId !== nativeBranch.hostLineage.parentChatId || proof.prefixDigest !== nativeBranch.hostLineage.prefixDigest))) throw new Error('lia_native_branch_revision_changed');
-    };
-    const existing = await readLivePersonaBindingByScopeKey(targetScopeKey, true);
-    if (existing) {
-      const verification = await PersonaBindingManager.inspect(targetCtx, existing).catch(() => null);
-      const lineage = livePersonaForkLineageMatches(existing, sourceBinding, options);
-      if (verification?.expectedMatch && lineage.matches) {
-        const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-        const durableReadback = await verifyDurableLivePersonaBindingReadback(storage, existing);
-        return {
-          adopted: false,
-          verified: existing.nativeBranchState?.verified !== false,
-          durableReadbackVerified: durableReadback.durableReadbackVerified === true,
-          reason: existing.nativeBranchState?.verified === false ? existing.nativeBranchState.reason : "target_already_managed",
-          binding: durableReadback.binding,
-          verification,
-          durableReadback,
-          lineage,
-        };
-      }
-      if (verification?.expectedMatch && !lineage.matches) {
-        return { adopted: false, verified: false, durableReadbackVerified: false, reason: "target_binding_lineage_mismatch", binding: existing, verification, lineage };
-      }
-      if (options.force !== true) {
-        return { adopted: false, verified: false, durableReadbackVerified: false, reason: "target_binding_already_exists", binding: existing, verification, lineage };
-      }
-    }
+  
 
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const personas = asArray(db?.personas).slice();
-    const sourceLivePersona = personas.find((item) => String(item?.id || "") === sourceBinding.livePersonaId) || null;
-    const sourcePersona = personas.find((item) => String(item?.id || "") === sourceBinding.sourcePersonaId) || null;
-    const snapshot = sourceBinding.originalSnapshot && typeof sourceBinding.originalSnapshot === "object" ? sourceBinding.originalSnapshot : null;
-    const template = sourceLivePersona || sourcePersona || snapshot || { name: sourceBinding.sourcePersonaName || "Persona", personaPrompt: sourceBinding.basePersonaPrompt || "" };
-    const inheritedBasePersonaPrompt = (nativeBranch ? stripLivePersonaState(snapshot?.personaPrompt || sourceBinding.basePersonaPrompt || "") : sourceLivePersona ? stripLivePersonaState(sourceLivePersona.personaPrompt || "") : "")
-      || sourceBinding.basePersonaPrompt
-      || stripLivePersonaState(sourcePersona?.personaPrompt || snapshot?.personaPrompt || "");
-    const pairs = collectCompletedTurnPairs(targetCtx.chat);
-    const now = new Date().toISOString();
-    const newLivePersonaId = `${LIVE_PERSONA_ID_PREFIX}::${hashText(targetScopeKey).slice(0, 12)}::${hashText(sourceBinding.sourcePersonaId || sourceBinding.sourcePersonaName).slice(0, 10)}::${randomId()}`;
-    const livePersonaName = livePersonaDisplayName(sourceBinding.sourcePersonaName || template?.name);
-    const forkReason = String(options.reason || (targetCtx?.chat?.copiedFromChatId ? "chat_handoff" : "foreign_live_binding_detected"));
-    const selectedSnapshot = selectedPersonaSnapshotFromDb(db);
-    const provisional = normalizeLivePersonaBinding({
-      ...sourceBinding,
-      scopeKey: targetScopeKey,
-      enabled: sourceBinding.enabled === true && (!nativeBranch || nativeBranch.receipt.verified === true),
-      hostLineage: nativeBranch?.hostLineage || MemorySuiteHostLineage.inspect(targetCtx.char, targetCtx.chat),
-      nativeBranchState: nativeBranch?.receipt ? { ...nativeBranch.receipt, storageBinding: options.storageBinding || null } : null,
-      managerVersion: PERSONA_BINDING_MANAGER_VERSION,
-      displayNameVersion: LIVE_PERSONA_DISPLAY_NAME_VERSION,
-      previousBinding: sourceBinding.previousBinding,
-      bindingStatus: "binding",
-      lastObservedBindingId: "",
-      lastBindingCheckAt: "",
-      bindingError: "",
-      lastObservedSelectedPersonaId: selectedSnapshot.id,
-      lastObservedSelectedPersonaKey: selectedSnapshot.key,
-      lastSelectedPersonaCheckAt: now,
-      livePersonaId: newLivePersonaId,
-      livePersonaName,
-      basePersonaPrompt: inheritedBasePersonaPrompt,
-      basePromptHash: hashText(inheritedBasePersonaPrompt),
-      anchorPairCount: nativeBranch ? nativeBranch.anchorPairCount : pairs.length,
-      lastProcessedPairCount: nativeBranch ? nativeBranch.lastProcessedPairCount : pairs.length,
-      ledgers: nativeBranch ? nativeBranch.ledgers : [],
-      liveState: nativeBranch ? nativeBranch.liveState : sourceBinding.liveState,
-      coreOverlay: nativeBranch ? nativeBranch.coreOverlay : sourceBinding.coreOverlay,
-      coreCandidateHistory: nativeBranch ? nativeBranch.coreCandidateHistory : {},
-      lastProcessedAt: "",
-      lastError: "",
-      disabledReason: nativeBranch?.receipt.verified === false ? nativeBranch.receipt.reason : sourceBinding.enabled === true ? "" : sourceBinding.disabledReason,
-      nextRetryAt: 0,
-      forkedFromScopeKey: sourceBinding.scopeKey,
-      forkedFromLivePersonaId: sourceBinding.livePersonaId,
-      forkReason,
-      handoffTransferId: String(options.transferId || ""),
-      handoffSourceChatId: String(options.sourceChatId || livePersonaBindingChatId(sourceBinding) || ""),
-      createdAt: now,
-      updatedAt: now,
-    });
-    const prompt = renderLivePersonaPrompt(provisional);
-    provisional.lastAppliedPromptHash = hashText(prompt);
-    const forkPersona = {
-      ...template,
-      id: newLivePersonaId,
-      name: livePersonaName,
-      personaPrompt: prompt,
-      note: [
-        LIVE_PERSONA_NOTE_MARKER,
-        `Source persona id: ${sourceBinding.sourcePersonaId || ""}`,
-        `Source persona name: ${sourceBinding.sourcePersonaName || ""}`,
-        `Chat scope: ${targetScopeKey}`,
-        `Forked from scope: ${sourceBinding.scopeKey}`,
-        `Fork reason: ${forkReason}`,
-      ].join("\n"),
-    };
-    await revalidateNativePersonaFork();
-    const forkWrite = await upsertPersonaFresh(forkPersona, targetCtx);
-    try {
-      await revalidateNativePersonaFork();
-      const bindResult = await PersonaBindingManager.bindLive(targetCtx, provisional);
-      provisional.lastObservedBindingId = bindResult.after.personaId;
-      provisional.lastBindingCheckAt = new Date().toISOString();
-      provisional.bindingStatus = provisional.enabled ? "connected" : "connected_paused";
-      provisional.bindingError = "";
-    } catch (error) {
-      try { await removeLiaLivePersonaIfUnreferenced(targetCtx, newLivePersonaId, { excludeScopeKey: targetScopeKey, fallbackPersonaId: sourceBinding.sourcePersonaId }); } catch (_) {}
-      throw error;
-    }
-    await revalidateNativePersonaFork();
-    const durableReadback = await writeLivePersonaBinding(provisional, { preserveSiblingBytes: Boolean(nativeBranch) || options.reason === 'retrace_handoff' });
-    const persistedBinding = durableReadback.binding;
-    const verification = await PersonaBindingManager.inspect({ ...targetCtx, db: await api.getDatabase?.(["personas", "selectedPersona"]) }, persistedBinding);
-    if (!verification.expectedMatch || !verification.livePersonaExists) {
-      throw new Error("Fork된 Live Persona의 RisuAI 바인딩 재검증에 실패했습니다.");
-    }
-    const lineage = livePersonaForkLineageMatches(persistedBinding, sourceBinding, options);
-    if (!lineage.matches || durableReadback.durableReadbackVerified !== true) {
-      throw new Error(`Forked Live Persona durable lineage verification failed: ${lineage.mismatches.join(", ") || "owner_readback"}`);
-    }
-    try { await resetPersonaProofForBindingChange(targetCtx, persistedBinding.livePersonaId); } catch (_) {}
-    appendOperationLog("live_persona_fork", `Live Persona를 새 채팅으로 분기했습니다: ${sourceBinding.livePersonaName || sourceBinding.sourcePersonaName || "Source"} → ${persistedBinding.livePersonaName}`, { sourceScopeKey: sourceBinding.scopeKey, targetScopeKey, reason: forkReason }, "ok");
-    appendDebugLog("live_sync", "fork_success", { sourceScopeKey: sourceBinding.scopeKey, targetScopeKey, sourceLivePersonaId: sourceBinding.livePersonaId, targetLivePersonaId: persistedBinding.livePersonaId, anchorPairCount: persistedBinding.anchorPairCount, reason: forkReason, transferId: persistedBinding.handoffTransferId, durableReadbackVerified: true }, "info");
-    return { adopted: true, verified: nativeBranch ? nativeBranch.receipt.verified === true : true, durableReadbackVerified: true, reason: nativeBranch?.receipt.verified === false ? nativeBranch.receipt.reason : forkReason, binding: persistedBinding, verification, sourceBinding, durableReadback, lineage };
-  }
+  
 
-  async function runLivePersonaForkOnce(targetCtx, sourceBinding, options = {}) {
-    const key = livePersonaScopeKey(targetCtx);
-    if (livePersonaForkInFlight.has(key)) return await livePersonaForkInFlight.get(key);
-    const task = forkLivePersonaBindingToContext(targetCtx, sourceBinding, options)
-      .finally(() => livePersonaForkInFlight.delete(key));
-    livePersonaForkInFlight.set(key, task);
-    return await task;
-  }
+  
 
-  async function ensureInheritedLivePersonaForCurrentChat(runtimeCtx = null, options = {}) {
-    const ctx = runtimeCtx || await getLiveRuntimeContext();
-    const targetScopeKey = livePersonaScopeKey(ctx);
-    const existing = await readLivePersonaBindingByScopeKey(targetScopeKey, options.forceStore === true);
+  
 
-    const chatState = await PersonaBindingManager.read(ctx).catch(() => ({ personaId: String(ctx?.chat?.bindedPersona || "") }));
-    const boundPersonaId = String(chatState?.personaId || ctx?.chat?.bindedPersona || "").trim();
-    const hostLineage = MemorySuiteHostLineage.inspect(ctx.char, ctx.chat);
-    const sourceChatId = String(
-      (hostLineage.kind === 'native_branch' ? hostLineage.parentChatId : '')
-      || options.sourceChatId
-      || ctx?.chat?.copiedFromChatId
-      || ctx?.chat?.memorySessionBridge?.sourceChatId
-      || ""
-    ).trim();
-    // An already-managed child must still have its storage policy migrated
-    // (0.3.57 implicit plugin_only -> parent mirror/server_only). Content
-    // inheritance and policy migration are separate concerns, so do not return
-    // before the verified native-branch preparation has run.
-    if (existing && !(hostLineage.kind === 'native_branch' && hostLineage.inheritanceEligible === true)) {
-      return { adopted: false, verified: existing.nativeBranchState?.verified !== false, reason: existing.nativeBranchState?.verified === false ? existing.nativeBranchState.reason : "current_scope_managed", binding: existing };
-    }
-    if (!sourceChatId && !boundPersonaId.startsWith(`${LIVE_PERSONA_ID_PREFIX}::`)) {
-      if (existing) return { adopted: false, verified: existing.nativeBranchState?.verified !== false, reason: "current_scope_managed", binding: existing };
-      return { adopted: false, verified: false, reason: "no_inheritance_marker" };
-    }
-    let nativeBranchStorage = null;
-    if (hostLineage.kind === 'native_branch' && hostLineage.inheritanceEligible === true) {
-      const sourceChat = asArray(ctx?.char?.chats).find(chat => String(chat?.id || chat?.chatId || '').trim() === sourceChatId) || null;
-      if (!sourceChat) return { adopted: false, verified: false, reason: 'native_branch_parent_unavailable' };
-      const sourceCtx = { ...ctx, chat: sourceChat };
-      const sourceScope = memorySuiteLiaScopeDescriptorForContext(sourceCtx);
-      const targetScope = memorySuiteLiaScopeDescriptorForContext(ctx);
-      nativeBranchStorage = await prepareMemorySuiteNativeBranchTargetStorage({
-        storage: MemorySuiteStorageBridge, owner: 'lia', lineage: hostLineage, sourceScope, targetScope
-      });
-      if (existing) {
-        // Idempotent: an already-migrated binding for the same source scope must
-        // not be rewritten (no repeated timestamp churn on ordinary reloads).
-        const previousState = existing.nativeBranchState || {};
-        const alreadyMigrated = previousState.reason === 'native_branch_storage_policy_migrated'
-          && previousState.storageBinding?.lineageDigest
-          && String(previousState.storageBinding.lineageDigest) === String(hostLineage.prefixDigest || '');
-        if (alreadyMigrated) {
-          return { adopted: false, verified: true, reason: 'native_branch_storage_policy_migrated', binding: existing, nativeBranchStorage };
-        }
-        const storageBinding = nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status: 'complete', committedAt: new Date().toISOString() } : null;
-        const nextState = {
-          ...previousState,
-          schema: 'lia.native_branch_state.v1', verified: true, reason: 'native_branch_storage_policy_migrated',
-          sourceScopeKey: sourceScope?.scopeKey || previousState.sourceScopeKey || '',
-          storageBinding,
-        };
-        try {
-          const bound = { ...existing, nativeBranchState: nextState };
-          await writeLivePersonaBinding(bound, { completeChangeId: existing.pendingBindingChange?.id });
-        } catch (error) {
-          appendDebugLog('live_sync', 'native_branch_storage_migration_write_failed', { scopeKey: targetScopeKey, error: compact(error?.message || error, 300) }, 'warn');
-        }
-        return {
-          adopted: false, verified: true, reason: 'native_branch_storage_policy_migrated',
-          binding: existing, storageBinding, nativeBranchStorage
-        };
-      }
-    }
-    const ownerReadOptions = nativeBranchStorage ? { storage: nativeBranchStorage.sourceView, readOnly: true } : {};
-    let owner = await readLivePersonaOwnerBinding({ currentScopeKey: targetScopeKey, sourceChatId, livePersonaId: boundPersonaId, ...ownerReadOptions });
-    if (!owner && sourceChatId) owner = await readLivePersonaOwnerBinding({ currentScopeKey: targetScopeKey, sourceChatId, ...ownerReadOptions });
-    if (!owner && hostLineage.kind !== 'native_branch' && boundPersonaId.startsWith(`${LIVE_PERSONA_ID_PREFIX}::`)) {
-      owner = await readLivePersonaOwnerBinding({ currentScopeKey: targetScopeKey, livePersonaId: boundPersonaId });
-    }
-    if (!owner || (hostLineage.kind === 'native_branch' && livePersonaBindingChatId(owner) !== hostLineage.parentChatId)) return { adopted: false, verified: false, reason: "no_inherited_live_owner" };
-    const storageBinding = nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status: 'complete', committedAt: new Date().toISOString() } : null;
-    return await runLivePersonaForkOnce(ctx, owner, {
-      reason: hostLineage.kind === 'native_branch' ? 'native_host_branch' : options.reason || (sourceChatId ? "chat_handoff" : "native_chat_copy"),
-      sourceChatId: sourceChatId || livePersonaBindingChatId(owner),
-      transferId: hostLineage.kind === 'native_branch' ? '' : options.transferId || ctx?.chat?.memorySessionBridge?.transferId || "",
-      sourceLivePersonaId: options.sourceLivePersonaId || owner.livePersonaId,
-      storageBinding,
-      force: options.force === true,
-    });
-  }
-
-  async function adoptLivePersonaHandoff(payload = {}) {
-    const sourceChatId = String(payload.sourceChatId || "").trim();
-    const targetChatId = String(payload.targetChatId || "").trim();
-    const transferId = String(payload.transferId || "").trim();
-    const sourceLivePersonaId = String(payload.sourceLivePersonaId || "").trim();
-    if (!sourceChatId || !targetChatId || !transferId || !sourceLivePersonaId) throw new Error("LIA handoff requires sourceChatId, targetChatId, transferId, and sourceLivePersonaId.");
-    const targetCtx = await getLiveRuntimeContextForChatId(targetChatId);
-    const targetScopeKey = livePersonaScopeKey(targetCtx);
-    const sourceBinding = await readLivePersonaOwnerBinding({ currentScopeKey: targetScopeKey, sourceChatId, livePersonaId: sourceLivePersonaId });
-    if (!sourceBinding) throw new Error(`Requested source LIA Live Persona binding was not found: ${sourceChatId}/${sourceLivePersonaId}`);
-    const sourceIntegrityBefore = await liaSourceHandoffIntegritySnapshot(sourceBinding, sourceChatId);
-    if (!sourceIntegrityBefore.fingerprint) throw new Error("LIA source integrity snapshot could not be created.");
-    const adopted = await runLivePersonaForkOnce(targetCtx, sourceBinding, { reason: "retrace_handoff", sourceChatId, sourceLivePersonaId, transferId, force: false });
-    const binding = normalizeLivePersonaBinding(adopted.durableReadback?.binding || adopted.binding);
-    const lineage = livePersonaForkLineageMatches(binding, sourceBinding, { sourceChatId, sourceLivePersonaId, transferId });
-    if (adopted.verified !== true || adopted.durableReadbackVerified !== true || !binding || !lineage.matches) {
-      throw new Error(`LIA Live Persona handoff was not durably verified: ${adopted.reason || lineage.mismatches.join(", ") || "owner_readback_failed"}`);
-    }
-    const sourceIntegrityAfter = await liaSourceHandoffIntegritySnapshot(sourceBinding, sourceChatId);
-    if (sourceIntegrityBefore.fingerprint !== sourceIntegrityAfter.fingerprint) {
-      const error = new Error("LIA source mutation detected during Live Persona handoff.");
-      error.code = "SOURCE_MUTATION_DETECTED";
-      throw error;
-    }
-    return {
-      schema: LIA_HANDOFF_RECEIPT_SCHEMA,
-      action: "adopted",
-      adopted: adopted.adopted === true,
-      verified: true,
-      durable: true,
-      durableReadbackVerified: true,
-      handoffContract: LIA_SESSION_HANDOFF_CONTRACT,
-      sourcePreserved: true,
-      sourceMutationAllowed: false,
-      sourceCompactionAllowed: false,
-      physicalCopies: 0,
-      sourceFingerprintBefore: sourceIntegrityBefore.fingerprint,
-      sourceFingerprintAfter: sourceIntegrityAfter.fingerprint,
-      ownerPluginId: "lia_persona_linker",
-      authorizedRequester: RETRACE_PLUGIN_ID,
-      mutation: "adopt_chat_handoff",
-      sourceChatId, targetChatId, transferId,
-      sourceScopeKey: sourceBinding.scopeKey,
-      targetScopeKey: binding.scopeKey || targetScopeKey,
-      sourceLivePersonaId,
-      livePersonaId: binding.livePersonaId || "",
-      livePersonaName: binding.livePersonaName || "",
-      forkedFromScopeKey: binding.forkedFromScopeKey,
-      forkedFromLivePersonaId: binding.forkedFromLivePersonaId,
-      handoffSourceChatId: binding.handoffSourceChatId,
-      handoffTransferId: binding.handoffTransferId,
-      ownerStorageKey: String(adopted.durableReadback?.storageKey || ''),
-      ownerStorageDigest: String(adopted.durableReadback?.digest || ''),
-      anchorPairCount: binding.anchorPairCount || 0,
-      enabled: binding.enabled === true,
-      reason: adopted.reason || "retrace_handoff",
-    };
-  }
+  
 
   // Read-only verification for the already authenticated RE:TRACE IPC boundary.
   // This deliberately does not repair a drifted binding: callers need a fresh
   // observation before another owner is allowed to treat a fork as continuous.
-  async function verifyChatHandoff(payload = {}) {
-    const sourceChatId = String(payload.sourceChatId || '').trim();
-    const targetChatId = String(payload.targetChatId || '').trim();
-    const transferId = String(payload.transferId || '').trim();
-    const sourceLivePersonaId = String(payload.sourceLivePersonaId || '').trim();
-    const targetLivePersonaId = String(payload.targetLivePersonaId || '').trim();
-    if (!sourceChatId || !targetChatId || sourceChatId === targetChatId || !transferId || !sourceLivePersonaId || !targetLivePersonaId || sourceLivePersonaId === targetLivePersonaId) {
-      throw new Error('LIA handoff verification identity is invalid.');
-    }
-    const [sourceCtx, targetCtx] = await Promise.all([
-      getLiveRuntimeContextForChatId(sourceChatId), getLiveRuntimeContextForChatId(targetChatId)
-    ]);
-    const sourceCharacterId = String(sourceCtx?.char?.chaId || sourceCtx?.char?.id || '').trim();
-    const targetCharacterId = String(targetCtx?.char?.chaId || targetCtx?.char?.id || '').trim();
-    const expectedCharacterId = String(payload.characterId || '').trim();
-    if (!sourceCharacterId || sourceCharacterId !== targetCharacterId || (expectedCharacterId && expectedCharacterId !== targetCharacterId)) throw new Error('LIA handoff character mismatch.');
-    const bridge = targetCtx?.chat?.memorySessionBridge || {};
-    if (String(bridge.sourceChatId || '').trim() !== sourceChatId || String(bridge.targetChatId || '').trim() !== targetChatId
-      || String(bridge.transferId || '').trim() !== transferId || bridge.includeLiaLivePersona !== true
-      || String(bridge.sourceLiaLivePersonaId || '').trim() !== sourceLivePersonaId) throw new Error('LIA handoff bridge mismatch.');
-    const sourceScopeKey = livePersonaScopeKey(sourceCtx);
-    const targetScopeKey = livePersonaScopeKey(targetCtx);
-    const sourceBinding = normalizeLivePersonaBinding(await readLivePersonaBindingByScopeKey(sourceScopeKey, true));
-    const targetBinding = normalizeLivePersonaBinding(await readLivePersonaBindingByScopeKey(targetScopeKey, true));
-    if (!sourceBinding || !targetBinding || sourceBinding.scopeKey !== sourceScopeKey || targetBinding.scopeKey !== targetScopeKey
-      || sourceBinding.livePersonaId !== sourceLivePersonaId || targetBinding.livePersonaId !== targetLivePersonaId) throw new Error('LIA handoff owner binding mismatch.');
-    const lineage = livePersonaForkLineageMatches(targetBinding, sourceBinding, { sourceChatId, sourceLivePersonaId, transferId });
-    if (!lineage.matches) throw new Error('LIA handoff fork lineage mismatch.');
-    const storage = await waitForPluginStorage(getRuntimeApi(), { timeoutMs: 4000, intervalMs: 250 });
-    const durable = await verifyDurableLivePersonaBindingReadback(storage, targetBinding, String(payload.ownerStorageDigest || '').trim());
-    const binding = normalizeLivePersonaBinding(durable.binding);
-    if (String(durable.storageKey || '') !== livePersonaScopeStorageKey(targetScopeKey) || binding?.scopeKey !== targetScopeKey) throw new Error('LIA handoff owner storage scope mismatch.');
-    const currentTargetCtx = await getLiveRuntimeContextForChatId(targetChatId);
-    const bindingState = await PersonaBindingManager.read(currentTargetCtx);
-    const personas = asArray((await api.getDatabase?.(['personas']))?.personas);
-    if (bindingState.personaId !== targetLivePersonaId || String(currentTargetCtx?.chat?.bindedPersona || '').trim() !== targetLivePersonaId
-      || !personas.some(persona => String(persona?.id || '').trim() === targetLivePersonaId) || !binding) throw new Error('LIA handoff current target binding mismatch.');
-    return {
-      schema: 'lia.live_persona_handoff.verification.v1', action: 'verify_chat_handoff', verified: true, durable: durable.durableReadbackVerified === true,
-      sourceChatId, targetChatId, transferId, characterId: targetCharacterId, sourceScopeKey, targetScopeKey,
-      sourceLivePersonaId, targetLivePersonaId, ownerStorageKey: String(durable.storageKey || ''), ownerStorageDigest: String(durable.digest || ''),
-      forkedFromScopeKey: binding.forkedFromScopeKey, forkedFromLivePersonaId: binding.forkedFromLivePersonaId,
-      handoffSourceChatId: binding.handoffSourceChatId, handoffTransferId: binding.handoffTransferId
-    };
-  }
 
   function parseLiaOwnerStore(value, field) {
     let parsed = value;
@@ -12895,53 +11132,24 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
 
   async function prepareVerifiedLiaMetadataShellDeletion(options = {}) {
     const scopeKey = String(options.scopeKey || options.scopeId || '').trim();
-    const allowedKinds = new Set(['proof_only', 'index_only', 'index_proof_only', 'empty_index_shell']);
-    if (!scopeKey || !allowedKinds.has(String(options.kind || '')) || options.metadataShellVerified !== true
+    if (!scopeKey || String(options.kind || '') !== 'proof_only' || options.metadataShellVerified !== true
       || Math.max(0, Number(options.metadataShellObservations || 0) || 0) < 2
       || !String(options.metadataShellFingerprint || '').trim()) {
       throw new Error('two stable LIA metadata-shell observations are required');
     }
-    const emptyIndexShell = String(options.kind || '') === 'empty_index_shell';
     const current = await getLiveRuntimeContext().catch(() => null);
-    if (!emptyIndexShell && current && livePersonaScopeKey(current) === scopeKey) throw new Error('current LIA scope cannot be deleted as a metadata shell');
-    const indexKey = LIVE_PERSONA_INDEX_STORAGE_KEY;
+    if (current && liaScopeKey(current) === scopeKey) throw new Error('current LIA scope cannot be deleted as a metadata shell');
     const proofKey = PERSONA_PROOF_STORAGE_KEY;
-    const shardKey = livePersonaScopeStorageKey(scopeKey);
     const inspect = async () => {
-      const [indexRemote, proofRemote, shardRemote] = await Promise.all([
-        MemorySuiteStorageBridge.serverGet('plugin', indexKey),
-        MemorySuiteStorageBridge.serverGet('plugin', proofKey),
-        MemorySuiteStorageBridge.serverGet('plugin', shardKey)
-      ]);
-      if (shardRemote?.exists === true) throw new Error('LIA metadata shell now has a content shard');
-      const index = parseLiaOwnerStore(indexRemote?.value, 'entries');
+      const proofRemote = await MemorySuiteStorageBridge.serverGet('plugin', proofKey);
       const proof = parseLiaOwnerStore(proofRemote?.value, 'proofs');
-      if (emptyIndexShell) {
-        if (indexRemote?.exists !== true || Object.keys(index.rows).length !== 0) throw new Error('LIA empty index is missing or no longer empty');
-        return hashText(JSON.stringify({ revision: indexRemote.revision || 0, digest: indexRemote.digest || '' }));
-      }
-      const hasIndex = Object.prototype.hasOwnProperty.call(index.rows, scopeKey);
-      const hasProof = Object.prototype.hasOwnProperty.call(proof.rows, scopeKey);
-      if (!hasIndex && !hasProof) throw new Error('LIA metadata shell is missing');
-      return hashText(JSON.stringify({ index: index.rows[scopeKey] || null, proof: proof.rows[scopeKey] || null,
-        indexRevision: indexRemote?.revision || 0, proofRevision: proofRemote?.revision || 0 }));
+      if (!Object.prototype.hasOwnProperty.call(proof.rows, scopeKey)) throw new Error('LIA metadata shell is missing');
+      return hashText(JSON.stringify({ proof: proof.rows[scopeKey] || null, proofRevision: proofRemote?.revision || 0 }));
     };
     const first = await inspect();
     await new Promise(resolve => setTimeout(resolve, 25));
     const second = await inspect();
     if (first !== second) throw new Error('LIA metadata shell changed during owner verification');
-    const localKeys = await MemorySuiteStorageBridge.ownerLegacyKeys('plugin', true);
-    if (emptyIndexShell) {
-      const localRaw = await MemorySuiteStorageBridge.ownerLegacyRead('plugin', indexKey);
-      if (localRaw !== null && localRaw !== undefined && localRaw !== '') {
-        const localIndex = parseLiaOwnerStore(localRaw, 'entries');
-        if (Object.keys(localIndex.rows).length) throw new Error('local LIA index is no longer empty');
-      }
-    }
-    if (localKeys.includes(shardKey)) {
-      const shard = await MemorySuiteStorageBridge.ownerLegacyRead('plugin', shardKey);
-      if (shard !== null && shard !== undefined && shard !== '') throw new Error('LIA metadata shell has a local content shard');
-    }
     const scope = { scopeId: scopeKey, scopeKey, label: scopeKey, aliases: [] };
     const beforeMode = await MemorySuiteStorageBridge.getScopeMode(scope);
     if (beforeMode?.mode === 'server_only') throw new Error('LIA metadata-shell cleanup is blocked in server_only mode');
@@ -12962,20 +11170,13 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (Object.prototype.hasOwnProperty.call(readback.rows, scopeKey)) throw new Error(`LIA ${field} cleanup readback failed`);
       return { removed: true, siblings: Object.keys(readback.rows).length };
     };
-    const localIndex = emptyIndexShell
-      ? (await MemorySuiteStorageBridge.ownerLegacyRead('plugin', indexKey)) == null
-        ? { removed: false, siblings: 0 }
-        : (await MemorySuiteStorageBridge.ownerLegacyRemove('plugin', indexKey), { removed: true, siblings: 0 })
-      : await rewrite(indexKey, 'entries');
-    const localProof = emptyIndexShell ? { removed: false, siblings: 0 } : await rewrite(proofKey, 'proofs');
-    cachedLivePersonaStore = null;
-    cachedLivePersonaStoreComplete = false;
+    const localProof = await rewrite(proofKey, 'proofs');
     cachedPersonaProofStore = null;
     return {
       schema: 'memory-suite.server-scope-delete-owner-receipt.v1', namespace: 'lia',
       pluginId: 'lia_persona_linker', pluginVersion: PLUGIN_VERSION, scopeId: scopeKey,
       verified: true, modeAfter: 'plugin_only', metadataShell: true,
-      serverAbsenceChecks: 2, serverFingerprint: second, localIndex, localProof, checkedAt: Date.now()
+      serverAbsenceChecks: 2, serverFingerprint: second, localProof, checkedAt: Date.now()
     };
   }
 
@@ -12998,22 +11199,10 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
         let result;
         if (action === "ping" || action === "capabilities") {
           result = {
-            ...liaRetraceCompatibility(),
-            compatibility: liaRetraceCompatibility(),
-            capabilities: {
-              livePersonaHandoff: true,
-              sourceImmutableHandoff: true,
-              handoffContract: LIA_SESSION_HANDOFF_CONTRACT,
-              durableReadback: true,
-              memorySuiteScopeDeleteOwnerProof: false,
-              storagePolicy:'local_only', localOnly:true, serverStorage:false, supportedStorageModes:['plugin_only'],
-              retraceCompatibility: liaRetraceCompatibility()
-            },
+            capabilities: { memorySuiteScopeDeleteOwnerProof: false, storagePolicy:'local_only', localOnly:true, serverStorage:false, supportedStorageModes:['plugin_only'] },
             ownerPluginId: "lia_persona_linker",
             authorizedRequester: RETRACE_PLUGIN_ID
           };
-        } else if (action === "inspect") {
-          result = await inspectLiaForRetrace();
         } else if (action === "memory_suite_prepare_handoff_target") {
             result = await prepareMemorySuiteHandoffTargetStorage(getRuntimeApi(), MemorySuiteStorageBridge, 'lia', request.payload || {});
         } else if (action === "memory_suite_storage_status") {
@@ -13036,13 +11225,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
           };
         } else if (action === "memory_suite_set_mode" || action === "memory_suite_prepare_server_scope_delete") {
           throw new Error('MEMORY_SUITE_LOCAL_ONLY_OWNER_POLICY');
-        } else if (action === "adopt_chat_handoff") {
-          const memorySuiteBefore = await MemorySuiteStorageBridge.ensureHandoffReady({ phase: "lia_before_adopt_chat_handoff" });
-          const adopted = await adoptLivePersonaHandoff(request.payload || {});
-          const memorySuiteAfter = await MemorySuiteStorageBridge.ensureHandoffReady({ phase: "lia_after_adopt_chat_handoff" });
-          result = { ...adopted, memorySuiteStorage: { before: memorySuiteBefore, after: memorySuiteAfter } };
-        } else if (action === "verify_chat_handoff") {
-          result = await verifyChatHandoff(request.payload || {});
         } else {
           throw new Error(`Unsupported LIA handoff action: ${action}`);
         }
@@ -13132,17 +11314,9 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     return false;
   }
 
-  function resolveLivePersonaChoice(personas, value) {
-    const selected = String(value || "").trim();
-    if (selected.startsWith("id:")) return asArray(personas).find((persona) => String(persona?.id || "") === selected.slice(3)) || null;
-    if (selected.startsWith("index:")) return asArray(personas)[Number(selected.slice(6))] || null;
-    return null;
-  }
+  
 
-  function livePersonaChoiceValue(persona, index) {
-    const id = String(persona?.id || "").trim();
-    return id ? `id:${id}` : `index:${index}`;
-  }
+  
 
   const PersonaBindingManager = Object.freeze({
     capability() {
@@ -13161,14 +11335,14 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
 
     async write(ctx, targetPersonaId = "", options = {}) {
       const before = await this.read(ctx);
-      appendDebugLog("binding", "write_start", { scopeKey: livePersonaScopeKey(ctx), reason: String(options.reason || "binding_write"), beforePersonaId: before?.personaId || "", targetPersonaId: String(targetPersonaId || "") });
+      appendDebugLog("binding", "write_start", { scopeKey: liaScopeKey(ctx), reason: String(options.reason || "binding_write"), beforePersonaId: before?.personaId || "", targetPersonaId: String(targetPersonaId || "") });
       if (!before.available) throw new Error("이 RisuAI 환경에서는 채팅 Persona 바인딩 API를 사용할 수 없습니다.");
       if (ctx?.char && ctx?.chat && typeof api.getCharacterFromIndex === 'function') {
         const actualCharacter=await api.getCharacterFromIndex(ctx.charIndex);
         // The earlier chat read cannot prove what currently occupies this index.
         // A reorder during the awaited character read must stop before setChatToIndex.
         const actualChat=actualCharacter?.chats?.[ctx.chatIndex];
-        if (!actualCharacter || !actualChat || livePersonaScopeKey({...ctx,char:actualCharacter,chat:actualChat})!==livePersonaScopeKey(ctx)) throw Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
+        if (!actualCharacter || !actualChat || liaScopeKey({...ctx,char:actualCharacter,chat:actualChat})!==liaScopeKey(ctx)) throw Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
         if (String(actualChat.bindedPersona || '').trim()!==before.personaId) throw Error('LIA_BINDING_CHANGE_CONFLICT');
         before.chat=actualChat;
       }
@@ -13188,7 +11362,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (before.personaId !== expected) {
         try { await resetPersonaProofForBindingChange(ctx, expected); } catch (_) {}
       }
-      appendDebugLog("binding", "write_success", { scopeKey: livePersonaScopeKey(ctx), reason: String(options.reason || "binding_write"), beforePersonaId: before?.personaId || "", afterPersonaId: after?.personaId || "", matched: true }, "info");
+      appendDebugLog("binding", "write_success", { scopeKey: liaScopeKey(ctx), reason: String(options.reason || "binding_write"), beforePersonaId: before?.personaId || "", afterPersonaId: after?.personaId || "", matched: true }, "info");
       return { before, after, matched: true, reason: String(options.reason || "binding_write") };
     },
 
@@ -13197,8 +11371,8 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       if (explicit) return explicit;
       const personas = asArray(runtimeCtx?.db?.personas);
       const selected = Number(runtimeCtx?.db?.selectedPersona);
-      if (Number.isInteger(selected) && personas[selected] && !isLivePersona(personas[selected])) return String(personas[selected]?.id || `index:${selected}`);
-      const firstIndex = personas.findIndex((item) => item && !isLivePersona(item));
+      if (Number.isInteger(selected) && personas[selected]) return String(personas[selected]?.id || `index:${selected}`);
+      const firstIndex = personas.findIndex((item) => item);
       if (firstIndex >= 0) return String(personas[firstIndex]?.id || `index:${firstIndex}`);
       return "";
     },
@@ -13220,54 +11394,19 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       };
     },
 
-    async inspect(ctx, binding = null, options = {}) {
+    async inspect(ctx, options = {}) {
       const current = options.viewOnly === true
         ? {...this.capability(),hadExplicitBinding:Boolean(ctx.chat?.bindedPersona),personaId:String(ctx.chat?.bindedPersona || '').trim(),chat:ctx.chat}
         : await this.read(ctx);
-      const personas = asArray(ctx?.db?.personas);
-      const livePersonaExists = Boolean(binding?.livePersonaId && personas.some((item) => String(item?.id || "") === binding.livePersonaId));
-      const expectedId = String(binding?.livePersonaId || "").trim();
-      const expectedMatch = Boolean(expectedId) && current.personaId === expectedId;
       const effectiveId = this.effectivePersonaId(ctx, current);
       const effectivePersona = this.resolvePersona(ctx, effectiveId);
-      let state = "unconfigured";
-      if (!current.available) state = "unavailable";
-      else if (!binding) state = current.personaId ? "external" : "unbound";
-      else if (binding.pendingBindingChange) state = "binding_change_pending";
-      else if (!livePersonaExists) state = "live_missing";
-      else if (expectedMatch) state = binding.enabled ? "connected" : "connected_paused";
-      else state = "external_change";
       return {
         ...current,
-        state,
-        expectedId,
-        expectedMatch,
-        livePersonaExists,
+        state: !current.available ? "unavailable" : current.personaId ? "external" : "unbound",
         effectivePersonaId: effectiveId,
         effectivePersonaName: String(effectivePersona?.name || "").trim(),
         checkedAt: new Date().toISOString(),
       };
-    },
-
-    async bindLive(ctx, binding) {
-      const result = await this.write(ctx, binding.livePersonaId, { reason: "live_bind" });
-      binding.bindingStatus = "connected";
-      binding.lastObservedBindingId = result.after.personaId;
-      binding.lastBindingCheckAt = new Date().toISOString();
-      binding.bindingError = "";
-      return result;
-    },
-
-    async restorePrevious(ctx, binding, personas = []) {
-      const previous = binding?.previousBinding || null;
-      let targetId = previous?.hadExplicitBinding ? String(previous?.personaId || "").trim() : "";
-      let fallbackReason = "";
-      if (targetId && !asArray(personas).some((item) => String(item?.id || "") === targetId)) {
-        targetId = "";
-        fallbackReason = "previous_persona_missing_unbound";
-      }
-      const result = await this.write(ctx, targetId, { reason: "restore_previous" });
-      return { ...result, targetId, fallbackReason, previous };
     },
   });
 
@@ -13335,9 +11474,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       requestStartedAt: String(raw.requestStartedAt || raw.request_started_at || ""),
       requestVerifiedAt: String(raw.requestVerifiedAt || raw.request_verified_at || ""),
       responseCompletedAt: String(raw.responseCompletedAt || raw.response_completed_at || ""),
-      lastLiveSyncAt: String(raw.lastLiveSyncAt || raw.last_live_sync_at || ""),
-      lastLiveSyncRange: asArray(raw.lastLiveSyncRange || raw.last_live_sync_range).slice(0, 2).map((v) => Math.max(0, Number(v || 0) || 0)),
-      liveRevision: Math.max(0, Number(raw.liveRevision || raw.live_revision || 0) || 0),
       message: String(raw.message || "").trim(),
       updatedAt: String(raw.updatedAt || raw.updated_at || ""),
     };
@@ -13396,11 +11532,11 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
 
   async function readPersonaProofForContext(ctx) {
     const store = await readPersonaProofStore();
-    return normalizePersonaProof(store.proofs[livePersonaScopeKey(ctx)] || null);
+    return normalizePersonaProof(store.proofs[liaScopeKey(ctx)] || null);
   }
 
   async function resetPersonaProofForBindingChange(ctx, targetPersonaId = "") {
-    const scopeKey = livePersonaScopeKey(ctx || {});
+    const scopeKey = liaScopeKey(ctx || {});
     if (!scopeKey) return null;
     let personas = asArray(ctx?.db?.personas);
     const targetId = String(targetPersonaId || "").trim();
@@ -13455,9 +11591,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
     if (!prompt) return { matched: false, score: 0, reason: "persona_prompt_empty" };
     const haystack = normalizePersonaProofText(flattenPersonaProofRequestText(messages).join("\n"));
     if (!haystack) return { matched: false, score: 0, reason: "request_text_empty" };
-    if (isLivePersona(persona) && haystack.includes(normalizePersonaProofText(LIVE_PROMPT_START))) {
-      return { matched: true, score: 100, reason: "live_marker_found" };
-    }
     const normalized = normalizePersonaProofText(prompt);
     if (normalized.length >= 40 && haystack.includes(normalized)) return { matched: true, score: 100, reason: "full_prompt_found" };
     const sampleSource = normalized.replace(/\{\{[^}]+\}\}/g, " ").replace(/\s+/g, " ").trim();
@@ -13502,7 +11635,6 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
   async function getPersonaProofSnapshot(runtimeCtx = null) {
     const ctx = runtimeCtx || await getLiveRuntimeContext();
     const state = buildPersonaPanelState(ctx);
-    const liveBinding = await readLivePersonaBindingForContext(ctx);
     const proof = await readPersonaProofForContext(ctx);
     return {
       runtimeCtx: ctx,
@@ -13515,9 +11647,8 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       dynamicPersona: state.dynamicPersona,
       effectivePersona: state.effectivePersona,
       effectiveMode: state.effectiveMode,
-      liveBinding,
       proof,
-      scopeKey: livePersonaScopeKey(ctx),
+      scopeKey: liaScopeKey(ctx),
     };
   }
 
@@ -13624,7 +11755,7 @@ const LiaLegacyServerRecovery = createLiaLegacyServerRecovery(MemorySuiteStorage
       const status = transientActive
         ? personaProofTransientNotice.text
         : personaProofStatusLabel(proof, current);
-      const revisionText = proof?.state === "response_verified" && proof?.responseCompletedAt ? `마지막 적용 ${new Date(proof.responseCompletedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : current.liveBinding?.enabled ? `수동 갱신 · Rev.${asArray(current.liveBinding?.ledgers).length + 1}` : "동적 바인딩 없음";
+      const revisionText = proof?.state === "response_verified" && proof?.responseCompletedAt ? `마지막 적용 ${new Date(proof.responseCompletedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "동적 바인딩 없음";
       const verified = proof?.state === "request_verified" || proof?.state === "response_verified";
       const renderKey = JSON.stringify([String(current.scopeKey || ""), name, status, revisionText, verified]);
       const badge = await ensurePersonaProofMainBadge();
@@ -13649,17 +11780,13 @@ ${revisionText}`);
     try { await updatePersonaProofMainBadge(); } catch (_) {}
   }
 
-  function setPersonaProofTransient(scopeKey, text, state = "request_verified", ms = 6500) {
-    personaProofTransientNotice = { scopeKey, text, state, until: Date.now() + Math.max(1000, Number(ms || 6500)) };
-    refreshPersonaProofIndicator().catch(() => {});
-  }
+  
 
   async function verifyCurrentPersonaBindingOnly(runtimeCtx = null) {
     const snapshot = await getPersonaProofSnapshot(runtimeCtx);
     const dynamicId = String(snapshot.dynamicPersonaId || "").trim();
-    const liveExpected = String(snapshot.liveBinding?.enabled ? snapshot.liveBinding?.livePersonaId || "" : "").trim();
     const personaExists = Boolean(dynamicId && snapshot.dynamicPersona);
-    const bindingVerified = personaExists && (!liveExpected || liveExpected === dynamicId);
+    const bindingVerified = personaExists;
     const now = new Date().toISOString();
     const proof = await writePersonaProof({
       ...(snapshot.proof || {}),
@@ -13686,108 +11813,21 @@ ${revisionText}`);
     return content;
   }
 
-  async function recordPersonaProofLiveSync(runtimeCtx, binding, range) {
-    try {
-      const scopeKey = livePersonaScopeKey(runtimeCtx);
-      const existing = await readPersonaProofForContext(runtimeCtx);
-      const proof = await writePersonaProof({
-        ...(existing || {}),
-        scopeKey,
-        state: "bound_only",
-        bindingVerified: true,
-        promptEvidenceVerified: false,
-        promptEvidenceScore: 0,
-        promptEvidenceReason: "manual_revision_applied",
-        responseCompletedAt: "",
-        message: "수동 분석 결과를 채팅 전용 Persona에 저장했습니다. 일반 대화에서는 Persona 추적을 실행하지 않습니다.",
-        lastLiveSyncAt: new Date().toISOString(),
-        lastLiveSyncRange: asArray(range).slice(0, 2),
-        liveRevision: asArray(binding?.ledgers).length + 1,
-      });
-      setPersonaProofTransient(scopeKey, `↻ Live Persona 갱신 · TURN ${range?.[0] || "?"}~${range?.[1] || "?"} · Rev.${asArray(binding?.ledgers).length + 1}`, "request_verified", 7000);
-    } catch (_) {}
-  }
+  
 
   // Output notifications count complete pairs only. They do not analyze chat,
   // write Persona data, attach assets, or authorize a provider request.
   let liaUpdateNotice = null;
-  let liaUpdateNoticeBusy = false;
-  const liaNotifiedUpdateRanges = new Set();
+  
+  
 
   function cancelLiaUpdateNotice() { liaUpdateNotice?.finish(false); }
 
-  function countLiaNoticePairs(chat, stopAfter = Infinity) {
-    let pending=false,count=0;
-    for(const item of asArray(chat?.message||chat?.messages||chat?.data)) {
-      if(item?.disabled===true||item?.isComment===true||item?.isStreaming===true||item?.streaming===true||item?.status==='error'||item?.status==='streaming'||item?.error||!messageText(item))continue;
-      if(isUserAuthoredMessage(item))pending=true;
-      else if(pending&&isAssistantTurnMessage(item)){count++;pending=false;if(count>=stopAfter)return count;}
-    }
-    return count;
-  }
+  
 
-  function liaExpectedUpdateMatches(ctx, expected) {
-    if(!expected)return true;
-    const binding=ctx.livePersonaBinding,plan=manualLivePersonaPlan(ctx,binding);
-    return livePersonaScopeKey(ctx)===expected.scopeKey
-      && String(ctx.chat?.bindedPersona||'')===expected.personaId
-      && String(binding?.livePersonaId||'')===expected.personaId
-      && Number(binding?.lastProcessedPairCount||0)===expected.processed
-      && JSON.stringify(plan.range)===JSON.stringify(expected.range);
-  }
 
-  async function showLiaUpdateNotice(expected, name) {
-    if(typeof document==='undefined'||!document.body||pluginUnloaded)return false;
-    for(const node of [document.documentElement,document.body])node.style.setProperty('background','transparent','important');
-    await api.showContainer?.('fullscreen');
-    if(pluginUnloaded)return false;
-    const shell=document.createElement('div');shell.id='lia-update-notice';
-    shell.style.cssText='position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;background:transparent';
-    const card=document.createElement('section');card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('aria-labelledby','lia-update-notice-title');
-    card.style.cssText='position:relative;width:min(480px,100%);max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;padding:24px;border:1px solid #c8b7e1;border-radius:20px;background:#faf8fd;color:#2a203b;box-shadow:0 14px 40px rgba(20,15,35,.2);font:14px/1.65 system-ui';
-    card.innerHTML=`<h2 id="lia-update-notice-title" style="margin:0 36px 12px 0;font-size:20px">Persona 수동 갱신 준비</h2><p><b>${htmlEscape(name||'현재 채팅 Persona')}</b>에 반영할 완료 대화 5턴이 쌓였습니다.</p><p>TURN ${expected.range[0]}~${expected.range[1]}의 User+Assistant 대화를 분석하고 이 채팅의 Persona를 갱신할까요?</p><p>동의하면 LLM을 호출하며 비용이 발생할 수 있습니다. 원본 Persona와 RisuAI 기본 Persona 선택은 유지됩니다.</p>`;
-    const actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;margin-top:18px';
-    const later=document.createElement('button'),approve=document.createElement('button'),close=document.createElement('button');
-    later.textContent='나중에';later.dataset.liaNotice='later';approve.textContent='동의 · 수동 분석·갱신';approve.dataset.liaNotice='approve';close.textContent='×';close.dataset.liaNotice='close';close.setAttribute('aria-label','갱신 안내 닫기');
-    for(const button of [later,approve,close]){button.type='button';button.style.cssText='min-height:42px;padding:8px 14px;border:1px solid #c8b7e1;border-radius:10px;background:#fff;color:#352647;font:600 13px system-ui;cursor:pointer';}
-    approve.style.background='#7653a6';approve.style.color='white';close.style.cssText+=';position:absolute;right:12px;top:12px;padding:4px 12px;font-size:20px';
-    actions.append(later,approve);card.append(close,actions);shell.append(card);document.body.append(shell);
-    return await new Promise(resolve=>{
-      const notice={root:shell,settled:false,finish(value){if(notice.settled)return;notice.settled=true;document.removeEventListener('keydown',keys);shell.remove();if(liaUpdateNotice===notice)liaUpdateNotice=null;resolve(value);}};
-      const keys=event=>{if(event.key==='Escape'){event.preventDefault();notice.finish(false);}else if(event.key==='Tab'){const first=close,last=approve;if(event.shiftKey&&(document.activeElement===first||!card.contains(document.activeElement))){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}};
-      liaUpdateNotice=notice;later.onclick=close.onclick=()=>notice.finish(false);approve.onclick=()=>notice.finish(true);document.addEventListener('keydown',keys);later.focus();
-    });
-  }
+  
 
-  async function maybeNotifyLiaUpdate(event) {
-    if(pluginUnloaded||liaUpdateNoticeBusy||manualLivePersonaAction||typeof document==='undefined'||!document.body)return;
-    const ci=event?.characterIndex,ti=event?.chatIndex,mi=event?.messageIndex,char=event?.char||event?.character;
-    if(!Number.isInteger(ci)||ci<0||!Number.isInteger(ti)||ti<0||!Number.isInteger(mi)||mi<0||!char||!event.chat)return;
-    const message=asArray(event.chat.message||event.chat.messages||event.chat.data)[mi];
-    if(!message||message.disabled||message.isComment||message.streaming||message.isStreaming||message.error||message.status==='error'||message.status==='streaming'||!isAssistantTurnMessage(message))return;
-    liaUpdateNoticeBusy=true;
-    try {
-      const selected=await readLiaViewSelection();
-      if(pluginUnloaded||selected.charIndex!==ci||selected.chatIndex!==ti)return;
-      const ctx={char,chat:event.chat,charIndex:ci,chatIndex:ti},scopeKey=livePersonaScopeKey(ctx);
-      const binding=await readLivePersonaBindingByScopeKey(scopeKey);
-      if(pluginUnloaded||!binding||String(event.chat.bindedPersona||'')!==String(binding.livePersonaId||''))return;
-      const processed=Number(binding.lastProcessedPairCount||0);
-      const key=JSON.stringify([scopeKey,String(binding.livePersonaId),processed]);
-      if(liaNotifiedUpdateRanges.has(key))return;
-      if(countLiaNoticePairs(event.chat,processed+LIVE_SYNC_BATCH_SIZE)-processed<LIVE_SYNC_BATCH_SIZE)return;
-      const expected={scopeKey,personaId:String(binding.livePersonaId),processed,range:[processed+1,processed+LIVE_SYNC_BATCH_SIZE]};
-      const stillSelected=await readLiaViewSelection();
-      if(pluginUnloaded||stillSelected.charIndex!==ci||stillSelected.chatIndex!==ti)return;
-      liaNotifiedUpdateRanges.add(key);if(liaNotifiedUpdateRanges.size>128)liaNotifiedUpdateRanges.delete(liaNotifiedUpdateRanges.values().next().value);
-      const approved=await showLiaUpdateNotice(expected,binding.sourcePersonaName);
-      if(!approved||pluginUnloaded){if(!pluginUnloaded&&!liaUiVisible)await api.hideContainer?.();return;}
-      const fresh=await getLiveRuntimeContext();fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
-      if(pluginUnloaded||!liaExpectedUpdateMatches(fresh,expected)){if(!liaUiVisible)await api.hideContainer?.();return;}
-      activeWorkspaceTab='realtime';if(liaUiVisible)await refreshPreview({skipCapture:true});else await openUI();
-      await runLiaMockupAction('update-five',document.getElementById('upd-go'),expected);
-    } finally {liaUpdateNoticeBusy=false;}
-  }
 
   async function initializePersonaProofExperience() {
     personaProofHooksEnabled = false;
@@ -13828,59 +11868,29 @@ ${revisionText}`);
     if (!Array.isArray(db?.characters) || !Array.isArray(db?.personas)) throw Error('전체 채팅과 Persona 목록을 읽을 수 없습니다. RisuAI 데이터 접근 권한을 확인하세요.');
     const selectedIndex=normalizePersonaDatabaseSelectedIndex(db.selectedPersona,db.personas);
     if(!Number.isInteger(selectedIndex))throw Error('기본 Persona 선택 상태를 확인할 수 없습니다. 데이터 접근 권한을 확인하세요.');
-    const storage = await waitForPluginStorage(getRuntimeApi(), {timeoutMs:4000,intervalMs:250});
-    if (!storage?.getItem) throw Error('LIA 저장소를 읽을 수 없습니다.');
-    const decode = raw => typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : raw;
-    const rawIndex = decode(await storage.getItem(LIVE_PERSONA_INDEX_STORAGE_KEY));
-    if (rawIndex != null && (rawIndex.schema !== LIVE_PERSONA_INDEX_SCHEMA || !rawIndex.entries || typeof rawIndex.entries !== 'object' || Array.isArray(rawIndex.entries))) throw Error('LIA 연결 인덱스를 확인할 수 없습니다. 기존 자료를 보존합니다.');
-    const index = rawIndex?.entries || {}, bindings = new Map(), bindingErrors = new Set();
-    for (const [scopeKey, meta] of Object.entries(index)) {
-      try {
-        if (meta?.storageKey !== livePersonaScopeStorageKey(scopeKey)) throw Error('binding key');
-        const raw = await storage.getItem(meta.storageKey), parsed = decode(raw);
-        if (!parsed || parsed.scopeKey !== scopeKey || (meta.digest && hashText(typeof raw === 'string' ? raw : JSON.stringify(raw)) !== meta.digest)) throw Error('binding digest');
-        const binding = normalizeLivePersonaBinding(parsed);
-        if (!binding) throw Error('binding unavailable');
-        bindings.set(scopeKey,binding);
-      } catch (_) { bindingErrors.add(scopeKey); }
-    }
-    // Legacy records are observed without migrating or rewriting them merely to open this page.
-    const legacy = decode(await storage.getItem(LIVE_PERSONA_STORAGE_KEY));
-    if(legacy!=null&&(typeof legacy!=='object'||Array.isArray(legacy)||(legacy.bindings!==undefined&&(!legacy.bindings||typeof legacy.bindings!=='object'||Array.isArray(legacy.bindings)))))throw Error('이전 LIA 연결 기록을 확인할 수 없습니다. 기존 자료를 보존합니다.');
-    for (const [scopeKey, value] of Object.entries(legacy?.bindings || {})) {
-      if (Object.hasOwn(index,scopeKey)) continue;
-      const binding = normalizeLivePersonaBinding(value);
-      if (binding?.scopeKey === scopeKey) bindings.set(scopeKey,binding); else bindingErrors.add(scopeKey);
-    }
     const personaCounts = new Map(), characterCounts = new Map();
     for (const p of db.personas) if (p?.id) personaCounts.set(String(p.id),(personaCounts.get(String(p.id))||0)+1);
     for (const c of db.characters) {const id=liaScopeCharacterId(c);if(id)characterCounts.set(id,(characterCounts.get(id)||0)+1);}
     const personas = db.personas.filter(p=>p?.id && personaCounts.get(String(p.id))===1).map(p=>({
-      id:String(p.id),name:String(p.name||'이름 없는 Persona'),live:isLivePersona(p),revision:liaScopePersonaRevision(p),
-      preview:limitText(compact(stripLivePersonaState(p.personaPrompt||'')),160)
+      id:String(p.id),name:String(p.name||'이름 없는 Persona'),revision:liaScopePersonaRevision(p),
+      preview:limitText(compact(p.personaPrompt||''),160)
     }));
-    const byPersona = new Map(personas.map(p=>[p.id,p])), rows=[], seen=new Set();
+    const byPersona = new Map(personas.map(p=>[p.id,p])), rows=[];
     const selected = db.personas[selectedIndex], selectedId=String(selected?.id||'');
     for (const [characterIndex,character] of db.characters.entries()) {
       const characterId=liaScopeCharacterId(character), chats=asArray(character?.chats), counts=new Map();
       for (const chat of chats) {const id=liaScopeChatId(chat);if(id)counts.set(id,(counts.get(id)||0)+1);}
       for (const [chatIndex,chat] of chats.entries()) {
-        const chatId=liaScopeChatId(chat),scopeKey=livePersonaScopeKey({char:character,chat,charIndex:characterIndex,chatIndex});
-        seen.add(scopeKey);
-        const binding=bindings.get(scopeKey),explicitId=String(chat?.bindedPersona||''),effective=byPersona.get(explicitId||selectedId);
-        let reason=!characterId||!chatId?'채팅 식별자 없음':characterCounts.get(characterId)!==1||counts.get(chatId)!==1?'중복된 채팅 식별자':!PersonaBindingManager.capability().available?'채팅 연결 API 사용 불가':bindingErrors.has(scopeKey)?'LIA 연결 기록 확인 필요':binding?.pendingBindingChange?'미완료 연결 변경 확인 필요':'';
+        const chatId=liaScopeChatId(chat),scopeKey=liaScopeKey({char:character,chat,charIndex:characterIndex,chatIndex});
+        const explicitId=String(chat?.bindedPersona||''),effective=byPersona.get(explicitId||selectedId);
+        let reason=!characterId||!chatId?'채팅 식별자 없음':characterCounts.get(characterId)!==1||counts.get(chatId)!==1?'중복된 채팅 식별자':!PersonaBindingManager.capability().available?'채팅 연결 API 사용 불가':'';
         rows.push({scopeKey,characterId,chatId,characterIndex,chatIndex,characterName:String(character.name||'이름 없는 캐릭터'),chatName:String(chat.name||'이름 없는 채팅'),
           personaId:explicitId,effectivePersonaId:explicitId||selectedId,personaName:effective?.name||(explicitId?'삭제되었거나 중복된 Persona':'기본 Persona 없음'),
-          preview:effective?.preview||'',livePersonaId:String(binding?.livePersonaId||''),sourcePersonaId:String(binding?.sourcePersonaId||''),sourcePersonaName:String(binding?.sourcePersonaName||''),
-          status:reason||(!explicitId?'기본 Persona 사용':!effective?'Persona 확인 필요':binding?.livePersonaId===explicitId?(binding.enabled?'LIA 연결됨':'LIA 갱신 일시정지'):'직접 연결'),
-          available:!reason,reason,orphan:false,
-          revision:hashText(JSON.stringify([scopeKey,explicitId,selectedId,effective?.revision,binding||null,bindingErrors.has(scopeKey)]))});
+          preview:effective?.preview||'',
+          status:reason||(!explicitId?'기본 Persona 사용':!effective?'Persona 확인 필요':'직접 연결'),
+          available:!reason,reason,
+          revision:hashText(JSON.stringify([scopeKey,explicitId,selectedId,effective?.revision]))});
       }
-    }
-    for (const scopeKey of new Set([...bindings.keys(),...bindingErrors])) if(!seen.has(scopeKey)) {
-      const binding=bindings.get(scopeKey),persona=byPersona.get(binding?.livePersonaId);
-      rows.push({scopeKey,characterName:'대상을 찾을 수 없는 연결 기록',chatName:scopeKey,personaName:persona?.name||binding?.livePersonaName||'Persona 확인 필요',
-        sourcePersonaName:binding?.sourcePersonaName||'',preview:persona?.preview||'',status:'채팅 없음 · 기록 보존',available:false,reason:'원본 채팅을 찾을 수 없어 변경할 수 없습니다.',orphan:true,revision:''});
     }
     return {rows,personas,defaultPersonaName:String(selected?.name||'기본 Persona 없음')};
   }
@@ -13888,16 +11898,15 @@ ${revisionText}`);
   async function changeLiaScopePersona(input = {}) {
     const scopeKey=String(input.scopeKey||'');
     if(pluginUnloaded)throw Error('LIA가 종료되었습니다.');
-    if(manualLivePersonaAction || liaScopePersonaChanges.size)throw Error('진행 중인 Persona 작업을 완료한 뒤 다시 시도하세요.');
+    if(liaScopePersonaChanges.size)throw Error('진행 중인 Persona 작업을 완료한 뒤 다시 시도하세요.');
     liaScopePersonaChanges.add(scopeKey);
     try {
       const catalog=await readLiaScopePersonaCatalog(),matches=catalog.rows.filter(row=>row.scopeKey===scopeKey);
       const row=matches[0];
       if(matches.length!==1||!row?.available)throw Error(row?.reason||'변경할 채팅을 확인할 수 없습니다. 목록을 새로 읽어 주세요.');
       if(!input.expectedRevision||input.expectedRevision!==row.revision)throw Error('확인 후 연결 정보가 바뀌었습니다. 목록을 새로 읽고 다시 선택하세요.');
-      if(livePersonaConfigurationScopes.has(scopeKey)||liveSyncInFlightScopes.has(scopeKey)||livePersonaBindingChanges.has(scopeKey))throw Error('이 채팅의 Persona 작업이 진행 중입니다.');
       const ctx=await getLiveRuntimeContextForTarget({characterIndex:row.characterIndex,chatIndex:row.chatIndex},{requireFreshSource:true});
-      if(!ctx.sourceReadCurrent||liaScopeCharacterId(ctx.char)!==row.characterId||liaScopeChatId(ctx.chat)!==row.chatId||livePersonaScopeKey(ctx)!==scopeKey||String(ctx.chat.bindedPersona||'')!==row.personaId)throw Error('채팅 위치 또는 연결 정보가 바뀌었습니다. 새로고침 후 다시 시도하세요.');
+      if(!ctx.sourceReadCurrent||liaScopeCharacterId(ctx.char)!==row.characterId||liaScopeChatId(ctx.chat)!==row.chatId||liaScopeKey(ctx)!==scopeKey||String(ctx.chat.bindedPersona||'')!==row.personaId)throw Error('채팅 위치 또는 연결 정보가 바뀌었습니다. 새로고침 후 다시 시도하세요.');
       const targetId=String(input.personaId||'');
       let expectedId=targetId;
       if(targetId) {
@@ -13905,7 +11914,6 @@ ${revisionText}`);
         if(!persona||persona.revision!==input.expectedPersonaRevision)throw Error('선택한 Persona가 변경되었거나 삭제되었습니다. 목록을 새로 읽어 주세요.');
         const freshPersonas=ctx.db.personas.filter(p=>String(p?.id||'')===targetId);
         if(freshPersonas.length!==1||liaScopePersonaRevision(freshPersonas[0])!==input.expectedPersonaRevision)throw Error('선택한 Persona가 변경되었습니다. 새로고침 후 다시 시도하세요.');
-        if(persona.live&&targetId!==row.livePersonaId)throw Error('다른 채팅의 Live Persona는 연결할 수 없습니다. 원본 Persona를 선택하세요.');
         const result=await PersonaSelectionManager.applyCard(ctx,`id:${targetId}`);
         expectedId=result.dynamicPersonaId||targetId;
       } else await PersonaSelectionManager.clearDynamic(ctx);
@@ -13961,71 +11969,34 @@ ${revisionText}`);
       const ensured = await ensurePersonaPanelPersonaId(choice, ctx);
       const db = await api.getDatabase?.(["personas", "selectedPersona"]);
       const selected = selectedPersonaSnapshotFromDb(db);
-      appendDebugLog("persona_selection", "native_default_write_blocked", { requestedPersonaId: ensured.id, requestedPersonaName: ensured.persona?.name || "", requestedIndex: ensured.index, nativeSelectedIndex: selected.index, nativeSelectedPersonaId: selected.id, scopeKey: livePersonaScopeKey(ctx) }, "warn");
+      appendDebugLog("persona_selection", "native_default_write_blocked", { requestedPersonaId: ensured.id, requestedPersonaName: ensured.persona?.name || "", requestedIndex: ensured.index, nativeSelectedIndex: selected.index, nativeSelectedPersonaId: selected.id, scopeKey: liaScopeKey(ctx) }, "warn");
       appendOperationLog("persona_select", `RisuAI 기본 Persona 선택은 LIA에서 변경하지 않았습니다: ${ensured.persona?.name || ensured.id || "Persona"}`, { requestedPersonaId: ensured.id, nativeSelectedPersonaId: selected.id, mode: "read_only" }, "info");
       return { ...ensured, previousIndex: selected.index, selectedIndex: selected.index, verified: false, blocked: true, reason: "native_default_read_only" };
     },
 
     async setDynamic(ctx, choice, options = {}) {
-      if (manualLivePersonaAction) throw new Error("LIA_MANUAL_ANALYSIS_BUSY: 현재 분석을 취소하거나 완료한 뒤 변경해 주세요.");
       const ensured = await ensurePersonaPanelPersonaId(choice, ctx);
-      const liveBinding = await readLivePersonaBindingForContext(ctx);
-      if (isLivePersona(ensured.persona) && String(ensured.id || "") !== String(liveBinding?.livePersonaId || "")) {
-        throw new Error("다른 채팅에서 관리 중인 Live Persona는 이 채팅에 직접 바인딩할 수 없습니다. 원본 Persona를 선택하세요.");
-      }
-      if (liveBinding?.enabled && ensured.id !== liveBinding.livePersonaId) {
-        liveBinding.enabled = false;
-        liveBinding.disabledReason = "Persona 사이드 패널에서 동적 바인딩을 직접 변경해 기존 갱신 연결을 해제했습니다.";
-        liveBinding.bindingStatus = "manual_override";
-        liveBinding.updatedAt = new Date().toISOString();
-        await writeLivePersonaBinding(liveBinding);
-      }
       const result = await PersonaBindingManager.write(ctx, ensured.id, { reason: options.reason || "persona_panel_dynamic" });
-      return { ...ensured, bindResult: result, liveBindingPaused: Boolean(liveBinding?.enabled === false && liveBinding?.bindingStatus === "manual_override") };
+      return { ...ensured, bindResult: result };
     },
 
     async clearDynamic(ctx) {
-      if (manualLivePersonaAction) throw new Error("LIA_MANUAL_ANALYSIS_BUSY: 현재 분석을 취소하거나 완료한 뒤 변경해 주세요.");
-      const liveBinding = await readLivePersonaBindingForContext(ctx);
-      if (liveBinding?.enabled) {
-        liveBinding.enabled = false;
-        liveBinding.disabledReason = "Persona 사이드 패널에서 현재 채팅 바인딩을 해제해 기존 갱신 연결을 해제했습니다.";
-        liveBinding.bindingStatus = "manual_unbound";
-        liveBinding.updatedAt = new Date().toISOString();
-        await writeLivePersonaBinding(liveBinding);
-      }
       return PersonaBindingManager.write(ctx, "", { reason: "persona_panel_unbind" });
     },
 
     async applyCard(ctx, choice) {
-      if (manualLivePersonaAction) throw new Error("LIA_MANUAL_ANALYSIS_BUSY: 현재 분석을 취소하거나 완료한 뒤 변경해 주세요.");
       const before = await this.read(ctx);
-      appendDebugLog("persona_selection", "apply_card_start", { choice: String(choice || ""), scopeKey: livePersonaScopeKey(ctx), currentDefaultId: before.selectedPersonaId || "", currentDynamicId: before.dynamicPersonaId || "" });
+      appendDebugLog("persona_selection", "apply_card_start", { choice: String(choice || ""), scopeKey: liaScopeKey(ctx), currentDefaultId: before.selectedPersonaId || "", currentDynamicId: before.dynamicPersonaId || "" });
       const ensured = await ensurePersonaPanelPersonaId(choice, ctx);
       const refreshed = await this.read(ctx);
       const target = refreshed.personas.find((item) => String(item?.id || "").trim() === ensured.id) || ensured.persona;
       const targetIndex = refreshed.personas.findIndex((item) => String(item?.id || "").trim() === ensured.id);
       const targetId = String(target?.id || ensured.id || "").trim();
       if (!targetId) throw new Error("선택한 Persona에 안정적인 ID를 부여하지 못했습니다.");
-      const liveBinding = await readLivePersonaBindingForContext(ctx);
-      if (isLivePersona(target) && targetId !== String(liveBinding?.livePersonaId || "")) {
-        throw new Error("다른 채팅에서 관리 중인 Live Persona는 직접 선택할 수 없습니다. 해당 Persona의 원본을 선택하세요.");
-      }
-      if (liveBinding?.enabled && !isLivePersona(target)) {
-        const nextBinding = await configureLivePersonaSync(
-          refreshed.runtimeCtx,
-          personaPanelChoiceRef(target, targetIndex),
-          liveBinding.policy,
-          liveBinding.externalChangePolicy,
-          { previousBinding: liveBinding.previousBinding, resetLedger: targetId !== liveBinding.sourcePersonaId },
-        );
-        appendDebugLog("persona_selection", "dynamic_bind_only", { personaId: targetId, personaName: target?.name || "", dynamicPersonaId: nextBinding.livePersonaId, nativeDefaultUnchanged: true, scopeKey: livePersonaScopeKey(ctx), liveReconfigured: true }, "info");
-        return { defaultResult: null, dynamicPersonaId: nextBinding.livePersonaId, liveReconfigured: true, nativeDefaultUnchanged: true, binding: nextBinding };
-      }
       const dynamicResult = await PersonaBindingManager.write(refreshed.runtimeCtx, targetId, { reason: "persona_panel_card_dynamic_only" });
-      appendDebugLog("persona_selection", "dynamic_bind_only", { personaId: targetId, personaName: target?.name || "", dynamicPersonaId: dynamicResult.after.personaId, nativeDefaultUnchanged: true, scopeKey: livePersonaScopeKey(ctx), liveReconfigured: false }, "info");
+      appendDebugLog("persona_selection", "dynamic_bind_only", { personaId: targetId, personaName: target?.name || "", dynamicPersonaId: dynamicResult.after.personaId, nativeDefaultUnchanged: true, scopeKey: liaScopeKey(ctx), liveReconfigured: false }, "info");
       appendOperationLog("persona_bind", `현재 채팅에 Persona를 동적 바인딩했습니다: ${target?.name || targetId}`, { personaId: targetId, nativeDefaultUnchanged: true }, "ok");
-      return { defaultResult: null, dynamicPersonaId: dynamicResult.after.personaId, liveReconfigured: false, nativeDefaultUnchanged: true };
+      return { defaultResult: null, dynamicPersonaId: dynamicResult.after.personaId, nativeDefaultUnchanged: true };
     },
   });
 
@@ -14052,471 +12023,48 @@ ${revisionText}`);
     let sourceId = currentId;
     if (!sourceId) sourceId = PersonaBindingManager.effectivePersonaId(runtimeCtx, verification);
     const source = PersonaBindingManager.resolvePersona(runtimeCtx, sourceId);
-    if (!source || isLivePersona(source)) return null;
+    if (!source) return null;
     const index = asArray(runtimeCtx?.db?.personas).findIndex((item) => item === source || String(item?.id || "") === String(source?.id || ""));
-    return { source, index, choice: livePersonaChoiceValue(source, index) };
+    return { source, index, choice: personaPanelChoiceRef(source, index) };
   }
 
-  const livePersonaBindingChanges = new Set();
-  const livePersonaConfigurationScopes = new Set();
-  async function resumeLivePersonaBindingChange(ctx, binding) {
-    const pending = binding?.pendingBindingChange;
-    if (!pending) return binding;
-    const scopeKey = livePersonaScopeKey(ctx);
-    if (pending.schema !== 'lia.binding_change.v1' || !pending.id || pending.scopeKey !== scopeKey
-      || pending.completedBinding?.scopeKey !== scopeKey || binding.scopeKey !== scopeKey
-      || !['configure', 'native_unbind'].includes(pending.kind)
-      || (pending.kind === 'configure' && (!pending.persona?.id || pending.persona.id !== pending.completedBinding.livePersonaId))) {
-      throw new Error('LIA_BINDING_CHANGE_INVALID');
-    }
-    if (livePersonaBindingChanges.has(scopeKey)) throw new Error('LIA_BINDING_CHANGE_BUSY');
-    livePersonaBindingChanges.add(scopeKey);
-    try {
-      const current = await readLivePersonaBindingByScopeKey(scopeKey, true);
-      if (current?.pendingBindingChange?.id !== pending.id) throw new Error('LIA_BINDING_CHANGE_SUPERSEDED');
-      const actual = await PersonaBindingManager.read(ctx);
-      const targetId = pending.kind === 'configure' ? pending.persona.id : '';
-      if (livePersonaScopeKey({ ...ctx, chat: actual.chat }) !== scopeKey
-        || ![pending.beforePersonaId, targetId].includes(actual.personaId)) throw new Error('LIA_BINDING_CHANGE_CONFLICT');
-      if (pending.persona) {
-        const db = await api.getDatabase(['personas', 'selectedPersona']);
-        const existing = asArray(db?.personas).find(item => item.id === targetId) || null;
-        const matches = value => JSON.stringify(existing) === JSON.stringify(value);
-        if (!matches(pending.beforePersona) && !matches(pending.persona)) throw new Error('LIA_BINDING_CHANGE_PERSONA_CONFLICT');
-        if (!matches(pending.persona)) await upsertPersonaFresh(pending.persona, ctx);
-      }
-      await PersonaBindingManager.write(ctx, targetId, { reason: pending.kind,
-        expectedBeforePersonaId: actual.personaId });
-      if (pending.persona) {
-        const verified = await api.getDatabase(['personas']);
-        const actualPersona = asArray(verified?.personas).find(item => item.id === targetId);
-        if (JSON.stringify(actualPersona) !== JSON.stringify(pending.persona)) throw new Error('LIA_BINDING_CHANGE_PERSONA_CONFLICT');
-      }
-      const completed = normalizeLivePersonaBinding({ ...pending.completedBinding, pendingBindingChange: null,
-        lastObservedBindingId: targetId, lastBindingCheckAt: new Date().toISOString(),
-        lastError: '', bindingError: '', updatedAt: new Date().toISOString() });
-      await writeLivePersonaBinding(completed, { completeChangeId: pending.id });
-      return completed;
-    } finally { livePersonaBindingChanges.delete(scopeKey); }
-  }
+  
+  
+  
 
-  async function commitLivePersonaBindingChange(ctx, completedBinding, persona = null) {
-    const scopeKey = livePersonaScopeKey(ctx);
-    const current = await readLivePersonaBindingByScopeKey(scopeKey, true);
-    if (current?.pendingBindingChange) throw new Error('LIA_BINDING_CHANGE_PENDING');
-    const before = await PersonaBindingManager.read(ctx);
-    if (livePersonaScopeKey({ ...ctx, chat: before.chat }) !== scopeKey) throw new Error('LIA_BINDING_CHANGE_SCOPE_CHANGED');
-    const db = persona ? await api.getDatabase(['personas', 'selectedPersona']) : null;
-    const beforePersona = persona ? asArray(db?.personas).find(item => item.id === persona.id) || null : null;
-    const targetPersona = persona ? { ...(beforePersona || {}), ...persona } : null;
-    const pending = { schema: 'lia.binding_change.v1', id: randomId(), scopeKey,
-      kind: persona ? 'configure' : 'native_unbind', beforePersonaId: before.personaId,
-      beforePersona,
-      persona: targetPersona, completedBinding: { ...completedBinding, pendingBindingChange: null } };
-    // Persist intent before changing the host. A failed final write leaves a replayable operation.
-    const staged = normalizeLivePersonaBinding({ ...completedBinding, enabled: true,
-      bindingStatus: 'binding_change_pending', pendingBindingChange: pending });
-    await writeLivePersonaBinding(staged);
-    return await resumeLivePersonaBindingChange(ctx, staged);
-  }
+  
 
-  async function configureLivePersonaSync(ctx, sourceChoice, policy = "conservative", externalChangePolicy = "safe", managerOptions = {}) {
-    const scopeKey = livePersonaScopeKey(ctx);
-    if (livePersonaConfigurationScopes.has(scopeKey) || (liveSyncInFlightScopes.has(scopeKey) && managerOptions.fromLiveSync !== true)) throw new Error('LIA_BINDING_CHANGE_BUSY');
-    livePersonaConfigurationScopes.add(scopeKey);
-    try {
-    const unfinished = await readLivePersonaBindingByScopeKey(scopeKey, true);
-    if (unfinished?.pendingBindingChange) await resumeLivePersonaBindingChange(ctx, unfinished);
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const personas = asArray(db?.personas).slice();
-    const source = resolveLivePersonaChoice(personas, sourceChoice);
-    if (!source || isLivePersona(source)) throw new Error("연결할 원본 RisuAI Persona를 선택하세요.");
-    if (!PersonaBindingManager.capability().available) throw new Error("이 RisuAI 환경에서는 채팅 Persona 바인딩 API를 사용할 수 없습니다.");
-    const pairs = collectCompletedTurnPairs(ctx.chat);
-    const previous = await readLivePersonaBindingByScopeKey(scopeKey);
-    const currentBindingState = await PersonaBindingManager.read(ctx);
-    const preservedPreviousBinding = managerOptions.previousBinding
-      || previous?.previousBinding
-      || PersonaBindingManager.previousSnapshotFromState(currentBindingState);
-    const sourceIndex = personas.findIndex((item) => item === source || String(item?.id || "") === String(source.id || ""));
-    const sourceId = String(source.id || `index:${sourceIndex}`);
-    const sameSource = previous?.sourcePersonaId === sourceId;
-    const livePersonaId = sameSource && previous?.livePersonaId
-      ? previous.livePersonaId
-      : `${LIVE_PERSONA_ID_PREFIX}::${hashText(scopeKey).slice(0, 12)}::${hashText(sourceId).slice(0, 10)}::${randomId()}`;
-    const oldLivePersonaId = previous?.livePersonaId || "";
-    const existingLiveIndex = personas.findIndex((item) => String(item?.id || "") === livePersonaId);
-    const basePersonaPrompt = sameSource && previous?.basePersonaPrompt
-      ? previous.basePersonaPrompt
-      : stripLivePersonaState(source.personaPrompt || "");
-    const now = new Date().toISOString();
-    const selectedSnapshot = selectedPersonaSnapshotFromDb(db);
-    const livePersonaName = livePersonaDisplayName(source.name);
-    const sameBinding = sameSource && previous?.livePersonaId === livePersonaId;
-    const provisionalBinding = normalizeLivePersonaBinding({
-      ...(sameBinding ? previous : {}),
-      scopeKey,
-      enabled: true,
-      policy: policy === "auto" ? "auto" : "conservative",
-      externalChangePolicy: externalChangePolicy === "follow" ? "follow" : "safe",
-      managerVersion: PERSONA_BINDING_MANAGER_VERSION,
-      displayNameVersion: LIVE_PERSONA_DISPLAY_NAME_VERSION,
-      previousBinding: preservedPreviousBinding,
-      bindingStatus: "binding",
-      lastObservedSelectedPersonaId: selectedSnapshot.id,
-      lastObservedSelectedPersonaKey: selectedSnapshot.key,
-      lastSelectedPersonaCheckAt: now,
-      sourcePersonaId: sourceId,
-      sourcePersonaIndex: sourceIndex,
-      sourcePersonaName: source.name || "Persona",
-      livePersonaId,
-      livePersonaName,
-      originalSnapshot: sameBinding && previous?.originalSnapshot ? previous.originalSnapshot : {
-        id: sourceId,
-        name: source.name || "Persona",
-        personaPrompt: String(source.personaPrompt || ""),
-        note: String(source.note || ""),
-        icon: source.icon || "",
-        image: source.image || "",
-        largePortrait: source.largePortrait || false,
-        savedAt: now,
-      },
-      basePersonaPrompt,
-      basePromptHash: hashText(basePersonaPrompt),
-      lastAppliedPromptHash: hashText(sameSource ? renderLivePersonaPrompt({ ...previous, basePersonaPrompt }) : basePersonaPrompt),
-      anchorPairCount: sameBinding && managerOptions.resetLedger !== true ? previous.anchorPairCount : pairs.length,
-      lastProcessedPairCount: sameBinding && managerOptions.resetLedger !== true ? previous.lastProcessedPairCount : pairs.length,
-      liveState: sameBinding && managerOptions.resetLedger !== true ? previous.liveState : [],
-      coreOverlay: sameBinding && managerOptions.resetLedger !== true ? previous.coreOverlay : [],
-      coreCandidateHistory: sameBinding && managerOptions.resetLedger !== true ? previous.coreCandidateHistory : {},
-      ledgers: sameBinding && managerOptions.resetLedger !== true ? previous.ledgers : [],
-      worldBlueprint: normalizeWorldBlueprint(ctx.worldBlueprint) || previous?.worldBlueprint || null,
-      lastError: "",
-      disabledReason: "",
-      nextRetryAt: 0,
-      createdAt: sameBinding ? previous.createdAt : now,
-      updatedAt: now,
-    });
-    const livePersona = {
-      ...source,
-      id: livePersonaId,
-      name: livePersonaName,
-      personaPrompt: renderLivePersonaPrompt(provisionalBinding),
-      note: [LIVE_PERSONA_NOTE_MARKER, `Source persona id: ${sourceId}`, `Source persona name: ${source.name || ""}`, `Chat scope: ${scopeKey}`].join("\n"),
-    };
-    provisionalBinding.bindingStatus = "connected";
-    const committedBinding = await commitLivePersonaBindingChange(ctx, provisionalBinding, livePersona);
-    // Do not auto-delete an established Live Persona when the source changes.
-    // A native RisuAI Persona switch must never make a previously created LIA
-    // Persona disappear. Old Live Personas are retained until an explicit user
-    // cleanup/restore action removes them.
-    if (oldLivePersonaId && oldLivePersonaId !== livePersonaId) {
-      provisionalBinding.retiredLivePersonaId = oldLivePersonaId;
-    }
-    return committedBinding;
-    } finally { livePersonaConfigurationScopes.delete(scopeKey); }
-  }
+  
 
-  async function disableLivePersonaSyncKeepCurrent(ctx) {
-      if (manualLivePersonaAction) throw new Error("LIA_MANUAL_ANALYSIS_BUSY: 현재 분석을 취소하거나 완료한 뒤 변경해 주세요.");
-    const binding = await readLivePersonaBindingForContext(ctx);
-    if (!binding) throw new Error("현재 채팅에 Live Persona 설정이 없습니다.");
-    binding.enabled = false;
-    binding.disabledReason = "사용자가 현재 Live 상태를 유지하고 동기화를 껐습니다.";
-    binding.bindingStatus = "connected_paused";
-    binding.lastBindingCheckAt = new Date().toISOString();
-    binding.updatedAt = new Date().toISOString();
-    await writeLivePersonaBinding(binding);
-    return binding;
-  }
+  
 
-  async function restoreOriginalLivePersona(ctx) {
-      if (manualLivePersonaAction) throw new Error("LIA_MANUAL_ANALYSIS_BUSY: 현재 분석을 취소하거나 완료한 뒤 변경해 주세요.");
-    const binding = await readLivePersonaBindingForContext(ctx);
-    if (!binding) throw new Error("현재 채팅에 복원할 Live Persona 설정이 없습니다.");
-    const db = await api.getDatabase?.(["personas", "selectedPersona"]);
-    const personas = asArray(db?.personas).slice();
-    const restored = await PersonaBindingManager.restorePrevious(ctx, binding, personas);
-    await deleteLivePersonaBinding(binding.scopeKey);
-    const cleanup = await removeLiaLivePersonaIfUnreferenced(ctx, binding.livePersonaId, { fallbackPersonaId: binding.sourcePersonaId });
-    return { ...binding, restoreResult: restored, cleanup };
-  }
+  
 
-  function liveBatchEvidenceText(pairs) {
-    return asArray(pairs).map((pair) => [
-      `## TURN ${pair.pairIndex}`,
-      `[USER]`, limitText(pair.user.text, 6000),
-      `[ASSISTANT/NPC]`, limitText(pair.assistant.text, 6000),
-    ].join("\n")).join("\n\n");
-  }
+  
 
-  async function analyzeLivePersonaBatch(runtimeCtx, binding, pairs, options = {}) {
-    const config = await readStoredLLMConfig();
-    const prompt = [
-      "Analyze exactly five completed U+A RP turns and update a chat-specific Live Persona state.",
-      "Return JSON only. This is state tracking, not prose generation.",
-      "Authority order: explicit USER self-declaration/action > objective world consequence clearly established by the exchange > assistant/NPC description.",
-      "Assistant/NPC claims about the user's private thoughts, identity, desire, consent, personality, or hidden facts are not authoritative by themselves.",
-      "Separate durable current state from one-scene noise. Weather, current room, one drink, one facial expression, a single emotional spike, or throwaway action normally belongs in ignoredTransient.",
-      "Carry forward unresolved prior liveState even when the newest five turns do not mention it. Remove it only when the new evidence clearly resolves, supersedes, or contradicts it.",
-      "Current injuries, active roles/affiliations, ongoing relationships/tensions, current goals, equipment, reputation changes, and in-progress training may belong in liveState.",
-      "coreCandidates are only for changes that may have become a stable part of the persona. Prefer none. Identity fundamentals require explicit USER authority.",
-      "Do not grant powers, status, relationships, knowledge, or species changes unsupported by the chat/world constraints.",
-      binding.policy === "auto"
-        ? "Policy AUTO: you may propose coreCandidates, but LIA will promote only high-confidence changes repeated across consecutive 5-turn batches."
-        : "Policy CONSERVATIVE: coreCandidates are advisory only and will never be promoted automatically.",
-      "",
-      "## Required JSON output contract",
-      "Return one object matching this schema, including every required field. Do not return Markdown or prose outside JSON.",
-      "liveState and coreCandidates must be arrays, including when empty. Never group liveState into an object keyed by category.",
-      "Each state needs a stable key, category, value, active or persistent durability, integer confidence from 0 to 100, and an evidence array of strings.",
-      "An empty liveState array means no unresolved current state remains; do not use it to conceal an output-format error.",
-      JSON.stringify(LIVE_PERSONA_DELTA_JSON_SCHEMA),
-      "",
-      "## Base Persona Prompt",
-      limitText(binding.basePersonaPrompt, 14000),
-      "",
-      "## Existing Persistent Evolution",
-      binding.coreOverlay.length ? binding.coreOverlay.map((item) => `- ${item.field}: ${item.value}`).join("\n") : "(none)",
-      "",
-      "## Current Live State",
-      binding.liveState.length ? binding.liveState.map((item) => `- [${item.category}] ${item.value} (${item.durability})`).join("\n") : "(none)",
-      "",
-      ...(binding.worldBlueprint ? ["## World Hard Constraints", ...binding.worldBlueprint.hardConstraints.map((item) => `- ${item}`), ""] : []),
-      `## New five-turn batch · TURN ${pairs[0]?.pairIndex || "?"}~${pairs[pairs.length - 1]?.pairIndex || "?"}`,
-      liveBatchEvidenceText(pairs),
-    ].join("\n");
-    const content = await callIndependentProvider(
-      "You are LIA Live Persona Sync. Track user persona state conservatively and return valid JSON only.",
-      prompt,
-      config,
-      { signal: options.signal, jsonMode: true, jsonSchema: LIVE_PERSONA_DELTA_JSON_SCHEMA, maxTokens: Math.min(2200, Number(config.maxCompletionTokens || 2200)), sharedPromptPrefix: limitText(binding.basePersonaPrompt, 10000) },
-    );
-    const delta = normalizeLiveDelta(content);
-    if (!delta) throw Object.assign(new Error("Live Persona 5턴 분석 결과의 상태 배열 또는 필수 항목 형식이 올바르지 않습니다. 기존 상태와 처리 범위는 변경하지 않았습니다. 같은 범위를 다시 실행해 주세요."), { code: "LIA_LIVE_DELTA_INVALID" });
-    return delta;
-  }
+  
 
-  async function applyLivePersonaPrompt(runtimeCtx, binding, options = {}) {
-    let prompt = "";
-    const livePersonaName = livePersonaDisplayName(binding.sourcePersonaName || binding.originalSnapshot?.name);
-    await mutatePersonaFresh(binding.livePersonaId, async (currentPersona) => {
-      if (typeof options.commitGuard === "function") {
-        const guard = await options.commitGuard();
-        if (!guard?.ok) {
-          const error = new Error(`Live Persona source revision was superseded: ${guard?.reason || "unknown"}`);
-          error.code = LIVE_SYNC_SOURCE_SUPERSEDED_CODE;
-          error.guard = guard;
-          throw error;
-        }
-      }
-      const currentPrompt = String(currentPersona?.personaPrompt || "");
-      const currentHash = hashText(currentPrompt);
-      if (binding.lastAppliedPromptHash && currentHash !== binding.lastAppliedPromptHash) {
-        const rebased = stripLivePersonaState(currentPrompt);
-        if (rebased) {
-          binding.basePersonaPrompt = rebased;
-          binding.basePromptHash = hashText(rebased);
-        }
-      }
-      prompt = renderLivePersonaPrompt(binding);
-      return { ...currentPersona, name: livePersonaName, personaPrompt: prompt };
-    }, runtimeCtx, { commitGuard: options.commitGuard, commitSelectionGuard: options.commitSelectionGuard, commitFence: options.commitFence });
-    binding.livePersonaName = livePersonaName;
-    binding.displayNameVersion = LIVE_PERSONA_DISPLAY_NAME_VERSION;
-    binding.lastAppliedPromptHash = hashText(prompt);
-    binding.updatedAt = new Date().toISOString();
-    return prompt;
-  }
+  
 
   // A persisted flag is never execution authority. Only a private, one-use
   // action issued by the explicit UI entry may enter the state engine.
-  let manualLivePersonaAction = null;
+  
 
-  function manualLivePersonaPlan(ctx, bindingValue = ctx?.livePersonaBinding) {
-    const pairs = collectCompletedTurnPairs(ctx?.chat);
-    const original = normalizeLivePersonaBinding(bindingValue);
-    if (!original) return { configured: false, pending: 0, missing: LIVE_SYNC_BATCH_SIZE, range: null, pairs, binding: null };
-    const validation = validateLivePersonaLedger(normalizeLivePersonaBinding(JSON.parse(JSON.stringify(original))), pairs);
-    const binding = validation.binding;
-    const pending = Math.max(0, pairs.length - binding.lastProcessedPairCount);
-    const startPair = binding.lastProcessedPairCount + 1;
-    return { configured: true, pending, missing: Math.max(0, LIVE_SYNC_BATCH_SIZE - pending),
-      range: pending >= LIVE_SYNC_BATCH_SIZE ? [startPair, startPair + LIVE_SYNC_BATCH_SIZE - 1] : null,
-      pairs, binding, validation };
-  }
+  
 
-  function manualLivePersonaPlanLabel(plan) {
-    if (!plan?.configured) return "먼저 원본 Persona를 연결해 주세요.";
-    return plan.range ? `TURN ${plan.range[0]}~${plan.range[1]} · 다음 5턴만 분석합니다.`
-      : `${plan.pending}/5턴 · 완료된 대화 ${plan.missing}턴이 더 필요합니다.`;
-  }
+  
 
-  function cancelManualLivePersonaAnalysis(reason = "cancelled") {
-    const action = manualLivePersonaAction;
-    if (!action || action.committing) return false;
-    action.cancelled = true;
-    action.cancelReason = String(reason || "cancelled");
-    action.controller?.abort();
-    return true;
-  }
+  
 
-  function manualLivePersonaActionCurrent(action) {
-    return manualLivePersonaAction === action && !action.cancelled && !pluginUnloaded;
-  }
+  
 
-  async function runManualLivePersonaAnalysis(expectedCtx = null) {
-    if (pluginUnloaded) return { skipped: true, reason: "plugin_unloaded" };
-    if (manualLivePersonaAction) return { skipped: true, reason: "manual_busy" };
-    if (liaScopePersonaChanges.size) return { skipped: true, reason: "binding_configuration_in_flight" };
-    const action = {
-      used: false, cancelled: false, committing: false,
-      expectedScope: expectedCtx ? String(expectedCtx.manualScopeKey || livePersonaScopeKey(expectedCtx)) : "",
-      expectedRangeKnown: Boolean(expectedCtx?.livePersonaBinding),
-      expectedRange: expectedCtx && Object.prototype.hasOwnProperty.call(expectedCtx, "manualAnalysisRange")
-        ? expectedCtx.manualAnalysisRange : expectedCtx?.livePersonaBinding ? manualLivePersonaPlan(expectedCtx).range : null,
-      target: expectedCtx ? normalizeLiveSyncTarget({ characterIndex: expectedCtx.charIndex,
-        chatIndex: expectedCtx.chatIndex, scopeKey: livePersonaScopeKey(expectedCtx) }) : null,
-      controller: typeof AbortController === "function" ? new AbortController() : null,
-    };
-    manualLivePersonaAction = action;
-    try { return await checkLivePersonaSync({ manualAction: action }); }
-    finally { if (manualLivePersonaAction === action) manualLivePersonaAction = null; }
-  }
+  
 
-  async function checkLivePersonaSync(options = {}) {
-    const action = options.manualAction;
-    if (!action || action !== manualLivePersonaAction || action.used) return { skipped: true, reason: "manual_only" };
-    action.used = true;
-    const stopped = () => ({ skipped: true, cancelled: true, reason: action.cancelReason || "manual_cancelled" });
-    if (!manualLivePersonaActionCurrent(action)) return stopped();
-    const runtimeCtx = await getLiveRuntimeContextForTarget(action.target, { requireFreshSource: true });
-    if (!manualLivePersonaActionCurrent(action)) return stopped();
-    if (!runtimeCtx.sourceReadCurrent) return { skipped: true, reason: "source_read_unavailable" };
-    const scopeKey = livePersonaScopeKey(runtimeCtx);
-    if (!runtimeCtx.isCurrentContext || (action.expectedScope && scopeKey !== action.expectedScope)) return { skipped: true, stale: true, reason: "scope_changed" };
-    if (livePersonaConfigurationScopes.has(scopeKey) || liveSyncInFlightScopes.has(scopeKey) || liaScopePersonaChanges.has(scopeKey)) return { skipped: true, reason: "binding_configuration_in_flight" };
-    liveSyncInFlightScopes.add(scopeKey);
-    try {
-      const original = await readLivePersonaBindingByScopeKey(scopeKey, true);
-      if (!manualLivePersonaActionCurrent(action)) return stopped();
-      if (!original) return { skipped: true, reason: "current_chat_not_configured" };
-      if (original.pendingBindingChange) return { skipped: true, reason: "binding_change_pending" };
-      const selected = selectedPersonaSnapshotFromDb(runtimeCtx.db);
-      const livePersona = asArray(runtimeCtx.db?.personas).find(item => String(item?.id || "") === original.livePersonaId);
-      const sourcePersona = asArray(runtimeCtx.db?.personas).find(item => String(item?.id || "") === original.sourcePersonaId);
-      if (!livePersona) return { skipped: true, reason: "live_persona_missing" };
-      if (selected.id === original.livePersonaId) return { skipped: true, reason: "live_persona_is_native_default" };
-      const verification = await PersonaBindingManager.inspect(runtimeCtx, original);
-      if (!manualLivePersonaActionCurrent(action)) return stopped();
-      if (!verification.expectedMatch || !verification.livePersonaExists) return { skipped: true, stale: true, reason: "chat_binding_changed" };
-      const plan = manualLivePersonaPlan(runtimeCtx, original);
-      if (!plan.range) return { skipped: true, reason: "insufficient_turns", pending: plan.pending, missing: plan.missing, message: manualLivePersonaPlanLabel(plan) };
-      if (action.expectedRangeKnown && JSON.stringify(action.expectedRange) !== JSON.stringify(plan.range)) return { skipped: true, stale: true, reason: "analysis_range_changed" };
-      const binding = plan.binding;
-      const batch = plan.pairs.slice(plan.range[0] - 1, plan.range[1]);
-      const sourceRevision = livePersonaBatchRevisionSnapshot(runtimeCtx, batch);
-      const originalBindingSignature = JSON.stringify(original);
-      const personaSignature = JSON.stringify(livePersona);
-      const sourcePersonaSignature = JSON.stringify(sourcePersona || null);
-      const selectedKey = selected.key;
-      const chatFingerprint = MemorySuiteHostLineage.prefixRevision(runtimeCtx.chat, plan.pairs.length);
-      const checkHostSnapshot = verified => {
-        if (!verified.ok) return verified;
-        const current = verified.runtimeCtx;
-        if (!current.isCurrentContext) return { ok: false, reason: "scope_changed" };
-        if (selectedPersonaSnapshotFromDb(current.db).key !== selectedKey) return { ok: false, reason: "selected_persona_changed" };
-        const currentLive = asArray(current.db?.personas).find(item => String(item?.id || "") === original.livePersonaId);
-        const currentSource = asArray(current.db?.personas).find(item => String(item?.id || "") === original.sourcePersonaId);
-        if (JSON.stringify(currentLive) !== personaSignature || JSON.stringify(currentSource || null) !== sourcePersonaSignature) return { ok: false, reason: "persona_changed" };
-        if (String(current.chat?.bindedPersona || "").trim() !== original.livePersonaId) return { ok: false, reason: "chat_binding_changed" };
-        const currentPairs = collectCompletedTurnPairs(current.chat);
-        if (currentPairs.length !== plan.pairs.length || MemorySuiteHostLineage.prefixRevision(current.chat, currentPairs.length) !== chatFingerprint) return { ok: false, reason: "chat_source_changed" };
-        return verified;
-      };
-      const guard = async () => {
-        if (!manualLivePersonaActionCurrent(action)) return { ok: false, reason: action.cancelReason || "manual_cancelled" };
-        // Read durable authority first, then re-observe the live host. A storage
-        // await must never make an earlier current-chat observation authoritative.
-        const latest = await readLivePersonaBindingByScopeKey(scopeKey, true);
-        if (JSON.stringify(latest) !== originalBindingSignature) return { ok: false, reason: "binding_changed" };
-        const verified = checkHostSnapshot(await verifyLivePersonaBatchStillCurrent(sourceRevision));
-        if (!manualLivePersonaActionCurrent(action)) return { ok: false, reason: action.cancelReason || "manual_cancelled" };
-        return verified;
-      };
-      const admission = await guard();
-      if (!admission.ok) return { skipped: true, stale: true, reason: admission.reason };
-      const delta = await analyzeLivePersonaBatch(runtimeCtx, binding, batch, { signal: action.controller?.signal });
-      const precommit = await guard();
-      if (!precommit.ok) return { skipped: true, stale: true, cancelled: action.cancelled, reason: precommit.reason };
-      const nextBinding = normalizeLivePersonaBinding(JSON.parse(JSON.stringify(binding)));
-      nextBinding.liveState = delta.liveState;
-      const promoted = applyLiveCoreCandidates(nextBinding, delta.coreCandidates, plan.range[1]);
-      nextBinding.coreCandidateHistory = promoted.history;
-      nextBinding.coreOverlay = nextBinding.policy === "auto" ? promoted.overlay : nextBinding.coreOverlay;
-      nextBinding.lastProcessedPairCount = plan.range[1];
-      nextBinding.lastProcessedAt = new Date().toISOString();
-      nextBinding.lastError = "";
-      nextBinding.nextRetryAt = 0;
-      nextBinding.ledgers = [...nextBinding.ledgers, {
-        id: `live-ledger::${randomId()}`, startPair: plan.range[0], endPair: plan.range[1],
-        fingerprints: batch.map(pair => pair.fingerprint), fingerprintSchema: LIVE_PERSONA_PAIR_FINGERPRINT_SCHEMA_V2,
-        createdAt: nextBinding.lastProcessedAt, summary: delta.summary,
-        liveStateAfter: nextBinding.liveState, coreOverlayAfter: nextBinding.coreOverlay,
-        coreCandidateHistoryAfter: nextBinding.coreCandidateHistory, ignoredTransient: delta.ignoredTransient,
-        sourceRevision: { schema: sourceRevision.schema, sourceFingerprint: sourceRevision.sourceFingerprint,
-          outputTurnKey: "", outputRevision: 0, captureBackend: "manual" },
-      }].slice(-LIVE_SYNC_LEDGER_MAX);
-      const commitFence = () => {
-        if (!manualLivePersonaActionCurrent(action)) return false;
-        // Once the host write starts, finish the matching durable record; a
-        // cancellation cannot safely undo an already accepted host mutation.
-        action.committing = true;
-        return true;
-      };
-      const commitSelectionGuard = async () => {
-        const [characterIndex, chatIndex] = await Promise.all([
-          boundedLiaHostContextCall("manual_commit_character", () => api.getCurrentCharacterIndex?.(), null),
-          boundedLiaHostContextCall("manual_commit_chat", () => api.getCurrentChatIndex?.(), null),
-        ]);
-        const current = manualLivePersonaActionCurrent(action);
-        return { ok: current && characterIndex === runtimeCtx.charIndex && chatIndex === runtimeCtx.chatIndex,
-          reason: current ? "scope_changed" : action.cancelReason || "manual_cancelled" };
-      };
-      await applyLivePersonaPrompt(precommit.runtimeCtx, nextBinding, { commitGuard: guard, commitSelectionGuard, commitFence });
-      await writeLivePersonaBinding(nextBinding);
-      await recordPersonaProofLiveSync(precommit.runtimeCtx, nextBinding, plan.range);
-      appendOperationLog("manual_persona_update", `Persona 수동 갱신 완료 · TURN ${plan.range[0]}~${plan.range[1]}`, { scopeKey }, "ok");
-      return { ok: true, binding: nextBinding, delta, range: plan.range, pending: plan.pending - LIVE_SYNC_BATCH_SIZE };
-    } catch (error) {
-      if (!manualLivePersonaActionCurrent(action) || error?.code === "LIA_PROVIDER_CANCELLED") return stopped();
-      if (error?.code === LIVE_SYNC_SOURCE_SUPERSEDED_CODE) return { skipped: true, stale: true, reason: error.guard?.reason || "manual_source_changed" };
-      // Failure never advances a ledger or schedules another model call.
-      throw error;
-    } finally {
-      liveSyncInFlightScopes.delete(scopeKey);
-    }
-  }
+  
 
-  function scheduleLivePersonaSyncCheck() {
-    // No timer, forced diagnostic path, or stale-result retry may authorize work.
-    return false;
-  }
+  
 
-  function renderLivePersonaOptions(ctx, binding = null) {
-    if (ctx?.personaDatabaseReadStatus?.available === false) {
-      return `<option value="" disabled selected>${htmlEscape(personaDatabaseReadFailureMessage())}</option>`;
-    }
-    const personas = asArray(ctx?.db?.personas);
-    const selectedId = String(binding?.sourcePersonaId || "").trim();
-    const fallbackId = String(ctx?.personaInfo?.persona?.id || "").trim();
-    return personas.map((persona, index) => ({ persona, index })).filter(({ persona }) => !isLivePersona(persona)).map(({ persona, index }) => {
-      const value = livePersonaChoiceValue(persona, index);
-      const id = String(persona?.id || `index:${index}`);
-      const selected = selectedId ? id === selectedId : fallbackId ? id === fallbackId : false;
-      return `<option value="${htmlEscape(value)}"${selected ? " selected" : ""}>${htmlEscape(persona?.name || `Persona ${index + 1}`)}</option>`;
-    }).join("") || `<option value="">사용 가능한 Persona 없음</option>`;
-  }
+  
 
   const PERSONA_DATABASE_READ_FAILURE_TITLE = "RisuAI Persona 목록을 읽지 못했습니다.";
   const PERSONA_DATABASE_READ_FAILURE_HINT = "RisuAI Database 접근 권한 동의를 확인한 뒤 ↻ 새로고침으로 다시 시도하세요.";
@@ -14599,8 +12147,6 @@ ${revisionText}`);
     const compatibility = inferCompatibility(personaInfo.persona, char, baseContext.personaLoreSignals);
     const savedLLMConfig = await readStoredLLMConfig();
     const savedResultVault = await readStoredResultVault();
-    const livePersonaBinding = await readLivePersonaBindingForContext(baseContext);
-    const livePersonaBindingStatus = livePersonaBinding ? await PersonaBindingManager.inspect({ ...baseContext, db: baseContext.db || db }, livePersonaBinding, {viewOnly:true}).catch(() => ({ state: "unavailable", available: false, personaId: "", effectivePersonaName: "" })) : null;
     const personaRequestProof = await readPersonaProofForContext(baseContext);
     let viewSelectionVerified = false;
     try {
@@ -14612,7 +12158,7 @@ ${revisionText}`);
       if (String(e?.message || e).includes('LIA_VIEW_SELECTION_CHANGED')) throw e;
       appendDebugLog("view_selection", "preview_selection_unverified", { error: errorForLog(e) }, "info");
     }
-    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, livePersonaBinding, livePersonaBindingStatus, personaRequestProof, viewSelectionVerified };
+    return { ...baseContext, personaDatabaseReadStatus: personaDatabaseRead.status, compatibility, savedLLMConfig, savedResultVault, personaRequestProof, viewSelectionVerified };
   }
   function normalizeStringArray(value, max = 16) {
     return unique(asArray(value).map((item) => compact(item)), max);
@@ -18910,7 +16456,7 @@ ${revisionText}`);
     if (!spec) throw new Error("Persona Evolution에는 PersonaSpec이 필요합니다.");
     const evidence = collectUserAuthoredConversationEvidence(ctx, { maxMessages: 160, maxChars: 42000 });
     if (!evidence.included) throw new Error("현재 채팅에서 분석할 사용자 작성 메시지를 찾지 못했습니다.");
-    appendDebugLog("evolution", "run_start", { runId: evolutionRunId, scopeKey: livePersonaScopeKey(ctx), evidenceMessages: evidence.included, evidenceChars: evidence.chars, lockedFields: currentPersonaFieldLocks(), personaName: spec.name });
+    appendDebugLog("evolution", "run_start", { runId: evolutionRunId, scopeKey: liaScopeKey(ctx), evidenceMessages: evidence.included, evidenceChars: evidence.chars, lockedFields: currentPersonaFieldLocks(), personaName: spec.name });
     const baseConfig = readLLMConfig();
     const config = normalizeLLMConfig({ ...baseConfig, temp: Math.min(0.2, Number(baseConfig.temp || 0.2)), reasoningPreset: "off", reasoningEffort: "none", reasoningBudgetTokens: 0, thinkingType: "disabled" });
     const locks = currentPersonaFieldLocks();
@@ -19931,22 +17477,22 @@ ${revisionText}`);
     const page=app?.querySelector('.page[data-page="scopes"]');if(!page)return;
     const view=liaScopePersonaView,catalog=view.catalog,rows=(catalog?.rows||[]).filter(row=>{
       if(view.filter==='bound'&&!row.personaId)return false;
-      if(view.filter==='default'&&(row.personaId||row.orphan))return false;
+      if(view.filter==='default'&&row.personaId)return false;
       if(view.filter==='review'&&row.available)return false;
-      return !view.query||[row.characterName,row.chatName,row.personaName,row.sourcePersonaName,row.scopeKey].join(' ').toLocaleLowerCase().includes(view.query.toLocaleLowerCase());
+      return !view.query||[row.characterName,row.chatName,row.personaName,row.scopeKey].join(' ').toLocaleLowerCase().includes(view.query.toLocaleLowerCase());
     });
     const pages=Math.max(1,Math.ceil(rows.length/24));view.page=Math.min(view.page,pages-1);
     const disabled=view.busy?' disabled':'';
     page.innerHTML=`<header class="page-head"><div><div class="eyebrow">SCOPE PERSONAS</div><h1>스코프 · Persona</h1><p>모든 채팅의 실제 Persona 연결을 확인하고 이곳에서 바꿉니다. 변경은 선택한 채팅에만 적용됩니다.</p></div><button class="btn" type="button" data-lia-scope-refresh${disabled}>새로고침</button></header>
-      <div class="note">기본 Persona 선택과 원본은 유지됩니다. LIA 연결 중인 채팅은 전용 Live 복사본을 연결하고, 분석은 실행하지 않습니다. 다른 채팅의 Live Persona는 선택할 수 없습니다.</div>
+      <div class="note">기본 Persona 선택과 원본은 유지됩니다. 선택한 Persona를 이 채팅에 연결합니다.</div>
       <div class="lia-scope-tools"><div class="field"><label for="lia-scope-query">캐릭터 · 채팅 · Persona 찾기</label><input class="input" id="lia-scope-query" data-lia-scope-query value="${htmlEscape(view.query)}" placeholder="이름 또는 스코프 키로 검색"></div><div class="field"><label for="lia-scope-filter">보기</label><select class="select" id="lia-scope-filter" data-lia-scope-filter>${[['all','전체'],['bound','연결된 채팅'],['default','기본 Persona 사용'],['review','확인 필요']].map(([id,label])=>`<option value="${id}"${view.filter===id?' selected':''}>${label}</option>`).join('')}</select></div></div>
       <p role="status" aria-live="polite" data-lia-scope-status>${htmlEscape(view.error|| (view.busy?'연결 정보를 확인하고 있습니다…':catalog?`전체 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 기본 Persona: ${catalog.defaultPersonaName}`:'새로고침을 눌러 전체 연결을 읽어 주세요.'))}</p>
       <div class="lia-scope-grid">${rows.slice(view.page*24,view.page*24+24).map(row=>{
-        const choices=catalog.personas.filter(p=>!p.live||p.id===row.livePersonaId);
-        let initial=row.livePersonaId===row.personaId?choices.find(p=>!p.live&&p.id===row.sourcePersonaId)?.id||row.personaId:row.personaId;
+        const choices=catalog.personas;
+        let initial=row.personaId;
         if(!choices.some(p=>p.id===initial))initial='';
         const key=htmlEscape(row.scopeKey),blocked=view.busy||!row.available;
-        return `<article class="card lia-scope-card" data-lia-scope-row="${key}"><div><h3>${htmlEscape(row.characterName)}</h3><p>${htmlEscape(row.chatName)}</p></div><div class="cluster"><span class="badge">${htmlEscape(row.status)}</span></div><div><small>현재 적용 Persona</small><p><b>${htmlEscape(row.personaName)}</b>${row.personaId?'':' · 기본값'}</p>${row.sourcePersonaName?`<small>연결 원본: ${htmlEscape(row.sourcePersonaName)}</small>`:''}</div><p class="lia-scope-description">${htmlEscape(row.preview||'표시할 소개가 없습니다.')}</p><details><summary>스코프 식별자</summary><small>${key}</small></details>${row.reason?`<p class="hint">${htmlEscape(row.reason)}</p>`:''}<div class="field"><label>변경할 Persona<select class="select" data-lia-scope-choice${blocked?' disabled':''}><option value="">기본 Persona 사용 · 연결 해제</option>${choices.map(p=>`<option value="${htmlEscape(p.id)}"${p.id===initial?' selected':''}>${htmlEscape(p.name)}${p.live?' · 현재 Live':''}</option>`).join('')}</select></label></div><button class="btn" type="button" data-lia-scope-apply="${key}"${blocked?' disabled':''}>이 채팅에 적용…</button></article>`;
+        return `<article class="card lia-scope-card" data-lia-scope-row="${key}"><div><h3>${htmlEscape(row.characterName)}</h3><p>${htmlEscape(row.chatName)}</p></div><div class="cluster"><span class="badge">${htmlEscape(row.status)}</span></div><div><small>현재 적용 Persona</small><p><b>${htmlEscape(row.personaName)}</b>${row.personaId?'':' · 기본값'}</p>${row.sourcePersonaName?`<small>연결 원본: ${htmlEscape(row.sourcePersonaName)}</small>`:''}</div><p class="lia-scope-description">${htmlEscape(row.preview||'표시할 소개가 없습니다.')}</p><details><summary>스코프 식별자</summary><small>${key}</small></details>${row.reason?`<p class="hint">${htmlEscape(row.reason)}</p>`:''}<div class="field"><label>변경할 Persona<select class="select" data-lia-scope-choice${blocked?' disabled':''}><option value="">기본 Persona 사용 · 연결 해제</option>${choices.map(p=>`<option value="${htmlEscape(p.id)}"${p.id===initial?' selected':''}>${htmlEscape(p.name)}</option>`).join('')}</select></label></div><button class="btn" type="button" data-lia-scope-apply="${key}"${blocked?' disabled':''}>이 채팅에 적용…</button></article>`;
       }).join('')||'<div class="empty"><b>표시할 스코프가 없습니다.</b><span>검색 조건을 바꾸거나 전체 목록을 새로 읽어 주세요.</span></div>'}</div>
       <div class="lia-scope-actions"><button class="btn" type="button" data-lia-scope-prev${view.page===0?' disabled':''}>이전</button><span>${view.page+1} / ${pages}</span><button class="btn" type="button" data-lia-scope-next${view.page+1>=pages?' disabled':''}>다음</button></div>`;
   }
@@ -19978,40 +17524,28 @@ ${revisionText}`);
 
   function renderMockupMine(ctx, app) {
     const state = buildPersonaPanelState(ctx);
-    const binding = normalizeLivePersonaBinding(ctx.livePersonaBinding);
-    const plan = ctx.manualViewPlan || manualLivePersonaPlan(ctx, binding);
     const dbFailed = ctx?.personaDatabaseReadStatus?.available === false;
     const persona = state.effectivePersona;
     const name = String(persona?.name || "Persona 없음");
     const initial = name.trim().slice(0, 1).toUpperCase() || "P";
-    const status = binding ? (ctx.livePersonaBindingStatus?.state === "connected" ? "Live 연결됨" : ctx.livePersonaBindingStatus?.state === "connected_paused" ? "Live · 수동 갱신" : "Live 연결 상태 확인 필요") : "Live 연결 안 됨";
     const pocket = app.querySelector("#pocket");
-    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").replace(LIVE_PERSONA_NOTE_MARKER, "").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">수동 갱신</button>${binding?.previousBinding?`<button class="btn" type="button" data-lia-restore-previous-only title="이전 대상만 복원하고 현재 LIA Live 연결 기록은 유지합니다.">이전 연결만 복원…</button><button class="btn" type="button" data-lia-restore-previous title="이전 대상으로 복원하고 현재 LIA Live 연결을 정리합니다.">Live 복원·정리…</button>`:""}</div>`;
-    const planBadge = app.querySelector("#upd-badge");
-    const planDots = app.querySelector("#upd-dots");
-    const planHint = app.querySelector("#upd-hint");
-    const pendingPairs=Math.max(0,Number(plan.pending||0));
-    if (planBadge) { planBadge.className = `badge ${plan.range ? "badge--ok" : "badge--warn"}`; planBadge.textContent = `${Math.min(5,pendingPairs)} / 5쌍`; }
-    if (planDots) { planDots.setAttribute("aria-label", `${Math.min(5,pendingPairs)} / 5쌍`); planDots.innerHTML = Array.from({length:5},(_,i)=>`<i class="${i < Math.min(5,pendingPairs) ? "on" : ""}"></i>`).join(""); }
-    if (planHint) planHint.textContent = `${Math.min(5,pendingPairs)}/5턴 · 완료된 대화 ${Math.max(0,5-pendingPairs)}턴이 더 필요합니다. 마지막 미완성 턴은 세지 않습니다.`;
+    if (pocket) pocket.innerHTML = `<div class="avatar">${htmlEscape(initial)}</div><div><span class="bind ${state.dynamicId ? "bind--here" : "bind--none"}">${htmlEscape(state.dynamicId ? "이 채팅에 연결됨" : "기본 Persona 사용 중")}</span><h2 style="margin-top:6px">${htmlEscape(name)}</h2><p>${htmlEscape(String(persona?.note || "RisuAI 기본 Persona를 그대로 사용합니다.").trim())}</p></div><div class="pocket__act"><button class="btn btn--primary" type="button" data-lia-open-bind>${state.dynamicId ? "연결 관리" : "Persona 연결…"}</button><button class="btn" type="button" data-go="edit">초안 편집</button><button class="btn" type="button" data-go="update">변화 검토</button></div>`;
     const list = app.querySelector("#mine-list");
     if (list) {
       if (dbFailed) list.innerHTML = `<div class="banner banner--danger" role="status"><b>RisuAI Persona 목록을 읽지 못했습니다.</b><span>${htmlEscape(personaDatabaseReadFailureMessage())}</span></div>`;
       else if (!state.personas.length) list.innerHTML = `<div class="empty"><b>Persona가 없습니다</b><span>만들기에서 초안을 생성하거나 RisuAI에서 Persona를 추가하세요.</span></div>`;
       else list.innerHTML = state.personas.map((item,index)=>{
-        const id=String(item?.id||""); const isDefault=index===state.selectedIndex; const isBound=!!id&&id===state.dynamicId; const live=isLivePersona(item); const note=limitText(String(item?.note||"").replace(LIVE_PERSONA_NOTE_MARKER,"").trim(),96);
+        const id=String(item?.id||""); const isDefault=index===state.selectedIndex; const isBound=!!id&&id===state.dynamicId; const note=limitText(String(item?.note||"").trim(),96);
         const label=String(item?.name||`Persona ${index+1}`);
-        const flags=[isDefault?"RisuAI 기본":null,isBound?"이 채팅 연결":null,live?"Live Persona":null].filter(Boolean);
-        return `<article class="pcard" aria-label="${htmlEscape(label)}"><span class="avatar avatar--sm ${live?"avatar--b":""}">${htmlEscape(label.slice(0,1).toUpperCase())}</span><span><b>${htmlEscape(label)}</b><small>${htmlEscape(note||"RisuAI Persona")}</small></span><span class="pcard__side">${flags.map(flag=>`<span class="bind ${isBound?"bind--here":live&&!isBound?"bind--other":"bind--none"}">${htmlEscape(flag)}</span>`).join("")}</span><button class="btn btn--sm" type="button" data-lia-persona-manage="${htmlEscape(personaPanelChoiceRef(item,index))}">관리</button></article>`;
+        const flags=[isDefault?"RisuAI 기본":null,isBound?"이 채팅 연결":null].filter(Boolean);
+        return `<article class="pcard" aria-label="${htmlEscape(label)}"><span class="avatar avatar--sm ">${htmlEscape(label.slice(0,1).toUpperCase())}</span><span><b>${htmlEscape(label)}</b><small>${htmlEscape(note||"RisuAI Persona")}</small></span><span class="pcard__side">${flags.map(flag=>`<span class="bind ${isBound?"bind--here":"bind--none"}">${htmlEscape(flag)}</span>`).join("")}</span><button class="btn btn--sm" type="button" data-lia-persona-manage="${htmlEscape(personaPanelChoiceRef(item,index))}">관리</button></article>`;
       }).join("");
     }
-    const live = app.querySelector("#live-persona-state");
-    if (live) live.innerHTML = binding ? `<div class="kv-line"><dl class="kv"><dt>상태</dt><dd>${htmlEscape(status)}</dd><dt>관리 범위</dt><dd>${htmlEscape(ctx.chat?.name || "현재 채팅")} · 이 채팅 소유</dd><dt>갱신</dt><dd>${htmlEscape(manualLivePersonaPlanLabel(plan))}</dd></dl></div>${binding.liveState?.length ? `<ul class="list">${binding.liveState.slice(0,6).map(item=>`<li class="row"><div><div class="row__title">${htmlEscape(item.category)}</div><div class="row__meta">${htmlEscape(item.value)}</div></div></li>`).join("")}</ul>` : `<p class="hint">아직 반영된 현재 상태가 없습니다.</p>`}` : `<p class="hint">현재 채팅에는 Live Persona가 연결되지 않았습니다. 연결이 없으면 RisuAI 기본 Persona가 적용됩니다.</p>`;
     const headerScope = app.querySelector(".scope span:last-child");
     if (headerScope) headerScope.textContent = `${ctx.char?.name || "현재 캐릭터"} · ${ctx.chat?.name || "현재 채팅"}`;
     const version = app.querySelector(".brand__ver");
     if (version) version.textContent = "Persona Linker · local_only";
-    return {state,binding,plan};
+    return {state};
   }
 
   function hydrateLiaMockupApp(ctx, app) {
@@ -20129,7 +17663,7 @@ ${revisionText}`);
     const contextSummary=app.querySelector('[data-page="make"] details .kv');
     if(contextSummary){const dds=contextSummary.querySelectorAll("dd");if(dds[0])dds[0].textContent=ctx.contextOptions?.characterLore?`${asArray(ctx.loreCandidates).filter(x=>x.source==="character_lore").length}개` : "사용 안 함";if(dds[1])dds[1].textContent=`${asArray(ctx.allActiveModules).length}개`;if(dds[2])dds[2].textContent=ctx.worldBlueprint?"분석 완료":"분석 전";}
     app.querySelectorAll('[data-toast]').forEach(button=>{if(button.closest('[data-page=\"assets\"],#sheet-emo,#sheet-bundle-del'))return;button.removeAttribute("data-toast");button.disabled=true;button.setAttribute("aria-disabled","true");button.title="목업 전용 동작은 제품 성공처럼 표시되지 않도록 비활성화했습니다.";});
-    app.querySelectorAll('[data-run-job="job-update"],[data-run-job="job-neutral"],[data-run-job="job-emo"],[data-act]').forEach(button=>{if(button.closest('[data-page=\"assets\"],#sheet-emo,#sheet-bundle-del'))return;button.disabled=true;button.setAttribute("aria-disabled","true");});
+    app.querySelectorAll('[data-run-job="job-neutral"],[data-run-job="job-emo"],[data-act]').forEach(button=>{if(button.closest('[data-page=\"assets\"],#sheet-emo,#sheet-bundle-del'))return;button.disabled=true;button.setAttribute("aria-disabled","true");});
     const text=app.querySelector(".brand__ver"); if(text)text.textContent=`Persona Linker · ${PLUGIN_VERSION} · local_only`;
     const recovery=app.querySelector('.page[data-page="recover"] .stack');
     if(recovery)recovery.innerHTML='<div id="liaMemorySuiteServerConnectionPanel" class="card"></div>';
@@ -20166,15 +17700,7 @@ ${revisionText}`);
   }
 
   function hydrateLiaMockupUpdate(ctx,app) {
-    const plan=ctx.manualViewPlan||manualLivePersonaPlan(ctx,ctx.livePersonaBinding);
-    const start=Number(ctx.livePersonaBinding?.lastProcessedPairCount||ctx.livePersonaBinding?.anchorPairCount||0);
-    const target=app.querySelector('#upd2-target');if(target)target.textContent=ctx.livePersonaBinding?`${ctx.livePersonaBinding.livePersonaName||'Live Persona'} · ${ctx.chat?.name||'현재 채팅'} 소유`:'Live Persona가 연결되지 않았습니다.';
-    const range=app.querySelector('#upd2-range');if(range)range.textContent=plan.range?`TURN ${plan.range[0]}~${plan.range[1]} · 완료된 다음 5쌍`:`완결된 다음 ${plan.pending}쌍 · 시작 기준 ${start}쌍`;
-    const badge=app.querySelector('#upd2-badge');if(badge){badge.textContent=plan.range?'실행 자격 있음':'대기';badge.className=`badge ${plan.range?'badge--ok':'badge--warn'}`;}
-    const button=app.querySelector('#upd-go');if(button){button.disabled=!plan.range||!ctx.livePersonaBinding;button.setAttribute('aria-disabled',String(button.disabled));}
-    const why=app.querySelector('#upd2-why');if(why){why.hidden=!!(plan.range&&ctx.livePersonaBinding);why.textContent=!ctx.livePersonaBinding?'현재 채팅에 소유권이 확인된 Live Persona가 없습니다.':`${Math.max(0,5-plan.pending)}쌍이 더 완결되어야 합니다.`;}
-    const hist=app.querySelector('#upd-hist');if(hist){const ledger=asArray(ctx.livePersonaBinding?.ledgers);hist.innerHTML=ledger.length?ledger.slice().reverse().map(item=>`<div class="row"><span><b>${htmlEscape(item.reason||'수동 갱신')}</b><small>${htmlEscape(item.createdAt||item.completedAt||'')}</small></span><span class="pick">${htmlEscape(item.status||'기록')}</span></div>`).join(''):'<div class="empty"><b>갱신 기록 없음</b><span>실제 Live Persona ledger가 여기에 표시됩니다.</span></div>';}
-    const fullPage=app.querySelector('[data-page="update"] [data-subpanel="full"]');if(fullPage){const evo=normalizePersonaEvolution(getLLMResultOverride()?.personaEvolution||preservedPersonaEvolution);const rows=evo?.suggestions||[];fullPage.innerHTML=`<div class="stack"><div class="note"><b>현재 채팅의 User 작성 메시지만 분석합니다.</b><span>선택한 변화는 Live Persona가 아니라 현재 편집 초안에 적용됩니다.</span></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-run-evolution">전체 대화 변화 후보 찾기</button><button class="btn" type="button" id="lia-apply-evolution"${rows.length?'':' disabled'}>선택 후보를 초안에 반영</button></div><div class="list" id="lia-evolution-results">${rows.length?rows.map(item=>`<label class="row"><input class="lia-mockup-evolution" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id)?' checked':''}><span><b>${htmlEscape(item.field)}</b><small>${htmlEscape(item.reason||item.evidence||'실제 User 대화 근거')} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(structuredPersonaText(item.proposedValue))}</span></span></label>`).join(''):'<div class="empty"><b>변화 후보 없음</b><span>실제 분석을 실행하면 User 메시지 근거 후보가 여기에 표시됩니다.</span></div>'}</div></div>`;}
+    const fullPage=app.querySelector('[data-page="update"] [data-subpanel="full"]');if(fullPage){const evo=normalizePersonaEvolution(getLLMResultOverride()?.personaEvolution||preservedPersonaEvolution);const rows=evo?.suggestions||[];fullPage.innerHTML=`<div class="stack"><div class="note"><b>현재 채팅의 User 작성 메시지만 분석합니다.</b><span>선택한 변화는 현재 편집 초안에 적용됩니다.</span></div><div class="cluster"><button class="btn btn--primary" type="button" id="lia-run-evolution">전체 대화 변화 후보 찾기</button><button class="btn" type="button" id="lia-apply-evolution"${rows.length?'':' disabled'}>선택 후보를 초안에 반영</button></div><div class="list" id="lia-evolution-results">${rows.length?rows.map(item=>`<label class="row"><input class="lia-mockup-evolution" type="checkbox" data-evolution-id="${htmlEscape(item.id)}"${preservedPersonaEvolutionSelection.has(item.id)?' checked':''}><span><b>${htmlEscape(item.field)}</b><small>${htmlEscape(item.reason||item.evidence||'실제 User 대화 근거')} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(structuredPersonaText(item.proposedValue))}</span></span></label>`).join(''):'<div class="empty"><b>변화 후보 없음</b><span>실제 분석을 실행하면 User 메시지 근거 후보가 여기에 표시됩니다.</span></div>'}</div></div>`;}
   }
 
   function hydrateLiaMockupIcons(root) {
@@ -20216,7 +17742,6 @@ ${revisionText}`);
     app.querySelectorAll(".sidebar .nav-item[data-go]").forEach((button) => button.setAttribute("aria-current", button.dataset.go === route ? "page" : "false"));
     const mine = app.querySelector('.page[data-page="mine"]');
     if (mine) renderMockupMine(ctx, app);
-    hydrateLiaMockupLiveState(ctx,app);
     hydrateLiaMockupApp(ctx, app);
     const status = document.createElement("div");
     status.id = "dpg-status";
@@ -20246,13 +17771,7 @@ ${revisionText}`);
     return app.innerHTML;
   }
 
-  function hydrateLiaMockupLiveState(ctx,app){
-    const root=app.querySelector('#live-persona-state');if(!root)return;
-    const binding=ctx?.livePersonaBinding;const personas=asArray(ctx?.db?.personas);const liveId=String(binding?.livePersonaId||ctx?.chat?.bindedPersona||'').trim();const persona=personas.find(item=>String(item?.id||'').trim()===liveId)||null;
-    if(!binding||!liveId||!persona){root.innerHTML='<div class="empty"><b>현재 채팅 소유 Live Persona가 없습니다.</b><span>채팅 바인딩을 연결해야 실제 상태가 나타납니다. 기본 Persona는 바뀌지 않습니다.</span></div>';return;}
-    const states=asArray(binding.liveState);const last=asArray(binding.ledgers).at(-1);const status=String(binding.bindingStatus||'unknown');
-    root.innerHTML=`<div class="stack stack--sm"><div class="kv"><dt>소유 Persona</dt><dd>${htmlEscape(persona.name||'Persona')} · ${htmlEscape(liveId)}</dd><dt>연결 상태</dt><dd>${htmlEscape(status)}${binding.lastError?` · ${htmlEscape(binding.lastError)}`:''}</dd><dt>처리 범위</dt><dd>${Number(binding.lastProcessedPairCount||0)}쌍 처리 · 마지막 ${htmlEscape(binding.lastProcessedAt||'기록 없음')}</dd><dt>최근 갱신</dt><dd>${last?`${htmlEscape(last.startPair)}–${htmlEscape(last.endPair)} · ${htmlEscape(last.createdAt||'')}`:'갱신 기록 없음'}</dd></div>${states.length?`<div class="list">${states.map(item=>`<div class="row"><span><b>${htmlEscape(item.category)}</b><small>${htmlEscape(item.durability)} · 신뢰도 ${Number(item.confidence)||0}</small><span>${htmlEscape(item.value)}</span></span></div>`).join('')}</div>`:'<div class="empty"><b>임시 상태 기록 없음</b><span>확인된 Live Persona 상태가 현재 없습니다.</span></div>'}</div>`;
-  }
+  
 
   function normalizeIllustrationProviderType(value) {
     const raw = String(value || "").trim().toLowerCase();
@@ -21052,19 +18571,7 @@ ${revisionText}`);
   }
 
 
-  function collectImageStringsFromJson(value, out = []) {
-    if (!value) return out;
-    if (typeof value === "string") {
-      if (/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value) || /^https?:\/\//i.test(value) || /^[A-Za-z0-9+/=\s]{800,}$/.test(value)) out.push(value);
-      return out;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((item) => collectImageStringsFromJson(item, out));
-      return out;
-    }
-    if (typeof value === "object") Object.values(value).forEach((item) => collectImageStringsFromJson(item, out));
-    return out;
-  }
+  
 
   function base64ToUint8Array(data) {
     const raw = String(data || "").replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, "").replace(/\s+/g, "");
@@ -22543,7 +20050,7 @@ ${revisionText}`);
 
   let liaPreviewEpoch = 0;
   function readLiaViewContext(ctx) {
-    return {...ctx,manualViewPlan:manualLivePersonaPlan(ctx,ctx.livePersonaBinding)};
+    return ctx;
   }
   function renderLiaPreviewState(root, error = null) {
     const failed = !!error;
@@ -22556,16 +20063,35 @@ ${revisionText}`);
     const retryBtn = typeof root.querySelector === 'function' ? root.querySelector('[data-lia-preview-retry]') : null;
     if (retryBtn) retryBtn.onclick=()=>{if(retryBtn.disabled)return;retryBtn.disabled=true;void refreshPreview({skipCapture:true});};
   }
+  // A data refresh redraws the page; the user stays where they were. Only moving to another page starts at the top.
+  const LIA_VIEW_SCROLLERS = Object.freeze([".page-body", ".sidebar", ".page.is-active"]);
+  function captureLiaViewPosition(root) {
+    const page = root.querySelector(".page.is-active[data-page]");
+    return { page: page?.dataset.page || "",
+      scroll: LIA_VIEW_SCROLLERS.map((selector) => [selector, Number(root.querySelector(selector)?.scrollTop) || 0]).filter(([, top]) => top > 0),
+      openFolds: page ? [...page.querySelectorAll("details")].map((fold) => fold.open) : [] };
+  }
+  function restoreLiaViewPosition(root, position) {
+    if (!position?.page || root.querySelector(".page.is-active[data-page]")?.dataset.page !== position.page) return;
+    const folds = root.querySelectorAll(".page.is-active details");
+    if (folds.length === position.openFolds.length) folds.forEach((fold, index) => { fold.open = position.openFolds[index]; });
+    const apply = () => { for (const [selector, top] of position.scroll) { const node = root.querySelector(selector); if (node) node.scrollTop = top; } };
+    apply();
+    // The browser lays out a replaced page after this task, which can clamp the position until then.
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(apply);
+  }
   async function refreshPreview(options = {}) {
     const root = document.getElementById("dpg-preview-root");
     if (!root) return;
+    const viewPosition = captureLiaViewPosition(root);
     const epoch = ++liaPreviewEpoch;
     const current = () => epoch === liaPreviewEpoch && !pluginUnloaded && document.getElementById("dpg-preview-root") === root;
     let previewTimer=null;
     try {
       if (options?.skipCapture !== true) captureGeneratedOutputState();
       const currentContextOptions = readContextOptions();
-      renderLiaPreviewState(root);
+      // Keep the page on screen while the new data is read; the blank state is only for a first draw.
+      if (!root.querySelector(".page[data-page]")) renderLiaPreviewState(root);
       const resolved = await Promise.race([
         getContext(currentContextOptions),
         new Promise((_,reject)=>{previewTimer=setTimeout(()=>reject(new Error('LIA_PREVIEW_READ_TIMEOUT · 호스트 응답을 확인한 뒤 다시 읽어 주세요.')),12000);})
@@ -22585,6 +20111,7 @@ ${revisionText}`);
               setStatus(`준비 완료: 로어 후보 ${asArray(ctx.loreCandidates).length}개 → Persona 채택 ${asArray(ctx.personaLoreSignals).length}개 · 보호 ${ctx.personaLoreRerank?.protectedCount || 0}개`, "ok");
             }
       document.getElementById("dpg-status")?.setAttribute("data-idle", "true");
+      restoreLiaViewPosition(root, viewPosition);
       return ctx;
     } catch (error) {
       if (!current()) return null;
@@ -22686,7 +20213,7 @@ ${revisionText}`);
     if (!root) return false;
     LiaLegacyServerRecovery.clear();
     hydrateLiaRecoverySteps("pending");
-    root.innerHTML = `<section class="stack"><div class="card__head"><div><h2 class="card__title">LIA 로컬 저장</h2><p class="card__desc">LIA 자료는 RisuAI pluginStorage에 저장됩니다. 실제 Persona와 원본 이미지는 RisuAI가 관리합니다.</p></div></div><p class="muted">이전 서버 자료는 그대로 보존됩니다. 자동으로 가져오거나 동기화하지 않습니다. 아래에서 전체 목록·Live Persona·이미지 청크를 먼저 검사한 뒤 가져오세요. 로컬과 다른 자료가 있으면 중단하며 덮어쓰지 않습니다.</p><div class="cluster"><button type="button" class="btn" data-lia-recovery-preview>이전 서버 자료 검사</button><button type="button" class="btn btn--primary" data-lia-recovery-publish disabled>검증된 자료를 로컬로 가져오기</button></div><p class="hint" data-lia-recovery-status>이전 서버 자료는 아직 확인하지 않았습니다. 서버의 삭제 표식은 로컬에 적용하지 않습니다.</p></section>`;
+    root.innerHTML = `<section class="stack"><div class="card__head"><div><h2 class="card__title">LIA 로컬 저장</h2><p class="card__desc">LIA 자료는 RisuAI pluginStorage에 저장됩니다. 실제 Persona와 원본 이미지는 RisuAI가 관리합니다.</p></div></div><p class="muted">이전 서버 자료는 그대로 보존됩니다. 자동으로 가져오거나 동기화하지 않습니다. 아래에서 전체 목록·이미지 청크를 먼저 검사한 뒤 가져오세요. 로컬과 다른 자료가 있으면 중단하며 덮어쓰지 않습니다.</p><div class="cluster"><button type="button" class="btn" data-lia-recovery-preview>이전 서버 자료 검사</button><button type="button" class="btn btn--primary" data-lia-recovery-publish disabled>검증된 자료를 로컬로 가져오기</button></div><p class="hint" data-lia-recovery-status>이전 서버 자료는 아직 확인하지 않았습니다. 서버의 삭제 표식은 로컬에 적용하지 않습니다.</p></section>`;
     const previewButton = root.querySelector('[data-lia-recovery-preview]');
     const publishButton = root.querySelector('[data-lia-recovery-publish]');
     const status = root.querySelector('[data-lia-recovery-status]');
@@ -22814,7 +20341,7 @@ ${revisionText}`);
     const prompt=String(persona?.personaPrompt||'').replace(/<!--[^]*?-->/g,'').trim();
     const lines=prompt.split(/\r?\n/).map(line=>line.replace(/^\s*(?:#{1,6}|[-*])\s*/,'').replace(/\*\*/g,'').trim()).filter(Boolean);
     const identity=lines.filter(line=>/^(?:Age|Gender|Species|Role|Occupation|나이|연령|성별|종족|역할|직업)\s*[:：]/i.test(line)).slice(0,3).join(' · ');
-    const detail=lines.find(line=>/^(?:Personality|Temperament|성격|기질)\s*[:：]/i.test(line))||lines.find(line=>line.length>30&&!/^(?:Name|이름)\s*[:：]/i.test(line))||lines[0]||String(persona?.note||'').replace(LIVE_PERSONA_NOTE_MARKER,'').trim();
+    const detail=lines.find(line=>/^(?:Personality|Temperament|성격|기질)\s*[:：]/i.test(line))||lines.find(line=>line.length>30&&!/^(?:Name|이름)\s*[:：]/i.test(line))||lines[0]||String(persona?.note||'').trim();
     return {identity:limitText(identity,160),detail:limitText(detail||'Persona 설명이 없습니다.',240)};
   }
   function hydrateLiaPersonaDialog(id) {
@@ -22824,23 +20351,22 @@ ${revisionText}`);
     const selected = state?.personas?.find((item, index) => personaPanelChoiceRef(item,index) === choice) || state?.effectivePersona || null;
     const selectedId = String(selected?.id || "");
     const defaultPersonaId = String(state?.personas?.[Number(state?.selectedIndex)]?.id || "");
-    const foreignLive = !!selected && isLivePersona(selected) && selectedId !== state?.dynamicId;
     if (id === "sheet-persona") {
       const name = document.querySelector("#spm-t [data-fill=name]"); if (name) name.textContent = String(selected?.name || "Persona");
       const kv = document.getElementById("spm-kv");
-      if (kv) kv.innerHTML = `<dt>RisuAI ID</dt><dd class="mono">${htmlEscape(selectedId || "확인 불가")}</dd><dt>기본 Persona</dt><dd>${selectedId && selectedId === defaultPersonaId ? "이 Persona" : "유지됨"}</dd><dt>현재 채팅</dt><dd>${selectedId && selectedId === state?.dynamicId ? "연결됨" : "연결되지 않음"}</dd><dt>Live 소유</dt><dd>${foreignLive ? "다른 채팅이 소유 · 변경 보호" : isLivePersona(selected) ? "현재 범위" : "Live Persona 아님"}</dd>`;
-      const note = document.getElementById("spm-note"); if (note) note.textContent = foreignLive ? "다른 채팅에서 관리하는 Live Persona는 이 채팅에서 선택·수정할 수 없습니다." : "연결·저장·삭제는 각각 별도 확인을 거칩니다. 기본 Persona 선택은 바꾸지 않습니다.";
+      if (kv) kv.innerHTML = `<dt>RisuAI ID</dt><dd class="mono">${htmlEscape(selectedId || "확인 불가")}</dd><dt>기본 Persona</dt><dd>${selectedId && selectedId === defaultPersonaId ? "이 Persona" : "유지됨"}</dd><dt>현재 채팅</dt><dd>${selectedId && selectedId === state?.dynamicId ? "연결됨" : "연결되지 않음"}</dd>`;
+      const note = document.getElementById("spm-note"); if (note) note.textContent = "연결·저장·삭제는 각각 별도 확인을 거칩니다. 기본 Persona 선택은 바꾸지 않습니다.";
       const actions = document.getElementById("spm-act");
       const selectedIndex=state?.personas?.indexOf(selected)??-1;
-      const canCleanup=!!selected&&selectedIndex>Number(state?.selectedIndex??-1)&&isGeneratedFallbackPersona(selected,ctx)&&!foreignLive;
-      if (actions) actions.innerHTML = selected ? `<button class="btn btn--primary" data-lia-persona-bind${foreignLive ? " disabled" : ""}>이 채팅에 연결…</button><button class="btn" data-open="sheet-bind">대상 선택</button>${selectedId&&selectedId===state?.dynamicId?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}` : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
+      const canCleanup=!!selected&&selectedIndex>Number(state?.selectedIndex??-1)&&isGeneratedFallbackPersona(selected,ctx);
+      if (actions) actions.innerHTML = selected ? `<button class="btn btn--primary" data-lia-persona-bind>이 채팅에 연결…</button><button class="btn" data-open="sheet-bind">대상 선택</button>${selectedId&&selectedId===state?.dynamicId?'<button class="btn btn--danger" data-lia-persona-unbind>이 채팅 연결 해제…</button>':''}${canCleanup?'<button class="btn btn--danger" data-lia-generated-cleanup>기본 Persona 뒤 LIA 생성 Persona 정리…</button><p class="hint">현재 기본 Persona보다 뒤에 있는 LIA 생성 Persona만 정리합니다. 직접 만든 Persona와 채팅 바인딩은 보호합니다.</p>':''}` : `<div class="empty"><b>선택한 Persona를 확인할 수 없습니다.</b><span>RisuAI 목록을 다시 읽어 주세요.</span></div>`;
     }
     if (id === "sheet-bind") {
       const intro=document.querySelector('#sheet-bind .sheet > p.muted');
       if(intro)intro.textContent=`‘${ctx?.char?.name||'현재 캐릭터'} · ${ctx?.chat?.name||'현재 채팅'}’ 채팅의 연결만 바꿉니다. 다른 채팅의 연결에는 영향이 없습니다.`;
       const list = document.getElementById("bind-list");
       if (list) list.innerHTML = (state?.personas || []).map((item,index) => {
-        const ref=personaPanelChoiceRef(item,index); const itemId=String(item?.id||""); const live=isLivePersona(item); const protectedForeign=live&&itemId!==state.dynamicId; const label=String(item?.name||`Persona ${index+1}`);
+        const ref=personaPanelChoiceRef(item,index); const itemId=String(item?.id||""); const protectedForeign=false; const label=String(item?.name||`Persona ${index+1}`);
         const preview=liaPersonaPreview(item);const stateLabel=protectedForeign?'다른 채팅 소유 · 선택 보호':itemId===state?.dynamicId?'현재 채팅 연결':itemId===defaultPersonaId?'RisuAI 기본 Persona':'연결 가능';
         return `<button class="big-choice${ref===choice?' is-on':''}" type="button" data-lia-bind-choice="${htmlEscape(ref)}" aria-pressed="${ref===choice}"${protectedForeign?' disabled':''}><span class="avatar avatar--sm" aria-hidden="true">${htmlEscape(label.slice(0,1))}</span><span class="persona-copy"><b>${htmlEscape(label)}</b><small>${htmlEscape(stateLabel)}${preview.identity?' · '+htmlEscape(preview.identity):''}</small><span class="persona-preview">${htmlEscape(preview.detail)}</span></span><span class="pick">${ref===choice?'선택됨':'선택'}</span></button>`;
       }).join("") || '<div class="empty"><b>Persona 목록이 비어 있습니다.</b></div>';
@@ -22965,23 +20491,6 @@ ${revisionText}`);
           if (state) state.textContent = `${readback.apiKey ? "인증 정보 저장됨" : "인증 정보 없음"}${unchanged ? " · 저장 완료" : " · 이후 입력 변경은 미저장"}`;
           setStatus("텍스트 AI 설정을 저장하고 저장값을 재확인했습니다.","ok");
         }
-      } else if (action === "update-five") {
-        const fresh=await getLiveRuntimeContext();
-        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);
-        if(!liaExpectedUpdateMatches(fresh,expectedUpdate))throw new Error("LIA_UPDATE_TARGET_CHANGED: 안내 후 채팅·Persona·갱신 범위가 바뀌었습니다. 다시 확인하세요.");
-        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding);
-        if(!plan.range||!fresh.livePersonaBinding)throw new Error("현재 채팅의 다음 완결 5쌍을 실행할 자격이 없습니다.");
-        const job=document.getElementById("job-update");
-        const persona=fresh.db?.personas?.find(item=>String(item?.id||"")===String(fresh.livePersonaBinding.livePersonaId||""));
-        const name=job?.querySelector('[data-fill="name"]');if(name)name.textContent=String(persona?.name||"현재 채팅 Persona");
-        const message=job?.querySelector("[data-job-msg]");if(message)message.textContent=`완결된 User+Assistant ${plan.range[0]}~${plan.range[1]}쌍을 처리합니다. 취소 요청은 안전한 저장 전까지 반영됩니다.`;
-        showLiaMockupDialog("job-update",button);
-        const result=await runManualLivePersonaAnalysis({...fresh,manualAnalysisRange:plan.range});
-        closeLiaMockupDialog(job);
-        await refreshPreview({skipCapture:true});
-        if(result?.cancelled||/cancel|abort/i.test(String(result?.reason||""))){setStatus("이번 수동 갱신을 취소했습니다. 분석 결과는 반영하지 않았습니다.","info");return true;}
-        if(!result?.ok)throw new Error(result?.message||result?.reason||"분석 결과를 적용하지 않았습니다.");
-        setStatus(`현재 채팅의 다음 5쌍(TURN ${result.range.join('~')})을 분석·반영했습니다.`,"ok");
       } else if (action === "run-evolution") {
         const result=await runPersonaEvolution();
         await refreshPreview({skipCapture:true});
@@ -23031,7 +20540,6 @@ ${revisionText}`);
     if (target.matches("[data-regen]")) { event.preventDefault(); void runLiaMockupAction("reroll-field", target); return; }
     if(target.id==="lia-translate-persona"){event.preventDefault();void runLiaMockupAction("translate",target);return;}
     if(target.id==="lia-save-provider"){event.preventDefault();void runLiaMockupAction("save-provider",target);return;}
-    if(target.id==="upd-go"){event.preventDefault();void runLiaMockupAction("update-five",target);return;}
     if(target.id==="lia-run-evolution"){event.preventDefault();void runLiaMockupAction("run-evolution",target);return;}
     if(target.id==="lia-apply-evolution"){event.preventDefault();void runLiaMockupAction("apply-evolution",target);return;}
     if(target.id==="lia-confirm-delete-vault"){event.preventDefault();target.disabled=true;void (async()=>{try{const current=await readStoredResultVault();if(!current.some(item=>item.id===preservedResultVaultId))throw new Error('삭제 대상이 이미 바뀌었거나 보관함에서 사라졌습니다. 다시 선택해 주세요.');const result=await deleteVaultResult();closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});activateTab('shelf');setStatus(`보관함 항목만 삭제했습니다: ${result.title}. 채택한 Persona와 채팅 연결은 변경하지 않았습니다.`,'ok');}catch(error){setStatus(`보관함 삭제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
@@ -23044,9 +20552,7 @@ ${revisionText}`);
       showLiaMockupDialog("sheet-bind",target); return;
     }
     if (target.matches("[data-lia-persona-manage]")) { liaSelectedPersonaChoice = target.dataset.liaPersonaManage || ""; showLiaMockupDialog("sheet-persona", target); return; }
-    if(target.matches('[data-lia-restore-previous-only]')){event.preventDefault();const fresh=await getLiveRuntimeContext();const scope=livePersonaScopeKey(fresh);const binding=await readLivePersonaBindingForContext(fresh);if(!binding?.previousBinding){setStatus('이전 Persona 연결 기록이 없습니다.','error');return;}const previous=binding.previousBinding;const beforeDefault=fresh.db?.selectedPersona;const name=previous.personaId?fresh.db?.personas?.find(item=>String(item?.id||'')===String(previous.personaId))?.name||'이전 Persona':'기본 Persona(연결 없음)';if(!globalThis.confirm?.(`현재 채팅 대상만 이전 값으로 바꿀까요?\n대상: ${name}\nLIA Live 연결 기록과 Persona는 유지됩니다.`))return;target.disabled=true;void(async()=>{try{const current=await getLiveRuntimeContext();if(livePersonaScopeKey(current)!==scope)throw new Error('확인 뒤 캐릭터/채팅 범위가 바뀌었습니다.');const liveBinding=await readLivePersonaBindingForContext(current);if(liveBinding?.scopeKey!==binding.scopeKey||liveBinding?.livePersonaId!==binding.livePersonaId||JSON.stringify(liveBinding?.previousBinding)!==JSON.stringify(previous))throw new Error('이전 복구 기록이 확인 뒤 바뀌었습니다.');const result=await PersonaBindingManager.restorePrevious(current,liveBinding,asArray(current.db?.personas));const after=await getLiveRuntimeContext();const expected=previous.hadExplicitBinding?String(previous.personaId||''):'';if(livePersonaScopeKey(after)!==scope||String(after.chat?.bindedPersona||'')!==expected)throw new Error('이전 대상을 저장 후 다시 읽은 값이 일치하지 않습니다.');if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeDefault))throw new Error('RisuAI 기본 Persona 선택이 변경됐습니다.');if(!(await readLivePersonaBindingForContext(after)))throw new Error('현재 Live 연결 기록이 예상치 않게 사라졌습니다.');await refreshPreview({skipCapture:true});setStatus(`현재 채팅 대상을 이전 값으로 복원하고 다시 읽었습니다: ${result.fallbackReason?'이전 Persona 없음 · 연결 해제':name}. Live 연결 기록은 유지했습니다.`,'ok');}catch(error){setStatus(`이전 대상 복원 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-restore-previous]')){event.preventDefault();const initial=await getLiveRuntimeContext();const initialScope=livePersonaScopeKey(initial);const initialBinding=await readLivePersonaBindingForContext(initial);const previous=initialBinding?.previousBinding;if(!initialBinding||!previous){setStatus('이전 Persona 연결 복구 기록이 없습니다.','error');return;}const previousName=previous.personaId?initial.db?.personas?.find(item=>String(item?.id||'')===String(previous.personaId))?.name||'이전 Persona':'기본 Persona(연결 없음)';if(!globalThis.confirm?.(`현재 채팅 연결을 이전 대상으로 복원할까요?\n대상: ${previousName}\nRisuAI 기본 Persona 선택은 변경하지 않습니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(livePersonaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다.');const current=await readLivePersonaBindingForContext(fresh);if(current?.scopeKey!==initialBinding.scopeKey||current?.livePersonaId!==initialBinding.livePersonaId||JSON.stringify(current?.previousBinding||null)!==JSON.stringify(previous))throw new Error('이전 복구 대상이 확인 뒤 바뀌었습니다. 다시 열어 확인하세요.');const defaultBefore=fresh.db?.selectedPersona;const result=await restoreOriginalLivePersona(fresh);const after=await getLiveRuntimeContext();const expected=previous.hadExplicitBinding?String(previous.personaId||''):'';if(livePersonaScopeKey(after)!==initialScope||String(after.chat?.bindedPersona||'')!==expected)throw new Error('복원 후 현재 채팅 대상이 예상한 값과 다릅니다.');if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(defaultBefore))throw new Error('복원 중 기본 Persona 선택이 바뀌었습니다.');if(await readLivePersonaBindingForContext(after))throw new Error('복원 후 현재 범위의 LIA 바인딩 기록이 남아 있습니다.');await refreshPreview({skipCapture:true});setStatus(`이전 연결을 복원하고 다시 읽었습니다: ${result.restoreResult?.fallbackReason?'이전 Persona 없음 · 연결 해제':previousName}. 기본 Persona는 유지했습니다.`,'ok');}catch(error){setStatus(`이전 연결 복구 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
-    if(target.matches('[data-lia-generated-cleanup]')){event.preventDefault();const initial=liaMockupContext;if(!initial)return;const initialScope=livePersonaScopeKey(initial);const getEligible=ctx=>{const state=buildPersonaPanelState(ctx);return state.personas.map((item,index)=>({item,index})).filter(({item,index})=>index>state.selectedIndex&&isGeneratedFallbackPersona(item,ctx)).map(({item})=>String(item?.id||'')).filter(Boolean).sort();};const expected=getEligible(initial);if(!expected.length){setStatus('정리할 수 있는 LIA 생성 Persona가 없습니다.','info');return;}if(!globalThis.confirm?.(`현재 캐릭터/채팅 범위에서 기본 Persona 뒤의 LIA 생성 Persona ${expected.length}개를 정리할까요? 직접 만든 Persona와 기본 Persona는 제외합니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(livePersonaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다. 다시 열어 주세요.');const freshCtx=await getContext();const freshIds=getEligible(freshCtx);if(JSON.stringify(freshIds)!==JSON.stringify(expected))throw new Error('정리 대상 목록이 확인 뒤 바뀌었습니다. 다시 확인해 주세요.');const beforeSelected=fresh.db?.selectedPersona;const result=await removeGenerated();const after=await getLiveRuntimeContext();if(livePersonaScopeKey(after)!==initialScope)throw new Error('작업 도중 범위가 바뀌어 결과를 확인할 수 없습니다.');const remaining=new Set(getEligible(await getContext()));const left=expected.filter(id=>remaining.has(id));if(left.length)throw new Error(`일부 정리 대상이 남아 있습니다: ${left.length}개. 다시 읽어 확인하세요.`);if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeSelected))throw new Error('RisuAI 기본 Persona 선택값 변경이 감지됐습니다. 결과를 확인하세요.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});setStatus(`LIA 생성 Persona 정리를 읽어 확인했습니다: ${result.removedPersonas}개 제거, ${result.protectedPersonas}개 보호. 기본 Persona 선택은 유지했습니다.`,'ok');}catch(error){setStatus(`LIA Persona 정리 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
+    if(target.matches('[data-lia-generated-cleanup]')){event.preventDefault();const initial=liaMockupContext;if(!initial)return;const initialScope=liaScopeKey(initial);const getEligible=ctx=>{const state=buildPersonaPanelState(ctx);return state.personas.map((item,index)=>({item,index})).filter(({item,index})=>index>state.selectedIndex&&isGeneratedFallbackPersona(item,ctx)).map(({item})=>String(item?.id||'')).filter(Boolean).sort();};const expected=getEligible(initial);if(!expected.length){setStatus('정리할 수 있는 LIA 생성 Persona가 없습니다.','info');return;}if(!globalThis.confirm?.(`현재 캐릭터/채팅 범위에서 기본 Persona 뒤의 LIA 생성 Persona ${expected.length}개를 정리할까요? 직접 만든 Persona와 기본 Persona는 제외합니다.`))return;target.disabled=true;void(async()=>{try{const fresh=await getLiveRuntimeContext();if(liaScopeKey(fresh)!==initialScope)throw new Error('확인 뒤 캐릭터 또는 채팅 범위가 바뀌었습니다. 다시 열어 주세요.');const freshCtx=await getContext();const freshIds=getEligible(freshCtx);if(JSON.stringify(freshIds)!==JSON.stringify(expected))throw new Error('정리 대상 목록이 확인 뒤 바뀌었습니다. 다시 확인해 주세요.');const beforeSelected=fresh.db?.selectedPersona;const result=await removeGenerated();const after=await getLiveRuntimeContext();if(liaScopeKey(after)!==initialScope)throw new Error('작업 도중 범위가 바뀌어 결과를 확인할 수 없습니다.');const remaining=new Set(getEligible(await getContext()));const left=expected.filter(id=>remaining.has(id));if(left.length)throw new Error(`일부 정리 대상이 남아 있습니다: ${left.length}개. 다시 읽어 확인하세요.`);if(JSON.stringify(after.db?.selectedPersona)!==JSON.stringify(beforeSelected))throw new Error('RisuAI 기본 Persona 선택값 변경이 감지됐습니다. 결과를 확인하세요.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});setStatus(`LIA 생성 Persona 정리를 읽어 확인했습니다: ${result.removedPersonas}개 제거, ${result.protectedPersonas}개 보호. 기본 Persona 선택은 유지했습니다.`,'ok');}catch(error){setStatus(`LIA Persona 정리 실패 또는 결과 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
     if (target.matches("[data-lia-bind-choice]")) { liaSelectedPersonaChoice = target.dataset.liaBindChoice || ""; hydrateLiaPersonaDialog("sheet-bind"); return; }
     if (target.matches("[data-lia-persona-bind]")) { closeLiaMockupDialog(target.closest(".overlay")); showLiaMockupDialog("sheet-bind", target); return; }
     if(target.matches('[data-lia-persona-unbind]')){event.preventDefault();const captured=String(liaSelectedPersonaChoice||'');const confirmed=typeof globalThis.confirm==='function'&&globalThis.confirm('현재 채팅의 동적 Persona 연결을 해제할까요? RisuAI 기본 Persona는 바뀌지 않습니다.');if(!confirmed)return;target.disabled=true;void(async()=>{try{const runtimeCtx=await getLiveRuntimeContext();const before=await PersonaSelectionManager.read(runtimeCtx);const current=before.personas?.find((item,index)=>personaPanelChoiceRef(item,index)===captured)||before.personas?.find(item=>String(item.id||'')===before.dynamicPersonaId);if(!current||String(current.id||'')!==String(before.dynamicPersonaId||''))throw new Error('현재 채팅의 연결 대상이 바뀌었습니다. 다시 열어 확인하세요.');await PersonaSelectionManager.clearDynamic(runtimeCtx);const after=await PersonaSelectionManager.read(await getLiveRuntimeContext());if(after.dynamicPersonaId)throw new Error('연결 해제 후에도 현재 채팅에 동적 Persona가 남아 있습니다.');closeLiaMockupDialog(target.closest('.overlay'));await refreshPreview({skipCapture:true});await refreshPersonaProofIndicator();setStatus('현재 채팅 연결을 해제하고 기본 Persona가 유지되는지 다시 읽었습니다.','ok');}catch(error){setStatus(`채팅 연결 해제 실패 또는 확인 필요: ${error?.message||error}`,'error');}finally{if(target.isConnected)target.disabled=false;}})();return;}
@@ -23058,7 +20564,7 @@ ${revisionText}`);
       return;
     }
     if (target.matches("[data-open]")) { event.preventDefault(); const active=document.querySelector("#dpg-preview-root .overlay.is-open"); if(active) closeLiaMockupDialog(active); showLiaMockupDialog(target.dataset.open, target); return; }
-    if (target.matches("[data-job-cancel]")) { event.preventDefault();const overlay=target.closest('.overlay');if(overlay?.id==='job-update'){const cancelled=cancelManualLivePersonaAnalysis('user_cancelled');setStatus(cancelled?'갱신 취소를 요청했습니다. 결과는 반영하지 않습니다.':'저장을 마무리 중이거나 진행 중인 갱신이 없습니다.','info');}closeLiaMockupDialog(overlay);return; }
+    if (target.matches("[data-job-cancel]")) { event.preventDefault();const overlay=target.closest('.overlay');closeLiaMockupDialog(overlay);return; }
     if (target.matches("[data-close]")) { event.preventDefault(); closeLiaMockupDialog(target.closest(".overlay")); return; }
     if (target.closest(".overlay") && target === target.closest(".overlay")) { closeLiaMockupDialog(target); return; }
     if (target.matches("[data-select-row]") && target.closest('[data-page="make"]')) { applyLiaMockupMode(target.dataset.selectRow); return; }
@@ -23262,7 +20768,7 @@ ${revisionText}`);
     overlay.querySelector('[data-cancel-close]').onclick = () => {stopTimer();status('자동 닫기를 취소했습니다. 후보는 계속 저장할 수 있습니다.');};
     overlay.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();void close();}});
     overlay.querySelector('[data-close]').focus();
-    const guard = async () => {if(state.closed||pluginUnloaded)throw Error('닫힌 작업입니다.');const ctx=await getLiveRuntimeContext();if(livePersonaScopeKey(ctx)!==state.scope)throw Error('현재 채팅이 바뀌었습니다. 다시 열어 주세요.');return ctx;};
+    const guard = async () => {if(state.closed||pluginUnloaded)throw Error('닫힌 작업입니다.');const ctx=await getLiveRuntimeContext();if(liaScopeKey(ctx)!==state.scope)throw Error('현재 채팅이 바뀌었습니다. 다시 열어 주세요.');return ctx;};
     const render = () => {
       if(state.closed)return;
       overlay.querySelector('[data-all]').disabled=state.busy||!state.rows.length||state.rows.every(row=>row.saved);
@@ -23293,7 +20799,7 @@ ${revisionText}`);
     };
     overlay.querySelector('[data-all]').onclick=()=>action(0,false,true);
     overlay.querySelector('[data-cards]').onclick=event=>{const button=event.target.closest('button');if(button?.hasAttribute('data-save'))void action(Number(button.dataset.save),false);if(button?.hasAttribute('data-adopt'))void action(Number(button.dataset.adopt),true);};
-    try {const ctx=await getLiveRuntimeContext();state.scope=livePersonaScopeKey(ctx);state.binding=String(ctx.chat?.bindedPersona||'');await guard();const bundle=await generateRandomCandidates(options);await guard();state.rows=bundle.candidates.map(candidate=>({candidate,result:null,saved:null}));status('후보 3개를 제안했습니다. 저장할 때 선택한 후보를 완성된 Persona로 상세 생성합니다.');}
+    try {const ctx=await getLiveRuntimeContext();state.scope=liaScopeKey(ctx);state.binding=String(ctx.chat?.bindedPersona||'');await guard();const bundle=await generateRandomCandidates(options);await guard();state.rows=bundle.candidates.map(candidate=>({candidate,result:null,saved:null}));status('후보 3개를 제안했습니다. 저장할 때 선택한 후보를 완성된 Persona로 상세 생성합니다.');}
     catch(error){status(`후보 생성 실패: ${error?.message||error}`);}
     finally{state.busy=false;if(state.closed){restoreDraft();if(randomChatPopup===state)randomChatPopup=null;}else render();}
   }
@@ -23323,16 +20829,9 @@ ${revisionText}`);
     await refreshPreview();
   }
 
-  async function activateLegacyLiveSyncBackendAfterSilentV3() { return false; }
-  async function maybeFailoverSilentLiveSyncBackend() { return false; }
-  async function registerLiveSyncCaptureBackend() {
-    liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS.NONE;
-    liveSyncCaptureFallbackReason = "manual_only_notification";
-    if(typeof api.addRisuChatListener!=="function")return false;
-    liveSyncOutputListener=event=>{void maybeNotifyLiaUpdate(event).catch(error=>appendDebugLog('manual_update_notice','unavailable',{error:errorForLog(error)},'warn'));};
-    try {await api.addRisuChatListener("output",liveSyncOutputListener);return true;}
-    catch(_){liveSyncOutputListener=null;return false;}
-  }
+  
+  
+  
 
   async function unregisterUiRegistration(handle, stableId, methodNames, fallbackArgumentLists = []) {
     if (stableId && typeof api?.unregisterUIPart === 'function') {
@@ -23389,7 +20888,6 @@ ${revisionText}`);
     if (pluginUnloaded) return;
     if(randomChatPopup)await randomChatPopup.close();
     if(randomChatButtonHandle)await unregisterUiRegistration(randomChatButtonHandle,RANDOM_CHAT_BUTTON_ID,['unregisterButton','removeButton'],[]);
-    cancelManualLivePersonaAnalysis("plugin_unloaded");
     liaHealthRecovery?.clear();
     pluginUnloaded = true;
     cancelLiaUpdateNotice();
@@ -23406,25 +20904,8 @@ ${revisionText}`);
     if (debugExportSnapshotRefreshTimer) clearTimeout(debugExportSnapshotRefreshTimer);
     debugExportSnapshotRefreshTimer = null;
     revokeVisualAssetObjectUrls();
-    for (const entry of liveSyncScheduledChecks.values()) {
-      if (entry?.timer) clearTimeout(entry.timer);
-    }
-    liveSyncScheduledChecks.clear();
-    liveSyncRequeueByScope.clear();
-    liveSyncOutputTurnRevisions.clear();
-    liveSyncInFlightScopes.clear();
-    liveSyncCaptureHealthPending = null;
     try { await unregisterLiaHandoffIpc(); } catch (_) {}
     try { await unregisterLiaUiRegistrations(); } catch (_) {}
-    try {
-      if (liveSyncOutputListener && typeof api.removeRisuChatListener === "function") await api.removeRisuChatListener("output", liveSyncOutputListener);
-    } catch (_) {}
-    try {
-      if (liveSyncLegacyOutputHandler && typeof api.removeRisuScriptHandler === "function") await api.removeRisuScriptHandler("output", liveSyncLegacyOutputHandler);
-    } catch (_) {}
-    liveSyncOutputListener = null;
-    liveSyncLegacyOutputHandler = null;
-    liveSyncCaptureBackend = LIVE_SYNC_CAPTURE_BACKENDS.NONE;
     try {
       if (personaProofBeforeReplacer && typeof api.removeRisuReplacer === "function") await api.removeRisuReplacer("beforeRequest", personaProofBeforeReplacer);
       if (personaProofAfterReplacer && typeof api.removeRisuReplacer === "function") await api.removeRisuReplacer("afterRequest", personaProofAfterReplacer);
@@ -23824,27 +21305,12 @@ const createMemorySuiteLiaHealthAdapter = options => {
     const authority = options.storage.captureReadOnlyAuthorityFence();
     const context = await options.readContext(), scope = options.scopeFor(context);
     if (!scope?.scopeKey || !scope.scopeId || !context.character || !context.chat || !context.profile) throw Error('LIA_HEALTH_CONTEXT_UNVERIFIED');
-    const key = options.keyFor(scope.scopeKey), keys = [options.indexKey, key, options.legacyKey];
-    const rows = [];
-    for (const item of keys) rows.push(await options.storage.inspectLocalHealthSnapshot(scope, item, { strictPhysical: true }));
-    if (rows.some(row => row.mode !== 'plugin_only' || row.binding !== rows[0].binding)) throw Error('LIA_HEALTH_AUTHORITY_CHANGED');
-    const index = parse(rows[0].raw), binding = parse(rows[1].raw), legacy = parse(rows[2].raw);
-    if (legacy != null) throw Error('LIA_HEALTH_LEGACY_REVIEW_REQUIRED');
-    let valid = false;
-    if (index == null && binding == null) {
-      valid = !String(context.chat.bindedPersona || context.chat.personaId || '').startsWith('lia-live-persona::');
-    } else if (object(index) && index.schema === options.indexSchema && object(index.entries)) {
-      const entry = index.entries[scope.scopeKey];
-      if (!entry && binding == null) valid = !String(context.chat.bindedPersona || context.chat.personaId || '').startsWith('lia-live-persona::');
-      else if (object(entry) && object(binding)) {
-        const raw = typeof rows[1].raw === 'string' ? rows[1].raw : JSON.stringify(rows[1].raw);
-        valid = entry.storageKey === key && entry.digest === options.hash(raw)
-          && binding.scopeKey === scope.scopeKey && typeof binding.livePersonaId === 'string' && !!binding.livePersonaId
-          && entry.livePersonaId === binding.livePersonaId && Array.isArray(binding.ledgers) && Array.isArray(binding.liveState);
-      }
-    }
+    const row = await options.storage.inspectLocalHealthSnapshot(scope, options.proofKey, { strictPhysical: true });
+    if (row.mode !== 'plugin_only') throw Error('LIA_HEALTH_AUTHORITY_CHANGED');
+    const proof = parse(row.raw);
+    const valid = proof == null || (object(proof) && (proof.proofs == null || object(proof.proofs)));
     authority.assertCurrent();
-    return { valid, mode: rows[0].mode, scopeKey: scope.scopeKey, assertCurrent: authority.assertCurrent,
+    return { valid, mode: row.mode, scopeKey: scope.scopeKey, assertCurrent: authority.assertCurrent,
       withFreshContext: publish => options.readContext(current => {
         if (JSON.stringify(current) !== JSON.stringify(context)) throw Error('LIA_HEALTH_HOST_CHANGED');
         authority.assertCurrent();
@@ -23852,50 +21318,9 @@ const createMemorySuiteLiaHealthAdapter = options => {
         // witness. No metadata read or awaited work may precede publication.
         return publish();
       }),
-      binding: JSON.stringify([scope.scopeId, context, rows.map(row => [row.binding, row.mode, row.raw])]) };
+      binding: JSON.stringify([scope.scopeId, context, [row.binding, row.mode, row.raw]]) };
   };
-  const captureCache = scopeKey => {
-    const cache = options.cache;
-    if (!cache || !['getStore','getComplete','setComplete'].every(key => typeof cache[key] === 'function')) return null;
-    const read = () => {
-      const store = cache.getStore(), complete = cache.getComplete();
-      if (typeof complete !== 'boolean') throw Error('LIA_CACHE_COMPLETENESS_UNVERIFIED');
-      let bindings = null, entry = { exists: false, value: undefined };
-      if (store != null) {
-        const container = MemorySuiteHealthRecovery.readOwnCacheField(store, 'bindings');
-        if (!container.exists || !container.value || typeof container.value !== 'object' || Array.isArray(container.value)) throw Error('LIA_CACHE_CONTAINER_UNVERIFIED');
-        bindings = container.value;
-        entry = MemorySuiteHealthRecovery.readOwnCacheField(bindings, scopeKey);
-        if (entry.exists && entry.configurable !== true) throw Error('LIA_CACHE_ENTRY_NOT_REMOVABLE');
-      }
-      return { store, bindings, entry, complete,
-        fingerprint: MemorySuiteHealthRecovery.cacheDataFingerprint([store, complete]) };
-    };
-    const captured = read();
-    return Object.freeze({
-      matches: () => {
-        const current = read();
-        return current.store === captured.store && current.bindings === captured.bindings
-          && current.entry.exists === captured.entry.exists && Object.is(current.entry.value, captured.entry.value)
-          && current.complete === captured.complete && current.fingerprint === captured.fingerprint;
-      },
-      invalidate: () => {
-        let changedFields = 0;
-        if (captured.entry.exists) {
-          if (!Reflect.deleteProperty(captured.bindings, scopeKey)) throw Error('LIA_CACHE_ENTRY_INVALIDATION_FAILED');
-          changedFields += 1;
-        }
-        if (captured.complete !== false) { cache.setComplete(false); changedFields += 1; }
-        return { changedFields };
-      },
-      verify: () => {
-        const current = read();
-        return current.store === captured.store && current.bindings === captured.bindings
-          && current.entry.exists === false && current.complete === false;
-      }
-    });
-  };
-  return MemorySuiteHealthRecovery.localOwnerAdapter({ owner: 'LIA', snapshot, captureCache,
+  return MemorySuiteHealthRecovery.localOwnerAdapter({ owner: 'LIA', snapshot,
     isBusy: options.isBusy, isAlive: options.isAlive });
 };
 /* END MEMORY SUITE LIA HEALTH ADAPTER */
@@ -23921,54 +21346,17 @@ const createMemorySuiteLiaHealthAdapter = options => {
   liaHealthRecovery = createMemorySuiteLiaHealthAdapter({
     storage: MemorySuiteStorageBridge, readContext: readLiaHealthContext,
     scopeFor: context => memorySuiteLiaScopeDescriptorForContext({ ...context, char: context.character }),
-    keyFor: livePersonaScopeStorageKey, indexKey: LIVE_PERSONA_INDEX_STORAGE_KEY,
-    indexSchema: LIVE_PERSONA_INDEX_SCHEMA, legacyKey: LIVE_PERSONA_STORAGE_KEY, hash: hashText,
+    proofKey: PERSONA_PROOF_STORAGE_KEY,
     isAlive: () => !pluginUnloaded,
-    isBusy: () => liveSyncInFlightScopes.size > 0 || livePersonaForkInFlight.size > 0 || livePersonaConfigurationScopes.size > 0
-      || livePersonaStorePromise !== null || ['queued','running','paused'].includes(MemorySuiteStorageBridge.getSyncJob()?.status),
-    cache: { getStore: () => cachedLivePersonaStore, getComplete: () => cachedLivePersonaStoreComplete,
-      setComplete: value => { cachedLivePersonaStoreComplete = value; } }
+    isBusy: () => ['queued','running','paused'].includes(MemorySuiteStorageBridge.getSyncJob()?.status)
   });
 /* LIA HEALTH OWNER WIRING END */
-/* LIA HEALTH MUTATION   readLivePersonaStore = guardLiaHealthOperation(readLivePersonaStore);
-  readLivePersonaBindingByScopeKey = guardLiaHealthOperation(readLivePersonaBindingByScopeKey);
-  writeLivePersonaStore = guardLiaHealthOperation(writeLivePersonaStore);
-  writeLivePersonaBinding = guardLiaHealthOperation(writeLivePersonaBinding);
-  withPersonaDatabaseMutationLock = guardLiaHealthOperation(withPersonaDatabaseMutationLock);
-  configureLivePersonaSync = guardLiaHealthOperation(configureLivePersonaSync);
-  checkLivePersonaSync = guardLiaHealthOperation(checkLivePersonaSync);
-  adoptLivePersonaHandoff = guardLiaHealthOperation(adoptLivePersonaHandoff);
-  forkLivePersonaBindingToContext = guardLiaHealthOperation(forkLivePersonaBindingToContext);
-  resumeLivePersonaBindingChange = guardLiaHealthOperation(resumeLivePersonaBindingChange);
-  restoreOriginalLivePersona = guardLiaHealthOperation(restoreOriginalLivePersona);
-  disableLivePersonaSyncKeepCurrent = guardLiaHealthOperation(disableLivePersonaSyncKeepCurrent); BEGIN */
+/* LIA HEALTH MUTATION BEGIN */
   const guardLiaHealthOperation = operation => function (...args) {
     return liaHealthRecovery.withMutation(() => operation.apply(this, args));
   };
-  readLivePersonaStore = guardLiaHealthOperation(readLivePersonaStore);
-  readLivePersonaBindingByScopeKey = guardLiaHealthOperation(readLivePersonaBindingByScopeKey);
-  writeLivePersonaStore = guardLiaHealthOperation(writeLivePersonaStore);
-  writeLivePersonaBinding = guardLiaHealthOperation(writeLivePersonaBinding);
   withPersonaDatabaseMutationLock = guardLiaHealthOperation(withPersonaDatabaseMutationLock);
-  configureLivePersonaSync = guardLiaHealthOperation(configureLivePersonaSync);
-  checkLivePersonaSync = guardLiaHealthOperation(checkLivePersonaSync);
-  adoptLivePersonaHandoff = guardLiaHealthOperation(adoptLivePersonaHandoff);
-  forkLivePersonaBindingToContext = guardLiaHealthOperation(forkLivePersonaBindingToContext);
-  resumeLivePersonaBindingChange = guardLiaHealthOperation(resumeLivePersonaBindingChange);
-  restoreOriginalLivePersona = guardLiaHealthOperation(restoreOriginalLivePersona);
-  disableLivePersonaSyncKeepCurrent = guardLiaHealthOperation(disableLivePersonaSyncKeepCurrent);
-/* LIA HEALTH MUTATION   readLivePersonaStore = guardLiaHealthOperation(readLivePersonaStore);
-  readLivePersonaBindingByScopeKey = guardLiaHealthOperation(readLivePersonaBindingByScopeKey);
-  writeLivePersonaStore = guardLiaHealthOperation(writeLivePersonaStore);
-  writeLivePersonaBinding = guardLiaHealthOperation(writeLivePersonaBinding);
-  withPersonaDatabaseMutationLock = guardLiaHealthOperation(withPersonaDatabaseMutationLock);
-  configureLivePersonaSync = guardLiaHealthOperation(configureLivePersonaSync);
-  checkLivePersonaSync = guardLiaHealthOperation(checkLivePersonaSync);
-  adoptLivePersonaHandoff = guardLiaHealthOperation(adoptLivePersonaHandoff);
-  forkLivePersonaBindingToContext = guardLiaHealthOperation(forkLivePersonaBindingToContext);
-  resumeLivePersonaBindingChange = guardLiaHealthOperation(resumeLivePersonaBindingChange);
-  restoreOriginalLivePersona = guardLiaHealthOperation(restoreOriginalLivePersona);
-  disableLivePersonaSyncKeepCurrent = guardLiaHealthOperation(disableLivePersonaSyncKeepCurrent); END */
+/* LIA HEALTH MUTATION END */
 
   try {
     const previousRuntime = globalThis[LIA_RUNTIME_INSTANCE_KEY];
@@ -23982,21 +21370,8 @@ const createMemorySuiteLiaHealthAdapter = options => {
       healthRecovery: liaHealthRecovery,
       version: PLUGIN_VERSION,
       dispose: async () => { try { await handlePluginUnload(); } catch (_) {} },
-      getHostLineageStatus: async () => { const ctx = await getLiveRuntimeContext(); const binding = await readLivePersonaBindingByScopeKey(livePersonaScopeKey(ctx)); return { ...MemorySuiteHostLineage.inspect(ctx.char, ctx.chat), owner: 'lia', scopeKey: livePersonaScopeKey(ctx), nativeBranchState: binding?.nativeBranchState || null }; },
-      debugProjectNativeBranchPersonaState: (ctx, binding) => projectNativeBranchPersonaState(ctx, normalizeLivePersonaBinding(binding)),
       getScopePersonaCatalog: readLiaScopePersonaCatalog,
       changeScopePersona: changeLiaScopePersona,
-      getLiveSyncCaptureState: () => sanitizeLogValue(liveSyncCaptureBackendSnapshot()),
-      debugProcessChatOutput: (event) => processLiveSyncChatOutputEvent(event),
-      debugScheduleLiveSync: (options = {}) => scheduleLivePersonaSyncCheck(0, options),
-      debugCaptureLiveSyncBatch: async (options = {}) => {
-        const runtimeCtx = await getLiveRuntimeContextForTarget(options.target || null);
-        const pairs = collectCompletedTurnPairs(runtimeCtx.chat);
-        const startPair = Math.max(1, Number(options.startPair || 1) || 1);
-        const batch = pairs.slice(startPair - 1, startPair - 1 + LIVE_SYNC_BATCH_SIZE);
-        return sanitizeLogValue(livePersonaBatchRevisionSnapshot(runtimeCtx, batch, options.outputCapture || null));
-      },
-      debugVerifyLiveSyncBatch: async (snapshot = {}) => sanitizeLogValue(await verifyLivePersonaBatchStillCurrent(snapshot)),
       debugWorldLoreComputeLocal: (input = {}) => runLiaWorldLoreComputeLocal(input),
       debugRerankWorldLoreWithCompute: (entries = [], ctx = {}, topK = WORLD_LORE_TOP_K) => rerankWorldLoreEntriesWithCompute(entries, ctx, topK),
       debugWorldLoreComputeWhenIdle: async () => ({ status: "retired", operations: [] }),
@@ -24021,7 +21396,6 @@ const createMemorySuiteLiaHealthAdapter = options => {
   // Existing Persona objects, bindings, pending journals and legacy names stay
   // untouched at startup. A prior enabled flag never resumes tracking.
   try { await initializePersonaProofExperience(); } catch (_) {}
-  await registerLiveSyncCaptureBackend();
   // v0.26.49: official lifecycle first. Some old forks expose addEventListener instead.
   try {
     unloadEventHandler = handlePluginUnload;

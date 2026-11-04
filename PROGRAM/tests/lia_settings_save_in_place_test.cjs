@@ -43,11 +43,11 @@ test('storage failure retains the current form and allows another save',async t=
  await save(x);assert.equal(doc.querySelector('#lia-model'),model);assert.equal(model.value,'retry-model');assert.match(doc.querySelector('#dpg-status').textContent,/실패 또는 결과 확인 필요/);
  fail=false;await save(x);assert.equal((await x.f.context.__saveAudit.read()).model,'retry-model');
 });
-test('lore length setting also saves and verifies the ARG without rebuilding the workspace',async t=>{
+test('lore length setting also saves and verifies in pluginStorage without rebuilding the workspace',async t=>{
  const x=await setup(t),doc=x.gui.document,root=doc.querySelector('#dpg-preview-root'),header=root.firstElementChild;
  doc.querySelector('.sidebar [data-go="make"]').click();const input=doc.querySelector('#lia-max-chars');
  input.value='2300';input.dispatchEvent(new x.gui.dom.window.Event('input',{bubbles:true}));
  const reads=x.f.context.__contextReads,button=doc.querySelector('[data-save-lore-limit]');assert(button);button.click();
- await until(()=>!button.disabled,'lore limit save');assert.equal(String(await x.host.getArgument('max_lore_chars')),'2300');
+ await until(()=>!button.disabled,'lore limit save');assert.equal(String(await x.host.pluginStorage.getItem('liaPersonaLoreCharLimitV1')),'2300');
  assert.equal(root.firstElementChild,header);assert.equal(doc.querySelector('#lia-max-chars'),input);assert.equal(x.f.context.__contextReads,reads);assert.equal(doc.querySelector('#savebar').hidden,true);
 });

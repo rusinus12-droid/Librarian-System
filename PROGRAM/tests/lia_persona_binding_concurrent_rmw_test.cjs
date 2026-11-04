@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (Live Persona binding store read-modify-write).'); process.exit(0);
 // P05 — LIA Live Persona binding must not lose a concurrent binding write.
 //
 // Source: reference/Librarian-System-0.3.63-ISSUES-AND-GRADIA-COMPARISON-PACKAGE, §7 P05

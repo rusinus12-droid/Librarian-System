@@ -15,13 +15,13 @@ async function setup(t){
 }
 const request=(catalog,row,id)=>({scopeKey:row.scopeKey,expectedRevision:row.revision,personaId:id,expectedPersonaRevision:catalog.personas.find(p=>p.id===id)?.revision});
 test('catalog lists managed and ordinary native chats without changing storage or personas',async t=>{
- const f=await setup(t),before=JSON.stringify(f.db),stored=JSON.stringify([...f.values].filter(([k])=>k.startsWith('liaPersonaLinkerLivePersona')));
+ const f=await setup(t),before=JSON.stringify(f.db),stored=JSON.stringify([...f.values]);
  const catalog=await f.runtime.getScopePersonaCatalog();
  assert.equal(catalog.rows.length,2);
- assert.equal(catalog.rows.find(r=>r.chatId==='lia-chat').status,'LIA 연결됨');
+ assert.equal(catalog.rows.find(r=>r.chatId==='lia-chat').status,'직접 연결');
  assert.equal(catalog.rows.find(r=>r.chatId==='other-chat').personaName,'두 번째 Persona');
  assert.match(catalog.rows.find(r=>r.chatId==='other-chat').preview,/탐험가/);
- assert.equal(JSON.stringify(f.db),before);assert.equal(JSON.stringify([...f.values].filter(([k])=>k.startsWith('liaPersonaLinkerLivePersona'))),stored);assert.equal(f.calls(),0);
+ assert.equal(JSON.stringify(f.db),before);assert.equal(JSON.stringify([...f.values]),stored);assert.equal(f.calls(),0);
 });
 test('a non-current chat changes and unbinds without switching the selected chat or default persona',async t=>{
  const f=await setup(t),original=JSON.stringify(f.liveChat),personas=JSON.stringify(f.db.personas),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='other-chat');
@@ -32,33 +32,25 @@ test('a non-current chat changes and unbinds without switching the selected chat
  await f.runtime.changeScopePersona(request(next,current,''));
  assert.equal(f.character.chats[1].bindedPersona,undefined);assert.equal(f.db.selectedPersona,0);assert.equal(f.calls(),0);
 });
-test('managed scopes reuse the existing per-chat Live transaction and preserve the old persona',async t=>{
+test('managed scopes bind the chosen persona and leave the old persona as it was',async t=>{
  const f=await setup(t),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='lia-chat'),other=JSON.stringify(f.character.chats[1]);
  const saved=await f.runtime.changeScopePersona(request(catalog,row,'second-source'));
- assert.match(saved.personaId,/^lia-live-persona::/);assert.equal(saved.sourcePersonaName,'두 번째 Persona');
- assert.equal(f.db.personas.find(p=>p.id==='lia-live-persona::fixture').personaPrompt,'Base persona prompt');
+ assert.equal(saved.personaId,'second-source');
+ assert.equal(f.db.personas.find(p=>p.id==='fixture-bound-persona').personaPrompt,'Bound persona prompt');
  assert.equal(f.db.personas.find(p=>p.id==='second-source').personaPrompt,'신중한 탐험가. 은빛 나침반을 지닌다.');
  assert.equal(JSON.stringify(f.character.chats[1]),other);assert.equal(f.db.selectedPersona,0);assert.equal(f.calls(),0);
 });
-test('stale views, deleted targets, duplicate IDs and other scopes Live personas cannot authorize changes',async t=>{
+test('stale views, deleted targets and duplicate IDs cannot authorize changes',async t=>{
  const f=await setup(t),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='other-chat');
  f.character.chats[1].bindedPersona='source-persona';
  await assert.rejects(()=>f.runtime.changeScopePersona(request(catalog,row,'second-source')),/情報|정보가 바뀌/);
  let fresh=await f.runtime.getScopePersonaCatalog(),target=fresh.rows.find(r=>r.chatId==='other-chat');
- await assert.rejects(()=>f.runtime.changeScopePersona(request(fresh,target,'lia-live-persona::fixture')),/다른 채팅의 Live/);
  f.db.personas.find(p=>p.id==='second-source').personaPrompt+=' changed';
  await assert.rejects(()=>f.runtime.changeScopePersona(request(fresh,target,'second-source')),/Persona가 변경/);
  f.character.chats.push({...f.character.chats[1],message:[]});fresh=await f.runtime.getScopePersonaCatalog();
  assert.equal(fresh.rows.filter(r=>r.chatId==='other-chat').every(r=>!r.available),true);
  await assert.rejects(()=>f.runtime.changeScopePersona(request(fresh,fresh.rows.find(r=>r.chatId==='other-chat'),'source-persona')),/중복/);
  assert.equal(f.character.chats[1].bindedPersona,'source-persona');assert.equal(f.calls(),0);
-});
-test('stored bindings whose chat is gone remain visible and cannot be edited',async t=>{
- const f=await setup(t);f.character.chats.shift();
- const rows=(await f.runtime.getScopePersonaCatalog()).rows,orphan=rows.find(r=>r.orphan);
- assert.equal(orphan.scopeKey,f.scopeKey);assert.equal(orphan.available,false);
- await assert.rejects(()=>f.runtime.changeScopePersona({scopeKey:f.scopeKey,expectedRevision:'old',personaId:'source-persona'}),/원본 채팅/);
- assert.ok(f.values.has('liaPersonaLinkerLivePersonaIndexV2'));
 });
 test('reordered host indexes are resolved from fresh IDs and rejected if the host returns another chat',async t=>{
  const f=await setup(t),catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.chatId==='other-chat');
@@ -68,7 +60,7 @@ test('reordered host indexes are resolved from fresh IDs and rejected if the hos
  const fresh=await f.runtime.getScopePersonaCatalog(),target=fresh.rows.find(r=>r.chatId==='other-chat');
  f.api.getChatFromIndex=async()=>f.character.chats[1];
  await assert.rejects(()=>f.runtime.changeScopePersona(request(fresh,target,'second-source')),/채팅 위치/);
- assert.equal(f.character.chats[1].bindedPersona,'lia-live-persona::fixture');
+ assert.equal(f.character.chats[1].bindedPersona,'fixture-bound-persona');
 });
 
 test('a chat reorder during the final character read cannot overwrite the other chat',async t=>{
@@ -100,12 +92,7 @@ test('partial database reads and damaged binding shards never look like an empty
  await assert.rejects(()=>f.runtime.getScopePersonaCatalog(),/기본 Persona 선택 상태/);
  f.api.getDatabase=async()=>null;await assert.rejects(()=>f.runtime.getScopePersonaCatalog(),/데이터 접근 권한/);
  f.api.getDatabase=original;
- const index=JSON.parse(f.values.get('liaPersonaLinkerLivePersonaIndexV2'));
- f.values.set(index.entries[f.scopeKey].storageKey,'{"corrupt":true}');
- const catalog=await f.runtime.getScopePersonaCatalog(),row=catalog.rows.find(r=>r.scopeKey===f.scopeKey);
- assert.equal(row.available,false);assert.equal(row.reason,'LIA 연결 기록 확인 필요');
- await assert.rejects(()=>f.runtime.changeScopePersona(request(catalog,row,'second-source')),/LIA 연결 기록/);
- assert.equal(f.liveChat.bindedPersona,'lia-live-persona::fixture');
+ assert.equal(f.liveChat.bindedPersona,'fixture-bound-persona');
 });
 
 test('a rejected host write preserves native binding and does not report successful application',async t=>{

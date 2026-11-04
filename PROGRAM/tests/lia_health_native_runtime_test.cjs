@@ -4,33 +4,28 @@ const local=path.join(__dirname,'fixtures/lia_native_runtime_fixture.cjs');
 const fixturePath=fs.existsSync(local)?local:path.join(process.env.LIB_BASE_PROGRAM||'', 'tests/fixtures/lia_native_runtime_fixture.cjs');
 const {createFixture}=require(fixturePath);
 const deferred=()=>{let resolve;return{promise:new Promise(r=>resolve=r),resolve}};
-const expose=source=>source.replace('      getLiveSyncCaptureState:',`      healthTestStorage: MemorySuiteStorageBridge,
-      healthTestConfigure: async () => configureLivePersonaSync(await getLiveRuntimeContext(), 'id:source-persona'),
-      healthTestReadBinding: () => readLivePersonaBindingByScopeKey('char:lia-char|chat:lia-chat'),
-      healthTestCache: () => ({store:cachedLivePersonaStore,complete:cachedLivePersonaStoreComplete}),
-      getLiveSyncCaptureState:`);
+const expose=source=>source.replace('      getScopePersonaCatalog:',`      healthTestStorage: MemorySuiteStorageBridge,
+      healthTestGenerated: (ctx,result) => upsertGeneratedPersona(ctx,result),
+      getScopePersonaCatalog:`);
 (async()=>{const f=await createFixture('official',{transformSource:expose});let release;
  try{
   const health=f.runtime.healthRecovery;assert(health);let writes=0;
-  await f.runtime.healthTestReadBinding(); // Populate cache explicitly; startup is now read-free for Live state.
   const set=f.api.pluginStorage.setItem,setDB=f.api.setDatabase,setChat=f.api.setChatToIndex;
   f.api.pluginStorage.setItem=async(...args)=>{writes++;return set(...args)};f.api.setDatabase=async(...args)=>{writes++;return setDB(...args)};f.api.setChatToIndex=async(...args)=>{writes++;return setChat(...args)};
-  const before=JSON.stringify({storage:[...f.values],personas:f.db.personas,selectedPersona:f.db.selectedPersona,chat:f.liveChat});
-  const report=await health.inspect(),ticket=await health.preview();assert.equal(report.known,true);assert.equal(report.complete,false);assert.equal(ticket.allowed,true);assert.equal(writes,0);
-  assert.equal(JSON.stringify({storage:[...f.values],personas:f.db.personas,selectedPersona:f.db.selectedPersona,chat:f.liveChat}),before);
-  const held=deferred();release=held.resolve;const get=f.api.getDatabase;f.api.getDatabase=async(...args)=>{await held.promise;return get(...args)};
-  const repair=health.repair(ticket);assert.equal(health.isBusy(),true);
-  await assert.rejects(f.runtime.healthTestReadBinding(),/HEALTH_OPERATION_IN_PROGRESS/);
-  await assert.rejects(f.runtime.healthTestStorage.startRestoreJob(),/HEALTH_OPERATION_IN_PROGRESS/);
-  assert.equal(writes,0);held.resolve();const result=await repair;assert.equal(result.status,'cache_invalidated');f.api.getDatabase=get;
-  assert.equal(f.runtime.healthTestCache().complete,false);assert.equal(f.runtime.healthTestCache().store?.bindings?.[f.scopeKey],undefined);
-  assert.equal(JSON.stringify({storage:[...f.values],personas:f.db.personas,selectedPersona:f.db.selectedPersona,chat:f.liveChat}),before);assert.equal(writes,0);assert.equal((await health.repair(ticket)).status,'blocked');
-  // A normal owner writer keeps its existing return value and holds admission
-  // through the real host publication, not just through its preparatory reads.
+  const state=()=>JSON.stringify({storage:[...f.values],personas:f.db.personas,selectedPersona:f.db.selectedPersona,chat:f.liveChat});
+  const before=state();
+  const report=await health.inspect();assert.equal(report.known,true);assert.equal(report.complete,false);
+  // LIA keeps no per-scope RAM cache any more, so there is nothing a repair could invalidate.
+  const ticket=await health.preview();assert.equal(ticket.allowed,false);assert.equal(writes,0);assert.equal(state(),before);
+  // A corrupt proof store is reported, not repaired.
+  f.values.set('liaPersonaRequestProofV1','[]');assert.equal((await health.inspect()).known,false);f.values.delete('liaPersonaRequestProofV1');
+  assert.equal((await health.inspect()).known,true);
+  // A normal owner writer keeps its return value and holds admission through the real host publication.
+  const ctx={char:f.character,chat:f.liveChat,charIndex:0,chatIndex:0,personaInfo:{persona:f.db.personas[0]},generationMode:'classic'};
   const writeGate=deferred(),entered=deferred();release=writeGate.resolve;f.api.setDatabase=async(...args)=>{entered.resolve();await writeGate.promise;return setDB(...args)};
-  const mutation=f.runtime.healthTestConfigure();await entered.promise;
-  assert.equal((await health.preview()).allowed,false);health.clear();assert.equal((await health.preview()).allowed,false);writeGate.resolve();await mutation;f.api.setDatabase=setDB;
-  assert.equal((await health.preview()).allowed,true);await f.dispose();assert.equal((await health.preview()).allowed,false);
-  console.log('PASS full LIA VM: read-only inspection/preview, canonical byte preservation, one-use cache action, read/restore exclusion, real host writer tail, unload');
+  const mutation=f.runtime.healthTestGenerated(ctx,{personaPrompt:'HEALTH',generationMode:'classic'});await entered.promise;
+  assert.equal((await health.inspect()).known,false,'a running writer is not inspected as settled');writeGate.resolve();const saved=await mutation;assert.equal(saved.persona.personaPrompt,'HEALTH');f.api.setDatabase=setDB;
+  assert.equal((await health.inspect()).known,true);await f.dispose();assert.equal((await health.inspect()).known,false);
+  console.log('PASS full LIA VM: read-only inspection, corrupt proof report, no cache action, real host writer tail, unload');
  }finally{release?.();await f.dispose();}
 })().catch(error=>{console.error(error);process.exitCode=1});

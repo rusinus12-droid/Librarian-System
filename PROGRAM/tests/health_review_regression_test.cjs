@@ -1,9 +1,9 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),path=require('path');
 const dir=process.env.HEALTH_REVIEW_TESTS||__dirname;
-let source=fs.readFileSync(path.join(dir,'health_lia_retrace_wiring_test.cjs'),'utf8');source=source.slice(0,source.indexOf("for(const owner of ['LIA','RETRACE'])"))+'\nmodule.exports=fixture;';
+let source=fs.readFileSync(path.join(dir,'health_lia_retrace_wiring_test.cjs'),'utf8');source=source.slice(0,source.indexOf("for(const owner of ['RETRACE'])"))+'\nmodule.exports=fixture;';
 const sandbox={require,__dirname:dir,module:{exports:{}},structuredClone};vm.runInNewContext(source,sandbox);const fixture=sandbox.module.exports;
-for(const owner of ['LIA','RETRACE'])for(const field of ['source','profile','selection'])test(`${owner}: ${field} change in final metadata await must block before cache clear`,async()=>{
+for(const owner of ['RETRACE'])for(const field of ['source','profile','selection'])test(`${owner}: ${field} change in final metadata await must block before cache clear`,async()=>{
  const f=fixture(owner),ticket=await f.health.preview(),bridge=f.context.MemorySuiteStorageBridge,read=bridge.inspectLocalHealthSnapshot;
  const original={source:f.chat.message[0].data,profile:f.db.personas[0].personaPrompt,selection:f.control.chatIndex};const endOfSample=f.control.reads*2;let changed=false;
  bridge.inspectLocalHealthSnapshot=async(...args)=>{const result=await read(...args);if(f.control.reads===endOfSample){changed=true;if(field==='source')f.chat.message[0].data='new source';else if(field==='profile')f.db.personas[0].personaPrompt='new profile';else f.control.chatIndex=1;}return result;};

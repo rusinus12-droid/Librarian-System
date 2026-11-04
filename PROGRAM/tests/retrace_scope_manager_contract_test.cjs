@@ -36,7 +36,6 @@ assert.ok(!retrace.includes("scanErrors.hayaku = '활성 HAYAKU owner 없음 · 
 assert.ok(retrace.includes('scopeManagerPrefetchRecord(namespace, record)'), 'scope scans prefetch only scanner metadata');
 assert.ok(retrace.includes('Number(scope?.referenceCount || 0) > 0'), 'any incoming reference blocks deletion even when the source chat is still active');
 assert.ok(retrace.includes('liaPersonaRequestProofV1'), 'LIA proof store must participate in scoped rewrites');
-assert.ok(retrace.includes('liaPersonaLinkerLivePersonaSyncV1'), 'LIA legacy live-binding store must participate in scoped rewrites');
 assert.ok(retrace.includes("if (scope?.pinned === true) return '사용자가 보존 상태로 고정한 스코프입니다.'"));
 assert.deepEqual((retrace.match(/const MEMORY_SUITE_SCOPE_NAMESPACES = Object\.freeze\(\[([^\]]+)\]\)/) || [])[1]?.replace(/\s+/g, ''), "'flashback','hayaku','libra','lia','retrace'", 'scope manager uses exactly the five active namespaces');
 for (const forbidden of ['scopeManagerScanGradia', 'requestGradiaIpc', 'readGradiaSource', 'includeGradia', 'gradiaSessionHandoff']) {

@@ -1,60 +1,17 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.16
+//@display-name HAYAKU · Locator Continuity v3.3.17
 //@api 3.0
-//@version 3.3.16
+//@version 3.3.17
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
-//@arg hayaku_enabled string true|false
-//@arg hayaku_mode string auto|balanced|fast|deep
-//@arg hayaku_prompt_mode string auto|balanced|full
-//@arg hayaku_packet_output_slot string auto|tail|wrapper|footer
-//@arg hayaku_packet_closing_tag string Optional closing tag, e.g. </Story>
-//@arg hayaku_prompt_cache string off|structural|native
-//@arg hayaku_max_items_per_axis string 3
 //@arg hayaku_recall_short_max_age string Optional source-turn age cutoff; all five temporal fields required
 //@arg hayaku_recall_medium_max_age string Optional source-turn age cutoff, greater than short cutoff
 //@arg hayaku_recall_short_turn_quota string Optional unique source-turn quota, 0 to 24
 //@arg hayaku_recall_medium_turn_quota string Optional unique source-turn quota, 0 to 24
 //@arg hayaku_recall_long_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_bm25_channel string true|false
-//@arg hayaku_bm25_weight string 0.08
-//@arg hayaku_memory_language string ko|en|ja|zh|source; blank uses source to follow the completed text language
-//@arg hayaku_debug string true|false
-//@arg hayaku_packet_recovery string true|false
-//@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
-//@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
-//@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
-//@arg hayaku_native_auto_repair string true|false; retired and ignored
-//@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg hayaku_cold_start_batch_turns string 1|5|10; maximum completed U+A turns per Other Ax Cold Start call; blank uses 1
-//@arg hayaku_packet_coverage_audit string true|false
-//@arg hayaku_packet_coverage_fallback_recall string true|false
-//@arg hayaku_display_scrubber string true|false
-//@arg hayaku_recall_relatedness_weight string 0-100 relevance preference after retrieval gate; blank uses 70
-//@arg hayaku_recall_recency_weight string 0-100 story-turn recency preference after retrieval gate; blank uses 30
-//@arg hayaku_recall_context_messages string Fixed recent user/assistant message window before the current input; blank uses 5
-//@arg hayaku_adaptive_context_window string true|false; blank uses true
-//@arg hayaku_multi_query_recall string true|false; blank uses true
-//@arg hayaku_contradiction_bundle string true|false; blank uses true
-//@arg hayaku_multi_resolution_recall string true|false; blank uses true
-//@arg hayaku_recall_stability string true|false; blank uses true
-//@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
-//@arg hayaku_gradia_final_delivery string true|false; advanced: while GRADIA reads HAYAKU, also give the response model the recall GRADIA used. Packet-writing instructions are always sent; default true
-//@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
-//@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
-//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
-//@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
-//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
-//@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
-//@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
-//@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
-//@arg hayaku_hierarchical_episode_memory string true|false; build router-only scene/turn episode hierarchy from L1 rows; blank uses true
-//@arg hayaku_episode_router_max_hits string Maximum episode routers activated per request; blank uses 3
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -990,7 +947,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.16';
+  const PLUGIN_VERSION = '3.3.17';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -3620,7 +3577,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The server address is kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const SAVED_SERVER_URL_KEY = `__memory_suite_internal_server_url_v1__:${namespace}`;
+  const readSavedServerUrl = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_URL_KEY);
+      return value === undefined || value === null ? '' : String(value).trim();
+    } catch (_) { return ''; }
+  };
+  const writeSavedServerUrl = async value => {
+    const storage = rawPluginStorage();
+    await storage.setItem(SAVED_SERVER_URL_KEY, String(value));
+    if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
+    return true;
+  };
   const getArgumentValue = async (names, fallback = '') => {
+    if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
       for (const api of apiCandidates()) {
         try {
@@ -3635,6 +3607,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const setArgumentValue = async (name, value) => {
+    if (urlArguments.includes(name) && rawPluginStorage()) return await writeSavedServerUrl(value);
     let lastError = null;
     for (const api of apiCandidates()) {
       try {
@@ -12579,6 +12552,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const connection = state.bootstrap.value, generation = dataBinding.generation;
     const connectionWitness = JSON.stringify(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -12732,6 +12707,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const executionIdentity = value => JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback ?? 0]);
     const executionIdentityWitness = executionIdentity(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -19331,6 +19308,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const readArg = async (key, fallback = '') => RisuCompat.getArgument(key, fallback);
+  // Settings are kept in pluginStorage: RisuAI keeps it through backups and plugin updates,
+  // and clears plugin arguments on every update. A key absent here reads its default.
+  const HAYAKU_SETTINGS_KEY = 'hayaku.v2.settings.values.v1';
+  let hayakuSavedSettings = null;
+  const readHayakuSavedSettings = async () => {
+    const outcome = await RisuCompat.getStorageItemOutcome(HAYAKU_SETTINGS_KEY);
+    if (outcome.state !== 'fulfilled') return hayakuSavedSettings || {};
+    const raw = outcome.value;
+    const parsed = raw == null || raw === '' ? {} : typeof raw === 'string' ? safeJsonParse(raw, {}) : raw;
+    hayakuSavedSettings = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return hayakuSavedSettings;
+  };
+  let hayakuSettingsWrite = Promise.resolve();
+  const writeHayakuSavedSetting = (key, value) => {
+    const run = hayakuSettingsWrite.then(async () => {
+      const next = { ...(await readHayakuSavedSettings()) };
+      if (value == null || value === '') delete next[key]; else next[key] = String(value);
+      if (!(await RisuCompat.setStorageItem(HAYAKU_SETTINGS_KEY, JSON.stringify(next)))) throw new Error('hayaku_settings_write_failed');
+      const readback = await readHayakuSavedSettings();
+      if ((readback[key] ?? '') !== (next[key] ?? '')) throw Object.assign(new Error('hayaku_settings_readback_mismatch'), { code: 'HAYAKU_SETTINGS_READBACK_MISMATCH' });
+      return true;
+    });
+    hayakuSettingsWrite = run.catch(() => {});
+    return run;
+  };
   const truthySetting = value => /^(?:true|on|1|yes)$/i.test(text(value).trim());
   const falsySetting = value => /^(?:false|off|0|no)$/i.test(text(value).trim());
   const HAYAKU_TEMPORAL_ARGUMENTS=Object.freeze(['hayaku_recall_short_max_age','hayaku_recall_medium_max_age',
@@ -19346,7 +19348,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const loadSettings = async (force = false) => {
     if (!force && Memory.settingsLoadedAt > 0 && now() - Memory.settingsLoadedAt < SETTINGS_REFRESH_TTL_MS) return Memory.settings;
-    const argumentInputs=new Map(),readArg=(key,fallback='')=>RisuCompat.getArgument(key,fallback,argumentInputs);
+    const argumentInputs=new Map(),savedSettings=await readHayakuSavedSettings();
+    const readArg=(key,fallback='')=>{
+      if(Object.prototype.hasOwnProperty.call(savedSettings,key)){argumentInputs.set(key,savedSettings[key]);return savedSettings[key];}
+      return RisuCompat.getArgument(key,fallback,argumentInputs);
+    };
     const [
       enabledRaw,
       modeRaw,
@@ -36680,7 +36686,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!argumentHost) throw Error('HAYAKU_READSET_SETTINGS_UNAVAILABLE');
     let timer;
     try {
-      const argumentsRead=Promise.all(HAYAKU_READSET_ARGUMENTS.map(async key=>[key,await (argumentHost.getArgument||argumentHost.getArg).call(argumentHost,key)]));
+      const savedSettings=await readHayakuSavedSettings();
+      const argumentsRead=Promise.all(HAYAKU_READSET_ARGUMENTS.map(async key=>[key,Object.prototype.hasOwnProperty.call(savedSettings,key)?savedSettings[key]:await (argumentHost.getArgument||argumentHost.getArg).call(argumentHost,key)]));
       const args=await Promise.race([argumentsRead,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HAYAKU_READSET_SETTINGS_UNAVAILABLE')),HOST_API_CALL_TIMEOUT_MS);})]);
       if(JSON.stringify(args.filter(([key])=>!key.startsWith('memory_suite_')).sort())!==Memory.settingsArgumentInputs)throw Error('HAYAKU_READSET_SETTINGS_CHANGED');
       const config=await MemorySuiteStorageBridge.getConnectionSettings({scope:{scopeId:frame.scope.key,scopeKey:frame.scope.key},force:true});
@@ -58186,10 +58193,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     return true;
   };
   const setNativeAutoRepairSetting = async enabled => {
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_background_auto_repair', enabled ? 'true' : 'false');
+    await writeHayakuSavedSetting('hayaku_background_auto_repair', enabled ? 'true' : 'false');
     await loadSettings(true);
     if (Memory.settings.backgroundAutoRepair !== enabled) throw new Error('background_auto_repair_setting_readback_mismatch');
     if (!enabled && Memory.nativeRecovery.repairTimer != null) {
@@ -58200,56 +58204,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
     return enabled;
   };
   const setAfterRequestAutoRepairSetting = async enabled => {
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_after_request_auto_repair', enabled ? 'true' : 'false');
+    await writeHayakuSavedSetting('hayaku_after_request_auto_repair', enabled ? 'true' : 'false');
     await loadSettings(true);
     if (Memory.settings.afterRequestAutoRepair !== enabled) throw new Error('after_request_auto_repair_setting_readback_mismatch');
     return enabled;
   };
   const setColdStartBatchTurnsSetting = async value => {
     const batchTurns = normalizeColdStartBatchTurns(value);
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_cold_start_batch_turns', String(batchTurns));
+    await writeHayakuSavedSetting('hayaku_cold_start_batch_turns', String(batchTurns));
     await loadSettings(true);
     if (Number(Memory.settings.coldStartBatchTurns) !== batchTurns) throw new Error('cold_start_batch_turns_setting_readback_mismatch');
     return batchTurns;
   };
-  const viewerSetArgumentValue = async (argument, value) => {
-    let lastError = null;
-    for (const api of apiCandidates()) {
-      const setter = typeof api?.setArgument === 'function'
-        ? api.setArgument
-        : (typeof api?.setArg === 'function' ? api.setArg : null);
-      if (!setter) continue;
-      try {
-        const result = await setter.call(api, argument, value);
-        if (result === false) throw new Error('argument_write_rejected');
-        return true;
-      } catch (error) { lastError = error; }
-    }
-    const error = new Error(`risuai_setArgument_unavailable:${compact(lastError?.message || lastError || argument, 180)}`);
-    error.code = 'RISUAI_SET_ARGUMENT_UNAVAILABLE';
-    throw error;
-  };
+  const viewerSetArgumentValue = async (argument, value) => await writeHayakuSavedSetting(argument, value);
   const viewerReadRawArgumentValue = async argument => {
-    let lastError = null;
-    for (const api of apiCandidates()) {
-      const getter = typeof api?.getArgument === 'function'
-        ? api.getArgument
-        : (typeof api?.getArg === 'function' ? api.getArg : null);
-      if (!getter) continue;
-      try {
-        const value = await getter.call(api, argument);
-        return value == null ? '' : String(value);
-      } catch (error) { lastError = error; }
-    }
-    const error = new Error(`risuai_getArgument_unavailable:${compact(lastError?.message || lastError || argument, 180)}`);
-    error.code = 'RISUAI_GET_ARGUMENT_UNAVAILABLE';
-    throw error;
+    const saved = await readHayakuSavedSettings();
+    return Object.prototype.hasOwnProperty.call(saved, argument) ? String(saved[argument]) : '';
   };
   // Literal settings page from the finalized mockup; product data/actions are attached through ARG hooks below.
   const HAYAKU_MOCKUP_SETTINGS_PAGE = String.raw`<section class="page" id="hayakuViewerPanelSettings" data-hayaku-viewer-panel="settings" data-page="settings" role="tabpanel" aria-labelledby="hayakuViewerTabSettings">
@@ -58823,7 +58793,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ticket = viewerSettingsLifetime();
     Memory.ledgerViewer.settingsLoadSerial = Number(Memory.ledgerViewer.settingsLoadSerial || 0) + 1;
     Memory.ledgerViewer.settingsApplying = true;
-    viewerUpdateSettingsDraftState(); viewerSetSettingsMessage('설정을 저장하고 전체 argument readback을 확인합니다.');
+    viewerUpdateSettingsDraftState(); viewerSetSettingsMessage('설정을 저장하고 저장값을 다시 읽어 확인합니다.');
     try {
       const draft = viewerCollectSettingsDraft();
       const result = await viewerApplySettingsTransaction(draft);
@@ -58840,7 +58810,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (viewerSettingsLifetimeCurrent(ticket)) { try { await viewerRenderNativeRecovery(); } catch (_) {} }
       return result;
     } catch (error) {
-      // Transaction rolls the ARG store back. Never discard the user's unsaved draft.
+      // Transaction rolls the saved settings back. Never discard the user's unsaved draft.
       if (viewerSettingsLifetimeCurrent(ticket)) viewerSetSettingsMessage(error?.rollbackVerified === true
         ? `적용 실패 · 이전 저장값 복원 확인. 편집값은 유지했습니다. ${compact(error?.message || error, 260)}`
         : `설정 적용 실패 · rollback 상태를 확인하세요. 편집값은 유지했습니다. ${compact(error?.message || error, 260)}`, true);

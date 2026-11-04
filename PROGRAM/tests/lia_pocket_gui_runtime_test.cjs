@@ -5,16 +5,16 @@ const path = require('node:path');
 const {createFixture} = require('./fixtures/lia_native_runtime_fixture.cjs');
 const source = fs.readFileSync(path.join(__dirname,'../plugins/LIA_Persona_Linker.js'),'utf8');
 
-const expose = s => s.replace('      getLiveSyncCaptureState:', `
+const expose = s => s.replace('      getScopePersonaCatalog:', `
       mockupMarkup: () => LIA_MOCKUP_APP_HTML,
       mockupContext: async () => readLiaViewContext(await getLiveRuntimeContext()),
       mockupMine: ctx => {
-        const slots=new Map(['#pocket','#upd-badge','#upd-dots','#upd-hint','#mine-list','#live-persona-state','.scope span:last-child','.brand__ver'].map(key=>[key,{setAttribute(){}}]));
+        const slots=new Map(['#pocket','#mine-list','.scope span:last-child','.brand__ver'].map(key=>[key,{setAttribute(){}}]));
         const app={querySelector:key=>slots.get(key)||null};
         const state=renderMockupMine(ctx,app);
         return {state,pocket:slots.get('#pocket').innerHTML,list:slots.get('#mine-list').innerHTML};
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 (async () => {
   const fixture = await createFixture('official', {transformSource:expose});
@@ -32,17 +32,15 @@ const expose = s => s.replace('      getLiveSyncCaptureState:', `
     const ctx=await fixture.runtime.mockupContext();
     ctx.chat=fixture.liveChat;
     const beforeBinding=fixture.liveChat.bindedPersona;
-    const beforeStorage=JSON.stringify([...fixture.values].filter(([key])=>key.startsWith('liaPersonaLinkerLivePersona')));
+    const beforeStorage=JSON.stringify([...fixture.values]);
     const rendered=fixture.runtime.mockupMine(ctx);
-    assert.equal(rendered.state.plan.pairs.length,5,"the product sees five completed fixture pairs");
-    assert.equal(rendered.state.plan.range,null,'without a verifiable local binding the update range stays disabled');
     assert.match(rendered.pocket,/Fixture Chat|기본 Persona|Persona/,'mine route renders a product-derived current Persona state');
     assert.doesNotMatch(rendered.list,/data-persona-apply=/,'opening the manager does not apply a binding');
     assert.match(rendered.list,/data-lia-persona-manage=/,'Persona management is a separate explicit destination');
     assert.equal(fixture.liveChat.bindedPersona,beforeBinding,'rendering does not mutate current chat binding');
-    assert.equal(JSON.stringify([...fixture.values].filter(([key])=>key.startsWith('liaPersonaLinkerLivePersona'))),beforeStorage,'rendering does not write local binding state');
+    assert.equal(JSON.stringify([...fixture.values]),beforeStorage,'rendering does not write local binding state');
 
-    const malicious={...ctx,db:{...ctx.db,personas:[{id:'malicious',name:'<script>bad</script>',note:'<img src=x onerror=bad>'}],selectedPersona:0},chat:{...ctx.chat,bindedPersona:''},livePersonaBinding:null};
+    const malicious={...ctx,db:{...ctx.db,personas:[{id:'malicious',name:'<script>bad</script>',note:'<img src=x onerror=bad>'}],selectedPersona:0},chat:{...ctx.chat,bindedPersona:''}};
     const escaped=fixture.runtime.mockupMine(malicious);
     assert.doesNotMatch(escaped.list,/<script>bad/);
     assert.match(escaped.list,/&lt;img/);

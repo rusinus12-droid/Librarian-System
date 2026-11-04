@@ -15,7 +15,7 @@ const ASSETS = 'liaPersonaVisualAssetStoreV1';
 const BLOBS = 'liaPersonaVisualAssetBlobV1::';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=', 'base64');
 const OTHER_PNG = Buffer.from(PNG); OTHER_PNG[OTHER_PNG.length - 1] ^= 1;
-const expose = source => source.replace('      getLiveSyncCaptureState:', `
+const expose = source => source.replace('      getScopePersonaCatalog:', `
       auditNativeRestore: {
         ensurePersonaVisualAssetAvailable, readPersonaVisualAssetUrl,
         readPersonaVisualAssetStore, writePersonaVisualAssetStore,
@@ -23,7 +23,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
         bridge: MemorySuiteStorageBridge, createRecovery:createLiaLegacyServerRecovery,
         readLogs: () => readLogStore(true)
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
 async function launch(baseUrl = '') {

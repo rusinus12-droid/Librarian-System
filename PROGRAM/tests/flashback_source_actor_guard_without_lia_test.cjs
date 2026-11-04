@@ -60,7 +60,7 @@ const EXPOSE = source => source.replace(
     "        } else if (action === 'adopt_session_handoff') {",
     `        } else if (action === '__probe_adopt') {
           const p = request.payload && typeof request.payload === 'object' ? request.payload : {};
-          result = await adoptSessionHandoff({ ...p, __authenticatedLiaContinuity: null });
+          result = await adoptSessionHandoff(p);
         } else if (action === 'adopt_session_handoff') {`);
 
 const build = async ({ selectedPersonaIndex, targetChatBindedPersona }) => {
@@ -147,7 +147,6 @@ const bridgeMarker = (targetChatId, transferId, sourceScopeKey, recordCount) => 
   includeFlashback: true,
   includeHayaku: false,
   includeLibra: false,
-  includeLiaLivePersona: false,
   sourceChatId: 'source-chat',
   targetChatId,
   transferId,
@@ -219,7 +218,7 @@ const bridgeMarker = (targetChatId, transferId, sourceScopeKey, recordCount) => 
   const different = await adopt('probe-different-persona');
   const differentReason = String(different?.result?.reason || '');
   assert.strictEqual(differentReason, 'source_actor_mismatch',
-    `a different Persona with no LIA continuity must be refused (got '${differentReason}')`);
+    `a different Persona must be refused (got '${differentReason}')`);
   // NOT `result.records`: the plugin reports `records: sourceRecordCount` in some refusal receipts (the
   // later actor check at ~22583 returns `records: sourceRecordCount`), so that field describes the SOURCE
   // and is non-zero even when nothing was copied. Asserting on it makes the test fail for the wrong reason

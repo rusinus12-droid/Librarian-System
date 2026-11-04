@@ -59,10 +59,6 @@ const ORIGINAL_SHARED_MAX = 512;
 const ORIGINAL_STAGE_MAX = 128;
 observations.original = { sharedMax: ORIGINAL_SHARED_MAX, stageMax: ORIGINAL_STAGE_MAX };
 
-// The declared arguments must advertise the same ceiling the code enforces.
-const argMax = source.match(/^\/\/@arg response_lore_max_items\s+int\s+([^\n]*)$/m);
-assert.ok(argMax, '//@arg response_lore_max_items must exist');
-observations.argMaxNote = argMax[1].trim();
 
 console.log(JSON.stringify({ test: 'libra_gradia_large_lore_frontier', observations }, null, 1));
 
@@ -107,9 +103,5 @@ observations.frontierMarkers = {
 assert.equal(observations.frontierMarkers.hasAdaptiveExpansion, true,
   'the engine must retain an adaptive frontier, not a single fixed cut');
 
-// 5. The ceiling the code enforces must match what the argument documents.
-assert.match(observations.argMaxNote, new RegExp(String(constants.MAX_ITEMS)),
-  `//@arg response_lore_max_items must document the enforced ceiling (${constants.MAX_ITEMS}); `
-  + `note reads: "${observations.argMaxNote}"`);
 
 process.stdout.write('libra_lore_adaptive_frontier_contract_test: PASS\n');

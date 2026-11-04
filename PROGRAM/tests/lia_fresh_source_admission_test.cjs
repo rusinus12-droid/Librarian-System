@@ -1,10 +1,11 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (Live sync batch source admission).'); process.exit(0);
 const assert=require('node:assert/strict');
 const {createFixture}=require(process.env.LIA_FIXTURE||'./fixtures/lia_native_runtime_fixture.cjs');
 const min=process.env.LIA_TEST_MIN==='1';let compiled;
-const expose=source=>{if(compiled)return compiled;source=source.replace('      getLiveSyncCaptureState:',`      auditCapture: async()=>{const ctx=await getLiveRuntimeContext();return livePersonaBatchRevisionSnapshot(ctx,collectCompletedTurnPairs(ctx.chat).slice(0,5));},
+const expose=source=>{if(compiled)return compiled;source=source.replace('      getScopePersonaCatalog:',`      auditCapture: async()=>{const ctx=await getLiveRuntimeContext();return livePersonaBatchRevisionSnapshot(ctx,collectCompletedTurnPairs(ctx.chat).slice(0,5));},
       auditCheck:()=>runManualLivePersonaAnalysis(),
-      getLiveSyncCaptureState:`);compiled=min?require(process.env.LIA_TERSER).minify_sync(source,{compress:{defaults:true,unsafe:false,drop_console:true,passes:3},mangle:{toplevel:true,properties:false}}).code:source;return compiled;};
+      getScopePersonaCatalog:`);compiled=min?require(process.env.LIA_TERSER).minify_sync(source,{compress:{defaults:true,unsafe:false,drop_console:true,passes:3},mangle:{toplevel:true,properties:false}}).code:source;return compiled;};
 (async()=>{const rows=[];for(const failure of ['throw','null','undefined','character_unavailable','database_unavailable','current_index_unavailable','stable']){const f=await createFixture('official',{transformSource:expose});try{const snap=structuredClone(await f.runtime.auditCapture());let writes=0;const set=f.api.setDatabase;f.api.setDatabase=async(...args)=>{writes++;return set(...args);};
  if(failure==='throw')f.api.getChatFromIndex=async()=>{throw Error('unavailable');};
  if(failure==='null')f.api.getChatFromIndex=async()=>null;

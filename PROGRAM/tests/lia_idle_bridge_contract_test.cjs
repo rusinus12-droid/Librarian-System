@@ -13,7 +13,6 @@ const source = fs.readFileSync(path.join(root, 'plugins', 'LIA_Persona_Linker.js
 assert.match(source, releasePattern("\\/\\/@version\\s+{lia}\\b", ""), 'patched LIA version');
 assert.doesNotMatch(source, /LIVE_SYNC_POLL_MS|PERSONA_PROOF_BADGE_REFRESH_MS/, 'legacy idle polling constants are removed');
 assert.doesNotMatch(source, /liveSyncTimer|personaProofBadgeTimer/, 'legacy idle polling timer handles are removed');
-assert.match(source, /reason: "manual_only"/, 'Live tracking is unconditionally retired');
 assert.match(source, /async function handlePersonaProofAfterRequest\(content\) \{\s*return content;/, 'legacy proof callback is an inert identity');
 assert.match(source, /__lia_persona_linker_runtime_v1__/, 'hot-reload singleton fence exists');
 assert.match(source, /personaProofBadgeRenderKey === renderKey/, 'SafeDOM proof badge is diff-only');
@@ -134,17 +133,16 @@ const hotPathMetrics = {};
   vm.runInContext(source, context, { filename: 'LIA_Persona_Linker.js' });
   await sleep(1700); // allow startup + one-shot diagnostics to settle
   assert.equal(activeIntervals.size, 0, 'LIA starts no unconditional interval while idle');
-  assert.equal(typeof outputListener, 'function', 'output listener offers manual update notices only');
+  assert.equal(outputListener, null, 'LIA does not listen to chat output');
 
   const before = { ...counters };
-  assert.equal(context.__lia_persona_linker_runtime_v1__.debugProcessChatOutput({}).reason, "manual_only");
   await sleep(900); // longer than the 650ms output debounce
-  assert.equal(counters.getCharacterFromIndex, before.getCharacterFromIndex, 'Live Sync OFF output does not reload character');
-  assert.equal(counters.getChatFromIndex, before.getChatFromIndex, 'Live Sync OFF output does not reload full chat');
+  assert.equal(counters.getCharacterFromIndex, before.getCharacterFromIndex, 'chat output does not reload character');
+  assert.equal(counters.getChatFromIndex, before.getChatFromIndex, 'chat output does not reload full chat');
 
   const beforeRequest = replacers.get('beforeRequest') || (messages => messages);
   const afterRequest = replacers.get('afterRequest') || (content => content);
-  assert.equal(replacers.has('beforeRequest'), false, 'ordinary requests have no Live before hook');
+  assert.equal(replacers.has('beforeRequest'), false, 'ordinary requests have no before hook');
   assert.equal(replacers.has('afterRequest'), false, 'retired emotion attachment registers no afterRequest hook');
   const beforeHookCounters = { host: { ...counters }, storage: { ...storageCounters } };
   const untouchedMessages = [{ role: 'user', content: 'ordinary request' }];

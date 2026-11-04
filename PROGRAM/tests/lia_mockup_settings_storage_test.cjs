@@ -2,9 +2,9 @@
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 
-const expose=source=>source.replace('      getLiveSyncCaptureState:',`      readLiaMockupSettings: async()=>({llm:await readStoredLLMConfig()}),
+const expose=source=>source.replace('      getScopePersonaCatalog:',`      readLiaMockupSettings: async()=>({llm:await readStoredLLMConfig()}),
       writeLiaMockupSettings: async()=>({llm:await writeStoredLLMConfig({provider:'openai',model:'fixture-model',endpoint:'https://fixture.invalid/v1',apiKey:'',temp:0.4,maxCompletionTokens:4096,timeout:45000,reasoningPreset:'off',reasoningEffort:'low',promptCacheMode:'explicit',extraBodyJson:'{"top_p":0.8}'})}),
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 (async()=>{
   const fixture=await createFixture('official',{transformSource:expose});

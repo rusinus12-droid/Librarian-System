@@ -7,8 +7,6 @@ const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..', '..');
 const source = fs.readFileSync(path.join(root, 'plugins', 'LIA_Persona_Linker.js'), 'utf8');
-assert.doesNotMatch(source, /return collectCompletedTurnPairs\(chat\)\.find/, 'output capture must not hash every historical pair');
-assert.match(source, /collectCompletedTurnPairRange\(runtimeCtx\.chat, startPair, pairCount\)/, 'source revalidation hashes only the pending batch');
 
 const hashText = value => {
   const source = String(value || '');
@@ -35,57 +33,10 @@ let measuredLongHotPathMs = 0;
 async function createFixture(mode, options = {}) {
   const values = new Map();
   const sourcePersona = { id: 'source-persona', name: 'Source Persona', personaPrompt: 'Base persona prompt', note: '' };
-  const livePersonaId = 'lia-live-persona::fixture';
-  const livePersona = { id: livePersonaId, name: 'Source Persona', personaPrompt: 'Base persona prompt', note: 'Managed by LIA Live Persona Sync.' };
-  const liveChat = { id: 'lia-chat', chatId: 'lia-chat', name: 'Fixture Chat', bindedPersona: livePersonaId, message: makeMessages() };
+  const boundPersona = { id: 'fixture-bound-persona', name: 'Bound Persona', personaPrompt: 'Bound persona prompt', note: '' };
+  const liveChat = { id: 'lia-chat', chatId: 'lia-chat', name: 'Fixture Chat', bindedPersona: boundPersona.id, message: makeMessages() };
   const character = { id: 'lia-char', chaId: 'lia-char', name: 'Fixture Character', chats: [liveChat], chatPage: 0 };
   const scopeKey = 'char:lia-char|chat:lia-chat';
-  const binding = {
-    scopeKey,
-    enabled: true,
-    policy: 'conservative',
-    externalChangePolicy: 'safe',
-    managerVersion: 6,
-    displayNameVersion: 2,
-    previousBinding: { hadExplicitBinding: false, personaId: '', capturedAt: new Date().toISOString(), legacyInferred: false },
-    bindingStatus: 'connected',
-    lastObservedBindingId: livePersonaId,
-    lastBindingCheckAt: new Date().toISOString(),
-    bindingError: '',
-    lastObservedSelectedPersonaId: sourcePersona.id,
-    lastObservedSelectedPersonaKey: `id:${sourcePersona.id}`,
-    lastSelectedPersonaCheckAt: new Date().toISOString(),
-    sourcePersonaId: sourcePersona.id,
-    sourcePersonaIndex: 0,
-    sourcePersonaName: sourcePersona.name,
-    livePersonaId,
-    livePersonaName: livePersona.name,
-    originalSnapshot: { name: sourcePersona.name, personaPrompt: sourcePersona.personaPrompt },
-    basePersonaPrompt: sourcePersona.personaPrompt,
-    basePromptHash: hashText(sourcePersona.personaPrompt),
-    lastAppliedPromptHash: hashText(livePersona.personaPrompt),
-    anchorPairCount: 0,
-    lastProcessedPairCount: 0,
-    liveState: [],
-    coreOverlay: [],
-    coreCandidateHistory: {},
-    ledgers: [],
-    lastProcessedAt: '',
-    lastError: '',
-    disabledReason: '',
-    nextRetryAt: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  const storageKey = `liaPersonaLinkerLivePersonaScopeV2::${hashText(scopeKey).slice(0, 24)}`;
-  const serialized = JSON.stringify(binding);
-  values.set(storageKey, serialized);
-  values.set('liaPersonaLinkerLivePersonaIndexV2', JSON.stringify({
-    schema: 'lia.live_persona_index.v2',
-    version: 2,
-    updatedAt: new Date().toISOString(),
-    entries: { [scopeKey]: { storageKey, digest: hashText(serialized), livePersonaId, updatedAt: binding.updatedAt } },
-  }));
 
   const pluginStorage = {
     async getItem(key) { return values.has(String(key)) ? values.get(String(key)) : null; },
@@ -101,7 +52,7 @@ async function createFixture(mode, options = {}) {
   const replacers = new Map();
   const unloadHandlers = [];
   const registrations = { chat: 0, script: 0 };
-  const db = { personas: [sourcePersona, livePersona], selectedPersona: 0, characters: [character], plugins: [] };
+  const db = { personas: [sourcePersona, boundPersona], selectedPersona: 0, characters: [character], plugins: [] };
 
   if (options.snapshot) {
     values.clear();for (const [key,value] of options.snapshot.values) values.set(key,value);
@@ -211,7 +162,7 @@ async function createFixture(mode, options = {}) {
     activeTimeouts.clear();
   };
 
-  return { api, runtime, context, outputListener, scriptOutputHandler, registrations, liveChat, character, scopeKey, binding, values, db, dispose };
+  return { api, runtime, context, outputListener, scriptOutputHandler, registrations, liveChat, character, scopeKey, values, db, dispose };
 }
 
 module.exports={createFixture};

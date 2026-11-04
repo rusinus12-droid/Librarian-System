@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {createFixture} = require('./fixtures/lia_native_runtime_fixture.cjs');
 (async () => {
- const f=await createFixture('official',{transformSource:s=>s.replace('      getLiveSyncCaptureState:', '      fullViewContext: getContext,\n      viewSelection: readLiaViewSelection,\n      verifyViewSelection: assertLiaViewSelectionCurrent,\n      getLiveSyncCaptureState:')});
+ const f=await createFixture('official',{transformSource:s=>s.replace('      getScopePersonaCatalog:', '      fullViewContext: getContext,\n      viewSelection: readLiaViewSelection,\n      verifyViewSelection: assertLiaViewSelectionCurrent,\n      getScopePersonaCatalog:')});
  try {
   f.api.getCurrentCharacterIndex=async()=> '0';
   f.api.getCurrentChatIndex=async()=> '0';
