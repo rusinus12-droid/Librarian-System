@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.15
+//@display-name HAYAKU · Locator Continuity v3.3.16
 //@api 3.0
-//@version 3.3.15
+//@version 3.3.16
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -990,7 +990,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.15';
+  const PLUGIN_VERSION = '3.3.16';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -38913,6 +38913,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       carryHayakuRecallPreparation(searched,selectedForContext);
       // budgetMessages was sanitized before prompt-mode resolution so Auto and
       // the final injection budget use the same packet-free physical payload.
+      // A reader sends the size of the request it will make, so context pressure is judged as it would be here.
+      if (recallOnly && Number(mode?.requestChars) > requestPayloadChars(budgetMessages)) budgetMessages = [...budgetMessages, { role: 'system', content: ' '.repeat(Number(mode.requestChars) - requestPayloadChars(budgetMessages)) }];
       const requestCharsBeforeInjection = requestPayloadChars(budgetMessages);
       const requestPressureDecision = promptPressureDecision(budgetMessages, hostContextBudget);
       const requestPressure = requestPressureDecision.pressure;
@@ -50415,11 +50417,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatText: message.recentChatText || '' })) };
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -50428,7 +50430,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -50538,13 +50540,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
-  // What the reader already shows its model, so an owner need not hand it back as memory.
-  const recentChatBody = () => { const value = options.recentChatText?.(); return value ? { recentChatText: value } : {}; };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...recentChatBody() }, signal);
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
     return { content: result.content, finalDelivery: result.finalDelivery !== false };
   };
@@ -50585,7 +50589,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
           let result;
           try {
-            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...recentChatBody(),
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
               maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
           } catch (error) {
             // One owner's refusal must not take its peers' memory with it. Cancellation and
@@ -51018,11 +51022,18 @@ return createReadSession;
 }
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
+  // The request this hook would have received: the turns the response request carries, then the input.
+  const hayakuRecallRequestFor = async (queryText, recentChatTurns = 0) => {
+    const native = await RisuCompat.currentChatScope();
+    const rows = ensureArray(native?.chatMessages).map(row => ({ role: /^(?:user|human)$/i.test(text(row?.role)) ? 'user' : 'assistant', content: text(row?.data ?? row?.content ?? ''), chatId: row?.chatId }));
+    const stored = rows.at(-1)?.role === 'user' && text(rows.at(-1).content).trim() === text(queryText).trim() ? rows.slice(0, -1) : rows;
+    let start = stored.length;
+    for (let shown = 0; start > 0 && shown < recentChatTurns; start -= 1) if (stored[start - 1].role === 'assistant') shown += 1;
+    return [...stored.slice(start), { role: 'user', content: queryText }];
+  };
   const getGradiaPluginReadOwner = () => {
     if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
     const primitives = createGradiaReadPrimitives();
-    const hayakuGradiaSnapshot = createGradiaPluginSnapshot({ primitives, createReadSession: createHayakuPluginReadSession(primitives),
-      read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) });
     gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'hayaku', primitives,
       api: () => apiCandidates().find(candidate => typeof candidate?.addPluginChannelListener === 'function' && typeof candidate?.postPluginChannelMessage === 'function') || RisuCompat.api(),
       boundary: async () => {
@@ -51033,16 +51044,17 @@ return createReadSession;
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
       onAttach: noteHayakuGradiaAttach, onDelivery: noteHayakuGradiaDelivery,
-      select: async (queryText, check) => {
-        const selected = await handleBeforeRequest([{ role: 'user', content: queryText }], 'model', { recallOnly: true });
+      select: async (queryText, check, hints = {}) => {
+        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0 });
         check?.();
         return { content: text(selected?.recallPrompt || '').trim(), finalDelivery: Memory.settings?.gradiaFinalDelivery !== false };
       },
       capture: async (request, authority) => {
         // The snapshot only proves currentness; what GRADIA reads is HAYAKU's own selection.
-        const read = await hayakuGradiaSnapshot(request, authority);
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
         try {
-          const selected = await handleBeforeRequest([{ role: 'user', content: request.queryText || '' }], 'model', { recallOnly: true });
+          const selected = await handleBeforeRequest(await hayakuRecallRequestFor(request.queryText || '', request.recentChatTurns), 'model', { recallOnly: true, requestChars: request.requestChars || 0 });
           authority?.check?.();
           const content = text(selected?.recallPrompt || '').trim();
           return { ...read, engine: { source: 'owner_selection' },

@@ -60,8 +60,8 @@ const assertOnlyOwnerLost=(body,lost)=>{for(const owner of owners)assert.equal(b
 for(const owner of owners)test(`${owner} changing during capture costs only ${owner}'s memory`,{timeout:30000},async t=>{const f=await fixture(t);let changed=false;// LIBRA evidence is issued by the unified owner channel (the server route only authorizes the read), so a LIBRA change
 // lands while its owner query is in flight; HAYAKU and Flashback are still captured through their server routes.
 if(owner==='libra')f.setOnQuery(()=>{if(!changed){changed=true;f.mutate(owner);}});else f.setOnRead(route=>{if(!changed&&route===`/v1/${owner}/read-session/capture`){changed=true;f.mutate(owner);}});const r=await f.run();assert(changed);assert.equal(r.ok,true);assert.equal(f.prompts.length,1);assert.equal(r.externalEvidence,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),owner);assertOnlyOwnerLost(r.finalRecallBlockNow(),owner);r.closeEvidence();});
-test('an owner changing after the model call leaves the other owners and the draft in place',{timeout:30000},async t=>{const f=await fixture(t);f.setOnModel(()=>f.mutate('flashback'));const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,1);await r.finalizeHandoff();const block=r.finalRecallBlockNow();assert.doesNotMatch(block,/recalled by Flashback/,'a lost owner does not reach the final request');assert.match(block,/recalled by HAYAKU/);r.closeEvidence();});
-test('one long owner prompt shares the memory budget instead of pushing the others out',{timeout:30000},async t=>{const f=await fixture(t,{memoryBudgetChars:24000,hayakuContent:'HAYAKU_LONG_MEMORY\n'+('기억 한 줄\n'.repeat(12000))+'HAYAKU_TAIL'}),r=await f.run();assert.equal(r.ok,true);assert.match(r.finalRecallBlockNow(),/HAYAKU_LONG_MEMORY/);assert.match(r.finalRecallBlockNow(),/recalled by Flashback/);assert.doesNotMatch(r.finalRecallBlockNow(),/HAYAKU_TAIL/,'its tail is what gives way');assert(r.finalRecallBlockNow().length<=24000);r.closeEvidence();});
+test('a store changing after selection keeps the draft and the memory, as an owner hook would',{timeout:30000},async t=>{const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});f.setOnModel(()=>f.mutate('flashback'));const output=await f.host.hooks.beforeRequest(messages(),'model');const text=output.map(row=>String(row.content||'')).join('\n');assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays');assert.match(text,/recalled by Flashback/);assert.match(text,/recalled by HAYAKU/);});
+test('an owner over budget is left out whole, and the others stay',{timeout:30000},async t=>{const f=await fixture(t,{memoryBudgetChars:60000,hayakuContent:'HAYAKU_LONG_MEMORY\n'+('기억 한 줄\n'.repeat(12000))+'HAYAKU_TAIL'}),r=await f.run();assert.equal(r.ok,true);assert.match(r.finalRecallBlockNow(),/recalled by Flashback/);assert.doesNotMatch(r.finalRecallBlockNow(),/HAYAKU_LONG_MEMORY/,'no fragment of it is delivered');r.closeEvidence();});
 test('an owner refusing its selection costs only that owner',{timeout:30000},async t=>{const f=await fixture(t,{hayakuSelectError:'LIB_READ_OWNER_UNAVAILABLE'}),r=await f.run();assert.equal(r.ok,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),'hayaku');r.closeEvidence();});
 
 for(const kind of ['scope','id','text','turn'])test(`native ${kind} mismatch still fails closed after bound-scope enrichment fix`,{timeout:30000},async t=>{const f=await fixture(t);f.mutateNative(kind);await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);});
@@ -93,28 +93,18 @@ test('host-bound RP transcript with prior CompletionReceipt keeps the certified 
  r.closeEvidence();
 });
 
-test('LIBRA failing during evidence materialization leaves HAYAKU and Flashback running',async t=>{
- const f=await fixture(t);f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',
-  readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
- const r=await f.run();assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,1);
- await r.finalizeHandoff();assertOnlyOwnerLost(r.finalRecallBlockNow(),'libra');r.closeEvidence();
+test('LIBRA failing while it is being read leaves HAYAKU and Flashback running on a valid draft',async t=>{
+ const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});f.setOnVerify(n=>{if(n>=1)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
+ const text=(await f.host.hooks.beforeRequest(messages(),'model')).map(row=>String(row.content||'')).join('\n');
+ assert.ok(f.prompts.length>=1);assert.equal(f.host.plugin.getRuntime().last.draftDiscarded,undefined);
+ assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays: it never saw LIBRA');assert.match(text,/recalled by HAYAKU/);assert.match(text,/recalled by Flashback/);assert.doesNotMatch(text,/LIBRA_MEMORY_SENTINEL/);
 });
 test('the chat itself changing still stops the whole run',async t=>{
- const f=await fixture(t);let captures=0;f.setOnQuery(()=>captures++);
- f.setOnVerify(n=>{if(n<4)return;f.mutateNative('text');throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
+ const f=await fixture(t);let captures=0;
+ f.setOnQuery(()=>{captures++;f.mutateNative('text');});
  await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);
  const d=f.host.plugin.getRuntime().lastLibReadDiagnostic;assert.equal(d.status,'failed');assert.ok(d.code);
  assert.ok(!JSON.stringify(d).includes('LIBRA_MEMORY_SENTINEL'),'diagnostic retains no memory content');
 });
 
-test('an owner failing in the request hook does not fail the request',async t=>{
- const f=await fixture(t);
- await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);
- await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
-  enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off'});
- f.setOnVerify(n=>{if(n>=4)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false,secret:'SHOULD_NOT_BE_EXPORTED'}});});
- const output=await f.host.hooks.beforeRequest(messages(),'model');
- const finalText=output.map(row=>String(row.content||'')).join('\n');
- assert.match(finalText,/recalled by HAYAKU/);assert.match(finalText,/recalled by Flashback/);assert.doesNotMatch(finalText,/LIBRA_MEMORY_SENTINEL/);
- assert.ok(f.prompts.length>=1);assert.ok(!JSON.stringify(f.host.plugin.getRuntime()).includes('SHOULD_NOT_BE_EXPORTED'));
-});
+

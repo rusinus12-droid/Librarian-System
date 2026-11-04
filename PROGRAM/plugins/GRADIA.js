@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.18
+//@display-name GRADIA v0.28.19
 //@api 3.0
-//@version 0.28.18
+//@version 0.28.19
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -938,7 +938,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.18';
+  const PLUGIN_VERSION = '0.28.19';
   
   
   
@@ -4329,8 +4329,12 @@ Before continuing, verify:
     await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
-  // The recent chat this run shows its stages. Owners use it to avoid handing the same turns back as memory.
-  let libRecentChatText = '';
+  // Product rules for this path: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like. Owners search with their own settings and budgets exactly as they
+  // would in their own hook; GRADIA only limits how much of the result it takes in total.
+  let libRunHints = {};
+  const libOwnerRunHints = () => libRunHints;
+  const libQueryText = value => { const encoder = new TextEncoder(); let out = '', size = 0; for (const char of String(value || '')) { size += encoder.encode(char).length; if (size > 16000) break; out += char; } return out; };
   const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, nativeBinding = null, openingController = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
@@ -4355,8 +4359,9 @@ Before continuing, verify:
       if (nativeBinding?.error) throw nativeBinding.error;
       nativeBinding?.assertLocal?.();
       await LibReadConnection.ensureConnected();
-      libRecentChatText = Array.from(text(baseRecent.completeTurnsText || baseRecent.text || '')).slice(-60000).join('');
-      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
+      libRunHints = { recentChatTurns: requestMessages.filter(message => message?.role === 'assistant').length,
+        requestChars: requestMessages.reduce((total, message) => total + contentToText(message?.content).length, 0) };
+      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: libQueryText(baseRecent.latestUser),
         evidenceBudget: libEvidenceBudget(settings),
         // Snapshot construction is lazy: unbound/plugin-only performs no identity,
         // hashing, owner discovery, credentials, or transport work.
@@ -30949,25 +30954,6 @@ function createGradiaEvidenceBudget({ digest }) {
   let libReadBinding = null;
   let libReadBindingGeneration = 0;
   let libReadSelection = null;
-  // Each owner gets an equal share and whatever the others leave unused, so one long prompt cannot push
-  // the others out. An owner's prompt is cut from its tail, at a line, because its head ranks first.
-  const fitOwnerPromptsToMemoryBudget = (items, maxChars) => {
-    const budget = Math.max(0, Math.floor(maxChars * 0.97) - items.length * 512);
-    const single = items.filter(item => item.source?.kind === 'owner_recall_prompt' || items.filter(other => other.owner === item.owner).length === 1);
-    if (single.length !== items.length || items.reduce((total, item) => total + item.content.length, 0) <= budget) return items;
-    const quota = new Map();
-    let left = budget, waiting = [...items].sort((a, b) => a.content.length - b.content.length);
-    while (waiting.length) {
-      const share = Math.floor(left / waiting.length), item = waiting.shift(), granted = Math.min(item.content.length, share);
-      quota.set(item, granted); left -= granted;
-    }
-    return items.map(item => {
-      const granted = quota.get(item);
-      if (item.content.length <= granted) return item;
-      const cut = item.content.slice(0, granted), line = cut.lastIndexOf('\n');
-      return Object.freeze({ ...item, content: line > granted * 0.5 ? cut.slice(0, line) : cut, foldedContent: null, trimmedForBudget: true });
-    });
-  };
   const createLibServerReadConsumer = (dependencies = {}) => {
     const fail = (code, cause) => { throw libEvidenceError(code, cause); };
     const bytes = value => new TextEncoder().encode(value).length;
@@ -31060,7 +31046,10 @@ function createGradiaEvidenceBudget({ digest }) {
           || JSON.stringify(raw.scope) !== JSON.stringify(scope) || !Array.isArray(raw.items) || raw.items.length > 4096
           || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
           || typeof read.assertCurrent !== 'function' || typeof read.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
-        const assertReadCurrent = read.assertCurrent, assertReadCurrentSync = read.assertCurrentSync;
+        // Once selected, memory is held as selected, as in an owner's own hook: a later background write
+        // to the store neither removes it nor discards a draft written from it.
+        const assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
+        const assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
         // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
         // their own memory, and an owner that is not running contributes none.
         let ownerUnavailable = null;
@@ -31127,7 +31116,6 @@ function createGradiaEvidenceBudget({ digest }) {
           candidates = [];
           for (let turn = 0; candidates.length < groups.size; turn += 1) for (const owner of allowedOwners) { const item = queues.get(owner)[turn]; if (item) candidates.push(item); }
         }
-        if (multipleOwners) candidates = fitOwnerPromptsToMemoryBudget(candidates, evidenceBudget.maxChars);
         const packer = createLibEvidencePacker('gradia.lib-server-evidence.v1', evidenceRevision, evidenceBudget);
         for (const item of candidates) {
           let target = item;
@@ -31137,6 +31125,10 @@ function createGradiaEvidenceBudget({ digest }) {
           }
           if (bytes(target.content) > evidenceBudget.maxBytes) continue;
           if (packer.tryAdd(target)) selected.push(target);
+        }
+        // An owner over budget is left out and told so: incomplete memory reads as if it were complete.
+        for (const owner of new Set(corpus.map(item => item.owner))) {
+          if (!selected.some(item => item.owner === owner || item.provenance?.some?.(row => row.owner === owner))) dependencies.onOwnerOmitted?.(owner, 'LIB_READ_MEMORY_BUDGET_EXCEEDED');
         }
         // The packer's arithmetic is checked once against the real renderer.
         if (selected.length) renderLibEvidence({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected }, evidenceBudget);
@@ -39347,7 +39339,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
         if (readSource === 'plugin_ipc') {
           const native = await readLibPluginNativeIdentity(); check();
-          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), recentChatText: () => libRecentChatText,
+          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), runHints: libOwnerRunHints,
             describeTimeoutMs:3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
             api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
           bridge = next;
@@ -39545,7 +39537,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   // LIBRA, HAYAKU and Flashback are separate memory paths. Each gets its own read session, deadline and
   // budget share, so one owner's failure removes only that owner. What stops the whole run is what does
   // not belong to any owner: cancellation, or the chat itself changing.
-  const LIB_READ_RUN_WIDE_FAILURE = /CANCELED|SUPERSEDED|MODE_CHANGED|BOUNDARY_CHANGED|NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/;
+  // An owner's own boundary or shutdown stays that owner's failure; cancellation counts only when this run was canceled.
+  const LIB_READ_RUN_WIDE_FAILURE = /NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/;
   const LIB_OWNER_DEADLINE_MS = LIB_MEMORY_OWNER_READ_TIMEOUT_MS - 10000;
   const libOwnerFailureCode = error => /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE';
   const withinLibOwnerDeadline = (operation, onExpired = () => {}) => {
@@ -39588,10 +39581,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try { return { owner, read: await withinLibOwnerDeadline(() => pending, () => { expired = true; abort(); }) }; }
         finally { input.signal?.removeEventListener('abort', abort); }
       }));
-      const runWide = opened.find(result => result.status === 'rejected' && LIB_READ_RUN_WIDE_FAILURE.test(result.reason?.code || ''));
-      if (runWide || input.signal?.aborted) {
+      if (input.signal?.aborted) {
         for (const result of opened) if (result.status === 'fulfilled') result.value.read?.close?.();
-        throw runWide?.reason || libEvidenceError('LIB_READ_CANCELED');
+        throw libEvidenceError('LIB_READ_CANCELED');
+      }
+      const runWide = opened.find(result => result.status === 'rejected' && LIB_READ_RUN_WIDE_FAILURE.test(result.reason?.code || ''));
+      if (runWide) {
+        for (const result of opened) if (result.status === 'fulfilled') result.value.read?.close?.();
+        throw runWide.reason;
       }
       let firstFailure = null;
       const items = [], revisions = [], engines = [];
@@ -39649,11 +39646,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const libReadRoute = () => LibReadConnection.status().draftReadOwners;
   // Owners that dropped out of this response run: they no longer reach the final request.
   const libOwnersLost = new Set();
-  const noteLibOwnerLost = (owner, code) => { libOwnersLost.add(owner); libOwnersAwaitingDelivery.delete(owner); reportLibOwnerDelivery(owner, 'failed', code); warn('lib_owner_read_failed', owner + ':' + code); };
+  const noteLibOwnerLost = (owner, code) => {
+    libOwnersLost.add(owner); libOwnersAwaitingDelivery.delete(owner); reportLibOwnerDelivery(owner, 'failed', code); warn('lib_owner_read_failed', owner + ':' + code);
+  };
   const independentOwnerClient = (scopes, clientForScopes) => Object.keys(scopes).length < 2 ? clientForScopes(scopes)
     : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
   let libOwnerSelectionReader = null;
-  const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), recentChatText: () => libRecentChatText,
+  const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
   const reportLibOwnerDelivery = (owner, status, code = '') => { void libOwnerReader().notify(owner, 'delivered', { status, code }); };
   // Owners stop searching in their own hook while this holds. It expires, so a removed GRADIA cannot silence them.
@@ -39673,7 +39672,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try { providerReady = !providerConfigurationIssues(resolvePreset(settings, 'shadow_act').preset).length; } catch (_) { providerReady = false; }
     const active = providerReady && connected && settings?.mode !== 'off';
     const routeOwners = connection.draftReadOwners || LIB_READ_OWNERS;
-    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner), ttlMs: 90000 });
+    // An owner GRADIA holds no session for must keep its own recall, or its memory reaches nobody.
+    const boundOwners = connection.activeOwners || [];
+    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner) && boundOwners.includes(owner), ttlMs: 90000 });
   };
   // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
   const libOwnerAbsentUntil = new Map();
@@ -39686,7 +39687,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal); }
     catch (error) {
-      if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '')) throw error;
+      if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '') || signal?.aborted) throw error;
       const code = libOwnerFailureCode(error);
       noteLibOwnerLost(owner, code);
       return { absent: true, code };
@@ -39694,7 +39695,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (answer.absent) { libOwnerAbsentUntil.set(owner, Date.now() + 60000); reportLibOwnerDelivery(owner, 'failed', answer.code || 'LIB_READ_IPC_UNAVAILABLE'); } else libOwnerAbsentUntil.delete(owner);
     return answer;
   };
-  const LibReadConsumer = createLibServerReadConsumer({ selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
+  const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
 
   const runPipeline = async (messages, type, settings) => {
     const pipelineStartedAt = Date.now();
@@ -46467,11 +46468,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatText: message.recentChatText || '' })) };
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -46480,7 +46481,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -46590,13 +46591,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
-  // What the reader already shows its model, so an owner need not hand it back as memory.
-  const recentChatBody = () => { const value = options.recentChatText?.(); return value ? { recentChatText: value } : {}; };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...recentChatBody() }, signal);
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
     return { content: result.content, finalDelivery: result.finalDelivery !== false };
   };
@@ -46637,7 +46640,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
           let result;
           try {
-            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...recentChatBody(),
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
               maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
           } catch (error) {
             // One owner's refusal must not take its peers' memory with it. Cancellation and

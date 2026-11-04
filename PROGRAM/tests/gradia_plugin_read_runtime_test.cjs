@@ -64,6 +64,12 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   await writer.wait(()=>JSON.parse(libra.f.r.values.get('libra:v1:scope:'+libra.scopeKey+':manifest')||'{}').frontiers?.observedTurn===6,'LIBRA startup source audit',10000);
   const messages = chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId }));
   const output = await f.host.hooks.beforeRequest(messages, 'model');
+  // Compatibility mode must select what each plugin's own hook selects for the same request.
+  const rowIds = rows => (rows || []).map(row => row.ref ? [row.axis, row.ref, row.state, row.score].join('|') : String(row.key || row.id || row.memoryId || row.text)).sort();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const libraSelected = rowIds(libra.f.r.api.getRuntime().lastMemoryRecallViewer?.rows);
+  const hayakuSelected = rowIds(hayaku.hayaku.lastDebug().lastViewerRecall?.rows);
+  assert.ok(libraSelected.length > 0, 'LIBRA selected memory'); assert.ok(hayakuSelected.length > 0, 'HAYAKU selected memory');
   assert.equal(f.prompts.length, 4, JSON.stringify(f.host.plugin.getRuntime().last));
   assert.ok(f.host.plugin.getLibReadOnlyStatus().selection, JSON.stringify({ status:f.host.plugin.getLibReadOnlyStatus(),
     replies:bus.messages.filter(m => m.body.kind === 'response').map(m => ({sender:m.sender,error:m.body.error,action:m.body.action,items:m.body.result?.items?.length})) }));
@@ -89,6 +95,10 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   assert.ok(!libraFinal.some(row => String(row.content || '').includes('LIBRA_EVIDENCE')), 'LIBRA did not search again');
   assert.equal(hayaku.hayaku.lastDebug().lastViewerRecall?.gradia?.status, 'final_delivered', 'HAYAKU shows the delivery');
   assert.equal((await flashback.api.debugState()).lastRecall?.gradia?.status, 'empty', 'Flashback chose nothing here (embeddings are off), which is not a failure');
+  hayaku.hayaku._test.noteHayakuGradiaAttach({ active: false, ttlMs: 0 });
+  await hayaku.callBeforeRequest(messages.map(row => ({ ...row, content: row.role === 'user' ? row.content : row.content })), 'model');
+  assert.deepEqual(rowIds(hayaku.hayaku.lastDebug().lastViewerRecall?.rows), hayakuSelected, 'HAYAKU selects the same memories alone');
+  hayaku.hayaku._test.noteHayakuGradiaAttach({ active: true, ttlMs: 60000 });
   const hayakuHook = await hayaku.callBeforeRequest([{ role: 'user', content: chat.message.at(-1).data }], 'model');
   assert.ok(!hayakuHook.some(row => String(row.content || '').includes('HAYAKU_IPC_MEMORY')), 'HAYAKU did not search again');
   assert.ok(hayakuHook.some(row => /HAYAKU_STATE_PACKET_START/.test(String(row.content || ''))), 'HAYAKU still sends its packet instructions');
@@ -107,15 +117,14 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   f.prompts.length = 0;
   await f.host.plugin.saveRuntimeSettings({ mode:'normal',default_preset:'writer',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off' });
   f.controls.onModel = async (...args) => { await pipelineModel(...args); await hstore.setItem('hayaku.v2.ledger.' + hscope, null); };
-  // HAYAKU drops out of this run; the draft, LIBRA and Flashback carry on.
-  const afterLoss = (await f.host.hooks.beforeRequest(messages, 'model')).map(row => String(row.content || '')).join('\n');
+  // A store changing mid-run neither discards the draft nor removes memory already selected.
+  const afterChange = (await f.host.hooks.beforeRequest(messages, 'model')).map(row => String(row.content || '')).join('\n');
   assert.ok(f.prompts.length >= 1);
-  assert.ok(afterLoss.includes('[LIBRA_EVIDENCE consumer=gradia'), 'LIBRA still reaches the final request');
-  assert.ok(!afterLoss.slice(afterLoss.indexOf('<MEMORY_RECALL>')).includes('HAYAKU_IPC_MEMORY'), 'the lost owner does not');
+  assert.ok(afterChange.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'the draft stays');
+  assert.ok(afterChange.includes('[LIBRA_EVIDENCE consumer=gradia'));
+  assert.ok(afterChange.includes('HAYAKU_IPC_MEMORY'));
   await new Promise(resolve => setTimeout(resolve, 20));
-  const failedDelivery = hayaku.hayaku.lastDebug().lastViewerRecall?.gradia;
-  assert.equal(failedDelivery?.status, 'failed', 'the lost owner hears its selection was not delivered');
-  assert.match(failedDelivery?.code || '', /LIB_READ_/);
+  assert.equal(hayaku.hayaku.lastDebug().lastViewerRecall?.gradia?.status, 'final_delivered');
   assert.ok(!JSON.stringify([...f.values]).includes('LIBRA_EVIDENCE consumer=gradia'));
   // After that failure, turning GRADIA off gives recall straight back to every owner.
   f.controls.onModel = null;
@@ -126,4 +135,5 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   assert.notEqual(libra.f.r.api.getRuntime().lastMemoryInjectionMeta?.gradiaCompat, true, 'LIBRA searches for itself again');
   await hayaku.callBeforeRequest([{ role: 'user', content: chat.message.at(-1).data }], 'model');
   assert.notEqual(hayaku.hayaku.lastDebug().lastBeforeRequest?.gradiaCompat, true, 'HAYAKU searches for itself again');
+  assert.deepEqual(rowIds(libra.f.r.api.getRuntime().lastMemoryRecallViewer?.rows), libraSelected, 'LIBRA selects the same memories alone');
 });

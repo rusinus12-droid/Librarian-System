@@ -57,11 +57,11 @@ module.exports = function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatText: message.recentChatText || '' })) };
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -70,7 +70,7 @@ module.exports = function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -180,13 +180,15 @@ module.exports = function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
-  // What the reader already shows its model, so an owner need not hand it back as memory.
-  const recentChatBody = () => { const value = options.recentChatText?.(); return value ? { recentChatText: value } : {}; };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...recentChatBody() }, signal);
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
     return { content: result.content, finalDelivery: result.finalDelivery !== false };
   };
@@ -227,7 +229,7 @@ module.exports = function createGradiaPluginRead(options) {
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
           let result;
           try {
-            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...recentChatBody(),
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
               maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
           } catch (error) {
             // One owner's refusal must not take its peers' memory with it. Cancellation and

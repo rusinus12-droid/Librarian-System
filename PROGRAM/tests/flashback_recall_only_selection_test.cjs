@@ -45,12 +45,13 @@ const QUERY = '서재 계기판 바늘과 은빛 열쇠 고리 상태를 알려�
     assert.ok(body.includes(selected.content), 'without GRADIA the hook delivers the same evidence itself');
 
     // Turns already in the recent chat are not handed back as memory, on either path.
-    const deduped = await runtime.api._selectionTest.selectRecallPrompt(QUERY, () => {}, { recentChatText: 'User:\n' + USER + '\n\nAssistant:\n' + REPLY + '\n\nUser:\nnext' });
+    const deduped = await runtime.api._selectionTest.selectRecallPrompt(QUERY, () => {}, { recentChatTurns: 1 });
     assert.ok(!deduped.content.includes(PHRASE), 'selection drops a turn the recent chat already shows');
     const hookDeduped = await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u1', content: USER }, { role: 'assistant', chatId: 'a1', content: REPLY }, { role: 'user', chatId: 'u9', content: QUERY }], 'model');
     assert.equal(hookDeduped.map(row => String(row.content || '')).join('\n').split(PHRASE).length - 1, 1, 'the hook delivers it only as the recent chat');
-    const otherChat = await runtime.api._selectionTest.selectRecallPrompt(QUERY, () => {}, { recentChatText: '전혀 다른 장면의 최근 대화가 여기에 있다.' });
+    const otherChat = await runtime.api._selectionTest.selectRecallPrompt(QUERY, () => {}, { recentChatTurns: 0 });
     assert.ok(otherChat.content.includes(PHRASE), 'a turn the recent chat does not show stays available');
+
 
     await runtime.api._selectionTest.selectRecallPrompt(QUERY);
     const shown = (await runtime.api.debugState()).lastRecall;

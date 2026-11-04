@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.20
+//@display-name ⚡ FLASHBACK Memory v1.3.21
 //@api 3.0
-//@version 1.3.20
+//@version 1.3.21
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
@@ -1485,7 +1485,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.20';
+const PLUGIN_VERSION = '1.3.21';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -34890,10 +34890,8 @@ const MemorySuiteHealthRecovery = (() => {
   // which also leaves their budget to older turns.
   const recentChatDuplicateTurns = (records = [], options = {}) => {
     const canonical = value => text(canonicalTurnCompareText(value) || '');
-    const bodies = (options.recentChatText
-      ? [options.recentChatText]
-      : normalizedMessagesFrom(options.messages || []).filter(message => message?.role === 'assistant').map(message => message?.contentText || message?.content || '').filter(body => body && !isOwnInjection(body))
-    ).map(canonical).filter(Boolean);
+    const shown = normalizedMessagesFrom(options.messages || []).filter(message => message?.role === 'assistant');
+    const bodies = shown.map(message => message?.contentText || message?.content || '').filter(body => body && !isOwnInjection(body)).map(canonical).filter(Boolean);
     const duplicates = new Set();
     if (!bodies.length) return duplicates;
     const groups = buildStoredTurnVectorGroups(records.filter(isRecallIndexableRecord)).sort((a, b) => b.turnIndex - a.turnIndex).slice(0, 128);
@@ -41629,13 +41627,24 @@ const MemorySuiteHealthRecovery = (() => {
   const noteFlashbackGradiaAttach = ({ active, ttlMs }) => { flashbackGradiaAttachedUntil = active ? Date.now() + Math.min(Math.max(0, ttlMs), 300000) : 0; };
   const noteFlashbackGradiaDelivery = ({ status, code }) => { if (Runtime.lastRecall?.gradia) { Runtime.lastRecall.gradia = { ...Runtime.lastRecall.gradia, status, code, reportedAt: Date.now() }; refreshLastRecallPanel(); } };
   // The dynamic evidence the hook would inject, for another reader. It arms no capture and writes nothing.
-  const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatText = '' } = {}) => {
+  const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatTurns = 0 } = {}) => {
     const settings = await loadSettings(true), bundle = await resolveCurrentScopeIdentityBundle(false), query = text(queryValue || '');
     check();
     const token = beginFlashbackRecallRequest(bundle.scope.scopeKey);
     try {
-      const recall = await prepareFlashbackRecall(query, settings, bundle.scope, { requestToken: token, requestBranch: 0, currentUser: query, recentChatText,
-        liveMessages: liveChatReadState(bundle.snapshot?.chat || {}, bundle.scope.scopeKey).normalized || [], messages: [{ role: 'user', content: query }] });
+      // The same request this hook would have received: the turns the response request carries, then the input.
+      const liveMessages = liveChatReadState(bundle.snapshot?.chat || {}, bundle.scope.scopeKey).normalized || [];
+      const stored = liveMessages.at(-1)?.role === 'user' && sameMaintenanceTurnText(liveMessages.at(-1).contentText || liveMessages.at(-1).content || '', query) ? liveMessages.slice(0, -1) : liveMessages;
+      let start = stored.length;
+      for (let shown = 0; start > 0 && shown < recentChatTurns; start -= 1) if (stored[start - 1]?.role === 'assistant') shown += 1;
+      const messages = [...stored.slice(start).map(row => ({ role: row.role, content: row.contentText || row.content || '', chatId: row.chatId })), { role: 'user', content: query }];
+      const normalizedRequest = normalizeMessages(messages);
+      const currentUserResolution = resolveFlashbackCurrentTurn(normalizedRequest, { liveMessages });
+      const latestUser = currentUserResolution.rawText || currentUserResolution.text || query;
+      const liveState = liveChatStateFromNormalized(liveMessages);
+      const lineage = resolveFlashbackCaptureLineage(normalizedRequest, currentUserResolution, latestUser, liveState);
+      const recall = await prepareFlashbackRecall(buildRecallQuery(latestUser, normalizedRequest, settings), settings, bundle.scope, { requestToken: token, requestBranch: 0, currentUser: latestUser,
+        currentUserResolution, requestSpec: currentUserResolution?.requestSpec, currentPairIndex: Number(lineage?.pairIndex || 0) || Number(liveState.pairCount || 0) + 1, liveMessages, messages });
       check();
       const plan = settings.maxInjectionChars >= 800 ? planFlashbackEvidenceBudget(recall, settings, settings.maxInjectionChars) : { text: '' };
       const content = text(plan.text || '').trim();
@@ -54064,11 +54073,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatText: message.recentChatText || '' })) };
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -54077,7 +54086,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
-        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -54187,13 +54196,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
-  // What the reader already shows its model, so an owner need not hand it back as memory.
-  const recentChatBody = () => { const value = options.recentChatText?.(); return value ? { recentChatText: value } : {}; };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...recentChatBody() }, signal);
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
     return { content: result.content, finalDelivery: result.finalDelivery !== false };
   };
@@ -54234,7 +54245,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
           let result;
           try {
-            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...recentChatBody(),
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
               maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
           } catch (error) {
             // One owner's refusal must not take its peers' memory with it. Cancellation and
@@ -54712,8 +54723,6 @@ return createReadSession;
   const getGradiaPluginReadOwner = () => {
     if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
     const primitives = createGradiaReadPrimitives();
-    const flashbackGradiaSnapshot = createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
-      read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) });
     gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
       api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
       boundary: async () => {
@@ -54729,9 +54738,10 @@ return createReadSession;
       select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
       capture: async (request, authority) => {
         // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
-        const read = await flashbackGradiaSnapshot(request, authority);
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
         try {
-          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatText: request.recentChatText || '' });
+          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
           return { ...read, engine: { source: 'owner_selection' },
             items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
               source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
@@ -57517,8 +57527,6 @@ return createReadSession;
   const getGradiaPluginReadOwner = () => {
     if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
     const primitives = createGradiaReadPrimitives();
-    const flashbackGradiaSnapshot = createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
-      read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) });
     gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
       api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
       boundary: async () => {
@@ -57534,9 +57542,10 @@ return createReadSession;
       select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
       capture: async (request, authority) => {
         // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
-        const read = await flashbackGradiaSnapshot(request, authority);
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
         try {
-          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatText: request.recentChatText || '' });
+          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
           return { ...read, engine: { source: 'owner_selection' },
             items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
               source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
