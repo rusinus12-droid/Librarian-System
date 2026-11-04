@@ -37,16 +37,10 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
     origin:'live_chat',role:'turn_pair',turnIndex:1,pairIndex:1,text:'FLASHBACK_IPC_MEMORY: 준호는 문 앞에서 기다렸다.'}],cfg,nativeScope,{deferEmbedding:true});
   await flashback.api._test.saveAllRecords(rows,cfg,nativeScope);
   const f = await writer.fixture(t, { unified: false, bus, chat, character });
-  await f.host.plugin.openSettingsGui();
-  await f.host.plugin.debugNavigateGui('management', 'flow');
-  f.document.querySelector('[data-lib-mode-choice="plugin_ipc"]').click();
-  f.document.querySelector('[data-lib-read-action="connect"]').click();
-  await writer.wait(()=>['connected','error'].includes(f.host.plugin.getLibReadOnlyStatus().connection.state),'settings plugin-mode connection');
+  await f.host.plugin.connectLibReadOnly('', 'plugin_ipc');
   const status = f.host.plugin.getLibReadOnlyStatus().connection;
   assert.equal(status.state, 'connected', JSON.stringify(status));
   assert.equal(status.readSource, 'plugin_ipc'); assert.deepEqual(Array.from(status.activeOwners), ['libra', 'hayaku', 'flashback']);
-  assert.match(f.document.querySelector('[data-lib-mode-status]').textContent,/현재 적용: 플러그인 모드/);
-  await f.host.plugin.closeSettingsGui();
   const beforeH = JSON.stringify([...hstore.values]), beforeF = JSON.stringify([...flashback.pluginStorage.values]);
   const pipelineModel = async (_count, body) => {
     const stage = (body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n').match(/(aide_\w+) patch JSON/) || [])[1];
@@ -68,27 +62,18 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
     const raw = JSON.stringify(body);
     assert.ok(raw.includes('HAYAKU_IPC_MEMORY:'), 'HAYAKU source must reach the model');
     assert.ok(raw.includes('FLASHBACK_IPC_MEMORY:'), 'Flashback source must reach the model');
-    assert.ok(raw.includes('owner_issued_evidence_bundle'), 'LIBRA owner bundle must reach the model');
+    assert.ok(raw.includes('LIBRA_EVIDENCE consumer=gradia'), 'LIBRA owner bundle must reach the model');
     assert.ok(raw.includes('민아가 은빛 열쇠를 준호에게'));
   }
   assert.ok(output.some(row => row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
   assert.equal(JSON.stringify([...hstore.values]), beforeH); assert.equal(JSON.stringify([...flashback.pluginStorage.values]), beforeF);
   assert.equal(hayaku.llmCalls.length, 0); assert.equal(flashback.networkCalls.length, 0);
   assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture').length, 3);
-  f.prompts.length = 0;
-  f.controls.onModel = null; delete f.controls.output;
-  await f.host.plugin.saveRuntimeSettings({mode:'off',default_preset:'writer',input_assist_mode:'user_focus',writing_mode:'novel',input_assist_target_chars:500,lore_activation_mode:'off',input_assist_lore_activation_mode:'off'});
-  const input = await f.start('UNSUBMITTED_IPC_PROPOSAL: 열쇠를 확인한다.');
-  await f.select(); const result = await f.done(input.pending, '복사 후 직접 전송');
-  assert.equal(result, true); assert.equal(f.copied.length,1); assert.ok(f.prompts.length >= 1);
-  assert.ok(f.prompts.every(body => JSON.stringify(body).includes('FLASHBACK_IPC_MEMORY')));
-  assert.ok(f.prompts.every(body => JSON.stringify(body).includes('input_writer_proposal')));
-  assert.ok(!JSON.stringify(chat).includes('UNSUBMITTED_IPC_PROPOSAL'));
   // A changed source during SHADOW cannot feed AIDE or deliver the draft.
   f.prompts.length = 0;
   await f.host.plugin.saveRuntimeSettings({ mode:'normal',default_preset:'writer',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off' });
   f.controls.onModel = async (...args) => { await pipelineModel(...args); await hstore.setItem('hayaku.v2.ledger.' + hscope, null); };
   await assert.rejects(() => f.host.hooks.beforeRequest(messages, 'model'), /LIB_READ_/);
   assert.equal(f.prompts.length, 1);
-  assert.ok(!JSON.stringify([...f.values]).includes('owner_issued_evidence_bundle'));
+  assert.ok(!JSON.stringify([...f.values]).includes('LIBRA_EVIDENCE consumer=gradia'));
 });

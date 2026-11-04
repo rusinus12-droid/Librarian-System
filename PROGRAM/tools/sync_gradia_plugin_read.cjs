@@ -31,6 +31,7 @@ function adapter(owner) {
   text = replace(text, 'return readUnit(repository => {', 'return readUnit(async repository => {');
   text = replace(text, 'const read = ', 'const read = async ');
   text = replace(text, 'const metadata = metadataOf(repository, key);', 'const metadata = await metadataOf(repository, key);');
+  text = replace(text, 'const rootMetadata = metadataOf(repository, rootKey);', 'const rootMetadata = await metadataOf(repository, rootKey);');
   text = replace(text, "row = repository.get('plugin', key,", "row = await repository.get('plugin', key,");
   text = replace(text, "gunzipSync(compressed, { maxOutputLength: ", "(await gunzip(compressed, { maxOutputLength: ");
   text = replace(text, " }).toString('utf8')", " })).toString('utf8')");

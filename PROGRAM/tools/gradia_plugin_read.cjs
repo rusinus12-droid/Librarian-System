@@ -184,18 +184,33 @@ module.exports = function createGradiaPluginRead(options) {
         if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
-        const available = await describe(scope, requestedOwners);
+        // A route that turned an owner off is not asked at all.
+        const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
+        const routeOwners = input.proposal ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
+        const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);
         for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
-        const items = [];
+        const items = [], unavailableOwners = { ...available.unavailable };
+        let firstRefusal = null;
         for (const owner of owners) {
           assertCurrentSync();
           const remaining = input.maxCorpusBytes - corpusBytes;
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
-          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
-            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          let result;
+          try {
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+              maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          } catch (error) {
+            // One owner's refusal must not take its peers' memory with it. Cancellation and
+            // changed sources still stop the whole read.
+            if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
+            unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
+            firstRefusal ||= error;
+            continue;
+          }
           // Retain the receipt before validating the response or cancellation.
           if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
           assertCurrentSync();
@@ -210,13 +225,15 @@ module.exports = function createGradiaPluginRead(options) {
           if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
           corpusBytes += actual;
         }
+        if (!captured.length && firstRefusal) throw firstRefusal;
+        const answeringOwners = captured.map(value => value.owner);
         const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
-            const found = await describe(scope, owners);
+            const found = await describe(scope, answeringOwners);
             assertCurrentSync();
-            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
+            for (const owner of answeringOwners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
@@ -229,9 +246,10 @@ module.exports = function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
+          ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
-            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+            owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
           assertCurrent, assertCurrentSync, close });
       } catch (error) { close(); throw error; }
     }
