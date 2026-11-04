@@ -292,6 +292,10 @@ async function createRisuThreeOwnerHarness(t, options = {}) {
     ]);
   let queried = null;
   let ownerSerial = 0;
+  t.after(await require('./fixtures/gradia_owner_selection_stub.cjs')(bus, {
+    hayaku: { scope: scopes.hayaku, content: 'HAYAKU_LIVE_KERNEL_SENTINEL recalled by HAYAKU' },
+    flashback: { scope: scopes.flashback, content: 'FLASHBACK_LIVE_KERNEL_SENTINEL recalled by Flashback' }
+  }));
   const libraOwner = createOwner({
     role: 'owner',
     api: bus.api('libra'),
@@ -579,7 +583,7 @@ for (const withChatSlotIds of [false, true]) {
   });
 }
 
-test('Scenario 4: Input Writer 3-owner proposal read-session followed by submitted <Current Input> (with {{user}}: prefix stripping) full 4-stage 3-owner pipeline', { timeout: 30000 }, async t => {
+test('Scenario 4: Input Writer without owner memory followed by submitted <Current Input> (with {{user}}: prefix stripping) full 4-stage 3-owner pipeline', { timeout: 30000 }, async t => {
   const h = await createRisuThreeOwnerHarness(t, {
     hostMessages: [
       { role: 'user', chatId: 'u1', data: '{{user}}가 서재 문을 연다.' },
@@ -607,17 +611,15 @@ test('Scenario 4: Input Writer 3-owner proposal read-session followed by submitt
   h.prompts.length = 0;
   h.bus.messages.length = 0;
 
-  // Step 1: Run Input Writer (rewriteInput) with 3-owner proposal read-session
+  // Step 1: Run Input Writer (rewriteInput), which reads no owner memory
   const rawDraftInput = '황동 열쇠와 푸른 리본의 행방을 묻는다.';
   const reconstructed = await h.host.plugin.rewriteInput(rawDraftInput);
   assert.ok(reconstructed.includes('황동 열쇠'));
   assert.equal(h.prompts.length, 1);
   const writerPromptStr = JSON.stringify(h.prompts[0]);
   for (const marker of ['LIBRA_MEMORY_SENTINEL', 'HAYAKU_MEMORY_SENTINEL', 'FLASHBACK_MEMORY_SENTINEL_1']) {
-    assert.ok(writerPromptStr.includes(marker), `Input Writer prompt missing ${marker}`);
+    assert.ok(!writerPromptStr.includes(marker), `Input Writer must not read ${marker}`);
   }
-  const writerDiag = h.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(writerDiag?.status, 'ready');
 
   // Step 2: Host appends pending user turn with {{user}}: prefix to chat.message and dispatches beforeRequest with stripped prefix inside <Current Input>
   h.chat.message.push({
@@ -849,6 +851,10 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
     return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }) };
   };
 
+  t.after(await require('./fixtures/gradia_owner_selection_stub.cjs')(bus, {
+    hayaku: { scope: { scopeKey: hScope.key, characterId, chatId }, content: 'HAYAKU_LIVE_KERNEL_SENTINEL recalled by HAYAKU' },
+    flashback: { scope: { scopeKey: fScope.scopeKey, characterId, chatId }, content: 'FLASHBACK_LIVE_KERNEL_SENTINEL recalled by Flashback' }
+  }));
   const g = await load({
     testGlobals: { crypto: crypto.webcrypto, Response },
     api: {

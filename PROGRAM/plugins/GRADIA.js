@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.16
+//@display-name GRADIA v0.28.17
 //@api 3.0
-//@version 0.28.16
+//@version 0.28.17
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -37,6 +37,7 @@
 //@arg input_assist_preset string Optional model preset for the per-turn Input Manager
 //@arg user_intent_ooc_preset string Optional model preset for the target-selectable Creative Direction OOC
 //@arg input_assist_mode string off|user_focus|npc_focus|offscreen_focus|random — active-mode carrier; Novel non-off opens three perspectives, RP non-off opens three player-action choices
+//@arg rp_impersonation_scope string persona|persona_cast|all — RP detail mode: what the AI may not invent; persona only, persona and other characters, or everything
 //@arg rp_input_assist_mode string off|user_focus — remembered RP-mode action-choice adviser state; user_focus means enabled
 //@arg input_assist_scope string full_pipeline|standalone
 //@arg input_assist_target_chars string 300|500|800|1000|omakase
@@ -936,7 +937,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.16';
+  const PLUGIN_VERSION = '0.28.17';
   
   
   
@@ -1926,13 +1927,13 @@
   const WRITING_MODE_DEFS = Object.freeze({
     novel: Object.freeze({
       label: '소설 모드',
-      description: 'USER는 작가·감독이고 GRADIA는 유저 페르소나를 포함한 전체 캐스트와 세계를 집필합니다. 현재 인풋은 장면 지시·인월드 재료·혼합 지시가 될 수 있습니다.',
-      meta: '작가 지시형 전체 캐스트 집필 · Classic / Input-inclusive'
+      description: '풀사칭 모드입니다. GRADIA는 페르소나와 주변 인물의 행동, 전개를 유저가 지시한 범위에 묶이지 않고 자율적으로 해석·묘사하며 추가 행동과 전개까지 씁니다. 유저가 명시해 고정한 내용만 지킵니다.',
+      meta: '풀사칭 · 페르소나·주변 인물·전개 자율 집필'
     }),
     rp: Object.freeze({
       label: 'RP 모드',
-      description: '유저 캐릭터의 행동·대사·감정·선택은 유저 입력에 있는 것만 성립합니다. GRADIA는 유저를 사칭하지 않으면서 NPC와 세계를 자율적으로 움직이고, 새 유저 행동이 실제로 필요해지는 경계에서 멈춥니다.',
-      meta: '유저 행동 불가침 · NPC/세계 자율 전개'
+      description: 'AI가 지어내면 안 되는 범위를 세부 모드로 고릅니다. 사칭 금지에는 대사도 포함됩니다. 따옴표로 묶인 대사만 입력하면 페르소나의 대사로 인식합니다.',
+      meta: '세부 모드로 사칭 금지 범위 선택'
     })
   });
   const normalizeWritingMode = (value, fallback = DEFAULT_WRITING_MODE) => {
@@ -1940,6 +1941,16 @@
     const aliases = { novel_mode: 'novel', story: 'novel', original: 'novel', rp_mode: 'rp', roleplay: 'rp', role_play: 'rp', author_directed: 'rp' };
     return normalizeChoice(aliases[raw] || raw, WRITING_MODES, fallback);
   };
+  const RP_IMPERSONATION_SCOPES = Object.freeze(['persona', 'persona_cast', 'all']);
+  const DEFAULT_RP_IMPERSONATION_SCOPE = 'persona';
+  const RP_IMPERSONATION_SCOPE_DEFS = Object.freeze({
+    persona: Object.freeze({ label: '페르소나만 사칭 금지', description: '페르소나의 행동·대사는 입력에 있는 것만 씁니다. 주변 인물과 전개는 AI가 자율적으로 해석하고 묘사합니다.' }),
+    persona_cast: Object.freeze({ label: '페르소나·주변 인물 사칭 금지', description: '페르소나와 주변 인물의 행동·대사는 입력에 있는 것만 씁니다. 전개(페르소나와 주변 인물의 주요 상황 바깥의 배경 변화)는 AI가 자율적으로 씁니다.' }),
+    all: Object.freeze({ label: '모두 사칭 금지', description: '페르소나, 주변 인물, 전개 모두 지어내지 않고 입력한 내용만 묘사합니다.' })
+  });
+  const normalizeRpImpersonationScope = value => normalizeChoice(String(value ?? '').trim().toLowerCase(), RP_IMPERSONATION_SCOPES, DEFAULT_RP_IMPERSONATION_SCOPE);
+  // Quoted speech and nothing else is the persona talking, not a direction or narration.
+  const isQuotedPersonaSpeechInput = value => /^(?:\s*(?:"[^"]+"|“[^”]+”|「[^」]+」|『[^』]+』)\s*)+$/.test(String(value || ''));
   const SHADOW_DRAFT_MODES = Object.freeze(['classic', 'input_inclusive', 'author_directed']);
   const NOVEL_SHADOW_DRAFT_MODES = Object.freeze(['classic', 'input_inclusive']);
   const DEFAULT_SHADOW_DRAFT_MODE = 'classic';
@@ -1999,6 +2010,40 @@
   const isNovelWritingMode = settings => !isPlayerControlledDraftMode(settings);
   // Compatibility alias retained for older internal call sites; top-level RP semantics are player-controlled from v0.25.35.
   const isAuthorDirectedDraftMode = isPlayerControlledDraftMode;
+  const rpImpersonationScope = settings => normalizeRpImpersonationScope(settings?.rpImpersonationScope);
+  const rpScopeLocksCast = settings => isPlayerControlledDraftMode(settings) && rpImpersonationScope(settings) !== 'persona';
+  const RP_BACKGROUND_MEANING = 'Development means changes in the surroundings: the background outside the main situation of the persona and the other characters, such as weather, ambient activity, or distant events.';
+  // What the model may not invent in RP mode. It overrides every other line of the prompt that gives the model more.
+  const buildRpImpersonationScopeLines = settings => {
+    if (!isPlayerControlledDraftMode(settings)) return [];
+    const scope = rpImpersonationScope(settings);
+    const speech = 'Inventing includes spoken lines: not one line of dialogue may be made up for anyone covered here.';
+    if (scope === 'all') return [
+      'RP DETAIL MODE — NOTHING MAY BE INVENTED (overrides any other line that lets the model act for anyone or advance anything):',
+      'Base the response only on the current user input. Describe what it states, in prose, and nothing beyond it: no action, reaction, decision, or feeling for the persona or any other character that the input does not state, and no development.',
+      speech,
+      'Quote lines the input gives and describe how what it states looks and sounds. Stop when what the input states has been described, even if the response is short.'
+    ];
+    if (scope === 'persona_cast') return [
+      'RP DETAIL MODE — PERSONA AND OTHER CHARACTERS MAY NOT BE INVENTED (overrides any other line that lets the model act for NPCs):',
+      'The persona and every other character do only what the current user input states: no invented action, reaction, decision, or feeling for any of them. Describe what the input states about them in prose.',
+      speech,
+      'Development is yours: interpret and describe it freely. ' + RP_BACKGROUND_MEANING,
+      'Stop rather than make a character act or speak.'
+    ];
+    return [
+      'RP DETAIL MODE — THE PERSONA MAY NOT BE INVENTED:',
+      'The persona does only what the current user input states. Other characters and development are yours to interpret and describe freely. ' + RP_BACKGROUND_MEANING,
+      'Inventing includes spoken lines: not one line of dialogue may be made up for the persona.'
+    ];
+  };
+  const buildRpImpersonationScopeContract = settings => buildRpImpersonationScopeLines(settings).join('\n');
+  // Stage instructions speak of "NPC/world" as model-owned. In a locked mode only the unlocked part stays model-owned.
+  const applyRpScopeToSystemPrompt = (settings, prompt) => {
+    if (!rpScopeLocksCast(settings) || typeof prompt !== 'string') return prompt;
+    const owned = rpImpersonationScope(settings) === 'all' ? 'input-stated' : 'background';
+    return prompt.replace(/NPCs?\/world/g, owned).replace(/model-owned/g, owned);
+  };
   const buildNovelAuthorshipContract = (settings = {}, phase = 'writing') => {
     if (!isNovelWritingMode(settings)) return '';
     const phaseLine = phase === 'analysis'
@@ -2011,7 +2056,8 @@
       phaseLine,
       '- USER ROLE: author/director. AI ROLE: scene writer for the user persona, NPCs, other characters, environment, and world.',
       '- The current input may fix exact events, dialogue, outcomes, relationships, tone, scene goals, prohibitions, or merely a direction. Preserve what the author explicitly fixes; fill unspecified story behavior naturally.',
-      '- USER PERSONA IS MODEL-AUTHORABLE in Novel mode. You may write their new action, dialogue, thought, feeling, decision, consent/refusal, movement, perception, and reaction when needed to realize the authorial scene and when not contradicted by explicit author direction or canon.',
+      '- FULL AUTONOMY: the input is a starting point, not a limit. Freely interpret it and go beyond it: add actions, dialogue, and developments for the persona, the other characters, and the story that the user did not ask for. Only what the author explicitly fixes or reserves, and established canon, bind you.',
+      '- USER PERSONA IS MODEL-AUTHORABLE in Novel mode. You may freely write their new action, dialogue, thought, feeling, decision, consent/refusal, movement, perception, and reaction, whether or not the input asks for it, when not contradicted by explicit author direction or canon.',
       '- Do NOT reinterpret unspecified persona behavior as protected player agency. The player-only boundary belongs to RP mode, not Novel mode.',
       '- If the user explicitly reserves a choice/outcome, says not to decide something, marks something hypothetical/attempted, or sets a hard boundary, preserve that reservation exactly.',
       '- Explicitly completed/fixed authorial events stay completed/fixed. Do not downgrade them. Conversely, do not promote an attempt, rumor, hypothetical, or uncertainty into pre-existing canon unless the authorial instruction intentionally resolves it inside this response.',
@@ -2020,12 +2066,21 @@
   };
   const shadowDraftModeContract = (settings = {}, phase = 'writing') => {
     const mode = normalizeShadowDraftMode(settings?.shadowDraftMode);
+    if (rpScopeLocksCast(settings)) return [
+      'SHADOW FIRST-DRAFT REALIZATION MODE — PLAYER-CONTROLLED RP:',
+      ...buildRpImpersonationScopeLines(settings),
+      phase === 'analysis'
+        ? 'Extract exactly what the current input states, then plan only how to describe it'+(rpImpersonationScope(settings) === 'all' ? '.' : ' and what the background does.')
+        : 'Render what the current input states as prose'+(rpImpersonationScope(settings) === 'all' ? '.' : ', with the background moving around it.'),
+      '- A user attempt or request is not proof of success or of anyone\'s acceptance unless the input itself states the result.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings) || mode === 'author_directed') {
       const phaseLine = phase === 'analysis'
         ? 'Treat the Current Submitted User Input as the already-authored complete USER-CHARACTER contribution for this turn. Extract what the user actually did/said/attempted/asked, then plan only NPC/world reactions and consequences that follow from it.'
         : 'Begin visible prose at the first NPC/world reaction or external consequence caused by the Current Submitted User Input. The user input is already enacted; do not perform it again for the user.';
       return [
         'SHADOW FIRST-DRAFT REALIZATION MODE — PLAYER-CONTROLLED RP:',
+        ...buildRpImpersonationScopeLines(settings),
         phaseLine,
         '- USER AGENCY IS EXCLUSIVE: never invent, extend, paraphrase-as-new-action, or complete a user-character action, dialogue, consent/refusal, decision, private thought, feeling, motive, sensory experience, voluntary movement, or final choice that is not explicitly present in the current submitted input.',
         '- Explicit user-authored completed actions/dialogue are already canonical input facts. Preserve their actor/action/target and completion state, but normally do not restage them in assistant prose. A minimal causal reference is allowed only when grammar or perception would otherwise be unclear.',
@@ -2068,6 +2123,13 @@
   const shadowDraftModeAideInheritanceContract = (settings = {}, stageName = '', phase = 'patch') => {
     if (!CORE_AIDE_STAGE_IDS?.includes?.(stageName)) return '';
     const mode = normalizeShadowDraftMode(settings?.shadowDraftMode);
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP — AIDE INHERITANCE:',
+      ...buildRpImpersonationScopeLines(settings),
+      phase === 'analysis'
+        ? '- Diagnose every sentence of CURRENT_SAME_TURN_DRAFT that goes beyond the input in a way this detail mode forbids.'
+        : '- Remove or rewrite every passage of the draft that this detail mode forbids. Do not add any in its place.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings) || mode === 'author_directed') {
       const domainLine = stageName === 'aide_character'
         ? '- Character AIDE may improve NPC characterization, NPC dialogue, knowledge boundaries, and relationship response. It must not write the user character’s new dialogue, feelings, thoughts, consent, decision, or voluntary action.'
@@ -2115,8 +2177,18 @@
     const inputHash = stableDraftHash(currentInput);
     const excerptLimit = clampInt(maxInputChars, 400, 7000, 2600);
     const finalization = options?.finalization === true;
+    const speechOnly = isQuotedPersonaSpeechInput(currentInput);
+    const speechLine = speechOnly ? 'INPUT TYPE: the input is only quoted speech. It is the persona\'s own spoken line, said exactly as written; it is not narration, a direction, or another character\'s line.' : '';
+    if (rpScopeLocksCast(options?.settings)) return [
+      '[PLAYER-CONTROLLED USER AGENCY LEDGER — HARD BOUNDARY]',
+      speechLine,
+      currentInput ? `USER-AUTHORED CONTRIBUTION EXCERPT:\n${compact(currentInput, excerptLimit)}` : 'USER-AUTHORED CONTRIBUTION: (none this turn)',
+      ...buildRpImpersonationScopeLines(options?.settings)
+    ].filter(Boolean).join('\n');
     return [
       '[PLAYER-CONTROLLED USER AGENCY LEDGER — HARD BOUNDARY]',
+      speechLine,
+      ...buildRpImpersonationScopeLines(options?.settings),
       `current_input_hash=${inputHash}; passive_continuation=${cue.active === true}`,
       currentInput ? `USER-AUTHORED CONTRIBUTION EXCERPT (already enacted / do not reenact):\n${compact(currentInput, excerptLimit)}` : 'USER-AUTHORED CONTRIBUTION: (none; user takes no new action this turn)',
       currentInput.length > excerptLimit ? '- The full exact current submitted input is supplied separately in this prompt/request and is the complete authority; this excerpt is only a compact guard copy.' : '',
@@ -2139,12 +2211,19 @@
     '- Any selected Skill that generates decisions, actions, escalation, movement, intimacy, dialogue tactics, or causal turns may target NPCs/world/model-owned actors only.',
     '- A Skill never authorizes the user persona to act, speak, consent/refuse, feel, decide, move, or reveal an interior state beyond the current submitted input.',
     '- If a Skill recommendation would cross the user-agency boundary, apply its useful part to NPC/world response or omit it.',
-    '- RP AUTONOMY OVERRIDE: do not interpret a Skill\'s restraint/minimality language as a command to keep NPC/world passive. Model-owned actors may take substantial causally earned actions or transitions; the hard limit is authorship of the player character, not the amount of NPC/world motion.'
+    rpScopeLocksCast(settings)
+      ? '- RP DETAIL MODE: a Skill never authorizes anything this detail mode forbids.'
+      : '- RP AUTONOMY OVERRIDE: do not interpret a Skill\'s restraint/minimality language as a command to keep NPC/world passive. Model-owned actors may take substantial causally earned actions or transitions; the hard limit is authorship of the player character, not the amount of NPC/world motion.'
   ].join('\n') : '';
 
   const playerControlledTurnHandoffContract = (settings = {}, stageName = '', phase = 'writing') => {
     if (!isPlayerControlledDraftMode(settings)) return '';
     const stage = text(stageName || '').trim();
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP — HARD CONTRACT:',
+      ...buildRpImpersonationScopeLines(settings),
+      ...(phase === 'final' ? ['- Preserve the candidate endpoint, and remove any passage of it this detail mode forbids.'] : [])
+    ].join('\n');
     if (phase === 'final') return [
       'PLAYER-CONTROLLED RP — FINAL CANDIDATE ENDPOINT CONTRACT:',
       '- The candidate has already selected its user-agency frontier and terminal beat. Preserve that endpoint; do not continue toward a later frontier.',
@@ -2608,12 +2687,13 @@ Before continuing, verify:
   const RESPONSE_HARD_NOVEL_INVARIANT_LINES = Object.freeze([
     'NOVEL MODE: the user is the author/director, not a protected player-character boundary. The model may author the user persona alongside the rest of the cast.',
     'Preserve explicit author-fixed events, outcomes, boundaries, quoted meaning, modality, and any choice/outcome the user explicitly reserves. Do not invent a contradiction to those fixed authorial commitments.',
-    'Do not treat unspecified user-persona action/dialogue/thought/feeling/decision as forbidden merely because the user did not write it. Such full-cast authorship is allowed in Novel mode.'
+    'Do not treat unspecified user-persona action/dialogue/thought/feeling/decision as forbidden merely because the user did not write it. Such full-cast authorship is allowed in Novel mode.',
+    'The input is a starting point, not a limit: additional actions and story developments for anyone are allowed beyond what the user directed.'
   ]);
   const buildHardResponseInvariantBlock = (settings = {}) => [
     'NON-OPTIONAL RESPONSE INVARIANTS:',
     ...RESPONSE_HARD_COMMON_INVARIANT_LINES.map(line => `- ${line}`),
-    ...(isPlayerControlledDraftMode(settings) ? RESPONSE_HARD_RP_INVARIANT_LINES : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
+    ...(isPlayerControlledDraftMode(settings) ? [...RESPONSE_HARD_RP_INVARIANT_LINES, ...buildRpImpersonationScopeLines(settings)] : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
   ].join('\n');
   const buildFinalCandidateInvariantBlock = (settings = {}) => [
     'NON-OPTIONAL FINAL-CANDIDATE INVARIANTS:',
@@ -2622,7 +2702,7 @@ Before continuing, verify:
     '- Preserve the candidate semantic lock and terminal beat except for the smallest direct authority or mode-safety repair allowed by the finalization contract.',
     '- Keep the configured visible language and required output format.',
     '- Expose no analysis, prompt labels, hidden instructions, model process, or other out-of-story material.',
-    ...(isPlayerControlledDraftMode(settings) ? RESPONSE_HARD_RP_INVARIANT_LINES : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
+    ...(isPlayerControlledDraftMode(settings) ? [...RESPONSE_HARD_RP_INVARIANT_LINES, ...buildRpImpersonationScopeLines(settings)] : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
   ].join('\n');
   const buildResponseImprovementInstructionBlock = () => ''; // compatibility no-op; retired in v0.25.14
 
@@ -3607,8 +3687,7 @@ Before continuing, verify:
     shadow_act: 'SHADOW: draw relationship history, promises, unresolved threads, and established facts from it so the first draft continues the story instead of restarting it.',
     aide_character: 'Character AIDE: check what each character knows, remembers, feels toward others, and has promised against it. Repair only contradictions inside the draft.',
     aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
-    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
-    [INPUT_ASSIST_STAGE_ID]: 'Input Manager: use it only to keep proposed inputs consistent with established relationships, promises, and facts. The terminal passage decides where the scene is now; never propose resuming a remembered scene.'
+    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
     const use = LIB_EVIDENCE_STAGE_USE[stageName];
@@ -3618,9 +3697,7 @@ Before continuing, verify:
       '- It is past-state memory. Current user input, the latest visible scene, and newer canon outrank it; when they differ, the memory is outdated.',
       '- Use it as background continuity. Do not replay remembered scenes, quote it, mention memory or sources, or move characters to a remembered location.',
       '- Lens notes are non-canonical reference memos. Prefer canonical memory when they disagree.',
-      stageName === INPUT_ASSIST_STAGE_ID
-        ? '- Memory may suggest which next inputs make sense; it is not a record of what happens now.'
-        : isPlayerControlledDraftMode(settings)
+      isPlayerControlledDraftMode(settings)
           ? '- In RP mode, memory never authorizes a new user-character action, line, feeling, or decision.'
           : '- In Novel mode, memory may inform the user persona like any other cast member, but explicit author direction wins.',
       `- ${use}`
@@ -3869,56 +3946,6 @@ Before continuing, verify:
         return true;
       }
     };
-  };
-  // Relevance order for multi-owner evidence. The newest items of every owner keep
-  // live-scene continuity; the rest follow BM25 against the current input (Hangul
-  // and other CJK runs as character bigrams, other words whole); items with no
-  // overlap keep the previous newest-first round robin. No model calls.
-  const LIB_EVIDENCE_RECENT_PER_OWNER = 2;
-  const LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS = 8000;
-  const libEvidenceTerms = value => {
-    const terms = [];
-    for (const word of String(value || '').normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []) {
-      if (!/[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(word) || word.length < 2) { terms.push(word); continue; }
-      for (let index = 0; index + 2 <= word.length; index += 1) terms.push(word.slice(index, index + 2));
-    }
-    return terms;
-  };
-  const orderLibEvidenceCandidates = (queues, owners, queryText) => {
-    const pending = new Map(owners.map(owner => [owner, [...(queues.get(owner) || [])]]));
-    const ordered = [];
-    const roundRobin = limitPerOwner => {
-      const taken = new Map(owners.map(owner => [owner, 0]));
-      while (owners.some(owner => pending.get(owner).length && taken.get(owner) < limitPerOwner)) {
-        for (const owner of owners) {
-          if (taken.get(owner) >= limitPerOwner) continue;
-          const item = pending.get(owner).pop();
-          if (item) { ordered.push(item); taken.set(owner, taken.get(owner) + 1); }
-        }
-      }
-    };
-    roundRobin(LIB_EVIDENCE_RECENT_PER_OWNER);
-    const query = [...new Set(libEvidenceTerms(queryText))];
-    const rest = owners.flatMap(owner => pending.get(owner).map((item, index) => ({ item, owner, index })));
-    if (query.length && rest.length) {
-      const docs = rest.map(entry => { const tf = new Map(); const terms = libEvidenceTerms(entry.item.content); terms.forEach(term => tf.set(term, (tf.get(term) || 0) + 1)); return { entry, tf, length: terms.length }; });
-      const average = docs.reduce((sum, doc) => sum + doc.length, 0) / docs.length || 1;
-      const df = new Map(query.map(term => [term, docs.filter(doc => doc.tf.has(term)).length]));
-      for (const doc of docs) {
-        doc.score = query.reduce((sum, term) => {
-          const frequency = doc.tf.get(term) || 0;
-          if (!frequency) return sum;
-          const idf = Math.log(1 + (docs.length - df.get(term) + 0.5) / (df.get(term) + 0.5));
-          return sum + idf * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * doc.length / average));
-        }, 0);
-      }
-      const relevant = docs.filter(doc => doc.score > 0).sort((a, b) => b.score - a.score || b.entry.index - a.entry.index);
-      const chosen = new Set(relevant.map(doc => doc.entry.item));
-      ordered.push(...relevant.map(doc => doc.entry.item));
-      for (const owner of owners) pending.set(owner, pending.get(owner).filter(item => !chosen.has(item)));
-    }
-    roundRobin(Infinity);
-    return ordered;
   };
   const libNativePromptView = recent => ({
     ...Object.fromEntries(['latestUser', 'latestAssistantRaw', 'latestAssistant', 'terminalVisibleScene',
@@ -4290,12 +4317,14 @@ Before continuing, verify:
     await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
-  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, proposalContext = null, nativeBinding = null, openingController = null) => {
+  // The recent chat this run shows its stages. Owners use it to avoid handing the same turns back as memory.
+  let libRecentChatText = '';
+  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, nativeBinding = null, openingController = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
     const settingsSignature = requestSettingsSignature(settings);
     const runtimeSettingsSignature = requestSettingsSignature(Runtime.settings || {});
-    const controller = proposalContext?.controller || openingController || new AbortController();
+    const controller = openingController || new AbortController();
     let session;
     let certifiedSelections = [];
     let nativeHostBinding = nativeBinding;
@@ -4307,22 +4336,19 @@ Before continuing, verify:
       if (st.state === 'error') {
         return { status: 'unavailable', reason: st.reason || 'LIB_READ_CONNECTION_UNAVAILABLE', assertCurrent: async () => true, close() {} };
       }
-      if (!proposalContext) {
-        const routeOwners = st.draftReadOwners || LIB_READ_OWNERS;
-        if (Array.isArray(routeOwners) && routeOwners.length === 0) {
-          return { status: 'unavailable', reason: 'LIB_READ_OWNERS_DISABLED', assertCurrent: async () => true, close() {} };
-        }
+      const routeOwners = st.draftReadOwners || LIB_READ_OWNERS;
+      if (Array.isArray(routeOwners) && routeOwners.length === 0) {
+        return { status: 'unavailable', reason: 'LIB_READ_OWNERS_DISABLED', assertCurrent: async () => true, close() {} };
       }
       if (nativeBinding?.error) throw nativeBinding.error;
       nativeBinding?.assertLocal?.();
       await LibReadConnection.ensureConnected();
-      session = await (proposalContext ? LibWriterReadConsumer : LibReadConsumer).beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
+      libRecentChatText = Array.from(text(baseRecent.completeTurnsText || baseRecent.text || '')).slice(-60000).join('');
+      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
         evidenceBudget: libEvidenceBudget(settings),
-        ...(proposalContext ? { proposal: proposalContext.proposal } : {}),
         // Snapshot construction is lazy: unbound/plugin-only performs no identity,
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: capability => {
-          if (proposalContext) { proposalContext.assertLocal(); return; }
           if (capability?.contract === 'existing-server-logical-read.v1') {
             return captureLibNativeReadSetFromHost(requestMessages,settings,baseRecent,capability.scope).then(binding => {
               if (!nativeHostBinding) nativeHostBinding = binding;
@@ -4334,7 +4360,7 @@ Before continuing, verify:
           return snapshot;
         } });
     } catch (error) {
-      if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED|NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/.test(error?.code || '')) throw error;
+      if (/CANCELED|SUPERSEDED|MODE_CHANGED|NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/.test(error?.code || '')) throw error;
       const connection = LibReadConnection.status();
       const code = error?.code === 'LIB_READ_CONNECTION_UNAVAILABLE'
         ? connection.reason || (connection.state === 'connecting' ? 'LIB_READ_CONNECTION_PENDING' : error.code) : error?.code;
@@ -4344,12 +4370,8 @@ Before continuing, verify:
     }
     if (session.status !== 'ready') return { ...session, close() {} };
     const budgetMeter = createGradiaModelContextBudget({ digest: libReadSha256 });
-    if (proposalContext && (session.engine?.purpose !== 'input_writer_proposal'
-      || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
-      session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
-    }
-    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
-      fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code, cause); },
+    const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
+      fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
         // Native reconstruction may add only the already-verified scope to the
@@ -4370,7 +4392,7 @@ Before continuing, verify:
         }
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() { proposalContext?.assertLocal(); for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
+      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
       assertLocalCurrent() {
         if (this.failed) throw libEvidenceError(this.failed);
         try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
@@ -4393,10 +4415,7 @@ Before continuing, verify:
         if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
           && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
         const checkStartedAt = Date.now();
-        // The native/proposal check after the owner check also covers any change made
-        // before or during it; checking it on both sides doubled a full host snapshot
-        // reload (character, DB, chat) on every check of the input writer.
-        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
+        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
         catch (error) {
           // A run that already failed (model timeout, cancellation) aborted this
           // check itself; report that cause, not "currentness lost".
@@ -4422,18 +4441,11 @@ Before continuing, verify:
       async beforeModel(stage, phase, recovery = '') {
         await this.assertCurrent();
         if (recovery) {
-          const base = `${stage}:${phase}`, key = `${proposalContext ? 'input_writer:' : ''}${base}:${recovery}`;
+          const base = `${stage}:${phase}`, key = `${base}:${recovery}`;
           if (!['stall', 'length'].includes(recovery) || this.recoveries.has(key) || this.recoveries.size >= LIB_EVIDENCE_MAX_RECOVERIES
-            || (proposalContext
-              ? stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16
-              : !this.calls.has(base))) throw this.fail('LIB_READ_RETRY_DISABLED');
+            || !this.calls.has(base)) throw this.fail('LIB_READ_RETRY_DISABLED');
           this.recoveries.add(key);
-          if (proposalContext) this.calls.add('input_writer:' + this.calls.size);
           return;
-        }
-        if (proposalContext) {
-          if (stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16) throw this.fail('LIB_READ_RETRY_DISABLED');
-          this.calls.add('input_writer:' + this.calls.size); return;
         }
         const allowed = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
           ? ['analysis', stage === 'shadow_act' ? 'draft' : 'patch'] : [stage === 'shadow_act' ? 'draft' : 'patch'];
@@ -4567,7 +4579,7 @@ Before continuing, verify:
       async finalize(draft) { await this.assertCurrent({ coalesce: true }); await session.bindDraft(draft);
         const final = await session.finalizeDraft(); await this.assertCurrent(); return final; },
       close() { this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate('LIB_READ_CLOSED');
-        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); activeLibEvidenceRun = null; } }
+        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); activeLibEvidenceRun = null; } }
     };
     activeLibEvidenceRun = run;
     try {
@@ -4595,7 +4607,7 @@ Before continuing, verify:
       let expired = false;
       const timer = setTimeout(() => { expired = true; controller.abort(); }, Math.max(1,deadlineAt-Date.now()));
       try {
-        const run = await openLibEvidenceRun(messages,settings,recent,requestId,null,nativeBinding,controller);
+        const run = await openLibEvidenceRun(messages,settings,recent,requestId,nativeBinding,controller);
         if (expired || Date.now() >= deadlineAt) { run.close(); throw libEvidenceError('LIB_READ_TIMEOUT'); }
         if (attempt > 0 && run.status !== 'ready') { run.close(); throw libEvidenceError(run.reason || 'LIB_READ_UNIFIED_UNAVAILABLE',run); }
         Runtime.lastLibReadDiagnostic = Object.freeze({at:Date.now(),purpose:'response_evidence',
@@ -4631,188 +4643,7 @@ Before continuing, verify:
     }
   };
 
-  let inputWriterEvidenceLease = null;
   let inputWriterDialogCancel = null;
-  const purgeInputWriterEvidenceRuntime = () => {
-    Runtime.lastInputAssist = null; Runtime.lastInputAssistContext = null;
-    Runtime.lastInputAssistMaterialUsage = null; Runtime.lastInputAssistTranslation = null;
-    Runtime.inputAssistStaticCandidate = null; Runtime.inputAssistStaticHandoff = null;
-    Runtime.inputAssistConfirmation = null;
-    if (Runtime.inputAssistSend) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, generated: '' };
-  };
-  const closeInputWriterEvidence = (code = 'LIB_READ_CLOSED', expected = inputWriterEvidenceLease) => {
-    if (!expected) return;
-    expected.failed ||= code;
-    expected.controller.abort();
-    if (expected.run) { expected.run.fail?.(code); expected.run.close?.(); }
-    if (inputWriterEvidenceLease === expected) inputWriterEvidenceLease = null;
-  };
-  const inputWriterNativeView = snapshot => JSON.stringify({
-    identity: snapshot?.chatInfo?.identity,
-    character: Object.fromEntries(Object.entries(snapshot?.character || {}).filter(([key]) => key !== 'chats')),
-    chat: snapshot?.chatInfo?.chat,
-    db: Object.fromEntries(['personas','selectedPersona','modules','enabledModules','moduleIntergration'].map(key => [key, snapshot?.db?.[key]]))
-  }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
-    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
-  const prepareInputWriterEvidence = () => {
-    inputWriterEvidenceLease = null;
-    const st = LibReadConnection.status();
-    if (st.readSource === 'off') return null;
-    if (!['unified_engine','plugin_ipc'].includes(libReadBinding?.readSource)) return null;
-    if (activeLibEvidenceRun) throw libEvidenceError('LIB_READ_BUSY');
-    const lease = { operationId: globalThis.crypto?.randomUUID?.() || idForInputWriter(), failed: '', run: null, controller: new AbortController(),
-      binding: libReadBinding, parentRequestId: Runtime.inputAssistSend?.busy ? Runtime.inputAssistSend.requestId : null };
-    inputWriterEvidenceLease = lease; return lease;
-  };
-  const assertInputWriterLease = lease => {
-    if (lease.failed || lease.controller.signal.aborted || inputWriterEvidenceLease !== lease || libReadBinding !== lease.binding)
-      throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    if (lease.parentRequestId !== null && (Runtime.inputAssistSend?.requestId !== lease.parentRequestId
-      || Runtime.inputAssistSend?.cancelRequested)) throw libEvidenceError('LIB_READ_CANCELED');
-  };
-  const guardInputWriterRead = async (lease, operation) => {
-    assertInputWriterLease(lease); let timer, abort;
-    const canceled = new Promise((_, reject) => {
-      abort = () => reject(libEvidenceError('LIB_READ_CANCELED'));
-      lease.controller.signal.addEventListener('abort', abort, { once: true });
-      timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 30000);
-    });
-    try { const result = await Promise.race([Promise.resolve().then(operation), canceled]); assertInputWriterLease(lease); return result; }
-    finally { clearTimeout(timer); lease.controller.signal.removeEventListener('abort', abort); }
-  };
-  const openInputWriterEvidence = async (original, settings, options, staticSnapshot, terminalScene, lease) => {
-    if (!lease) return null;
-    const assertLocal = () => assertInputWriterLease(lease);
-    const startedAt = Date.now();
-    let notedStage = '';
-    const noteDiagnostic = (status, code, stage) => {
-      notedStage = String(stage || '');
-      const transport = globalThis.__gradiaLibReadTransportCause;
-      Runtime.lastInputWriterReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'input_writer_proposal',
-        status: String(status || ''), code: String(code || ''), stage: String(stage || ''),
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        ...(status !== 'ready' && transport && transport.at >= startedAt ? { transportCause: transport } : {}) });
-    };
-    const initialNative = inputWriterNativeView(staticSnapshot);
-    let assertNative;
-    try {
-      const proposalDigest = await libReadSha256(original), nativeContextDigest = await libReadSha256(initialNative);
-      assertLocal();
-      const rawQuery = [original, terminalScene].filter(Boolean).join('\n\n') || 'Continue the existing scene with an unsubmitted input proposal.';
-      let query = '', queryBytes = 0;
-      for (const char of rawQuery) { const size = new TextEncoder().encode(char).length; if (queryBytes + size > 12000) break; query += char; queryBytes += size; }
-      const proposal = Object.freeze({ schema: 'gradia.input-writer-proposal.v1', purpose: 'input_writer_proposal',
-        operationId: lease.operationId, proposalDigest, nativeContextDigest, queryTruncated: query.length !== rawQuery.length, factAdopted: false });
-      // Overlapping checks (UI actions while a model call re-verifies) join the
-      // read already in flight instead of each reloading the whole host snapshot.
-      let nativeCheck = null;
-      const context = { proposal, controller: lease.controller, assertLocal, async assertCurrent() {
-        if (!nativeCheck) nativeCheck = (async () => {
-          const nativeStartedAt = Date.now();
-          const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }));
-          const changed = !current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
-            || inputWriterNativeView(current) !== initialNative;
-          noteEvidenceCheck('native', nativeStartedAt);
-          if (changed) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-        })().finally(() => { nativeCheck = null; });
-        return await nativeCheck;
-      } };
-      assertNative = context.assertCurrent;
-      // Resolve capacity before acquiring owner evidence. Only an unavailable
-      // optional source at this point can fall back to native context.
-      const st = LibReadConnection.status();
-      if (st.readSource === 'off') {
-        closeInputWriterEvidence('LIB_READ_DISABLED', lease);
-        noteDiagnostic('disabled', 'LIB_READ_DISABLED', 'owner_read');
-        return null;
-      }
-      const routeOwners = st.inputWriterReadOwners || LIB_READ_OWNERS;
-      if (Array.isArray(routeOwners) && routeOwners.length === 0) {
-        closeInputWriterEvidence('LIB_READ_OWNERS_DISABLED', lease);
-        noteDiagnostic('disabled', 'LIB_READ_OWNERS_DISABLED', 'owner_read');
-        return null;
-      }
-      const resolved = resolvePreset(settings, INPUT_ASSIST_STAGE_ID);
-      const profile = await guardInputWriterRead(lease, () => discoverLibModelContext(resolved.preset, resolved.name));
-      assertLocal();
-      if (!profile) { noteDiagnostic('unavailable', 'LIB_READ_MODEL_CONTEXT_UNAVAILABLE', 'model_context_preflight');
-        throw libEvidenceError('LIB_READ_MODEL_CONTEXT_UNAVAILABLE'); }
-      await context.assertCurrent();
-      lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
-      assertLocal();
-      if (lease.run.status !== 'ready') {
-        noteDiagnostic('unavailable', 'LIB_READ_UNIFIED_UNAVAILABLE', 'owner_read');
-        throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
-      }
-      lease.run.evidencePrefix = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n';
-      lease.run.block = lease.run.evidencePrefix + lease.run.block;
-      if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
-      // openLibEvidenceRun has just verified the run; only local prefixing happened since.
-      await lease.run.assertCurrent({ coalesce: true });
-      if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'ready', reason: '' } };
-      noteDiagnostic('ready', '', 'owner_read');
-      return lease;
-    } catch (error) {
-      // Only an unavailable optional source BEFORE any evidence is accepted may
-      // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
-      const fallbackAllowedCodes = [
-        'LIB_READ_TIMEOUT','LIB_READ_UNAVAILABLE','LIB_READ_SERVER_MAINTENANCE','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
-        'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
-        // An oversized owner store is an unavailable optional source, not a writer failure.
-        'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
-        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED','LIB_READ_MODEL_CONTEXT_UNAVAILABLE',
-        'LIB_READ_SUPERSEDED','LIB_READ_STALE','LIB_READ_CURRENTNESS_LOST'
-      ];
-      if (!options.requireEvidence && (!lease.run || lease.run.status !== 'consumed') && fallbackAllowedCodes.includes(error?.code)) {
-        if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId) || error?.code === 'LIB_READ_CANCELED') throw (error?.code === 'LIB_READ_CANCELED' ? error : libEvidenceError('LIB_READ_CANCELED'));
-        closeInputWriterEvidence(error.code, lease);
-        try {
-          let timer;
-          const current = await Promise.race([
-            loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }),
-            new Promise((_, reject) => {
-              timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 10000 + MEMORY_READ_TIMEOUT_EXTENSION_MS);
-            })
-          ]).finally(() => clearTimeout(timer));
-          if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId)) {
-            throw libEvidenceError('LIB_READ_CANCELED');
-          }
-          if (!current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
-            || inputWriterNativeView(current) !== initialNative) {
-            throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-          }
-        } catch (nativeError) {
-          const failureCode = /^LIB_READ_[A-Z_]+$/.test(nativeError?.code || '') ? nativeError.code : 'LIB_READ_NATIVE_UNAVAILABLE';
-          const failure = nativeError?.code === failureCode ? nativeError : libEvidenceError(failureCode);
-          noteDiagnostic('failed', failureCode, 'native_revalidation');
-          throw failure;
-        }
-        if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
-        // Keep the boundary that actually failed (e.g. model_context_preflight).
-        noteDiagnostic('unavailable', error.code, notedStage || 'owner_read');
-        warn('input_writer_memory_unavailable', error.code);
-        return null;
-      }
-      closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
-      noteDiagnostic('failed', /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', notedStage || 'owner_read');
-      throw error;
-    }
-  };
-  const idForInputWriter = () => 'input-writer:' + Date.now() + ':' + Math.random().toString(36).slice(2);
-  const assertInputWriterDeliveryLocal = lease => {
-    if (!lease) return true;
-    if (lease.failed || inputWriterEvidenceLease !== lease || !lease.run) throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    lease.run.assertLocalCurrent(); return true;
-  };
-  const assertInputWriterDelivery = async (lease, value, currentValue = () => value) => {
-    if (!lease) return value;
-    if (lease.failed || inputWriterEvidenceLease !== lease || !lease.run) throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    const exact = text(value);
-    await lease.run.finalize(exact);
-    if (text(currentValue()) !== exact || inputWriterEvidenceLease !== lease) throw lease.run.fail('LIB_READ_PROPOSAL_CHANGED');
-    lease.run.assertLocalCurrent(); return exact;
-  };
-
   const log = (...args) => {
     if (activeLibEvidenceRun) return;
     if (Runtime.settings?.debugLog) console.log(PUBLIC_LOG_PREFIX, ...args);
@@ -5479,7 +5310,7 @@ Before continuing, verify:
       maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode',
       stageTimeoutMs: 'stage_timeout_ms', defaultPresetName: 'default_preset', aideStageOrder: 'aide_stage_order', quickProfile: 'quick_profile', multiPipelineMode: 'multi_pipeline_mode', writingMode: 'writing_mode', shadowDraftMode: 'shadow_draft_mode', novelShadowDraftMode: 'novel_shadow_draft_mode',
       gradationMode: 'gradation_mode', outputMode: 'output_mode', internalDraftLanguage: 'internal_draft_language', builtInStylePreset: 'built_in_style_preset', debugLog: 'debug_log', enableShadowRisuContext: 'shadow_include_risu_context', shadowRisuContextMaxChars: 'shadow_risu_context_max_chars', twoCallAide: 'two_call_aide', targetDraftMinChars: 'target_draft_min_chars', targetDraftMaxChars: 'target_draft_max_chars', guiEnabled: 'enable_gui',
-      inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', novelInputAssistMode: 'novel_input_assist_mode', rpInputAssistMode: 'rp_input_assist_mode', novelInputAssistScope: 'novel_input_assist_scope', novelInputAssistConfirmationMode: 'novel_input_assist_confirmation_mode', informationTransferMode: 'information_transfer_mode',
+      rpImpersonationScope: 'rp_impersonation_scope', inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', novelInputAssistMode: 'novel_input_assist_mode', rpInputAssistMode: 'rp_input_assist_mode', novelInputAssistScope: 'novel_input_assist_scope', novelInputAssistConfirmationMode: 'novel_input_assist_confirmation_mode', informationTransferMode: 'information_transfer_mode',
       nsfwMode: 'nsfw_mode', nsfwGuidanceEnabled: 'nsfw_guidance_enabled', nsfwInjectFinalRequest: 'nsfw_inject_final_request',
       responseImprovementProfile: 'response_improvement_profile', responseImprovementToggles: 'response_improvement_toggles',
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
@@ -5960,6 +5791,7 @@ Before continuing, verify:
         novel_shadow_draft_mode: flat.novel_shadow_draft_mode ?? flat.novelShadowDraftMode,
         internal_draft_language: flat.internal_draft_language ?? flat.internalDraftLanguage,
         novel_input_assist_mode: flat.novel_input_assist_mode ?? flat.novelInputAssistMode,
+        rp_impersonation_scope: flat.rp_impersonation_scope ?? flat.rpImpersonationScope,
         rp_input_assist_mode: flat.rp_input_assist_mode ?? flat.rpInputAssistMode,
         novel_input_assist_scope: flat.novel_input_assist_scope ?? flat.novelInputAssistScope,
         novel_input_assist_confirmation_mode: flat.novel_input_assist_confirmation_mode ?? flat.novelInputAssistConfirmationMode,
@@ -6447,6 +6279,7 @@ Before continuing, verify:
       'novel_input_assist_mode',
       writingMode === 'rp' ? 'off' : configuredInputAssistMode
     ), INPUT_ASSIST_MODES, 'off');
+    const rpImpersonationScopeSetting = normalizeRpImpersonationScope(await runtimeCfg('rp_impersonation_scope', DEFAULT_RP_IMPERSONATION_SCOPE));
     const rpInputAssistMode = normalizeChoice(await runtimeCfg(
       'rp_input_assist_mode',
       writingMode === 'rp' ? configuredInputAssistMode : 'user_focus'
@@ -6552,6 +6385,7 @@ Before continuing, verify:
       inputAssistTargetChars,
       inputAssistConfirmationMode,
       novelInputAssistMode,
+      rpImpersonationScope: rpImpersonationScopeSetting,
       rpInputAssistMode,
       novelInputAssistScope,
       novelInputAssistConfirmationMode,
@@ -19868,7 +19702,8 @@ ${passage.text || ''}`, 420));
     return telemetry;
   };
 
-  const callLLMWithPreset = async (settings, stageName, systemPrompt, userPrompt, options = {}) => {
+  const callLLMWithPreset = async (settings, stageName, rawSystemPrompt, userPrompt, options = {}) => {
+    let systemPrompt = stageName === INPUT_ASSIST_STAGE_ID ? rawSystemPrompt : applyRpScopeToSystemPrompt(settings, rawSystemPrompt);
     if ((stageName === ARC_DIRECTOR_STAGE_ID)) throw retiredMemoryError();
     const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
     if (evidenceRun) {
@@ -20412,11 +20247,23 @@ ${passage.text || ''}`, 420));
     return output;
   };
 
+  // Which person is which never depends on the character card's name or the focus of a choice.
+  const inputWriterCastRules = (voiceContext = {}) => [
+    `CAST: the protagonist is ALWAYS the user persona${voiceContext.playerName ? ` (${voiceContext.playerName})` : ''}. Central and supporting characters are ALWAYS people other than the persona.`,
+    'Never present a non-persona character as the protagonist, even when the character card, chat title, or current scene centers on them, and never treat the persona as a central or supporting character.',
+    'A candidate that focuses on other people still keeps the persona as its protagonist; only the emphasis moves.'
+  ];
+
   const authorDirectedInputAssistInstruction = (voiceContext = {}) => {
     const aliases = Array.isArray(voiceContext?.aliases) ? voiceContext.aliases.filter(Boolean) : [];
     return [
       'MODE: PLAYER-CONTROLLED RP ACTION CHOICE ADVISER.',
-      'Generate alternative USER ACTION INPUTS the user may explicitly choose. Do not write assistant RP prose and do not describe the NPC/world response after the proposed user action.',
+      voiceContext.hasInput
+        ? 'Reconstruct and expand CURRENT USER INPUT into different ready-to-send USER ACTION INPUTS the user may explicitly choose. Every option is built from what the user wrote: the same action, target, and intent, made fuller and clearer. Do not replace it with a different action, and do not ignore it to describe the situation.'
+        : 'Propose different ready-to-send USER ACTION INPUTS the user may explicitly choose, grounded in the terminal scene.',
+      'Do not write assistant RP prose and do not describe the NPC/world response after the proposed user action.',
+      voiceContext.speechOnly ? 'CURRENT USER INPUT is only quoted speech, which is the persona\'s own spoken line. Keep that line in every option and build the option around it.' : '',
+      ...inputWriterCastRules(voiceContext),
       'Nothing you propose is canon or enacted until the user explicitly selects that option in the GRADIA choice UI.',
       'Each option must be a ready-to-send user input: what the user character chooses to do/say/attempt/ask NOW, not a scene brief telling the assistant what outcomes must happen.',
       'PLAYER INPUT VOICE: write from the player side, NOT as a narrator describing the persona from outside.',
@@ -20425,11 +20272,13 @@ ${passage.text || ''}`, 420));
       'Do not continue into the NPC/world answer. `그러자 보라가 대답했다...` is assistant-owned outcome and must NOT appear in a choice. If useful, the player input may end with a user-owned handoff such as `대답을 기다렸다.`',
       'Prefer immediately playable outward action/dialogue/question over a paragraph of private reflection. An observe/wait option should describe the player staying quiet, watching, or waiting—not decide a long hidden emotional conclusion for the persona.',
       'In languages where a subject is grammatically necessary, prefer natural first-person player voice over third-person persona narration.',
-      'Options may differ meaningfully in tactic, tone, target, restraint, question, movement, or decision space. Never pre-decide the NPC/world response, success, consent from others, hidden facts, or aftermath.',
+      (voiceContext.hasInput
+        ? 'Options differ in how the written action is carried out: tactic, tone, detail, wording of what is said, or pacing. Never pre-decide'
+        : 'Options may differ meaningfully in tactic, tone, target, restraint, question, movement, or decision space. Never pre-decide') + ' the NPC/world response, success, consent from others, hidden facts, or aftermath.',
       'Respect the terminal scene, current continuity, knowledge/relationship boundaries, and explicit OOC constraints in CURRENT USER INPUT. If CURRENT USER INPUT already contains a hard constraint, preserve it across compatible proposals.',
-      'If the user already wrote a concrete action, the original input remains a separate selectable option; AI proposals are alternatives and are not allowed to silently overwrite it.',
+      'The original input also stays separately selectable; a chosen option is the user\'s own input made fuller, never a silent replacement of it.',
       'Story Arc future beats are optional inspiration only. They may suggest opportunities presented TO the user but cannot become user behavior unless the user selects a matching option.',
-      'Prefer three materially different choices rather than cosmetic rewrites. Do not recommend, rank, preselect, or mark a best choice.'
+      'Prefer three clearly different choices rather than cosmetic rewrites. Do not recommend, rank, preselect, or mark a best choice.'
     ].filter(Boolean);
   };
 
@@ -20530,8 +20379,9 @@ ${passage.text || ''}`, 420));
     return NOVEL_INPUT_CHOICE_PERSPECTIVES.map(perspective => byPerspective.get(perspective)).filter(Boolean);
   };
 
-  const novelInputAssistChoiceInstruction = (continuationCue = {}, targetChoice = {}) => [
+  const novelInputAssistChoiceInstruction = (continuationCue = {}, targetChoice = {}, voiceContext = {}) => [
     'MODE: NOVEL-MODE THREE-PERSPECTIVE AUTHOR-DIRECTION CHOICE ADVISER.',
+    ...inputWriterCastRules(voiceContext),
     `Generate EXACTLY ${NOVEL_INPUT_CHOICE_TARGET} candidate AUTHOR INPUTS. The required perspectives are, in order: user_focus, npc_focus, offscreen_focus.`,
     'All three candidates must preserve the same CORE AUTHOR INTENT: explicit hard constraints, fixed events/outcomes, named entities, polarity, prohibitions, relationship boundaries, and any irreversible decision the user explicitly commits. Unspecified micro-actions and prose choices do NOT need to be identical.',
     'user_focus: realize the same author intent through the user persona/protagonist’s experience, action, dialogue, interiority, or decision emphasis. You MAY propose new protagonist details consistent with the authorial direction; this is Novel mode, not player-controlled RP.',
@@ -20539,7 +20389,7 @@ ${passage.text || ''}`, 420));
     'offscreen_focus: preserve the core author intent while emphasizing causally reachable offscreen NPC/faction/world movement such as messages, orders, delays, traces, rumors, consequences, or converging plans. Do not teleport actors, invent arbitrary crises, or reveal information without a path.',
     continuationCue?.active
       ? 'CONTINUATION CASE: the user supplied no new fixed action. Propose three different authorial directions for the nearest continuation supported by the terminal scene. The protagonist may be authored as part of those proposals; do not introduce a disconnected new plot.'
-      : 'NORMAL INPUT CASE: reconstruct the input as an author-facing scene direction rather than freezing every user-persona micro-action. Preserve explicit commitments and allow the perspective to change how the scene is realized.',
+      : 'NORMAL INPUT CASE: reconstruct and expand CURRENT USER INPUT as an author-facing scene direction rather than freezing every user-persona micro-action. Preserve explicit commitments and allow the perspective to change how the scene is realized. Rewrite the input as one integrated whole: never copy its sentences and then add what happens next, and never begin a candidate with the input verbatim. Expansion may add actions, dialogue, and developments the user did not write, woven into the rebuilt input rather than appended after a copy of it.',
     targetChoice?.chars
       ? `Each candidate may use up to about ${targetChoice.chars} characters as a soft practical ceiling. Use fewer when complete; never pad.`
       : 'Use the shortest length that makes each candidate clear and executable. Never pad.',
@@ -20852,8 +20702,6 @@ ${passage.text || ''}`, 420));
   };
 
   const runInputAssistForContent = async (content, settings, options = {}) => {
-    const requireEvidence = !!inputWriterEvidenceLease?.run;
-    closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     Runtime.lastInputAssistMaterialUsage = null;
     // A static snapshot belongs to exactly one delivery cycle. Regeneration may
     // replace it inside the same cycle, while a newly submitted input must never
@@ -20868,10 +20716,7 @@ ${passage.text || ''}`, 420));
     const continuationCue = classifyInputAssistContinuationCue(original);
     if (requestedMode === 'off') return original;
     if (/data:image\/|<svg|base64,/i.test(original) && original.length > 2500) return original;
-    const preparation = prepareInputWriterEvidence();
-    const inputAssistStaticSnapshot = preparation
-      ? await guardInputWriterRead(preparation, () => loadRisuStaticContextSnapshot(settings))
-      : await loadRisuStaticContextSnapshot(settings);
+    const inputAssistStaticSnapshot = await loadRisuStaticContextSnapshot(settings);
     const storedMessages = Array.isArray(inputAssistStaticSnapshot?.chatInfo?.chat?.message)
       ? inputAssistStaticSnapshot.chatInfo.chat.message.map(normalizeInputAssistHistoryMessage).filter(Boolean)
       : [];
@@ -21006,8 +20851,6 @@ ${passage.text || ''}`, 420));
       INPUT_ASSIST_STAGE_ID, recent, scoped, null, null
     );
     recent.materialsUsed = Runtime.lastInputAssistMaterialUsage;
-    const writerEvidence = await openInputWriterEvidence(original, settings, {...options,requireEvidence}, inputAssistStaticSnapshot, terminalVisibleScene, preparation);
-    if (writerEvidence) scoped[LIB_EVIDENCE_CONTEXT] = writerEvidence.run;
     if (Runtime.inputAssistSend?.busy) {
       void setInputAssistContinuePanel(authorDirectedDraft ? 'RP 행동 선택지를 작성하고 있습니다…' : '세 작가 관점 인풋 후보를 작성하고 있습니다…', 'working', 0, false);
     }
@@ -21016,7 +20859,7 @@ ${passage.text || ''}`, 420));
       const playerInputVoice = playerControlledInputVoiceContext(original, scoped.ragCbsContext);
       const systemPrompt = [
         'You are GRADIA Input Manager in PLAYER-CONTROLLED RP ACTION CHOICE ADVISER mode.',
-        ...authorDirectedInputAssistInstruction(playerInputVoice),
+        ...authorDirectedInputAssistInstruction({ ...playerInputVoice, hasInput: !!text(original).trim(), speechOnly: isQuotedPersonaSpeechInput(original) }),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}.`,
         `Return ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET} distinct choices when possible, using this exact shape: {"schema":"${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}","choices":[{"id":"A","title":"short label","summary":"what this player action emphasizes","input":"ready-to-send user action input"}]}.`,
@@ -21029,16 +20872,16 @@ ${passage.text || ''}`, 420));
         terminalVisibleScene || '(No preceding assistant passage was available.)',
         '',
         original
-          ? `[CURRENT USER INPUT — ORIGINAL OPTION / CONSTRAINT SOURCE]\n${original}`
+          ? `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS IN EVERY OPTION]\n${original}`
           : '[CURRENT USER INPUT]\n(no new user action; propose plausible player-controlled actions or an observe/wait option)',
         '',
         recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
         '[CHOICE CONTRACT]',
-        '- Each option must be materially different in the USER action/tactic, not merely different wording.',
+        original ? '- Every option must keep the action and intent of CURRENT USER INPUT and differ in how it is carried out, not merely in wording.' : '- Each option must be materially different in the USER action/tactic, not merely different wording.',
         '- In Korean, write each choice as subject-omitted player action/dialogue whenever natural. Do not prefix the choice with the persona name as a third-person actor.',
         '- End each choice on the player side. Do not write what the NPC/world does in response; GRADIA will generate that only after the user selects the choice.',
-        '- Preserve explicit OOC/agency constraints across every compatible option. Do not preserve a concrete original action as mandatory when the point of the picker is to offer alternatives.',
+        '- Preserve explicit OOC/agency constraints across every option.',
         '- Do not enact any option. The user will choose after generation.'
       ].filter(Boolean).join('\n');
       const requestPlayerChoices = async (attempt) => {
@@ -21048,8 +20891,7 @@ ${passage.text || ''}`, 420));
           maxTokens: 2600,
           temp: attempt ? 0.4 : 0.65,
           forceNoThinking: true,
-          jsonMode: true,
-          omitNativeJsonMode: !!writerEvidence
+          jsonMode: true
         });
         const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
         return { result: response, schemaOk: envelope.schemaOk,
@@ -21127,7 +20969,7 @@ ${passage.text || ''}`, 420));
       const systemPrompt = [
         'You are GRADIA Input Manager in NOVEL-MODE THREE-PERSPECTIVE CHOICE mode.',
         resolveModelBehaviorAdapterForStage(scoped, INPUT_ASSIST_STAGE_ID, 'input').prompt,
-        ...novelInputAssistChoiceInstruction(continuationCue, targetChoice),
+        ...novelInputAssistChoiceInstruction(continuationCue, targetChoice, playerControlledInputVoiceContext(original, scoped.ragCbsContext)),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${NOVEL_INPUT_CHOICES_SCHEMA}.`,
         `Return exactly this shape: {"schema":"${NOVEL_INPUT_CHOICES_SCHEMA}","choices":[{"perspective":"user_focus","title":"주인공 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"npc_focus","title":"현장 인물 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"offscreen_focus","title":"세계·외부 인물 중심","summary":"short explanation","input":"ready-to-send user input"}]}.`,
@@ -21140,7 +20982,7 @@ ${passage.text || ''}`, 420));
         '',
         continuationCue.active
           ? `[CONTINUATION REQUEST]\nType: ${continuationCue.kind}\n${continuationCue.preserveSilence ? 'The source input is silence. In Novel mode this is not a player-agency lock; propose authorial continuations that respect the silence as the starting condition.' : 'Continue from the nearest unresolved motion already present.'}`
-          : `[CURRENT USER INPUT — PRESERVE CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
+          : `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS, PRESERVING CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
         '',
         recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
@@ -21162,8 +21004,7 @@ ${passage.text || ''}`, 420));
           maxTokens,
           temp: attempt ? 0.35 : 0.58,
           forceNoThinking: true,
-          jsonMode: true,
-          omitNativeJsonMode: !!writerEvidence
+          jsonMode: true
         });
         const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), NOVEL_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
         const normalized = envelope.schemaOk ? normalizeNovelInputChoices(envelope.payload, original) : [];
@@ -21257,7 +21098,6 @@ ${passage.text || ''}`, 420));
     const languageLabel = language === 'korean' ? 'Korean' : language === 'japanese' ? 'Japanese' : 'English';
     const localizedLabel = language === 'korean' ? '한국어' : language === 'japanese' ? '일본어' : '영어';
     const scoped = scopedSettingsForStage(settings, INPUT_ASSIST_STAGE_ID);
-    if (inputWriterEvidenceLease?.run) scoped[LIB_EVIDENCE_CONTEXT] = inputWriterEvidenceLease.run;
     const systemPrompt = [
       'You are a faithful RP input translator.',
       `Translate the supplied message into natural ${languageLabel} and return ONLY the ${languageLabel} translation.`,
@@ -21352,9 +21192,6 @@ ${passage.text || ''}`, 420));
       last.trace.parsed.deliveredInputHash = last.deliveredInputHash;
       last.trace.parsed.deliverySource = deliverySource;
       last.trace.parsed.deliveredGenerated = deliveredGenerated;
-    }
-    if (activeLibEvidenceRun?.purpose === 'input_writer') {
-      clearInputAssistStaticHandoff('input_writer_evidence_not_reusable'); last.externalEvidence = true; return deliveredInput;
     }
     const candidate = Runtime.inputAssistStaticCandidate;
     Runtime.inputAssistStaticCandidate = null;
@@ -21720,19 +21557,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
   });
 
-  const INPUT_ASSIST_MEMORY_SKIP_LABELS = Object.freeze({ LIB_READ_MODEL_CONTEXT_UNAVAILABLE: '모델 문맥 한도 미확인',
-    LIB_READ_TIMEOUT: '기억 서버 응답 지연', LIB_READ_UNAVAILABLE: '기억 서버 읽기 실패', LIB_READ_SERVER_MAINTENANCE: '기억 서버 점검 중' });
-  const inputAssistMemoryNotice = () => {
-    const memory = Runtime.inputAssistSend?.memory;
-    if (memory?.status !== 'unavailable' || !memory.reason) return '';
-    return ` · 기억 참고 생략: ${INPUT_ASSIST_MEMORY_SKIP_LABELS[memory.reason] || memory.reason}`;
-  };
-  const refreshInputAssistMemoryNotice = app => {
-    const node = app.querySelector('[data-input-memory-notice]');
-    if (!node) return;
-    node.dataset.memoryBase ??= node.textContent;
-    node.textContent = node.dataset.memoryBase + inputAssistMemoryNotice();
-  };
   const setInputAssistContinuePanel = async (message = '', state = 'working', autoClearMs = 0, cancelable = false) => {
     const panelEpoch = ++InputAssistContinuePanelEpoch;
     await unbindInputAssistContinueCancelButton();
@@ -21877,7 +21701,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       cancelled: false,
       reason: 'user_cancelled'
     };
-    closeInputWriterEvidence('LIB_READ_CANCELED');
     if (inputWriterDialogCancel) await inputWriterDialogCancel();
     await setInputAssistContinuePanel(
       current.phase === 'generating'
@@ -22564,7 +22387,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       continuationMode ? '직전 장면을 바탕으로 이어질 인풋을 작성하고 있습니다…' : '작성한 인풋을 바탕으로 확장안을 만들고 있습니다…',
       'working', 0, true
     );
-    let writerLease = null;
     try {
       const settings = await loadSettings();
       if (settings.inputAssistMode === 'off') throw new Error('쉬운 설정에서 인풋 관리자 모드를 먼저 선택해 주세요.');
@@ -22573,7 +22395,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
         telemetryNewCycle: true
       });
-      writerLease = inputWriterEvidenceLease;
       if (inputAssistContinueCancelled(requestId)) throw inputAssistContinueCancellationError();
       let choiceEdited = false;
       let choiceSourceEdited = false;
@@ -22585,17 +22406,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length < 2) throw new Error(Runtime.lastInputAssist?.reason || '유저 행동 선택지를 충분히 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
+        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
         const reviewed = await showAuthorDirectedInputChoicePicker({
           original: originalInput,
           choices,
-          onValidate: writerLease ? () => assertInputWriterDeliveryLocal(writerLease) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_author_choice_regenerate' : 'explicit_input_writer_author_choice_regenerate' });
             const next = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
-            if (next.length < 2) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
-            writerLease = inputWriterEvidenceLease; return next;
+            if (next.length < 2) throw new Error('선택지를 충분히 다시 만들지 못했습니다.');
+            return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -22611,17 +22431,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length !== NOVEL_INPUT_CHOICE_TARGET) throw new Error(Runtime.lastInputAssist?.reason || '소설 모드의 세 작가 관점 선택지를 모두 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
+        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
         const reviewed = await showNovelInputChoicePicker({
           original: originalInput,
           choices,
-          onValidate: writerLease ? () => assertInputWriterDeliveryLocal(writerLease) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_novel_choice_regenerate' : 'explicit_input_writer_novel_choice_regenerate' });
             const next = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
-            if (next.length < 3) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
-            writerLease = inputWriterEvidenceLease; return next;
+            if (next.length < 3) throw new Error('선택지를 충분히 다시 만들지 못했습니다.');
+            return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -22635,9 +22454,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         choiceTranslationLanguage = text(reviewed.translationLanguage || '');
       }
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'reviewing', generated };
-      assertInputWriterDeliveryLocal(writerLease);
       const delivery = await showInputAssistDeliveryPicker(generated, {
-        onValidate: writerLease ? (value, current) => assertInputWriterDelivery(writerLease, value, current) : null,
         onTranslate: async (value, targetLanguage) => (
           await translateInputAssistReviewText(value, settings, targetLanguage)
         )
@@ -22674,8 +22491,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           Runtime.lastInputAssist.trace.parsed.choiceTranslationLanguage = choiceTranslationLanguage;
         }
       }
-      // The delivery screen verified this exact text right before copying.
-      assertInputWriterDeliveryLocal(writerLease);
       generated = finalizeInputAssistDelivery(generated, deliverySource, settings).trim();
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, busy: false, phase: 'copied', generated, ok: true, reason: 'manual_copy', lastAt: Date.now() };
       await setInputAssistContinuePanel('인풋을 복사했습니다. RisuAI 입력창에 붙여넣어 직접 전송하세요.', 'done', 6000);
@@ -22695,10 +22510,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       await notifyInputAssistContinueError(reason);
       finishCallTelemetry('explicit_input_writer_failed');
       return false;
-    } finally {
-      closeInputWriterEvidence('LIB_READ_CLOSED', writerLease);
-      if (inputWriterEvidenceLease?.parentRequestId === requestId) closeInputWriterEvidence();
-      if (writerLease && Runtime.inputAssistSend?.requestId === requestId) purgeInputWriterEvidenceRuntime();
     }
   };
 
@@ -24636,7 +24447,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   };
 
   const recordStageTrace = (entry) => {
-    if (activeLibEvidenceRun && (entry.stage !== INPUT_ASSIST_STAGE_ID || activeLibEvidenceRun.purpose === 'input_writer')) return;
+    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -24733,6 +24544,10 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const shadowDraftLengthBeatContract = (settings = {}, phase = 'write') => {
     const plan = shadowDraftLengthPlan(settings);
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP LENGTH AND BEAT CONTRACT:',
+      `Configured draft range: ${plan.minChars}-${plan.maxChars} characters. This is a preference, never permission to invent what the detail mode forbids. A much shorter response is correct when the input gives little to describe.`
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings)) {
       const lines = [
         'PLAYER-CONTROLLED RP LENGTH AND BEAT CONTRACT:',
@@ -24760,7 +24575,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       `Requested draft range: ${plan.minChars}-${plan.maxChars} characters.`,
       `Working draft target: about ${plan.targetChars} characters.`,
       `Minimum distinct scene beats: ${plan.minBeats}.`,
-      'A scene beat is one meaningful stimulus/action -> observable reaction -> changed conversational, relational, physical, or decision pressure. It is not a sentence count and must not require a time skip, new major event, or sequel scene.',
+      'A scene beat is one meaningful stimulus/action -> observable reaction -> changed conversational, relational, physical, or decision pressure. It is not a sentence count and does not by itself require a time skip or a new major event, though the story may move there.',
       'Use additional beats to deepen the current scene through dialogue exchange, counter-reaction, physical behavior, social consequences, sensory grounding, and unresolved pressure. Do not pad with repetition, profile exposition, redundant introspection, or decorative description.'
     ];
     if (phase === 'analysis') {
@@ -24771,7 +24586,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     } else {
       lines.push(
         `Realize at least ${plan.minBeats} distinct planned beats in the complete response_draft and aim for ${plan.minChars}-${plan.maxChars} characters.`,
-        'Continue beyond the opening reaction, first glance, first contact, or first exchange. Expand inward within this response’s existing scene boundary, not forward into a later scene.'
+        'Continue beyond the opening reaction, first glance, first contact, or first exchange. Deepen the current scene, and move the story onward into further developments when that serves it.'
       );
     }
     return lines.join('\n');
@@ -24779,6 +24594,12 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const shadowActIntegratedPlanningContract = (settings = {}) => {
     const plan = shadowDraftLengthPlan(settings);
+    if (rpScopeLocksCast(settings)) return [
+      'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE PLANNING:',
+      ...buildRpImpersonationScopeLines(settings),
+      'Before writing, silently list what the submitted input states, and mark everything else this detail mode forbids.',
+      'The visible output must contain only in-world RP prose.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings)) {
       return [
         'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE REACTION PLANNING:',
@@ -24796,7 +24617,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       'Before writing, silently complete the following two compact internal passes in this same call. Do not output, label, summarize, or expose either pass.',
       `PASS 1 — STORY AUTHOR: determine the scene purpose, primary unresolved tension, direct alignment with the Current Submitted User Input, open questions, conditional payoff candidates, do-not-resolve boundaries, and at least ${plan.minBeats} causally ordered stimulus/action -> observable reaction -> changed-pressure beats.`,
       'PASS 2 — DIRECTOR: translate that exact plan into required visible outcomes, continuity locks, forbidden moves, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary that best fulfills the authorial scene purpose.',
-      'Every planned beat must receive an observable treatment inside this same response. Director execution must not replace Story Author meaning, contradict explicit author-fixed events/reservations, add a sequel scene, or force an uncertain pre-existing fact. The user persona may be authored as part of the whole cast.',
+      'Every planned beat must receive an observable treatment inside this same response. Director execution must not replace Story Author meaning, contradict explicit author-fixed events/reservations, or force an uncertain pre-existing fact. The user persona may be authored as part of the whole cast.',
       'After both private passes, write the complete RP response. The visible output must contain only in-world RP prose; never output analysis, plans, labels, JSON, reasoning, or metadata.'
     ].join('\n');
   };
@@ -25238,7 +25059,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ? '- PLAYER-CONTROLLED RP: preserve player agency. Do not decide the user character hidden thoughts, feelings, choices, dialogue, consent/refusal, or voluntary action unless the user already provided them.'
       : '- NOVEL MODE AUTHORSHIP: the user is the author/director. You may write the user persona’s new actions, dialogue, thoughts, feelings, choices, consent/refusal, movement, and reactions as part of the fiction; preserve only explicit author-fixed/reserved boundaries and established canon.',
     '- Maintain grounded continuity. Visible causes should lead to visible effects, physical and social constraints should stay active, and bystanders or public context should not vanish.',
-    '- Expand weak parts only when it improves the current response. Do not bloat, derail, skip ahead, or replace the current scene with a different next beat.',
+    isPlayerControlledDraftMode(settings)
+      ? '- Expand weak parts only when it improves the current response. Do not bloat, derail, skip ahead, or replace the current scene with a different next beat.'
+      : '- Expand weak parts only when it improves the current response. Do not bloat or lose the thread; moving the story onward is allowed.',
     '- Keep the response entirely within the story. Never output <Thoughts>, reasoning, key beats, structure notes, constraint checks, labels, technical comments, or other non-story material.',
     '- Output only the RP response itself without machine-readable appendices or side notes.'
   ].join('\n');
@@ -25250,7 +25073,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '- After those two user-authored directives, the final visible passage of the immediately preceding assistant response, capped at 2,400 characters, is the primary live-scene continuity anchor. Continue from its final physical, emotional, conversational, and social state before consulting older history.',
     '- When the Author Note deliberately redirects a lower-ranked scene condition, stage the necessary transition coherently instead of resetting continuity or claiming the old state never happened.',
     isAuthorDirectedDraftMode(settings)
-      ? '- PLAYER-CONTROLLED RP: treat the current input as the already-enacted complete player contribution for this turn. Do not realize or restage it; write only NPC/world/model-owned continuation. Continue causally until a new player contribution is actually required, then stop before it. Natural model-owned closure/transition is allowed.'
+      ? (rpScopeLocksCast(settings)
+          ? '- PLAYER-CONTROLLED RP: follow the RP detail mode above for what may be written.'
+          : '- PLAYER-CONTROLLED RP: treat the current input as the already-enacted complete player contribution for this turn. Do not realize or restage it; write only NPC/world/model-owned continuation. Continue causally until a new player contribution is actually required, then stop before it. Natural model-owned closure/transition is allowed.')
       : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
         ? '- Start from the terminal handoff and fold the user-authored in-world portion of the current input into the opening as one continuous scene beat; do not reset the older scene or duplicate the incorporated input afterward.'
         : '- NOVEL CLASSIC: use the previous assistant endpoint as the factual handoff and interpret the current input as an author brief/scene seed, not automatically as already-enacted player behavior. Realize the requested scene from that handoff without mechanical input replay, and freely author the user persona unless the author explicitly fixed/reserved a choice.',
@@ -25298,7 +25123,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Make the latest user action receive a clear response, preserve relevant unresolved tension and hidden information, order beats by cause and effect, and respect the COMMIT BARRIER.',
       isPlayerControlledDraftMode(settings)
         ? 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that force the user character’s next action or hidden feelings.'
-        : 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
+        : 'Repair repetition, premature resolution, arbitrary escalation, fake cliffhangers, exposition drag, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
       'Improve pacing and payoff only where needed, preserve unaffected blocks exactly, and expose only the required compact patch JSON. Do not append a sequel scene.'
     ]
   }[stageName] || ['ROLE: full-response draft rewriter.']).join('\n');
@@ -25380,7 +25205,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : 'The inherited SHADOW draft is the same-turn primary composition. Revise only inside this AIDE domain.'
     ],
     task: stageName === 'shadow_act'
-      ? (isPlayerControlledDraftMode(settings) ? 'Write the first complete NPC/world response draft for this player-controlled turn.' : 'Write the first complete author-directed Novel-mode scene draft, including the user persona as part of the cast.')
+      ? (isPlayerControlledDraftMode(settings) ? (rpScopeLocksCast(settings) ? 'Write the first complete response draft for this turn within the RP detail mode.' : 'Write the first complete NPC/world response draft for this player-controlled turn.') : 'Write the first complete author-directed Novel-mode scene draft, including the user persona as part of the cast.')
       : 'Return the improved same-turn scene draft without advancing beyond its existing scene boundary.',
     hardConstraints: [
       buildHardResponseInvariantBlock(settings),
@@ -25464,7 +25289,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const shadowDraftBridge = stageName === 'shadow_act' ? shadowActDraftStyleBridgePrompt(settings) : '';
     const authorNoteAuthority = stageName === 'shadow_act' ? buildShadowAuthorNoteAuthorityBlock(recent, settings) : '';
     const sameTurnLock = aideSameTurnRevisionLock(stageName);
-    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '';
+    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '';
     const shadowModeInheritance = stageName === 'shadow_act' ? '' : shadowDraftModeAideInheritanceContract(settings, stageName, 'patch');
     const lengthGuide = stageName === 'shadow_act'
       ? shadowDraftLengthBeatContract(settings, 'write')
@@ -25568,7 +25393,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       shadowDraftLengthBeatContract(settings, 'write'),
       '',
       isAuthorDirectedDraftMode(settings)
-        ? '현재 유저 인풋은 이미 성립한 유저 캐릭터의 이번 턴 행동/대사이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 말고, 그 행동이 세계에 닿은 지점부터 NPC·세계의 반응과 인과적 결과를 작성한 뒤 다음 유저 행동이 필요해지는 순간 멈춰라.'
+        ? (rpScopeLocksCast(settings)
+            ? (rpImpersonationScope(settings) === 'all'
+                ? '현재 유저 인풋에 적힌 내용만 묘사하라. 인물의 행동·대사와 전개를 지어내지 말고, 적힌 내용을 다 묘사하면 멈춰라.'
+                : '현재 유저 인풋에 적힌 인물의 행동·대사만 묘사하라. 인물의 행동·대사를 지어내지 말고, 전개(인물들의 주요 상황 바깥의 배경 변화)만 자율적으로 묘사하라.')
+            : '현재 유저 인풋은 이미 성립한 유저 캐릭터의 이번 턴 행동/대사이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 말고, 그 행동이 세계에 닿은 지점부터 NPC·세계의 반응과 인과적 결과를 작성한 뒤 다음 유저 행동이 필요해지는 순간 멈춰라.')
         : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
           ? '직전 완료 턴의 끝과 현재 유저 인풋의 사용자가 직접 쓴 장면 요소를 하나의 연속된 사건으로 자연스럽게 결합한 뒤, 그에 대한 반응과 결과까지 이어지는 첫 번째 complete RP response_draft를 지금 작성하라.'
           : '직전 완료 턴의 끝을 현재 장면의 사실적 출발점으로 삼고, 현재 유저 입력은 이미 수행된 플레이어 행동이 아니라 작가의 장면 지시/소재로 해석하라. 작가가 명시한 사건·결과·경계는 지키되 문장을 기계적으로 재현하지 말고, 유저 페르소나를 포함한 전체 인물을 집필하여 첫 번째 complete RP response_draft를 지금 작성하라.'
@@ -25814,7 +25643,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : stageName === 'shadow_act'
         ? arcDirectorBriefForPrompt(recent, 'shadow')
         : (arcControl, arcAudience, '');
-    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '';
+    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '';
     const common = [
       'Analyze the supplied roleplay material privately for the current same-turn rewrite.',
       analysisSourceMaterialRules(stageName),
@@ -25860,7 +25689,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'INTERNAL PASS 2 — DIRECTOR: after the Story Author plan is complete, translate that exact meaning into visible required outcomes, forbidden moves, continuity locks, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary.',
         isPlayerControlledDraftMode(settings)
           ? 'Director owns execution guardrails only. It may not replace the Story Author purpose, add a different plot, alter the player’s declared action, or convert uncertain pressure into a forced outcome.'
-          : 'Director owns execution guardrails only. It may not replace the Story Author purpose, add a different plot, contradict an explicit author-fixed event/reservation, or mislabel an uncertain pre-existing fact as canon. It MAY choose unspecified user-persona behavior and current-scene outcomes needed to realize the authorial plan.',
+          : 'Director owns execution guardrails only. It may not replace the Story Author purpose, contradict an explicit author-fixed event/reservation, or mislabel an uncertain pre-existing fact as canon. It MAY choose user-persona behavior, current-scene outcomes, and added developments that serve the story.',
         isAuthorDirectedDraftMode(settings)
           ? 'Every planned NPC/world reaction beat must receive a realizable Director treatment, but the Director must stop before inventing the user character’s next action, line, emotion, or choice.'
           : 'Every Story Author beat must have a realizable Director treatment inside this same response. Prefer observable behavior over explanatory labels, but do not prescribe generic gaze, silence, or gestures unless they specifically express this scene’s evidence and pressure.',
@@ -25917,7 +25746,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           : '',
         isPlayerControlledDraftMode(settings)
           ? 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, agency-bypass closure, and endings that decide the user character’s next move.'
-          : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
+          : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
         'Recommend direction only inside this same response. next_turn_openings are natural remaining possibilities, not instructions to write the next scene now.',
         'Do not write or revise the response draft. Return precise plot notes and direct rewrite actions.'
       ]
@@ -26421,7 +26250,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const inputDraftHash = stableDraftHash(previousDraft);
     const system = [
       fullDraftStageSystemShell(stageName, settings),
-      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, 2200) : '',
+      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, 2200, { settings }) : '',
       shadowDraftModeAideInheritanceContract(settings, stageName, 'patch'),
       playerControlledSkillSubjectGate(settings),
       playerControlledTurnHandoffContract(settings, stageName, 'repair'),
@@ -27194,7 +27023,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         : 'Analyze the full draft privately, but expose only the compact analysis fields and structural edits in the required JSON.',
       buildInternalDraftLanguageContract(settings, 'patch'),
       resolveModelBehaviorAdapterForStage(settings, stageName, 'patch').prompt,
-      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '',
+      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '',
       shadowDraftModeAideInheritanceContract(settings, stageName, 'patch'),
       aidePatchRoleContract(stageName, settings),
       aidePatchExpansionContract(stageName, settings),
@@ -27770,19 +27599,28 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
       '- Treat the supplied draft as the authoritative same-turn scene seed and primary response blueprint, not as immutable wording and not as a sequel prompt.',
       '- Recompose it into the final RP response. Preserve its core beats, causal order, dialogue intent, character positions, continuity, and unresolved choices.',
-      '- Expand inward, not forward: develop underwritten actions, context-appropriate NPC reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions inside the draft’s existing scene boundary.',
+      isPlayerControlledDraftMode(settings)
+        ? '- Expand inward, not forward: develop underwritten actions, context-appropriate NPC reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions inside the draft’s existing scene boundary.'
+        : '- Develop underwritten actions, reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions, and carry the story onward when that serves it.',
       '- Strengthen the scene with established character details, active setting facts, recent events, remembered continuity, and unresolved obligations that are relevant to the present moment.',
       '- Convert relevant context into natural behavior, dialogue, physical detail, remembered obligations, relationship texture, knowledge limits, object/injury/position continuity, and unresolved tension. Do not recite profiles, summarize memory blocks, or insert lore merely to prove it was read.',
       '- When details conflict, follow the current user input first, then the latest visible scene and exact active canon, then older continuity. Treat the response draft as the primary composition to preserve and refine.',
       '- If memory or an older summary conflicts with newer visible events, follow the newer events. Treat uncertain recollection, rumor, inference, and last-known offscreen state as uncertain rather than confirmed present fact.',
       '- Do not give a character knowledge without a valid in-world path. Do not teleport offscreen actors or introduce a new major event only because a lore or memory entry mentions it.',
-      '- Do not append a sequel scene, time skip, new aftermath, or event beyond the draft’s final intended beat. Do not make the response longer merely for length; compress repetition and expand only material that improves this scene.',
-      '- Preserve POV/knowledge boundaries and explicit author-fixed/reserved choices. In Novel mode the user persona is authorable; do not impose RP player-agency restrictions on their new dialogue, thought, feeling, or action.',
+      isPlayerControlledDraftMode(settings)
+        ? '- Do not append a sequel scene, time skip, new aftermath, or event beyond the draft’s final intended beat. Do not make the response longer merely for length; compress repetition and expand only material that improves this scene.'
+        : '- Additional actions and developments beyond the draft are allowed. Do not make the response longer merely for length.',
+      isPlayerControlledDraftMode(settings)
+        ? buildRpImpersonationScopeContract(settings)
+        : '- Preserve POV/knowledge boundaries and explicit author-fixed/reserved choices. In Novel mode the user persona is authorable; do not impose RP player-agency restrictions on their new dialogue, thought, feeling, or action.',
       '- Keep the response entirely within the story. Express relevant context through natural behavior, dialogue, knowledge limits, physical continuity, and consequences instead of explaining the source material.'
     ].join('\n');
     const compactContextExpansionRequirements = [
       'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
-      'Use the draft as a same-turn scene seed. Expand inward through action, reaction, dialogue, sensory and causal detail—not into a sequel.',
+      isPlayerControlledDraftMode(settings)
+        ? 'Use the draft as a same-turn scene seed. Expand inward through action, reaction, dialogue, sensory and causal detail—not into a sequel.'
+        : 'Use the draft as a scene seed. Develop it through action, reaction, dialogue, sensory and causal detail, and carry the story onward when that serves it.',
+      buildRpImpersonationScopeContract(settings),
       'Use relevant established facts, recent events, and remembered continuity naturally. Newer visible canon wins; preserve knowledge paths and active writing-mode authority; keep the response entirely within the story.'
     ].join('\n');
     const contextExpansionRequirements = compact(
@@ -28490,7 +28328,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         ? ['compact', 'tiny']
         : ['tiny'];
     const rawLanguageContract = buildInternalDraftLanguageContract(settings, 'final');
-    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3000, { finalization: true });
+    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3000, { finalization: true, settings });
     const terminalEvidence = playerControlledRpTerminalEvidenceBlock(recent, 3000);
     const continuityGuard = buildPlayerControlledFinalContinuityGuard(recent, 3400);
     const hardTransfer = buildPlayerControlledFinalHardTransferBlock(stages, settings, recent, 2400);
@@ -28689,7 +28527,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         name: 'Response Instruction',
         content: [
           'RESPONSE INSTRUCTION:',
-          ...(isAuthorDirectedDraftMode(settings) ? [
+          ...(rpScopeLocksCast(settings) ? buildRpImpersonationScopeLines(settings).map(line => `- ${line}`) : isAuthorDirectedDraftMode(settings) ? [
             '- PLAYER-CONTROLLED RP: the latest user input is already the complete user-character contribution for this turn. Do not reenact it or add further user behavior.',
             '- Treat the serial draft as the NPC/world response candidate. Improve model-owned reactions, causality, dialogue, staging, sensory grounding, and continuity without crossing the next user-agency boundary.',
             '- NPC/world may act autonomously when causally supported, including grounded initiatives, reveals, arrivals/departures, transitions, and natural closure. Do not add an unrelated hook/sequel or continue after a new user action/decision is actually required.',
@@ -28698,8 +28536,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
             '- Story Arc, lore, memory, and older plans may guide NPC/world continuity only; they cannot authorize user-character behavior.'
           ] : [
             '- Use the serial draft as the same-turn scene seed and primary response blueprint. Recompose it rather than merely copying its wording.',
-            '- Expand inward, not forward: develop underwritten action/reaction causality, dialogue rhythm, sensory grounding, and transitions inside the existing scene boundary. Do not write the next scene after the draft.',
-            '- NOVEL MODE FULL-CAST AUTHORSHIP: the user persona is part of the fiction you may write. Preserve explicit author-fixed/reserved constraints, but you may author new user-persona thoughts, feelings, choices, dialogue, and actions inside the current scene.'
+            '- Develop underwritten action/reaction causality, dialogue rhythm, sensory grounding, and transitions, and carry the story onward with further developments when that serves it.',
+            '- NOVEL MODE FULL-CAST AUTHORSHIP: the user persona is part of the fiction you may write. Preserve explicit author-fixed/reserved constraints, but you may author new user-persona thoughts, feelings, choices, dialogue, and actions, and developments the user did not ask for.'
           ]),
           '- Use relevant persona, character, activated lore, author-note, memory, Others Info, and recent-chat items in this prompt plan as private writing evidence. Integrate them through behavior, knowledge limits, physical continuity, relationship texture, and unresolved tension instead of exposition.',
           '- Newer visible events and the latest user input override older or uncertain memory. A memory fact does not grant every character knowledge of it without an in-world path.',
@@ -29006,7 +28844,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       packetAuxiliary, legacyReference, conversation
     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
     const synthesisContract = buildPlayerControlledFinalSynthesisContract('full');
-    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3200, { finalization: true });
+    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3200, { finalization: true, settings });
     const terminalGuard = playerControlledRpTerminalEvidenceBlock(recent, 3200);
     const continuityGuard = buildPlayerControlledFinalContinuityGuard(recent, 3800);
     const hardTransfer = buildPlayerControlledFinalHardTransferBlock(stages, settings, recent, 2600);
@@ -31168,7 +31006,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
         let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-          queryText: input.queryText, ...(input.proposal ? {proposal: input.proposal} : {}) }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
+          queryText: input.queryText }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
         if (typeof read?.close === 'function') record.releaseRead = read.close;
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
@@ -31187,6 +31025,22 @@ function createGradiaEvidenceBudget({ digest }) {
           || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
           || typeof read.assertCurrent !== 'function' || typeof read.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
         const assertReadCurrent = read.assertCurrent, assertReadCurrentSync = read.assertCurrentSync;
+        // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
+        // their own memory, and an owner that is not running contributes none.
+        let ownerUnavailable = null;
+        if (multipleOwners && readSource === 'unified_engine' && typeof dependencies.selectOwnerRecall === 'function') {
+          const kept = raw.items.filter(item => item?.owner === 'libra');
+          ownerUnavailable = {};
+          const peers = raw.owners.filter(value => value !== 'libra');
+          const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
+          for (const [index, owner] of peers.entries()) {
+            const selected = answers[index];
+            if (selected.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
+            if (selected.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
+              source: { namespace: owner, kind: 'owner_recall_prompt', finalDelivery: selected.finalDelivery !== false } });
+          }
+          raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
+        }
         let corpusBytes = 0, metadataBytes = 0; const seen = new Set(), corpus = [];
         for (const item of raw.items) {
           const owner = multipleOwners ? item?.owner : 'libra', ownerKey = JSON.stringify([owner,item?.key,...(multipleOwners ? [item?.id] : [])]);
@@ -31200,17 +31054,16 @@ function createGradiaEvidenceBudget({ digest }) {
           if (bytes(metadata) > 65536 || metadataBytes > 1048576) fail('LIB_READ_METADATA_BUDGET_EXCEEDED');
           // Copy only bounded metadata. Immutable JS text primitives are shared,
           // never full-corpus JSON-stringified, cloned or re-parsed.
-          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: libMemoryModelContent(owner, item.content),
-            foldedContent: owner === 'hayaku' ? projectHayakuPacketText(item.content, { fold: true }) : null }));
+          const ownerPrompt = item.source.kind === 'owner_recall_prompt';
+          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: ownerPrompt ? item.content : libMemoryModelContent(owner, item.content),
+            foldedContent: !ownerPrompt && owner === 'hayaku' ? projectHayakuPacketText(item.content, { fold: true }) : null }));
         }
         if (corpusBytes !== raw.corpusBytes) fail('LIB_READ_RESPONSE_INVALID');
         record.corpus = Object.freeze(corpus);
         const evidenceRevision = raw.evidenceRevision, selected = [];
         raw = null; read = null;
         // Legacy LIBRA selection stays unchanged. The multiowner path keeps exact-content
-        // dedup and every contributing owner identity in model-visible provenance, and
-        // orders candidates by orderLibEvidenceCandidates (recent per owner, then BM25
-        // relevance to the current input, then newest-first round robin).
+        // dedup and every contributing owner identity in model-visible provenance.
         let candidates = [...corpus].reverse(), deduplicatedItems = 0;
         if (multipleOwners) {
           const groups = new Map(), queues = new Map(allowedOwners.map(owner => [owner,[]]));
@@ -31234,35 +31087,26 @@ function createGradiaEvidenceBudget({ digest }) {
               || a.key.localeCompare(b.key) || a.id.localeCompare(b.id));
             freeze(group);
           }
-          candidates = orderLibEvidenceCandidates(queues, allowedOwners, input.queryText);
+          // Each owner has already chosen what is relevant; GRADIA does not rank it again and takes turns between owners.
+          candidates = [];
+          for (let turn = 0; candidates.length < groups.size; turn += 1) for (const owner of allowedOwners) { const item = queues.get(owner)[turn]; if (item) candidates.push(item); }
         }
         const packer = createLibEvidencePacker('gradia.lib-server-evidence.v1', evidenceRevision, evidenceBudget);
-        // An Input Writer proposal needs only a little record-level memory beside the live
-        // scene: HAYAKU/Flashback records share a small whole-record budget (the first one is
-        // always admitted). The LIBRA owner bundle is unchanged.
-        const recordCharCap = input.proposal ? LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS : Infinity;
-        let recordChars = 0;
         for (const item of candidates) {
           let target = item;
-          const record = target.owner !== 'libra';
-          const overCap = bytes(target.content) > evidenceBudget.maxBytes
-            || (record && recordChars > 0 && recordChars + target.content.length > recordCharCap)
-            || !packer.canFit(target);
+          const overCap = bytes(target.content) > evidenceBudget.maxBytes || !packer.canFit(target);
           if (overCap && target.owner === 'hayaku' && target.foldedContent && target.content !== target.foldedContent) {
             target = Object.freeze({ ...target, content: target.foldedContent, folded: true });
           }
           if (bytes(target.content) > evidenceBudget.maxBytes) continue;
-          if (record && recordChars > 0 && recordChars + target.content.length > recordCharCap) continue;
-          if (packer.tryAdd(target)) {
-            selected.push(target);
-            if (record) recordChars += target.content.length;
-          }
+          if (packer.tryAdd(target)) selected.push(target);
         }
         // The packer's arithmetic is checked once against the real renderer.
         if (selected.length) renderLibEvidence({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected }, evidenceBudget);
         if (!selected.length) fail(corpus.length ? 'LIB_READ_NO_COMPLETE_ITEM_FITS_PROMPT' : 'LIB_READ_NO_EVIDENCE');
         record.evidence = freeze({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected });
-        const selection = Object.freeze({ ...(readEngine?.unavailableOwners ? { unavailableOwners: readEngine.unavailableOwners } : {}),
+        const unavailableOwners = { ...readEngine?.unavailableOwners, ...ownerUnavailable };
+        const selection = Object.freeze({ ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}),
           corpusBytes, corpusItems: corpus.length, selectedItems: selected.length,
           omittedItems: candidates.length - selected.length, ...(multipleOwners ? {deduplicatedItems,owners:allowedOwners.filter(owner=>corpus.some(item=>item.owner===owner))} : {}),
           truncated: false, promptByteLimit: evidenceBudget.maxBytes, promptCharLimit:evidenceBudget.maxChars, readSource,
@@ -31319,7 +31163,6 @@ function createGradiaEvidenceBudget({ digest }) {
     const requestedSource = options.readSource === undefined ? 'unified_engine' : String(options.readSource);
     const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
     if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
-    closeInputWriterEvidence('LIB_READ_BOUNDARY_CHANGED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
     libReadSelection = null;
@@ -31327,7 +31170,6 @@ function createGradiaEvidenceBudget({ digest }) {
     return Object.freeze({ status: 'bound', liveConnectionVerified: false, maxCorpusBytes });
   };
   const unbindLibReadOnlyClient = () => {
-    closeInputWriterEvidence('LIB_READ_CONNECTION_UNAVAILABLE');
     LibReadConsumer.invalidate('LIB_READ_CONNECTION_UNAVAILABLE');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_CONNECTION_UNAVAILABLE'); old.close(); }
     libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;
@@ -39315,7 +39157,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
     let inspecting = null, lastInspection = null;
-    let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS], inputWriterReadOwners = [...LIB_READ_OWNERS];
+    let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS];
     let isLegacyV1Consent = false;
     let unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
@@ -39327,7 +39169,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const status = () => Object.freeze({state,reason,url,explicit,readSource,
       readOwners:Object.freeze([...readOwners]),
       draftReadOwners:Object.freeze([...draftReadOwners]),
-      inputWriterReadOwners:Object.freeze([...inputWriterReadOwners]),
       reconnectAttempts,
       inspecting:!!inspecting,lastInspection,
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
@@ -39397,7 +39238,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // A canceled startup read may never reveal saved consent. Retain that
         // uncertainty until a verified false write, so a failed revoke can retry.
         consentMayBeStored = true;
-        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); }
+        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); }
         catch (error) { state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); throw error; }
       }
     };
@@ -39441,19 +39282,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (Array.isArray(config.draftReadOwners)) {
         draftReadOwners = config.draftReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
       }
-      if (Array.isArray(config.inputWriterReadOwners)) {
-        inputWriterReadOwners = config.inputWriterReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
-      }
       let targetOwners = requestedOwners;
       if (!Array.isArray(targetOwners)) {
         if (isLegacyV1Consent) {
           targetOwners = [...LIB_READ_OWNERS];
           draftReadOwners = [...LIB_READ_OWNERS];
-          inputWriterReadOwners = [...LIB_READ_OWNERS];
           isLegacyV1Consent = false;
         } else {
-          const union = new Set([...draftReadOwners, ...inputWriterReadOwners]);
-          targetOwners = LIB_READ_OWNERS.filter(o => union.has(o));
+          targetOwners = LIB_READ_OWNERS.filter(o => draftReadOwners.includes(o));
           if (!targetOwners.length) targetOwners = [...LIB_READ_OWNERS];
         }
       }
@@ -39474,7 +39310,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
         if (readSource === 'plugin_ipc') {
           const native = await readLibPluginNativeIdentity(); check();
-          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(),
+          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), recentChatText: () => libRecentChatText,
             describeTimeoutMs:3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
             api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
           bridge = next;
@@ -39483,7 +39319,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           await assertScope(scope); check();
           if (!startup) {
             pendingConsent = {url:target};
-            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
+            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); check();
             await assertScope(scope); check(); pendingConsent = null; explicit = true;
           }
           bindLibReadOnlyClient(next.createClient(resolved.scopes),{scope,readSource});
@@ -39515,7 +39351,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         await read.assertCurrent(); read = null; await assertScope(resolved); check();
         if (!startup) {
           pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
+          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); check();
           await assertScope(resolved); check();
           pendingConsent = null; explicit = true;
         }
@@ -39592,7 +39428,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         url = normalizeLibReadUrl(saved.url);
         if (saved.readSource) readSource = saved.readSource;
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
-        if (Array.isArray(saved.inputWriterReadOwners)) inputWriterReadOwners = saved.inputWriterReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;
           state = 'disconnected';
@@ -39603,11 +39438,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (saved.schema === 'gradia.lib-read-connection.v1') {
           isLegacyV1Consent = true;
           draftReadOwners = ['libra'];
-          inputWriterReadOwners = ['libra'];
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
+          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -39617,12 +39451,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         draftReadOwners = Array.isArray(saved.draftReadOwners)
           ? saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
           : [...savedOwners];
-        inputWriterReadOwners = Array.isArray(saved.inputWriterReadOwners)
-          ? saved.inputWriterReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
-          : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
+        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -39651,15 +39482,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       setDraftReadOwners: async owners => {
         if (Array.isArray(owners)) {
           draftReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
-          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
-          refresh();
-        }
-        return status();
-      },
-      setInputWriterReadOwners: async owners => {
-        if (Array.isArray(owners)) {
-          inputWriterReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
-          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
+          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners });
           refresh();
         }
         return status();
@@ -39669,9 +39492,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           const valid = owners.filter(o => LIB_READ_OWNERS.includes(o));
           if (valid.length) {
             draftReadOwners = [...valid];
-            inputWriterReadOwners = [...valid];
             readOwners = [...valid];
-            if (state === 'connected') return await connect(false, valid, readSource, { draftReadOwners, inputWriterReadOwners });
+            if (state === 'connected') return await connect(false, valid, readSource, { draftReadOwners });
             refresh();
           }
         }
@@ -39683,8 +39505,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
 
-  const LibReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
-  const LibWriterReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope });
+  let libOwnerSelectionReader = null;
+  const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), recentChatText: () => libRecentChatText,
+    describeTimeoutMs: 3000, timeoutMs: LIB_MEMORY_OWNER_READ_TIMEOUT_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
+  const reportLibOwnerDelivery = (owner, status, code = '') => { void libOwnerReader().notify(owner, 'delivered', { status, code }); };
+  // Owners stop searching in their own hook while this holds. It expires, so a removed GRADIA cannot silence them.
+  const announceLibReads = async (settings = Runtime.settings) => {
+    if (!settings) return;
+    const connection = LibReadConnection.status();
+    // GRADIA skips a request it has no provider for, so owners must keep their own recall then.
+    let providerReady = false;
+    try { providerReady = !providerConfigurationIssues(resolvePreset(settings, 'shadow_act').preset).length; } catch (_) { providerReady = false; }
+    const active = providerReady && connection.readSource !== 'off' && connection.state === 'connected' && settings.mode !== 'off';
+    const routeOwners = connection.draftReadOwners || LIB_READ_OWNERS;
+    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner), ttlMs: 90000 });
+  };
+  // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
+  const libOwnerAbsentUntil = new Map();
+  // Owners whose selection this response run holds and has not yet reported an outcome for.
+  const libOwnersAwaitingDelivery = new Set();
+  const failUndeliveredLibOwners = code => { for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'failed', code); libOwnersAwaitingDelivery.clear(); };
+  const selectLibOwnerRecall = async (owner, scope, queryText, signal) => {
+    if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
+    const answer = await libOwnerReader().select(owner, scope, queryText, signal);
+    if (answer.absent) { libOwnerAbsentUntil.set(owner, Date.now() + 60000); reportLibOwnerDelivery(owner, 'failed', answer.code || 'LIB_READ_IPC_UNAVAILABLE'); } else libOwnerAbsentUntil.delete(owner);
+    return answer;
+  };
+  const LibReadConsumer = createLibServerReadConsumer({ selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
 
   const runPipeline = async (messages, type, settings) => {
     const pipelineStartedAt = Date.now();
@@ -40347,6 +40194,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(finalBodyIssue === 'refusal' ? { refusalDraftChars: boundFinalDraft.length } : {}) };
     }
     let injection = suppressedReason ? '' : buildFinalOverlay(current, stages, finalRecent, settings);
+    // The memory the draft used also reaches the response model, unless its owner turned that off.
+    const ownerRecallItems = usesLibEvidence ? [...(libReadSession.evidencePacket?.items || [])] : [];
+    const finalRecallBlock = ownerRecallItems.filter(item => item.source?.finalDelivery !== false).map(item => String(item.content || '').trim()).filter(Boolean).join('\n\n');
     if (usesLibEvidence && !suppressedReason) {
       await libReadSession.finalize(boundFinalDraft);
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
@@ -40357,6 +40207,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       reason: suppressedReason,
       injection,
       externalEvidence: usesLibEvidence,
+      finalRecallBlock,
+      ownerRecallItems,
       finalizeHandoff: usesLibEvidence ? async () => {
         const final = await libReadSession.finalize(injection);
         await libReadSession.assertCurrent();
@@ -40404,7 +40256,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const beforeRequest = async (messages, type) => {
-    if (isMainNarrativeRequest(type)) closeInputWriterEvidence('LIB_READ_SUPERSEDED');
+    if (isMainNarrativeRequest(type)) await announceLibReads(Runtime.settings || await loadSettings().catch(() => null));
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
@@ -40668,6 +40520,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.lastProviderError = null;
 
     const startedAt = Date.now();
+    libOwnersAwaitingDelivery.clear();
+    const libRunConnection = LibReadConnection.status();
+    if (libRunConnection.state === 'connected' && libRunConnection.readSource !== 'off') for (const owner of libRunConnection.draftReadOwners || LIB_READ_OWNERS) libOwnersAwaitingDelivery.add(owner);
     try {
       const result = await runPipeline(messages, type, requestSettings);
       const suppressionMeta = Runtime.finalDraftMeta?.suppressed === result.reason ? {
@@ -40689,10 +40544,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();
-          const injected = injectSystemMessage(messages, injection, requestSettings);
+          const injected = injectSystemMessage(messages, result.finalRecallBlock ? `${injection}\n\n<MEMORY_RECALL>\n${result.finalRecallBlock}\n</MEMORY_RECALL>` : injection, requestSettings);
           if (!verifyOriginalMessagePreservation(messages, injected).preserved) throw libEvidenceError('LIB_READ_TRANSPORT_CHANGED');
           Runtime.last = { at: Date.now(), ok: true, externalEvidence: true, stageCount: result.stages.length };
           result.assertHandoffLocalCurrent();
+          for (const item of result.ownerRecallItems) { reportLibOwnerDelivery(item.owner, item.source?.finalDelivery === false ? 'draft_only' : 'final_delivered'); libOwnersAwaitingDelivery.delete(item.owner); }
+          for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'empty');
+          libOwnersAwaitingDelivery.clear();
           libEvidenceResponseRedactionRequired = true;
           return injected;
         } finally { result.closeEvidence(); }
@@ -40783,6 +40641,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (settings.failureMode === 'hard') throw error;
       return messages;
     } finally {
+      failUndeliveredLibOwners(String(Runtime.last?.reason || 'LIB_READ_DRAFT_UNAVAILABLE'));
       Runtime.inFlight = false;
       finishCallTelemetry(Runtime.last?.ok === false ? 'failed' : 'completed');
       scheduleGuiTraceRefresh();
@@ -41191,6 +41050,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     inputAssistTargetChars: normalizeInputAssistTargetChars(settings.inputAssistTargetChars),
     inputAssistConfirmationMode: normalizeChoice(settings.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
     novelInputAssistMode: normalizeChoice(settings.novelInputAssistMode || (settings.writingMode === 'rp' ? 'off' : settings.inputAssistMode) || 'off', INPUT_ASSIST_MODES, 'off'),
+    rpImpersonationScope: normalizeRpImpersonationScope(settings.rpImpersonationScope),
     rpInputAssistMode: normalizeChoice(settings.rpInputAssistMode || (settings.writingMode === 'rp' ? settings.inputAssistMode : 'user_focus') || 'user_focus', ['off', 'user_focus'], 'user_focus'),
     novelInputAssistScope: normalizeChoice(settings.novelInputAssistScope || (settings.writingMode === 'rp' ? 'full_pipeline' : settings.inputAssistScope) || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
     novelInputAssistConfirmationMode: normalizeChoice(settings.novelInputAssistConfirmationMode || (settings.writingMode === 'rp' ? 'direct' : settings.inputAssistConfirmationMode) || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
@@ -41570,6 +41430,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ? (normalizeChoice(runtime.rpInputAssistMode || runtime.inputAssistMode || 'off', ['off', 'user_focus'], 'off') === 'off' ? 'direct' : 'confirm')
           : normalizeChoice(runtime.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
         novel_input_assist_mode: normalizeChoice(runtime.novelInputAssistMode || 'off', INPUT_ASSIST_MODES, 'off'),
+        rp_impersonation_scope: normalizeRpImpersonationScope(runtime.rpImpersonationScope),
         rp_input_assist_mode: normalizeChoice(runtime.rpInputAssistMode || (runtime.writingMode === 'rp' ? runtime.inputAssistMode : 'user_focus') || 'user_focus', ['off', 'user_focus'], 'user_focus'),
         novel_input_assist_scope: normalizeChoice(runtime.novelInputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
         novel_input_assist_confirmation_mode: normalizeChoice(runtime.novelInputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
@@ -42207,7 +42068,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   } = {}) => {
     const initialOriginal = text(original || '').trim();
     let currentChoices = Array.isArray(choices) ? choices.map(item => ({ ...item })).filter(item => text(item?.brief).trim()) : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || source === 'explicit_input_writer';
     if (typeof document === 'undefined') {
       // Never auto-select an AI proposal in headless mode. Preserve the user's own
       // authored direction when available; explicit continuation without UI cancels.
@@ -42327,7 +42188,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
-        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -42385,12 +42245,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       const cancelDialog = () => finish('cancelled', '', null);
-      if (onValidate) inputWriterDialogCancel = cancelDialog;
+      inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: 'RP 행동 선택' }),
-          guiEl('p', { 'data-input-memory-notice': '', text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
+          guiEl('p', { text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
         ]),
         closeButton
       ]));
@@ -42450,7 +42310,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let currentChoices = Array.isArray(choices)
       ? choices.map(item => ({ ...item })).filter(item => text(item?.input).trim())
       : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || source === 'explicit_input_writer';
     if (typeof document === 'undefined') {
       // Never auto-select an AI candidate without an interactive picker.
       if (initialOriginal) {
@@ -42569,7 +42429,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
-        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -42631,12 +42490,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       const cancelDialog = () => finish('cancelled', '', null);
-      if (onValidate) inputWriterDialogCancel = cancelDialog;
+      inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '소설 모드 · 인풋 선택' }),
-          guiEl('p', { 'data-input-memory-notice': '', text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
+          guiEl('p', { text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
         ]),
         closeButton
       ]));
@@ -44119,7 +43978,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
     libReadConnection: LibReadConnection.status(),
-    lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
     lastStageViewMismatch: Runtime.lastStageViewMismatch || null,
@@ -44162,7 +44020,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       lastAt: Number(Runtime.inputAssistSend?.lastAt) || 0,
       ok: Runtime.inputAssistSend?.ok ?? null,
       reason: Runtime.inputAssistSend?.reason || '',
-      memory: Runtime.inputAssistSend?.memory || null,
       generatedPreview: compact(Runtime.inputAssistSend?.generated || '', 2400)
     },
     pipelineWorkStatus: JSON.parse(JSON.stringify(Runtime.pipelineWorkStatus || null)),
@@ -44439,7 +44296,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       skillCustomLibrary: 'Skill · 사용자 라이브러리', skillLegacyRouterSettings: 'Skill · 이전 설정 보관',
       multiPipelineMode: '분석·작성 호출 방식', writingMode: '작성 모드', shadowDraftMode: 'SHADOW · 첫 초안 방식',
       novelShadowDraftMode: '소설 모드 · 첫 초안 방식', novelInputAssistMode: '소설 모드 · 인풋 방식',
-      rpInputAssistMode: 'RP 모드 · 인풋 방식', novelInputAssistScope: '소설 모드 · 인풋 적용 범위',
+      rpImpersonationScope: 'RP 모드 · 세부 모드', rpInputAssistMode: 'RP 모드 · 인풋 방식', novelInputAssistScope: '소설 모드 · 인풋 적용 범위',
       novelInputAssistConfirmationMode: '소설 모드 · 인풋 확인 방식', outputMode: '응답 마무리 방식',
       internalDraftLanguage: '내부 초안 언어', nsfwMode: '성인 장면 지침 · 강도', nsfwGuidanceEnabled: '성인 장면 지침 · 사용',
       nsfwInjectFinalRequest: '성인 장면 지침 · 최종 요청 전달',
@@ -44576,6 +44433,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(key==='nsfwGuidanceEnabled')control.checked=runtime.nsfwGuidanceEnabled!==false;
       else if(key==='nsfwInjectFinalRequest'){control.checked=runtime.nsfwInjectFinalRequest===true;control.disabled=!nsfwEffective;}
       else if(key==='shadowDraftMode'){control.value=normalizeNovelShadowDraftMode(runtime.novelShadowDraftMode||runtime.shadowDraftMode);control.disabled=mode==='rp';}
+      else if(key==='rpImpersonationScope'){control.value=normalizeRpImpersonationScope(runtime.rpImpersonationScope);control.title=RP_IMPERSONATION_SCOPE_DEFS[control.value].description;control.hidden=mode!=='rp';}
     });
     const draftHint=app.querySelector('[data-existing-draft-mode-hint]');if(draftHint)draftHint.textContent=mode==='rp'?'RP 모드에서는 유저 행동 불가침 계약으로 고정됩니다. 소설 모드로 돌아오면 이전 초안 방식을 복원합니다.':SHADOW_DRAFT_MODE_DEFS[normalizeNovelShadowDraftMode(runtime.shadowDraftMode)]?.description||'';
     const nsfwPreview=app.querySelector('[data-existing-nsfw-preview]');if(nsfwPreview){const writingPreview=buildNsfwGuidanceBlock(runtime,'writing'),finalPreview=buildNsfwGuidanceBlock(runtime,'final');nsfwPreview.value=writingPreview?(finalPreview?`${writingPreview}\n\n[FINAL REQUEST]\n${finalPreview}`:writingPreview):'(현재 지침 주입이 꺼져 있습니다.)';}
@@ -44796,7 +44654,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (nextSource === 'off') {
           void LibReadConnection.connect({ readSource: 'off' }).then(() => {
             Gui.libDraftReadOwnersDraft = null;
-            Gui.libInputWriterReadOwnersDraft = null;
             mockupRenderSources();
             guiSetStatus('LIB 기억 읽기를 해제했습니다 (사용 안 함).');
           }).catch(err => {
@@ -44809,16 +44666,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const nextDraftOwners = Gui.libDraftReadOwnersDraft !== undefined && Gui.libDraftReadOwnersDraft !== null
           ? Gui.libDraftReadOwnersDraft
           : (st.draftReadOwners || st.readOwners);
-        const nextInputOwners = Gui.libInputWriterReadOwnersDraft !== undefined && Gui.libInputWriterReadOwnersDraft !== null
-          ? Gui.libInputWriterReadOwnersDraft
-          : (st.inputWriterReadOwners || st.readOwners);
         void LibReadConnection.connect({
           draftReadOwners: nextDraftOwners,
-          inputWriterReadOwners: nextInputOwners,
           readSource: nextSource
         }).then(()=>{
           Gui.libDraftReadOwnersDraft = null;
-          Gui.libInputWriterReadOwnersDraft = null;
           mockupRenderSources();
           guiSetStatus('LIB 기억 읽기 대상 및 연결 상태를 갱신했습니다.');
         });
@@ -44865,6 +44717,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(key==='nsfwGuidanceEnabled')applyNsfwGuidanceEnabledToGui(control.checked);
       else if(key==='nsfwInjectFinalRequest')applyNsfwInjectFinalRequestToGui(control.checked);
       else if(key==='shadowDraftMode'&&currentWritingModeFromGui()!=='rp')applyShadowDraftModeToGui(control.value);
+      else if(key==='rpImpersonationScope'){(Gui.state.runtime||(Gui.state.runtime={})).rpImpersonationScope=normalizeRpImpersonationScope(control.value);markGuiDirty();renderSettingsGui();}
       return;
     }
     if(control.matches?.('[data-stage-ref][data-stage-ref-owner]')){const id=control.dataset.stageRefOwner,key=control.dataset.stageRef;if(Gui.state.agents?.[id]){Gui.state.agents[id].risuRefs=normalizeRisuReferences(Gui.state.agents[id].risuRefs,defaultRisuReferencesForStage(id));Gui.state.agents[id].risuRefs[key]=control.checked;markGuiDirty();mockupRefreshStatus();}return;}
@@ -44952,15 +44805,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       mockupRenderSources({preserveUrlDraft:true});
       return;
     }
-    if (control.matches?.('[data-lib-input-writer-owner]')) {
-      const targetOwner = control.dataset.libInputWriterOwner;
-      const current = new Set(Gui.libInputWriterReadOwnersDraft || LibReadConnection.status().inputWriterReadOwners || LibReadConnection.status().readOwners);
-      if (control.checked) current.add(targetOwner);
-      else current.delete(targetOwner);
-      Gui.libInputWriterReadOwnersDraft = LIB_READ_OWNERS.filter(o => current.has(o));
-      mockupRenderSources({preserveUrlDraft:true});
-      return;
-    }
     const providerStage=control.closest('.stage-detail[data-detail]');
     if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
   };
@@ -45015,6 +44859,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     app.querySelectorAll('.stage-detail').forEach(detail=>{
       detail.querySelectorAll('button').forEach(button=>{if(button.textContent.includes('프롬프트 미리보기'))button.dataset.action='prompt-preview';});
     });
+    const modeSwitch=page.closest('.app')?.querySelector('.mode-switch');
+    if(modeSwitch&&!modeSwitch.parentElement.querySelector('[data-existing-response-field="rpImpersonationScope"]')){
+      const scopeSelect=document.createElement('select');scopeSelect.className='select';scopeSelect.style.width='auto';scopeSelect.dataset.existingResponseField='rpImpersonationScope';scopeSelect.setAttribute('aria-label','RP 세부 모드');
+      RP_IMPERSONATION_SCOPES.forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=RP_IMPERSONATION_SCOPE_DEFS[value].label;scopeSelect.append(option);});
+      modeSwitch.after(scopeSelect);
+    }
     const expert=page.closest('.app')?.querySelector('[data-page="manage"] [data-subpanel="adv"] .stack');
     if(expert&&!expert.querySelector('[data-existing-response-options]')){
       const fold=document.createElement('details');fold.className='fold';fold.dataset.existingResponseOptions='true';
@@ -45406,11 +45256,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const draftLabel=mockupNode('span','label','초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
       const draftCluster=mockupNode('div','cluster');draftCluster.style.marginTop='6px';draftCluster.style.display='flex';draftCluster.style.flexWrap='wrap';draftCluster.style.gap='14px';
 
-      const inputField=mockupNode('div','field');inputField.id='lib-input-writer-read-owners';
-      inputField.style.marginTop='8px';
-      const inputLabel=mockupNode('span','label','인풋 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
-      const inputCluster=mockupNode('div','cluster');inputCluster.style.marginTop='6px';inputCluster.style.display='flex';inputCluster.style.flexWrap='wrap';inputCluster.style.gap='14px';
-
       const ownerDefs=[
         {id:'libra',label:'LIBRA (미크로·통합 기억)'},
         {id:'hayaku',label:'HAYAKU (로케이터·연속성)'},
@@ -45420,25 +45265,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const dRow=mockupNode('label','cluster');dRow.style.cursor='pointer';dRow.style.display='inline-flex';dRow.style.alignItems='center';dRow.style.gap='5px';
         const dCb=document.createElement('input');dCb.type='checkbox';dCb.dataset.libDraftOwner=def.id;
         dRow.append(dCb,document.createTextNode(def.label));draftCluster.append(dRow);
-
-        const iRow=mockupNode('label','cluster');iRow.style.cursor='pointer';iRow.style.display='inline-flex';iRow.style.alignItems='center';iRow.style.gap='5px';
-        const iCb=document.createElement('input');iCb.type='checkbox';iCb.dataset.libInputWriterOwner=def.id;
-        iRow.append(iCb,document.createTextNode(def.label));inputCluster.append(iRow);
       }
       draftField.append(draftLabel,draftCluster);
-      inputField.append(inputLabel,inputCluster);
-      container.append(draftField,inputField);
+      container.append(draftField);
       connectButton.parentElement?.prepend(container);
     }
     const activeDraftOwners = Gui.libDraftReadOwnersDraft || status.draftReadOwners || status.readOwners;
     const selectedSource=Gui.libReadSourceDraft||status.readSource;
     page.querySelectorAll('[data-lib-draft-owner]').forEach(cb => {
       cb.checked = activeDraftOwners.includes(cb.dataset.libDraftOwner);
-      cb.disabled = status.state === 'connecting' || selectedSource === 'off';
-    });
-    const activeInputOwners = Gui.libInputWriterReadOwnersDraft || status.inputWriterReadOwners || status.readOwners;
-    page.querySelectorAll('[data-lib-input-writer-owner]').forEach(cb => {
-      cb.checked = activeInputOwners.includes(cb.dataset.libInputWriterOwner);
       cb.disabled = status.state === 'connecting' || selectedSource === 'off';
     });
     const modeLabel=source=>source==='off'?'기억 읽기 끄기 (사용 안 함)':source==='plugin_ipc'?'플러그인 모드':'서버 모드 · LIB 백엔드';
@@ -45466,18 +45301,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const hint = reasonHint(status.reason);
     const draftSummary = activeDraftOwners.length ? activeDraftOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
-    const inputSummary = activeInputOwners.length ? activeInputOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
-    const ownersChanged = (Gui.libDraftReadOwnersDraft && (
+    const ownersChanged = Gui.libDraftReadOwnersDraft && (
       Gui.libDraftReadOwnersDraft.length !== status.draftReadOwners.length ||
       Gui.libDraftReadOwnersDraft.some(o => !status.draftReadOwners.includes(o))
-    )) || (Gui.libInputWriterReadOwnersDraft && (
-      Gui.libInputWriterReadOwnersDraft.length !== status.inputWriterReadOwners.length ||
-      Gui.libInputWriterReadOwnersDraft.some(o => !status.inputWriterReadOwners.includes(o))
-    ));
+    );
     const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
-    if(modeStatus)modeStatus.textContent=(status.readSource==='off'?'현재 적용: 기억 읽기 끄기 (LIB 기억 사용 안 함)':status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+' / 인풋: '+status.inputWriterReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
+    if(modeStatus)modeStatus.textContent=(status.readSource==='off'?'현재 적용: 기억 읽기 끄기 (LIB 기억 사용 안 함)':status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
       +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')
-      +(ownersChanged && selectedSource!=='off'?' · 대상 변경 (초안: '+draftSummary+' / 인풋: '+inputSummary+') (연결·적용 필요)':'')
+      +(ownersChanged && selectedSource!=='off'?' · 대상 변경 (초안: '+draftSummary+') (연결·적용 필요)':'')
       +(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
       +(status.inspecting?' · 기억 연결 확인 중…':status.lastInspection?' · '+(status.lastInspection.ok?'연결 확인 완료 · 실제 기억 검색은 실행 시 수행':`연결 확인 실패 · ${status.lastInspection.code}`)+' ('+new Date(status.lastInspection.at).toLocaleTimeString('ko-KR')+')':'');
     Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
@@ -46077,7 +45908,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
@@ -46299,13 +46130,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
+      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
+      else if (action === 'select') {
+        // Server storage is read through the server, but only the owner decides what is relevant.
+        if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
+        const value = await options.boundary();
+        if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatText: message.recentChatText || '' })) };
+      }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
         await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
@@ -46313,6 +46155,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if (message.recentChatText !== undefined && (typeof message.recentChatText !== 'string' || byteLength(message.recentChatText) > 262144)) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -46422,6 +46265,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
+  // What the reader already shows its model, so an owner need not hand it back as memory.
+  const recentChatBody = () => { const value = options.recentChatText?.(); return value ? { recentChatText: value } : {}; };
+  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
+  const select = async (owner, scope, queryText, signal) => {
+    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...recentChatBody() }, signal);
+    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+  };
+  // Fire and forget: an owner that is not running simply does not hear it.
+  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -46440,7 +46295,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // owners do not impose the capture timeout or suppress healthy peers.
         // A route that turned an owner off is not asked at all.
         const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
-        const routeOwners = input.proposal ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
+        const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
         const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
         const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
@@ -46455,7 +46310,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
           let result;
           try {
-            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...recentChatBody(),
               maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
           } catch (error) {
             // One owner's refusal must not take its peers' memory with it. Cancellation and
@@ -46463,6 +46318,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
+            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -46518,7 +46374,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, createClient, dispose });
+  return Object.freeze({ start, describe, select, notify, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
@@ -46885,7 +46741,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           telemetryNewCycle: true
         });
       } finally {
-        closeInputWriterEvidence('LIB_READ_CLOSED');
         clearInputAssistStaticHandoff('public_rewrite_not_delivered');
         finishCallTelemetry('public_rewrite');
       }
@@ -48356,7 +48211,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     
 
+    const libReadAnnouncement = setInterval(() => { void announceLibReads(); }, 30000);
+    libReadAnnouncement.unref?.();
     const unload = async () => {
+      clearInterval(libReadAnnouncement);
       await LibReadConnection.dispose();
       LibReadConsumer.invalidate('LIB_READ_CANCELED');
       libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;

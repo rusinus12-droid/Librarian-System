@@ -9,6 +9,7 @@ const pluginPath = path.resolve(__dirname, '..', 'plugins', 'HAYAKU_Locator_Cont
 const source = fs.readFileSync(pluginPath, 'utf8');
 
 const expectedArguments = [
+  'hayaku_gradia_final_delivery',
   'hayaku_enabled',
   'hayaku_mode',
   'hayaku_prompt_mode',

@@ -28,7 +28,7 @@ test('RP action advice and novel three-perspective direction retain distinct loc
  const {plugin,getCalls}=await load();
  const rp=plugin.debugShadowDraftMode('author_directed'),novel=plugin.debugShadowDraftMode('input_inclusive');
  assert.match(rp.inputAssistContract,/PLAYER-CONTROLLED RP ACTION CHOICE ADVISER/);
- assert.match(rp.inputAssistContract,/alternative USER ACTION INPUTS/);
+ assert.match(rp.inputAssistContract,/USER ACTION INPUTS/);
  assert.match(novel.inputAssistContract,/THREE-PERSPECTIVE AUTHOR-DIRECTION CHOICE ADVISER/);
  assert.match(novel.inputAssistContract,/EXACTLY 3 candidate AUTHOR INPUTS/);
  assert.notEqual(rp.contract,novel.contract);assert.equal(getCalls(),0);
