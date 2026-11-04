@@ -69,6 +69,15 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   assert.equal(JSON.stringify([...hstore.values]), beforeH); assert.equal(JSON.stringify([...flashback.pluginStorage.values]), beforeF);
   assert.equal(hayaku.llmCalls.length, 0); assert.equal(flashback.networkCalls.length, 0);
   assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture').length, 3);
+  f.prompts.length = 0;
+  f.controls.onModel = null; delete f.controls.output;
+  await f.host.plugin.saveRuntimeSettings({mode:'off',default_preset:'writer',input_assist_mode:'user_focus',writing_mode:'novel',input_assist_target_chars:500,lore_activation_mode:'off',input_assist_lore_activation_mode:'off'});
+  const input = await f.start('UNSUBMITTED_IPC_PROPOSAL: 열쇠를 확인한다.');
+  await f.select(); const result = await f.done(input.pending, '복사 후 직접 전송');
+  assert.equal(result, true); assert.equal(f.copied.length,1); assert.ok(f.prompts.length >= 1);
+  assert.ok(f.prompts.every(body => JSON.stringify(body).includes('FLASHBACK_IPC_MEMORY')));
+  assert.ok(bus.messages.some(m => m.body.action === 'capture' && m.body.proposal?.purpose === 'input_writer_proposal'), 'the owners are told this is an unsubmitted proposal');
+  assert.ok(!JSON.stringify(chat).includes('UNSUBMITTED_IPC_PROPOSAL'));
   // A changed source during SHADOW cannot feed AIDE or deliver the draft.
   f.prompts.length = 0;
   await f.host.plugin.saveRuntimeSettings({ mode:'normal',default_preset:'writer',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,failure_mode:'hard',lore_activation_mode:'off' });

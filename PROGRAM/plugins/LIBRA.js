@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.20
+//@display-name LIBRA v2.6.21
 //@api 3.0
-//@version 2.6.20
+//@version 2.6.21
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1559,7 +1559,7 @@ function __libraNarrativeStripPatch(value) {
 
   const PLUGIN_NAME = 'libra';
   // 2.3.160: transactional device-local corpus generations and pinned-reader GC.
-  const PLUGIN_VERSION = '2.6.20';
+  const PLUGIN_VERSION = '2.6.21';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -78233,13 +78233,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const maxChars = Math.min(characterCap,Math.max(32,Math.floor(request.maxCorpusBytes/4)));
       const allowance = before.enabled ? Math.min(before.registry.recallMaxChars,Math.floor(maxChars*before.registry.recallBudgetRatio)) : 0;
       const lensAllowance = allowance >= LENS_RECALL_MIN_CHARS && maxChars-allowance-2>=32 ? allowance : 0;
-      const maxReads = isInputWriter ? 2048 : GRADIA_OWNER_SESSION_MAX_READS;
       const maxUnits = isInputWriter ? 12 : 24;
       let graph, result;
       try {
         graph = await executeMemoryGraphUnifiedQuery({expectedScopeKey:request.scope.scopeKey,mode:'unified',
           requestId:request.operationId||request.id,queryInput:{queryText:request.queryText||'현재 기억',viewerId:'gradia_reader'},
-          resourceBudget:{maxReads,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
+          resourceBudget:{maxReads:GRADIA_OWNER_SESSION_MAX_READS,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
           consumerPolicy:{maxCharacters:maxChars-(lensAllowance?lensAllowance+2:0),maxUnits},
           ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})},null,authority);
         if (!unifiedGraphDeliveryAuthority.has(graph) || graph.modelDispatchEligible!==true) {

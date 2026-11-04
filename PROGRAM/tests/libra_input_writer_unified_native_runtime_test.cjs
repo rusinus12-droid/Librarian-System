@@ -7,11 +7,11 @@ test('actual LIBRA kernel and SQLite feed the explicit writer; canonical replace
  const rows=owner.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),calls=owner.f.control.calls.length;
  let {pending}=await f.start('민아와 준호, 은빛 열쇠의 현재 보관 상황을 참고해 다음 입력을 제안해 줘.');
  await f.select();assert.equal(await f.done(pending,'복사 후 직접 전송'),true);
- assert.equal(f.copied.length,1);assert.ok(JSON.stringify(f.prompts[0]).includes('owner_issued_evidence_bundle'));
+ assert.equal(f.copied.length,1);assert.ok(JSON.stringify(f.prompts[0]).includes('LIBRA_EVIDENCE consumer=gradia'));
  const capture=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
  const result=f.bus.messages.find(m=>m.body.result?.engine?.corpusRead)?.body.result;
- assert.equal(result.engine.corpusRead.mode,'durable_common_index');assert.equal(result.engine.corpusRead.indexBuildsDuringQuery,0);
- assert.equal(result.engine.corpusRead.storage.storageAccess,'selective_durable_pages');assert.ok(result.engine.corpusRead.storage.pagesRead>0);
+ // The writer reads a bounded recent window from the owner, not the durable common index.
+ assert.equal(result.engine.corpusRead.mode,'owner_window');
  assert.equal(capture.proposal.purpose,'input_writer_proposal');assert.equal(capture.proposal.factAdopted,false);
  assert.ok(result.items.reduce((total,item)=>total+item.content.length,0)<=3000,'real writer receives the owner-selected 3000-character bundle');
  assert.equal(owner.f.control.calls.length,calls);assert.deepEqual(owner.server.storedRows().filter(row=>!row.key.includes(':memory-graph-control:v1:')),rows,'writer reading must not mutate memory');
