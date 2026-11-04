@@ -20,14 +20,13 @@ const expose = s => s.replace('      getScopePersonaCatalog:', `
   const fixture = await createFixture('official', {transformSource:expose});
   try {
     const markup=fixture.runtime.mockupMarkup();
-    const routes=['mine','make','shelf','settings','edit','update','recover'];
+    const routes=['mine','make','shelf','settings','edit','update'];
     for(const route of routes)assert.match(markup,new RegExp(`data-page="${route}"`),`canonical route ${route}`);
     assert.equal((markup.match(/\bid="([^"]+)"/g)||[]).length,new Set((markup.match(/\bid="([^"]+)"/g)||[])).size,'canonical shell has unique ids');
     for(const id of ['random-cand-go','lia-max-chars','lia-rich-profile','ed-lang','btn-persona-blueprint','btn-persona-json','sheet-bind','sheet-persona','sheet-del-vault','sheet-del-persona'])assert(markup.includes(`id="${id}"`),id);
     assert.doesNotMatch(markup,/data-page="assets"|id="asset-lock-fields"|id="btn-confirm-visual-lock"/,'retired image workspace stays absent');
     assert.doesNotMatch(markup,/lia-app-layout|lia-pocket-nav|lia-header/,'legacy view structure is absent');
     assert.doesNotMatch(markup,/data-persona-apply=/,'persona row has no automatic bind hook');
-    assert.match(markup,/data-page="recover"/,'recovery destination is present');
 
     const ctx=await fixture.runtime.mockupContext();
     ctx.chat=fixture.liveChat;

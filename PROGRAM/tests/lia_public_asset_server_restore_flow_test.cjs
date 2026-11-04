@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: image AI and its assets were removed.'); process.exit(0);
 
 // Drive retained vault/recovery callbacks against a real DOM and physical local
 // snapshots. The retired image screen has no public producer: an existing-format

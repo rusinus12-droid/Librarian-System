@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: image AI and its assets were removed.'); process.exit(0);
 
 // Actual LIA owner functions against a mock native API with physical Temp asset
 // files. This establishes host-seam behavior, not installed Risu GUI acceptance.

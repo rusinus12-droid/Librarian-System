@@ -34,7 +34,7 @@ const {createModelFixture:createFixture,modelSettings}=require('./fixtures/recal
    assert.equal(JSON.stringify((await ft.loadScopeRecords(scope.scopeKey)).records),storedBefore,'Recall preserves stored originals and vectors');
    // Each reader observes physical bytes independently. Current C0 projection
    // caching cannot borrow a different request's physical read authority.
-   const manifest=await ft.loadScopeManifest(scope.scopeKey);ft.invalidateRecallShardCache(scope.scopeKey);
+   const manifest=await ft.loadScopeManifest(scope.scopeKey);ft.invalidateRecallCache(scope.scopeKey);
    const physicalReads=new Map();const stores=[f.pluginStorage,f.host.safeLocalStorage];const reads=stores.map(store=>store.getItem.bind(store));
    stores.forEach((store,i)=>{store.getItem=async key=>{const id=i+'::'+String(key);physicalReads.set(id,(physicalReads.get(id)||0)+1);return reads[i](key);};});
    const [left,right]=await Promise.all([ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest}),ft.loadScopeRecordsForRecall(scope.scopeKey,null,{manifest})]);

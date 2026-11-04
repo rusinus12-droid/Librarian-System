@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: image AI and its assets were removed.'); process.exit(0);
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const p=path.resolve(__dirname,'..');
 const {createFixture}=require(path.join(p,'tests/fixtures/lia_native_runtime_fixture.cjs'));

@@ -55,10 +55,6 @@ for (const marker of [
   "request.payload?.kind === 'registry_only_shell'"
 ]) assert.ok(libra.includes(marker), `LIBRA orphan safety marker: ${marker}`);
 
-for (const marker of [
-  'persona_proof_write readback mismatch', 'prepareVerifiedLiaMetadataShellDeletion',
-  'LIA metadata shell changed during owner verification'
-]) assert.ok(lia.includes(marker), `LIA orphan safety marker: ${marker}`);
 
 for (const marker of [
   'HAYAKU_SCOPE_RECORD_PREFIXES', "kind: 'registry_only_shell'", "'empty_ledger_shell'", "'metadata_only_ledger'", "'ledger_missing'",

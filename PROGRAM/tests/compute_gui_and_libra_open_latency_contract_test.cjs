@@ -54,8 +54,6 @@ for (const [relative, hostId] of integrations) {
 const lia = read('plugins/LIA_Persona_Linker.js');
 assert.match(lia, /storagePolicy:\s*'local_only'/);
 assert.doesNotMatch(lia, /MemorySuiteStorageBridge\.mountConnectionPanel\(/, 'LIA retired ordinary server/compute panel stays absent');
-assert.match(lia, /await LiaLegacyServerRecovery\.preview\(/, 'explicit read-only legacy recovery remains reachable');
-assert.match(lia, /await LiaLegacyServerRecovery\.publish\(/, 'separate explicit recovery publication remains reachable');
 
 const libra = read('plugins/LIBRA.js');
 const renderOnce = between(libra, 'async function renderSettingsGuiOnce() {', 'const hideSettingsGui = async () =>');

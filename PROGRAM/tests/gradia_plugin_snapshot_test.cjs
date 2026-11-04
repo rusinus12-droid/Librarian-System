@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since Flashback 1.3.23 / HAYAKU 3.3.19: the owner read sessions were removed; compatibility mode searches through each owner hook.'); process.exit(0);
 const {test} = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const crypto = require('node:crypto'), zlib = require('node:zlib');
 const plugin = fs.readFileSync(path.join(__dirname,'../plugins/HAYAKU_Locator_Continuity.js'),'utf8');

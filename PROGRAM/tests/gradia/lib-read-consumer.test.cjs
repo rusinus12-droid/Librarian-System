@@ -1,4 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+console.log('SKIP: not applicable since GRADIA 0.28.21: the unused client-only consumer was removed; server-read-adapter and three-owner tests cover the real consumer.'); process.exit(0);
 const acorn=require('../../tools/gradia/load-dev-dependency.cjs')('acorn');const {load}=require('./host.cjs');
 const digest=async v=>crypto.createHash('sha256').update(v).digest('hex');const clone=v=>JSON.parse(JSON.stringify(v));
 function captureFactory(source){

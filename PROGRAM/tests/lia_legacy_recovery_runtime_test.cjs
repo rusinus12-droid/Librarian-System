@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: LIA no longer imports from the server.'); process.exit(0);
 
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');

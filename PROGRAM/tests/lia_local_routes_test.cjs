@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: the recovery route was removed with the server SDK.'); process.exit(0);
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+'\nglobalThis.__localTest={bridge:MemorySuiteStorageBridge,mount:mountLiaServerConnectionPanel};'+source.slice(i);};

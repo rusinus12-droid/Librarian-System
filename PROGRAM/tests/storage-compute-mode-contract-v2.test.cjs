@@ -30,8 +30,7 @@ assert.match(computeSdk, /^\/\* LIBRARIAN SYSTEM COMPUTE SDK v\d+\.\d+\.\d+/m, '
 const integrations = [
   ['plugins/Flashback_Memory.js', releaseVersion('flashback')],
   ['plugins/HAYAKU_Locator_Continuity.js', releaseVersion('hayaku')],
-  ['plugins/LIBRA.js', releaseVersion('libra')],
-  ['plugins/LIA_Persona_Linker.js', releaseVersion('lia')]
+  ['plugins/LIBRA.js', releaseVersion('libra')]
 ];
 for (const [relative, version] of integrations) {
   const source = read(relative);
@@ -40,10 +39,9 @@ for (const [relative, version] of integrations) {
   assert.doesNotMatch(source, /^\/\/@arg memory_suite_(?:flashback|hayaku|libra|lia)_compute_mode\b/m);
   assert.doesNotMatch(source, /LIBRARIAN SYSTEM COMPUTE SDK v|createMemorySuiteComputeBridge\(|\.mountSettingsPanel/, `${relative} embeds no Compute SDK`);
   assert.doesNotMatch(source, /computeBridge:\s*MemorySuite/, `${relative} mounts Storage without a Compute bridge`);
-  if (relative === 'plugins/LIA_Persona_Linker.js') require('./fixtures/lia_local_compute_owner_contract.cjs').checkLiaLocalComputeOwner(source);
 }
 
-require('./fixtures/lia_local_compute_owner_contract_controls.cjs').runControls();
+
 
 console.log('storage-compute integrated scope policy contract test: PASS');
 

@@ -6,7 +6,7 @@ const {hostData} = require('./libra_consumer_test_support.cjs');
 function expose(source) {
   const outer = '  const loadRisuContextSnapshot = async';
   assert.equal(source.split(outer).length, 2);
-  source = source.replace(outer, `  globalThis.__retainedOuter = () => ({loadSettings, loadRisuContextSnapshot, sealReferenceSourceSnapshot, translateInputAssistReviewText, updatePipelineWorkPanel, reportPipelineStageProgress, finishPipelineWorkStatus});\n${outer}`);
+  source = source.replace(outer, `  globalThis.__retainedOuter = () => ({loadSettings, loadRisuContextSnapshot, sealReferenceSourceSnapshot, updatePipelineWorkPanel, reportPipelineStageProgress, finishPipelineWorkStatus});\n${outer}`);
   const core = '      getUnifiedStorageStatus,';
   assert.equal(source.split(core).length, 2);
   return source.replace(core, `      retainedContractProbe: async (packet = {}) => {

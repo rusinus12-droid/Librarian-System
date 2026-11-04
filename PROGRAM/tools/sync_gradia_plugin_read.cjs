@@ -66,7 +66,7 @@ const begin = '  /* GRADIA PLUGIN READ START */', end = '  /* GRADIA PLUGIN READ
 let changed = false;
 for (const [name, owner] of Object.entries({ 'GRADIA.js': null, 'LIBRA.js': 'libra', 'HAYAKU_Locator_Continuity.js': 'hayaku', 'Flashback_Memory.js': 'flashback' })) {
   const file = path.join(root, 'plugins', name), before = fs.readFileSync(file, 'utf8');
-  const block = [begin, primitives, protocol, ...(['hayaku', 'flashback'].includes(owner) ? [snapshot, adapter(owner)] : []), end].join('\n');
+  const block = [begin, primitives, protocol, end].join('\n');
   const start = before.indexOf(begin), last = before.indexOf(end);
   if (start >= 0 && last < start) throw Error('plugin_read_block_invalid:' + name);
   const anchor = name === 'HAYAKU_Locator_Continuity.js' ? '  const registerMemoryBridgeIpc = async' : name === 'LIBRA.js' ? '    const getGradiaUnifiedReadOwner = () =>' : '  const publicApi = Object.freeze({';

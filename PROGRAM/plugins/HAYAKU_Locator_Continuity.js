@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.18
+//@display-name HAYAKU · Locator Continuity v3.3.19
 //@api 3.0
-//@version 3.3.18
+//@version 3.3.19
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -241,139 +241,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 }
 /* End RisuAI native-branch target storage preparation */
 
-/* 3.0.118: Limit structured-output exclusion to active directives; rebuild incomplete injections and report suppression accurately. */
-/* 3.0.107: Retain queued recovery consent while local work is busy; distinguish API availability from model connectivity. */
-/* 3.0.106: Show only actionable maintenance rows; hide empty controls and retain explicit read-error states. */
-/* 3.0.105: Persist regular generation source basis; distinguish downstream review and use white review checkboxes. */
-/* 3.0.104: Align prompt profiles, preserve optional regular evidence, and shorten runtime authoring instructions. */
-/* 3.0.99: Fix full-ingest metadata, separate observed response variants from direct edits, and expose source validation stages. */
-/* 3.0.98: Preserve batch salvage, adopt verified cold-start subsets with durable readback, and resume only the matching partial run. */
-/* 3.0.79: Remove story-word semantic registries; retain only explicit canonical signal fields and namespace tags. */
-/* 3.0.63: Expire recall on observed scope and explicit query changes; rank new group members by incremental delivered cost. */
-/* 3.0.62: One recall selection plan, grouped evidence and returned-hook delivery history; existing canonical storage retained. */
 /* Remaining implementation: explicit generation policy, bounded terminal streams, owner metadata migration and maintenance telemetry. Offline verification is separate from real provider certification. */
-/* 3.0.61: Automatic failed-analysis revalidation, durable per-incident one-call retry budget, strict evidence checks and GUI controls. */
-/* 3.0.60: Reuse verified legacy evidence manifests across writer versions; preserve original hashes and require physical chunk readback. */
-/* 3.0.59: Execution Contract 1.0.1 synchronization. Normal capture and OtherAx roles unchanged. Real host/provider validation remains separate. */
-/* 3.0.54 / Integrated Implementation 10+11: Owner-local shared OtherAx contract, default zero automatic additional calls, explicitly bounded complete-format repair, cancellation and late-result guards. Existing packet/source-review and failure-vault contracts retained. Host/model NOT_RUN. */
-/* 3.0.51 / Integrated Implementation 02: Full source review with one-turn selection, immutable U+A evidence and explicit missing-original acknowledgement. Existing packet validation and recovery remain. */
-/* 3.0.50 / Integrated Implementation 01: Shared Source Edit Consent 1.1.0 and explicit selected keys. Existing recovery/output/packet contracts retained. Common diff UI is a subsequent phase. */
-/* v3.0.49: exact completed-turn coverage, illustration-neutral identities, visible source-edit review, preserve-until-replacement consent, and stale-debt reconciliation. */
-/* v3.0.45 / BOOK_UX 5.18: verified RisuAI native branch prefixes, source-bound adoption, preserved consent and read-only lineage status. */
-/* v3.0.47 / BOOK_UX 5.23: align grounding instructions, readable failure review, preview/source-bound user adoption, verified maintenance I/O and nonblocking recovery minimization. */
-/* v3.0.46 / BOOK_UX 5.20: scoped authoring card below overview metrics; source-edit controls in Recovery Journal; native chat lineage integrated into Worldline. Presentation and guarded review entry only; packet, consent and storage authority unchanged. */
-/* v3.0.43: GUI draft lifetime, truthful record/probe status, paged ledger, main-model authoring receipt, multilingual explicit output slots and schema-first semantic authoring. No extra normal-path model call or memory schema migration. */
-/* v3.0.44: source-edit confirmation, old-carrier exclusion and consent-bound targeted Other Ax repair; normal response-model packet authoring is unchanged. */
-/* v3.0.42 persists indeterminate ledger-write reconciliation metadata in a small durable journal so a RisuAI reload can re-check late physical writes by scope/request nonce/packet hash without another LLM call. Terminal exact/superseding readback removes the journal entry; unresolved entries remain durable for the next safe hook. */
-/* v3.0.41 makes durable ledger writes tri-state instead of treating a 1.5s host timeout as a confirmed failure. Timed-out writes remain indeterminate while their original fenced setItem continues, exact readback can confirm them later without another LLM call, one safe exact replay is allowed only when no newer same-scope ledger supersedes the write, and chat_output capture no longer creates Recovery Journal debt merely because storage acknowledgement was slow. */
-/* v3.0.40 makes Failed Recovery diagnostics actionable: it explains the concrete failure, records the afterRequest/Journal stage, refuses as-is adoption with an explicit reason when the preview is only an empty skeleton, accepts repaired canonical JSON/manual envelope input, and keeps grounded LLM resolution on the immediate verified-adoption path. */
-/* v3.0.39 presents background-recovery confirmation as an independent lightweight dialog. The full ledger viewer is no longer mounted automatically when a Recovery Journal prompt is raised; if the host cannot display a body-level dialog, the call is not started and the durable journal remains pending. */
-/* v3.0.38 moves the RisuAI auxiliary-model call test into Settings while preserving its explicit one-call diagnostic boundary. */
-/* v3.0.37 moves the Recovery Journal status summary into Operation Logs so recovery state is read with its diagnostic activity. */
-/* v3.0.36 removes the overview's duplicate coverage description and navigation shortcuts so the dashboard opens directly on its status and data cards. */
-/* v3.0.35 removes the redundant Worldline status banner and its Recovery Status shortcut so the page leads directly from its heading into the turn-continuity board. */
-/* v3.0.34 starts the existing exact-identity finalized-binding monitor after authoritative chat_output_v3 capture instead of parking it until another user request. Stable U+A, request nonce, message identity, parent/worldline, reroll, and rollback gates remain fail-closed. The viewer also reports unbound records as binding-pending rather than presenting them as an active worldline. */
-/* v3.0.33 makes the Failed Recovery empty-state mutually exclusive with real records at the DOM level: the renderer now updates hidden, aria-hidden, and an important inline display value together so host styles cannot leave the empty placeholder visible above populated failure cards. */
-/* v3.0.32 gives every Failed Recovery list card the same full-width height, clamps long diagnostics, and correctly hides the empty state when records exist. Each card now has a confirmed delete action that atomically removes only its indexed manifest and chunk payload with physical readback and rollback; Recovery Journal debt and exact U+A evidence remain preserved for later repair. */
-/* v3.0.31 moves the large Recovery diagnostics JSON out of the primary recovery workflow and into a collapsed disclosure at the bottom of Operation Log. The existing live diagnostic node and recovery status source are preserved, and opening Logs refreshes the snapshot without invoking an LLM. */
-/* v3.0.30 adopts Flashback's paint-first GUI switching: the mounted shell is reused, tab selection and visibility commit before active-panel hydration, hidden packet/JSON/worldline views are not rebuilt, and background refresh no longer disables or fades the whole viewer. */
-/* v3.0.29 aligns HAYAKU's RisuAI auxiliary transport with LIBRA: otherAx now permits RisuAI plugin-provided models by default, preserves an explicit false setting, serializes physical calls, and keeps RisuAI-owned model selection with no synthetic timeout or retry. */
-/* v3.0.28 adds an explicit session-only RisuAI Other Ax connectivity probe without changing HAYAKU's no-LLM normal chat path. */
-/* v3.0.26 rebuilds the HAYAKU GUI around the Flashback UX shell without changing ledger, recovery, settings, storage, or provider ownership. It adds a health-first Overview, an accessible grouped sidebar, a master-detail packet ledger, and a readable worldline timeline while preserving existing Recovery Journal confirmation, Failed Recovery, Portable Memory, shared Server panels, and 34-argument transactional readback/rollback contracts. */
-/* v3.0.25 repairs a missing/unusable current packet once inside the normal afterRequest pipeline so success remains in the same Assistant transcript entry. Failure always preserves exact visible U+A in the durable Recovery Journal; optional background repair is independent, requires an explicit per-entry confirmation, makes one Other Ax call with prior raw diagnostics, and never starts from a timer. The public GUI exposes both controls and live confirmation/job state while legacy Recovery Vault keys remain readable. */
 /* Core-quality patch: the semantic skeleton guard now detects short but continuity-critical finalized responses (death/injury, movement, acquisition/loss, commitments, revelations, relationship/status changes) instead of exempting every response under 80 characters. */
-/* v3.0.24 preserves complete Recovery Vault evidence in verified chunk sidecars, requires target-grounded Other Ax recovery envelopes before automatic adoption, and gives the single corrective call the concrete prior failure report. */
-/* v3.0.23 makes prompt Auto select Full only for deep/precision recovery with verified headroom, otherwise Balanced; multilingual memory now defaults to source language. */
-/* v3.0.22 preserves raw blank argument values during GUI rollback and requires both raw and effective readback before reporting rollback success. */
-/* v3.0.21 adds a grouped GUI for all 34 user-facing HAYAKU arguments. Changes remain draft-only until one transaction writes them, reloads all settings, and verifies full readback; partial failures restore the previous argument snapshot and verify rollback without an LLM call. Storage/Compute panels remain owned by the shared Librarian System bridges, and the migration-only server-mode argument stays hidden. */
-/* v3.0.20 adds 1/5/10-turn Cold Start Other Ax batches while keeping one canonical packet and checkpoint per evidence unit. Full failed model output and normalization/validation/size diagnostics are stored in a chunked hash/readback vault, and the new Failed Recovery panel supports exact-preview adoption, one user-requested Other Ax repair, or a user-edited packet. Review-pending debt is not silently dropped or automatically retried; exact worldline and durable adoption gates remain mandatory. */
-/* v3.0.19 makes legacy recovery takeover evidence-exact and fail-closed, validates native repair candidate worker/prompt identity, removes retired RE:TRACE recovery IPC/lease/event surfaces, and makes owner/viewer inspection read-only. Legacy artifacts without current U+A proof remain stored but are never auto-adopted; normal Other Ax, ledger, worldline, Portable Memory, and Compute ownership are unchanged. */
-/* v3.0.18 adopts Storage SDK 1.8.13 paged key discovery, bounded batch reads, oversized-record fallback, and the 4 MiB interactive value guard. Ledger, packet, Recovery Vault, worldline, Other Ax, recall, and local Compute ownership are unchanged. */
-/* v3.0.17 stores stable character/chat identity in every newly written ledger, groups recovery/run/candidate dependents into the same server-scope safety boundary, and permits deletion only for a lone semantically empty ledger observed twice and reverified by the authenticated Owner. Packet, archive, Recovery Vault, worldline, recall, Other Ax and local fallback ownership are unchanged. */
-/* v3.0.16 makes RE:TRACE discovery a storage-free fast path: capability responses report the already-cached Storage status instead of waiting on durable scope-mode resolution. Owner discovery therefore remains responsive while RisuAI chat/context APIs or pluginStorage are busy; ledger ownership, recovery, recall and storage-mode changes are unchanged. */
-/* v3.0.15 exposes the plugin-global Compute mode in the Server GUI through the shared Compute panel. The panel requires no user token or pairing key, keeps local as the zero-network fallback, and mounts independently from Storage connection diagnostics. */
-/* v3.0.14 adopts the Librarian System product name and Storage SDK 1.8.11 / Compute SDK 0.3.2 labels without changing ledger, packet, archive, recovery, local fallback, Other Ax, or ownership behavior. */
-/* v3.0.13 makes prefer_server delegate the current deterministic RRF request through a bounded interactive Compute call, while server failure, timeout, stale binding, local mode, and shadow mode preserve the existing JavaScript scorer. Compute bootstrap stays automatic and Storage-independent with no token or pairing input. HAYAKU retains retrieval gates, packet cohesion, graph/transition coverage, final selection, prompt injection, ledger writes, finalized binding, and Other Ax ownership. */
-/* v3.0.11 hardens Portable Memory against re-signed semantic forgeries, cross-scope relabeling, routed-storage bypass, transcript and target time-of-check/time-of-use races, incomplete archive graphs, and auxiliary-state migration collisions. Backup snapshots now share the canonical HAYAKU storage queue; restore readback covers physical archive data, transcript identity, native regeneration state, and touched-key rollback. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider schemas are unchanged. */
-/* v3.0.10 closes Portable Memory's integrity boundaries: exports now follow explicit archive references stored inside serialized ledgers, format-v3 ownership is re-proven from the source scope instead of trusting labels, confirmed imports abort if the target changes before the queued write, shared dependencies are collision-safe and never removed as scope-owned state, and failed cross-chat imports roll back only keys journaled by that transaction. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider schemas are unchanged. */
-/* v3.0.9 makes Portable Memory import transaction-safe: current-chat ownership now requires an exact key or top-level owner identity instead of a recursive provenance mention, every restore/migration/copy transaction runs through the canonical storage queue, failed cross-chat imports restore or remove every touched ledger/archive/meta key with readback, and session-local charIndex fallbacks cannot authorize cross-chat identity. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider contracts are unchanged. */
-/* v3.0.8 tightens Recovery-page visual balance: the unavailable-chat state is a compact non-stretching status badge, manual repair and Cold Start use identical primary-action dimensions, and the redundant direct-JSON-paste surface and handler are removed while file-based format-v3 restore remains unchanged. */
-/* v3.0.7 introduces scope-owned Portable Backup format v3, same-chat replacement isolation, new-chat historical migration, copied-chat worldline recovery, JSON paste, pre-commit comparison, visible progress/cancel/minimize controls, verified target rollback, and durable import receipts. */
-/* v3.0.6 versions Portable Memory Backup's collision-safe object encoding as format v2 while retaining explicit format-v1 restore compatibility, uses the scoped pluginStorage proxy for transactional restore, keeps verified regeneration adoption success distinct from secondary GUI refresh failures, and stops hidden viewer progress tickers on close/unload. */
-/* v3.0.5 makes the fullscreen ledger viewer backdrop visually transparent so the underlying RisuAI interface remains visible around the centered HAYAKU window. The viewer window, internal overlays, and modal input blocking remain unchanged; outside clicks do not pass through. */
-/* v3.0.3 adds a unified native-work job center for Cold Start, manual repair, and targeted regeneration with a minimizable central progress surface, live header chip, truthful checkpoint progress, elapsed time, and soft cancellation. Targeted regeneration now stages verified candidates for an old/new comparison and explicit user choice before any tombstone/adoption transaction, while replacement tombstones can be atomically reselected with exact active-worldline validation and durable readback. */
-/* v3.0.2 adds owner-native recovery coverage reporting. The recovery screen now refreshes current-worldline Packet Debt without an LLM call, lists the exact missing completed U+A turns, and separates immediately repairable, retry-backoff, exhausted, leased, user-suppressed, and Cold Start target turns. Cold Start remains user-triggered and recordless sessions are not mislabeled as incremental Packet Debt. */
-/* v3.0.1 keeps the RisuAI API object captured at plugin startup as the authoritative runLLMModel transport, matching the working OFF THE SCREEN adapter. Native recovery no longer loses Other Ax when sandbox globals are hidden after initialization; live aliases remain a fallback, recovery status distinguishes chat-scope failure from requester absence, and packet/ledger/archive/recovery schemas remain unchanged. */
-/* v3.0.0 promotes the stabilized HAYAKU release line without changing packet/ledger/archive schemas, Recovery Vault, native Other Ax repair/Cold Start contracts, RE:TRACE capability ownership, Librarian System routing, or DATA layout from v2.5.1. The version change is release metadata only and requires no packet rebuild. */
-/* v2.5.1 completes native ownership of HAYAKU recovery/Cold Start: explicit targeted regeneration and record replacement now run inside HAYAKU, legacy RE:TRACE staged checkpoints are adopted or resumed without RE:TRACE LLM execution, Cold Start preserves Assistant-only narrative and uses System messages as context-only evidence, and checkpoint reuse is bound to the native worker/prompt authoring contract. RE:TRACE becomes delegation/read-only compatibility for HAYAKU analysis while existing packet/ledger/archive schemas remain unchanged. */
-/* v2.5.0 moves missing-turn repair and first-use Cold Start into HAYAKU itself. Normal chat remains no-LLM; only Recovery Vault debt and explicit Cold Start use the official RisuAI runLLMModel({mode:'otherAx',allowPlugins:false}) background path. Response-level recovery_snapshot authoring is retired, current responses always request one current_snapshot, exact branch revalidation/readback remain mandatory, RE:TRACE repair/cold-start become compatibility fallbacks, and long-chat topology scans reuse exact per-message revision diagnostics instead of reparsing unchanged packets. */
-/* v2.4.46 fixes the Portable Memory Backup envelope metadata contract so exported backups and the public portable-backup API report the actual HAYAKU plugin version. Packet capture, ledger, Recovery Vault, archive, Memory Lane, worldline, storage, and RE:TRACE contracts are unchanged. */
-/* v2.4.45 makes Portable Memory Backup UI mounting no-DOM safe so worker/headless hosts skip only the UI while HAYAKU runtime, ledger, Recovery Vault, archive, storage, and RE:TRACE contracts continue to initialize unchanged. */
-/* v2.4.44 adds strict same-chat portable Ledger/Recovery Vault/archive backup and transactional restore without rewriting chat packets. */
-// v2.4.39: Fixes RE:TRACE next-session handoff false negatives in Recovery Vault source-preservation verification. The vault fingerprint now hashes the physically stored raw value instead of a normalized empty-vault object whose synthetic updatedAt changed on every read; absent vaults therefore remain deterministically unchanged, real source mutations still fail closed, and existing packet/archive/Memory Lane behavior is unchanged.
-// v2.4.40: Adopts RisuAI 2026.8.240 API-v3 addRisuChatListener('output') as the authoritative committed-output capture source. Official events are matched to pending logical U+A turns, revision-upsert the same packet group across auto-continue/reroll, persist with highest capture priority, and defer final identity binding to the next authoritative beforeRequest snapshot so IGP/post-output changes can settle. Long finalized-capture polling and afterRequest/output capture heuristics are disabled while the listener is active; legacy hooks remain sanitizer/fallback-only.
-// v2.4.41: Formalizes the capture backend as one owner at a time: CHAT_OUTPUT_V3 on current RisuAI, AFTER_REQUEST_RECONCILE as the preferred completed-response legacy backend, SCRIPT_OUTPUT_LEGACY only when afterRequest capture is unavailable, and NONE otherwise. Output/editoutput hooks remain available as byte-preserving packet/runtime sanitizers even when they do not own capture. Backend telemetry records fallback reason, observed events, revision/duplicate/stale counts, while legacy finalized capture/binding monitors stay active only outside CHAT_OUTPUT_V3. Packet schema, ledger, Recovery Vault, worldline and RE:TRACE contracts are unchanged.
-// v2.4.42 adds dispatch-health failover for RisuAI forks that successfully register addRisuChatListener but never invoke it. Main afterRequest records a non-capturing health witness; the next main beforeRequest proves a silent listener if no official callback intervened, removes that listener, promotes the already-installed afterRequest/script compatibility owner, and re-enables finalized live-chat recovery for the missed turn. No polling is added to healthy CHAT_OUTPUT_V3 sessions.
-// v2.4.43 gives the Ledger Viewer setting/button stable official UI ids and explicitly unregisters them through unregisterUIPart() when this runtime still owns the viewer. Legacy/fork shared-registration fallback remains intact when unregisterUIPart is unavailable, reducing hot-reload/update UI residue without changing packet, recall, capture, storage, or RE:TRACE behavior.
-// v2.4.38: Integrates Memory Lane principles into the existing Global Packet Router and Hierarchical Episode Router instead of adding a duplicate lane store. Episode fingerprints now use lane-level document frequency, rare lexical/canonical/entity matches and adaptive score-gap selection; ambiguous queries broaden safely, exact signals remain protected, and every routing failure still returns the untouched full candidate rows. Packet bodies, hidden ledgers, audits, archive storage and model-call counts are unchanged.
-/* v2.4.37 adopts Storage SDK v1.8.10 and validates restored archive chains from physical pluginStorage readback, never from a hydrated runtime cache. */
-/* v2.4.35 adopts Storage SDK v1.8.8: the active plugin-only scope is a strict zero-network boundary even when other scopes use the server, shared and foreign-scope keys stay local, and applying plugin-only does not reconnect. */
-/* v2.4.34 adopts Storage SDK v1.8.7: server-to-pluginStorage restore requires verified candidate coverage and readback, failed recovery remains server-only under a durable recovery guard, and terminal work results stay visible. */
-/* v2.4.33 adopts Storage SDK v1.8.6: timed-out server requests are aborted, failed data routes open the shared offline circuit, background resources are disposed on unload, and hot-reload globals are released safely. */
-/* v2.4.32 makes RE:TRACE summary inspection read-only and manifest-local, skips ledger hydration when no bridge capsule exists, avoids repeated current-chat resolution for explicit ledger/archive keys, and keeps startup repair on the non-hydrating ledger path. */
-/* v2.4.28 binds Recovery Vault debt and RE:TRACE repair packets to exact active worldline variants, mirrors reroll/rollback lifecycle into debt and packet state, adds branch-safe repair leases plus authenticated debt IPC/events, suspends candidates during first-observation rollback quarantine, reactivates the exact branch without another LLM call, and rejects superseded/orphaned repairs before canonical adoption. */
-/* v2.4.27 reinforces the v2.4.24-v2.4.26 memory stack as one integrated pipeline: a global packet routing catalog now runs before bounded full/light ingest; hierarchical parents route recursively through child episodes instead of flattened truncated L1 keys; hierarchy capacity is reserved across levels; current-state conflict collapse cannot be undone by closure coverage; derived-index cache keys include graph/episode compiler profiles; packet-debt raw evidence carries epistemic caution and is copied source-immutably during RE:TRACE handoff; and pre-build budget guards can fail soft before expensive graph/episode construction. */
-/* v2.4.26 adds a deterministic Typed Memory Graph, query-directed Graph Closure Evidence Bundles, and a router-only Hierarchical Episode Memory index. Explicit and conservative inferred SUPERSEDES/CONTRADICTS/RESOLVES/FULFILLS/VIOLATES/CAUSES/DEPENDS_ON/CONTINUES edges enrich the existing associative graph; closure can preserve the relevant change chain after the evidence gate; scene/turn clusters and recursively grouped parent episodes route broad or old-memory queries back down to exact L1 packet rows without adding an LLM, embedding provider, durable memory schema, or new handoff authority. */
-/* v2.4.25 adds a packet-debt Recovery Vault and embedding-free Raw Passage Recall. Only finalized active-worldline U+A turns whose current packet is missing or unusable retain exact visible text; request-local exact/phrase, BM25, rare-term, proximity, character n-gram and RRF passage retrieval returns offset-sliced verbatim evidence without changing packet, ledger, worldline, archive, reroll/rollback, or RE:TRACE handoff schemas. */
-/* v2.4.24 adds a protected adaptive recall controller: the current input remains the primary retrieval authority while a separately derived recent-context focus, relevance-versus-recency preference mixing, context-aware full/light packet selection, multi-topic support, contradiction-transition pairing, and scene-stability diagnostics strengthen continuity recall without changing packet schema, ledger keys, worldline, reroll/rollback, archive, or handoff semantics. */
-/* v2.4.23 formalizes the existing live-chat identity contract: msg.chatId is explicitly authoritative when present, fallback source/quality is exposed to lineage diagnostics, and no ledger key, packet schema, reroll, rollback, or worldline semantics are changed. */
-/* v2.4.22 adds current-scope Librarian System server diagnostics to HAYAKU debug JSON. Server events, namespace integrity, protocol/version and offline state are exported through the shared privacy-scrubbed diagnostics contract while live-chat packet authority and ledger contents remain unchanged. */
-/* v2.4.21 makes Librarian System mode chat-scope-specific. Each HAYAKU ledger scope can independently use pluginStorage, mirror, or server-only while new chats default to pluginStorage; shared immutable archive metadata remains safely mirrored only when a server-backed scope exists. Server outages no longer prevent the ledger GUI/server page from registering. */
-/* v2.4.20 adds the shared Librarian System background-sync progress UI. Initial server seeding, mirror synchronization, and restore expose live phase/count/bytes/timing/retry diagnostics while keeping HAYAKU packet authority and existing ledger semantics unchanged; the active storage mode is not committed until server baseline verification finishes. */
-/* v2.4.19 adds a first-class 서버 연결 page to the HAYAKU side panel with storage-mode selection, loopback URL editing, connection testing, server/protocol status, synchronization, recovery, and guarded pluginStorage deletion. Packet capture, binding, recall, and the live-chat-primary dual-ledger contract are unchanged. */
-/* v2.4.18 adds the RE:TRACE server-scope deletion owner proof while preserving HAYAKU's live-chat-primary dual-ledger contract. Active server-scope deletion first verifies/restores the exact ledger data in pluginStorage and switches durably to plugin_only; packet capture, binding, recall, and archive semantics are unchanged. */
 
-/* v2.4.18 adds RE:TRACE/Librarian System handoff synchronization: mirror/server storage is verified around owner-led session adoption without changing live-chat packet authority or source-immutable handoff semantics. */
-/* v2.4.16 adds three Librarian System storage modes with plugin-only as the default, live pluginStorage+server mirroring, server-only storage, verified server-to-pluginStorage recovery, and guarded deletion of only server-backed HAYAKU pluginStorage data after server integrity/coverage proof. Mirror-mode deletion switches automatically to server-only; live-chat packet authority and RE:TRACE compatibility beacons remain untouched. */
-/* v2.4.15 routes HAYAKU's durable v2 packet ledger and immutable shared-archive bodies/meta through the shared Librarian System server. Live-chat packet authority, shared RE:TRACE bridge markers/beacons, packet capture, rollback/reroll binding and source-immutable handoff are unchanged. Existing pluginStorage remains a lazy, non-destructive migration source. */
-/* v2.4.14 accepts both memory-session-bridge-v1 and v2 RE:TRACE handoff markers, repairs already-created v2 target sessions on startup by durably adopting their immutable HAYAKU archive, and exposes the accepted marker/source/count identity in diagnostics. Source HAYAKU storage remains read-only and fingerprint-verified. */
-/* v2.4.13 fixes the v2.4.12 native-copy recovery migration false-negative: before deciding that a copied chat has no RE:TRACE recovery snapshots, HAYAKU now hydrates the source's incremental-recovery capsule into an in-memory source ledger, accepts authoritative bridge_incremental_recovery slot-head records, retries instead of permanently completing the migration when expected recovery records are present but target identity is not stable yet, and exposes source/examined/rejected counts in debug state. The source ledger and recovery capsule remain read-only; shared archives, cold-start history, predecessor-session history, unbound recovery, and unrelated source storage remain excluded. */
-/* v2.4.12 preserves verified RE:TRACE incremental-recovery snapshots across ordinary RisuAI native chat copies without restoring the v2.4.8 over-copy bug: only active bridge_incremental_recovery records whose U+A content hashes exactly match a real pair in the copied transcript are rebound to the copied chat's new worldline/message IDs; shared archives, cold-start material, predecessor history, unbound recovery, and unrelated source storage remain excluded. Existing v2.4.9-v2.4.11 copied chats receive the same one-time verified recovery migration. */
-/* v2.4.11 registers the RE:TRACE owner IPC listener immediately after runtime ownership is claimed, before slower settings/storage initialization can delay discovery; it also publishes a readback-verified shared pluginStorage compatibility beacon so isolated API-v3 peers can identify the installed contract without relying on cross-iframe globals. */
-/* v2.4.10 moves the existing RE:TRACE allowed-ipc declaration into the primary metadata block and exposes the peer-compatibility contract directly on the public HAYAKU runtime API; packet capture, native-copy isolation, and immutable handoff semantics are unchanged. */
-/* v2.4.9 isolates ordinary RisuAI native chat copies from source-only HAYAKU storage: copied chats rebuild only current_snapshot packets physically present in the copied transcript, never inherit source shared archives/cold-start/incremental-recovery records, and automatically detach legacy copied_chat_clone/archive contamination while preserving RE:TRACE immutable handoff behavior. */
-/* v2.4.8 aligns HAYAKU with the RE:TRACE peer-compatibility v1 contract and makes next-session handoff strictly source-immutable: the source ledger is no longer rewritten into an archive-only form, target sessions reference a detached immutable archive, source fingerprints are persisted in the target handoff proof, and future plugin versions are negotiated by protocol/features instead of exact version numbers. */
-/* v2.4.7 prevents internal runtime packet-authoring instructions from leaking into visible chat: prompt-echo blocks are excluded from packet capture before parsing, scrubbed from hook returns only after capture/binding observation, hidden again at display time as a final guard, and recorded with deduplicated diagnostics without weakening the mandatory packet core. */
-/* v2.4.6 makes packet authoring a mandatory core outside HAYAKU optional continuity/recall budgets: adaptive pressure can reduce recall and scene data to zero but cannot suppress the packet contract; only verified physical host headroom below the atomic minimum triggers hard_context_exhaustion with an explicit operation log. */
-/* v2.4.5 makes host token context budgets authoritative over raw-character pressure heuristics, prevents false extreme-pressure suppression on large multilingual prompts, and restores the atomic packet-writing minimum when verified host headroom can safely fit it before allocating recall evidence. */
-/* v2.4.4 makes current-chat selection races fail-soft, gives the UI topology observer a steady-state fast scope path that avoids repeated full copy/verification scans, and adds explicit first-run hook lifecycle diagnostics without changing capture, binding, lineage, recall, or packet-authoring behavior. */
-/* v2.4.3 avoids the Permissions-Policy-blocked Clipboard API inside RisuAI about:srcdoc containers, prefers a synchronous ownerDocument execCommand copy path with focus/selection restoration, and falls back to the existing visible debug JSON panel when copying is unavailable. */
-/* v2.4.2 replaces unavailable host-native confirm() in orphan cleanup with an in-viewer confirmation dialog, so verified cleanup no longer self-cancels in RisuAI plugin containers. */
-/* v2.4.1 keeps rollback/reroll audit branches out of the default ledger view and makes manual orphan cleanup remove the whole verified discarded branch, including orphan-owned audit/quarantine copies, while creating system tombstones so hidden live-chat mirrors cannot resurrect deleted packets. */
-/* v2.4.0 promotes the mature 2.3 continuity core into a long-form RP memory release: evidence-pressure recall budgeting, slot-level current-state projection, validity-aware temporal decay, cue-driven latent episodic reactivation, hardened structured packet normalization, generation-lineage v2 reroll binding, longer fail-soft recall budgets, archive hydration caching, native prompt-cache support, and verified manual orphan cleanup are retained as the new 2.4 baseline without changing the packet schema revision. */
-/* v2.3.78 adds a fail-closed manual orphan cleanup that physically removes only verified local orphan records, reconciles dangling slot heads and orphan-node packet references, preserves all active, quarantined, inherited, permanent, protected, tombstoned, and audit-retained data, and requires explicit UI confirmation. */
-/* v2.3.77 gives every main generation attempt a unique request_lineage_v2 identity, keeps stable U + parent + pair as the turn owner, and permits finalized response-hash refresh only with exact generation output proof while retaining legacy v1 and all foreign-branch rejection gates. */
-/* v2.3.76 preserves a divergent current reroll capture as an unbound same-nonce variant when an older higher-priority live-chat mirror occupies the canonical record id, allowing finalized U+A identity to bind the new sidecar without overwriting or recalling the old variant. */
-/* v2.3.75 accepts a successfully normalized, semantic-valid current_snapshot as validated evidence for the narrow finalized logical-id rebase while preserving nonce, parent, stable-user, reroll, rollback, and quarantine gates. */
-/* v2.3.74 raises the fast recall budget from 2.5 to 10 seconds while preserving the 20/30-second balanced/deep budgets, the 30-second host request deadline, and the bounded 1.5-second individual host-call timeout. */
-/* v2.3.73 raises balanced/deep recall budgets to 20/30 seconds with a matching 30-second host deadline, keeps individual host calls bounded, and guarantees one query-relevant or latest lightweight packet projection when the normal ingest budget expires before any packet is indexed. */
-/* v2.3.72 normalizes structured recall values across every packet axis, recovers legacy world/narrative state wrappers and planner/narrative record shapes, sanitizes knowledge-boundary identifiers, and rejects any final rendered object-stringification artifact without modifying the durable raw ledger. */
-/* v2.3.71 safely flattens object-valued character state into readable recall text, forbids object/array state in the packet-authoring contract, and fail-closes any legacy [object Object] row before indexing or model delivery while preserving the durable raw ledger. */
-/* v2.3.70 adds cue-driven latent episodic reactivation: strongly matching present-scene place/entity cues can revive one old episodic memory despite temporal decay, with a short repeat cooldown, while decay remains a prior rather than deletion and packet-authoring prompts stay unchanged. */
-/* v2.3.69 adds validity-aware temporal decay: obsolete historical snapshots lose retrieval weight progressively by memory class, explicit past lookups relax that decay, unresolved continuity/canonical knowledge remain protected, and carried character slots now age by their own source turn so stale attire/carrying/physical details eventually retire without deleting ledger history. */
-/* v2.3.68 projects repeated character snapshots into slot-level current state: durable attire/carrying/physical state persist until updated, scene-bound location/emotion/status persist only within the same scene, and instant action/expression/posture do not survive an omitted newer observation; historical snapshots stay in the ledger while ordinary current-scene recall prefers the projection. */
-/* v2.3.67 makes recall expansion evidence-pressure driven for narrative/full-persona inputs: every turn first packs into 3,000 chars, expands to 4,500 only when important selected evidence is actually dropped, and reaches 6,000 only when hard required evidence still does not fit or broad timeline/recovery evidence remains under pressure; packet-authoring prompt budgeting stays separate and unchanged. */
-/* v2.3.66 separates recall-data budgeting from packet-authoring prompt budgeting: ordinary recall targets 3,000 chars, precision recall expands to 4,500, and timeline/recovery/complex multi-topic recall expands to 6,000 only when needed, while the packet-writing contract text remains unchanged. */
-/* v2.3.65 caches fully verified immutable archive hydration snapshots by archive-head identity, preventing deep gzip-chain LRU thrashing while keeping the existing layer cache as a bounded fallback and clearing archive caches on unload. */
-/* v2.3.64 activates provider-native prompt-cache interception in native mode, aligns OpenAI explicit breakpoints and Anthropic model thresholds/multi-breakpoint coexistence, and treats Gemini 2.5+ as provider-managed implicit caching while preserving preconfigured explicit cachedContent. */
-/* v2.3.63 makes a unique persisted user-message id authoritative over request/live text-hash drift, rejects conflicting ids and nonces before append affinity, and immediately rekeys a post-processed finalized packet when the same stable U, target pair, and validated request nonce agree. */
-/* v2.3.62 gives the response model a typed continuity-evidence contract, resolves latest valid state and chronological transitions, and keeps unresolved constraints, knowledge boundaries, and prohibited inferences from becoming occurred events. */
-/* v2.3.61 keeps response hooks byte-preserving, recovers the innermost valid packet candidate internally, and removes repeated or damaged reserved packet prefixes consistently from display and visible-identity text. */
-/* v2.3.60 restores only complete, semantically valid bare packet markers through the existing afterRequest/editoutput response path while keeping bare-wrapper restoration disabled for streaming output and leaving render-only scrubbing unchanged. */
-/* v2.3.59 completes safely reconciled finalized bindings during the next beforeRequest and preserves runtime ledger availability after durable reconcile writes. */
-/* v2.3.58 enables the render-only packet scrubber by default, verifies damaged and incomplete packet concealment, and includes output-observation evidence while finalized binding is still waiting. */
-/* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
-/* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
 
 /*
  * HAYAKU · Locator Continuity Plugin
@@ -942,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.18';
+  const PLUGIN_VERSION = '3.3.19';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -1002,7 +872,6 @@ const MemorySuiteExecutionContract = (() => {
   const RAW_RECOVERY_PASSAGE_MAX_CHARS = 1100;
   const RAW_RECOVERY_PASSAGE_MIN_CHARS = 16;
   const RAW_RECOVERY_CANDIDATE_LIMIT = 96;
-  const RAW_RECOVERY_RRF_K = 48;
   const RECOVERY_VAULT_HANDOFF_VERSION = 'hayaku_recovery_vault_handoff_v1';
   const RECOVERY_DEBT_WORLDLINE_VERSION = 'hayaku_recovery_debt_worldline_v1';
   const RECOVERY_DEBT_LEASE_TTL_MS = 10 * 60 * 1000;
@@ -1097,7 +966,6 @@ const MemorySuiteExecutionContract = (() => {
   const HAYAKU_SESSION_HANDOFF_RECEIPT_SCHEMA = 'hayaku.session_handoff.receipt.v1';
   const HAYAKU_RETRACE_COMPATIBILITY_BEACON_SCHEMA = 'hayaku.retrace_compatibility_beacon.v1';
   const HAYAKU_RETRACE_COMPATIBILITY_BEACON_KEY = 'hayaku.v2.retrace_compatibility.v1';
-  // v2.3.33 capacity-only expansion. Ledger schema, keys, lifecycle, recall,
   // rollback/reroll handling, and packet semantics remain unchanged.
   const STORAGE_LEDGER_MAX_RECORDS = 1024;
   const STORAGE_LEDGER_MAX_SLOT_HEADS = 4096;
@@ -14590,7 +14458,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const characterIndex = directSelection ? -1 : indexes.characterIndex;
         const chatIndex = directSelection ? directSelection.chatIndex : indexes.chatIndex;
 
-        // v2.4.4 steady-state observer fast path. Once a full, verified scope has
         // established the exact character/chat identity, repeated topology polls
         // only need the current indexes plus the current chat body. A chat switch
         // or identity drift falls through to the original full verification path.
@@ -20641,34 +20508,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const headChars = Math.floor(maxChars * 0.62);
     const tailChars = Math.max(120, maxChars - headChars - 18);
     return `${clean.slice(0, headChars).trimEnd()}\n[...]\n${clean.slice(Math.max(0, clean.length - tailChars)).trimStart()}`;
-  };
-  const findLatestAssistantRecoverySource = (messages = []) => {
-    const list = ensureArray(messages);
-    const boundary = recoveryBoundaryIndex(list);
-    const requireProvenance = list.some(hasChatProvenance);
-    for (let i = Math.min(boundary - 1, list.length - 1); i >= 0; i -= 1) {
-      const message = list[i];
-      const role = roleOf(message);
-      if (!/^(assistant|model)$/i.test(role)) continue;
-      if (requireProvenance && !hasChatProvenance(message)) continue;
-      const candidates = packetEvidencePayloadCandidates(message).map(body => text(body)).filter(Boolean);
-      if (!candidates.length) continue;
-      const joined = candidates.join('\n');
-      const visible = compactRecoveryExcerpt(joined);
-      if (visible.length < PACKET_RECOVERY_MIN_VISIBLE_CHARS) continue;
-      if (isBackstageUserPayload(visible) || isExternalMemoryInjectionPayload(visible)) continue;
-      if (RequestKindCore.isModuleOnlyPrompt(visible) || RequestKindCore.isHardAuxiliaryPrompt(visible)) continue;
-      return {
-        message,
-        index: i,
-        boundary,
-        role,
-        visible,
-        visibleChars: visible.length,
-        hasPacketMarkers: hasCompleteHayakuPacketInMessage(message)
-      };
-    }
-    return null;
   };
   const buildAssistantRecoverySource = (message, index, boundary, options = {}) => {
     const role = roleOf(message);
@@ -27023,25 +26862,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       span: Number.isFinite(bestSpan) ? bestSpan : 0
     };
   };
-  const rawRecoveryRrf = (rows = [], selectors = []) => {
-    const rankMaps = selectors.map(selector => {
-      const ranked = rows.slice().filter(selector.filter || (() => true))
-        .sort((a, b) => selector.score(b) - selector.score(a));
-      return new Map(ranked.map((row, index) => [row.passageId, index + 1]));
-    });
-    let max = 0;
-    const scores = new Map();
-    for (const row of rows) {
-      let score = 0;
-      for (const ranks of rankMaps) {
-        const rank = ranks.get(row.passageId);
-        if (rank) score += 1 / (RAW_RECOVERY_RRF_K + rank);
-      }
-      scores.set(row.passageId, score);
-      max = Math.max(max, score);
-    }
-    return rows.map(row => ({ ...row, rrfScore: max > 0 ? (scores.get(row.passageId) || 0) / max : 0 }));
-  };
   const rawRecoverySupportTerms = (contextFocus = null, primaryTerms = [], docFreq = new Map(), docCount = 1) => {
     if (!contextFocus?.active || !contextFocus?.ambiguous) return [];
     const primary = new Set(primaryTerms.map(normalizeKey));
@@ -27153,70 +26973,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         primaryEvidence
       }
     };
-  };
-  const ensureRawRecoveryTurnPairCoverage = (gated = [], fused = [], minScore = 0.16) => {
-    const out = gated.slice();
-    const ids = new Set(out.map(row => row.passageId));
-    const seedRows = out.slice(0, 4);
-    for (const seed of seedRows) {
-      const partner = fused
-        .filter(row => row.vaultRecordId === seed.vaultRecordId && row.role !== seed.role && !ids.has(row.passageId))
-        .filter(row => Number(row.score || 0) >= minScore * 0.72)
-        .filter(row => Number(row.components?.primarySurfaceOverlap || 0) >= 1
-          || Number(row.components?.supportCoverage || 0) >= 0.20
-          || Number(row.components?.primaryEvidence || 0) >= 0.12)
-        .sort((a, b) => b.score - a.score)[0] || null;
-      if (!partner) continue;
-      const paired = {
-        ...partner,
-        passed: true,
-        score: Math.max(Number(partner.score || 0), Number(seed.score || 0) * 0.82),
-        reasons: uniq([...ensureArray(partner.reasons), 'paired_turn_context'], 12)
-      };
-      out.push(paired);
-      ids.add(paired.passageId);
-    }
-    return out.sort((a, b) => b.score - a.score || b.pairIndex - a.pairIndex || a.startOffset - b.startOffset);
-  };
-  const rawRecoveryMergeSelections = (rows = [], maxItems = 3, maxChars = 2400) => {
-    const selected = [];
-    let usedChars = 0;
-    for (const row of rows) {
-      if (selected.length >= maxItems) break;
-      const duplicate = selected.find(existing => existing.vaultRecordId === row.vaultRecordId
-        && existing.role === row.role
-        && row.startOffset <= existing.endOffset + 80
-        && row.endOffset >= existing.startOffset - 80);
-      if (duplicate) {
-        const mergedStart = Math.min(duplicate.startOffset, row.startOffset);
-        const mergedEnd = Math.max(duplicate.endOffset, row.endOffset);
-        const mergedText = text(row.fullSourceText || '').slice(mergedStart, mergedEnd);
-        if (mergedText && usedChars - duplicate.text.length + mergedText.length <= maxChars) {
-          usedChars = usedChars - duplicate.text.length + mergedText.length;
-          duplicate.startOffset = mergedStart;
-          duplicate.endOffset = mergedEnd;
-          duplicate.text = mergedText;
-          duplicate.score = Math.max(duplicate.score, row.score);
-          duplicate.reasons = uniq([...duplicate.reasons, ...row.reasons], 12);
-        }
-        continue;
-      }
-      let evidenceText = row.text;
-      let startOffset = row.startOffset;
-      let endOffset = row.endOffset;
-      const remaining = maxChars - usedChars;
-      if (evidenceText.length > remaining) {
-        const focusText = text(row.focusText || '').trim();
-        if (!focusText || focusText.length > remaining || focusText.length < RAW_RECOVERY_PASSAGE_MIN_CHARS) continue;
-        evidenceText = focusText;
-        startOffset = row.focusStartOffset;
-        endOffset = row.focusEndOffset;
-      }
-      if (!evidenceText || evidenceText.length > remaining) continue;
-      selected.push({ ...row, text: evidenceText, startOffset, endOffset });
-      usedChars += evidenceText.length;
-    }
-    return { selected, usedChars };
   };
   const searchRecoveryVaultRawPassages = async (scope={},query='',messages=[],settings=Memory.settings||DEFAULT_SETTINGS,snapshot=null,worldline=null) => {
     const empty=reason=>({version:LOCAL_RECALL_VERSION,active:false,reason,records:[],vaultRecords:0,passages:0,candidates:0});
@@ -27522,55 +27278,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     Memory.authoritativeLedgerCache = next;
     return { packets, worldline, cacheHit: false, previous, current: next };
-  };
-  const authoritativeRecoveryEvidence = (chatMessages = [], settings = Memory.settings || DEFAULT_SETTINGS) => {
-    const sourceMessages = ensureArray(chatMessages);
-    const windowSize = Math.max(8, PACKET_RECOVERY_MAX_CHAIN_MESSAGES * 2 + 2);
-    const windowStart = Math.max(0, sourceMessages.length - windowSize);
-    const messages = sourceMessages.slice(windowStart).map((message, index) => ({
-      role: normalizeMessageRole(message?.role || roleFromUserFlag(message)),
-      content: unescapeRisuStoredPayload(hasOwnProperty(message, 'data') ? message.data : rawMessagePayload(message)),
-      chatId: messageSourceId(message, windowStart + index)
-    }));
-    const packets = [];
-    messages.forEach((message, messageIndex) => {
-      if (!/^(?:assistant|model)$/i.test(roleOf(message))) return;
-      packetEvidencePayloadCandidates(message).forEach(body => {
-        const payloadBody = text(body || '');
-        if (!payloadBody) return;
-        scanPacketMarkersInBody(payloadBody, PACKET_START, PACKET_END, 'authoritative_recovery', ({ rawStart, rawEnd, type }) => {
-          const raw = payloadBody.slice(rawStart, rawEnd).trim();
-          if (!raw) return;
-          packets.push({ raw, hash: stableHash64(raw), messageIndex, messageCount: messages.length, type });
-        });
-        scanPacketMarkersInBody(payloadBody, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'authoritative_recovery_visible', ({ rawStart, rawEnd, type }) => {
-          const raw = payloadBody.slice(rawStart, rawEnd).trim();
-          if (!raw) return;
-          packets.push({ raw, hash: stableHash64(raw), messageIndex, messageCount: messages.length, type });
-        });
-      });
-    });
-    const detected = detectPacketRecovery(messages, packets, settings);
-    const recovery = isDetectedPacketRecoveryRequest(detected)
-      ? {
-          ...detected,
-          evidenceSource: 'authoritative_chat',
-          messageIndex: detected.messageIndex + windowStart,
-          firstMissingMessageIndex: detected.firstMissingMessageIndex + windowStart,
-          messageIndices: ensureArray(detected.messageIndices).map(index => Number(index) + windowStart),
-          boundaryIndex: detected.boundaryIndex + windowStart,
-          messageCount: sourceMessages.length
-        }
-      : null;
-    return {
-      source: 'authoritative_chat',
-      available: true,
-      windowStart,
-      windowMessages: messages.length,
-      assistantMessages: messages.filter(message => /^(?:assistant|model)$/i.test(roleOf(message))).length,
-      packets: packets.length,
-      recovery
-    };
   };
   const cleanPublicSegment = value => normalizeKey(value || 'item').slice(0, 48) || 'item';
   const makePublicRef = (axis, category, id, value = {}) => {
@@ -33330,108 +33037,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     Number(r.worldProfile?.pressure || 0),
     Number(r.storyProfile?.priority || 0)
   );
-  const RETRIEVAL_PREFILTER_MIN_ROWS = 240;
-  const RETRIEVAL_PREFILTER_KEEP_LIMITS = Object.freeze({ fast: 280, balanced: 460, deep: 760 });
-  const RETRIEVAL_PREFILTER_PROTECTED_RE = /\b(?:character|secret|pov_memory|relation|current_state|active_event|world_rule|offscreen_thread|faction|region|continuity_lock|do_not_resolve_yet|consequence|payoff|open_invitation|consent_memory|speaker_boundary|overpromotion_risk|summary_memory|conflict_trace|state|scene_delta|theme_motif)\b/i;
-  const prefilterExactScore = (row = {}, signature = {}, docTokens = []) => {
-    const r = row.retrieval || {};
-    const lexical = lexicalStats(signature.tokens, docTokens);
-    const entity = lexicalStats(signature.entityTokens, mergeValues([r.subjectTokens, r.relationEndpoints, r.subject], 120));
-    const concept = lexicalStats(signature.conceptTokens, conceptTokensForRetrieval(r));
-    const canonical = lexicalStats(
-      ensureArray(signature.canonicalTokens),
-      mergeValues([r.canonicalAnchors, r.crossLingualTokens], 160).filter(token => CANONICAL_RECALL_TOKEN_PREFIX_RE.test(token))
-    );
-    const frame = lexicalStats(signature.semanticFrameTokens, r.semanticFrameTokens || []);
-    const surfaceQueryTokens = ensureArray(signature.surfaceQueryTokens);
-    const surfaceRowTokens = surfaceSpecificTokensOf([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '));
-    const surfaceOverlap = surfaceQueryTokens.filter(token => surfaceRowTokens.includes(token)).length;
-    const surfaceSignal = surfaceOverlap > 0 ? surfaceOverlap / Math.max(1, surfaceQueryTokens.length) : 0;
-    const qKey = normalizeKey(signature.rawQuery || '');
-    const subjectKey = normalizeKey(r.subject || '');
-    const subjectMatch = subjectKey.length >= 2 && qKey.includes(subjectKey) ? 1 : 0;
-    const refKey = normalizeKey(row.publicRef || row.id || '');
-    const refMatch = refKey.length >= 4 && qKey.includes(refKey) ? 1 : 0;
-    const contextFocus = requestContextFocusSignalForRow(row, signature.contextFocus, signature.settings || Memory.settings);
-    return Math.max(
-      lexical.coverage * 0.55,
-      lexical.jaccard,
-      entity.coverage * 0.72,
-      concept.coverage * 0.62,
-      canonical.coverage,
-      frame.coverage * 0.58,
-      surfaceSignal * 0.72,
-      contextFocus.signal * 0.86,
-      subjectMatch,
-      refMatch
-    );
-  };
-  const prefilterForceKeep = (row = {}, signature = {}) => {
-    const category = text(row.category || '');
-    const axis = text(row.axis || '');
-    const memoryLifecycle = row?._memoryLifecycle || {};
-    if (memoryLifecycle.tier === 'hot' && memoryLifecycle.mustCarryClass) return true;
-    if (RETRIEVAL_PREFILTER_PROTECTED_RE.test(category)) return true;
-    if (Number(row.importance || 0) >= 0.9) return true;
-    if (retrievalRowPressure(row.retrieval || {}) >= 0.85) return true;
-    if (signature.explicitContinuityIntent && axis === 'planner') return true;
-    if (signature.presentStateQuery && (axis === 'entity' || axis === 'world')) return true;
-    if (requestContextFocusSignalForRow(row, signature.contextFocus, signature.settings || Memory.settings).signal >= 0.58) return true;
-    return false;
-  };
-  const prefilterRetrievalRows = (rows = [], signature = {}, settings = Memory.settings) => {
-    const input = ensureArray(rows);
-    if (input.length < RETRIEVAL_PREFILTER_MIN_ROWS || !ensureArray(signature.tokens).length) return input;
-    const mode = effectivePerformanceModeOf(settings);
-    const keepLimit = Math.min(input.length, RETRIEVAL_PREFILTER_KEEP_LIMITS[mode] || RETRIEVAL_PREFILTER_KEEP_LIMITS.balanced);
-    if (input.length <= keepLimit) return input;
-    const scored = input.map((row, index) => {
-      const docTokens = retrievalBm25Document(row, settings);
-      const exactScore = prefilterExactScore(row, signature, docTokens);
-      const force = prefilterForceKeep(row, signature);
-      return { index, row, force, exactScore };
-    });
-    const positive = scored.filter(item => item.force || item.exactScore > 0);
-    if (positive.length < Math.min(80, Math.ceil(input.length * 0.08))) return input;
-    if (positive.length < keepLimit) return input;
-    const rankPrefilterItem = (a, b) => Number(b.force) - Number(a.force)
-      || b.exactScore - a.exactScore
-      || Number(b.row.importance || 0) - Number(a.row.importance || 0)
-      || Number(b.row.updatedAt || 0) - Number(a.row.updatedAt || 0)
-      || a.index - b.index;
-    const keep = new Set();
-    const forceItems = positive
-      .filter(item => item.force)
-      .sort(rankPrefilterItem);
-    forceItems
-      .slice(0, keepLimit)
-      .forEach(item => keep.add(item.index));
-    if (keep.size >= keepLimit) {
-      return input.filter((_, index) => keep.has(index));
-    }
-    const exactPositive = positive
-      .filter(item => !item.force)
-      .sort(rankPrefilterItem);
-    const fallback = scored
-      .filter(item => !item.force && item.exactScore <= 0)
-      .sort(rankPrefilterItem);
-    const remainingAfterForce = keepLimit - keep.size;
-    const fallbackReserve = Math.min(fallback.length, Math.max(24, Math.ceil(keepLimit * 0.12)), remainingAfterForce);
-    const primaryLimit = Math.max(0, remainingAfterForce - fallbackReserve);
-    exactPositive
-      .slice(0, primaryLimit)
-      .forEach(item => keep.add(item.index));
-    fallback
-      .slice(0, Math.max(0, keepLimit - keep.size))
-      .forEach(item => keep.add(item.index));
-    if (keep.size < keepLimit) {
-      exactPositive
-        .filter(item => !keep.has(item.index))
-        .slice(0, keepLimit - keep.size)
-        .forEach(item => keep.add(item.index));
-    }
-    return input.filter((_, index) => keep.has(index));
-  };
   const scoreRowWithStrengthenedJaccard = (store, row, rowIndex, signature, corpus, profile, settings = Memory.settings) => {
     const r = row.retrieval || {};
     const sparseBreakdown = row.scoreBreakdown || {};
@@ -34346,61 +33951,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   // Sparse RRF always runs locally (the Compute SDK was retired); the debug entry point is kept.
   const debugApplyRrfFusionWithCurrentOwner = async (rows = []) => applyRrfFusion(rows);
-  const directRetrievalEvidenceOf = row => {
-    const breakdown = row?.scoreBreakdown || {};
-    return Math.max(
-      Number(breakdown.strengthenedJaccard || 0),
-      Number(breakdown.entitySignal || 0),
-      Number(breakdown.canonicalSignal || 0),
-      Number(breakdown.locatorSignal || 0),
-      Number(breakdown.bm25Signal || 0),
-      Number(breakdown.phraseSignal || 0),
-      Number(breakdown.exactSignal || 0),
-      Number(breakdown.episodeRouterSignal || 0) * 0.72,
-      breakdown.queryEntityHit === true ? 0.24 : 0,
-      breakdown.specificTokenHit === true ? 0.18 : 0
-    );
-  };
-  const applyPacketStructureCohesion = (rows = []) => {
-    const groups = new Map();
-    ensureArray(rows).forEach(row => {
-      const packetHash = text(row?.packetHash || '').trim();
-      if (!packetHash) return;
-      if (!groups.has(packetHash)) groups.set(packetHash, []);
-      groups.get(packetHash).push(row);
-    });
-    const packetSignals = new Map();
-    groups.forEach((group, packetHash) => {
-      const hits = group.map(row => ({ row, evidence: directRetrievalEvidenceOf(row) })).filter(hit => hit.evidence > 0.012);
-      if (!hits.length) return;
-      const channels = new Set(hits.map(hit => hit.row.structuredChannel || hit.row.axis).filter(Boolean));
-      const best = Math.max(...hits.map(hit => hit.evidence));
-      packetSignals.set(packetHash, { best, channelCount: channels.size });
-    });
-    return ensureArray(rows).map(row => {
-      const packetSignal = packetSignals.get(text(row?.packetHash || '').trim());
-      const qualityWeight = clamp(row?.recallQualityWeight, 0.9, 1, 1);
-      const direct = directRetrievalEvidenceOf(row);
-      const siblingEligible = /continuity_lock|do_not_resolve_yet|active_event|world_rule|conflict_trace|summary_memory|character|relation/i.test(text(row?.category || ''))
-        || Number(row?.importance || 0) >= 0.6;
-      const cohesionBoost = packetSignal
-        ? clamp(packetSignal.best * (direct > 0.012 ? 0.045 : (siblingEligible ? 0.075 : 0.025)) + Math.max(0, packetSignal.channelCount - 1) * 0.008, 0, 0.075, 0)
-        : 0;
-      const base = Number(row?.score || 0);
-      const score = clamp((base + cohesionBoost) * qualityWeight, 0, 1.35, base);
-      return {
-        ...row,
-        score,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          packetCohesionSignal: Number(cohesionBoost.toFixed(4)),
-          packetCohesionChannels: Number(packetSignal?.channelCount || 0),
-          recallQualityWeight: Number(qualityWeight.toFixed(4)),
-          scoreBeforePacketCohesion: Number(base.toFixed(4))
-        }
-      };
-    });
-  };
   const searchIndexSparseHybrid = (store, query, settings = Memory.settings, mode = '', options = {}) => {
     const view={...store};if(options.indexRows){view.index=options.indexRows;delete view._recallSourceRows;}
     const rows=localRecallCandidates(view,query,settings),selected=prepareHayakuRecallRows(rows,query,settings,view,[],[]);
@@ -35214,78 +34764,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     statements.push(...modelMemorySemanticQualifiers(axis, row, language));
     const rendered = `- ${statements.filter(Boolean).join(' ')}`;
     return hasObjectStringificationArtifact(rendered) ? '' : rendered;
-  };
-  const sourceTimeOrderValue = row => {
-    const raw = text(row?.temporal?.eventTime || row?.sourceTime || row?.temporal?.observedAt || row?.temporal?.knownAt || row?.temporal?.lastConfirmedAt || '').trim();
-    const match = raw.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:[^\d]{0,16}(\d{1,2}):(\d{2}))?/);
-    if (match) return Number(`${match[1]}${match[2].padStart(2, '0')}${match[3].padStart(2, '0')}${(match[4] || '0').padStart(2, '0')}${(match[5] || '0').padStart(2, '0')}`);
-    return Number(row?.locator?.messageIndex ?? row?.locator?.turnId ?? 0);
-  };
-  const selectTemporalOrderRows = (store = {}, selected = {}, limit = 4) => {
-    const cap = Math.max(2, Math.min(6, Number(limit) || 4));
-    const keyOf = row => text(row?.packetHash || row?.locator?.sourceHash || `${row?.sourceTime}|${row?.publicText}`).trim();
-    const selectedTimed = ensureArray(selected.world).filter(row => row?.sourceTime).slice(0, 2);
-    const selectedKeys = new Set(selectedTimed.map(keyOf).filter(Boolean));
-    const latest = ensureArray(store.index)
-      .filter(row => row?.axis === 'world' && row?.category === 'current_state' && row?.sourceTime)
-      .slice()
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b));
-    const fill = latest.filter(row => !selectedKeys.has(keyOf(row))).slice(-(cap - selectedTimed.length));
-    const seen = new Set();
-    return [...selectedTimed, ...fill]
-      .filter(row => {
-        const key = keyOf(row);
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b))
-      .slice(-cap);
-  };
-  const temporalOrderRowsFromPackets = (packets = [], limit = 4) => {
-    const cap = Math.max(2, Math.min(6, Number(limit) || 4));
-    const candidates = ensureArray(packets)
-      .slice()
-      .sort((a, b) => Number(a?.messageIndex ?? 0) - Number(b?.messageIndex ?? 0))
-      .slice(-12)
-      .map(packet => {
-        const materialized = materializeExtractedPacket(packet);
-        const parsed = safeJsonParse(materialized?.raw || '', null);
-        const world = objectish(parsed?.world) ? parsed.world : {};
-        const activeEvents = packetItems(world.active_events || world.activeEvents || world.events || [])
-          .slice()
-          .sort((a, b) => Number(b?.importance || b?.priority || 0) - Number(a?.importance || a?.priority || 0))
-          .slice(0, 2);
-        const sourceTime = compact(world.time || parsed?.meta?.event_time || parsed?.meta?.eventTime || activeEvents[0]?.event_time || activeEvents[0]?.eventTime || '', 100);
-        if (!sourceTime) return null;
-        const publicText = compact([
-          ...activeEvents.map(event => itemText(event)),
-          world.location
-        ].filter(Boolean).join(' | '), 220);
-        return {
-          axis: 'world', category: 'current_state',
-          packetHash: materialized?.hash || packet?.hash || '',
-          sourceTime,
-          publicText,
-          sceneRelation: Number(packet?.distanceFromLatest) > 0 ? 'prior_snapshot_unconfirmed' : 'current_or_unknown',
-          locator: {
-            sourceHash: materialized?.hash || packet?.hash || '',
-            messageIndex: Number.isFinite(Number(packet?.messageIndex)) ? Number(packet.messageIndex) : null,
-            distanceFromLatest: Number.isFinite(Number(packet?.distanceFromLatest)) ? Number(packet.distanceFromLatest) : null
-          },
-          lifecycle: { status: '', timeScope: '' },
-          retrieval: {}, importance: 0.5
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b));
-    const seen = new Set();
-    return candidates.filter(row => {
-      const key = `${normalizeKey(row.sourceTime)}|${normalizeKey(row.publicText)}`;
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(-cap);
   };
   const sceneBatonPacketState = packet => {
     const materialized = materializeExtractedPacket(packet);
@@ -36547,21 +36025,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   const packetCoreRecallEntries = (selected = {}, query = '') => {
     const rows = packetCoreRecallRows(selected, PACKET_CORE_RECALL_CANDIDATE_LIMIT, query);
-    const temporalRows = ensureArray(selected?.temporalOrder).filter(Boolean).slice(-6);
     const viewContext = {
       selectedCharacterCount: rows.filter(({ axis, row }) => axis === 'entity' && row.category === 'character').length
     };
     const entries = [];
-    const candidates = [
-      ...rows.map(candidate => ({ ...candidate, laneOverride: '' })),
-      ...temporalRows.map((row, index) => ({
-        axis: row?.axis || 'world',
-        row,
-        laneOverride: index === temporalRows.length - 1
-          ? CONTINUITY_EVIDENCE_LANES.latestState
-          : CONTINUITY_EVIDENCE_LANES.confirmedChanges
-      }))
-    ];
+    const candidates = rows.map(candidate => ({ ...candidate, laneOverride: '' }));
     for (const { axis, row, laneOverride } of candidates) {
       const entry = packetCoreRecallEntryFromRow(axis, row, query, viewContext, { laneOverride });
       if (!entry) continue;
@@ -36790,7 +36258,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const policy=buildHayakuSelectionPolicy(sourceRows,policySettings,modeProfile(effectivePerformanceModeOf(policySettings)),query,metadata.store||{});
     const byRow=new Map(policy.candidates.map(c=>[hayakuEvidenceRowId(c.row),c]));
     const rows=policy.candidates.map(c=>({axis:c.row.axis,row:c.row})).slice(0,PACKET_CORE_RECALL_CANDIDATE_LIMIT);
-    const temporal=ensureArray(selected?.temporalOrder).filter(Boolean).slice(-6);
     const viewContext={selectedCharacterCount:rows.filter(c=>c.axis==='entity'&&c.row.category==='character').length};
     const entries=[],rejected=[];
     const duplicate = createPacketCoreRecallDuplicateComparator(signatureOwner);
@@ -36803,11 +36270,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }catch(_){rejected.push({id:hayakuEvidenceRowId(row),reason:'dependency_unavailable'});}
     };
     rows.forEach(({axis,row})=>insert(axis,row));
-    for(let i=0;i<temporal.length;i++){
-      const row=temporal[i];
-      if(requestKnowledgeUnavailableForRow(row,query,metadata.store?.context?.mentionedEntities||[],settings))continue;
-      insert(row.axis||'world',row,i===temporal.length-1?CONTINUITY_EVIDENCE_LANES.latestState:CONTINUITY_EVIDENCE_LANES.confirmedChanges);
-    }
     const assessed=assessHayakuEvidence(entries,query);
     const units=assessed.map(entry=>{
       const origins=ensureArray(entry.sourceRows).map(value=>({axis:value.axis,row:value.row}));
@@ -37448,7 +36910,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (key && !out.has(key)) out.set(key, { axis: resolvedAxis, row });
     };
     ['entity', 'world', 'narrative', 'planner'].forEach(axis => ensureArray(selected?.[axis]).forEach(row => add(axis, row)));
-    ensureArray(selected?.temporalOrder).forEach(row => add(row?.axis || 'world', row));
     return out;
   };
   const recallBudgetEvidenceClass = (axis, row = {}, query = '') => {
@@ -38905,10 +38366,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ensureArray(rawRecoveryRecall?.records), selectedWithLiveOverlay, query
       ));
       const selectedForModel = selectedWithLiveOverlay;
-      const temporalOrder = [];
       const selectedForContext = {
         ...selectedForModel,
-        temporalOrder,
         partialMemoryEvidence: ensureArray(partialMemoryRecall),
         rawRecoveryEvidence: ensureArray(rawAnchorIntegration?.records)
       };
@@ -39502,11 +38961,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           hostRequestDeadlineScope: 'diagnostic_only_not_cross_request_host_call_gate',
           hostCallTimeoutMs: HOST_API_CALL_TIMEOUT_MS
         },
-        temporalOrder: temporalOrder.map(row => ({
-          sourceTime: row.sourceTime,
-          sourceScope: effectivePublicTimeScope(row),
-          state: compact(row.publicText || '', 120)
-        })),
         recallDelivery: {
           selectedRows: recallDelivery.selectedRows,
           injectedRows: recallDelivery.injectedRows,
@@ -39727,7 +39181,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
 
-  // v2.3.38 capture-semantic defense. The v2.3.33 authoring contract is
   // unchanged. This layer only prevents structurally valid but semantically
   // empty runtime-skeleton echoes from becoming durable memory when the
   // finalized visible assistant artifact itself contains detectable outcome
@@ -41403,7 +40856,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return { ledger, changed: false, reason: 'native_copy_source_storage_unavailable', records: 0, sourceRecoveryRecords: 0, sourceScopeKey };
     }
 
-    // v2.4.13: a RE:TRACE incremental-recovery capsule can be durable even when
     // its packet records have not yet been materialized into the source ledger.
     // Hydrate it into a detached in-memory ledger only. Never persist this source
     // copy from the target chat: native-copy synchronization must remain source-read-only.
@@ -50657,371 +50109,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   return Object.freeze({ start, describe, select, notify, createClient, dispose });
 });
-const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
-  const { fingerprint, byteLength } = options.primitives;
-  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
-  const fail = code => { throw Object.assign(new Error(code), { code }); };
-  return async (request, authority = {}) => {
-    let reading = true, closed = false;
-    const cache = new Map();
-    let loadedBytes = 0;
-    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
-    const get = async key => {
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      if (reading && cache.has(key)) return cache.get(key);
-      const value = await options.read(key);
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
-      loadedBytes += size;
-      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-      // An absent key has the same metadata the server reports, so an owner with no records reads as empty.
-      const row = value == null
-        ? { value: null, exists: false, tombstone: false, revision: 0, updatedAt: 0, digest: '', valueBytes: 0 }
-        : { value, exists: true, tombstone: false, revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
-      if (reading) cache.set(key, row);
-      return row;
-    };
-    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
-      get: async (_space, key, limits) => {
-        const row = await get(key);
-        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
-        return row;
-      } };
-    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
-      epochs: () => ({}), canRead: () => !closed });
-    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
-    reading = false; cache.clear();
-    let currentTail = Promise.resolve();
-    return { items: snapshot.items,
-      async assertCurrent() {
-        const task = currentTail.then(async () => {
-          loadedBytes = 0;
-          if (closed) fail('LIB_READ_STALE');
-          return (await session.current(snapshot)).current === true;
-        });
-        currentTail = task.catch(() => {});
-        return await task;
-      },
-      close() { closed = true; cache.clear(); }
-    };
-  };
-});
-function createHayakuPluginReadSession(primitives) {
-'use strict';
-
-// Read only the HAYAKU producer's published ledger, selected packet bodies and
-// explicitly referenced immutable archives. Never enumerate or replay receipts.
-const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
-const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
-  const gunzip = async (compressed, options) => {
-    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
-    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-    const chunks = []; let size = 0;
-    try { while (true) { const next = await stream.read(); if (next.done) break;
-      size += next.value.byteLength;
-      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
-      chunks.push(next.value);
-    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
-    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return { toString: () => text };
-  };
-const PLUGIN_ID = 'serial_gradation_agents_for_rp';
-const CAPTURE_ROUTE = '/v1/hayaku/read-session/capture';
-const CURRENT_ROUTE = '/v1/hayaku/read-session/current';
-const MiB = 1024 ** 2;
-const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
-  maxRefs: 4096, currentRequestBytes: 4 * MiB });
-const DELTA_PREFIX = 'hayaku.v2.storage_reconciliation_journal.capture_delta::';
-const ARCHIVE_PREFIX = 'hayaku.v2.shared_archive.';
-const META_PREFIX = 'hayaku.v2.shared_archive_meta.';
-const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
-const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
-const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
-const text = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\0\r\n]/.test(value);
-const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-const int = value => Number.isSafeInteger(value) && value >= 0;
-function stableHash64(value) {
-  // Exact producer FNV-1a/64 over UTF-16 code units, including surrogate pairs.
-  let high = 0xcbf29ce4, low = 0x84222325;
-  for (let i = 0; i < value.length; i++) {
-    low = (low ^ value.charCodeAt(i)) >>> 0;
-    high = (Math.imul(high, 435) + (low << 8) + Math.floor(low * 435 / 0x100000000)) >>> 0;
-    low = Math.imul(low, 435) >>> 0;
-  }
-  return 'h64' + ((BigInt(high) << 32n) | BigInt(low)).toString(36);
-}
-function scopeOf(value) {
-  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => text(value[key]))) fail('gradia_read_scope_invalid', 400);
-  const scope = { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
-  if (scope.scopeKey !== 'chat_' + stableHash64(scope.characterId + '\n' + scope.chatId)) fail('gradia_read_scope_invalid', 400);
-  return scope;
-}
-const ledgerKeyFor = scope => 'hayaku.v2.ledger.' + scope.scopeKey;
-function corpusLimit(value) {
-  if (value === undefined) return LIMITS.defaultCorpusBytes;
-  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
-  return value;
-}
-function decode(value) {
-  if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); } }
-  if (!object(value)) fail('gradia_read_stored_object_invalid');
-  return value;
-}
-function deepFreeze(value) {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) { for (const child of Object.values(value)) deepFreeze(child); Object.freeze(value); }
-  return value;
-}
-async function metadataOf(repository, key) {
-  const value = await repository.getMetadata('plugin', key);
-  return { namespace: 'hayaku', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-function allowedKey(key, scope, index) {
-  if (!text(key, 1200)) return false;
-  if (index === 0) return key === ledgerKeyFor(scope);
-  return key.startsWith(DELTA_PREFIX + scope.scopeKey + '::')
-    || /^hayaku\.v2\.shared_archive(?:_meta)?\.[A-Za-z0-9_-]{1,128}$/.test(key);
-}
-function validMetadata(value, scope, index) {
-  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)) fail('gradia_read_dependencies_invalid', 400);
-  if (index === 0 && value.exists === false) {
-    const absent = value.tombstone === false && value.revision === 0 && value.digest === ''
-      && value.updatedAt === 0 && value.valueBytes === 0;
-    const deleted = value.tombstone === true && Number.isSafeInteger(value.revision) && value.revision > 0
-      && /^[a-f0-9]{64}$/.test(value.digest || '') && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
-      && Number.isSafeInteger(value.valueBytes) && value.valueBytes >= 0;
-    if (!absent && !deleted) fail('gradia_read_dependencies_invalid', 400);
-    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: value.tombstone,
-      revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-  }
-  if (value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
-    || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);
-  return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: true, tombstone: false,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-function slotId(record) {
-  const type = record.packetType || 'current_snapshot';
-  if (record.inheritedSessionHistory === true || record.memoryClass === 'historical') return record.permanentHistoryId
-    ? ['historical_permanent', record.permanentHistoryId, type].join('\x01')
-    : ['historical', record.coldStartEpochId || record.inheritedFromScopeKey || 'session', number(record.historicalOrdinal), type].join('\x01');
-  if (record.incrementalRecoveryId) return ['incremental_recovery', record.ownerTurnNodeId || record.ownerNodeId || `pair:${Math.max(1, number(record.targetPairIndex) || 1)}`, record.incrementalRecoveryId, type].join('\x01');
-  if (record.ownerTurnNodeId || record.ownerNodeId) return ['node', record.ownerTurnNodeId || record.ownerNodeId, type].join('\x01');
-  if (record.requestNonce) return ['pending', record.requestNonce, type].join('\x01');
-  return ['pair', Math.max(1, number(record.targetPairIndex) || 1), record.userHash || record.userMessageIdHash || '', type].join('\x01');
-}
-const archiveIdFor = record => record.permanentHistoryId || record.archiveCanonicalId
-  || stableHash64([record.inheritedFromScopeKey || '', slotId(record), record.hash || '', record.packetType || ''].join('\x01'));
-function selectedRecords(ledger) {
-  const records = ledger.records, heads = ledger.slotHeads || [], tombstones = ledger.tombstones || [];
-  if (!Array.isArray(records) || !Array.isArray(heads) || !Array.isArray(tombstones)) fail('gradia_read_ledger_schema_invalid');
-  if (records.length > LIMITS.maxRefs || heads.length > LIMITS.maxRefs || tombstones.length > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-  if (records.some(record => !object(record) || !text(record.recordId, 196) || !text(record.hash, 96))) fail('gradia_read_memory_identity_mismatch');
-  const byId = new Map(records.map(record => [record.recordId, record])), byHash = new Map(records.map(record => [record.hash, record]));
-  if (byId.size !== records.length) fail('gradia_read_duplicate_memory_pointer');
-  const eligible = heads.length ? heads.filter(head => ['active', 'historical'].includes(head?.state))
-    .map(head => byId.get(head.selectedRecordId) || byHash.get(head.selectedVariantHash)).filter(Boolean)
-    : records.filter(record => ['active', 'historical'].includes(record.recordState));
-  const tombstonesBySlot = new Map(tombstones.filter(t => object(t) && t.active !== false && !number(t.restoredAt)).map(t => [t.slotId, t]));
-  return [...new Map(eligible.filter(record => {
-    if (record.permanentSessionHistory === true || record.deletionProtected === true || record.historicalProtection === 'permanent_session_history') return true;
-    const tombstone = tombstonesBySlot.get(slotId(record));
-    return !tombstone || (Boolean(tombstone.recordId || tombstone.variantHash) && tombstone.recordId !== record.recordId && tombstone.variantHash !== record.hash);
-  }).map(record => [record.recordId, record])).values()];
-}
-function archivePointer(value) {
-  if (!object(value) || value.schema !== 'hayaku.shared_archive_ref.v1' || !text(value.archiveId, 128)
-    || !/^[A-Za-z0-9_-]+$/.test(value.archiveId) || value.storageKey !== ARCHIVE_PREFIX + value.archiveId
-    || value.metaKey !== META_PREFIX + value.archiveId || !int(value.recordCount) || !int(value.deltaCount)
-    || !int(value.generation) || value.generation < 1 || !int(value.depth) || value.depth < 1 || value.depth > 256
-    || !text(value.digest, 96)) fail('gradia_read_archive_pointer_invalid');
-  return value;
-}
-// A composed reader can only tighten this owner's existing raw-read ceiling.
-function rawLimitOf(value, maxCorpusBytes) {
-  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
-  if (value === undefined) return maximum;
-  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
-  return value;
-}
-function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
-  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().hayaku || 0) });
-  async function readUnit(body) {
-    if (!canRead()) fail('gradia_read_maintenance', 503);
-    const repository = getRepository(), epoch = Number(epochs().hayaku || 0);
-    repository.database.exec('BEGIN');
-    try {
-      const result = await body(repository);
-      if (!canRead() || Number(epochs().hayaku || 0) !== epoch) fail('gradia_read_maintenance', 503);
-      return deepFreeze(result);
-    } finally { repository.database.exec('ROLLBACK'); }
-  }
-  function capture(body) {
-    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
-    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
-    return readUnit(async repository => {
-      const readIdentity = identity(scope), dependencies = [], cache = new Map();
-      const rootKey = ledgerKeyFor(scope);
-      const rootMetadata = await metadataOf(repository, rootKey);
-      if (!rootMetadata.exists || rootMetadata.tombstone) {
-        const rootDeps = [rootMetadata];
-        return { schema: 'memory-suite.hayaku-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
-          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId, resetEpoch: readIdentity.resetEpoch, readIdentity };
-      }
-      let rawBytes = 0, decodedBytes = 0, metadataBytes = 0, corpusBytes = 0, recordCount = 0, packetRefs = 0;
-      const chargedReceipts = new Set();
-      // Inline packets live inside the ledger itself. Its body limit must be a
-      // corpus limit plus metadata, rather than treating the corpus as metadata.
-      const chargeMetadata = (value, perItem = false) => {
-        const size = bytes(value); metadataBytes += size;
-        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
-      };
-      const read = async key => {
-        if (cache.has(key)) return cache.get(key);
-        if (dependencies.length > LIMITS.maxRefs || !allowedKey(key, scope, dependencies.length)) fail('gradia_read_memory_pointer_invalid');
-        const metadata = await metadataOf(repository, key);
-        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
-        if (!int(metadata.valueBytes) || metadata.valueBytes > rawLimit - rawBytes - decodedBytes) fail('gradia_read_storage_budget_exceeded', 413);
-        let row;
-        try { row = await repository.get('plugin', key, { maxValueBytes: rawLimit - rawBytes - decodedBytes }); }
-        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
-        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
-        if (bytes(row.value) !== metadata.valueBytes || hash(row.value) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
-        rawBytes += metadata.valueBytes;
-        const result = { parsed: decode(row.value), raw: typeof row.value === 'string' ? row.value : JSON.stringify(row.value), metadata };
-        dependencies.push(metadata); cache.set(key, result); return result;
-      };
-      const head = await read(ledgerKeyFor(scope)), ledger = head.parsed;
-      if (!['hayaku_storage_ledger_v1', 'hayaku_storage_ledger_v2'].includes(ledger.version) || ledger.scopeKey !== scope.scopeKey
-        || ledger.identity?.schema !== 'hayaku.scope_identity.v1' || !['scopeKey', 'characterId', 'chatId'].every(key => ledger.identity[key] === scope[key])) fail('gradia_read_manifest_scope_mismatch');
-      chargeMetadata({ ...ledger, records: [] });
-      const validateRecords = records => {
-        if (!Array.isArray(records) || (recordCount += records.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-        for (const record of records) { if (!object(record)) fail('gradia_read_memory_schema_invalid'); chargeMetadata({ ...record, raw: '' }, true); }
-      };
-      validateRecords(ledger.records);
-      const packetOf = async (record, ownerScope, archive = false) => {
-        let raw = record.raw;
-        if (!archive && record.captureRawRef != null) {
-          const ref = record.captureRawRef;
-          if (!object(ref) || ref.schema !== 'hayaku.capture_raw_delta.v1' || ref.scopeKey !== ownerScope
-            || !text(ref.binding, 512) || !text(ref.digest, 96) || !text(ref.rawDigest, 96) || !int(ref.packetIndex)
-            || ref.storageKey !== DELTA_PREFIX + ownerScope + '::' + ref.binding + '::' + ref.digest) fail('gradia_read_memory_pointer_invalid');
-          const receipt = await read(ref.storageKey);
-          if (stableHash64(receipt.raw) !== ref.digest || receipt.parsed.schema !== ref.schema
-            || receipt.parsed.scopeKey !== ownerScope || receipt.parsed.binding !== ref.binding) fail('gradia_read_memory_identity_mismatch');
-          if (!chargedReceipts.has(ref.storageKey)) {
-            const packets = receipt.parsed.packets;
-            if (!Array.isArray(packets) || (packetRefs += packets.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-            chargeMetadata({ ...receipt.parsed, packets: [] });
-            for (const packet of packets) {
-              if (!object(packet) || typeof packet.raw !== 'string') fail('gradia_read_memory_schema_invalid');
-              chargeMetadata({ ...packet, raw: '' }, true);
-            }
-            chargedReceipts.add(ref.storageKey);
-          }
-          const packet = receipt.parsed.packets?.[ref.packetIndex];
-          if (typeof packet?.raw !== 'string' || stableHash64(packet.raw) !== ref.rawDigest
-            || (raw !== undefined && raw !== packet.raw)) fail('gradia_read_memory_identity_mismatch');
-          raw = packet.raw;
-        }
-        if (typeof raw !== 'string' || !raw || raw.trim().length > 96000 || stableHash64(raw.trim()) !== record.hash) fail('gradia_read_memory_identity_mismatch');
-        const parsed = decode(raw);
-        if (parsed.meta?.schema !== 'hayaku_packet_v1' || Number(parsed.meta.packet_schema_rev) !== 2
-          || !['meta', 'entity', 'world', 'narrative', 'planner', 'importance'].every(key => object(parsed[key]))) fail('gradia_read_memory_schema_invalid');
-        const packetType = parsed.meta.packet_type || parsed.meta.packetType || 'current_snapshot';
-        if (record.packetType && record.packetType !== packetType) fail('gradia_read_memory_identity_mismatch');
-        return raw;
-      };
-      const rows = new Map();
-      const append = async (record, key, inherited, ownerScope) => {
-        if (!text(record.recordId, 196) || !text(record.hash, 96)) fail('gradia_read_memory_identity_mismatch');
-        const content = await packetOf(record, ownerScope, key.startsWith(ARCHIVE_PREFIX)), id = archiveIdFor(record), previous = rows.get(id);
-        if (!previous || number(record.capturedAt || record.inheritedAt) >= number(previous.record.capturedAt || previous.record.inheritedAt)) {
-          corpusBytes += Buffer.byteLength(content, 'utf8') - (previous ? Buffer.byteLength(previous.content, 'utf8') : 0);
-          rows.set(id, {record,key,inherited,ownerScope,content});
-        }
-      };
-      if (ledger.archiveRef != null && ledger.archiveRef !== false && ledger.archiveRef !== '') {
-        const first = archivePointer(ledger.archiveRef), seen = new Set(), layers = [];
-        let cursor = first;
-        while (cursor) {
-          if (seen.has(cursor.storageKey) || layers.length >= 256) fail('gradia_read_archive_cycle');
-          seen.add(cursor.storageKey);
-          const stored = await read(cursor.storageKey), meta = (await read(cursor.metaKey)).parsed;
-          let archive = stored.parsed;
-          if (archive.schema === 'hayaku.shared_archive.gzip.v1') {
-            if (archive.encoding !== 'gzip+base64' || archive.archiveSchema !== 'hayaku.shared_archive.v1' || archive.archiveId !== cursor.archiveId
-              || !int(archive.rawChars) || typeof archive.data !== 'string' || !int(archive.compressedBytes)
-              || archive.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(archive.data)) fail('gradia_read_archive_schema_invalid');
-            const remaining = rawLimit - rawBytes - decodedBytes;
-            if (archive.rawChars > remaining || remaining < 1) fail('gradia_read_storage_budget_exceeded', 413);
-            const compressed = Buffer.from(archive.data, 'base64');
-            if (compressed.length !== archive.compressedBytes) fail('gradia_read_archive_identity_mismatch');
-            let raw;
-            try { raw = (await gunzip(compressed, { maxOutputLength: remaining })).toString('utf8'); }
-            catch (error) { fail(error?.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error?.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
-            if (raw.length !== archive.rawChars || stableHash64(raw) !== archive.rawHash) fail('gradia_read_archive_identity_mismatch');
-            decodedBytes += Buffer.byteLength(raw, 'utf8');
-            archive = decode(raw);
-          }
-          if (archive.schema !== 'hayaku.shared_archive.v1' || meta.schema !== 'hayaku.shared_archive_meta.v1'
-            || archive.archiveId !== cursor.archiveId || meta.archiveId !== cursor.archiveId
-            || ['generation','depth','deltaCount','recordCount','digest'].some(key => archive[key] !== cursor[key] || meta[key] !== cursor[key])) fail('gradia_read_archive_identity_mismatch');
-          validateRecords(archive.records); chargeMetadata({ ...archive, records: [] }); chargeMetadata(meta);
-          const ids = archive.records.map(archiveIdFor).sort(), digest = stableHash64(ids.join('\x01'));
-          if (new Set(ids).size !== ids.length || ids.length !== cursor.deltaCount || archive.deltaDigest !== digest
-            || meta.deltaDigest !== digest || !same([...meta.deltaMemberIds || []].sort(), ids)) fail('gradia_read_archive_identity_mismatch');
-          const parents = [cursor.parentRef, archive.parentRef || archive.parentArchiveRef, meta.parentRef || meta.parentArchiveRef].filter(Boolean).map(archivePointer);
-          if (parents.some(parent => !['archiveId','storageKey','metaKey','generation','depth','deltaCount','recordCount','digest'].every(key => parent[key] === parents[0][key]))) fail('gradia_read_archive_parent_mismatch');
-          const parent = parents[0] || null;
-          if (parent ? parent.depth + 1 !== cursor.depth || parent.generation + 1 !== cursor.generation || parent.recordCount + cursor.deltaCount !== cursor.recordCount
-            : cursor.depth !== 1 || cursor.generation !== 1 || cursor.recordCount !== cursor.deltaCount) fail('gradia_read_archive_parent_mismatch');
-          layers.push({archive,key:cursor.storageKey}); cursor = parent;
-        }
-        const archiveIds = new Set();
-        for (const {archive,key} of layers.reverse()) for (const record of archive.records) {
-          const id = archiveIdFor(record); if (archiveIds.has(id)) fail('gradia_read_duplicate_memory_pointer'); archiveIds.add(id);
-          await append(record,key,true,record.inheritedFromScopeKey || scope.scopeKey);
-        }
-        if (archiveIds.size !== first.recordCount || stableHash64([...archiveIds].sort().join('\x01')) !== first.digest) fail('gradia_read_archive_identity_mismatch');
-      }
-      for (const record of selectedRecords(ledger)) await append(record,head.metadata.key,record.inheritedSessionHistory === true || record.memoryClass === 'historical',scope.scopeKey);
-      if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
-      const items = [...rows.values()].map(({record,key,inherited,ownerScope,content}) => {
-        const start = number(record.recoveryTurnStart || record.targetPairIndex), end = number(record.recoveryTurnEnd || record.targetPairIndex);
-        return { id: record.recordId, key, content, source: {namespace:'hayaku',space:'plugin',scopeKey:ownerScope,
-          memoryId:record.recordId,revision:cache.get(key).metadata.revision,sourceDigest:record.hash,
-          turnRange:{start,end},sessionEpoch:0,inherited,archiveShared:key.startsWith(ARCHIVE_PREFIX)} };
-      });
-      return {schema:'memory-suite.hayaku-read-session.v1',readOnly:true,complete:true,scope,items,dependencies,
-        evidenceRevision:hash(dependencies),corpusBytes,maxCorpusBytes,maxRawBytes:rawLimit,metadataBytes,rawBytes:rawBytes+decodedBytes,dataInstanceId,resetEpoch:readIdentity.resetEpoch,readIdentity};
-    });
-  }
-  function current(body) {
-    const scope = scopeOf(body?.scope);
-    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
-    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
-    const dependencies = body.dependencies.map((value,index) => validMetadata(value,scope,index));
-    if (new Set(dependencies.map(value=>value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid',400);
-    return readUnit(async repository => {
-      const expected = identity(scope);
-      const matches = body.dataInstanceId === dataInstanceId && body.resetEpoch === expected.resetEpoch
-        && body.readIdentity.dataInstanceId === dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
-      let allCurrent = true; for (const value of dependencies) if (!same(value, await metadataOf(repository,value.key))) allCurrent = false;
-      return {schema:'memory-suite.hayaku-read-session-current.v1',current:matches && allCurrent,
-        scope,evidenceRevision:body.evidenceRevision,dataInstanceId,resetEpoch:expected.resetEpoch};
-    });
-  }
-  return Object.freeze({capture,current});
-}
-return createReadSession;
-}
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
   // The request this hook would have received: the turns the response request carries, then the input.

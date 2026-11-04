@@ -36,7 +36,6 @@ const embedded = [
   ['Flashback_Memory.js', 'MemorySuiteStorageClient.source.js'],
   ['HAYAKU_Locator_Continuity.js', 'MemorySuiteStorageClient.source.js'],
   ['LIBRA.js', 'MemorySuiteStorageClient.libra.source.js'],
-  ['LIA_Persona_Linker.js', 'MemorySuiteStorageClient.source.js'],
   ['RETRACE.js', 'MemorySuiteStorageClient.source.js']
 ];
 for (const [plugin, sdk] of embedded) {

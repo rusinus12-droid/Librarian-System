@@ -1,15 +1,11 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.20
+//@display-name GRADIA v0.28.22
 //@api 3.0
-//@version 0.28.20
+//@version 0.28.22
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
 
-/* v0.25.84 completes ordinary RisuAI native chat-copy continuity: heuristic source selection now prioritizes the longest verified U+A transcript prefix over Copy-title proximity, Story Arc/Writer state can repair a shorter legacy copy when the verified source is further advanced, and Narrative Archive state is merged into the target scope without re-embedding while reusing existing vector references/shared archive history. A v2 completeness receipt verifies Story Arc, Writer, and Narrative Archive readback, and legacy v1 receipts are repaired idempotently instead of being frozen as already adopted. RE:TRACE next-session handoff remains separate and source-immutable. */
-/* v0.25.82 makes WebRisu credential persistence update-safe by mirroring every provider-preset secret, Narrative Archive embedding key, and hosting token into verified pluginStorage backups while retaining localPluginStorage; startup reads repair a missing local copy from the synced backup, and the active narrative-embedding/hosting credentials also use host arguments when available without changing provider/model selection. */
-/* v0.25.81 aligns GRADIA with RE:TRACE peer-compatibility v1 and makes all next-session state handoff source-immutable: Narrative Archive preparation no longer empties or rewrites the source scope, source Story Arc/Writer/Narrative fingerprints are proven unchanged across prepare/adopt, and future GRADIA versions are negotiated by stable protocol/features instead of exact version gates. */
-/* v0.25.49 fixes the button-only Input Writer GUI capability probe that was referenced by the composer/delivery flow but missing from both the source feature branch and the merged canonical build. v0.25.48 merges the explicit button-only Input Writer flow while preserving the shared Narrative Archive, local Float32 vector tier, and RE:TRACE summary-only handoff contract. */
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
 
 /*
@@ -855,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.20';
+  const PLUGIN_VERSION = '0.28.22';
   
   
   
@@ -2189,7 +2185,6 @@
   };
 
   const normalizeLoreActivationMode = value => {
-    // v0.25.72: risu_selected / risu_key / gradia_extended are migration aliases only.
     // Runtime retrieval always uses the single unified evidence-fusion path.
     void value;
     return UNIFIED_LORE_ACTIVATION_MODE;
@@ -2529,7 +2524,6 @@ Before continuing, verify:
       ...phaseRules
     ].join('\n');
   };
-  // v0.25.14: the standalone response-improvement layer is retired.
   // These legacy parsers exist only to migrate old saved toggles into Skill priorities once.
   const LEGACY_RESPONSE_IMPROVEMENT_PROFILES = Object.freeze(['off', 'recommended', 'all', 'custom']);
   const LEGACY_RESPONSE_IMPROVEMENT_IDS = Object.freeze([
@@ -5348,7 +5342,6 @@ Before continuing, verify:
     return out;
   };
 
-  // v0.12.6: optional post-response agents were removed. Old data is ignored.
   const normalizeStoredPostProcessors = () => ({ mode: 'off' });
 
   // Legacy storage/API names use customPrompt + replace. Semantically this is
@@ -6260,7 +6253,6 @@ Before continuing, verify:
     const loreTopKRepairVersion = Math.max(0, Number(runtimeStored.lore_reranker_top_k_repair_v1 || 0) || 0);
     let loreRerankerTopK = rawLoreRerankerTopK;
     if (loreTopKRepairVersion < LORE_RERANK_TOP_K_REPAIR_VERSION && rawLoreRerankerTopK === 1) {
-      // v0.25.51-era settings could surface Top-K=1 even though the product default is 8.
       // Repair that legacy value exactly once. After the marker is stored, an explicit user
       // choice of 1 is respected on later loads.
       loreRerankerTopK = DEFAULT_STAGE_LORE_RERANK_TOP_K;
@@ -7198,7 +7190,6 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const buildRecentChat = (messages, settings) => {
-    // v0.25.76: keep old message bodies as lightweight strings while pairing the
     // recent window, then run the expensive history sanitizer only on content that
     // can actually reach a prompt. This preserves turn numbering without repeatedly
     // regex-cleaning hundreds/thousands of old messages.
@@ -7492,7 +7483,6 @@ ${text(paired.leadingAssistant.content || '')}
       for (const match of memberMatches) add(match[1]);
     });
 
-    // v0.25.76: merge alias-equivalent entries in linear time. The previous
     // merged.find(...aliasKeys...) path became O(E²) on large WingLore databases.
     const merged = [];
     const aliasOwner = new Map();
@@ -14047,7 +14037,6 @@ ${passage.text || ''}`, 420));
     const terminalQuery = compact(options.terminalQuery || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
     const bm25fCurrentCorpus = loreBm25fLoreCorpusScores(source, primaryQuery, 6200);
     const bm25fTerminalCorpus = loreBm25fLoreCorpusScores(source, terminalQuery, 4200);
-    // v0.25.77: once the full-text index has searched every permitted lore, precision
     // reranking also scores every candidate in its bounded result pool. Do not use a
     // wall-clock cutoff that can silently leave later lore unscored.
     const scoredEntries = source.map((lore, order) => {
@@ -14146,7 +14135,6 @@ ${passage.text || ''}`, 420));
       )
     ));
 
-    // v0.25.78: the configured value is a starting frontier, not a hard cut. The
     // selector expands for candidate-protected evidence, uncovered query anchors and
     // flat relevance clusters, then constrains optional evidence by the actual lore
     // budget. Long lore contributes query-ranked passages built from its complete source.
@@ -29669,810 +29657,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
 
   // Preliminary client-only contract. No production server, credential or owner API is bound.
-  const createLibReadConsumer = (dependencies = {}) => {
-    const factoryVersion = 'gradia.lib-read-consumer.v1';
-    const limits = Object.freeze({ maxItems: 8, maxBytes: 8192, maxQueryBytes: 4096 });
-    const owners = new Set(['libra', 'flashback', 'hayaku', 'lia', 'retrace']);
-    const bytes = value => new TextEncoder().encode(value).length;
-    const clone = value => JSON.parse(JSON.stringify(value));
-    const canonical = value => JSON.stringify(value, function (_key, item) {
-      return item && typeof item === 'object' && !Array.isArray(item)
-        ? Object.keys(item).sort().reduce((out, key) => { out[key] = item[key]; return out; }, Object.create(null)) : item;
-    });
-    const error = code => Object.assign(new Error(code), { code });
-    const requireText = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 4096;
-    const requireHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-    const timeoutMs = Math.max(10, Math.min(5000, Number(dependencies.timeoutMs) || 1500));
-    let generation = 0;
-    let active = null;
-    const stop = (record, reason) => {
-      if (!record || record.invalidated) return;
-      record.invalidated = true;
-      record.reason = reason;
-      record.packet = null;
-      record.draft = '';
-      record.draftHash = '';
-      record.removeAbort?.();
-      record.controller.abort(error(reason));
-      if (active === record) generation += 1;
-    };
-    const invalidate = (reason = 'LIB_READ_INVALIDATED') => {
-      stop(active, /^LIB_READ_[A-Z_]+$/.test(reason) ? reason : 'LIB_READ_INVALIDATED');
-    };
-    const check = record => {
-      if (record.invalidated || active !== record || record.generation !== generation) throw error(record.reason || 'LIB_READ_SUPERSEDED');
-    };
-    const guarded = async (record, operation) => {
-      check(record);
-      let timer, onAbort;
-      try {
-        const canceled = new Promise((_, reject) => {
-          onAbort = () => reject(error(record.reason || 'LIB_READ_CANCELED'));
-          record.controller.signal.addEventListener('abort', onAbort, { once: true });
-          timer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), timeoutMs);
-        });
-        const value = await Promise.race([Promise.resolve().then(() => { check(record); return operation(); }), canceled]);
-        check(record);
-        return value;
-      } finally {
-        clearTimeout(timer);
-        if (onAbort) record.controller.signal.removeEventListener('abort', onAbort);
-      }
-    };
-    const normalizeBoundary = raw => {
-      if (!raw || raw.transition === true || !['plugin_only', 'server_only'].includes(raw.mode)) throw error('LIB_READ_MODE_UNAVAILABLE');
-      if (raw.mode === 'plugin_only') return { mode: 'plugin_only' };
-      const scope = {};
-      for (const key of ['characterId', 'chatId', 'branchId', 'personaId', 'worldlineRevision']) {
-        if (!requireText(raw.scope?.[key])) throw error('LIB_READ_SCOPE_UNAVAILABLE');
-        scope[key] = raw.scope[key];
-      }
-      if (!Number.isSafeInteger(raw.modeGeneration) || raw.modeGeneration < 0
-          || !requireText(raw.data?.instanceId) || !requireText(raw.data?.resetEpoch)
-          || !requireText(raw.nativeRevision) || !requireHash(raw.currentInputHash) || !requireHash(raw.recentTurnDigest)) throw error('LIB_READ_BOUNDARY_UNAVAILABLE');
-      return { mode: raw.mode, modeGeneration: raw.modeGeneration, scope,
-        data: { instanceId: raw.data.instanceId, resetEpoch: raw.data.resetEpoch }, nativeRevision: raw.nativeRevision,
-        currentInputHash: raw.currentInputHash, recentTurnDigest: raw.recentTurnDigest };
-    };
-    const disabledSession = () => Object.freeze({ status: 'disabled', reason: 'plugin_only',
-      assertCurrent: async () => true, getEvidence: async () => null,
-      bindDraft: async () => { throw error('LIB_READ_DISABLED'); }, finalizeDraft: async () => { throw error('LIB_READ_DISABLED'); } });
-    const beginRead = async (input = {}) => {
-      invalidate('LIB_READ_SUPERSEDED');
-      // Production defaults here without inspecting input or loading connection settings.
-      if (typeof dependencies.getBoundary !== 'function') return disabledSession();
-      const record = { generation, controller: new AbortController(), invalidated: false, packet: null, draft: '', draftHash: '', reason: '' };
-      active = record;
-      const signal = input.signal;
-      if (signal) {
-        const cancel = () => stop(record, 'LIB_READ_CANCELED');
-        signal.addEventListener('abort', cancel, { once: true });
-        record.removeAbort = () => signal.removeEventListener('abort', cancel);
-        if (signal.aborted) cancel();
-      }
-      try {
-        // Copy request primitives before the first await; callers retain their input object.
-        const captured = { requestId: input.requestId, currentInputHash: input.currentInputHash,
-          recentTurnDigest: input.recentTurnDigest, query: input.query,
-          allowedOwners: Array.isArray(input.allowedOwners) ? input.allowedOwners.slice() : null };
-        const boundary = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-        if (boundary.mode === 'plugin_only') { stop(record, 'LIB_READ_DISABLED'); return disabledSession(); }
-        if (typeof dependencies.recall !== 'function' || typeof dependencies.assertCurrent !== 'function'
-            || typeof dependencies.digest !== 'function') throw error('LIB_READ_CONTRACT_UNAVAILABLE');
-        if (typeof input.pipelineSnapshot === 'function') {
-          const snapshot = clone(input.pipelineSnapshot());
-          captured.currentInputHash = await guarded(record, () => dependencies.digest(snapshot.currentInput));
-          const nativeReadSet = { schema: snapshot.schema, currentInputRef: snapshot.currentInputRef, selections: [], turns: [] };
-          for (const selection of snapshot.selections) {
-            const viewSHA256 = await guarded(record, () => dependencies.digest(canonical(selection.view)));
-            if (!requireHash(viewSHA256)) throw error('LIB_READ_HASH_UNAVAILABLE');
-            nativeReadSet.selections.push({ stage: selection.stage, turns: selection.turns, viewSHA256 });
-          }
-          for (const item of snapshot.turns) nativeReadSet.turns.push({ ...item.ref, role: item.role,
-            contentSHA256: await guarded(record, () => dependencies.digest(item.content)) });
-          if (bytes(canonical(nativeReadSet)) > 65536) throw error('LIB_READ_REQUEST_BUDGET_EXCEEDED');
-          captured.recentTurnDigest = await guarded(record, () => dependencies.digest(canonical(nativeReadSet)));
-          captured.nativeReadSet = nativeReadSet;
-          captured.query = '';
-          for (const char of snapshot.query) {
-            if (bytes(captured.query + char) > limits.maxQueryBytes) break;
-            captured.query += char;
-          }
-          captured.allowedOwners = ['libra'];
-          const afterDigest = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-          if (canonical(afterDigest) !== canonical(boundary)) throw error('LIB_READ_BOUNDARY_CHANGED');
-        }
-        if (!requireText(captured.requestId) || captured.currentInputHash !== boundary.currentInputHash
-            || captured.recentTurnDigest !== boundary.recentTurnDigest || typeof captured.query !== 'string'
-            || bytes(captured.query) > limits.maxQueryBytes || !Array.isArray(captured.allowedOwners)
-            || !captured.allowedOwners.length || captured.allowedOwners.length > owners.size
-            || captured.allowedOwners.some(owner => !owners.has(owner))) throw error('LIB_READ_REQUEST_INVALID');
-        const request = clone({ requestId: captured.requestId, currentInputHash: captured.currentInputHash,
-          recentTurnDigest: captured.recentTurnDigest, query: captured.query, allowedOwners: [...new Set(captured.allowedOwners)],
-          boundary, budget: limits, ...(captured.nativeReadSet ? { nativeReadSet: captured.nativeReadSet } : {}) });
-        const boundaryKey = canonical(boundary);
-        const assertBoundary = async () => {
-          const current = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-          if (canonical(current) !== boundaryKey) throw error('LIB_READ_BOUNDARY_CHANGED');
-        };
-        const response = await guarded(record, () => dependencies.recall(clone(request), { signal: record.controller.signal }));
-        const serializedReceipt = JSON.stringify(response);
-        if (typeof serializedReceipt !== 'string' || bytes(serializedReceipt) > 65536) throw error('LIB_READ_BUDGET_EXCEEDED');
-        const receipt = JSON.parse(serializedReceipt);
-        await assertBoundary();
-        if (receipt?.schema !== 'gradia.lib-read-receipt.v1' || receipt.requestId !== request.requestId
-            || canonical(receipt.boundary) !== boundaryKey || !requireText(receipt.evidenceRevision)) throw error('LIB_READ_RECEIPT_MISMATCH');
-        if (receipt.completeness !== 'complete' || receipt.truncated !== false) throw error('LIB_READ_INCOMPLETE');
-        if (!Array.isArray(receipt.items) || receipt.items.length > limits.maxItems) throw error('LIB_READ_BUDGET_EXCEEDED');
-        const seen = new Set(); let totalBytes = 0;
-        for (const item of receipt.items) {
-          if (!requireText(item.id) || seen.has(item.id) || !request.allowedOwners.includes(item.owner)
-              || item.authority !== 'owner_memory' || item.eligibility !== 'eligible'
-              || typeof item.content !== 'string' || !requireHash(item.contentHash)
-              || canonical(item.source?.scope) !== canonical(boundary.scope)
-              || !requireText(item.source?.sourceRevision) || !requireText(item.source?.variantId)
-              || !requireText(item.source?.handle) || !Array.isArray(item.source?.turnIds)
-              || !item.source.turnIds.length || item.source.turnIds.length > 64
-              || item.source.turnIds.some(id => !requireText(id))
-              || new Set(item.source.turnIds).size !== item.source.turnIds.length) throw error('LIB_READ_SOURCE_INVALID');
-          seen.add(item.id); totalBytes += bytes(item.content);
-          if (totalBytes > limits.maxBytes) throw error('LIB_READ_BUDGET_EXCEEDED');
-          const digest = await guarded(record, () => dependencies.digest(item.content));
-          if (digest !== item.contentHash) throw error('LIB_READ_CONTENT_MISMATCH');
-        }
-        record.packet = receipt;
-        const assertCurrent = async () => {
-          try {
-            check(record);
-            await assertBoundary();
-            const current = await guarded(record, () => dependencies.assertCurrent(clone(record.packet), { signal: record.controller.signal }));
-            if (current !== true) throw error('LIB_READ_STALE');
-            await assertBoundary();
-            check(record);
-            return true;
-          } catch (caught) {
-            const code = /^LIB_READ_/.test(caught?.code || '') ? caught.code : 'LIB_READ_UNAVAILABLE';
-            stop(record, code); throw error(code);
-          }
-        };
-        await assertCurrent();
-        check(record);
-        const evidenceRevision = receipt.evidenceRevision;
-        return Object.freeze({ status: 'ready',
-          invalidate: reason => stop(record, /^LIB_READ_[A-Z_]+$/.test(reason) ? reason : 'LIB_READ_INVALIDATED'),
-          assertLocalCurrent: () => check(record),
-          assertCurrent,
-          getEvidence: async () => { await assertCurrent(); check(record); return clone(record.packet); },
-          bindDraft: async draft => {
-            await assertCurrent();
-            check(record);
-            if (typeof draft !== 'string' || !draft || bytes(draft) > 320000) throw error('LIB_READ_DRAFT_INVALID');
-            const digest = await guarded(record, () => dependencies.digest(draft));
-            await assertCurrent();
-            check(record);
-            if (!requireHash(digest)) throw error('LIB_READ_DRAFT_INVALID');
-            record.draft = draft; record.draftHash = digest;
-            return Object.freeze({ requestId: request.requestId, draftHash: digest, evidenceRevision });
-          },
-          finalizeDraft: async () => {
-            await assertCurrent();
-            check(record);
-            if (!record.draft || !record.draftHash) throw error('LIB_READ_DRAFT_UNBOUND');
-            return record.draft;
-          }
-        });
-      } catch (caught) {
-        const code = /^LIB_READ_/.test(caught?.code || '') ? caught.code : 'LIB_READ_UNAVAILABLE';
-        stop(record, code); throw error(code);
-      }
-    };
-    return Object.freeze({ factoryVersion, beginRead, invalidate,
-      getState: () => Object.freeze({ generation, hasEvidence: !!active?.packet, hasDraft: !!active?.draft,
-        reason: active?.reason || '', productionRemoteEnabled: false }) });
-  };
   // Narrow existing-server adapter. This is a logical read session, not an owner
   // certificate or the stronger, still separate MiB-v2 observer contract.
   // BEGIN pinned pure G2 factory (unchanged implementation).
 'use strict';
 // Pure, locally issued budget evidence. This is not owner authentication and is
 // not embedded into GRADIA runtime. Content is bounded; framing is an estimate.
-/* GRADIA RANKED EVIDENCE V2 COMPONENTS BEGIN */
-// Source: sdk/gradia/GradiaReadV2Protocol.source.js sha256=da14a645ed32ce1d30f35e07c91f5579be7b39c0aa9bb3cf85ce7ad0a6c059c6
-'use strict';
-// Pure transport validation. A digest establishes integrity, never owner authority.
-function createGradiaReadV2Protocol({sha256}) {
-  if (typeof sha256 !== 'function') throw new TypeError('GRADIA_V2_HASH_REQUIRED');
-  const MiB = 1048576;
-  const defaults = {contentBytes:4*MiB,items:1024,metadataBytes:2*MiB,nativeMetadataBytes:MiB,
-    queryBytes:32768,frameBytes:MiB,fragmentBytes:131072,frames:256,transferBytes:32*MiB,
-    issuedRecordBytes:8*MiB,issuedRecords:4,physicalReads:4,managedBytes:64*MiB,
-    renderedBytes:262144,metadataDepth:8,metadataNodes:131072};
-  const maxima = {contentBytes:32*MiB,items:8192,metadataBytes:16*MiB,nativeMetadataBytes:8*MiB,
-    queryBytes:131072,frameBytes:MiB,fragmentBytes:131072,frames:2048,transferBytes:256*MiB,
-    issuedRecordBytes:64*MiB,issuedRecords:4,physicalReads:4,managedBytes:256*MiB,
-    renderedBytes:4*MiB,metadataDepth:8,metadataNodes:1048576};
-  const fail = reason => { throw new TypeError('GRADIA_V2_' + reason); };
-  const integer = (value, positive=false) => {
-    if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0) || Object.is(value,-0)) fail('INTEGER');
-    return value;
-  };
-  const checkedAdd = (a,b) => { integer(a);integer(b);if(a>Number.MAX_SAFE_INTEGER-b)fail('OVERFLOW');return a+b; };
-  const checkedMultiply = (a,b) => { integer(a);integer(b);if(b && a>Math.floor(Number.MAX_SAFE_INTEGER/b))fail('OVERFLOW');return a*b; };
-  function plain(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('OBJECT');
-    const proto=Object.getPrototypeOf(value);
-    if(proto!==null && proto!==Object.prototype) fail('PROTOTYPE');
-  }
-  function fields(value,required,optional=[]) {
-    plain(value);const keys=Reflect.ownKeys(value),out=Object.create(null);
-    if(keys.length>required.length+optional.length)fail('FIELDS');
-    for(const key of keys){if(typeof key!=='string'||(!required.includes(key)&&!optional.includes(key)))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(value,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out[key]=d.value;}
-    for(const key of required)if(!Object.hasOwn(out,key))fail('MISSING_FIELD');
-    return out;
-  }
-  function array(value,max=1048576){
-    if(!Array.isArray(value))fail('ARRAY');if(Object.getPrototypeOf(value)!==Array.prototype)fail('PROTOTYPE');const length=Object.getOwnPropertyDescriptor(value,'length').value;integer(length);if(length>max)fail('NODES');
-    const keys=Reflect.ownKeys(value);if(keys.length!==length+1)fail('ARRAY_FIELDS');
-    const out=[];for(let i=0;i<length;i++){const d=Object.getOwnPropertyDescriptor(value,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out.push(d.value);}return out;
-  }
-  // Exact JSON string byte measure without allocating a serialized string/buffer.
-  function stringSize(value,max=16*MiB,nonempty=false){
-    if(typeof value!=='string'||(nonempty&&!value.length)||value.length>max)fail('STRING');
-    let utf8=0,jsonBytes=2;
-    for(let i=0;i<value.length;i++){
-      const c=value.charCodeAt(i);let bytes;
-      if(c>=0xd800&&c<=0xdbff){const next=value.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))fail('UNSUPPORTED_TEXT');bytes=4;}
-      else if(c>=0xdc00&&c<=0xdfff)fail('UNSUPPORTED_TEXT');
-      else bytes=c<128?1:c<2048?2:3;
-      // Input code units are capped at 32 MiB before this loop: UTF-8 <= 3*n
-      // and JSON <= 6*n+2, both far below the safe-integer ceiling.
-      utf8+=bytes;
-      jsonBytes+=c===34||c===92?2:c<32?(c===8||c===9||c===10||c===12||c===13?2:6):bytes;
-      if(utf8>max)fail('STRING_BYTES');
-    }
-    return {utf8,jsonBytes};
-  }
-  function prepareCanonical(value,maxBytes){
-    let bytes=0,nodes=0;const ancestors=new Set();
-    const add=n=>{bytes=checkedAdd(bytes,n);if(bytes>maxBytes)fail('CANONICAL_BYTES');};
-    function visit(v,depth){
-      if(depth>8)fail('DEPTH');if(++nodes>1048576)fail('NODES');
-      if(v===null){add(4);return null;}
-      if(typeof v==='string'){add(stringSize(v).jsonBytes);return v;}
-      if(typeof v==='number'){integer(v);add(String(v).length);return v;}
-      if(typeof v==='boolean'){add(v?4:5);return v;}
-      if(!v||typeof v!=='object')fail('VALUE');if(ancestors.has(v))fail('CYCLE');ancestors.add(v);
-      let out;
-      if(Array.isArray(v)){
-        const values=array(v);add(2+Math.max(0,values.length-1));out=[];for(const item of values)out.push(visit(item,depth+1));
-      }else{
-        plain(v);const keys=Reflect.ownKeys(v);if(keys.length>1048576-nodes)fail('NODES');if(keys.some(k=>typeof k!=='string'))fail('FIELDS');keys.sort();out=Object.create(null);add(2+Math.max(0,keys.length-1));
-        for(const key of keys){const d=Object.getOwnPropertyDescriptor(v,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');if(++nodes>1048576)fail('NODES');add(stringSize(key,256).jsonBytes+1);out[key]=visit(d.value,depth+1);}
-      }
-      ancestors.delete(v);return out;
-    }
-    return {normalized:visit(value,0),bytes};
-  }
-  function encodePrepared(prepared){
-    // Object insertion order cannot encode lexical integer-like keys. Emit the
-    // already-validated bounded tree directly, serializing primitives only.
-    const parts=[];
-    function emit(value){
-      if(value===null||typeof value!=='object'){parts.push(JSON.stringify(value));return;}
-      if(Array.isArray(value)){
-        parts.push('[');for(let i=0;i<value.length;i++){if(i)parts.push(',');emit(value[i]);}parts.push(']');
-      }else{
-        const keys=Object.keys(value).sort();parts.push('{');
-        for(let i=0;i<keys.length;i++){if(i)parts.push(',');parts.push(JSON.stringify(keys[i]),':');emit(value[keys[i]]);}parts.push('}');
-      }
-    }
-    emit(prepared.normalized);
-    const encoded=new TextEncoder().encode(parts.join(''));
-    if(encoded.byteLength!==prepared.bytes)fail('ENCODING_MISMATCH');return encoded;
-  }
-  function canonicalBytes(value){return encodePrepared(prepareCanonical(value,16*MiB));}
-  function validateLimits(raw={}){
-    const value=fields(raw,[],[...Object.keys(defaults),'itemBytes']),out={};
-    for(const key of Object.keys(defaults)){const n=Object.hasOwn(value,key)?integer(value[key],true):defaults[key];if(n>maxima[key])fail('LIMIT_'+key);out[key]=n;}
-    if(Object.hasOwn(value,'itemBytes')&&value.itemBytes!==out.contentBytes)fail('ITEM_LIMIT');
-    out.itemBytes=out.contentBytes;return Object.freeze(out);
-  }
-  const id=value=>{stringSize(value,256,true);return value;};
-  const nullableId=value=>value===null?null:id(value);
-  const hash=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value))fail('HASH');return value;};
-  const kinds=['content','corpus-metadata','native-metadata','selection-metadata'];
-  function entry(raw,pageKind){
-    plain(raw);const discriminant=Object.getOwnPropertyDescriptor(raw,'kind');if(discriminant&&!('value'in discriminant))fail('ACCESSOR');
-    let e;
-    if(!discriminant){
-      if(pageKind!=='content')fail('ENTRY_KIND');e=fields(raw,['itemId','fragmentIndex','text','utf8Bytes']);id(e.itemId);integer(e.fragmentIndex);integer(e.utf8Bytes);if(stringSize(e.text,131072).utf8!==e.utf8Bytes)fail('CONTENT_BYTES');
-    }else if(discriminant.value==='item-descriptor'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','itemId','profile','contentBytes','contentHash','groupId']);id(e.itemId);nullableId(e.groupId);integer(e.contentBytes);if(e.contentBytes>32*MiB)fail('CONTENT_BYTES');hash(e.contentHash);
-      if(!['libra.canonical.memory-text.v1','libra.micro.claims-text.v1','libra.micro.source-span.v1'].includes(e.profile))fail('PROFILE');
-    }else if(discriminant.value==='source-proof'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','proofId','sourceId','sourceHash']);id(e.proofId);id(e.sourceId);hash(e.sourceHash);
-    }else if(discriminant.value==='native-ref'){
-      if(pageKind!=='native-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','messageId','generationId','speakerId','speakerName','contentHash','requestContentHash']);id(e.messageId);for(const key of ['generationId','speakerId','speakerName'])nullableId(e[key]);if(typeof e.contentHash!=='string'||!/^[a-f0-9]{8}:[0-9]{1,16}$/.test(e.contentHash))fail('NATIVE_HASH');hash(e.requestContentHash);
-    }else if(discriminant.value==='selection-item'){
-      if(pageKind!=='selection-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','selectionIndex','itemId']);integer(e.selectionIndex);id(e.itemId);
-    }else fail('ENTRY_KIND');
-    return Object.freeze(e);
-  }
-  function validateFrame(raw){
-    const frame=fields(raw,['schema','requestId','issuerId','transferId','pageKind','pageIndex','entries','frameHash']);
-    if(frame.schema!=='gradia.owner-read.v2'||!kinds.includes(frame.pageKind))fail('SCHEMA');for(const key of ['requestId','issuerId','transferId'])id(frame[key]);integer(frame.pageIndex);if(frame.pageIndex>=2048)fail('PAGE_INDEX');hash(frame.frameHash);
-    // Each closed entry is larger than 32 wire bytes; bound the reference array
-    // before walking it. Check the cumulative complete envelope before encoding
-    // and stop at the first overflowing entry, rather than scanning the transfer.
-    const inputs=array(frame.entries,Math.floor(MiB/32));frame.entries=[];
-    let wireBytes=prepareCanonical(frame,MiB).bytes;
-    for(const rawEntry of inputs){
-      const normalized=entry(rawEntry,frame.pageKind);
-      wireBytes=checkedAdd(wireBytes,prepareCanonical(normalized,MiB).bytes+(frame.entries.length?1:0));
-      if(wireBytes>MiB)fail('FRAME_BYTES');frame.entries.push(normalized);
-    }
-    if(!frame.entries.length)fail('EMPTY_FRAME');Object.freeze(frame.entries);
-    const core=Object.create(null);for(const key of Object.keys(frame))if(key!=='frameHash')core[key]=frame[key];
-    if(hash(sha256(encodePrepared(prepareCanonical(core,MiB))))!==frame.frameHash)fail('FRAME_HASH');return Object.freeze(frame);
-  }
-  return Object.freeze({validateLimits,validateFrame,canonicalBytes,checkedAdd,checkedMultiply});
-}
-
-// Source: sdk/gradia/GradiaReadV2Credit.source.js sha256=d00649128173c221303abf07d1f50bfc34c007f0118be9856ad9e4ce77db80f4
-'use strict';
-// Application-declared representation bytes, not JavaScript/host peak heap.
-function createGradiaReadV2Credit({maxManagedBytes,maxPhysicalReads}) {
-  const fail=reason=>{throw new TypeError('GRADIA_V2_CREDIT_'+reason);};
-  const integer=(value,positive=false)=>{if(!Number.isSafeInteger(value)||value<(positive?1:0)||Object.is(value,-0))fail('INTEGER');return value;};
-  integer(maxManagedBytes,true);integer(maxPhysicalReads,true);
-  if(maxManagedBytes>268435456||maxPhysicalReads>4)fail('LIMIT');
-  const records=new Map();let managedBytes=0,physicalReads=0;
-  const kinds=new Set(['utf16-text','bytes','metadata','frame','reassembly','encoding','selected-prompt','physical']);
-  function id(value){if(typeof value!=='string'||!value.length||value.length>256)fail('ID');let bytes=0;for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);if(c>=0xd800&&c<=0xdbff){const n=value.charCodeAt(++i);if(!(n>=0xdc00&&n<=0xdfff))fail('ID');bytes+=4;}else if(c>=0xdc00&&c<=0xdfff)fail('ID');else bytes+=c<128?1:c<2048?2:3;if(bytes>256)fail('ID');}return value;}
-  function data(raw,keys){if(!raw||typeof raw!=='object'||Array.isArray(raw))fail('FIELDS');const proto=Object.getPrototypeOf(raw);if(proto!==null&&proto!==Object.prototype)fail('PROTOTYPE');const own=Reflect.ownKeys(raw);if(own.length!==keys.length)fail('FIELDS');const result={};for(const key of own){if(!keys.includes(key))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(raw,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');result[key]=d.value;}return result;}
-  function add(raw,physical){const r=data(raw,physical?['id','bytes']:['id','bytes','kind']);id(r.id);integer(r.bytes);if(!physical&&!kinds.has(r.kind))fail('KIND');if(records.has(r.id))fail('DUPLICATE');if(r.bytes>maxManagedBytes-managedBytes)fail('BYTES');if(physical&&physicalReads>=maxPhysicalReads)fail('PHYSICAL_READS');
-    records.set(r.id,{bytes:r.bytes,kind:physical?'physical':r.kind,physical,pending:physical,retired:false});managedBytes+=r.bytes;if(physical)physicalReads++;return Object.freeze({id:r.id,bytes:r.bytes});}
-  const get=key=>{id(key);const record=records.get(key);if(!record)fail('UNKNOWN');return record;};
-  const reserve=raw=>add(raw,false),beginPhysical=raw=>add(raw,true);
-  const retire=key=>{const record=get(key);record.retired=true;};
-  const settle=key=>{const record=get(key);if(!record.physical||!record.pending)fail('SETTLEMENT');record.pending=false;physicalReads--;return Object.freeze({retired:record.retired,retainedBytes:record.bytes});};
-  const release=key=>{const record=get(key);if(record.pending)fail('UNSETTLED');managedBytes-=record.bytes;records.delete(key);};
-  const snapshot=()=>{const byKind=Object.create(null);let retired=0,settledPhysical=0;for(const record of records.values()){byKind[record.kind]=(byKind[record.kind]||0)+record.bytes;if(record.retired)retired++;if(record.physical&&!record.pending)settledPhysical++;}return {managedBytes,physicalReads,reservations:records.size,retired,settledPhysical,kinds:byKind};};
-  return Object.freeze({reserve,beginPhysical,retire,settle,release,snapshot});
-}
-
-// Source: sdk/gradia/GradiaReadV2Frames.source.js sha256=ae52d772bf7f06747f03f6fe12da8b29d516d583c154d22b70b51a87834de94a
-'use strict';
-// Fixed closed page schemas. Transport integrity is not producer/native authority.
-// Caller reserves iterator.reservationBytes before next(); retained outputs need
-// their own reservations. This module cannot mutate the endpoint credit ledger.
-function createGradiaReadV2Frames({protocol,sha256}) {
-  if(!protocol||typeof protocol.canonicalBytes!=='function'||typeof sha256!=='function')throw new TypeError('GRADIA_V2_FRAMES_DEPENDENCY');
-  const MiB=1048576;
-  const fail=reason=>{throw new TypeError('GRADIA_V2_FRAMES_'+reason);};
-  const integer=(value,positive=false)=>{if(!Number.isSafeInteger(value)||value<(positive?1:0)||Object.is(value,-0))fail('INTEGER');return value;};
-  const checkedAdd=protocol.checkedAdd,checkedMultiply=protocol.checkedMultiply;
-  // Executable sources are private, trusted synchronous producers, never IPC data.
-  // Capture intrinsics instead of looking up next/return/iterator on a producer.
-  const generatorPrototype=Object.getPrototypeOf(Object.getPrototypeOf((function*(){})()));
-  const iteratorPrototype=Object.getPrototypeOf(generatorPrototype);
-  const generatorNext=Object.getOwnPropertyDescriptor(generatorPrototype,'next').value;
-  const generatorReturn=Object.getOwnPropertyDescriptor(generatorPrototype,'return').value;
-  const iteratorIdentity=Object.getOwnPropertyDescriptor(iteratorPrototype,Symbol.iterator).value;
-  function admitGenerator(value){
-    if(!value||typeof value!=='object')fail('ITERATOR');
-    const proto=Object.getPrototypeOf(value);
-    if(!proto||Object.getPrototypeOf(proto)!==generatorPrototype||Reflect.ownKeys(proto).length!==0)fail('ITERATOR_PROTOTYPE');
-    const own=Reflect.ownKeys(value);
-    if(own.some(key=>key!=='reservationBytes'))fail('ITERATOR_FIELDS');
-    if(own.length){const descriptor=Object.getOwnPropertyDescriptor(value,'reservationBytes');if(!descriptor||!('value'in descriptor))fail('ACCESSOR');integer(descriptor.value);}
-    if(Object.getPrototypeOf(generatorPrototype)!==iteratorPrototype
-      ||Object.getOwnPropertyDescriptor(generatorPrototype,'next')?.value!==generatorNext
-      ||Object.getOwnPropertyDescriptor(generatorPrototype,'return')?.value!==generatorReturn
-      ||Object.getOwnPropertyDescriptor(iteratorPrototype,Symbol.iterator)?.value!==iteratorIdentity)fail('ITERATOR_INTRINSICS');
-  }
-
-  function plain(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('OBJECT');
-    const proto=Object.getPrototypeOf(value);
-    if(proto!==null && proto!==Object.prototype) fail('PROTOTYPE');
-  }
-  function fields(value,required,optional=[]) {
-    plain(value);const keys=Reflect.ownKeys(value),out=Object.create(null);
-    if(keys.length>required.length+optional.length)fail('FIELDS');
-    for(const key of keys){if(typeof key!=='string'||(!required.includes(key)&&!optional.includes(key)))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(value,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out[key]=d.value;}
-    for(const key of required)if(!Object.hasOwn(out,key))fail('MISSING_FIELD');
-    return out;
-  }
-  function array(value,max=1048576){
-    if(!Array.isArray(value))fail('ARRAY');if(Object.getPrototypeOf(value)!==Array.prototype)fail('PROTOTYPE');const length=Object.getOwnPropertyDescriptor(value,'length').value;integer(length);if(length>max)fail('NODES');
-    const keys=Reflect.ownKeys(value);if(keys.length!==length+1)fail('ARRAY_FIELDS');
-    const out=[];for(let i=0;i<length;i++){const d=Object.getOwnPropertyDescriptor(value,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out.push(d.value);}return out;
-  }
-  // Exact JSON string byte measure without allocating a serialized string/buffer.
-  function stringSize(value,max=16*MiB,nonempty=false){
-    if(typeof value!=='string'||(nonempty&&!value.length)||value.length>max)fail('STRING');
-    let utf8=0,jsonBytes=2;
-    for(let i=0;i<value.length;i++){
-      const c=value.charCodeAt(i);let bytes;
-      if(c>=0xd800&&c<=0xdbff){const next=value.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))fail('UNSUPPORTED_TEXT');bytes=4;}
-      else if(c>=0xdc00&&c<=0xdfff)fail('UNSUPPORTED_TEXT');
-      else bytes=c<128?1:c<2048?2:3;
-      // Input code units are capped at 32 MiB before this loop: UTF-8 <= 3*n
-      // and JSON <= 6*n+2, both far below the safe-integer ceiling.
-      utf8+=bytes;
-      jsonBytes+=c===34||c===92?2:c<32?(c===8||c===9||c===10||c===12||c===13?2:6):bytes;
-      if(utf8>max)fail('STRING_BYTES');
-    }
-    return {utf8,jsonBytes};
-  }
-  const id=value=>{stringSize(value,256,true);return value;};
-  const nullableId=value=>value===null?null:id(value);
-  const hash=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value))fail('HASH');return value;};
-  const kinds=['content','corpus-metadata','native-metadata','selection-metadata'];
-  function entry(raw,pageKind){
-    plain(raw);const discriminant=Object.getOwnPropertyDescriptor(raw,'kind');if(discriminant&&!('value'in discriminant))fail('ACCESSOR');
-    let e;
-    if(!discriminant){
-      if(pageKind!=='content')fail('ENTRY_KIND');e=fields(raw,['itemId','fragmentIndex','text','utf8Bytes']);id(e.itemId);integer(e.fragmentIndex);integer(e.utf8Bytes);if(stringSize(e.text,131072).utf8!==e.utf8Bytes)fail('CONTENT_BYTES');
-    }else if(discriminant.value==='item-descriptor'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','itemId','profile','contentBytes','contentHash','groupId']);id(e.itemId);nullableId(e.groupId);integer(e.contentBytes);if(e.contentBytes>32*MiB)fail('CONTENT_BYTES');hash(e.contentHash);
-      if(!['libra.canonical.memory-text.v1','libra.micro.claims-text.v1','libra.micro.source-span.v1'].includes(e.profile))fail('PROFILE');
-    }else if(discriminant.value==='source-proof'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','proofId','sourceId','sourceHash']);id(e.proofId);id(e.sourceId);hash(e.sourceHash);
-    }else if(discriminant.value==='native-ref'){
-      if(pageKind!=='native-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','messageId','generationId','speakerId','speakerName','contentHash','requestContentHash']);id(e.messageId);for(const key of ['generationId','speakerId','speakerName'])nullableId(e[key]);if(typeof e.contentHash!=='string'||!/^[a-f0-9]{8}:[0-9]{1,16}$/.test(e.contentHash))fail('NATIVE_HASH');hash(e.requestContentHash);
-    }else if(discriminant.value==='selection-item'){
-      if(pageKind!=='selection-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','selectionIndex','itemId']);integer(e.selectionIndex);id(e.itemId);
-    }else fail('ENTRY_KIND');
-    return Object.freeze(e);
-  }
-  function measuredScalar(value){
-    if(value===null)return 4;
-    if(typeof value==='string')return stringSize(value).jsonBytes;
-    if(typeof value==='number'){integer(value);return String(value).length;}
-    if(Array.isArray(value)&&value.length===0)return 2;
-    fail('SCALAR');
-  }
-  function measureRecord(value){let bytes=2;const keys=Object.keys(value);if(keys.length)bytes+=keys.length-1;for(const key of keys)bytes=checkedAdd(bytes,stringSize(key,256).jsonBytes+1+measuredScalar(value[key]));return bytes;}
-  function expose(generator,reservationBytes){Object.defineProperty(generator,'reservationBytes',{value:reservationBytes,enumerable:true});return generator;}
-  function fragmentText(raw){
-    const input=fields(raw,['itemId','text'],['maxFragmentBytes']);id(input.itemId);const max=input.maxFragmentBytes===undefined?131072:integer(input.maxFragmentBytes,true);if(max>131072)fail('FRAGMENT_BYTES');if(typeof input.text!=='string')fail('STRING');
-    const reservationBytes=checkedAdd(checkedMultiply(max,2),1024);
-    return expose((function*(){
-      stringSize(input.text,32*MiB); // whole-input validity, no whole-input encoding/copy
-      if(!input.text.length){yield Object.freeze({itemId:input.itemId,fragmentIndex:0,text:'',utf8Bytes:0});return;}
-      let start=0,bytes=0,index=0;
-      for(let i=0;i<input.text.length;){const c=input.text.charCodeAt(i),units=c>=0xd800&&c<=0xdbff?2:1,n=units===2?4:c<128?1:c<2048?2:3;if(n>max)fail('CODE_POINT_EXCEEDS_FRAGMENT');
-        if(bytes+n>max){yield Object.freeze({itemId:input.itemId,fragmentIndex:index++,text:input.text.slice(start,i),utf8Bytes:bytes});start=i;bytes=0;}
-        bytes+=n;i+=units;
-      }
-      if(start<input.text.length)yield Object.freeze({itemId:input.itemId,fragmentIndex:index,text:input.text.slice(start),utf8Bytes:bytes});
-    })(),reservationBytes);
-  }
-  function iterateFrames(raw){
-    const input=fields(raw,['binding','entries','limits']);
-    const limits=protocol.validateLimits(input.limits);
-    const binding=fields(input.binding,['schema','requestId','issuerId','transferId','pageKind']);
-    if(binding.schema!=='gradia.owner-read.v2'||!kinds.includes(binding.pageKind))fail('SCHEMA');for(const key of ['requestId','issuerId','transferId'])id(binding[key]);Object.freeze(binding);
-    // Conservative application-controlled simultaneous bytes: UTF-16 core/wire,
-    // their UTF-8 buffers, bounded hash-input copy, pending-entry encoding and
-    // fragment text. Engine/host allocation overhead remains separately qualified.
-    let arrayLength=null;
-    if(Array.isArray(input.entries)){
-      if(Object.getPrototypeOf(input.entries)!==Array.prototype)fail('PROTOTYPE');
-      arrayLength=integer(Object.getOwnPropertyDescriptor(input.entries,'length').value);
-      if(arrayLength>limits.metadataNodes)fail('NODES');
-    }else admitGenerator(input.entries);
-    // Array inputs are already caller-owned. Reserve their bounded key scan as
-    // well; values are still read one at a time, without copying the transfer.
-    const reservationBytes=checkedAdd(checkedAdd(checkedMultiply(limits.frameBytes,16),4096),arrayLength===null?0:checkedMultiply(arrayLength,64));
-    function* source(){
-      if(arrayLength!==null){
-        if(Reflect.ownKeys(input.entries).length!==arrayLength+1)fail('ARRAY_FIELDS');
-        for(let i=0;i<arrayLength;i++){const d=Object.getOwnPropertyDescriptor(input.entries,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');yield d.value;}
-      }else{
-        let done=false;
-        try{for(;;){const step=generatorNext.call(input.entries);if(step.done){done=true;return;}yield step.value;}}
-        finally{if(!done)generatorReturn.call(input.entries);}
-      }
-    }
-    return expose((function*(){
-      if(reservationBytes>limits.managedBytes)fail('MANAGED_BYTES');
-      let pageIndex=0,aggregate=0,contentBytes=0,metadataBytes=2,metadataNodes=1;
-      let group=[],entryBytes=0,lastItem=null,lastFragment=-1,itemBytes=0,selectionIndex=0;
-      const seen=new Set();
-      const baseBytes=()=>measureRecord({...binding,pageIndex,entries:[]});
-      const wireSize=(count,size)=>checkedAdd(baseBytes()+size+Math.max(0,count-1),79); // comma + "frameHash":64-hex
-      function finish(){
-        const predicted=wireSize(group.length,entryBytes);
-        if(pageIndex>=limits.frames||predicted>limits.frameBytes)fail('FRAME_LIMIT');
-        const nextAggregate=checkedAdd(aggregate,predicted);if(nextAggregate>limits.transferBytes)fail('TRANSFER_BYTES');
-        const core={...binding,pageIndex,entries:Object.freeze(group)};
-        const preimage=protocol.canonicalBytes(core),frameHash=hash(sha256(preimage));
-        const frame=Object.freeze({...core,frameHash});
-        const wireBytes=protocol.canonicalBytes(frame).byteLength;
-        if(wireBytes!==predicted)fail('MEASUREMENT');
-        aggregate=nextAggregate;pageIndex=checkedAdd(pageIndex,1);
-        const result=Object.freeze({frame,wireBytes,coreBytes:preimage.byteLength,reservationBytes});
-        group=[];entryBytes=0;return result;
-      }
-      for(const rawEntry of source()){
-        const e=entry(rawEntry,binding.pageKind),size=measureRecord(e);
-        metadataNodes=checkedAdd(metadataNodes,1+2*Object.keys(e).length);if(metadataNodes>limits.metadataNodes)fail('NODES');
-        if(binding.pageKind==='content'){
-          if(e.utf8Bytes>limits.fragmentBytes)fail('FRAGMENT_BYTES');
-          if(e.itemId!==lastItem){if(seen.has(e.itemId)||e.fragmentIndex!==0)fail('FRAGMENT_ORDER');seen.add(e.itemId);if(seen.size>limits.items)fail('ITEMS');lastItem=e.itemId;lastFragment=-1;itemBytes=0;}
-          if(e.fragmentIndex!==(lastFragment<0?0:checkedAdd(lastFragment,1)))fail('FRAGMENT_ORDER');lastFragment=e.fragmentIndex;
-          itemBytes=checkedAdd(itemBytes,e.utf8Bytes);contentBytes=checkedAdd(contentBytes,e.utf8Bytes);if(itemBytes>limits.itemBytes||contentBytes>limits.contentBytes)fail('CONTENT_BYTES');
-        }else{
-          metadataBytes=checkedAdd(metadataBytes,size+(metadataBytes===2?0:1));
-          if(metadataBytes>(binding.pageKind==='native-metadata'?limits.nativeMetadataBytes:limits.metadataBytes))fail('METADATA_BYTES');
-          if(e.kind==='item-descriptor'||e.kind==='selection-item'){if(seen.has(e.itemId))fail('DUPLICATE_ITEM');seen.add(e.itemId);if(seen.size>limits.items)fail('ITEMS');}
-          if(e.kind==='selection-item'&&e.selectionIndex!==selectionIndex++)fail('SELECTION_ORDER');
-        }
-        if(group.length&&wireSize(group.length+1,checkedAdd(entryBytes,size))>limits.frameBytes)yield finish();
-        if(wireSize(group.length+1,checkedAdd(entryBytes,size))>limits.frameBytes)fail('ENTRY_EXCEEDS_FRAME');
-        group.push(e);entryBytes=checkedAdd(entryBytes,size);
-      }
-      if(group.length)yield finish();
-    })(),reservationBytes);
-  }
-  return Object.freeze({fragmentText,iterateFrames});
-}
-
-// Source: sdk/GradiaEvidenceRender.v2.source.js sha256=3ce9514e8ab32ed4a9f3b433c19d31f731c04002b0ebb5abb0fc716408c6744d
-'use strict';
-// Shared deterministic complete-item renderer and the existing LIBRA MMR policy.
-// Integrity/currentness is the caller's responsibility; this module mints no authority.
-function createGradiaEvidenceRender({ protocol }) {
-  if (!protocol || typeof protocol.checkedAdd !== 'function') throw new TypeError('GRADIA_V2_RENDER_DEPENDENCY');
-  const fail = reason => { throw new TypeError('GRADIA_V2_RENDER_' + reason); };
-  const add = protocol.checkedAdd, mul = protocol.checkedMultiply;
-  const integer = (n, positive = false) => { if (!Number.isSafeInteger(n) || Object.is(n, -0) || n < (positive ? 1 : 0)) fail('INTEGER'); return n; };
-  const profiles = new Set(['libra.canonical.memory-text.v1', 'libra.micro.claims-text.v1', 'libra.micro.source-span.v1']);
-  // Measure escaped JSON text without allocating the escaped copy. Escape HTML
-  // delimiters as well: source content can never close the evidence wrapper.
-  function stringMeasure(text, cap = 33554432) {
-    if (typeof text !== 'string' || text.length > cap) fail('TEXT');
-    let raw = 0, bytes = 2, units = 2;
-    for (let i = 0; i < text.length; i++) {
-      const c = text.charCodeAt(i); let b, u = 1;
-      if (c >= 0xd800 && c <= 0xdbff) {
-        const low = text.charCodeAt(++i); if (!(low >= 0xdc00 && low <= 0xdfff)) fail('UNSUPPORTED_TEXT'); b = 4; u = 2;
-      } else if (c >= 0xdc00 && c <= 0xdfff) fail('UNSUPPORTED_TEXT');
-      else b = c < 128 ? 1 : c < 2048 ? 2 : 3;
-      raw = add(raw, b); if (raw > cap) fail('TEXT_BYTES');
-      if (c === 60 || c === 62 || c === 38 || c === 0x2028 || c === 0x2029) { bytes = add(bytes, 6); units = add(units, 6); }
-      else if (c === 34 || c === 92 || [8, 9, 10, 12, 13].includes(c)) { bytes = add(bytes, 2); units = add(units, 2); }
-      else if (c < 32) { bytes = add(bytes, 6); units = add(units, 6); }
-      else { bytes = add(bytes, b); units = add(units, u); }
-    }
-    return Object.freeze({ rawUtf8Bytes: raw, utf8Bytes: bytes, utf16Bytes: mul(units, 2) });
-  }
-  const escaped = text => JSON.stringify(text).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
-  const id = value => { if (!value || typeof value !== 'string') fail('ID'); stringMeasure(value, 256); return value; };
-  function validateItems(items) {
-    if (!Array.isArray(items) || items.length > 8192) fail('ITEMS');
-    const map = new Map();
-    for (const item of items) {
-      if (!item || map.has(id(item.itemId)) || !profiles.has(item.profile)) fail('ITEM');
-      id(item.sourceHandle); if (item.groupId !== null && item.groupId !== undefined) id(item.groupId);
-      if (!/^[a-f0-9]{64}$/.test(item.contentHash)) fail('HASH');
-      integer(item.contentBytes, true);
-      const measure = stringMeasure(item.content);
-      if (measure.rawUtf8Bytes !== item.contentBytes) fail('CONTENT_BYTES');
-      map.set(item.itemId, item);
-    }
-    return map;
-  }
-  function prepare({ corpusId, items, selectedItemIds, byteLimit }) {
-    id(corpusId); integer(byteLimit, true); if (byteLimit > 4194304) fail('RENDERED_BYTES');
-    const map = validateItems(items);
-    if (!Array.isArray(selectedItemIds) || selectedItemIds.length > items.length) fail('SELECTION');
-    const seen = new Set(), selected = [];
-    for (const key of selectedItemIds) { if (seen.has(key) || !map.has(key)) fail('SELECTION'); seen.add(key); selected.push(map.get(key)); }
-    // A named semantic group is a complete unit, never an arbitrary text slice.
-    const groups = new Set(selected.filter(item => item.groupId).map(item => item.groupId));
-    for (const item of items) if (groups.has(item.groupId) && !seen.has(item.itemId)) fail('INCOMPLETE_GROUP');
-    const prefix = '<lib_evidence_v2 corpus=' + escaped(corpusId) + '>\n';
-    const suffix = '</lib_evidence_v2>';
-    let utf8Bytes = stringMeasure(prefix).rawUtf8Bytes + suffix.length, utf16Bytes = (prefix.length + suffix.length) * 2;
-    for (const item of selected) {
-      // Field order is part of gradia.evidence-render.v2.
-      const header = '{"itemId":' + escaped(item.itemId) + ',"profile":' + escaped(item.profile) + ',"sourceHandle":' + escaped(item.sourceHandle) + ',"content":';
-      const content = stringMeasure(item.content);
-      utf8Bytes = add(utf8Bytes, add(stringMeasure(header).rawUtf8Bytes, add(content.utf8Bytes, 2)));
-      utf16Bytes = add(utf16Bytes, add(header.length * 2, add(content.utf16Bytes, 4)));
-      if (utf8Bytes > byteLimit) fail('RENDERED_BYTES');
-    }
-    if (utf8Bytes > byteLimit) fail('RENDERED_BYTES');
-    return { selected, prefix, suffix, utf8Bytes, utf16Bytes };
-  }
-  function measure(input) { const p = prepare(input); return Object.freeze({ utf8Bytes: p.utf8Bytes, utf16Bytes: p.utf16Bytes, items: p.selected.length }); }
-  function render(input) {
-    const p = prepare(input), parts = [p.prefix];
-    for (const item of p.selected) parts.push('{"itemId":' + escaped(item.itemId) + ',"profile":' + escaped(item.profile) + ',"sourceHandle":' + escaped(item.sourceHandle) + ',"content":' + escaped(item.content) + '}\n');
-    parts.push(p.suffix);
-    const text = parts.join('');
-    if (text.length * 2 !== p.utf16Bytes || stringMeasure(text, 4194304).rawUtf8Bytes !== p.utf8Bytes) fail('MEASURE_MISMATCH');
-    return Object.freeze({ text, utf8Bytes: p.utf8Bytes, utf16Bytes: p.utf16Bytes, items: p.selected.length });
-  }
-  function rank({ items, ranking, similarities, policy, countLimit }) {
-    integer(countLimit); if (countLimit > 8192 || !Array.isArray(ranking) || ranking.length !== items.length) fail('RANKING');
-    if (!policy || policy.schema !== 'libra.recall-mmr.v2' || ![40, 80, 160, 320].includes(policy.candidateLimit)
-      || typeof policy.mmrEnabled !== 'boolean' || !Number.isFinite(policy.mmrLambda) || policy.mmrLambda < 0 || policy.mmrLambda > 1) fail('POLICY');
-    const seen = new Set(), indices = new Map(items.map((item, i) => [id(item.itemId), i]));
-    if (indices.size !== items.length || !Array.isArray(similarities) || similarities.length !== items.length) fail('SIMILARITIES');
-    for (const row of similarities) if (!Array.isArray(row) || row.length !== items.length || row.some(n => !Number.isFinite(n) || n < 0 || n > 1)) fail('SIMILARITIES');
-    for (const row of ranking) {
-      if (!indices.has(row.itemId) || seen.has(row.itemId) || typeof row.forced !== 'boolean'
-        || ['relevance', 'exactScore', 'sparseEvidence'].some(key => !Number.isFinite(row[key]) || row[key] < 0 || row[key] > 1)) fail('RANKING');
-      seen.add(row.itemId);
-    }
-    const pool = ranking.slice(0, policy.candidateLimit), selected = [], omissions = [];
-    if (!policy.mmrEnabled) selected.push(...pool.splice(0, countLimit));
-    else while (pool.length && selected.length < countLimit) {
-      let bestIndex = 0, bestScore = -Infinity;
-      for (let index = 0; index < pool.length; index++) {
-        const candidate = pool[index]; let redundancy = 0;
-        for (const previous of selected) redundancy = Math.max(redundancy, similarities[indices.get(candidate.itemId)][indices.get(previous.itemId)]);
-        const penalty = redundancy >= .985 && !candidate.forced && candidate.exactScore < .30 && candidate.sparseEvidence < .30 ? .65 : 0;
-        const score = policy.mmrLambda * candidate.relevance - (1 - policy.mmrLambda) * redundancy - penalty;
-        if (score > bestScore) { bestScore = score; bestIndex = index; }
-      }
-      if (selected.length && bestScore < .02 && !pool[bestIndex].forced) break;
-      selected.push(pool.splice(bestIndex, 1)[0]);
-    }
-    for (const row of pool) omissions.push(Object.freeze({ itemId: row.itemId, reason: selected.length >= countLimit ? 'selection_count_limit' : 'mmr_score_floor' }));
-    for (const row of ranking.slice(policy.candidateLimit)) omissions.push(Object.freeze({ itemId: row.itemId, reason: 'mmr_candidate_limit' }));
-    return Object.freeze({ selectedItemIds: Object.freeze(selected.map(row => row.itemId)), omissions: Object.freeze(omissions) });
-  }
-  return Object.freeze({ contract: 'gradia.evidence-render.v2', stringMeasure, validateItems, measure, render, rank });
-}
-
-// Source: sdk/gradia/GradiaEvidenceSelection.source.js sha256=60841b56427227d11fea4b785a854eac62417fa919f2800d7e9cc405f3173a8f
-'use strict';
-// Per-stage selection over one verified immutable corpus. This component does not
-// discover owners, perform retrieval, authenticate a route, or dispatch a model.
-function createGradiaEvidenceSelection({ protocol, render, budget, digest, creditFactory }) {
-  if (!protocol || !render || !budget || typeof digest !== 'function' || typeof creditFactory !== 'function') throw new TypeError('GRADIA_V2_SELECTION_DEPENDENCY');
-  const fail = reason => { throw new TypeError('GRADIA_V2_SELECTION_' + reason); };
-  const add = protocol.checkedAdd, mul = protocol.checkedMultiply;
-  const id = value => { if (typeof value !== 'string' || !value) fail('ID'); render.stringMeasure(value, 256); return value; };
-  const frozen = value => { if (!value || !Object.isFrozen(value)) fail('IMMUTABLE_REQUIRED'); return value; };
-  async function openVerifiedCorpus({ identity, items, ranking, similarities, policy, readLimits = {}, owner }) {
-    frozen(identity); frozen(items); frozen(ranking); frozen(similarities); frozen(policy);
-    for (const key of ['corpusId', 'requestId', 'issuerId']) id(identity[key]);
-    if (!/^[a-f0-9]{64}$/.test(identity.manifestHash)) fail('MANIFEST_HASH');
-    for (const item of items) frozen(item);
-    for (const row of ranking) frozen(row);
-    for (const row of similarities) frozen(row);
-    for (const method of ['assertCorpusCurrent', 'bindSelection', 'assertSelectionCurrent']) if (typeof owner?.[method] !== 'function') fail('OWNER_UNAVAILABLE');
-    const limits = protocol.validateLimits(readLimits), credit = creditFactory({ maxManagedBytes: limits.managedBytes, maxPhysicalReads: limits.physicalReads });
-    if (items.length > limits.items || items.length > policy.candidateLimit + 2) fail('ITEM_LIMIT');
-    let closed = false, serial = 0, contentBytes = 0, operations = 0;
-    const allocations = new Set(), stages = new Map(), consumed = new Set(), pendingStages = new Set(), byId = new Map(), groups = new Map();
-    let issued = new WeakMap();
-    const reserve = (key, bytes, kind) => { credit.reserve({ id: key, bytes, kind }); allocations.add(key); };
-    const release = key => { if (allocations.delete(key)) credit.release(key); };
-    const dispose = () => { for (const key of [...allocations]) release(key); stages.clear(); consumed.clear(); pendingStages.clear(); byId.clear(); groups.clear(); issued = new WeakMap(); items = []; ranking = []; similarities = []; identity = null; policy = null; owner = null; };
-    const close = () => { if (closed) return; closed = true; if (!operations) dispose(); };
-    const use = async operation => { if (closed) fail('CLOSED'); operations++; try { return await operation(); } finally { operations--; if (closed && !operations) dispose(); } };
-    const current = async () => { if (closed || await owner.assertCorpusCurrent(identity) !== true || closed) fail('CORPUS_CHANGED'); };
-    try {
-      // Owned immutable strings are retained by reference, never JSON-cloned.
-      for (const item of items) {
-        if (!Number.isSafeInteger(item.contentBytes) || item.contentBytes <= 0) fail('ITEM_BYTES');
-        contentBytes = add(contentBytes, item.contentBytes); if (contentBytes > limits.contentBytes) fail('CONTENT_LIMIT');
-        reserve('corpus:' + allocations.size, add(mul(item.content.length, 2), 1024), 'utf16-text');
-      }
-      reserve('ranking', add(mul(mul(items.length, items.length), 16), mul(items.length, 1024)), 'metadata');
-      render.validateItems(items);
-      for (const item of items) if (await digest(item.content) !== item.contentHash) fail('CONTENT_HASH');
-      await current();
-      const ordered = render.rank({ items, ranking, similarities, policy, countLimit: limits.items });
-      for (const item of items) byId.set(item.itemId, item);
-      for (const item of items) { const key = item.groupId ? 'group:' + item.groupId : 'item:' + item.itemId; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item.itemId); }
-      async function selectStage(input) {
-        await current();
-        const stage = id(input.stage), phase = id(input.phase), stageKey = stage + ':' + phase;
-        if (stages.has(stageKey) || pendingStages.has(stageKey) || stages.size + pendingStages.size >= 8) fail('STAGE_REUSE_OR_LIMIT');
-        pendingStages.add(stageKey);
-        try {
-        if (typeof input.baseBody !== 'string' || render.stringMeasure(input.baseBody, 128000).rawUtf8Bytes > 128000) return Object.freeze({ status: 'unavailable', reason: 'payload_budget_exceeded' });
-        const context = Object.freeze({ ...input.context });
-        const envelope = Object.freeze({ providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity, requestFormat: input.requestFormat, context, baseBody: input.baseBody });
-        const baseCredit = 'base:' + (++serial); reserve(baseCredit, mul(envelope.baseBody.length, 6), 'selected-prompt');
-        let retained = null;
-        const omissions = ordered.omissions.map(value => ({ ...value })), selected = [], handled = new Set();
-        async function trial(selectedItemIds) {
-          let measure;
-          try { measure = selectedItemIds.length ? render.measure({ corpusId: identity.corpusId, items, selectedItemIds, byteLimit: limits.renderedBytes }) : { utf8Bytes: 0, utf16Bytes: 0 }; }
-          catch (error) { if (/RENDERED_BYTES/.test(error.message)) return { status: 'omitted', reason: 'rendered_evidence_budget' }; throw error; }
-          const allocation = 'trial:' + (++serial);
-          // Render chunks + joined string + JSON payload (escaping <= 6x raw).
-          const declaredBytes = add(mul(envelope.baseBody.length, 6), add(mul(measure.utf16Bytes, 3), mul(measure.utf8Bytes, 12)));
-          try { reserve(allocation, declaredBytes, 'selected-prompt'); }
-          catch (error) { if (/CREDIT_BYTES/.test(error.message)) return { status: 'omitted', reason: 'managed_credit_budget' }; throw error; }
-          try {
-            const evidence = selectedItemIds.length ? render.render({ corpusId: identity.corpusId, items, selectedItemIds, byteLimit: limits.renderedBytes }).text : '';
-            let native;
-            try { native = JSON.parse(envelope.baseBody); } catch (_) { release(allocation); return { status: 'unavailable', reason: 'payload_format_unsupported' }; }
-            const last = native?.messages?.at(-1);
-            if (!last || last.role !== 'user' || typeof last.content !== 'string') { release(allocation); return { status: 'unavailable', reason: 'payload_format_unsupported' }; }
-            if (evidence) last.content += '\n\n' + evidence;
-            const body = evidence ? JSON.stringify(native) : envelope.baseBody;
-            const decision = await budget.evaluate({ ...envelope, finalBody: body, renderedEvidence: evidence, renderedByteLimit: limits.renderedBytes });
-            if (closed) fail('CLOSED');
-            if (decision.status !== 'available') { release(allocation); return decision; }
-            if (!decision.fits) { release(allocation); return { status: 'omitted', reason: 'model_context_budget' }; }
-            return { status: 'available', allocation, body, evidence, witness: decision.witness };
-          } catch (error) { release(allocation); throw error; }
-        }
-        try {
-          retained = await trial([]);
-          if (retained.status !== 'available') return Object.freeze({ status: 'unavailable', reason: retained.reason });
-          const rankedIds = new Set(ordered.selectedItemIds);
-          for (const itemId of ordered.selectedItemIds) {
-            const item = byId.get(itemId), groupKey = item.groupId ? 'group:' + item.groupId : 'item:' + itemId;
-            if (handled.has(groupKey)) continue; handled.add(groupKey);
-            const members = groups.get(groupKey);
-            if (members.some(key => !rankedIds.has(key))) {
-              for (const key of members) if (!omissions.some(row => row.itemId === key)) omissions.push({ itemId: key, reason: 'semantic_group_not_selected' });
-              continue;
-            }
-            // Keep MMR order inside each indivisible complete group.
-            const unit = ordered.selectedItemIds.filter(key => members.includes(key));
-            const candidate = await trial([...selected, ...unit]);
-            if (candidate.status === 'unavailable') {
-              if (candidate.reason === 'payload_budget_exceeded') { for (const key of unit) omissions.push({ itemId: key, reason: 'model_context_budget' }); continue; }
-              return Object.freeze({ status: 'unavailable', reason: candidate.reason });
-            }
-            if (candidate.status !== 'available') { for (const key of unit) omissions.push({ itemId: key, reason: candidate.reason }); continue; }
-            release(retained.allocation); retained = candidate; selected.push(...unit);
-          }
-          await current();
-          const selectedItemIds = Object.freeze(selected), frozenOmissions = Object.freeze(omissions.map(Object.freeze));
-          const proposalCore = Object.freeze({ schema: 'gradia.model-evidence-selection.v2', corpusId: identity.corpusId, requestId: identity.requestId,
-            issuerId: identity.issuerId, manifestHash: identity.manifestHash, stage, phase,
-            renderer: render.contract, mmrPolicy: policy, selectedItemIds,
-            selectedItems: Object.freeze(selected.map(key => { const item = byId.get(key); return Object.freeze({ itemId: key, sourceHandle: item.sourceHandle, contentHash: item.contentHash, contentBytes: item.contentBytes, groupId: item.groupId || null }); })),
-            renderedEvidenceHash: await digest(retained.evidence), omissions: frozenOmissions, budgetWitness: retained.witness });
-          const proposal = Object.freeze({ ...proposalCore, selectionHash: await digest(JSON.stringify(proposalCore)) });
-          const receipt = await owner.bindSelection(proposal);
-          await current();
-          if (!receipt || !Object.isFrozen(receipt) || receipt.schema !== proposal.schema || receipt.corpusId !== identity.corpusId || receipt.requestId !== identity.requestId
-            || receipt.stage !== stage || receipt.phase !== phase || receipt.selectionHash !== proposal.selectionHash) fail('OWNER_RECEIPT');
-          id(receipt.receiptHandle);
-          const handle = Object.freeze({}), record = { receipt, witness: retained.witness, envelope, body: retained.body, allocation: retained.allocation };
-          issued.set(handle, record); stages.set(stageKey, handle);
-          const result = Object.freeze({ status: 'available', authorityQualified: false, handle, stage, phase, body: retained.body, evidence: retained.evidence,
-            selectedItemIds, omissions: frozenOmissions, receipt, budgetWitness: retained.witness });
-          retained = null; return result;
-        } finally { release(baseCredit); if (retained?.allocation) release(retained.allocation); }
-        } finally { pendingStages.delete(stageKey); }
-      }
-      async function assertDispatch(handle, actual) {
-        await current(); const record = issued.get(handle); if (!record) fail('UNISSUED_SELECTION');
-        budget.assertDispatch(record.witness, actual);
-        if (await owner.assertSelectionCurrent(record.receipt) !== true) fail('SELECTION_CHANGED');
-        await current(); consumed.add(handle); return true;
-      }
-      async function assertConsumedCurrent() {
-        await current();
-        for (const handle of consumed) if (await owner.assertSelectionCurrent(issued.get(handle).receipt) !== true) fail('SELECTION_CHANGED');
-        await current(); return Object.freeze({ consumedSelections: consumed.size });
-      }
-      return Object.freeze({ contract: 'gradia.verified-corpus-selection-component.v2', authorityQualified: false,
-        selectStage: input => use(() => selectStage(input)), assertDispatch: (handle, actual) => use(() => assertDispatch(handle, actual)),
-        assertConsumedCurrent: () => use(assertConsumedCurrent), close, creditSnapshot: credit.snapshot });
-    } catch (error) { close(); throw error; }
-  }
-  return Object.freeze({ contract: 'gradia.evidence-selection.v2', authorityQualified: false, openVerifiedCorpus });
-}
-/* GRADIA RANKED EVIDENCE V2 COMPONENTS END */
-
 /* GRADIA MODEL CONTEXT BUDGET BEGIN */
 // Source: sdk/GradiaModelContextBudget.source.js sha256=610925c140c711e12e6e8dc3388c7d57b3005f93d1c2eeda1195a15e528fd214
 'use strict';
@@ -30678,189 +29868,6 @@ function createGradiaModelContextBudget({ digest }) {
 }
 
 /* GRADIA MODEL CONTEXT BUDGET END */
-
-function createGradiaEvidenceBudget({ digest }) {
-  if (typeof digest !== 'function') throw new TypeError('GRADIA_V2_BUDGET_DIGEST_REQUIRED');
-  const MODEL = 'gpt-4o-mini-2024-07-18';
-  const ROUTE = 'https://api.openai.com/v1/chat/completions';
-  const MAX_CONTEXT = 128000;
-  const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
-  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
-  // Exact production wrappers for successful four/eight-stage profiles only.
-  // Schema, names, descriptions and serialization changes require requalification.
-  const STRUCTURED_SCHEMA_PINS = Object.freeze({
-    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
-    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
-    "gradia_aide_character_patch": "c75cefb3ee0a1c16f54d38b8bf6e07a2101b1a1a24108fa073f8bf825b9b921f",
-    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
-    "gradia_aide_world_patch": "f28a548fd7e02c46cc6923abc3271dc6371919c8a6f60a795b1795783d6c345f",
-    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
-    "gradia_aide_plot_patch": "917ba51651879ffe86dff333a0c80a6f5c19c213235ffa25beb4d146a518d7e1"
-});
-  const issued = new WeakMap();
-  const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
-  const integer = (value, positive = false) => Number.isSafeInteger(value)
-    && !Object.is(value, -0) && value >= (positive ? 1 : 0);
-  const add = (left, right) => {
-    if (!integer(left) || !integer(right) || right > Number.MAX_SAFE_INTEGER - left) stop('limits_invalid');
-    return left + right;
-  };
-  function fields(raw, required, optional, reason) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) stop(reason);
-    const proto = Object.getPrototypeOf(raw);
-    if (proto !== null && proto !== Object.prototype) stop(reason);
-    const keys = Reflect.ownKeys(raw);
-    if (keys.length > required.length + optional.length) stop(reason);
-    const out = Object.create(null);
-    for (const key of keys) {
-      if (typeof key !== 'string' || (!required.includes(key) && !optional.includes(key))) stop(reason);
-      const descriptor = Object.getOwnPropertyDescriptor(raw, key);
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) stop(reason);
-      out[key] = descriptor.value;
-    }
-    for (const key of required) if (!Object.hasOwn(out, key)) stop(reason);
-    return out;
-  }
-  // No encoding buffer is allocated. Reject malformed text instead of silently
-  // letting TextEncoder replace it. A cap bounds the scan and later JSON parse.
-  function utf8(value, cap, overflow) {
-    if (typeof value !== 'string') stop('input_invalid');
-    if (value.length > cap) stop(overflow);
-    let size = 0;
-    for (let index = 0; index < value.length; index++) {
-      const code = value.charCodeAt(index);
-      if (code >= 0xd800 && code <= 0xdbff) {
-        const low = value.charCodeAt(++index);
-        if (!(low >= 0xdc00 && low <= 0xdfff)) stop('unsupported_text');
-        size += 4;
-      } else if (code >= 0xdc00 && code <= 0xdfff) stop('unsupported_text');
-      else size += code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
-      if (size > cap) stop(overflow);
-    }
-    return size;
-  }
-  function capacity(raw, identity) {
-    const value = fields(raw, ['source', 'limit', 'sourceIdentity', 'providerId', 'modelId', 'routeIdentity'], [], 'model_context_unavailable');
-    if (!['configured', 'catalog'].includes(value.source) || !integer(value.limit, true)
-      || value.providerId !== identity.providerId || value.modelId !== identity.modelId
-      || value.routeIdentity !== identity.routeIdentity || typeof value.sourceIdentity !== 'string'
-      || !value.sourceIdentity.trim() || value.sourceIdentity.length > 1024) stop('model_context_unavailable');
-    utf8(value.sourceIdentity, 4096, 'model_context_unavailable');
-    return { limit: Math.min(value.limit, MAX_CONTEXT), source: value.source, identity: value.sourceIdentity };
-  }
-  function payload(serialized) {
-    let body;
-    try { body = JSON.parse(serialized); } catch (_) { stop('payload_format_unsupported'); }
-    // Actual builder serialization round-trips exactly. This rejects duplicate
-    // keys, whitespace and alternate encodings instead of interpreting ambiguity.
-    if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
-    if (value.model !== MODEL || typeof value.stream !== 'boolean'
-      || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
-      || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
-    const hasTokens = Object.hasOwn(value, 'max_tokens'), hasCompletion = Object.hasOwn(value, 'max_completion_tokens');
-    if (hasTokens === hasCompletion) stop('token_accounting_unavailable');
-    const output = hasTokens ? value.max_tokens : value.max_completion_tokens;
-    if (!integer(output, true) || output > 16384) stop('token_accounting_unavailable');
-    if (Object.hasOwn(value, 'stream_options')) {
-      const stream = fields(value.stream_options, ['include_usage'], [], 'token_accounting_unavailable');
-      if (!value.stream || stream.include_usage !== true) stop('token_accounting_unavailable');
-    }
-    if (!Array.isArray(value.messages) || value.messages.length < 1 || value.messages.length > 3) stop('token_accounting_unavailable');
-    let content = 0;
-    for (let index = 0; index < value.messages.length; index++) {
-      const message = fields(value.messages[index], ['role', 'content'], [], 'token_accounting_unavailable');
-      if (message.role !== (index === value.messages.length - 1 ? 'user' : 'system')
-        || typeof message.content !== 'string') stop('token_accounting_unavailable');
-      content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
-      content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
-    }
-    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
-    if (Object.hasOwn(value, 'response_format')) {
-      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
-      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
-      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
-        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
-        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
-      structuredName = schema.name;
-      structuredSerialized = JSON.stringify(value.response_format);
-      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
-    }
-    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
-  }
-  function sameBase(base, final, evidence) {
-    const left = base.body, right = final.body;
-    const keys = Object.keys(left);
-    if (keys.length !== Object.keys(right).length || left.messages.length !== right.messages.length) stop('payload_binding_changed');
-    for (const key of keys) {
-      if (key !== 'messages' && JSON.stringify(left[key]) !== JSON.stringify(right[key])) stop('payload_binding_changed');
-    }
-    for (let index = 0; index < left.messages.length; index++) {
-      const original = left.messages[index], current = right.messages[index];
-      const suffix = index === left.messages.length - 1 && evidence ? '\n\n' + evidence : '';
-      if (original.role !== current.role || current.content !== original.content + suffix) stop('payload_binding_changed');
-    }
-  }
-  async function evaluate(raw) {
-    try {
-      const input = fields(raw, ['providerId', 'modelId', 'routeIdentity', 'requestFormat', 'context', 'baseBody', 'finalBody', 'renderedEvidence', 'renderedByteLimit'], [], 'input_invalid');
-      if (input.providerId !== 'openai' || input.modelId !== MODEL || input.routeIdentity !== ROUTE || input.requestFormat !== 'chat_completions') stop('token_accounting_unavailable');
-      const context = capacity(input.context, input);
-      if (!integer(input.renderedByteLimit, true) || input.renderedByteLimit > 4194304) stop('limits_invalid');
-      const evidenceBytes = utf8(input.renderedEvidence, input.renderedByteLimit, 'rendered_budget_exceeded');
-      // Check both immutable bodies before parsing either, including JSON escaping.
-      utf8(input.baseBody, MAX_CONTEXT, 'payload_budget_exceeded');
-      const serializedBytes = utf8(input.finalBody, MAX_CONTEXT, 'payload_budget_exceeded');
-      const base = payload(input.baseBody), final = payload(input.finalBody);
-      sameBase(base, final, input.renderedEvidence);
-      if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
-      const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
-      if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
-      let structuredSchemaSha256 = null;
-      if (final.structuredBytes) {
-        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
-        catch (_) { stop('payload_hash_unavailable'); }
-        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
-      }
-      // The raw envelope already charges the schema once. Reserve its complete
-      // UTF-8 wrapper again for structured framing; this remains a conservative
-      // engineering estimate, not a provider tokenizer or server-internals proof.
-      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
-      const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
-      const fits = add(add(allowance, final.output), margin) <= context.limit;
-      const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
-        requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
-        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
-        meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
-        framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
-        safetyMargin: margin, selectedContentTokenBound: selectedContent,
-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
-        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
-      // Only already captured primitives survive the await; caller mutations cannot
-      // replace the body or envelope. The adapter owns cancellation/generation.
-      const body = input.finalBody;
-      let hash;
-      try { hash = await digest(body); } catch (_) { stop('payload_hash_unavailable'); }
-      if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) stop('payload_hash_unavailable');
-      const witness = Object.freeze({ ...witnessFields, finalPayloadHash: hash });
-      if (fits) issued.set(witness, Object.freeze({ providerId: witness.providerId, modelId: witness.modelId,
-        routeIdentity: witness.routeIdentity, requestFormat: witness.requestFormat, method: 'POST', body }));
-      return Object.freeze({ status: 'available', fits, reason: fits ? 'fit' : 'model_context_exceeded', witness });
-    } catch (error) {
-      return Object.freeze({ status: 'unavailable', reason: error?.budgetReason || 'input_invalid' });
-    }
-  }
-  function assertDispatch(witness, raw) {
-    const record = witness && typeof witness === 'object' ? issued.get(witness) : null;
-    if (!record) throw new TypeError('GRADIA_V2_BUDGET_WITNESS_UNISSUED');
-    let input;
-    try { input = fields(raw, ['providerId', 'modelId', 'routeIdentity', 'requestFormat', 'method', 'body'], [], 'dispatch_invalid'); }
-    catch (_) { throw new TypeError('GRADIA_V2_BUDGET_DISPATCH_CHANGED'); }
-    for (const key of Object.keys(record)) if (input[key] !== record[key]) throw new TypeError('GRADIA_V2_BUDGET_DISPATCH_CHANGED');
-    return true;
-  }
-  return Object.freeze({ factoryVersion: 'gradia.evidence-budget.v2', evaluate, assertDispatch });
-}
 
   // END pinned pure G2 factory.
   const libReadSha256 = async value => {
@@ -39689,7 +38696,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
 
-    // v0.25.16: Arc Director is maintenance-only. It updates Story Arc DB on completed 5-turn boundaries;
     // it is not a normal draft stage and never supervises SHADOW/AIDEs. SHADOW and Input Manager only read the DB.
     ;
     risuSnapshot = null;
@@ -39816,7 +38822,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         referenceCapacity: sharedRisuContext.referenceCapacity || null,
         meta: sharedRisuContext.meta
       };
-      // v0.25.66: decide prompt caching by the exact rendered shared-prefix hash, not by
       // whether one individual stage happens to make two calls. Lightweight SHADOW/World/Plot
       // frequently reuse the same 80k+ prefix and should share one cache entry (a Gemini
       // CachedContent resource, an OpenAI/Anthropic prefix breakpoint), while a
@@ -48449,7 +47454,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return true;
     };
-    // v0.25.48: keep the legacy automatic Input Manager implementation for compatibility/debug,
     // but do not register it. Input writing is entered only through the explicit chat button.
     Runtime.hookStatus.input = false;
     await registerBeforeRequestHook();

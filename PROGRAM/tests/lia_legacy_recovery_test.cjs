@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: LIA no longer imports from the server.'); process.exit(0);
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+`\nglobalThis.__recoveryTest={create:typeof createLiaLegacyServerRecovery==='function'?createLiaLegacyServerRecovery:null,validate:memorySuiteLiaValidateRestore};`+source.slice(i);};

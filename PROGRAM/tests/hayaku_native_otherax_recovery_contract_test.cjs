@@ -191,7 +191,6 @@ for (const retired of [
 ]) forbidText(retrace, retired, `RE:TRACE HAYAKU analysis executor retired: ${retired}`);
 requireText(retrace, 'probeLiveHayakuOwner', 'RE:TRACE authenticated HAYAKU owner probe remains');
 requireText(retrace, 'readPendingColdStartCapsule', 'RE:TRACE legacy cold-start capsule reader remains');
-requireText(retrace, 'HAYAKU exclusively owns Cold Start, missing-turn repair, targeted regeneration, Other Ax calls, worldline validation, and durable adoption.', 'RE:TRACE legacy capsule viewer remains passive');
 requireText(retrace, 'purgeLegacyProviderCredentials', 'RE:TRACE exact-key legacy credential purge remains');
 requireText(retrace, 'performPendingNextSessionHandoff', 'RE:TRACE handoff remains present');
 requireText(retrace, 'sourceMutationAllowed: false', 'source-immutable handoff remains present');

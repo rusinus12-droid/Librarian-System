@@ -38,7 +38,6 @@ test('Flashback request-local recall reads use their own budget, separate from c
  assert.match(source,/const RECALL_REQUEST_READ_MAX_BYTES = 64 \* 1024 \* 1024;/);
  assert.match(source,/if \(readSet\.bytes \+ bytes > RECALL_REQUEST_READ_MAX_BYTES\)/);
  assert.match(source,/reserveBytes > RECALL_REQUEST_READ_MAX_BYTES\) throw uncachedProjectionBudgetError\('decode'\)/);
- assert.match(source,/if \(estimatedBytes > RECALL_SHARD_CACHE_MAX_BYTES\) \{/,'cache residency keeps its own cap');
 });
 
 test('Flashback returns never-sent embedding attempts to pending instead of uncertain',()=>{

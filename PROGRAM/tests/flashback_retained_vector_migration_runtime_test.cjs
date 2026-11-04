@@ -306,7 +306,7 @@ test('loss of a retained derived vector cannot block the next finalized raw capt
     assert(Array.isArray(shard.records)); shard.records[0].vector = [];
     shard.checksum = x.h.context.__RetainedFixtureChecksum(shard.records);
     await x.h.pluginStorage.setItem(key, JSON.stringify(shard));
-    x.h.api._test.invalidateRecallShardCache(x.scope.scopeKey);
+    x.h.api._test.invalidateRecallCache(x.scope.scopeKey);
     assert.equal((await x.read())[0].vectorPayloadMissing, true, 'fixture proves the derived payload is missing');
     await x.h.api.saveSettings({ ...x.cfg, embeddingEnabled: false });
     const chat = await x.h.host.getCurrentChat(), character = await x.h.host.getCharacter();

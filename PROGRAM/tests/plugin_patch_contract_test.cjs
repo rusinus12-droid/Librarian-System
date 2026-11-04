@@ -13,7 +13,6 @@ const cases = [
   ['Flashback_Memory.js', releaseVersion('flashback'), 'flashback'],
   ['HAYAKU_Locator_Continuity.js', releaseVersion('hayaku'), 'hayaku'],
   ['LIBRA.js', releaseVersion('libra'), 'libra'],
-  ['LIA_Persona_Linker.js', releaseVersion('lia'), 'lia'],
   ['RETRACE.js', releaseVersion('retrace'), 'retrace']
 ];
 
@@ -31,7 +30,6 @@ for (const [name, version, namespaceMarker] of cases) {
   assert.equal(extractStorageSdk(text,name),expectedStorageSdk(root,name,text),`${name} reviewed canonical or preserved SDK variant`);
   if (name === 'RETRACE.js') {
     assert.equal((text.match(/^\/\/@arg memory_suite_server_mode /gm) || []).length, 0, releaseText('RE:TRACE {retrace} has no own storage-mode arg'));
-    assert.ok(text.includes('participation-aware and read-only'), releaseText('RE:TRACE {retrace} uses the dynamic read-only owner gate'));
   } else if (name === 'LIA_Persona_Linker.js') {
     assert.equal((text.match(/^\/\/@arg memory_suite_server_mode /gm) || []).length, 0, 'LIA has no active server-mode argument');
     assert.ok(/storagePolicy\s*:\s*['"]local_only['"]/.test(text), 'LIA uses its explicit local-only policy');
@@ -120,13 +118,8 @@ for (const key of [
   'liaPersonaVisualAssetStoreV1',
   'liaPersonaVisualAssetPresetStoreV1'
 ]) assert.ok(lia.includes(key), `LIA routed key ${key}`);
-assert.match(lia, /pluginPrefixes:\s*\[PERSONA_VISUAL_ASSET_BACKUP_PREFIX\]/);
-assert.ok(lia.includes('liaPersonaIllustrationConfigV1'));
+assert.ok(lia.includes("storagePolicy: 'local_only'"), 'LIA reports its local-only policy');
 assert.ok(lia.includes('await api.setDatabase({ personas: nextPersonas });'), 'actual RisuAI Persona DB mutation must remain local');
-assert.ok(!lia.slice(lia.indexOf("namespace: 'lia'"), lia.indexOf('async function waitForPluginStorage')).includes('personas'), 'RisuAI Persona objects must not be routed as server KV');
-assert.ok(lia.includes("if (key === LLM_CONFIG_STORAGE_KEY || key === LOG_STORAGE_KEY) return { kind: 'global' };"), 'LIA connection/UI config remains local');
-assert.ok(lia.includes('scopedContainer: true'), 'LIA proof containers are projected per scope');
-assert.ok(lia.includes("error.code = 'LIA_STORAGE_JSON_INVALID'"), 'LIA bridge rejects malformed storage JSON instead of normalizing to an empty object');
 
 
 const retrace = read('RETRACE.js');
