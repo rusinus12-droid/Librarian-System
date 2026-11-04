@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.29
+//@display-name LIBRA v2.6.30
 //@api 3.0
-//@version 2.6.29
+//@version 2.6.30
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.29';
+  const PLUGIN_VERSION = '2.6.30';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -37390,6 +37390,8 @@ function createLibraReadonlySourceContext(owner) {
       if(isReadableUnifiedEngineVersion(head.unifiedApplied?.engineVersion))return [
         '[WORLD MANAGER CURRENT STATE HEAD · UNIFIED VALUES]',
         'Current values use the committed Canonical baseline and separately state-admitted active Micro changes. Pending Micro claims do not override admitted values; a newer pending claim may make them last-known. Non-ready domains are LAST-KNOWN except for individually listed admitted Micro fields. Missing fields are unknown/unchanged. Current input and explicitly later events in recent dialogue override older values. Rule exceptions are conditional; do not assume their conditions hold. A→B does not prove B→A. No write authority is granted.',
+        [...asArray(head.characters),...asArray(head.relationships),...asArray(head.world),head.narrative].some(row=>[...Object.values(asObject(row?.fieldEvidence)),...Object.values(asObject(row?.clearedFieldEvidence))].some(proof=>proof?.meaning))
+          ?'fieldQualifiers mark a value that came from a memory which is not a confirmed current fact. temporalRole says when it belongs, certainty how sure it is, restsOn what it depends on, claim what the memory actually says, previousValue what the field held before. Never present or act on such a value as an established current fact: treat it the way its claim says, and prefer previousValue for what is currently true unless the dialogue says otherwise.':'',
         JSON.stringify(unifiedStateReadProjection(head),null,2),
         liveTail?.available?'The recent dialogue is request-local evidence. Prefer explicitly later events over older head values; its presence alone does not imply a change.':''
       ].filter(Boolean).join('\n');
@@ -59732,6 +59734,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Held canonical reasons the review projection applies automatically when the fact is a confirmed current one.
     const MEMORY_REVIEW_AUTO_REASONS=Object.freeze(['missing_current_binding','same_source_order_conflict','dependency_pending','quarantined_field_update']);
     const memoryReviewDecision=(policy,kind,record,index)=>policy.decisions[memoryReviewId(kind,record,index)]?.status||'automatic';
+    const unifiedFactIsCurrent=(fact,factById,seen=new Set())=>{
+      if(fact?.certainty!=='confirmed'||fact?.temporalRole!=='current_sequence')return false;
+      if(seen.has(fact.tempFactId))return true;
+      seen.add(fact.tempFactId);
+      return asArray(fact.dependsOn).every(id=>unifiedFactIsCurrent(factById(id),factById,seen));
+    };
+    // Null for a plain current fact. Otherwise this stays with the value wherever State is read.
+    const unifiedFactMeaningLimits=(fact,factById)=>{
+      const restsOn=asArray(fact.dependsOn).map(id=>factById(id)).filter(dep=>!unifiedFactIsCurrent(dep,factById));
+      if(fact.certainty==='confirmed'&&fact.temporalRole==='current_sequence'&&!restsOn.length)return null;
+      return {temporalRole:fact.temporalRole,certainty:fact.certainty,conditional:restsOn.length>0,restsOn:restsOn.map(dep=>string(dep?.text||'')).filter(Boolean),claim:string(fact.text||'')};
+    };
     const memoryReviewRisk=(reason,claim={})=>{
       if(/conflict|overlap|verifier|quarantin/.test(reason)||claim.certainty&&claim.certainty!=='confirmed'||claim.epistemicStatus&&claim.epistemicStatus!=='observed')return 'high';
       return reason?'medium':'low';
@@ -59752,7 +59766,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           sourceDigest:record.sourceDigest,scopeKey:scope.scopeKey,worldlineId:worldline,status:saved?.status||'automatic',
           verification:saved?.verification||'source_storage_scope_verified',risk:saved?.risk||memoryReviewRisk(data.reason,data.claim),reason:saved?.reason||data.reason||'',
           factId:kind==='canonical'?index:'',text:string(data.claim?.text||''),quote:string(data.quote||''),stateEligible:data.stateEligible===true,
-          domain:data.domain||'',field:data.field||'',targetName:data.targetName||''};
+          domain:data.domain||'',field:data.field||'',targetName:data.targetName||'',...(data.meaning?{meaning:data.meaning}:{})};
         row.validationLevel=saved?.validationLevel||(row.risk==='high'?'additional_verification_pending':row.stateEligible&&!row.reason?'rules_verified':'source_verified');
         rows.push(row);internal.set(id,{...data,row,record,index});
       };
@@ -59783,7 +59797,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const c=UNIFIED_CLAIMS[fact.claimKind],domain=STATE_PIPELINE_DOMAIN_HEAD_KEYS[fact.domain];
             // Automatic use has no content conditions: the user decides afterwards, in the review.
             const supported=view.authority?.exactBasis===true&&!!c?.field;
-            add('canonical',record,fact.tempFactId,{claim:fact,quote:asArray(fact.evidenceSpans).map(s=>s.quote).join('\n'),reason:p.reason,
+            add('canonical',record,fact.tempFactId,{meaning:unifiedFactMeaningLimits(fact,id=>asArray(record.canonicalArtifact.facts).find(f=>f.tempFactId===id)),claim:fact,quote:asArray(fact.evidenceSpans).map(s=>s.quote).join('\n'),reason:p.reason,
               stateEligible:!!supported,domain,field:c?.field||'',pending:p,ref});
           }
         }catch(error){unavailable.push({kind:'canonical',memoryId:ref.memoryId,reason:string(error.code||error.message)});}
@@ -59842,6 +59856,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           let domain=row.domain,targetId='',field=row.field,value,clear=false,sourceRow=null,reviewAdditive=null;
           if(row.kind==='canonical'){
             const fact=item.claim,c=UNIFIED_CLAIMS[fact.claimKind];
+            // Only derives the typed value; row.meaning keeps what the fact actually says.
             const selectedFact={...clone(fact),certainty:'confirmed',temporalRole:'current_sequence',dependsOn:[]};
             const artifact={...clone(item.record.canonicalArtifact),facts:[selectedFact],stateBindings:[{factTempId:fact.tempFactId,typedValueField:c.value,stateDomain:fact.domain,stateField:c.field}]};
             const memory={...item.record,canonicalArtifact:artifact};memory.unifiedIdentityProvenance=buildUnifiedIdentityProvenance(memory);
@@ -59884,11 +59899,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const patch={domain,entityId:targetId,relationId:targetId,set:clear?{}:{[field]:value},clear:clear?[field]:[],identitySet:{}};
           validateUnifiedCorrectionPatch({patches:[patch]},head);
           const stateValue=domain==='narrative'?target:(target.state=asObject(target.state));
+          const replaced=row.meaning&&domain!=='narrative'?clone(stateValue[field]):undefined;
           if(clear)delete stateValue[field];else stateValue[field]=reviewAdditive?microStateMergeCollection(field,targetId,stateValue[field],reviewAdditive):clone(value);
           const provenance=row.kind==='micro'?{schema:'libra.micro_state_field_evidence.v1',status:'state_admitted',receiptKey:item.record.receiptKey,sourceRevisionId:item.record.sourceRevisionId,
             analysisRevisionId:item.record.analysisRevisionId,claimDigest:digest(item.claim),role:item.claim.evidence.role,messageId:item.claim.evidence.messageId,startOffset:item.claim.evidence.startOffset,endOffset:item.claim.evidence.endOffset,exactQuote:item.claim.evidence.exactQuote}
             :{schema:'libra.state_field_evidence.v1',memoryId:item.record.memoryId,revision:item.record.revision,artifactDigest:item.record.artifactDigest,assertionIds:[item.index]};
-          const evidenceName=clear?'clearedFieldEvidence':'fieldEvidence';target[evidenceName]=asObject(target[evidenceName]);target[evidenceName][field]={...provenance,reviewId:row.id,reviewStatus:row.status,risk:row.risk,
+          const evidenceName=clear?'clearedFieldEvidence':'fieldEvidence';target[evidenceName]=asObject(target[evidenceName]);target[evidenceName][field]={...provenance,...(row.meaning?{meaning:{...row.meaning,...(replaced!==undefined?{previousValue:replaced}:{})}}:{}),reviewId:row.id,reviewStatus:row.status,risk:row.risk,
             verification:row.verification,sourceDigest:row.sourceDigest,turn:row.turn,evidenceSpans:[{quote:row.quote}],recordKey:row.kind==='micro'?item.active.recordKey:item.ref.key};
           if(clear&&target.fieldEvidence)delete target.fieldEvidence[field];if(!clear&&target.clearedFieldEvidence)delete target.clearedFieldEvidence[field];
           if(row.kind==='micro')reviewTransitions.push({turn:row.turn,claimIndex:item.index,domain:item.claim.stateIntent.domain,targetId:targetId||'current_narrative',field,disposition:'still_current',reviewId:row.id});
@@ -64555,12 +64571,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return value;
       };
       const status=Object.fromEntries(Object.entries(asObject(head.domainStatus)).map(([k,v])=>[k,{status:v.status,throughTurn:v.throughTurn,reason:v.reason || ''}]));
+      const qualifiers=row=>{
+        const found=[...Object.entries(asObject(row?.fieldEvidence)),...Object.entries(asObject(row?.clearedFieldEvidence))].filter(([,proof])=>proof?.meaning);
+        return found.length?{fieldQualifiers:Object.fromEntries(found.map(([field,proof])=>[field,valueOnly(proof.meaning)]))}:{};
+      };
       return {status:head.status,throughTurn:head.throughTurn,domainStatus:status,...(head.unifiedCoverage?{historicalCoverage:clone(head.unifiedCoverage)}:{}),
         ...(microStatePromptProjection(head)?{microProjection:microStatePromptProjection(head)}:{}),
-        characters:asArray(head.characters).map(r=>({name:r.name,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
-        relationships:asArray(head.relationships).map(r=>({subject:r.subjectName || names.get(r.subjectId) || 'unknown',target:r.targetName || names.get(r.targetId) || 'unknown',dimension:r.dimension,definition:typeof r.state==='string'?r.state:r.state?.value||'명시된 관계 정의 없음',state:valueOnly(r.state)})),
-        world:asArray(head.world).map(r=>({name:r.name,kind:r.kind,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
-        narrative:{summary:head.narrative?.summary || '',threads:asArray(head.narrative?.threads).map(t=>({title:t.title,summary:t.summary,status:t.status,kind:t.kind||t.type||'other',interpretation:t.interpretation||''}))}};
+        characters:asArray(head.characters).map(r=>({...qualifiers(r),name:r.name,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
+        relationships:asArray(head.relationships).map(r=>({...qualifiers(r),subject:r.subjectName || names.get(r.subjectId) || 'unknown',target:r.targetName || names.get(r.targetId) || 'unknown',dimension:r.dimension,definition:typeof r.state==='string'?r.state:r.state?.value||'명시된 관계 정의 없음',state:valueOnly(r.state)})),
+        world:asArray(head.world).map(r=>({...qualifiers(r),name:r.name,kind:r.kind,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
+        narrative:{...qualifiers(head.narrative),summary:head.narrative?.summary || '',threads:asArray(head.narrative?.threads).map(t=>({title:t.title,summary:t.summary,status:t.status,kind:t.kind||t.type||'other',interpretation:t.interpretation||''}))}};
     };
     const unifiedWorldReadContext = (head,locationName) => {
       const nodes=asArray(head?.world), matches=nodes.filter(n=>n.name===locationName && n.kind==='location');
@@ -90193,6 +90213,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('div',{class:'cluster',style:{gap:'6px'}},[guiEl('span',{class:`badge ${riskBadge[row.risk]}`,text:`위험 ${riskLabel[row.risk]}`}),guiEl('span',{class:`badge ${decisionBadge[row.status]}`.trim(),text:decisionLabel[row.status]})])
         ]),
         guiEl('p',{style:{margin:0},text:row.text||row.quote||'(내용 없음)'}),
+        row.meaning?stateMeaningBadge(row.meaning):null,
         guiEl('p',{class:'hint',style:{margin:0},dataset:{memoryReviewState:row.stateOutcome||''},text:stateText(row)}),
         row.reason?guiEl('p',{class:'hint',style:{margin:0},text:(row.stateOutcome==='admitted'?'처음 보류된 사유 · ':'검토 사유 · ')+memoryReviewReasonLabel(row.reason)}):null,
         guiLazyDetails({class:'fold'},guiEl('summary',{text:'원문 근거'}),()=>guiEl('div',{class:'fold__body stack',style:{gap:'6px'}},[
@@ -90615,6 +90636,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return text(value).replace(/\s*\[(?:주제|범위):[^\]]*\]/g,'').trim();
   };
 
+  const stateMeaningLabel = meaning => {
+    if (!meaning) return '';
+    const when = { historical: '과거', flashback: '회상', reported: '전언', hypothetical: '가정', uncertain: '불확실' }[meaning.temporalRole];
+    const sure = { uncertain: '불확실', conflict: '충돌', unknown: '미상' }[meaning.certainty];
+    return [...new Set([when, sure, meaning.conditional ? '조건부' : ''].filter(Boolean))].join(' · ');
+  };
+  const stateMeaningBadge = meaning => {
+    const label = stateMeaningLabel(meaning);
+    if (!label) return null;
+    return guiEl('span', { class: 'badge badge--warn', title: meaning.claim || '', dataset: { stateMeaning: label }, text: label });
+  };
+  const stateFieldValueNode = (attrs, value, meaning) => meaning
+    ? guiEl('dd', attrs, [value, ' ', stateMeaningBadge(meaning)]) : guiEl('dd', { ...attrs, text: value });
   const worldManagerArticleFacts = (detailValue,view=null,limit=16) => {
     const detail = guiAsObject(view?worldManagerDisplayReferences(detailValue,view):detailValue);
     const state = detail.state && typeof detail.state === 'object' && !Array.isArray(detail.state) ? detail.state : {};
@@ -90662,7 +90696,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       lead ? guiEl('p', { class: "deck", text: lead }) : null,
       cleared.length?guiEl('p',{class:'hint',text:'명시적으로 해제된 값 · '+cleared.map(worldManagerArticleFieldLabel).join(', ')}):null,
       pending.length?guiEl('div',{class:'note warn'},[`보류 ${pending.length}건 · ${pending.map(p=>worldManagerArticleFieldLabel(p.field||p.domain)).join(', ')}. 마지막 유효값을 표시합니다.`,domain==='characters'?guiEl('button',{class:'btn btn--sm',type:'button',style:'margin-left:10px',text:'보류 근거 해결…',onClick:()=>openApprovedPendingDialog('characters',row,view)}):null]):null,
-      facts.length ? guiEl('dl', { class: 'kv profile' }, facts.flatMap(item => [guiEl('dt', { text: item.label }), guiEl('dd', { text: item.value })])) : guiEl('p', { class: 'hint', text: '아직 표시할 현재 정보가 없습니다. 아래에서 근거와 관리 기능을 확인할 수 있습니다.' }),
+      facts.length ? guiEl('dl', { class: 'kv profile' }, facts.flatMap(item => [guiEl('dt', { text: item.label }), stateFieldValueNode({}, item.value, fieldEvidence[item.key]?.meaning)])) : guiEl('p', { class: 'hint', text: '아직 표시할 현재 정보가 없습니다. 아래에서 근거와 관리 기능을 확인할 수 있습니다.' }),
       guiEl('aside', { class: "note" }, [
         guiEl('strong', { text: row?.correctionProvenance?'교정 전 정본 근거':'정본 근거' }),
         row?.correctionProvenance?guiEl('p',{class:'hint',text:'현재 표시값에는 사용자 교정이 적용되어 있습니다. 아래 원문은 교정으로 바뀌지 않습니다.'}):null,
@@ -90671,7 +90705,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       guiLazyDetails({ class: "fold", open: false }, guiEl('summary', {}, [
         guiEl('span', { text: '세부 정보' }), guiEl('span', { class: 'hint', text: '읽기 전용' })
-      ]), () => guiEl('div',{class:'fold__body'},[guiEl('dl', { class: 'kv' }, worldManagerArticleFacts(detail,view,Infinity).flatMap(item=>[guiEl('dt',{text:item.label}),guiEl('dd',{text:item.value})]))])),
+      ]), () => guiEl('div',{class:'fold__body'},[guiEl('dl', { class: 'kv' }, worldManagerArticleFacts(detail,view,Infinity).flatMap(item=>[guiEl('dt',{text:item.label}),stateFieldValueNode({},item.value,fieldEvidence[item.key]?.meaning)]))])),
       buildWorldManagerCorrectionEditor(editorDomain, row, view)
     ]);
   };
@@ -92560,7 +92594,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const admittedFields=new Set(Object.entries(guiAsObject(row.fieldEvidence))
         .filter(([,proof])=>proof?.schema==='libra.micro_state_field_evidence.v1'&&proof.status==='state_admitted').map(([field])=>field));
       const visibleField=field=>BOOK_WORLD_AUTO_FIELDS.has(field)||admittedFields.has(field);
-      const facts=worldManagerArticleFacts({state},view,Number.MAX_SAFE_INTEGER).filter(f=>visibleField(f.key));
+      const facts=worldManagerArticleFacts({state},view,Number.MAX_SAFE_INTEGER).filter(f=>visibleField(f.key)).map(f=>({...f,meaning:row.fieldEvidence?.[f.key]?.meaning}));
       const rule=guiAsObject(state.rule),ruleFact=facts.find(f=>f.key==='rule');
       if(ruleFact){
         const scope=byId.get(String(rule.scopeRef||''));
@@ -93636,7 +93670,7 @@ advanced
         guiEl('div',{},[guiEl('b',{text:'임베딩'}),guiEl('span',{text:'실제 저장 상태 확인 필요'})])
       ]),
       guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
-      card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
+      card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 과거·불확실·조건부 내용은 그 표시를 달고 들어갑니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
       card('GRADIA 호환','GRADIA가 LIBRA를 읽는 동안 검색은 GRADIA 요청 때 한 번만 합니다.',[runtimeToggle('finalDeliveryForGradia','GRADIA 사용 시 최종 응답 모델에도 기억 전달','끄면 LIBRA 회상은 GRADIA 초안 단계에서만 쓰입니다.')]),
       card('복구 · 진단','기존 확인·복구 조건과 대상 보호를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('현재 상태 적용…','state'),routeButton('교정 관리…','general'),routeButton('분기 · 재구축…','recovery'),routeButton('실행 기록…','logs')])])
     ]);
@@ -96033,7 +96067,7 @@ advanced
       guiEl('div',{class:'rail__search'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',placeholder:'인물 검색','aria-label':'인물 검색',value:Gui.bookCharacterQuery||'',onInput:event=>{Gui.bookCharacterQuery=event.target.value;const q=event.target.value.trim().toLocaleLowerCase();let n=0;Gui.app?.querySelectorAll('[data-character-search]').forEach(node=>{node.hidden=!node.dataset.characterSearch.includes(q);if(!node.hidden)n++;});const empty=Gui.app?.querySelector('[data-character-search-empty]');if(empty)empty.hidden=n>0;}})])]),
       guiEl('div',{class:'rail__list'},matching.length?matching.map(({item,id,name:n})=>{
         const factsFor=worldManagerArticleFacts({id:item.id||'',name:n,state:guiAsObject(item.state)},view,Number.MAX_SAFE_INTEGER);
-        const present=factsFor.filter(f=>['locationRef','condition'].includes(f.key)).map(f=>f.value).filter(Boolean).join(' · ');
+        const present=factsFor.filter(f=>['locationRef','condition'].includes(f.key)).map(f=>{const limit=stateMeaningLabel(item.fieldEvidence?.[f.key]?.meaning);return limit&&f.value?`${f.value}(${limit})`:f.value;}).filter(Boolean).join(' · ');
         const aliases=guiAsArray(item.aliases).map(text).filter(Boolean);
         const queryText=[n,...aliases].join(' ').toLocaleLowerCase();
         return guiEl('button',{class:`chapter${id===selectedId?' is-on':''}`,type:'button',dataset:{characterSearch:queryText,selectRow:id},'aria-pressed':String(id===selectedId),onClick:()=>{Gui.bookSelectedCharacterId=id;Gui.worldManagerSelectedCharacterId=id;Gui.bookCharacterDetail=true;queueGuiNavigationRender();}},[
@@ -96061,7 +96095,7 @@ advanced
       const keys=groupKeys[key]||[],matched=facts.filter(f=>keys.includes(f.key));
       const factNodes=list=>guiEl('dl',{class:'kv profile'},list.flatMap(f=>{
         const info=evidenceSummary(row.fieldEvidence?.[f.key]);
-        return [guiEl('dt',{text:f.label}),guiEl('dd',{dataset:{characterField:f.key},text:f.value}),info.count?guiEl('details',{},[guiEl('summary',{text:`근거 ${info.count}개 · T${info.turn||'?'}`}),...info.spans.map(span=>guiEl('blockquote',{text:text(span.quote)}))]):guiEl('small',{class:'hint',text:'연결된 인용 근거 없음'})];
+        return [guiEl('dt',{text:f.label}),stateFieldValueNode({dataset:{characterField:f.key}},f.value,row.fieldEvidence?.[f.key]?.meaning),info.count?guiEl('details',{},[guiEl('summary',{text:`근거 ${info.count}개 · T${info.turn||'?'}`}),...info.spans.map(span=>guiEl('blockquote',{text:text(span.quote)}))]):guiEl('small',{class:'hint',text:'연결된 인용 근거 없음'})];
       }));
       const charStatus = text(view?.domainStatus?.characters?.status || '');
       const charReason = text(view?.domainStatus?.characters?.reason || '');
@@ -96089,7 +96123,7 @@ advanced
       const from=rows.find(person=>person.id===rel.subjectId),to=rows.find(person=>person.id===rel.targetId);
       const summary=evidenceSummary([rel.evidence||rel.identityEvidence,...Object.values(guiAsObject(rel.fieldEvidence))]);
       return guiEl('div',{class:'rel',dataset:{relationshipId:bookProjectionIdentity('relationships',rel,relRows.indexOf(rel))}},[
-        guiEl('b',{text:from?bookCharacterName(from):bookRelationshipEndpointName(rel,'subject')}),guiEl('span',{},[guiEl('span',{class:'rel__arrow',text:'→'}),` ${to?bookCharacterName(to):bookRelationshipEndpointName(rel,'target')} `,guiEl('span',{class:'chip',text:[worldManagerArticleValue(worldManagerDisplayReferences(rel.dimension,view,'dimension')),bookProjectionReadable(worldManagerRelationshipDefinition(rel),240)||'상태 미기록'].filter(Boolean).join(' · ')})]),
+        guiEl('b',{text:from?bookCharacterName(from):bookRelationshipEndpointName(rel,'subject')}),guiEl('span',{},[guiEl('span',{class:'rel__arrow',text:'→'}),` ${to?bookCharacterName(to):bookRelationshipEndpointName(rel,'target')} `,guiEl('span',{class:'chip',text:[worldManagerArticleValue(worldManagerDisplayReferences(rel.dimension,view,'dimension')),bookProjectionReadable(worldManagerRelationshipDefinition(rel),240)||'상태 미기록'].filter(Boolean).join(' · ')}),stateMeaningBadge(Object.values(guiAsObject(rel.fieldEvidence)).find(proof=>proof?.meaning)?.meaning)]),
         guiEl('button',{class:'linkbtn',type:'button',text:`근거${summary.count?` ${summary.count}개`:''}`,onClick:()=>{Gui.worldManagerSelectedRelationshipId=bookProjectionIdentity('relationships',rel,relRows.indexOf(rel));bookSelectPeopleSection('relationships');}})
       ]);
     })):guiEl('p',{class:'muted',text:'현재 인물과 연결된 관계 기록이 없습니다.'});
@@ -96130,7 +96164,7 @@ advanced
           } }))
         ]),
         guiEl('details',{class:'fold',dataset:{worldDetail:item.id}},[guiEl('summary',{text:'상세 · 기록과 인용 근거'}),guiEl('div',{class:'fold__body stack'},[
-          guiAsArray(item.facts).length?guiEl('dl',{class:'kv'},guiAsArray(item.facts).flatMap(fact=>[guiEl('dt',{text:fact.label}),guiEl('dd',{text:fact.value})])):guiEl('p',{class:'muted',text:'상태와 연결 정보는 아직 기록되지 않았습니다.'}),
+          guiAsArray(item.facts).length?guiEl('dl',{class:'kv'},guiAsArray(item.facts).flatMap(fact=>[guiEl('dt',{text:fact.label}),stateFieldValueNode({},fact.value,fact.meaning)])):guiEl('p',{class:'muted',text:'상태와 연결 정보는 아직 기록되지 않았습니다.'}),
           guiAsArray(item.cleared).length?guiEl('p',{class:'hint',text:'명시적으로 해제됨 · '+item.cleared.join(' · ')}):null,
           item.row?.correctionProvenance?guiEl('p',{class:'hint',text:'사용자 교정이 적용된 기록입니다.'}):null,
           ...guiAsArray(item.evidence).map(record=>guiEl('blockquote',{},[guiEl('p',{text:record.quote}),guiEl('small',{class:'hint',text:`${record.ref} · ${record.fields.join(' · ')}`})])),
@@ -96221,6 +96255,13 @@ advanced
     ]),
     ...children
   ]);
+
+  // Story threads are one collection, so what is not a plain current fact is named above them.
+  const buildStoryMeaningNotice = () => {
+    const limited = Object.values(guiAsObject(worldManagerSnapshotView().head?.narrative?.fieldEvidence)).map(proof => proof?.meaning).filter(Boolean);
+    return limited.length ? guiEl('div', { class: 'stack stack--sm', dataset: { storyMeaning: 'true' } },
+      limited.map(meaning => guiEl('p', { class: 'hint cluster' }, [stateMeaningBadge(meaning), meaning.claim]))) : null;
+  };
 
   const buildApprovedMockupDestinationDetail = page => {
     switch (page) {
@@ -96505,6 +96546,7 @@ advanced
     const status = document.createElement('div');
     status.className = 'hint'; status.dataset.guiStatus = 'true'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
     current.appendChild(status);
+    if(page==='story'&&Gui.bookStorySection==='toc'){const notice=buildStoryMeaningNotice();if(notice)current.appendChild(notice);}
     current.appendChild(measureRegion('main',()=>buildApprovedMockupDestinationDetail(page)));
     const correctionList=app.querySelector('#dlg-corr-life.is-open #corr-list');
     if(correctionList&&correctionList.closest('.overlay').dataset.correctionsScope===canonicalReaderBinding().scopeKey)correctionList.replaceChildren(buildWorldManagerCorrectionsPanel());
