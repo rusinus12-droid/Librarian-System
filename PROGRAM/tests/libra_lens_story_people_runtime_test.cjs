@@ -133,12 +133,12 @@ test('one lens tracks several people; people cards group at read time; recall na
     assert.equal(records[0].items.find(item => item.label === '약속').who[0].name, '지호', 'the stored record keeps the source wording');
 
     let recall = await api.recallLensMemories({ query: '한지호 몸 상태와 약속', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /\(T1–T5 · 인물: 한지호 · 약속\)/, 'recall names the person; the people card name counts toward relevance');
+    assert.match(recall.renderedBlock, /■ 한지호\n[^■]*\(T1–T5 · 약속\)/, 'recall names the person; the people card name counts toward relevance');
     recall = await api.recallLensMemories({ query: '열쇠를 맡아 들었다', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /인물: 준호 · 보관/);
-    assert.match(recall.renderedBlock, /인물: 민아 · 소유/, 'same wording about two people is recalled for each');
+    assert.match(recall.renderedBlock, /■ 준호\n[^■]*· 보관\)/);
+    assert.match(recall.renderedBlock, /■ 민아\n[^■]*· 소유\)/, 'same wording about two people is recalled for each');
     recall = await api.recallLensMemories({ query: '신뢰한다고 말했다', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /인물 불명 · 신뢰/);
+    assert.match(recall.renderedBlock, /■ 기타\n[^■]*· 신뢰\)/);
 
     const revision = lens.instructionRevision;
     const updated = await api.updateLens(lens.lensId, { trackSubject: false });
@@ -171,7 +171,7 @@ test('handoff, a second handoff and portable restore keep people', async () => {
     await f.api.adoptSessionHandoff({ transferId: 'people-2', targetChatId: second.id });
     checkInherited(await inheritedPeople(f), 'second handoff');
     const recall = await f.api.recallLensMemories({ query: '지호 열쇠 약속', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /이전 대화\] \(T1–T5 · 인물: 지호 · 약속\)/);
+    assert.match(recall.renderedBlock, /■ 지호\n[^■]*이전 대화\] \(T1–T5 · 약속\)/);
 
     const portable = f.r.context.__LIBRAPortableMemoryBackup;
     const envelope = await portable.exportCurrentScope();

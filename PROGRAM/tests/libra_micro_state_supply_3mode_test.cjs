@@ -48,8 +48,9 @@ const span = (text, quote, messageId) => ({role: 'assistant', messageId,
       const unknown = await f.r.api.debugAdmitActiveMicroStateClaim(6, 1);
       assert.equal(known.status, 'admitted', `${mode}: ${known.reason}`);
       assert.match(String(known.decision.patch.set.holderRef), /^ce_person_/, `${mode}: the Registry id is stored, not the name`);
-      assert.equal(unknown.status, 'pending');
-      assert.equal(unknown.reason, 'registry_reference_unresolved', `${mode}: an unknown holder never becomes State`);
+      assert.equal(unknown.status, 'admitted', `${mode}: someone the source names but no record holds yet is new`);
+      assert.match(String(unknown.decision.patch.set.holderRef), /^ce_person_/, `${mode}: stored as an id, not a name`);
+      assert.equal(unknown.decision.patch.microNewEntities.length, 1, `${mode}: the decision carries who it is`);
       if (mode === 'plugin_only') {
         // Heads stored before the rule still say not_updated; what they actually hold decides.
         const headKey = [...fixture.local.keys()].find(key => key.endsWith(':continuity-state'));

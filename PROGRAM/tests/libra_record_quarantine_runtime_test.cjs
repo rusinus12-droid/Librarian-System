@@ -17,7 +17,7 @@ const receipt=f=>f.getMemory().artifactValidation.admission;
  });
  await test('rejected latest possession cannot promote an older holder',async f=>{
   fact(f,'f11').evidenceSpans[0].quote='not present';await f.run();assert.ok(!admitted(f,'f11'));assert.ok(admitted(f,'f7'));assert.ok(admitted(f,'f8'));
-  assert.equal(f.getHead().world.find(x=>x.name==='은빛 열쇠').state.holderRef,undefined);assert.deepEqual(f.getHead().characters.find(x=>x.name==='민아').state.knowledge,['상자의 암호']);assert.equal(f.getHead().status,'partial');
+  assert.equal(f.getHead().world.find(x=>x.name==='은빛 열쇠').state.holderRef,undefined);assert.deepEqual(f.getHead().characters.find(x=>x.name==='민아').state.knowledge,['상자의 암호']);assert.equal(f.getHead().status,'ready','one held field no longer stops the rest');
  });
  await test('invalid entity rejects its dependent facts and keeps independent records',async f=>{
   f.control.artifact.entities.find(x=>x.tempId==='key').name='not in source';await f.run();assert.equal(receipt(f).rejectedEntities,1);for(const id of ['f6','f7','f8','f11'])assert.ok(!admitted(f,id));assert.ok(admitted(f,'f9'));
@@ -55,7 +55,7 @@ const receipt=f=>f.getMemory().artifactValidation.admission;
  });
  await test('admission survives restart and does not call the model to repair State',async f=>{
   fact(f,'f11').evidenceSpans[0].quote='invented';await f.run();const bytes=JSON.stringify(f.getMemory());const restored=await fixture({snapshot:{chat:f.chat,values:[...f.r.values]}});
-  try{assert.equal(JSON.stringify(restored.getMemory()),bytes);await restored.r.api.retryPendingUnifiedState();assert.equal(restored.control.calls.length,0);assert.ok(restored.getHead()?.status!=='ready');}finally{await restored.r.cleanup();}
+  try{assert.equal(JSON.stringify(restored.getMemory()),bytes);await restored.r.api.retryPendingUnifiedState();assert.equal(restored.control.calls.length,0);assert.equal(restored.getHead().world.find(x=>x.name==='은빛 열쇠').state.holderRef,undefined,'the older holder still does not read as current');}finally{await restored.r.cleanup();}
  });
  console.log(JSON.stringify({test:'libra_record_quarantine_runtime',passed:results.length,results,boundary:'full plugin, controlled provider, KV fault/restart fixture; no external model calls'}));
 })().catch(e=>{console.error(e);process.exitCode=1;});

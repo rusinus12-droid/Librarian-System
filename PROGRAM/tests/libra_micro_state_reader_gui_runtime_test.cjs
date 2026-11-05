@@ -22,17 +22,15 @@ async function unknownLocation(){
   const micro=await f.api.readActiveMicroMemoryForTurn(6);assert.equal(micro.record.analysisStatus,'verified');
   const before=f.writes.length,modelCalls=calls;
   const admission=await f.api.readMicroStateAdmissionForTurn(6,micro.record.scopeKey,micro.record.analysisRevisionId);
-  assert.equal(admission.status,'verified');assert.equal(admission.decisions.length,1);assert.equal(admission.decisions[0].status,'pending');assert.equal(admission.decisions[0].reason,'registry_location_unresolved');
+  assert.equal(admission.status,'verified');assert.equal(admission.decisions.length,1);assert.equal(admission.decisions[0].status,'admitted','a place the source names but no record holds yet is new');
   assert.equal((await f.api.readMicroStateAdmissionForTurn(6,'other-scope',micro.record.analysisRevisionId)).status,'scope_mismatch');
   assert.equal((await f.api.readMicroStateAdmissionForTurn(6,micro.record.scopeKey,'changed-revision')).status,'stale_source');
   assert.equal(f.writes.length,before,'state decision inspection cannot mutate storage');assert.equal(calls,modelCalls);
   f.doc.querySelector('.sidebar [data-go="memory"]').click();await pause(200);f.doc.querySelector('[data-memory-reader-kind="micro"]').click();
   await until(()=>f.doc.querySelector('[data-micro-reader-turn="6"]'),'Micro list');f.doc.querySelector('[data-micro-reader-turn="6"]').click();
-  await until(()=>f.doc.querySelector('[data-micro-state-pending-reason="registry_location_unresolved"]'),'actual pending reason in the viewer',10000);
-  const panel=f.doc.querySelector('[data-micro-state-admission="pending"]');assert.ok(panel.textContent.includes('장소'));assert.ok(panel.textContent.includes('상태 승인 다시 확인'));
-  assert.equal(f.api.getCurrentStateHead().throughTurn,5,'an unknown location must never be auto-approved by the reader');
+  await until(()=>f.doc.querySelector('[data-micro-state-admission="ready"]'),'the viewer shows it applied',10000);
   assert.equal(calls,2);assert.deepEqual(f.errors,[]);
-  console.log('PASS unknown location stays pending; scope/revision refusal; zero reader writes/model calls');
+  console.log('PASS a new location is admitted; scope/revision refusal; zero reader writes/model calls');
  }finally{await f?.close();}
 }
 
@@ -116,7 +114,7 @@ async function pendingBeyondDiagnosticLimit(){
     const source=JSON.parse(messages[1].content),quote=source.assistant.text;
     return{type:'success',result:JSON.stringify({schema:'libra.micro_producer_envelope.v1',personCandidates:{spans:[],relations:[]},
      micro:{schema:'libra.micro_memory.v1',...source.binding,claims:Array.from({length:16},(_,i)=>({changeKind:'world',text:quote,actor:'',target:'제어실',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',
-      stateIntent:{domain:'world',target:{entityName:'제어실'},field:`doorStatus${i}`,operation:'set',value:'열렸다'},
+      stateIntent:{domain:'world',target:{entityName:'열렸다'},field:`doorStatus${i}`,operation:'set',value:'열렸다'},
       evidence:{role:'assistant',messageId:source.assistant.messageId,startOffset:0,endOffset:quote.length,exactQuote:quote}}))}})};
    }
   }});

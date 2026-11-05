@@ -23,11 +23,11 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
  });
  await test('a failed first batch does not block the second; filling the gap replays saved memory',async f=>{
   append(f);f.control.onCall=async()=>f.control.calls.length===1?success('bad JSON'):success(secondArtifact());
-  const first=await f.run();assert.equal(first.completed,1,JSON.stringify(first));assert.equal(f.getMemory(),null);assert.ok(f.getMemory(6));assert.equal(f.getHead(),null);assert.equal(countCalls(f.control).canonical,2);
-  const recall=await f.r.api.previewUnifiedMemoryRecall('민아 은빛 열쇠');assert.ok(recall.memories.some(row=>row.memory.turnRange.start===6),'saved memory remains searchable before State catches up');assert.equal(countCalls(f.control).canonical,2);
+  const first=await f.run();assert.equal(first.completed,1,JSON.stringify(first));assert.equal(f.getMemory(),null);assert.ok(f.getMemory(6));assert.equal(f.getHead().throughTurn,10,'State moves past the failed batch');assert.deepEqual(f.getHead().skippedRanges.map(row=>row.start),[1]);assert.equal(countCalls(f.control).canonical,2);
+  const recall=await f.r.api.previewUnifiedMemoryRecall('민아 은빛 열쇠');assert.ok(recall.memories.some(row=>row.memory.turnRange.start===6),'saved memory remains searchable');assert.equal(countCalls(f.control).canonical,2);
   const saved=f.getMemory(6).artifactDigest;f.control.onCall=async()=>success(artifact());
   const retryOne=async()=>{const inv=await f.r.api.listReanalysisRanges();const res=await f.r.api.reanalyzeSelectedRanges({...inv,ranges:inv.ranges.filter(r=>r.batchStart===1)});return res.job||res;};
-  const retry=await retryOne();assert.equal(retry.completed,1,JSON.stringify(retry));assert.equal(countCalls(f.control).canonical,3);assert.equal(f.getMemory(6).artifactDigest,saved);assert.equal(f.getHead().throughTurn,10);assert.equal(f.getHead().status,'ready');
+  const retry=await retryOne();assert.equal(retry.completed,1,JSON.stringify(retry));assert.equal(countCalls(f.control).canonical,3);assert.equal(f.getMemory(6).artifactDigest,saved);assert.equal(f.getHead().throughTurn,10);assert.equal(f.getHead().status,'ready');assert.equal(f.getHead().skippedRanges,undefined,'the hole is filled');
   const headBefore=JSON.stringify(f.getHead());await f.r.api.retryPendingUnifiedState();assert.equal(countCalls(f.control).canonical,3);assert.equal(JSON.stringify(f.getHead()),headBefore,'already replayed chain does not write State again');
  });
  await test('a gap replay storage failure keeps both memories and retries locally',async f=>{
@@ -35,13 +35,13 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
   const storage=f.r.context.risuai.pluginStorage,original=storage.setItem;let hit=false;
   storage.setItem=async(k,v)=>{if(!hit&&JSON.parse(v)?.schema==='libra.continuity_state.v2'){hit=true;return true;}return original(k,v);};
   let job;try{const inv=await f.r.api.listReanalysisRanges();const res=await f.r.api.reanalyzeSelectedRanges({...inv,ranges:inv.ranges.filter(r=>r.batchStart===1)});job=res.job||res;}finally{storage.setItem=original;}
-  assert.ok(hit);assert.equal(job.completed,1);assert.ok(f.getMemory());assert.ok(f.getMemory(6));assert.equal(f.getHead(),null);
+  assert.ok(hit);assert.equal(job.completed,1);assert.ok(f.getMemory());assert.ok(f.getMemory(6));assert.equal(f.getHead().throughTurn,10,'State moved on');
   await f.r.api.retryPendingUnifiedState();assert.equal(f.getHead().throughTurn,10);assert.equal(countCalls(f.control).canonical,3);
  });
  await test('changed source in a saved later range prevents gap replay from overwriting State',async f=>{
   append(f);f.control.onCall=async()=>f.control.calls.length===1?success('bad JSON'):success(secondArtifact());await f.run();
   f.control.onCall=async()=>success(artifact());f.chat.message[10].data+=' source changed';
-  const job=await f.run();assert.equal(job.completed,1);assert.ok(f.getMemory());assert.ok(f.getMemory(6));assert.equal(f.getHead(),null);await f.r.api.retryPendingUnifiedState();assert.equal(f.getHead(),null);assert.equal(countCalls(f.control).canonical,3);
+  const before=JSON.stringify(f.getHead());const job=await f.run();assert.equal(job.completed,1);assert.ok(f.getMemory());assert.ok(f.getMemory(6));assert.equal(JSON.stringify(f.getHead()),before,'the gap replay does not overwrite State');await f.r.api.retryPendingUnifiedState();assert.equal(JSON.stringify(f.getHead()),before);assert.equal(countCalls(f.control).canonical,3);
  });
  console.log(JSON.stringify({test:'libra_memory_first_runtime',passed:results.length,results,boundary:'full deployed plugin with controlled provider; physical mock storage readback'}));
 })().catch(e=>{console.error(e);process.exitCode=1;});
