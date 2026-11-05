@@ -59,7 +59,16 @@ const coldTurns = async r => (await r.hayaku.recovery.status({ includeDebts: tru
 
   // One failed turn in a single-turn batch comes back in the same run.
   r = await open({ turns: 3 });
+  const restoreColdLogWrites = [];
   try {
+    for (const store of new Set([r.pluginStorage, r.safeLocalStorage])) {
+      const set = store.setItem.bind(store);
+      restoreColdLogWrites.push(() => { store.setItem = set; });
+      store.setItem = async (key, value) => {
+        if (String(key).startsWith('hayaku.v2.analysis_failure_log.') && JSON.parse(value).entries.some(row => row.resolution)) throw Error('injected_cold_diagnostic_write_failure');
+        return await set(key, value);
+      };
+    }
     let failedOnce = false;
     r.setLlmResponder(async call => {
       const turn = turnOf(call);
@@ -74,8 +83,21 @@ const coldTurns = async r => (await r.hayaku.recovery.status({ includeDebts: tru
     const row = report.rows.find(item => item.turn === 2);
     assert.ok(row, 'the failed try stays on the record');
     assert.equal(row.resolved, true, 'and shows that the turn came back');
+    assert.equal(row.resolutionPending, true);
     assert.equal(row.title, 'AI 응답 형식 오류');
-  } finally { await r.dispose(); }
+    const coldStores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage }, coldMessages = r.chat.message;
+    await r.dispose();
+    restoreColdLogWrites.forEach(fn => fn());
+    r = await createHayakuRuntime({ messages: coldMessages, autoRepair: false, afterRequestAutoRepair: false, ...coldStores });
+    const recovered = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(item => item.failureKey === row.failureKey);
+    assert.equal(recovered.resolved, true, 'Cold Start recovery is reconstructed after an immediate restart');
+    assert.equal(recovered.resolutionDurable, true);
+    assert.equal(recovered.resolutionPending, false);
+    const durableRecords = (await r.hayaku.ledger.inspect({ includeRecords: true })).records;
+    assert.ok(recovered.resolution.recordIds.length > 0);
+    assert.ok(recovered.resolution.recordIds.every(id => durableRecords.some(record => record.recordId === id && record.hash === recovered.resolution.packetHash)));
+    assert.equal(r.llmCalls.length, 0, 'Cold Start proof reconstruction spends no model call');
+  } finally { restoreColdLogWrites.forEach(fn => fn()); await r.dispose(); }
 
   // A retry that fails too keeps the run partial, names the turn, and survives a restart.
   const messages = chat(2);

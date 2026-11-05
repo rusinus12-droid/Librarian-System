@@ -131,7 +131,6 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     }
     r.setLlmResponder(async call => good(call));
     assert.equal((await r.hayaku.rebuildAllTurns()).ok, true);
-    const calls = r.llmCalls.length;
     const pending = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey);
     assert.equal(pending.resolved, true);
     assert.equal(pending.resolutionPending, true);
@@ -147,6 +146,25 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     await waitFor(() => root.querySelector('#hayakuViewerPanelLogs [data-failure-row="2"]'), 'pending diagnostic row');
     assert.match(root.querySelector('[data-failure-row="2"]').textContent, /복구됨 · 기록 저장 대기/);
     assert.doesNotMatch(root.querySelector('[data-failure-row="2"]').textContent, /기존 기억 유지|미복구/);
+    const pendingLogKey = [...r.pluginStorage.values.keys()].find(key => key.startsWith('hayaku.v2.analysis_failure_log.'));
+    const pendingLog = JSON.parse(r.pluginStorage.values.get(pendingLogKey));
+    pendingLog.entries.push({ ...failure, failureKey: 'restart-other-source', sourceRevisionId: 'other-source-revision' });
+    pendingLog.entries.push({ ...failure, failureKey: 'restart-newer-failure', at: Date.now() + 600000 });
+    r.pluginStorage.values.set(pendingLogKey, JSON.stringify(pendingLog));
+    const crashedStores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage }, crashedMessages = r.chat.message;
+    await r.dispose();
+    r = await createHayakuRuntime({ messages: crashedMessages, autoRepair: false, afterRequestAutoRepair: false, ...crashedStores });
+    const reconstructed = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey);
+    assert.equal(reconstructed.resolved, true, 'a restart rebuilds the proof from the durable recovery record');
+    assert.equal(reconstructed.resolutionPending, true, 'the still-failing diagnostic store remains pending');
+    assert.equal(reconstructed.resolutionDurable, false);
+    assert.equal(reconstructed.keptOld, false);
+    assert.ok(reconstructed.resolution.recordIds.includes((await active(r)).get(2).recordId));
+    const negatives = (await r.hayaku.recovery.failedAnalysis.report()).rows;
+    assert.equal(negatives.find(row => row.failureKey === 'restart-other-source').resolved, false, 'a different source revision stays unresolved');
+    assert.equal(negatives.find(row => row.failureKey === 'restart-newer-failure').resolved, false, 'a record adopted before a failure proves no later recovery');
+    assert.equal(r.llmCalls.length, 0, 'proof reconstruction never invokes a model');
+    const calls = r.llmCalls.length;
     restore.forEach(fn => fn());
     await new Promise(resolve => setTimeout(resolve, 5100));
     const saved = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey);

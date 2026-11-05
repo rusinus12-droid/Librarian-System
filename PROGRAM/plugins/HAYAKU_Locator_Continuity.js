@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.24
+//@display-name HAYAKU · Locator Continuity v3.3.25
 //@api 3.0
-//@version 3.3.24
+//@version 3.3.25
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.24';
+  const PLUGIN_VERSION = '3.3.25';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -44507,6 +44507,69 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
     }
   };
+  // Rebuild a lost retry buffer from durable native recovery records, never from coverage alone.
+  // Read the physical ledger: an older packet or an uncommitted in-memory candidate proves no retry.
+  const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
+    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
+      && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
+    if (!unresolved.length) return false;
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || scope.key !== scopeKey || scope.chatMessagesAvailable !== true) return false;
+    const outcome = await RisuCompat.getStorageItemOutcome(storageLedgerStorageKey(scope), HAYAKU_STORAGE_IO_TIMEOUT_MS);
+    if (outcome.state !== 'fulfilled' || !outcome.value) return false;
+    const hydrated = await hydrateCapturedLedgerRaw(outcome.value, scope);
+    const stored = typeof hydrated === 'string' ? safeJsonParse(hydrated, null) : hydrated;
+    if (!stored || stored.scopeKey !== scopeKey) return false;
+    const ledger = normalizeStorageLedger(stored, scope);
+    // Lifecycle reconciliation may bind an old candidate now. Only its already-persisted
+    // active adoption time can establish that a recovery happened after the failure.
+    const adoptedAtById = new Map(ensureArray(ledger.records).filter(record => record.recordState === 'active'
+      && record.captureSource === 'bridge_incremental_recovery' && Number(record.boundAt) > 0).map(record => [record.recordId, Number(record.boundAt)]));
+    const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
+    const worldline = reconcileTurnWorldline(ledger.worldline, snapshot, scope);
+    const activeIds = new Set(bindStorageLedgerToSnapshot(ledger, snapshot, worldline).activeRecords.map(record => record.recordId));
+    const turns = new Set(unresolved.map(row => Number(row.turn)));
+    const prefixes = new Map(), units = new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit]));
+    let reconstructed = false;
+    for (const record of ensureArray(ledger.records)) {
+      if (!['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource)
+        || record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
+      if (!record.hash || stableHash64(text(record.raw).trim()) !== record.hash) continue;
+      const packet = safeJsonParse(record.raw, null), meta = packet?.meta;
+      if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
+        || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
+      if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
+      if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
+      const prefix = prefixes.get(turn);
+      if (!prefix) continue;
+      let operationId = '', adoptedAt = 0;
+      if (record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
+        && record.sourceRevisionBasis === prefix && meta.repair_target?.sourcePrefixDigest === prefix
+        && record.recoveryTargetEvidenceHash === meta.source_evidence_hash) {
+        operationId = record.incrementalRecoveryRunId;
+        adoptedAt = adoptedAtById.get(record.recordId) || 0;
+      } else if (record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
+        && record.coldStartEpochId === ledger.coldStart?.activeEpochId && record.inheritedFromScopeKey === `cold_start:${scopeKey}`
+        && meta.source_evidence_hash === units.get(turn)?.chunkHash) {
+        operationId = record.coldStartTransferId;
+        adoptedAt = Number(record.inheritedAt || 0);
+      }
+      if (!operationId || !adoptedAt) continue;
+      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && adoptedAt > Number(row.at)) {
+        const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+        if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
+        const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
+        Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+        reconstructed = true;
+      }
+    }
+    if (!reconstructed) return false;
+    while (Memory.analysisFailurePendingResolutions.size > 200) Memory.analysisFailurePendingResolutions.delete(Memory.analysisFailurePendingResolutions.keys().next().value);
+    try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
+    catch (error) { pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
+    return true;
+  };
   const analysisFailureReport = async (scopeKey, { coveredTurns = [], coldRun = null } = {}) => {
     if ([...Memory.analysisFailurePendingResolutions.values()].some(row => row.scopeKey === scopeKey && row.nextRetryAt <= now())) {
       try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
@@ -44523,6 +44586,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const explained = failedAnalysisReasonExplanation({ message: chunk.error }, { flow: 'cold_start' });
       rows.push({ scopeKey, turn, at: Number(chunk.lastAttemptAt || coldRun.updatedAt || 0), flow: 'cold_start', code: '', reason: compact(chunk.error || '', 160), cause: [], physicalCalls: Number(chunk.attempts || 0), count: 1, diagnosisCode: explained.diagnosisCode, title: explained.title, detail: explained.detail, nextStep: explained.nextStep });
     }
+    if (logAvailable) try {
+      if (await reconstructAnalysisFailureResolutions(scopeKey, rows)) {
+        const saved = new Map((await readAnalysisFailureLog(scopeKey)).map(row => [identity(row), row]));
+        rows = rows.map(row => saved.get(identity(row)) || row);
+      }
+    } catch (error) { pushOperationLog('analysis:failure_resolution_recheck_unavailable', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
     const covered = new Set(ensureArray(coveredTurns).map(Number));
     return { logAvailable, rows: rows.map(row => {
       const resolutionDurable = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
