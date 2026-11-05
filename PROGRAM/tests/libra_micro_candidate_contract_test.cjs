@@ -87,6 +87,36 @@ const valid = () => ({
     assert.equal(partial.status, 'source_bound_candidate', 'one invalid claim does not erase a grounded claim');
     assert.equal(partial.claims.length, 1);
     assert.equal(partial.rejected.length, 1);
+
+    const names = Array.from({ length: 17 }, (_, i) => `상자${String(i + 1).padStart(2, '0')}`);
+    const sentences = names.map((name, i) => `${name}의 표식은 색상${i + 1}이다.`);
+    const longReceipt = structuredClone(receipt);
+    longReceipt.assistant.text = sentences.join(' ');
+    const stateClaim = (name, value, quote, source) => ({
+      ...typed.claims[0], actor: '', target: '', text: quote,
+      stateIntent: { domain: 'world', target: { entityName: name }, field: 'condition', operation: 'set', value },
+      evidence: { role: 'assistant', messageId: receipt.assistant.chatId, startOffset: source.indexOf(quote), endOffset: source.indexOf(quote) + quote.length, exactQuote: quote }
+    });
+    const changes = names.map((name, i) => stateClaim(name, `색상${i + 1}`, sentences[i], longReceipt.assistant.text));
+    const overflow = valid();
+    overflow.claims = [{ ...changes[0], actor: '근거없는인물' }, ...changes.slice().reverse()];
+    const capped = validate(overflow, longReceipt);
+    assert.equal(capped.claims.length, 16);
+    assert.ok(capped.claims.some(claim => claim.stateIntent.target.entityName === names[16]), 'source order outranks model output order');
+    assert.equal(capped.claims.some(claim => claim.stateIntent.target.entityName === names[0]), false);
+    assert.ok(capped.rejected.some(row => row.index === 0 && row.reason === 'participant_unbound'), 'invalid proposals consume no capacity');
+    assert.ok(capped.rejected.some(row => row.index === 17 && row.reason === 'claim_limit_exceeded'), 'omission uses the original response index');
+
+    const conflictQuote = '공통상자의 표식은 붉음과 푸름으로 적혀 있다.';
+    const conflictReceipt = structuredClone(longReceipt);
+    conflictReceipt.assistant.text = [conflictQuote, ...sentences.slice(0, 15)].join(' ');
+    const conflict = valid();
+    conflict.claims = [stateClaim('공통상자', '붉음', conflictQuote, conflictReceipt.assistant.text), stateClaim('공통상자', '푸름', conflictQuote, conflictReceipt.assistant.text),
+      ...names.slice(0, 15).map((name, i) => stateClaim(name, `색상${i + 1}`, sentences[i], conflictReceipt.assistant.text))];
+    const keptTogether = validate(conflict, conflictReceipt);
+    assert.equal(keptTogether.claims.length, 15);
+    assert.equal(keptTogether.claims.some(claim => claim.stateIntent.target.entityName === '공통상자'), false, 'the cap cannot make one side of a conflict authoritative');
+    assert.deepEqual(JSON.parse(JSON.stringify(keptTogether.rejected)), [{ index: 0, reason: 'claim_limit_exceeded' }, { index: 1, reason: 'claim_limit_exceeded' }]);
     assert.equal(fixture.f.control.calls.length, 0, 'contract validation does not call a model');
     console.log('PASS one-turn Micro candidates require exact source and provisional authority');
   } finally { await fixture.cleanup(); }

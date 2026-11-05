@@ -57,7 +57,36 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     assert.equal(rows.get(3).raw.includes('ORIGINAL'), false);
     assert.deepEqual(await covered(r), [1, 2, 3, 4]);
     const row = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(item => item.turn === 2);
+    assert.equal(row.resolved, false, 'an existing record does not resolve the failed analysis');
     assert.equal(row.keptOld, true); assert.equal(row.flowLabel, '직접 원문 재분석');
+    assert.ok(row.sourceRevisionId && row.operationId && row.failureKey);
+    const logKey = [...r.pluginStorage.values.keys()].find(key => key.startsWith('hayaku.v2.analysis_failure_log.'));
+    const log = JSON.parse(r.pluginStorage.values.get(logKey));
+    log.entries.push({ ...row, failureKey: 'other-source-failure', sourceRevisionId: 'other-source-revision' });
+    log.entries.push({ ...row, failureKey: 'legacy-unbound-failure', sourceRevisionId: '' });
+    r.pluginStorage.values.set(logKey, JSON.stringify(log));
+    r.setLlmResponder(async call => good(call));
+    assert.equal((await r.hayaku.rebuildAllTurns()).ok, true);
+    const recovered = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(item => item.failureKey === row.failureKey);
+    assert.equal(recovered.resolved, true);
+    assert.equal(recovered.keptOld, false);
+    assert.equal(recovered.resolution.sourceRevisionId, row.sourceRevisionId);
+    assert.ok(recovered.resolution.recordIds.includes((await active(r)).get(2).recordId));
+    const history = (await r.hayaku.recovery.failedAnalysis.report()).rows;
+    assert.equal(history.find(item => item.failureKey === 'other-source-failure').resolved, false, 'another source revision is not certified by this recovery');
+    assert.equal(history.find(item => item.failureKey === 'legacy-unbound-failure').resolved, false, 'legacy coverage without a source binding proves no recovery');
+    const stores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage };
+    const messages = r.chat.message;
+    await r.dispose();
+    r = await createHayakuRuntime({ messages, autoRepair: false, afterRequestAutoRepair: false, ...stores });
+    const afterRestart = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(item => item.failureKey === row.failureKey);
+    assert.equal(afterRestart.resolved, true, 'the recovery link survives a restart');
+    assert.equal(afterRestart.keptOld, false);
+    r.setLlmResponder(async call => turnOf(call) === 2 ? { type: 'success', result: 'not json' } : good(call));
+    assert.equal((await r.hayaku.rebuildAllTurns()).ok, false);
+    const later = (await r.hayaku.recovery.failedAnalysis.report()).rows.filter(item => item.turn === 2);
+    assert.ok(later.some(item => item.failureKey === row.failureKey && item.resolved), 'a later failure preserves the earlier recovery');
+    assert.ok(later.some(item => item.failureKey !== row.failureKey && !item.resolved && item.keptOld), 'a later failed operation is not resolved by the old record');
   } finally { await r.dispose(); }
 
   // Three failures in a row stop the spending; what was replaced stays.

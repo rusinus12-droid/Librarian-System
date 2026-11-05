@@ -6,9 +6,9 @@ const assert = require('node:assert/strict');
 const { lensFixture } = require('./fixtures/libra_lens_handoff_fixture.cjs');
 
 const item = (id, name, label, text) => ({ itemId: id, label, text, evidenceLevel: 'interpreted', refs: ['t1-u'], basis: '근거', who: name ? [{ name, ref: 't1-u', role: 'named' }] : [], whoIssue: name ? '' : 'unknown' });
-const seed = async (f, role, items) => {
+const seed = async (f, role, items, recall = {}) => {
   f.setReply({ items: [{ label: '시작', text: '시작 기록입니다.', refs: ['t1-u'], basis: '근거' }] });
-  const lens = await f.add(`렌즈-${role}`, 'active', { trackSubject: true, recall: { role } });
+  const lens = await f.add(`렌즈-${role}`, 'active', { trackSubject: true, recall: { role, ...recall } });
   assert.equal(lens.recall.role, role, 'the role is kept with the lens');
   const key = [...f.r.values.keys()].find(k => k.endsWith(`:lens:${lens.lensId}:records`));
   const stored = JSON.parse(f.r.values.get(key));
@@ -46,7 +46,7 @@ test('a search-only lens still needs words in common, and people not in the scen
   } finally { await f.close?.(); }
 });
 
-test('each person in the scene gets a turn when the budget is small, and no more than two notes per lens', async () => {
+test('each person in the scene gets a turn within the lens total and character budget', async () => {
   const f = await lensFixture();
   try {
     const many = (name, n) => Array.from({ length: n }, (_, i) => item(`${name}${i}`, name, '증상', `${name}의 기록 ${i}번입니다. 내용이 조금 길게 이어집니다.`));
@@ -57,6 +57,21 @@ test('each person in the scene gets a turn when the budget is small, and no more
     assert.match(small.renderedBlock, /^■ 민아$/m, 'a small budget still reaches both people');
     const large = JSON.parse(JSON.stringify(await f.api.recallLensMemories({ query: UNRELATED, canonicalBudgetChars: 12000 })));
     const counts = large.injectedItems.reduce((map, row) => { map[row.groupName] = (map[row.groupName] || 0) + 1; return map; }, {});
-    assert.deepEqual(counts, { 지호: 2, 민아: 2 });
+    assert.equal(large.injectedItems.length, 3, 'the default maxItems applies across people');
+    assert.ok(counts.지호 >= 1 && counts.지호 <= 2);
+    assert.ok(counts.민아 >= 1 && counts.민아 <= 2);
+  } finally { await f.close?.(); }
+});
+
+for (const maxItems of [1, 3, 8]) test(`scene and general selection share the lens limit ${maxItems}`, async () => {
+  const f = await lensFixture();
+  try {
+    const notes = ['지호', '민아', '외부인물'].flatMap(name => Array.from({ length: 6 }, (_, i) => item(`${name}${i}`, name, '검증 기록', `${name}의 검증 기록 ${i}번입니다.`)));
+    const lens = await seed(f, 'persistent', notes, { maxItems });
+    const recall = await f.api.recallLensMemories({ query: '검증 기록', canonicalBudgetChars: 30000 });
+    assert.equal(recall.injectedItems.filter(row => row.lensId === lens.lensId).length, maxItems);
+    assert.ok(recall.skippedCandidates.some(row => row.reasonCode === 'item_limit'));
+    assert.ok(recall.usedChars <= recall.budgetChars);
+    if (maxItems >= 3) for (const name of ['지호', '민아']) assert.ok(recall.injectedItems.some(row => row.groupName === name), name);
   } finally { await f.close?.(); }
 });

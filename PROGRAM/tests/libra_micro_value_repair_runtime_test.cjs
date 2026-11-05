@@ -87,6 +87,25 @@ const nameOf = (head, id) => head.world.find(row => row.id === id)?.name;
     assert.equal(record.claims.length, 16);
     assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '다락방', 'and the change is what stays');
   });
+  const independent = Array.from({ length: 16 }, (_, i) => {
+    const name = `검증인물${String(i + 1).padStart(2, '0')}`, quote = `${name}는 기절했다.`;
+    return { ...location(quote, '기절했다'), stateIntent: { domain: 'character', target: { entityName: name }, field: 'condition', operation: 'set', value: '기절했다' } };
+  });
+  const lastMove = location('민아는 다락방으로 올라갔다.', '다락방');
+  for (const ordered of [[...independent, lastMove], [lastMove, ...independent.slice().reverse()]]) {
+    await run([...independent, lastMove].map(claim => claim.text).join(' '), ordered, async ({ head, record, publication }) => {
+      assert.equal(publication.analysisStatus, 'verified');
+      assert.equal(record.claims.length, 16);
+      assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '다락방', 'source recency wins even with more than sixteen State changes');
+      assert.equal(record.claims.some(claim => claim.stateIntent?.target?.entityName === '검증인물01'), false);
+      assert.deepEqual(record.rejected, [{ index: ordered.indexOf(independent[0]), reason: 'claim_limit_exceeded' }], 'omission remains diagnostic');
+    });
+  }
+  const moves = Array.from({ length: 17 }, (_, i) => location(`민아는 검증방${i + 1}에 도착했다.`, `검증방${i + 1}`));
+  await run(moves.map(claim => claim.text).join(' '), [...moves].reverse(), async ({ head, record }) => {
+    assert.equal(record.claims.length, 16);
+    assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '검증방17', 'same-field reduction still precedes the count limit');
+  });
   await run('민아는 다락방으로 올라갔다.', [{ ...location('민아는 다락방으로 올라갔다.', '다락방'), stateIntent: { domain: 'character', target: { entityName: '민아' }, field: 'locationRef', operation: 'set', value: '다락방' } }], async ({ head }) => {
     const before = head.characters.length;
     assert.equal(head.characters.filter(row => row.name === '김민아').length, 1, 'a given name is the person of that full name');

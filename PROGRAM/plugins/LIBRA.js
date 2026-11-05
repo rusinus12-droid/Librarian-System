@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.34
+//@display-name LIBRA v2.6.35
 //@api 3.0
-//@version 2.6.34
+//@version 2.6.35
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.34';
+  const PLUGIN_VERSION = '2.6.35';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -58514,7 +58514,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || candidate.sourceDigest !== receipt.sourceDigest) return rejectedResult('receipt_binding_invalid');
       if (typeof candidate.label !== 'undefined'
         && (typeof candidate.label !== 'string' || candidate.label.length > 120)) return rejectedResult('label_invalid');
-      if (!Array.isArray(candidate.claims) || !candidate.claims.length || candidate.claims.length > 16) {
+      if (!Array.isArray(candidate.claims) || !candidate.claims.length) {
         return rejectedResult('claim_count_invalid');
       }
       const claimFields = new Set(['changeKind', 'text', 'actor', 'target', 'temporalRole',
@@ -58560,7 +58560,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         return '';
       };
-      const claims = [], rejected = [];
+      const claims = [], rejected = [], sourceIndexes = [];
       for (const [index, source] of candidate.claims.entries()) {
         const claim = asObject(source), evidence = asObject(claim.evidence);
         const row = asObject(receipt[evidence.role]);
@@ -58593,12 +58593,43 @@ function mountMemorySuiteReanalysisReview(container,config) {
           reason = stateIntentReason(claim.stateIntent, claim, evidence.exactQuote);
         }
         if (reason) { rejected.push({ index, reason }); continue; }
+        sourceIndexes.push(index);
         claims.push({ changeKind: claim.changeKind, text: claim.text.trim(), actor: claim.actor.trim(),
           target: claim.target.trim(), temporalRole: claim.temporalRole, certainty: claim.certainty,
           epistemicStatus: claim.epistemicStatus, stateChangeType: claim.stateChangeType,
           ...(claim.stateIntent ? { stateIntent: { ...clone(claim.stateIntent), field: microStateCanonicalField(claim.stateIntent.field, claim.stateIntent.domain) } } : {}),
           evidence: { role: evidence.role, messageId: evidence.messageId, startOffset, endOffset,
             exactQuote: evidence.exactQuote } });
+      }
+      if (claims.length > 16) {
+        // Budget verified claims, so an invalid proposal cannot displace a real change.
+        // Keep competing values for one field together: trimming one side must not approve the other.
+        const groups = new Map();
+        for (const [index, claim] of claims.entries()) {
+          const intent = claim.stateIntent;
+          const scalar = intent && !MICRO_STRING_COLLECTION_FIELDS.has(intent.field)
+            && !['preferences', 'boundaries', 'affiliations', 'access'].includes(intent.field);
+          const groupKey = scalar ? digest([intent.domain, intent.target, intent.field]) : `memory:${index}`;
+          if (!groups.has(groupKey)) groups.set(groupKey, []);
+          groups.get(groupKey).push({ claim, index });
+        }
+        const latest = group => group.reduce((best, { claim }) => {
+          const rank = [claim.evidence.role === 'assistant' ? 1 : 0, claim.evidence.endOffset, claim.evidence.startOffset];
+          return !best || rank[0] > best[0] || rank[0] === best[0] && (rank[1] > best[1] || rank[1] === best[1] && rank[2] > best[2]) ? rank : best;
+        }, null);
+        const ordered = [...groups.values()].sort((a, b) => {
+          const stateDifference = Number(Boolean(b[0].claim.stateIntent)) - Number(Boolean(a[0].claim.stateIntent));
+          if (stateDifference) return stateDifference;
+          if (!a[0].claim.stateIntent) return a[0].index - b[0].index;
+          const x = latest(a), y = latest(b);
+          return y[0] - x[0] || y[1] - x[1] || y[2] - x[2] || a[0].index - b[0].index;
+        });
+        const kept = new Set();
+        for (const group of ordered) {
+          if (kept.size + group.length <= 16) for (const row of group) kept.add(row.claim);
+          else for (const row of group) rejected.push({ index: sourceIndexes[row.index], reason: 'claim_limit_exceeded' });
+        }
+        claims.splice(0, claims.length, ...claims.filter(claim => kept.has(claim)));
       }
       return { schema: 'libra.micro_candidate_validation.v1',
         status: claims.length ? 'source_bound_candidate' : 'rejected',
@@ -58712,11 +58743,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         && digest(other.stateIntent.value ?? null) !== digest(claim.stateIntent.value ?? null)
         && (before(claim, other) || claim.stateChangeType === 'clear' && other.stateChangeType === 'set' && overlaps(claim, other))));
       for (const claim of replaced) { claim.stateChangeType = 'none'; delete claim.stateIntent; }
-      // A long reply must not lose the whole turn over its count: changes first, then the earliest of the rest.
-      if (claims.length <= 16) return { ...microValue, claims };
-      const kept = new Set(claims.filter(claim => isPlainObject(claim) && isPlainObject(claim.stateIntent)).slice(0, 16));
-      for (const claim of claims) if (kept.size < 16) kept.add(claim);
-      return { ...microValue, claims: claims.filter(claim => kept.has(claim)) };
+      // Validation applies the count limit after checking evidence and State intent.
+      return { ...microValue, claims };
     };
     const analyzeCompletedReceipt = async (activeReceipt, knownInventoryValue, settingsValue, signal = null, options = {}) => {
       const receipt = asObject(activeReceipt);
@@ -82164,10 +82192,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const header = `${LENS_RECALL_BLOCK_HEADER}\n${LENS_RECALL_BLOCK_NOTE}`;
       const bodyBudget = budgetChars - header.length - 1;
       const injected = [];
-      const injectedSet = new Set(), openGroups = new Set(), lensById = new Map(withCandidates.map(lens => [lens.lensId, lens]));
+      const injectedSet = new Set(), openGroups = new Set(), counts = new Map(), lensById = new Map(withCandidates.map(lens => [lens.lensId, lens]));
       let used = 0;
       const costOf = candidate => candidate.chars + (openGroups.has(candidate.groupKey) ? 0 : candidate.groupName.length + 3);
-      const take = candidate => { used += costOf(candidate); openGroups.add(candidate.groupKey); injected.push(candidate); injectedSet.add(candidate); };
+      const take = candidate => { used += costOf(candidate); openGroups.add(candidate.groupKey); injected.push(candidate); injectedSet.add(candidate); counts.set(candidate.lensId, (counts.get(candidate.lensId) || 0) + 1); };
       // The people in the scene come first, in turns, so one person cannot take the whole budget.
       const LENS_SCENE_ITEMS_PER_PERSON = 2;
       const scenePicks = new Map();
@@ -82184,7 +82212,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         for (const queue of order) {
           // Each person's lenses take turns: the lens given least so far, then the newest-note role, then the score.
           queue.sort((x, y) => picksOf(x) - picksOf(y) || x.sceneRank - y.sceneRank || y.score - x.score);
-          const at = queue.findIndex(candidate => picksOf(candidate) < Math.min(LENS_SCENE_ITEMS_PER_PERSON, lensById.get(candidate.lensId).recall.maxItems) && used + costOf(candidate) <= bodyBudget);
+          const at = queue.findIndex(candidate => (counts.get(candidate.lensId) || 0) < lensById.get(candidate.lensId).recall.maxItems && picksOf(candidate) < LENS_SCENE_ITEMS_PER_PERSON && used + costOf(candidate) <= bodyBudget);
           if (at < 0) continue;
           const [candidate] = queue.splice(at, 1), pick = candidate.lensId + '|' + candidate.groupKey;
           take(candidate); scenePicks.set(pick, picksOf(candidate) + 1); moved = true;
@@ -82196,24 +82224,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const totalShare = (others.length ? others : withCandidates).reduce((sum, lens) => sum + lens.recall.share, 0);
       const allocation = new Map(withCandidates.map(lens => [lens.lensId, Math.floor(remaining * lens.recall.share / totalShare)]));
       const leftover = [];
-      const counts = new Map();
       for (const lens of withCandidates) {
         let lensUsed = 0;
         for (const candidate of byLens.get(lens.lensId)) {
           if (injectedSet.has(candidate)) continue;
-          if (candidate.sceneRank !== 2) { skip(lens, candidate, candidate.record, 'budget_exceeded'); continue; }
+          if (candidate.sceneRank !== 2) { skip(lens, candidate, candidate.record, (counts.get(lens.lensId) || 0) >= lens.recall.maxItems ? 'item_limit' : 'budget_exceeded'); continue; }
           const count = counts.get(lens.lensId) || 0;
           if (count >= lens.recall.maxItems) { skip(lens, candidate, candidate.record, 'item_limit'); continue; }
           const cost = costOf(candidate);
           if (lensUsed + cost > allocation.get(lens.lensId) || used + cost > bodyBudget) { leftover.push({ lens, candidate }); continue; }
-          take(candidate); lensUsed += cost; counts.set(lens.lensId, count + 1);
+          take(candidate); lensUsed += cost;
         }
       }
       // Budget a lens did not use goes to the best remaining notes of the other lenses.
       leftover.sort((a, b) => b.candidate.score - a.candidate.score);
       for (const { lens, candidate } of leftover) {
         const count = counts.get(lens.lensId) || 0;
-        if (count < lens.recall.maxItems && used + costOf(candidate) <= bodyBudget) { take(candidate); counts.set(lens.lensId, count + 1); }
+        if (count < lens.recall.maxItems && used + costOf(candidate) <= bodyBudget) take(candidate);
         else skip(lens, candidate, candidate.record, count >= lens.recall.maxItems ? 'item_limit' : 'budget_exceeded');
       }
       // Notes are gathered under the person they belong to.

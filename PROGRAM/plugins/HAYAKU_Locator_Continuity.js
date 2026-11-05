@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.22
+//@display-name HAYAKU · Locator Continuity v3.3.23
 //@api 3.0
-//@version 3.3.22
+//@version 3.3.23
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.22';
+  const PLUGIN_VERSION = '3.3.23';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -43600,6 +43600,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const verification = alreadyImported
         ? verifyBridgeColdStartLedgerAdoption(ledger, scope, capsule)
         : { verified: false, reason: imported.reason, records: 0, expectedRecords: 0 };
+      if (verification.verified === true) await resolveAnalysisFailuresForCapsule(scope, capsule, ledger);
       return {
         ok: verification.verified === true,
         adopted: false,
@@ -43617,7 +43618,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const commit = await writeStorageLedgerDirect(scope, imported.ledger, 'bridge_cold_start_api');
     const verification = verifyBridgeColdStartLedgerAdoption(commit.ledger, scope, capsule);
     const verified = commit.durable === true && verification.verified === true;
-    if (verified) invalidateExternalLedgerCaches(scope.key);
+    if (verified) {
+      invalidateExternalLedgerCaches(scope.key);
+      await resolveAnalysisFailuresForCapsule(scope, capsule, commit.ledger);
+    }
     return {
       ok: verified,
       adopted: verified,
@@ -43748,6 +43752,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         : { verified: false, reason: imported.reason, records: 0, expectedRecords: 0 };
       if (verification.verified === true) {
         await dischargeVerifiedRecoveryCapsuleTargetsDirect(scope.key, capsule);
+        await resolveAnalysisFailuresForCapsule(scope, capsule, candidateLedger);
       }
       return {
         ok: verification.verified === true,
@@ -43775,6 +43780,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (verified) {
       invalidateExternalLedgerCaches(scope.key);
       await dischargeVerifiedRecoveryCapsuleTargetsDirect(scope.key, capsule);
+      await resolveAnalysisFailuresForCapsule(scope, capsule, commit.ledger);
     }
     return {
       ok: verified,
@@ -44421,17 +44427,61 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const parsed = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
     return parsed?.schema === 'hayaku.analysis_failure_log.v1' && parsed.scopeKey === scopeKey ? ensureArray(parsed.entries) : [];
   };
+  const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
   const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
     const entries = await readAnalysisFailureLog(summary.scopeKey);
-    const same = entries.find(row => row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode);
+    const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
+      && row.sourceRevisionId === summary.sourceRevisionId && row.operationId === summary.operationId);
+    if (same) summary.failureKey = same.failureKey;
     if (same) Object.assign(same, summary, { count: Number(same.count || 1) + 1 }); else entries.push({ ...summary, count: 1 });
     entries.sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
     return await writeFailedAnalysisJsonExact(analysisFailureLogKey(summary.scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: summary.scopeKey, entries: entries.slice(-40) }, 'analysis_failure_log_write_failed');
   });
+  // Only a verified, durable adoption of this source revision closes its failed work.
+  // Keep the failure history and link it to the actual records, independently of turn coverage.
+  const resolveAnalysisFailuresForCapsule = async (scope, capsule, ledger) => {
+    try {
+      await enqueueFailedAnalysisMutation(async () => {
+        const entries = await readAnalysisFailureLog(scope.key);
+        const unresolved = entries.filter(row => !row.resolution && row.sourceRevisionId && Number(capsule.createdAt || 0) >= Number(row.at || 0));
+        if (!unresolved.length) return;
+        const turns = new Set(unresolved.map(row => row.turn));
+        const units = capsule.nativeColdStart === true ? new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit])) : null;
+        const resolutions = new Map();
+        for (const packet of ensureArray(capsule.packets)) {
+          const turn = Number(packet.targetPairIndex ?? packet.startTurn ?? 0);
+          if (turn < 1 || !turns.has(turn)) continue;
+          const prefix = hayakuSourcePrefixDigest(scope, turn);
+          if (!prefix) continue;
+          if (capsule.nativeColdStart === true) {
+            const unit = units.get(turn);
+            if (!unit || unit.chunkHash !== packet.chunkHash) continue;
+          } else if (packet.repairTarget?.sourcePrefixDigest !== prefix) continue;
+          const records = ensureArray(ledger.records).filter(record => record.hash === packet.packetHash && (
+            capsule.nativeColdStart === true
+              ? record.coldStartEpochId === capsule.epochId && record.recordState === 'historical'
+              : record.incrementalRecoveryRunId === capsule.recoveryId && Number(record.targetPairIndex) === turn && record.recordState === 'active'));
+          if (!records.length) continue;
+          for (const row of unresolved) if (!row.resolution && row.turn === turn && row.sourceRevisionId === prefix) {
+            const resolution = { sourceRevisionId: prefix, operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
+              recordIds: records.map(record => record.recordId), packetHash: packet.packetHash, resolvedAt: now() };
+            row.resolution = resolution;
+            resolutions.set(analysisFailureIdentity(row), resolution);
+          }
+        }
+        if (!resolutions.size) return;
+        const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scope.key), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: scope.key, entries }, 'analysis_failure_resolution_write_failed');
+        if (!write.durable) throw new Error(write.reason);
+        for (const row of ensureArray(Memory.analysisFailureSummaries)) if (row.scopeKey === scope.key && resolutions.has(analysisFailureIdentity(row))) row.resolution = resolutions.get(analysisFailureIdentity(row));
+      });
+    } catch (error) {
+      pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
+    }
+  };
   const analysisFailureReport = async (scopeKey, { coveredTurns = [], coldRun = null } = {}) => {
     let rows = [], logAvailable = true;
     try { rows = await readAnalysisFailureLog(scopeKey); } catch (_) { logAvailable = false; }
-    const identity = row => [row.turn, row.flow, row.diagnosisCode].join('|');
+    const identity = analysisFailureIdentity;
     const known = new Set(rows.map(identity));
     for (const row of analysisFailureSummaries(scopeKey)) if (!known.has(identity(row))) { known.add(identity(row)); rows.push({ ...row, count: 1 }); }
     for (const chunk of ensureArray(coldRun?.chunks).filter(row => row?.status === 'failed')) {
@@ -44441,7 +44491,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       rows.push({ scopeKey, turn, at: Number(chunk.lastAttemptAt || coldRun.updatedAt || 0), flow: 'cold_start', code: '', reason: compact(chunk.error || '', 160), cause: [], physicalCalls: Number(chunk.attempts || 0), count: 1, diagnosisCode: explained.diagnosisCode, title: explained.title, detail: explained.detail, nextStep: explained.nextStep });
     }
     const covered = new Set(ensureArray(coveredTurns).map(Number));
-    return { logAvailable, rows: rows.map(row => ({ ...row, flowLabel: failedAnalysisFlowLabel(row.flow), resolved: covered.has(Number(row.turn)), keptOld: row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) })).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
+    return { logAvailable, rows: rows.map(row => {
+      const resolved = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
+      return { ...row, flowLabel: failedAnalysisFlowLabel(row.flow), resolved, keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
+    }).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
   };
   const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
   const saveFailedAnalysisArtifact = async input => {
@@ -44459,8 +44512,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       physicalCalls: ensureArray(input?.attempts).length, partialSaved: partialMemory.saved === true && partialMemory.durable === true,
       outcome: partialMemory.saved === true && partialMemory.durable === true ? 'partial_memory_saved' : 'analysis_failed'
     };
+    summary.sourceRevisionId = compact(input?.context?.repairTarget?.sourcePrefixDigest || '', 96);
+    if (!summary.sourceRevisionId) try {
+      const scope = await RisuCompat.currentChatScope();
+      if (scope?.key === scopeKey) summary.sourceRevisionId = compact(partialMemorySource(scope, input?.chunk)?.prefixDigest || '', 96);
+    } catch (_) {}
+    summary.operationId = compact(input?.context?.runId || input?.context?.batchHash || input?.chunk?.chunkHash || '', 128);
     const explained = failedAnalysisReasonExplanation({ code: summary.code, message: summary.cause.map(row => row.code).join(' ') || summary.reason }, { flow: summary.flow });
     Object.assign(summary, { diagnosisCode: explained.diagnosisCode, title: explained.title, detail: explained.detail, nextStep: explained.nextStep });
+    summary.failureKey = stableHash64([scopeKey, summary.turn, summary.flow, summary.diagnosisCode, summary.sourceRevisionId, summary.operationId, summary.at].join('\u0001'));
     Memory.analysisFailureSummaries.push(summary);
     // The summary holds no source text, so it is kept even when detailed diagnostics are off.
     try { await appendAnalysisFailureLog(summary); }
