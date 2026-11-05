@@ -273,7 +273,8 @@ test('stuck native host lookup is bounded and cannot dispatch a model',async()=>
   await assert.rejects(()=>f.bind(),error=>error.code==='LIB_READ_TIMEOUT');
 });
 
-async function inputWriterRevalidationFixture(options={}){
+async function nativeInputWriterFixture(options={}){
+  let memoryReads=0;
   const crypto=require('node:crypto');
   const chat={id:scope.chatId,message:[{role:'user',chatId:'u1',data:'Open the cabinet.'},{role:'assistant',chatId:'a1',data:'The blue ledger rests on the upper shelf.'}]};
   const character={chaId:scope.characterId,name:'Archivist',chats:[chat],chatPage:0,lorebook:[]};
@@ -328,6 +329,7 @@ async function inputWriterRevalidationFixture(options={}){
     schema:'memory-suite.memory-read-client.v1',
     pluginId:'serial_gradation_agents_for_rp',
     openReadSession:async()=>{
+      memoryReads++;
       await options.onMemoryFailure?.({
         chat,
         character,
@@ -343,81 +345,28 @@ async function inputWriterRevalidationFixture(options={}){
   return {
     host,
     prompts,
+    memoryReads:()=>memoryReads,
     run:()=>host.plugin.rewriteInput('Inspect the blue ledger closely.')
   };
 }
 
-test('Input Writer optional memory fallback proceeds when native context is re-verified unchanged (no false LIB_READ_SUPERSEDED)',async()=>{
-  const f=await inputWriterRevalidationFixture({errorCode:'LIB_READ_SUPERSEDED'});
-  const out=await f.run();
+// public rewriteInput is native-only. Interactive writer context, memory exclusion and cancel are covered by
+// gradia_input_writer_unified_runtime_test.cjs; the retired optional-read fallback must not return.
+for(const [name,options] of [
+  ['stale memory',{errorCode:'LIB_READ_SUPERSEDED'}],
+  ['memory-side chat mutation',{onMemoryFailure:({chat})=>chat.message.push({role:'user',chatId:'u2',data:'Concurrent native mutation.'})}],
+  ['memory-side host error',{onMemoryFailure:({setCharLookup})=>setCharLookup(async()=>{throw Error('host_api_failure');})}],
+  ['memory-side scope failure',{onMemoryFailure:({setChatLookup})=>setChatLookup(async()=>null)}],
+  ['memory-side stalled lookup',{onMemoryFailure:({setCharIndex})=>setCharIndex(()=>new Promise(()=>{}))}]
+]) test('public native Input Writer never opens '+name,async()=>{
+  const f=await nativeInputWriterFixture(options),out=await f.run();
   assert.equal(f.prompts.length,1);
   assert.match(out,/blue ledger/);
-  const diag=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(diag.status,'unavailable');
-  assert.equal(diag.code,'LIB_READ_SUPERSEDED');
+  assert.equal(f.memoryReads(),0,'a bound client does not opt the public native writer into memory');
+  assert.equal(f.host.plugin.getRuntime().lastInputWriterReadDiagnostic,undefined);
 });
 
-test('Input Writer optional memory fallback fails closed when native context changed during memory read',async()=>{
-  const f=await inputWriterRevalidationFixture({
-    errorCode:'LIB_READ_UNAVAILABLE',
-    onMemoryFailure:({chat})=>{
-      chat.message.push({role:'user',chatId:'u2',data:'Concurrent native mutation.'});
-    }
-  });
-  await assert.rejects(()=>f.run(),err=>err.code==='LIB_READ_NATIVE_CHANGED');
-  assert.equal(f.prompts.length,0);
-  const diag=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(diag.status,'failed');
-  assert.equal(diag.stage,'native_revalidation');
-  assert.equal(diag.code,'LIB_READ_NATIVE_CHANGED');
-});
-
-test('Input Writer optional memory fallback fails closed on host API error during native revalidation',async()=>{
-  const f=await inputWriterRevalidationFixture({
-    errorCode:'LIB_READ_UNAVAILABLE',
-    onMemoryFailure:({setCharLookup})=>{
-      setCharLookup(async()=>{throw new Error('host_api_failure');});
-    }
-  });
-  await assert.rejects(()=>f.run(),err=>err.code==='LIB_READ_NATIVE_UNAVAILABLE');
-  assert.equal(f.prompts.length,0);
-  const diag=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(diag.status,'failed');
-  assert.equal(diag.stage,'native_revalidation');
-  assert.equal(diag.code,'LIB_READ_NATIVE_UNAVAILABLE');
-});
-
-test('Input Writer optional memory fallback fails closed on scope lookup failure during native revalidation',async()=>{
-  const f=await inputWriterRevalidationFixture({
-    errorCode:'LIB_READ_UNAVAILABLE',
-    onMemoryFailure:({setChatLookup})=>{
-      setChatLookup(async()=>null);
-    }
-  });
-  await assert.rejects(()=>f.run(),err=>err.code==='LIB_READ_NATIVE_SCOPE_CHANGED');
-  assert.equal(f.prompts.length,0);
-  const diag=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(diag.status,'failed');
-  assert.equal(diag.stage,'native_revalidation');
-  assert.equal(diag.code,'LIB_READ_NATIVE_SCOPE_CHANGED');
-});
-
-test('Input Writer optional memory fallback fails closed on timeout during native revalidation',async()=>{
-  const f=await inputWriterRevalidationFixture({
-    errorCode:'LIB_READ_UNAVAILABLE',
-    onMemoryFailure:({setCharIndex})=>{
-      setCharIndex(()=>new Promise(()=>{}));
-    }
-  });
-  await assert.rejects(()=>f.run(),err=>err.code==='LIB_READ_TIMEOUT');
-  assert.equal(f.prompts.length,0);
-  const diag=f.host.plugin.getRuntime().lastInputWriterReadDiagnostic;
-  assert.equal(diag.status,'failed');
-  assert.equal(diag.stage,'native_revalidation');
-  assert.equal(diag.code,'LIB_READ_TIMEOUT');
-});
-
-for (const duplicateAssistant of [false,true]) test('end-to-end formatted Current Input injects memory across all stages, duplicate assistant='+duplicateAssistant,async()=>{
+for (const duplicateAssistant of [false,true]) test('end-to-end formatted Current Input injects running-owner memory across all stages, duplicate assistant='+duplicateAssistant,async()=>{
   const crypto=require('node:crypto');
   const chat={id:scope.chatId,message:messages().map((row,i)=>({role:row.role,chatId:'native-'+i,data:row.content}))};
   const character={chaId:scope.characterId,name:'Archivist',chats:[chat],chatPage:0,lorebook:[]};
@@ -498,13 +447,15 @@ for (const duplicateAssistant of [false,true]) test('end-to-end formatted Curren
   assert.equal(prompts.length,4);
   for(const prompt of prompts){
     const serialized=JSON.stringify(prompt);
-    for(const owner of owners)assert.ok(serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
+    // Only LIBRA is running in this fixture; peer server rows require owner-selected recall.
+    assert.ok(serialized.includes('LIBRA_MEMORY_EVIDENCE'));
+    for(const owner of ['hayaku','flashback'])assert.ok(!serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
     assert.ok(serialized.includes('The blue ledger rests on the upper shelf.'));
   }
   assert.ok(out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
 });
 
-test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and non-substring Current Input transform binds structurally and injects memory evidence',async()=>{
+test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and non-substring Current Input transform binds structurally and injects running-owner memory evidence',async()=>{
   const crypto=require('node:crypto');
   const persona={name:'철수',personaPrompt:'신중한 조사관'};
   const chat={
@@ -595,7 +546,9 @@ test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and 
   assert.equal(prompts.length,4);
   for(const prompt of prompts){
     const serialized=JSON.stringify(prompt);
-    for(const owner of owners)assert.ok(serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
+    // Only LIBRA is running in this fixture; peer server rows require owner-selected recall.
+    assert.ok(serialized.includes('LIBRA_MEMORY_EVIDENCE'));
+    for(const owner of ['hayaku','flashback'])assert.ok(!serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
     assert.ok(serialized.includes('아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.'));
     assert.ok(serialized.includes('철수가 방문을 밀고 들어가 아키비스트 앞에서 주변을 살핀다.'));
     assert.ok(!serialized.includes('{{user}}는 조용히 문을 열고'));

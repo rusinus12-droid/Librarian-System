@@ -36,10 +36,12 @@ test('each stage fits the full packet to its own model instead of inheriting an 
 });
 
 test('an evidence item already present verbatim in the request is omitted from that call',async()=>{
- const duplicate={owner:'flashback',id:'fb-1',key:'fb-1',content:'Assistant:\n'+ASSISTANT};
- const partial={owner:'flashback',id:'fb-2',key:'fb-2',content:'User:\nPARTIAL_SENTINEL Where did the river take the key?\n\n---\n\nAssistant:\n'+ASSISTANT};
+ // This fixture has only LIBRA running. Peer recall is tested through real owner channels
+ // in gradia_three_owner_pipeline_test.cjs; a server row alone cannot impersonate a peer.
+ const duplicate={owner:'libra',id:'fb-1',key:'fb-1',content:'Assistant:\n'+ASSISTANT};
+ const partial={owner:'libra',id:'fb-2',key:'fb-2',content:'User:\nPARTIAL_SENTINEL Where did the river take the key?\n\n---\n\nAssistant:\n'+ASSISTANT};
  const unique={owner:'libra',id:'libra-1',key:'libra-1',content:'UNIQUE_MEMORY_SENTINEL The archivist once lost the brass key in the river.'};
- const short={owner:'hayaku',id:'hy-1',key:'hy-1',content:'blue door'};
+ const short={owner:'libra',id:'hy-1',key:'hy-1',content:'blue door'};
  const f=await stageFixture({items:[duplicate,partial,unique,short]});
  const r=await f.runConversation();assert.equal(r.ok,true);assert.equal(f.prompts.length,4);
  for(const body of f.prompts){
@@ -54,7 +56,7 @@ test('an evidence item already present verbatim in the request is omitted from t
 });
 
 test('a packet made only of prompt duplicates still runs with an empty evidence block',async()=>{
- const duplicate={owner:'flashback',id:'fb-1',key:'fb-1',content:'Assistant:\n'+ASSISTANT};
+ const duplicate={owner:'libra',id:'fb-1',key:'fb-1',content:'Assistant:\n'+ASSISTANT};
  const f=await stageFixture({items:[duplicate]});
  const r=await f.runConversation();assert.equal(r.ok,true);assert.equal(f.prompts.length,4);
  for(const body of f.prompts){const user=userText(body),evidence=user.slice(user.indexOf('GRADIA EXTERNAL EVIDENCE'));assert.ok(user.includes('GRADIA EXTERNAL EVIDENCE'));assert.ok(!evidence.includes('fb-1'));}

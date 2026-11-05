@@ -16,8 +16,8 @@ const envelope = n => {
 const chat = () => [1, 2, 3, 4].flatMap(n => [{ role: 'user', id: `u${n}`, chatId: `u${n}`, data: `Continue ${n}` }, { role: 'assistant', id: `a${n}`, chatId: `a${n}`, data: n === 4 ? line(n) : hiddenPacketMessage(line(n), createValidPacket({ turn: n, subject: 'Alice', summary: `${line(n)} ORIGINAL` })) }]);
 const turnOf = call => Number((call.messages.map(m => m.content).join('\n').match(/box number (\d) and found/) || [])[1] || 1);
 const good = call => ({ type: 'success', result: JSON.stringify(envelope(turnOf(call))) });
-const open = async () => {
-  const r = await createHayakuRuntime({ messages: chat(), autoRepair: false, afterRequestAutoRepair: false });
+const open = async (options = {}) => {
+  const r = await createHayakuRuntime({ messages: chat(), autoRepair: false, afterRequestAutoRepair: false, ...options });
   await r.callBeforeRequest([{ role: 'user', content: '이어서', memo: 'x' }], 'model'); await r.callAfterRequest('', 'model');
   r.setLlmResponder(async call => good(call));
   return r;
@@ -118,6 +118,8 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
   const pendingGui = createColdStartGuiDocument();
   const restore = [];
   try {
+    // Failure and successful adoption can share a clock tick. Their durable link proves order.
+    require('node:vm').runInContext('Date.now = () => ' + Date.now(), r.context);
     r.setLlmResponder(async call => turnOf(call) === 2 ? { type: 'success', result: 'not json' } : good(call));
     assert.equal((await r.hayaku.rebuildAllTurns()).ok, false);
     const failure = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.turn === 2);
@@ -136,6 +138,7 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     assert.equal(pending.resolutionPending, true);
     assert.equal(pending.resolutionDurable, false);
     assert.equal(pending.keptOld, false);
+    assert.equal((await active(r)).get(2).boundAt, failure.at);
     assert.ok(pending.resolution.recordIds.includes((await active(r)).get(2).recordId));
     assert.ok(r.hayaku.activityLog.list().some(row => row.event === 'analysis:failure_resolution_not_saved'));
     Object.assign(r.context, { document: pendingGui.document, window: pendingGui.dom.window, Event: pendingGui.dom.window.Event, HTMLElement: pendingGui.dom.window.HTMLElement, MutationObserver: pendingGui.dom.window.MutationObserver });
@@ -149,6 +152,7 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     const pendingLogKey = [...r.pluginStorage.values.keys()].find(key => key.startsWith('hayaku.v2.analysis_failure_log.'));
     const pendingLog = JSON.parse(r.pluginStorage.values.get(pendingLogKey));
     pendingLog.entries.push({ ...failure, failureKey: 'restart-other-source', sourceRevisionId: 'other-source-revision' });
+    pendingLog.entries.push({ ...failure, failureKey: 'restart-same-time-unlinked' });
     pendingLog.entries.push({ ...failure, failureKey: 'restart-newer-failure', at: Date.now() + 600000 });
     r.pluginStorage.values.set(pendingLogKey, JSON.stringify(pendingLog));
     const crashedStores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage }, crashedMessages = r.chat.message;
@@ -162,6 +166,7 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     assert.ok(reconstructed.resolution.recordIds.includes((await active(r)).get(2).recordId));
     const negatives = (await r.hayaku.recovery.failedAnalysis.report()).rows;
     assert.equal(negatives.find(row => row.failureKey === 'restart-other-source').resolved, false, 'a different source revision stays unresolved');
+    assert.equal(negatives.find(row => row.failureKey === 'restart-same-time-unlinked').resolved, false, 'an equal clock without a committed failure link proves no recovery');
     assert.equal(negatives.find(row => row.failureKey === 'restart-newer-failure').resolved, false, 'a record adopted before a failure proves no later recovery');
     assert.equal(r.llmCalls.length, 0, 'proof reconstruction never invokes a model');
     const calls = r.llmCalls.length;
@@ -177,6 +182,34 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     r = await createHayakuRuntime({ messages, autoRepair: false, afterRequestAutoRepair: false, ...stores });
     assert.equal((await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey).resolutionDurable, true);
   } finally { restore.forEach(fn => fn()); await r.dispose(); pendingGui.dom.window.close(); }
+
+  // A negative check is reused only for the same physical ledger, transcript, and failure set.
+  r = await open({ transformSource: source => source.replace(
+    'const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => {',
+    'const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => { globalThis.reconciliationChecks = (globalThis.reconciliationChecks || 0) + 1;') });
+  try {
+    r.setLlmResponder(async call => turnOf(call) === 2 ? { type: 'success', result: 'not json' } : good(call));
+    assert.equal((await r.hayaku.rebuildAllTurns()).ok, false);
+    await r.hayaku.recovery.failedAnalysis.report();
+    const checks = r.context.reconciliationChecks;
+    await Promise.all(Array.from({ length: 3 }, () => r.hayaku.recovery.failedAnalysis.report()));
+    assert.equal(r.context.reconciliationChecks, checks, 'unchanged unresolved failures do not rescan');
+    const ledgerKey = [...r.pluginStorage.values.keys()].find(key => key.startsWith('hayaku.v2.ledger.'));
+    const ledger = JSON.parse(r.pluginStorage.values.get(ledgerKey));
+    ledger.updatedAt += 1;
+    r.pluginStorage.values.set(ledgerKey, JSON.stringify(ledger));
+    await Promise.all(Array.from({ length: 3 }, () => r.hayaku.recovery.failedAnalysis.report()));
+    assert.equal(r.context.reconciliationChecks, checks + 1, 'a changed ledger is checked once across concurrent viewers');
+    const logKey = [...r.pluginStorage.values.keys()].find(key => key.startsWith('hayaku.v2.analysis_failure_log.'));
+    const log = JSON.parse(r.pluginStorage.values.get(logKey));
+    log.entries.find(row => row.turn === 2).count += 1;
+    r.pluginStorage.values.set(logKey, JSON.stringify(log));
+    await r.hayaku.recovery.failedAnalysis.report();
+    assert.equal(r.context.reconciliationChecks, checks + 2, 'a new failed attempt invalidates the check');
+    r.chat.message[1].data = 'A changed source revision with no verified recovery.';
+    await r.hayaku.recovery.failedAnalysis.report();
+    assert.ok(r.context.reconciliationChecks > checks + 2, 'a changed source invalidates the check');
+  } finally { await r.dispose(); }
 
   // The screen asks first, spends nothing on cancel, and reports what happened.
   r = await open();

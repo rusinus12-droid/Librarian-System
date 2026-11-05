@@ -61,6 +61,7 @@ const coldTurns = async r => (await r.hayaku.recovery.status({ includeDebts: tru
   r = await open({ turns: 3 });
   const restoreColdLogWrites = [];
   try {
+    require('node:vm').runInContext('Date.now = () => ' + Date.now(), r.context);
     for (const store of new Set([r.pluginStorage, r.safeLocalStorage])) {
       const set = store.setItem.bind(store);
       restoreColdLogWrites.push(() => { store.setItem = set; });

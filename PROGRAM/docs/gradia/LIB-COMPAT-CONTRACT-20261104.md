@@ -71,6 +71,13 @@
 - `tests/gradia_plugin_mode_long_chat_test.cjs`: 긴 채팅과 큰 저장소
 - `tests/gradia_owner_handback_test.cjs`: GRADIA가 멈출 때 소유자의 복구
 
+## 회귀 검사 계약 정리 (2026-11-06)
+
+- 공개 `rewriteInput()`은 네이티브 문맥만 쓰는 API다. 연결된 기억 클라이언트의 실패나 그 콜백에서만 발생하는 채팅 변경을 이 API의 오류로 기대하지 않는다. 대화형 Input Writer도 LIB 기억을 읽지 않으며, 네이티브 문맥·기억 미사용·취소 검사는 `gradia_input_writer_unified_runtime_test.cjs`에서 수행한다.
+- 서버 스냅샷에 HAYAKU·Flashback 행이 있어도 실행 중인 소유자의 자체 검색 응답이 없으면 제외한다. 소유자를 제공하지 않는 테스트는 LIBRA 전달과 두 소유자의 제외를 함께 확인한다. 실제 세 소유자 전달은 `gradia_three_owner_pipeline_test.cjs`에서 확인한다.
+- 프롬프트 중복 제거 테스트는 실행 중인 소유자의 항목을 사용한다. 소유자가 없어 제외된 항목을 중복 제거 결과로 오인하지 않는다.
+- 이전 게시 게이트의 20회 실패는 중복 실행을 포함한 12개 테스트였다. 이 중 네이티브 저장 모드 행렬 1개는 단독 실행에서 재현되지 않았으므로 전체 게이트에서도 확인해야 한다.
+
 ## 알려진 한계
 
 - 요청을 재구성하므로 RisuAI가 프롬프트 단계에서 바꾼 내용은 소유자에게 보이지 않는다.

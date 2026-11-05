@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.25
+//@display-name HAYAKU · Locator Continuity v3.3.26
 //@api 3.0
-//@version 3.3.25
+//@version 3.3.26
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.25';
+  const PLUGIN_VERSION = '3.3.26';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -2329,6 +2329,7 @@ const MODE_PROFILES = Object.freeze({
     failedAnalysisVolatile: new Map(),
     analysisFailureSummaries: [],
     analysisFailurePendingResolutions: new Map(),
+    analysisFailureReconstructionChecks: new Map(),
     failedAnalysisMutationQueue: Promise.resolve(),
     partialMemoryMutationQueue: Promise.resolve(),
     failedAnalysisStats: { writes: 0, readbacks: 0, failures: 0, volatile: 0, lastError: '' },
@@ -39944,6 +39945,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .forEach(tombstone => tombstonesBySlot.set(tombstone.slotId, tombstone));
     return {
       ...empty,
+      // Written with the recovered records: this proves ordering even when the clock ties.
+      analysisFailureProofs: ensureArray(parsed.analysisFailureProofs).slice(-200).filter(proof =>
+        proof && typeof proof.failureKey === 'string' && proof.failureKey.length <= 196
+        && Number(proof.failureAt) > 0 && Number(proof.failureCount) > 0
+        && typeof proof.sourceRevisionId === 'string' && proof.sourceRevisionId.length <= 96
+        && typeof proof.recordId === 'string' && proof.recordId.length <= 196
+        && typeof proof.packetHash === 'string' && proof.packetHash.length <= 96),
       identity: {
         schema: 'hayaku.scope_identity.v1',
         scopeKey: empty.scopeKey,
@@ -42710,6 +42718,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       },
       updatedAt: now(),
       chatTopologyHash: compact(ledger.chatTopologyHash || '', 96),
+      analysisFailureProofs: ensureArray(ledger.analysisFailureProofs)
+        .filter(proof => survivingRecordIds.has(proof.recordId)).slice(-200),
       migration: ledger.migration || emptyStorageLedger(scope).migration,
       coldStart: ledger.coldStart || emptyStorageLedger(scope).coldStart,
       incrementalRecovery: ledger.incrementalRecovery || emptyStorageLedger(scope).incrementalRecovery,
@@ -43616,7 +43626,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceHash: compact(verification.sourceHash || ledger?.coldStart?.sourceHash || '', 96)
       };
     }
-    const commit = await writeStorageLedgerDirect(scope, imported.ledger, 'bridge_cold_start_api');
+    const prepared = await attachAnalysisFailureProofs(scope, ledger, imported.ledger);
+    const commit = await writeStorageLedgerDirect(scope, prepared, 'bridge_cold_start_api');
     const verification = verifyBridgeColdStartLedgerAdoption(commit.ledger, scope, capsule);
     const verified = commit.durable === true && verification.verified === true;
     if (verified) {
@@ -43775,6 +43786,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const preflightVerification = verifyBridgeIncrementalRecoveryLedgerAdoption(candidateLedger, scope, capsule);
     if (preflightVerification.verified !== true) return { ok:false, adopted:false, durable:false, verified:false, reason:preflightVerification.reason || 'replacement_preflight_failed', diagnostics:preflightVerification };
     await options.sourceEditValidate?.();
+    candidateLedger = await attachAnalysisFailureProofs(scope, ledger, candidateLedger);
     const commit = await writeStorageLedgerDirect(scope, candidateLedger, 'bridge_incremental_recovery_api', {sourceEditValidate:options.sourceEditValidate});
     const verification = verifyBridgeIncrementalRecoveryLedgerAdoption(commit.ledger, scope, capsule);
     const verified = commit.durable === true && verification.verified === true;
@@ -44430,6 +44442,33 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
   const analysisFailureResolutionKey = (scopeKey, row) => `${scopeKey}::${analysisFailureIdentity(row)}`;
+  const attachAnalysisFailureProofs = async (scope, before, next) => {
+    try {
+      const previous = new Set(ensureArray(before.records).map(record => `${record.recordId}:${record.hash}`));
+      const additions = ensureArray(next.records).filter(record => !previous.has(`${record.recordId}:${record.hash}`)
+        && ['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource));
+      if (!additions.length) return next;
+      const failures = (await readAnalysisFailureLog(scope.key)).filter(row => !row.resolution && row.failureKey && row.sourceRevisionId);
+      if (!failures.length) return next;
+      const turns = new Set(failures.map(row => Number(row.turn))), prefixes = new Map();
+      const proofs = [...ensureArray(next.analysisFailureProofs)];
+      for (const record of additions) {
+        const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
+        if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
+        if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
+        const prefix = prefixes.get(turn);
+        for (const row of failures) if (Number(row.turn) === turn && row.sourceRevisionId === prefix) {
+          proofs.push({ failureKey: row.failureKey, failureAt: Number(row.at), failureCount: Number(row.count || 1),
+            sourceRevisionId: prefix, recordId: record.recordId, packetHash: record.hash });
+        }
+      }
+      // A failure observed before this new record's commit is an ordering proof, not a time guess.
+      return { ...next, analysisFailureProofs: proofs.slice(-200) };
+    } catch (error) {
+      pushOperationLog('analysis:failure_proof_unavailable', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
+      return next;
+    }
+  };
   const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
     const entries = await readAnalysisFailureLog(summary.scopeKey);
     const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
@@ -44509,15 +44548,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Rebuild a lost retry buffer from durable native recovery records, never from coverage alone.
   // Read the physical ledger: an older packet or an uncommitted in-memory candidate proves no retry.
-  const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
-    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
-      && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
-    if (!unresolved.length) return false;
-    const scope = await RisuCompat.currentChatScope();
-    if (!scope?.confident || scope.key !== scopeKey || scope.chatMessagesAvailable !== true) return false;
-    const outcome = await RisuCompat.getStorageItemOutcome(storageLedgerStorageKey(scope), HAYAKU_STORAGE_IO_TIMEOUT_MS);
-    if (outcome.state !== 'fulfilled' || !outcome.value) return false;
-    const hydrated = await hydrateCapturedLedgerRaw(outcome.value, scope);
+  const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => {
+    const hydrated = await hydrateCapturedLedgerRaw(storedRaw, scope);
     const stored = typeof hydrated === 'string' ? safeJsonParse(hydrated, null) : hydrated;
     if (!stored || stored.scopeKey !== scopeKey) return false;
     const ledger = normalizeStorageLedger(stored, scope);
@@ -44556,7 +44588,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         adoptedAt = Number(record.inheritedAt || 0);
       }
       if (!operationId || !adoptedAt) continue;
-      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && adoptedAt > Number(row.at)) {
+      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
+        || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
+          && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
+          && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
         const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
         if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
         const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
@@ -44569,6 +44604,26 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
     catch (error) { pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
     return true;
+  };
+  const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
+    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
+      && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
+    if (!unresolved.length) return false;
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || scope.key !== scopeKey || scope.chatMessagesAvailable !== true) return false;
+    const outcome = await RisuCompat.getStorageItemOutcome(storageLedgerStorageKey(scope), HAYAKU_STORAGE_IO_TIMEOUT_MS);
+    if (outcome.state !== 'fulfilled' || !outcome.value) return false;
+    // Cache the completed check, never its memory result. Any physical ledger, transcript,
+    // or failed-attempt change requires fresh verification; concurrent viewers share the work.
+    const signature = [stableHash64(typeof outcome.value === 'string' ? outcome.value : JSON.stringify(outcome.value)),
+      stableHash64(JSON.stringify(scope.chatMessages)), stableHash64(JSON.stringify(unresolved))].join(':');
+    const checks = Memory.analysisFailureReconstructionChecks, prior = checks.get(scopeKey);
+    if (prior?.signature === signature) return await prior.promise;
+    const check = { signature, promise: reconstructAnalysisFailureResolutionsFromStored(scopeKey, unresolved, scope, outcome.value) };
+    checks.set(scopeKey, check);
+    while (checks.size > 16) checks.delete(checks.keys().next().value);
+    try { return await check.promise; }
+    catch (error) { if (checks.get(scopeKey) === check) checks.delete(scopeKey); throw error; }
   };
   const analysisFailureReport = async (scopeKey, { coveredTurns = [], coldRun = null } = {}) => {
     if ([...Memory.analysisFailurePendingResolutions.values()].some(row => row.scopeKey === scopeKey && row.nextRetryAt <= now())) {
