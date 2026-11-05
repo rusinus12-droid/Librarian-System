@@ -289,9 +289,9 @@
         "bytes": 3677432
       },
       "hayaku": {
-        "version": "3.3.20",
-        "sha256": "ab3675c1a38c6eaf62f044e2eb3419d68b8b59ae3cbe9cc44a7bda46a985db39",
-        "bytes": 4117432
+        "version": "3.3.22",
+        "sha256": "f3df6c508aba823c49a393e19d97c3f871092d46873989f81842d41de72f08fd",
+        "bytes": 4138181
       },
       "libra": {
         "version": "2.6.34",

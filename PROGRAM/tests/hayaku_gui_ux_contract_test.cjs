@@ -18,7 +18,7 @@ assert.deepEqual([...routeIds.matchAll(/'([^']+)'/g)].map(match => match[1]), ro
   'scope data management is independent from server settings; Worldline is a Packets view');
 assert.match(source, /const nav = \(id,label,short,icon,aria\) => `.*data-hayaku-viewer-tab="\$\{id\.toLowerCase\(\)\}".*role="tab"/,
   'the canonical sidebar item factory must bind route identity and accessible state');
-for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Scopes', '스코프 데이터 관리'], ['Recovery', '구간 점검 · 복구'], ['Server', '서버 연결'], ['Settings', '설정'], ['Logs', '작동 기록']]) {
+for (const [id, label] of [['Overview', '연속성 관제'], ['Packets', '패킷 · 세계선'], ['Scopes', '스코프 데이터 관리'], ['Recovery', '구간 점검 · 복구'], ['Server', '서버 연결'], ['Settings', '설정'], ['Logs', '상태 · 작동 기록']]) {
   assert.ok(source.includes(`nav('${id}','${label}'`), `missing canonical ${id} destination`);
   assert.ok(source.includes(`data-hayaku-viewer-panel="${id.toLowerCase()}"`), `missing ${id} destination panel`);
 }

@@ -28,7 +28,7 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data });
       return { type: 'success', result: 'not-json' };
     });
 
-    const firstResult = await runtime.hayaku.recovery.coldStart({ resume: true });
+    const firstResult = await runtime.hayaku.recovery.coldStart({ resume: true, automaticRetry: false });
     assert.equal(firstResult.ok, true);assert.equal(firstResult.completed,false);assert.equal(firstResult.reason,'cold_start_partial_adopted');assert.equal(firstResult.adoption.durable,true);
     assert.equal(firstResult.awaitingUserReview, false);
     assert.equal(runtime.llmCalls.length, 2, 'one primary per turn; no unapproved repair');
