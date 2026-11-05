@@ -44,12 +44,18 @@ test('genre recommendations apply explicit choices and references as a cancellab
   assert.deepEqual(saved.skill_stage_selections.aide_world,['institutional-procedure']);
   assert.equal(f.doc.querySelector('[data-skill-genre-card="mystery"]').classList.contains('is-selected'),true);
   f.doc.querySelector('[data-skill-genre-details="action"]').click();
-  f.doc.querySelector('.skill-preset-dialog [data-skill-genre-apply="stage"]').click();
+  assert.equal(f.doc.querySelector('.skill-preset-dialog [data-skill-genre-apply="stage"]'),null,'a preset applies whole, so two cannot mix');f.doc.querySelector('.skill-preset-dialog [data-skill-genre-apply="all"]').click();
   f.doc.querySelector('[data-skill-selected="quiet-interior-beat"]').click();
   f.doc.querySelector('[data-skill-selected="consequential-decision"]').click();
   assert.equal(f.doc.querySelector('[data-skill-selected="consequential-decision"]').checked,true);
-  f.doc.querySelector('[data-skill-selected="information-exchange"]').click();
-  assert.equal(f.doc.querySelector('[data-skill-selected="information-exchange"]').checked,false,'four long procedures cannot displace core material');
+  // A skill is about 3,500 characters once compiled, so the screen refuses only when several no longer fit.
+  // The list redraws on each click, so every read asks for the box again.
+  const box=id=>f.doc.querySelector(`[data-skill-selected="${id}"]`);
+  const extra=['information-exchange','tension-arc','immediate-aftermath','world-reaction','plot-thread-advance','mood-shift'];
+  const refused=[];
+  for(const id of extra){box(id).click();if(!box(id).checked){refused.push(id);break;}}
+  assert.equal(refused.length,1,'long procedures still cannot displace core material');
+  for(const id of extra)if(box(id).checked)box(id).click();
   assert.match(f.doc.querySelector('[data-skill-budget]').textContent,/24,000자/);
   f.doc.querySelector('#savebar [data-revert]').click();await wait(()=>!f.plugin.debugGuiStateInfo().dirty,'genre cancel');
   assert.deepEqual(settings(f).skill_stage_selections.shadow_act,['genre-lens','information-exchange']);assert.equal(f.getCalls(),0);

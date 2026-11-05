@@ -170,6 +170,8 @@ test('UI renders owner toggle checkboxes for the draft route only', async t => {
   const scope = doc.querySelector('[data-existing-response-field="rpImpersonationScope"]');
   assert.deepEqual(Array.from(scope.options).map(o => o.value), ['persona', 'persona_cast', 'all'], 'RP 세부 모드 3종');
   assert.equal(scope.hidden, true, '소설 모드에서는 RP 세부 모드를 숨긴다');
+  assert.deepEqual(Array.from(scope.options).map(o => o.textContent), ['페르소나만 사칭 금지', '장면 연출', '문장화']);
+  assert.equal(doc.querySelector('[data-rp-scope-description]').hidden, true, '소설 모드에서는 세부 모드 설명도 숨긴다');
   assert.equal(doc.querySelectorAll('[data-lib-input-writer-owner]').length, 0, '입력 작성기는 LIB 기억을 읽지 않으므로 대상 선택이 없다');
 });
 

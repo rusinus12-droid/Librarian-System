@@ -77,7 +77,9 @@ test('the writer continues from the latest visible reply with its previous user 
   assert.ok(user.includes('LATEST_SHORT_REPLY'),writingMode+': latest reply is the terminal passage');
   assert.ok(user.indexOf('PREVIOUS_USER_ACTION')<user.indexOf('LATEST_SHORT_REPLY'),writingMode+': previous user input precedes it');
   assert.ok(user.includes('EARLIER_REPLY_TAIL')&&!user.includes('EARLIER_REPLY_HEAD'),writingMode+': short reply backfilled with the earlier tail only');
-  assert.ok(!user.includes('EARLY_USER'),writingMode+': older turns stay out');
+  assert.ok(user.includes('EARLY_USER'),writingMode+': recent turns are read');
+  assert.ok(user.indexOf('[RECENT TURNS')<user.indexOf('EARLY_USER')&&user.indexOf('EARLY_USER')<user.indexOf('PREVIOUS_USER_ACTION'),writingMode+': oldest first, and labeled as over');
+  assert.match(writerSystem(f.prompts[0]),/immediately after the end of TERMINAL PASSAGE/,writingMode+': the input is written for now');
   assert.equal(f.host.plugin.getRuntime().lastInputAssistContext.terminalProof,'settled_visible_reply');
   f.host.plugin.cancelInputAssistSend?.();await Promise.race([pending,new Promise(r=>setTimeout(r,1500))]).catch(()=>{});
  }
@@ -87,7 +89,7 @@ test('an edited latest reply and a long reply stay the only terminal passage',as
   {role:'user',chatId:'u2',data:'민아는 열쇠를 찾는다.'},{role:'assistant',chatId:'a2',data:'EDITED_LONG_REPLY '+'등불이 서가를 비췄다. '.repeat(120)}]};
  const f=await fixture(t,{unified:false,chat,character:{chaId:'c',name:'민아',chats:[chat],chatPage:0,lorebook:[]}});
  const {pending}=await f.start('');await f.choices();const user=writerUser(f.prompts[0]);
- assert.ok(user.includes('등불이 서가를 비췄다'));assert.ok(!user.includes('OLDER_REPLY'),'no backfill behind a long reply');
+ assert.ok(user.includes('등불이 서가를 비췄다'));assert.ok(user.indexOf('OLDER_REPLY')<user.indexOf('등불이 서가를 비췄다'),'a long reply still has the recent turns before it');
  f.host.plugin.cancelInputAssistSend?.();await Promise.race([pending,new Promise(r=>setTimeout(r,1500))]).catch(()=>{});
 });
 test('the writer lore block keeps whole entries',async t=>{

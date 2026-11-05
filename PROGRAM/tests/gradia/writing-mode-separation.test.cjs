@@ -36,5 +36,6 @@ for(const multiPipelineMode of ['lightweight','heavyweight']){
   assert.equal(prompts.length,multiPipelineMode==='heavyweight'?8:4);
   prompts.forEach((prompt,index)=>{assert.ok(!NOVEL.test(prompt),'call '+index);assert.ok(RP.test(prompt));});
   assert.ok(injection&&RP.test(injection)&&!NOVEL.test(injection));
+  const shadowPrompt=prompts.find(prompt=>/LENGTH AND BEAT CONTRACT/.test(prompt));assert.match(shadowPrompt,/at most \d+ characters/,'RP length is a ceiling');assert.doesNotMatch(shadowPrompt,/Configured draft range/);
  });
 }
