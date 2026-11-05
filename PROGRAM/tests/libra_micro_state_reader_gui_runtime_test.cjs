@@ -56,7 +56,7 @@ async function conflictingClaims(){
     if(active.status!=='verified')return{type:'success',result:JSON.stringify(artifact())};
     const r=active.receipt,body=r.assistant.text;
     const claims=['열렸다','닫혔다'].map(value=>{
-     const quote=`도서관 문이 ${value}`,startOffset=body.indexOf(quote);
+     const quote='도서관 문이 열렸다 닫혔다',startOffset=body.indexOf(quote);
      return{changeKind:'world',text:quote,actor:'',target:'도서관',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',
       stateIntent:{domain:'world',target:{entityName:'도서관'},field:'doorStatus',operation:'set',value},
       evidence:{role:'assistant',messageId:'t6-a',startOffset,endOffset:startOffset+quote.length,exactQuote:quote}};
@@ -67,7 +67,7 @@ async function conflictingClaims(){
   }});
   await f.open();assert.equal((await f.api.runManualColdStart()).completed,1);
   const character=await f.host.getCharacter(),chat=character.chats[0];
-  chat.message.push({role:'user',chatId:'t6-u',data:'문 상태를 확인해 줘.'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다. 도서관 문이 닫혔다.'});chat.messages=chat.message;
+  chat.message.push({role:'user',chatId:'t6-u',data:'문 상태를 확인해 줘.'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다 닫혔다.'});chat.messages=chat.message;
   listener({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:11});
   await until(()=>f.api.getCaptureBackendState().lastMicroPublication?.turn===6,'conflicting Micro',10000);
   // Both individual decisions pass. Only the actual projection detects their conflict.

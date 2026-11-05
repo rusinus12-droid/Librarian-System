@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.33
+//@display-name LIBRA v2.6.34
 //@api 3.0
-//@version 2.6.33
+//@version 2.6.34
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.33';
+  const PLUGIN_VERSION = '2.6.34';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -58648,6 +58648,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
           claim.evidence = { role, messageId: string(row.chatId || ''), startOffset: hit.start, endOffset: hit.start + hit.length, exactQuote: source.slice(hit.start, hit.start + hit.length) };
           break;
         }
+        // Models often quote only the name. When one sentence of the turn holds both who it is about and the value,
+        // that sentence is the evidence; a value the turn never says stays unbound.
+        const proposal = asObject(claim.stateIntent), proposedValue = typeof proposal.value === 'string' ? proposal.value.trim() : '';
+        const proposalNames = ['entityName', 'subjectName', 'targetName'].map(name => asObject(proposal.target)[name]).filter(name => typeof name === 'string' && name.trim());
+        if (isPlainObject(claim.evidence) && claim.stateChangeType === 'set' && proposedValue && !string(claim.evidence.exactQuote).includes(proposedValue)) {
+          let widened = null;
+          for (const role of ['assistant', 'user']) {
+            const row = asObject(receipt[role]), source = string(row.text || '');
+            for (const match of source.matchAll(/\S[\s\S]*?(?:[.!?](?=\s|$)|$)/gu)) {
+              const sentence = match[0].trimEnd();
+              if (sentence.length <= 600 && sentence.includes(proposedValue) && proposalNames.every(name => canonicalEntityNameBoundToEvidence(name, sentence)))
+                widened = { role, messageId: string(row.chatId || ''), startOffset: match.index, endOffset: match.index + sentence.length, exactQuote: sentence };
+            }
+            if (widened) break;
+          }
+          if (widened) claim.evidence = widened;
+        }
         // A name the quote does not contain says nothing here; a relation needs both, so it stays rejected.
         const bound = isPlainObject(claim.evidence) ? string(claim.evidence.exactQuote) : '';
         if (claim.changeKind !== 'relation' && bound) for (const side of ['actor', 'target'])
@@ -58658,13 +58675,48 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const notCurrent = claim.temporalRole !== 'current' || claim.certainty !== 'confirmed' || claim.epistemicStatus !== 'observed';
         const target = asObject(asObject(claim.stateIntent).target);
         const targetNames = ['entityName', 'subjectName', 'targetName'].map(name => target[name]).filter(name => typeof name === 'string');
-        if (bound && proposes && (notCurrent || targetNames.some(name => !canonicalEntityNameBoundToEvidence(name, bound)))) {
+        // A bare name cannot show that something ended.
+        const nameOnly = claim.stateChangeType === 'clear' && targetNames.some(name => statePipelineIdentityKey(name) === statePipelineIdentityKey(bound));
+        if (bound && proposes && (notCurrent || nameOnly || targetNames.some(name => !canonicalEntityNameBoundToEvidence(name, bound)))) {
           claim.stateChangeType = 'none';
           delete claim.stateIntent;
         }
+        const intent = asObject(claim.stateIntent), named = typeof intent.value === 'string' ? intent.value.trim() : '';
+        if (bound && claim.stateChangeType === 'set' && named && bound.includes(named)) {
+          const after = bound.slice(bound.indexOf(named) + named.length);
+          // "창고를 나왔다" says where the person no longer is.
+          if (intent.domain === 'character' && intent.field === 'locationRef'
+            && /^\s*(?:을|를|에서부터|에서|으로부터|로부터)\s*(?:[^.!?\n]{0,10}\s)?(?:나와|나왔|나가|나갔|떠나|떠났|벗어나|벗어났|빠져나)/.test(after)) {
+            const { value: _left, ...rest } = intent;
+            claim.stateChangeType = 'clear';
+            claim.stateIntent = { ...rest, operation: 'clear' };
+          // "문을 열자 먼지가" is the start of a clause, not a state to keep.
+          } else if (/status|condition|emotion/i.test(string(intent.field))
+            && /(?:자|며|면|니|고|서|려|면서|지만|는데|다가|도록)$/.test(named) && /^[\s,]/.test(after)) {
+            claim.stateChangeType = 'none';
+            delete claim.stateIntent;
+          }
+        }
         return claim;
       });
-      return { ...microValue, claims };
+      // A field that changes twice in one turn ends on what the source says last. The earlier claim stays a memory.
+      // Values that share the same words cannot be ordered, so they stay a conflict for the admission step.
+      const changing = claims.filter(claim => isPlainObject(claim) && isPlainObject(claim.stateIntent) && isPlainObject(claim.evidence)
+        && !MICRO_STRING_COLLECTION_FIELDS.has(claim.stateIntent.field)
+        && !['preferences', 'boundaries', 'affiliations', 'access'].includes(claim.stateIntent.field));
+      const sameField = (a, b) => digest([a.stateIntent.domain, a.stateIntent.target, a.stateIntent.field]) === digest([b.stateIntent.domain, b.stateIntent.target, b.stateIntent.field]);
+      const roleRank = claim => claim.evidence.role === 'user' ? 0 : 1;
+      const overlaps = (a, b) => roleRank(a) === roleRank(b) && a.evidence.startOffset < b.evidence.endOffset && b.evidence.startOffset < a.evidence.endOffset;
+      const before = (a, b) => roleRank(a) < roleRank(b) || roleRank(a) === roleRank(b) && a.evidence.endOffset <= b.evidence.startOffset;
+      const replaced = changing.filter(claim => changing.some(other => other !== claim && sameField(claim, other)
+        && digest(other.stateIntent.value ?? null) !== digest(claim.stateIntent.value ?? null)
+        && (before(claim, other) || claim.stateChangeType === 'clear' && other.stateChangeType === 'set' && overlaps(claim, other))));
+      for (const claim of replaced) { claim.stateChangeType = 'none'; delete claim.stateIntent; }
+      // A long reply must not lose the whole turn over its count: changes first, then the earliest of the rest.
+      if (claims.length <= 16) return { ...microValue, claims };
+      const kept = new Set(claims.filter(claim => isPlainObject(claim) && isPlainObject(claim.stateIntent)).slice(0, 16));
+      for (const claim of claims) if (kept.size < 16) kept.add(claim);
+      return { ...microValue, claims: claims.filter(claim => kept.has(claim)) };
     };
     const analyzeCompletedReceipt = async (activeReceipt, knownInventoryValue, settingsValue, signal = null, options = {}) => {
       const receipt = asObject(activeReceipt);
@@ -58693,6 +58745,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'For every observed current set/clear change, include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
         'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world rule or sceneTime take a value copied from the quote. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
         'LOCATION VALUE: copy only the destination or current place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
+        'LIMIT: at most 16 claims. When a turn holds more, keep every current change and drop the least important of the rest.',
+        'QUOTE: exactQuote is the sentence that states the change and holds its value, never only a name.',
+        'LEAVING: a place the person left is not where they are. When the turn says only that they left, use operation clear on locationRef; when it names where they went, set that place.',
+        'STATUS VALUE: copy a complete phrase from the quote, never the start of a clause such as 문을 열자 or 문을 열고.',
+        'CURRENT CONDITIONS: currentConditions lists what State now says about people named in this turn. Before finishing, check every row: does this turn show the person doing something that condition rules out? Someone listed as 잠들었다 who now walks into a room is awake. If so, add a claim quoting that sentence, with stateIntent {"domain":"character","target":{"entityName":"name"},"field":"condition","operation":"set","value":"new condition"} when the quote states one, otherwise operation clear without value and stateChangeType clear. Never clear one only because the turn does not mention it.',
         'CHANGE EXAMPLE (shape only, never copy these source facts): for source 아린이 기절했다. with messageId a1, a claim is {"changeKind":"person","text":"아린이 기절했다.","actor":"아린","target":"","temporalRole":"current","certainty":"confirmed","epistemicStatus":"observed","stateChangeType":"set","stateIntent":{"domain":"character","target":{"entityName":"아린"},"field":"condition","operation":"set","value":"기절했다"},"evidence":{"role":"assistant","messageId":"a1","startOffset":0,"endOffset":9,"exactQuote":"아린이 기절했다."}}. A question or an unperformed plan never proves that change.',
         'Offsets are UTF-16 indices in the exact U or A text. Quote only an exact contiguous source span. Do not invent an outcome from a request, intention or report.',
         'Evidence and person span role is exactly user or assistant, never subject, narrator or description. evidenceCandidates provide exact optional UTF-16 spans; other exact source spans are also allowed. Actor and target must be strings: copy only a named participant that appears inside that claim\'s exactQuote, otherwise use empty string; never use assistant, user, narrator, null, or a translated name as a participant. CURRENT OBSERVATION VS BACKGROUND: direct current presence ("서재에 있다") or state transition ("서재로 들어갔다") in this turn is admitted with stateChangeType:set, temporalRole:current, certainty:confirmed, epistemicStatus:observed. Enduring facts directly stated in this turn (appearance, background, personality, hobbies, ability, affiliation, rules) use stateChangeType:set with stateIntent like any current fact. Only ungrounded rumors remain stateChangeType:none without stateIntent. If used, stateIntent.target is an object such as {\"entityName\":\"exact cited name\"}, never a string. Check both source roles: preserve a directly evidenced user question as an event with stateChangeType:none, alongside assistant world facts; the question itself does not prove the requested outcome.',
@@ -58700,11 +58757,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'Describe this turn\'s changes and precise evidence only; do not recap five turns or merge identities. Return JSON only.'
       ].join('\n');
       const sourceRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null).catch(() => null);
+      const sourceHead = asObject(await storage.getJson(key.continuityState(scope), null, scope).catch(() => null));
+      const turnText = `${string(receipt.user?.text || '')}\n${string(receipt.assistant?.text || '')}`;
       const userPrompt = JSON.stringify({
         schema: 'libra.micro_source_input.v1',
         registeredStateTargets: asArray(sourceRegistry?.entities).filter(entity => entity.validated === true)
           .slice(0, 64).map(entity => ({name: compact(entity.name, 120), type: entity.type, kind: entity.kind,
             aliases: asArray(entity.aliases).slice(0, 6).map(alias => compact(alias, 120))})),
+        currentConditions: asArray(sourceHead.characters)
+          .filter(row => typeof row?.state?.condition === 'string' && row.state.condition.trim()
+            && [row.name, ...asArray(row.aliases)].some(name => typeof name === 'string' && name.trim() && turnText.includes(name)))
+          .slice(0, 8).map(row => ({ name: compact(row.name, 120), condition: compact(row.state.condition, 200) })),
         rawPacketRef: raw.rawPacketRef,
         binding: { scopeKey: scope.scopeKey, worldlineId: receipt.worldlineId,
           sessionEpoch: receipt.sessionEpoch, turn: receipt.turn,
@@ -60109,6 +60172,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (known || !string(name) || !wanted) return known;
         if (asArray(registry.entities).some(row => row?.type === type && [row.name, ...asArray(row.aliases)].some(alias => statePipelineIdentityKey(alias) === wanted))) return null;
         if (type === 'person' && lensNotAPerson(name)) return null;
+        // "하은" is 신하은 when the records hold one person of that given name; with two, it stays unresolved.
+        if (type === 'person' && wanted.length >= 2) {
+          const fullNames = asArray(registry.entities).filter(row => row?.validated === true && row.type === 'person' && row.id
+            && [1, 2].includes(statePipelineIdentityKey(row.name).length - wanted.length) && statePipelineIdentityKey(row.name).endsWith(wanted));
+          if (fullNames.length === 1) return fullNames[0];
+          if (fullNames.length > 1) return null;
+        }
         // "문이 열렸다" gives "열렸다" as a word of the quote, but it is what happened, not something named.
         const quoteText = string(claim.evidence?.exactQuote || ''), named = string(name);
         if (/[다요죠까]$/.test(named) && !quoteText.split(named).slice(1).some(rest => /^[가-힣]/.test(rest))) return null;
@@ -60513,14 +60583,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         dimension: patch.dimension, state: {}, fieldEvidence: {}, certainty: 'confirmed' };
     };
     const retainMicroLocationReference = (head, registry, domain, field, value, proof) => {
-      if (domain !== 'character' || field !== 'locationRef' || asArray(head.world).some(row => row.id === value)) return;
-      const place = asArray(registry?.entities).find(row => row.id === value && row.validated === true
-        && row.type === 'world' && row.kind === 'location');
-      if (!place) return;
+      const isLocation = domain === 'character' && field === 'locationRef';
+      if (!isLocation && !(domain === 'world' && MICRO_WORLD_REFERENCE_FIELDS[field])) return;
+      if ([...asArray(head.world), ...asArray(head.characters)].some(row => row?.id === value)) return;
+      const named = asArray(registry?.entities).find(row => row.id === value && row.validated === true
+        && (isLocation ? row.type === 'world' && row.kind === 'location' : ['world', 'person'].includes(row.type)));
+      if (!named) return;
       // Identity-only read model row: name the verified reference without
-      // inventing a current world field or persisting a second State Head.
-      head.world = [...asArray(head.world), {id: place.id, name: place.name, kind: place.kind,
-        aliases: clone(asArray(place.aliases)), state: {}, fieldEvidence: {},
+      // inventing a current field or persisting a second State Head.
+      const collection = named.type === 'person' ? 'characters' : 'world';
+      head[collection] = [...asArray(head[collection]), {id: named.id, name: named.name,
+        ...(named.type === 'person' ? {} : {kind: named.kind}),
+        aliases: clone(asArray(named.aliases)), state: {}, fieldEvidence: {},
         identityEvidence: clone(proof), certainty: 'confirmed'}];
     };
     const projectActiveMicroStateForResponse = async (scope, manifest, canonicalView, options = {}) => {

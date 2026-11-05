@@ -7,11 +7,11 @@ const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
   let listener;const fx=await serverFixture({mode,host:{addRisuChatListener:async(_,fn)=>{listener=fn;return true;}}});
   try{
    const {f}=fx;assert.equal((await f.run()).completed,1);
-   f.chat.message.push({role:'user',chatId:'t6-u',data:'문은?'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다. 도서관 문이 닫혔다.'});f.chat.messages=f.chat.message;
+   f.chat.message.push({role:'user',chatId:'t6-u',data:'문은?'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다 닫혔다.'});f.chat.messages=f.chat.message;
    f.control.onCall=async()=>{
     const r=(await f.r.api.debugReadActiveCompletedTurnReceipt(6)).receipt;
     return {type:'success',result:JSON.stringify({schema:'libra.micro_producer_envelope.v1',personCandidates:{spans:[],relations:[]},micro:{schema:'libra.micro_memory.v1',scopeKey:r.scopeKey,worldlineId:r.worldlineId,sessionEpoch:0,turn:6,sourceRevisionId:r.revisionId,sourceDigest:r.sourceDigest,
-     claims:['열렸다','닫혔다'].map(value=>{const quote='도서관 문이 '+value,startOffset=r.assistant.text.indexOf(quote);return {changeKind:'world',text:quote,actor:'',target:'도서관',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',stateIntent:{domain:'world',target:{entityName:'도서관'},field:'doorStatus',operation:'set',value},evidence:{role:'assistant',messageId:'t6-a',startOffset,endOffset:startOffset+quote.length,exactQuote:quote}};})}})};
+     claims:['열렸다','닫혔다'].map(value=>{const quote='도서관 문이 열렸다 닫혔다',startOffset=r.assistant.text.indexOf(quote);return {changeKind:'world',text:'도서관 문이 '+value,actor:'',target:'도서관',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',stateIntent:{domain:'world',target:{entityName:'도서관'},field:'doorStatus',operation:'set',value},evidence:{role:'assistant',messageId:'t6-a',startOffset,endOffset:startOffset+quote.length,exactQuote:quote}};})}})};
    };
    listener({char:f.character,chat:f.chat,characterIndex:0,chatIndex:0,messageIndex:11});await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===6,15000);
    const calls=f.control.calls.length;

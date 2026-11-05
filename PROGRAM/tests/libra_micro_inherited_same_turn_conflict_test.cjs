@@ -48,7 +48,7 @@ const waitFor = async predicate => {
     assert.equal((await f.run()).completed, 1);
     sourceChat.message.push(
       {role: 'user', chatId: 't6-u', data: '도서관 문 상태를 확인해 줘.'},
-      {role: 'assistant', chatId: 't6-a', data: '도서관 문이 열렸다. 곧 도서관 문이 닫혔다.'}
+      {role: 'assistant', chatId: 't6-a', data: '도서관 문이 열렸다 닫혔다.'}
     );
     sourceChat.messages = sourceChat.message;
     f.control.onCall = async () => {
@@ -68,8 +68,8 @@ const waitFor = async predicate => {
           worldlineId: receipt.worldlineId, sessionEpoch: receipt.sessionEpoch,
           turn: 6, sourceRevisionId: receipt.revisionId,
           sourceDigest: receipt.sourceDigest,
-          claims: [claim('도서관 문이 열렸다', '열렸다'),
-            claim('도서관 문이 닫혔다', '닫혔다')]}
+          claims: [claim('도서관 문이 열렸다 닫혔다', '열렸다'),
+            claim('도서관 문이 열렸다 닫혔다', '닫혔다')]}
       })};
     };
     assert.equal(typeof listener, 'function');

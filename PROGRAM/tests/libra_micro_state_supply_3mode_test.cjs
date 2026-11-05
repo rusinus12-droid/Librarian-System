@@ -6,7 +6,7 @@ const {serverFixture} = require('./fixtures/libra_server_runtime_fixture.cjs');
 const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
 
 const HOLDER_QUOTE = '은빛 열쇠는 지호가 들고 있다';
-const UNKNOWN_QUOTE = '은빛 열쇠는 라온이 들고 있다';
+const UNKNOWN_QUOTE = '금빛 열쇠는 라온이 들고 있다';
 const span = (text, quote, messageId) => ({role: 'assistant', messageId,
   startOffset: text.indexOf(quote), endOffset: text.indexOf(quote) + quote.length, exactQuote: quote});
 
@@ -30,9 +30,9 @@ const span = (text, quote, messageId) => ({role: 'assistant', messageId,
       f.control.onCall = async () => {
         const {receipt} = await f.r.api.debugReadActiveCompletedTurnReceipt(6);
         const body = receipt.assistant.text, id = receipt.assistant.chatId;
-        const claim = (quote, value) => ({changeKind: 'world', text: `${quote}.`, actor: '', target: '은빛 열쇠',
+        const claim = (quote, value) => ({changeKind: 'world', text: `${quote}.`, actor: '', target: quote.split('는 ')[0],
           temporalRole: 'current', certainty: 'confirmed', epistemicStatus: 'observed', stateChangeType: 'set',
-          stateIntent: {domain: 'world', target: {entityName: '은빛 열쇠'}, field: 'holderRef', operation: 'set', value},
+          stateIntent: {domain: 'world', target: {entityName: quote.split('는 ')[0]}, field: 'holderRef', operation: 'set', value},
           evidence: span(body, quote, id)});
         return {type: 'success', result: JSON.stringify({
           schema: 'libra.micro_producer_envelope.v1', personCandidates: {spans: [], relations: []},
@@ -50,7 +50,7 @@ const span = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.match(String(known.decision.patch.set.holderRef), /^ce_person_/, `${mode}: the Registry id is stored, not the name`);
       assert.equal(unknown.status, 'admitted', `${mode}: someone the source names but no record holds yet is new`);
       assert.match(String(unknown.decision.patch.set.holderRef), /^ce_person_/, `${mode}: stored as an id, not a name`);
-      assert.equal(unknown.decision.patch.microNewEntities.length, 1, `${mode}: the decision carries who it is`);
+      assert.deepEqual(Array.from(unknown.decision.patch.microNewEntities, row => row.name).sort(), ['금빛 열쇠', '라온'], `${mode}: the decision carries what is new`);
       if (mode === 'plugin_only') {
         // Heads stored before the rule still say not_updated; what they actually hold decides.
         const headKey = [...fixture.local.keys()].find(key => key.endsWith(':continuity-state'));
