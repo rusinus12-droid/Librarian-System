@@ -112,6 +112,54 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     assert.equal(l.records.filter(x => x.recordState === 'historical').length, 0);
   } finally { await r.dispose(); }
 
+  // Memory recovery remains successful when diagnostic writes fail. The UI distinguishes
+  // the pending log write, and a later report retries it without another model call.
+  r = await open();
+  const pendingGui = createColdStartGuiDocument();
+  const restore = [];
+  try {
+    r.setLlmResponder(async call => turnOf(call) === 2 ? { type: 'success', result: 'not json' } : good(call));
+    assert.equal((await r.hayaku.rebuildAllTurns()).ok, false);
+    const failure = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.turn === 2);
+    for (const store of new Set([r.pluginStorage, r.safeLocalStorage])) {
+      const set = store.setItem.bind(store);
+      restore.push(() => { store.setItem = set; });
+      store.setItem = async (key, value) => {
+        if (String(key).startsWith('hayaku.v2.analysis_failure_log.') && JSON.parse(value).entries.some(row => row.resolution)) throw Error('injected_diagnostic_write_failure');
+        return await set(key, value);
+      };
+    }
+    r.setLlmResponder(async call => good(call));
+    assert.equal((await r.hayaku.rebuildAllTurns()).ok, true);
+    const calls = r.llmCalls.length;
+    const pending = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey);
+    assert.equal(pending.resolved, true);
+    assert.equal(pending.resolutionPending, true);
+    assert.equal(pending.resolutionDurable, false);
+    assert.equal(pending.keptOld, false);
+    assert.ok(pending.resolution.recordIds.includes((await active(r)).get(2).recordId));
+    assert.ok(r.hayaku.activityLog.list().some(row => row.event === 'analysis:failure_resolution_not_saved'));
+    Object.assign(r.context, { document: pendingGui.document, window: pendingGui.dom.window, Event: pendingGui.dom.window.Event, HTMLElement: pendingGui.dom.window.HTMLElement, MutationObserver: pendingGui.dom.window.MutationObserver });
+    assert.equal(await r.hayaku.showUi(), true);
+    const root = pendingGui.document.getElementById('hayaku-ledger-viewer-root');
+    await waitFor(() => root.querySelector('.app') && !root.querySelector('.app').classList.contains('is-busy'), 'pending diagnostic viewer');
+    root.querySelector('#hayakuViewerHealth').click();
+    await waitFor(() => root.querySelector('#hayakuViewerPanelLogs [data-failure-row="2"]'), 'pending diagnostic row');
+    assert.match(root.querySelector('[data-failure-row="2"]').textContent, /복구됨 · 기록 저장 대기/);
+    assert.doesNotMatch(root.querySelector('[data-failure-row="2"]').textContent, /기존 기억 유지|미복구/);
+    restore.forEach(fn => fn());
+    await new Promise(resolve => setTimeout(resolve, 5100));
+    const saved = (await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey);
+    assert.equal(saved.resolved, true);
+    assert.equal(saved.resolutionPending, false);
+    assert.equal(saved.resolutionDurable, true);
+    assert.equal(r.llmCalls.length, calls, 'only the diagnostic write is retried');
+    const stores = { pluginStorage: r.pluginStorage, safeLocalStorage: r.safeLocalStorage }, messages = r.chat.message;
+    await r.dispose();
+    r = await createHayakuRuntime({ messages, autoRepair: false, afterRequestAutoRepair: false, ...stores });
+    assert.equal((await r.hayaku.recovery.failedAnalysis.report()).rows.find(row => row.failureKey === failure.failureKey).resolutionDurable, true);
+  } finally { restore.forEach(fn => fn()); await r.dispose(); pendingGui.dom.window.close(); }
+
   // The screen asks first, spends nothing on cancel, and reports what happened.
   r = await open();
   const gui = createColdStartGuiDocument();

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-05T15:38:47.939Z",
+  "generatedAt": "2026-11-05T21:59:40.537Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "2.6.35",
+          "version": "2.6.36",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -397,7 +397,7 @@
           ]
         },
         "hayaku": {
-          "version": "3.3.23",
+          "version": "3.3.24",
           "deferredAuthoritativeBinding": true,
           "backendOrder": [
             "chat_output_v3",
@@ -568,7 +568,7 @@
       "nativePersonaDatabaseExcluded": true
     },
     "hayakuNativeOtherAxRecovery": {
-      "version": "3.3.23",
+      "version": "3.3.24",
       "schema": "hayaku.native_recovery.v1",
       "normalPathNoLlmWhenCurrentPacketUsable": true,
       "normalPathLlmCallsWhenCurrentPacketUsable": 0,
@@ -760,7 +760,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "2.6.35",
+        "version": "2.6.36",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -778,7 +778,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "2.6.35",
+      "version": "2.6.36",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -804,7 +804,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -994,7 +994,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1076,7 +1076,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "2.6.35",
+        "version": "2.6.36",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "7a096a212eb71e1a87639347659ca9216fe32149068153491315734133217840",
         "retired": true,
@@ -1097,7 +1097,7 @@
         ]
       },
       "hayakuSparseRrfPilot": {
-        "version": "3.3.23",
+        "version": "3.3.24",
         "operation": "hayaku.sparse-rrf-fusion.v1",
         "algorithmFingerprint": "7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f",
         "retired": true,
@@ -1163,7 +1163,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1187,7 +1187,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1203,7 +1203,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1275,7 +1275,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "2.6.35",
+      "version": "2.6.36",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1423,8 +1423,8 @@
   },
   "plugins": {
     "flashback": "1.3.24",
-    "hayaku": "3.3.23",
-    "libra": "2.6.35",
+    "hayaku": "3.3.24",
+    "libra": "2.6.36",
     "lia": "0.29.8",
     "retrace": "1.12.10",
     "gradia": "0.28.27"
@@ -3831,7 +3831,7 @@
       "bytes": 3518
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "bd78033350dbc070dad2438ea6f5dfab08104d4bf126ab8ffc16154d9c6b3fd7",
+      "sha256": "d6838165ccdadcd013b7e5e8d6013cda46778f2a68e781d311cd6de873f907a2",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4231,7 +4231,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "5de5b9459eb848cae965a163e7e1d5704dc3c736c9761c91382da89e6ef0b0d9",
+      "sha256": "0e415aaff5625917b514d12968938ee199d26de08c92da5ccaca7ff26d4bc24c",
       "bytes": 3354
     },
     "plugins/Flashback_Memory.js": {
@@ -4243,16 +4243,16 @@
       "bytes": 3035229
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "623c6b0e510eeb50179f3cf481092d6db3d04e07586d7a6c8298b962254893d0",
-      "bytes": 4142727
+      "sha256": "cccd9cb461c979d001f9577c8a4a45acee449423acf76dcf150df907f7b9fc7a",
+      "bytes": 4145698
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645",
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "d201cbefdc9ae106209198528199af4fdf38a52dadb19296e46f8ab26c646883",
-      "bytes": 6958164
+      "sha256": "dfe82e6659e3651c3c3fbb175f6bf53418901b221e1e6a50faf091b0928d41bd",
+      "bytes": 6959313
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -7351,8 +7351,8 @@
       "bytes": 11499
     },
     "tests/hayaku_rebuild_all_turns_runtime_test.cjs": {
-      "sha256": "22983c807e4c8624eca562b6993b69982015c8594a54649e973c8546409832fe",
-      "bytes": 10138
+      "sha256": "cf68d3ec31bfdecc4ac3e55496acbf69ebcf0ac01547ea2f7d1bebad3c296968",
+      "bytes": 13663
     },
     "tests/hayaku_recall_only_selection_test.cjs": {
       "sha256": "e80c3c4588c4241cd6fc18eb89371e556ec7a7e4838676b488c730fc29e22c4b",
@@ -8967,12 +8967,12 @@
       "bytes": 9378
     },
     "tests/libra_memory_review_3mode_test.cjs": {
-      "sha256": "d84fcfa9deae81a869134cf6d8ad322ae946320d8c16c103c1069ea0c50061b7",
-      "bytes": 3936
+      "sha256": "21f3d9241e400aa05eee9aea5452db531d64bfee99db10fe7e6ef622ebe932eb",
+      "bytes": 3986
     },
     "tests/libra_memory_review_runtime_test.cjs": {
-      "sha256": "f8de579248f6e84a9fcc673fc2e821fa0194056460dc5afb52ce128ce2751395",
-      "bytes": 10208
+      "sha256": "f5aad3084b240fd9ae76585355cb1a8a1ea5b9e2584a23208e23d774e1b5c6f8",
+      "bytes": 10039
     },
     "tests/libra_memory_work_status_runtime_test.cjs": {
       "sha256": "56aa1ac589ec881fe2fa30092a03263652617c111b37465e3469589d34c1964a",
@@ -8987,8 +8987,8 @@
       "bytes": 5542
     },
     "tests/libra_micro_candidate_contract_test.cjs": {
-      "sha256": "66081a5bbe95ede2d8e137e046ce5d5a7c1cd30f51648963ed56191b4df969c7",
-      "bytes": 8097
+      "sha256": "5ae0d700063d9a98ebd2d84d1cabe177641a37e7fe6e011ffab662d928531e7d",
+      "bytes": 8950
     },
     "tests/libra_micro_correction_turn_order_3mode_test.cjs": {
       "sha256": "e5193a82a290a32d75d669fffa98f5cc203b19f73e55234a45b9e8d23d28e0fa",
@@ -9011,8 +9011,8 @@
       "bytes": 10148
     },
     "tests/libra_micro_inherited_same_turn_conflict_test.cjs": {
-      "sha256": "e8e4a24292e611416007cd970ecf86048ba096473f68356bd0d30d340c0d262c",
-      "bytes": 6263
+      "sha256": "49edc29d47f2eaa35642e6033332ba42f2cb2ade7767444bbe91ccc142d5afbc",
+      "bytes": 6438
     },
     "tests/libra_micro_inherited_t5_conflict_3mode_test.cjs": {
       "sha256": "604d394b48c2a3a344f027ef4ecf4f837735c10d3f5dc614ed74ea887daae133",
@@ -9111,24 +9111,24 @@
       "bytes": 17751
     },
     "tests/libra_micro_state_reader_gui_runtime_test.cjs": {
-      "sha256": "9c38cb360326980d47ff062a3a43dcba2942f9f6b6f0c2a4152f19178898a09d",
-      "bytes": 16339
+      "sha256": "8d603b2b64182d51a702b6422f03fb4e1e58846632be30b66d4b5ef248567e3b",
+      "bytes": 16330
     },
     "tests/libra_micro_state_supply_3mode_test.cjs": {
       "sha256": "396826764b6e1b637445a9648fe4630b902f66762e49de088ed3546032c62b76",
       "bytes": 5029
     },
     "tests/libra_micro_storage_3mode_test.cjs": {
-      "sha256": "ba73c0be8062171f1e40a5306eddba026ee0af5d2106063ec81a2333043d2747",
-      "bytes": 24115
+      "sha256": "bae470c7d07b880314be45e528fade4d8939d3c1d8f78d5b0c4f48c2084d9f0a",
+      "bytes": 24340
     },
     "tests/libra_micro_timeline_t1t3t5_test.cjs": {
       "sha256": "71f41e3bd79c759e773698f473d270d1c93c396fcdd51f5d011f676a8a7e74b5",
       "bytes": 11035
     },
     "tests/libra_micro_value_repair_runtime_test.cjs": {
-      "sha256": "2fc26f6043f9867a9876e5d879445699677d3a78ff471127db5f6f6618f438ce",
-      "bytes": 12002
+      "sha256": "e83b940b9637bce4e50c059b13b7ce177b4fc65c41e94076a215b9ed36111411",
+      "bytes": 12581
     },
     "tests/libra_micro_vector_authority_runtime_test.cjs": {
       "sha256": "c129b2ca7f09f3a1db1ff10e5ca3ff13de58ec2e3b26098e020931d8224be4f0",
@@ -12535,7 +12535,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "a4f3e2b0be60473b0ac254ab1cd51b9c62a0a35667df09cc941bbc311e9543fd",
+      "sha256": "e2d0d7ae182ab10e5d6c4507e41c0dba65eb78e7c4b622802f66e58108549bf7",
       "bytes": 3788
     }
   },

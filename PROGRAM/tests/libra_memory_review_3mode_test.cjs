@@ -18,7 +18,7 @@ const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
    let p=await f.r.api.listMemoryReviews();assert.equal(p.rows.length,2);assert.ok(p.rows.every(r=>r.risk==='high'&&r.stateEligible));
    fx.local.set('__memory_suite_internal_scope_routes_v1__:libra',JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',pluginId:'LIBRA',legacyGlobalModeImported:true,entries:{[p.scopeKey]:{scopeId:p.scopeKey,scopeKey:p.scopeKey,mode,origin:'user_explicit',updatedAt:1}}}));
    const current=async()=>(await f.r.api.debugLoadContinuityStateForResponse()).head.world.find(r=>r.name==='도서관').state.doorStatus;
-   assert.equal(await current(),'닫혔다');
+   assert.equal(await current(),undefined,'unresolved source-order conflicts wait for review');
    const close=p.rows.find(r=>r.text.includes('닫혔다'));
    assert.equal((await f.r.api.setMemoryReviewDecision({scopeKey:p.scopeKey,previewDigest:p.previewDigest,ids:[close.id],status:'rejected'})).ok,true);
    assert.equal(await current(),'열렸다');

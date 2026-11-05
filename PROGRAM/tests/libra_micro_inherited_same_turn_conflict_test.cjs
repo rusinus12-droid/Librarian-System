@@ -1,4 +1,6 @@
 'use strict';
+// Regression: the State projection held an unordered conflict, but automatic memory review
+// applied it again. Both the source and the inherited archive must keep the hold.
 const assert = require('node:assert/strict');
 const input = require('./fixtures/unified_vertical_source.json');
 const {serverFixture} = require('./fixtures/libra_server_runtime_fixture.cjs');

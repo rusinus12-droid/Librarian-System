@@ -106,6 +106,11 @@ const nameOf = (head, id) => head.world.find(row => row.id === id)?.name;
     assert.equal(record.claims.length, 16);
     assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '검증방17', 'same-field reduction still precedes the count limit');
   });
+  for (const length of [65, 1000]) await run('비가 내렸다. 민아는 다락방으로 올라갔다.', Array.from({ length }, () => location('민아는 다락방으로 올라갔다.', '다락방')), async ({ head, record, publication }) => {
+    assert.equal(publication.analysisStatus, 'minimum_source_bound', 'an oversized response retains only source-bound fallback memory');
+    assert.equal(record.claims.length, 0);
+    assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '서재', 'oversized input changes no State');
+  });
   await run('민아는 다락방으로 올라갔다.', [{ ...location('민아는 다락방으로 올라갔다.', '다락방'), stateIntent: { domain: 'character', target: { entityName: '민아' }, field: 'locationRef', operation: 'set', value: '다락방' } }], async ({ head }) => {
     const before = head.characters.length;
     assert.equal(head.characters.filter(row => row.name === '김민아').length, 1, 'a given name is the person of that full name');

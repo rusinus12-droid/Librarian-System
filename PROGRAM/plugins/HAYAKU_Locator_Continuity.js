@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.23
+//@display-name HAYAKU · Locator Continuity v3.3.24
 //@api 3.0
-//@version 3.3.23
+//@version 3.3.24
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.23';
+  const PLUGIN_VERSION = '3.3.24';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -2328,6 +2328,7 @@ const MODE_PROFILES = Object.freeze({
     recoveryVaultCache: new Map(),
     failedAnalysisVolatile: new Map(),
     analysisFailureSummaries: [],
+    analysisFailurePendingResolutions: new Map(),
     failedAnalysisMutationQueue: Promise.resolve(),
     partialMemoryMutationQueue: Promise.resolve(),
     failedAnalysisStats: { writes: 0, readbacks: 0, failures: 0, volatile: 0, lastError: '' },
@@ -44428,6 +44429,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return parsed?.schema === 'hayaku.analysis_failure_log.v1' && parsed.scopeKey === scopeKey ? ensureArray(parsed.entries) : [];
   };
   const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
+  const analysisFailureResolutionKey = (scopeKey, row) => `${scopeKey}::${analysisFailureIdentity(row)}`;
   const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
     const entries = await readAnalysisFailureLog(summary.scopeKey);
     const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
@@ -44439,6 +44441,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   });
   // Only a verified, durable adoption of this source revision closes its failed work.
   // Keep the failure history and link it to the actual records, independently of turn coverage.
+  const persistAnalysisFailureResolutions = async (scopeKey, entries, force = false) => {
+    const pending = [...Memory.analysisFailurePendingResolutions].filter(([, row]) => row.scopeKey === scopeKey && (force || row.nextRetryAt <= now()));
+    if (!pending.length) return;
+    const applied = [];
+    for (const [key, item] of pending) {
+      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && entry.sourceRevisionId === item.resolution.sourceRevisionId);
+      if (!row || row.resolution) { Memory.analysisFailurePendingResolutions.delete(key); continue; }
+      row.resolution = item.resolution;
+      applied.push([key, item]);
+    }
+    if (!applied.length) return;
+    try {
+      const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey, entries }, 'analysis_failure_resolution_write_failed');
+      if (!write.durable) throw new Error(write.reason);
+    } catch (error) {
+      for (const [, item] of applied) item.nextRetryAt = now() + 5000;
+      throw error;
+    }
+    for (const [key, item] of applied) {
+      Memory.analysisFailurePendingResolutions.delete(key);
+      for (const row of ensureArray(Memory.analysisFailureSummaries)) if (row.scopeKey === scopeKey && analysisFailureIdentity(row) === item.failureKey) row.resolution = item.resolution;
+    }
+  };
   const resolveAnalysisFailuresForCapsule = async (scope, capsule, ledger) => {
     try {
       await enqueueFailedAnalysisMutation(async () => {
@@ -44470,15 +44495,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           }
         }
         if (!resolutions.size) return;
-        const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scope.key), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: scope.key, entries }, 'analysis_failure_resolution_write_failed');
-        if (!write.durable) throw new Error(write.reason);
-        for (const row of ensureArray(Memory.analysisFailureSummaries)) if (row.scopeKey === scope.key && resolutions.has(analysisFailureIdentity(row))) row.resolution = resolutions.get(analysisFailureIdentity(row));
+        for (const [failureKey, resolution] of resolutions) {
+          Memory.analysisFailurePendingResolutions.set(`${scope.key}::${failureKey}`, { scopeKey: scope.key, failureKey, resolution, nextRetryAt: 0 });
+        }
+        while (Memory.analysisFailurePendingResolutions.size > 200) Memory.analysisFailurePendingResolutions.delete(Memory.analysisFailurePendingResolutions.keys().next().value);
+        // The buffer owns the resolution until the diagnostic write is readback-verified.
+        for (const row of entries) if (resolutions.has(analysisFailureIdentity(row))) delete row.resolution;
+        await persistAnalysisFailureResolutions(scope.key, entries, true);
       });
     } catch (error) {
       pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
     }
   };
   const analysisFailureReport = async (scopeKey, { coveredTurns = [], coldRun = null } = {}) => {
+    if ([...Memory.analysisFailurePendingResolutions.values()].some(row => row.scopeKey === scopeKey && row.nextRetryAt <= now())) {
+      try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
+      catch (error) { pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
+    }
     let rows = [], logAvailable = true;
     try { rows = await readAnalysisFailureLog(scopeKey); } catch (_) { logAvailable = false; }
     const identity = analysisFailureIdentity;
@@ -44492,8 +44525,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     const covered = new Set(ensureArray(coveredTurns).map(Number));
     return { logAvailable, rows: rows.map(row => {
-      const resolved = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
-      return { ...row, flowLabel: failedAnalysisFlowLabel(row.flow), resolved, keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
+      const resolutionDurable = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
+      const pending = Memory.analysisFailurePendingResolutions.get(analysisFailureResolutionKey(scopeKey, row));
+      const resolutionPending = !resolutionDurable && Boolean(row.sourceRevisionId && pending?.resolution.sourceRevisionId === row.sourceRevisionId && ensureArray(pending?.resolution.recordIds).length);
+      const resolved = resolutionDurable || resolutionPending;
+      return { ...row, ...(resolutionPending ? { resolution: clone(pending.resolution, {}) } : {}), flowLabel: failedAnalysisFlowLabel(row.flow), resolved, resolutionDurable, resolutionPending,
+        keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
     }).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
   };
   const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
@@ -56492,10 +56529,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const cause = ensureArray(row.cause).map(item => item.code + (Number(item.count) > 1 ? ' ×' + Number(item.count) : '')).join(', ');
       entries.push({
         owner: '분석 실패', failureTurn: Number(row.turn || 0),
-        badge: row.keptOld ? 'badge--warn' : row.resolved ? 'badge--ok' : 'badge--danger',
-        badgeText: row.keptOld ? '기존 기억 유지' : row.resolved ? '이후 복구됨' : '미복구',
+        badge: row.resolutionPending || row.keptOld ? 'badge--warn' : row.resolved ? 'badge--ok' : 'badge--danger',
+        badgeText: row.resolutionPending ? '복구됨 · 기록 저장 대기' : row.keptOld ? '기존 기억 유지' : row.resolved ? '이후 복구됨' : '미복구',
         title: `T${Number(row.turn || 0)} · ${row.title || '분석 확인 필요'}`,
-        detail: [`작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`, row.detail || '', row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '', `원인 코드: ${cause || row.reason || row.code || '-'}`].filter(Boolean).join('\n')
+        detail: [`작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`, row.detail || '',
+          row.resolutionPending ? '기억 복구는 완료됐지만 진단 기록을 아직 저장하지 못했습니다. 저장소가 응답하면 다시 저장합니다.' : '',
+          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '', `원인 코드: ${cause || row.reason || row.code || '-'}`].filter(Boolean).join('\n')
       });
     }
 

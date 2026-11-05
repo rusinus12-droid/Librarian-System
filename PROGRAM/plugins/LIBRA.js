@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.35
+//@display-name LIBRA v2.6.36
 //@api 3.0
-//@version 2.6.35
+//@version 2.6.36
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.35';
+  const PLUGIN_VERSION = '2.6.36';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -58498,6 +58498,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...known, status: 'classified_candidates', spans, relations,
         rejected, novelDiscovery: 'model_candidates_source_bound' };
     };
+    // Micro는 기록량보다 원문에 근거한 정확성을 우선하며, 한 턴의 기억을 최대 16개로 작게 유지한다.
+    // 64개는 저장량이 아니라 보정·검증을 시작하기 전 허용하는 입력 상한이다.
+    const MICRO_MAX_INPUT_CLAIMS = 64;
     const validateMicroCandidate = (candidateValue, receiptValue) => {
       const candidate = asObject(candidateValue), receipt = asObject(receiptValue);
       const rejectedResult = reason => ({ schema: 'libra.micro_candidate_validation.v1',
@@ -58517,6 +58520,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!Array.isArray(candidate.claims) || !candidate.claims.length) {
         return rejectedResult('claim_count_invalid');
       }
+      if (candidate.claims.length > MICRO_MAX_INPUT_CLAIMS) return rejectedResult('claim_input_limit_exceeded');
       const claimFields = new Set(['changeKind', 'text', 'actor', 'target', 'temporalRole',
         'certainty', 'epistemicStatus', 'stateChangeType', 'stateIntent', 'evidence']);
       const evidenceFields = new Set(['role', 'messageId', 'startOffset', 'endOffset', 'exactQuote']);
@@ -58661,6 +58665,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const repairMicroEvidence = (microValue, receiptValue) => {
       if (!isPlainObject(microValue) || !Array.isArray(microValue.claims)) return microValue;
+      if (microValue.claims.length > MICRO_MAX_INPUT_CLAIMS) return microValue;
       const receipt = asObject(receiptValue), locate = (source, quote, near) => {
         const hits = []; for (let at = source.indexOf(quote); at >= 0 && hits.length < 32; at = source.indexOf(quote, at + 1)) hits.push(at);
         if (hits.length) return { start: hits.reduce((best, at) => Math.abs(at - near) < Math.abs(best - near) ? at : best, hits[0]), length: quote.length };
@@ -58880,6 +58885,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       catch (_) { return pending('producer_json_invalid', provider); }
       if (!envelope || envelope?.schema !== 'libra.micro_producer_envelope.v1' || !isPlainObject(envelope)) {
         return pending('producer_schema_invalid', provider);
+      }
+      if (Array.isArray(envelope.micro?.claims) && envelope.micro.claims.length > MICRO_MAX_INPUT_CLAIMS) {
+        return pending('micro_claim_input_limit_exceeded', provider);
       }
       let registry;
       try { registry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null) || {}; }
@@ -60004,6 +60012,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // With automatic use off, only what the user approved reaches State; the rest waits in the review.
         const heldForReview=row.kind!=='micro'||asArray(view.head?.microProjection?.pendingClaims).some(p=>p.turn===row.turn&&p.claimIndex===item.index);
         if(row.status==='automatic'&&!autoApply&&heldForReview){row.stateOutcome='not_applied';continue;}
+        // Source-order repair already resolves ordered changes. An unresolved conflict has no
+        // justified last value; automatic review must not bypass the State projection's hold.
+        if(row.kind==='micro'&&row.status==='automatic'&&heldForReview&&row.reason==='micro_same_turn_field_conflict'){row.stateOutcome='not_applied';continue;}
         try{
           let domain=row.domain,targetId='',field=row.field,value,clear=false,sourceRow=null,reviewAdditive=null;
           if(row.kind==='canonical'){
@@ -82142,6 +82153,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const semanticRelevance = similarity === null ? 0 : Math.max(0, Math.min(1, (similarity - LENS_SEMANTIC_FLOOR) / (LENS_SEMANTIC_HIGH - LENS_SEMANTIC_FLOOR))) * 0.6;
             const relevance = Math.max(lexicalRelevance, semanticRelevance);
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
+            // '관점유형' 필드명은 생략했지만 최종 출력의 '· 해석', '해석근거:', '원문:' 표시는 근거 유형을 구분한다.
             const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
             const basisPart = item.basis && (!item.quote || lensSafeText(item.basis, 120) !== lensSafeText(item.quote, 120))
@@ -90498,7 +90510,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     :/DEPENDENCY/.test(reason)?'의존한 사실이 제외됨':/EVIDENCE|QUOTE|SOURCE/.test(reason)?'원문 인용을 확인하지 못함'
     :/IDENTITY|TEMP_REF|UNRESOLVED/.test(reason)?'대상 인물·장소를 확인하지 못함':/AMBIGUOUS|DUPLICATE/.test(reason)?'식별자가 중복됨':'형식 검증을 통과하지 못함';
   const memoryReviewReasonLabel = reason => ({
-    micro_same_turn_field_conflict:'같은 턴에 서로 다른 값이 기록되어 있습니다. 기록 순서상 마지막 값을 반영하며, 사용자가 확정한 값이 있으면 그 값을 우선합니다.',
+    micro_same_turn_field_conflict:'같은 턴의 근거로 값의 선후를 확정할 수 없어 상태 반영을 보류했습니다. 원문을 확인하고 적용할 값을 확정하세요.',
     same_source_order_conflict:'같은 시점의 근거에 서로 다른 값이 있습니다. 기록 순서상 마지막 값을 반영하며, 사용자가 확정한 값이 있으면 그 값을 우선합니다.',
     missing_current_binding:'상태 연결 선언이 빠져 있어 원문 사실에서 자동으로 연결했습니다.',
     dependency_pending:'연관된 다른 사실의 처리 결과에 의존합니다.',

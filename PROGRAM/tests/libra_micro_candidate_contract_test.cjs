@@ -117,6 +117,20 @@ const valid = () => ({
     assert.equal(keptTogether.claims.length, 15);
     assert.equal(keptTogether.claims.some(claim => claim.stateIntent.target.entityName === '공통상자'), false, 'the cap cannot make one side of a conflict authoritative');
     assert.deepEqual(JSON.parse(JSON.stringify(keptTogether.rejected)), [{ index: 0, reason: 'claim_limit_exceeded' }, { index: 1, reason: 'claim_limit_exceeded' }]);
+    const bounded = valid();
+    bounded.claims = Array.from({ length: 64 }, () => structuredClone(valid().claims[0]));
+    const boundedResult = validate(bounded, receipt);
+    assert.equal(boundedResult.claims.length, 16, 'the bounded overrun still retains sixteen verified claims');
+    assert.equal(boundedResult.rejected.length, 48);
+    for (const length of [65, 1000]) {
+      let visits = 0;
+      const oversized = valid();
+      oversized.claims = Array.from({ length }, () => new Proxy({}, { ownKeys() { visits++; throw Error('oversized_claim_was_inspected'); } }));
+      const refused = validate(oversized, receipt);
+      assert.equal(refused.status, 'rejected');
+      assert.equal(refused.rejected[0].reason, 'claim_input_limit_exceeded');
+      assert.equal(visits, 0, 'oversized input is refused before any claim is inspected');
+    }
     assert.equal(fixture.f.control.calls.length, 0, 'contract validation does not call a model');
     console.log('PASS one-turn Micro candidates require exact source and provisional authority');
   } finally { await fixture.cleanup(); }

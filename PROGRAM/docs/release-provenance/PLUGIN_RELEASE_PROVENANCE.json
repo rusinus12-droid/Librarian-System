@@ -289,14 +289,14 @@
         "bytes": 3677432
       },
       "hayaku": {
-        "version": "3.3.23",
-        "sha256": "623c6b0e510eeb50179f3cf481092d6db3d04e07586d7a6c8298b962254893d0",
-        "bytes": 4142727
+        "version": "3.3.24",
+        "sha256": "cccd9cb461c979d001f9577c8a4a45acee449423acf76dcf150df907f7b9fc7a",
+        "bytes": 4145698
       },
       "libra": {
-        "version": "2.6.35",
-        "sha256": "d201cbefdc9ae106209198528199af4fdf38a52dadb19296e46f8ab26c646883",
-        "bytes": 6958164
+        "version": "2.6.36",
+        "sha256": "dfe82e6659e3651c3c3fbb175f6bf53418901b221e1e6a50faf091b0928d41bd",
+        "bytes": 6959313
       },
       "lia": {
         "version": "0.29.8",
