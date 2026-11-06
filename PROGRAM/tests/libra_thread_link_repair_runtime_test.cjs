@@ -25,10 +25,11 @@ async function test(mode,scenario){
   const sealed=m=>JSON.stringify([m.canonicalArtifact,m.artifactDigest,m.sourceDigest,m.rawPacketRefs]);
   const oldMemory=sealed(f.getMemory());
   fiveMore(f);const next=f.control.artifact;next.schema='libra.canonical_artifact.v5';next.facts=next.facts.filter(f=>f.claimKind!=='thread');
-  const quote=scenario==='link'?'지호는 준호에게 책을 반환하겠다는 약속을 다시 확인했다.':'지호는 민아와 스피커로 통화하기로 했다.';
-  const summary=scenario==='duplicate'?SCHOOL:scenario==='link'?BOOK:SPEAKER,target=scenario==='link'?'junho':'mina';
-  f.chat.message[19].data+=' '+quote;
-  next.entities.push({tempId:'incoming',name:'통화 과제',type:'world',kind:'thread',evidenceSpans:spans('t10-a',quote)});
+  const linked=['link','user-link'].includes(scenario),userEvidence=['user-new','user-link'].includes(scenario),ref=userEvidence?'t10-u':'t10-a';
+  const quote=linked?'지호는 준호에게 책을 반환하겠다는 약속을 다시 확인했다.':['duplicate','paraphrase'].includes(scenario)?'지호는 민아의 학교에 전화해 등교 여부를 확인하기로 했다.':'지호는 민아와 스피커로 통화하기로 했다.';
+  const summary=scenario==='duplicate'?SCHOOL:scenario==='paraphrase'?'민아의 학교 등교 여부 확인 전화':linked?BOOK:SPEAKER,target=linked?'junho':'mina';
+  f.chat.message[userEvidence?18:19].data+=' '+quote;
+  next.entities.push({tempId:'incoming',name:'통화 과제',type:'world',kind:'thread',evidenceSpans:spans(ref,quote)});
   let repairs=0,candidates=[];
   f.control.onCall=args=>{
    const messages=args[0].messages,sys=messages.find(m=>m.role==='system').content;
@@ -39,13 +40,13 @@ async function test(mode,scenario){
     if(scenario==='failure')return {type:'error',result:'controlled repair failure'};
     if(scenario==='reanalyze'&&repairs===1)return {type:'success',result:JSON.stringify({repairs:[{factTempId:'incoming_fact',decision:'hold'}]})};
     if(scenario==='edit')f.chat.message[19].data+=' 원문이 바뀌었다.';
-    const r={factTempId:'incoming_fact',decision:scenario==='link'||scenario==='bad-link'?'link':'new',evidenceRef:'t10-a',quote};
+    const r={factTempId:'incoming_fact',decision:linked||scenario==='bad-link'?'link':'new',evidenceRef:ref,quote};
     if(r.decision==='link')r.linkCandidateAlias=candidates.find(c=>c.summary===BOOK).alias;
     if(scenario==='bad-quote')r.quote='없는 인용';
     return {type:'success',result:JSON.stringify({repairs:scenario==='duplicate-response'?[r,r]:[r]})};
    }
    candidates=candidateRowsFromPrompt(args[0]);const closed=candidates.find(c=>c.summary===SCHOOL);assert.ok(closed);
-   const response=structuredClone(next);response.facts.push(thread('incoming_fact','incoming',summary,'open',target,'t10-a',quote,{link:'reaffirm',linkCandidateAlias:closed.alias}));
+   const response=structuredClone(next);response.facts.push(thread('incoming_fact','incoming',summary,'open',target,ref,quote,{link:'reaffirm',linkCandidateAlias:closed.alias}));
    return {type:'success',result:JSON.stringify(response)};
   };
   const result=await f.run();
@@ -56,10 +57,10 @@ async function test(mode,scenario){
   assert.equal(result.completed,1,JSON.stringify(result));
   const memory=f.getMemory(6),value=memory.canonicalArtifact.facts.find(f=>f.tempFactId==='incoming_fact').values.thread;
   assert.equal(JSON.stringify(f.getHead().narrative.closedThreads),oldClosed,'repair never reopens/changes the unrelated finished task');
-  if(scenario==='new'||scenario==='link'){
-   assert.equal(value.linkStatus,scenario==='new'?'new':'accepted');
+  if(['new','link','user-new','user-link'].includes(scenario)){
+   assert.equal(value.linkStatus,linked?'accepted':'new');
    assert.ok(!value.linkPendingReason);assert.ok(!f.getHead().unifiedApplied.pending.some(p=>p.fact==='incoming_fact'));
-   if(scenario==='new'){
+   if(!linked){
     assert.equal(f.getHead().narrative.threads.filter(t=>t.summary===SPEAKER).length,1);
     assert.ok(!value.link&&!value.linkTarget);
    }else{
@@ -90,6 +91,6 @@ async function test(mode,scenario){
  console.log('PASS',mode,scenario);
 }
 (async()=>{
- for(const mode of ['plugin_only','mirror','server_only'])for(const scenario of ['new','link'])await test(mode,scenario);
- for(const scenario of ['duplicate','bad-link','bad-quote','duplicate-response','failure','edit','reanalyze'])await test('plugin_only',scenario);
+ for(const mode of ['plugin_only','mirror','server_only'])for(const scenario of ['new','link','user-new','user-link'])await test(mode,scenario);
+ for(const scenario of ['duplicate','paraphrase','bad-link','bad-quote','duplicate-response','failure','edit','reanalyze'])await test('plugin_only',scenario);
 })().catch(e=>{console.error(e);process.exitCode=1;});
