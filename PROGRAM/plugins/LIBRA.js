@@ -73232,7 +73232,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         targetStarts,
         currentStart: targetStarts[0] || 0,
         state: 'preparing',
-        stateLabel: 'preparing',
+        stateLabel: '준비 중',
         total: Math.max(1, requestedRanges.length),
         completed: 0,
         failed: 0,
@@ -73277,7 +73277,43 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       updateJob();
 
+      // Startup State recovery uses the scope writer queue, while Micro/lens
+      // producers have their own queues. Drain existing writes before pinning
+      // the analysis boundary; never spend a model call just waiting for them.
+      const restoreGeneration=Number(state.microRestoreGeneration||0);
+      const assertWaitingBoundary=()=>{
+        if(job.cancelRequested)throw Error('사용자가 작업을 취소했습니다.');
+        if(state.disposed||state.deletingScopes.has(job.scopeKey)||state.portableMemoryActiveOperationId
+          ||Number(state.microRestoreGeneration||0)!==restoreGeneration)throw Error('기억 작업 경계가 변경되었습니다. 다시 선택하세요.');
+      };
+      const waitForMemoryQueue=async()=>{
+        assertWaitingBoundary();
+        let waiting=false;
+        while(state.queues.has(job.scopeKey)){
+          assertWaitingBoundary();
+          const pending=state.queues.get(job.scopeKey);
+          if(!waiting){
+            waiting=true;
+            updateJob({phase:'waiting_for_memory',currentStage:'waiting_for_memory',stateLabel:'다른 기억 작업 완료 대기',stepIndex:-1,
+              message:'이 채팅의 기억 복구 등 진행 중인 작업이 끝나기를 기다리고 있습니다. 완료되면 재분석을 자동으로 시작합니다. 아직 AI 분석은 시작하지 않았습니다.'});
+          }
+          await new Promise((resolve,reject)=>{
+            const signal=job.abortController?.signal;
+            const cleanup=()=>signal?.removeEventListener('abort',abort);
+            const abort=()=>{cleanup();reject(Error('사용자가 작업을 취소했습니다.'));};
+            const settled=()=>{cleanup();resolve();};
+            signal?.addEventListener('abort',abort,{once:true});
+            if(signal?.aborted)abort();
+            else Promise.resolve(pending).then(settled,settled);
+          });
+        }
+        assertWaitingBoundary();
+        if(waiting)updateJob({phase:'preparing',currentStage:'preparing',stateLabel:'준비 중',stepIndex:0,
+          message:'대기가 끝났습니다. 재분석할 원문과 태그를 확인하고 있습니다.'});
+      };
+
       try{
+        await waitForMemoryQueue();
         const inventory=await listReanalysisRanges(selection),rows=asArray(selection.ranges),keys=new Set(rows.map(row=>String(row.key))),units=inventory.ranges.filter(row=>keys.has(row.key));
         if(!keys.size||units.length!==keys.size||selection.scopeKey!==inventory.scopeKey||selection.worldlineId!==inventory.worldlineId||selection.topology!==inventory.topology
           ||rows.some(row=>units.find(unit=>unit.key===String(row.key))?.identity!==row.identity))throw Error('선택한 원문 위치가 변경되었습니다. 목록을 새로고침하세요.');
@@ -73287,9 +73323,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const turn=reviewed.turn??(units.length===1&&units[0].start===units[0].end?units[0].start:null);
           if(units.length!==1||!Number.isSafeInteger(turn)||turn<units[0].start||turn>units[0].end||reviewed.key!==units[0].key||reviewed.rulesKey!==memorySuiteSourceTagKey('libra'))throw Error('검토한 턴 또는 태그 규칙이 변경되었습니다.');
         }
-        const rulesKey=memorySuiteSourceTagKey('libra'),generation=Number(state.worldManagerRuntimeMetaGeneration||0);
+        const rulesKey=memorySuiteSourceTagKey('libra');
         const samples=new Map();for(const unit of units)samples.set(unit.key,await readReanalysisTurn(inventory,unit));
         if(reviewed&&samples.get(units[0].key).rawDigest!==reviewed.rawDigest)throw Error('검토한 원문이 변경되었습니다. 다시 확인하세요.');
+        await waitForMemoryQueue();
+        const generation=Number(state.worldManagerRuntimeMetaGeneration||0);
 
         const lensObj=inventory.kind==='lens'?(inventory.lenses?.find(l=>l.lensId===inventory.lensId)||null):null;
         const resolvedLensName=lensObj?.name||lensName||'렌즈';
@@ -73303,7 +73341,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           targetStarts:units.map(u=>u.start),
           currentStart:units[0]?.start||0,
           state:'running',
-          stateLabel:'running',
+          stateLabel:'진행 중',
+          phase:'preparing',
+          currentStage:'preparing',
           total:units.length,
           message:units.length>1?`[1/${units.length}] 대상 구간(${units[0]?.label})을 확인하고 있습니다.`:`대상 구간(${units[0]?.label})을 확인하고 있습니다.`
         });
@@ -73335,18 +73375,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if(job.cancelRequested)throw Error('사용자가 작업을 취소했습니다.');
             if(stage==='analysis'){
               updateJob({
+                phase:'analysis',currentStage:'analysis',
                 stepIndex:1,
                 currentStart:unit.start,
                 message:`${unitPrefix}${inventory.kind==='micro'?'미크로 기억':'렌즈 기억'} 분석 중...`
               });
             }else if(stage==='validation'){
               updateJob({
+                phase:'validation',currentStage:'validation',
                 stepIndex:2,
                 currentStart:unit.start,
                 message:`${unitPrefix}분석 결과를 검증하는 중...`
               });
             }else if(stage==='storage'){
               updateJob({
+                phase:'storage',currentStage:'storage',
                 stepIndex:3,
                 currentStart:unit.start,
                 message:`${unitPrefix}기록을 저장하는 중...`
@@ -73408,7 +73451,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
         updateJob({
           state:'completed',
-          stateLabel:'completed',
+          stateLabel:'완료',
+          phase:'complete',currentStage:'complete',
           stepIndex:3,
           finishedAt:nowIso(),
           message:'작업을 마쳤습니다. 아래 결과를 확인하세요.',
@@ -73422,7 +73466,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const processedCount=results.filter(r=>r.ok).length;
           updateJob({
             state:cancelled?'cancelled':'failed',
-            stateLabel:cancelled?'cancelled':'failed',
+            stateLabel:cancelled?'취소됨':'실패',
+            phase:cancelled?'cancelled':'failed',currentStage:cancelled?'cancelled':'failed',
             finishedAt:nowIso(),
             error:compact(String(error?.message||error),400),
             message:cancelled?'작업을 취소했습니다.':`작업 실패: ${compact(String(error?.message||error),300)}`,
@@ -83047,7 +83092,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const measurable = Math.max(0, Number(job.total || 0));
     const done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
     Gui.app.querySelectorAll('[data-canonical-job-clock]').forEach(node => {
-      if (node.dataset.canonicalJobClock === String(job.jobId)) node.textContent = `${CANONICAL_JOB_STATE_LABELS[job.state] || String(job.state || '')} · ${elapsed}초 · ${measurable ? `${done}/${measurable}구간` : '구간 수 확인 중'}`;
+      if (node.dataset.canonicalJobClock === String(job.jobId)) node.textContent = `${job.phase==='waiting_for_memory'?job.stateLabel:CANONICAL_JOB_STATE_LABELS[job.state] || String(job.state || '')} · ${elapsed}초 · ${measurable ? `${done}/${measurable}구간` : '구간 수 확인 중'}`;
     });
     Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node => {
       if (node.dataset.canonicalJobId === String(job.jobId)) setLibraJobPill(node, canonicalJobPillState(job));
@@ -83196,8 +83241,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       kindBadge.textContent = String(job.stateLabel || (job.state==='completed_with_warnings'&&(Number(job.failed||0)||guiAsArray(job.stateWarnings).length)?'완료 · 확인 필요':CANONICAL_JOB_STATE_LABELS[job.state]) || job.state || '');
       kindBadge.className = `badge ${terminal ? (failedTerminal ? 'badge--danger' : 'badge--ok') : 'badge--info'}`;
     }
-    const meter=body.querySelector('.progress');meter.hidden=!measurable;meter.querySelector('i').style.setProperty('--v',`${percent}%`);
+    const meter=body.querySelector('.progress');meter.hidden=!measurable||job.phase==='waiting_for_memory';meter.querySelector('i').style.setProperty('--v',`${percent}%`);
     const message=body.querySelector('[data-job-msg]');message.textContent=job.message||job.error||'현재 작업 상태를 확인합니다.';
+    message.setAttribute('role','status');message.setAttribute('aria-live','polite');
     const stage=String(job.currentStage||job.phase||'');
     const index=typeof job.stepIndex === 'number' ? job.stepIndex : (/prepar|resolv|inventory/.test(stage)?0:/librarian|generat|analy/.test(stage)?1:/valid|admiss/.test(stage)?2:/sav|commit|persist|adopt/.test(stage)?3:-1);
     body.querySelectorAll('.step').forEach((node,i)=>{
@@ -83294,7 +83340,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       portal.remove();
       Gui.app.querySelectorAll('[data-canonical-job-chip]').forEach(node=>node.remove());
     }}));
-    body.appendChild(guiEl('p',{class:'hint',dataset:{canonicalJobClock:String(job.jobId)},text:`${CANONICAL_JOB_STATE_LABELS[job.state]||String(job.state||'')} · ${elapsed}초 · ${measurable?`${done}/${measurable}구간`:'구간 수 확인 중'}`}));
+    body.appendChild(guiEl('p',{class:'hint',dataset:{canonicalJobClock:String(job.jobId)},text:`${job.phase==='waiting_for_memory'?job.stateLabel:CANONICAL_JOB_STATE_LABELS[job.state]||String(job.state||'')} · ${elapsed}초 · ${measurable?`${done}/${measurable}구간`:'구간 수 확인 중'}`}));
     if (job.state === 'awaiting_edit' && job.comparison?.candidate) {
       // Editing is the whole task here: the dialog grows to the frame and the text area takes the free height.
       body.classList.add('dialog--editor');
@@ -90471,6 +90517,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     completed_with_warnings:'완료 · 참고 사항',failed:'실패',cancelled:'취소됨',original_kept:'원본 유지',awaiting_choice:'선택 대기',awaiting_edit:'편집 대기'});
   const canonicalJobStageLabel = job => {
     const stage = String(job?.currentStage || job?.phase || '');
+    if(stage==='waiting_for_memory')return '다른 기억 작업 대기';
     return /finaliz/.test(stage) ? '마무리 점검' : /state/.test(stage) ? '상태 반영' : /commit|sav|persist|adopt/.test(stage) ? '저장'
       : /librarian|generat|analy|pipeline/.test(stage) ? '분석' : /prepar|scan|resolv|inventory/.test(stage) ? '준비' : '진행 중';
   };
@@ -90502,9 +90549,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const total = Math.max(0, Number(job.total || 0)), done = Math.max(0, Number(job.completed || 0) + Number(job.failed || 0) + Number(job.skipped || 0));
     const failed = job.state === 'failed' || Number(job.failed || 0) > 0;
     const title = job.jobType === 'micro' ? '미크로 작업' : job.jobType === 'lens' ? '렌즈 작업' : '정본 작업';
-    const meta = terminal ? (failed ? '일부 실패' : job.state === 'cancelled' ? '취소됨' : '완료') : `${canonicalJobStageLabel(job)}${total ? ` · ${done}/${total}` : ''}`;
+    const waiting = !terminal && job.phase === 'waiting_for_memory';
+    const meta = waiting ? '다른 기억 작업 대기 · 분석 전' : terminal ? (failed ? '일부 실패' : job.state === 'cancelled' ? '취소됨' : '완료') : `${canonicalJobStageLabel(job)}${total ? ` · ${done}/${total}` : ''}`;
     return { title, meta, tone: !terminal ? 'running' : failed || job.state === 'cancelled' ? 'failed' : guiAsArray(job.stateWarnings).length ? 'warn' : 'done',
-      percent: total ? Math.round(done / total * 100) : null, label: `${title} · ${meta} · 작업 창 다시 열기` };
+      percent: !waiting && total ? Math.round(done / total * 100) : null, label: `${title} · ${meta}${waiting ? ` · ${job.message}` : ''} · 작업 창 다시 열기` };
   };
   const canonicalRejectionLabel = reason => /FACT_KIND|DOMAIN/.test(reason)?'사실 종류가 영역과 맞지 않음'
     :/DEPENDENCY/.test(reason)?'의존한 사실이 제외됨':/EVIDENCE|QUOTE|SOURCE/.test(reason)?'원문 인용을 확인하지 못함'
