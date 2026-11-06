@@ -158,7 +158,7 @@ async function fixture(t, {saved} = {}) {
   return {...host, dom, values, local, requests, status, connect};
 }
 
-test('UI renders distinct toggle checkboxes for draft and input writer routes', async t => {
+test('UI renders owner toggle checkboxes for the draft route only', async t => {
   const f = await fixture(t);
   const doc = f.dom.window.document;
   
@@ -167,13 +167,15 @@ test('UI renders distinct toggle checkboxes for draft and input writer routes', 
   const draftIds = Array.from(draftCbs).map(cb => cb.dataset.libDraftOwner);
   assert.deepEqual(draftIds, ['libra', 'hayaku', 'flashback']);
 
-  const inputCbs = doc.querySelectorAll('[data-lib-input-writer-owner]');
-  assert.equal(inputCbs.length, 3, '인풋 작성용 오너 체크박스 3개 렌더링');
-  const inputIds = Array.from(inputCbs).map(cb => cb.dataset.libInputWriterOwner);
-  assert.deepEqual(inputIds, ['libra', 'hayaku', 'flashback']);
+  const scope = doc.querySelector('[data-existing-response-field="rpImpersonationScope"]');
+  assert.deepEqual(Array.from(scope.options).map(o => o.value), ['persona', 'persona_cast', 'all'], 'RP 세부 모드 3종');
+  assert.equal(scope.hidden, true, '소설 모드에서는 RP 세부 모드를 숨긴다');
+  assert.deepEqual(Array.from(scope.options).map(o => o.textContent), ['페르소나만 사칭 금지', '장면 연출', '문장화']);
+  assert.equal(doc.querySelector('[data-rp-scope-description]').hidden, true, '소설 모드에서는 세부 모드 설명도 숨긴다');
+  assert.equal(doc.querySelectorAll('[data-lib-input-writer-owner]').length, 0, '입력 작성기는 LIB 기억을 읽지 않으므로 대상 선택이 없다');
 });
 
-test('toggling draft and input writer owners independently connects and persists separate sets', async t => {
+test('toggling draft owners connects and persists that set', async t => {
   const f = await fixture(t);
   const doc = f.dom.window.document;
   
@@ -182,24 +184,19 @@ test('toggling draft and input writer owners independently connects and persists
   draftHayaku.checked = false;
   draftHayaku.dispatchEvent(new f.dom.window.Event('change', {bubbles: true}));
 
-  // Uncheck Flashback for input writer
-  const inputFlashback = doc.querySelector('[data-lib-input-writer-owner="flashback"]');
-  inputFlashback.checked = false;
-  inputFlashback.dispatchEvent(new f.dom.window.Event('change', {bubbles: true}));
-
   // Click connect
   const status = await f.connect();
   assert.equal(status.connection.state, 'connected');
 
   // Verify connection status reflects independent sets
   assert.deepEqual(Array.from(status.connection.draftReadOwners), ['libra', 'flashback']);
-  assert.deepEqual(Array.from(status.connection.inputWriterReadOwners), ['libra', 'hayaku']);
+  assert.equal(status.connection.inputWriterReadOwners, undefined);
 
   // Verify persistence includes both sets
   const saved = JSON.parse(f.local.get(PREF));
   assert.equal(saved.schema, 'gradia.lib-read-connection.v2');
   assert.deepEqual(saved.draftReadOwners, ['libra', 'flashback']);
-  assert.deepEqual(saved.inputWriterReadOwners, ['libra', 'hayaku']);
+  assert.equal(saved.inputWriterReadOwners, undefined);
 });
 
 test('UI supports disabling / turning off LIB memory read and persists off state', async t => {

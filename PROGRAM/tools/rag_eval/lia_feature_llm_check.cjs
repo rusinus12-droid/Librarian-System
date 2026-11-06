@@ -73,7 +73,7 @@ const chatMessages = chatTurns.flatMap(([user, assistant], index) => [
 // ---- source seam: expose only ---------------------------------------------
 function expose(source) {
   const runtimeAnchor = '    globalThis[LIA_RUNTIME_INSTANCE_KEY] = {';
-  const methodAnchor = '      getLiveSyncCaptureState:';
+  const methodAnchor = '      getScopePersonaCatalog:';
   if (!source.includes(runtimeAnchor) || !source.includes(methodAnchor)) throw new Error('LIA exposure anchors not found');
   source = source.replace(runtimeAnchor, `
     { const __liaCheckSetStatus = setStatus; setStatus = (message, tone = "info") => { try { api.__liaCheckStatus?.(String(message), tone); } catch (_) {} return __liaCheckSetStatus(message, tone); }; }

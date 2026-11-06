@@ -641,7 +641,6 @@ function runReleaseSmokeFromSource() {
     'sync_flashback_consent_profile.cjs', 'sync_hayaku_consent_profile.cjs']) {
     runNode(path.join(programDir, 'tools', file), ['--check'], programDir);
   }
-  runNode(path.join(programDir, 'tools', 'sync_gradia_ranked_evidence.cjs'), [], programDir);
   const smokeEnv = {};
   const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
   const support = ensureBuildSupportDependencies({ programDir });

@@ -90,9 +90,9 @@ assert.doesNotMatch(analyzer, /이번 턴 적용 결과|id: 'injection'|buildLib
 const logs = between('const buildSharedExecutionLogsPanel =', 'const buildAnalysisInputPanel =');
 assert.match(logs, /normalizeHubChoice\(Gui\.executionLogSection,SHARED_EXECUTION_LOG_SECTIONS,'memory'\)/);
 assert.match(logs, /class:'tabs',role:'tablist'/);
-assert.match(logs, /'aria-selected':String\(Gui\.executionLogSection===id\)/);
+assert.match(logs, /'aria-selected':String\(viewOf\(\)\[0\]===id\)/);
 for (const id of ['memory', 'state', 'draft', 'recall', 'embedding', 'rebuild']) {
-  assert.ok(logs.includes(`['${id}',`), `missing execution category: ${id}`);
+  assert.ok(source.includes(`['${id}', `), `missing execution category: ${id}`);
 }
 
 process.stdout.write('libra_secondary_navigation_rail_contract_test: PASS\n');

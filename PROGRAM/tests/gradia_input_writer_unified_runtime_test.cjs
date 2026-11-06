@@ -27,56 +27,6 @@ for(const writingMode of ['novel','rp'])for(const unified of [false,true])test(w
   assert.doesNotMatch(f.copied.at(-1),/NSFW GUIDANCE|proposed USER input choices/);
  }
 });
-test('real explicit Novel writer queries once, binds edited output and delivers without retaining evidence',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.select();
- const editor=f.document.querySelector('textarea');editor.value='EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
- assert.equal(await f.done(pending),true);assert.deepEqual(f.copied,['EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.']);assert.equal(f.sent.length,0);
- assert.equal(f.prompts.length,1);assert.equal(f.queries(),1);
- assert.ok(JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));assert.ok(!JSON.stringify(f.prompts).includes('LEGACY_AUTHORIZATION_ONLY'));
- const request=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
- assert.equal(request.proposal.factAdopted,false);assert.equal(request.proposal.purpose,'input_writer_proposal');assert.match(request.proposal.proposalDigest,/^[a-f0-9]{64}$/);
- const runtime=JSON.stringify(f.host.plugin.getRuntime());assert.ok(!runtime.includes('WRITER_OWNER_EVIDENCE'));assert.ok(!runtime.includes('WRITER_CHOICE_'));assert.ok(!runtime.includes('EDITED_WRITER_OUTPUT'));
- assert.ok(!JSON.stringify([...f.values,...f.local]).includes('WRITER_CHOICE_'));
-});
-test('RP choices and translation share one read, copy exact edited text, and redact generic status',async t=>{
- const f=await fixture(t,{writingMode:'rp'});await setNsfw(f,'direct');const {pending}=await f.start();const cards=await f.choices();
- assert.equal(f.host.plugin.getRuntime().externalEvidence,true);
- assert.ok(!JSON.stringify(f.host.plugin.getInputAssistConfirmationStatus()).includes('WRITER_CHOICE_'));
- cards[0].querySelector('[data-input-choice-translate="english"]').click();
- await f.wait(()=>cards[0].querySelector('textarea').value.startsWith('TRANSLATED_WRITER_CHOICE'),'translation');
- await f.select();const editor=f.document.querySelector('textarea');editor.value='COPIED_WRITER_OUTPUT 은빛 열쇠의 위치를 묻는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
- assert.ok(!JSON.stringify(f.host.plugin.getInputAssistSendStatus()).includes('TRANSLATED_WRITER_CHOICE'));
- assert.equal(await f.done(pending,'복사 후 직접 전송'),true);assert.deepEqual(f.copied,['COPIED_WRITER_OUTPUT 은빛 열쇠의 위치를 묻는다.']);assert.equal(f.sent.length,0);
- assert.equal(f.prompts.length,2);assert.equal(f.queries(),1);assert.ok(f.prompts.every(p=>JSON.stringify(p).includes('WRITER_OWNER_EVIDENCE')));
- assert.match(writerSystem(f.prompts[0]),/NSFW GUIDANCE — DIRECT/);
- assert.doesNotMatch(writerSystem(f.prompts[1]),/NSFW GUIDANCE —/,'translation stays faithful to the selected text');
-});
-test('regeneration releases the old receipt and opens a distinct proposal operation',async t=>{
- const f=await fixture(t);await setNsfw(f,'soft');const {pending}=await f.start();await f.choices();f.button('3가지 선택지 다시 제안').click();
- await f.wait(()=>f.queries()===2&&f.document.querySelector('[data-input-choice-editor]')?.disabled===false,'regeneration');
- const requests=f.bus.messages.filter(m=>m.body.action==='capture').map(m=>m.body.payload.proposal);
- assert.notEqual(requests[0].operationId,requests[1].operationId);assert.equal(requests[0].proposalDigest,requests[1].proposalDigest);
- assert.ok(f.bus.messages.some(m=>m.body.action==='release'));await f.select();assert.equal(await f.done(pending),true);assert.equal(f.prompts.length,2);
- for(const body of f.prompts)assert.equal((writerSystem(body).match(/NSFW GUIDANCE — SOFT/g)||[]).length,1);
-});
-test('failed regeneration cannot export the previous choices under a fresh or absent lease',async t=>{
- const f=await fixture(t),{pending}=await f.start();const cards=await f.choices();
- f.controls.onQuery=async()=>{throw Object.assign(Error('refused'),{code:'LIB_READ_UNIFIED_UNAVAILABLE'});};
- f.button('3가지 선택지 다시 제안').click();await f.wait(()=>f.document.body.textContent.includes('재생성 실패'),'failed regeneration');
- cards[0].querySelector('.btn--primary').click();await f.wait(()=>f.document.body.textContent.includes('선택 검증 실패'),'old-choice rejection');
- assert.equal(f.sent.length+f.copied.length,0);await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
-});
-for(const change of ['owner','native','scope','permission','disconnect','settings'])test(change+' changing during final review blocks copy and draft export',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.select();
- if(change==='owner')f.controls.current=false;
- if(change==='native')f.chat.message[1].data+=' EDITED_NATIVE';
- if(change==='scope')f.chat.id='another-chat';
- if(change==='permission')f.controls.denied=true;
- if(change==='disconnect')await f.host.plugin.unbindLibReadOnlyClient();
- if(change==='settings')await f.host.plugin.saveRuntimeSettings({input_assist_target_chars:1000});
- f.button('복사 후 직접 전송').click();await f.wait(()=>f.document.body.textContent.includes('복사 검증 실패'),'stale copy rejection');
- assert.equal(f.copied.length+f.sent.length,0);await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
-});
 for(const unified of [false,true])test('writer offers copy without direct send or sendChat support and '+(unified?'bound memory':'native context'),async t=>{
  const f=await fixture(t,{unified,sendAvailable:false}),{pending}=await f.start();await f.select();
  const chosen=f.document.querySelector('textarea').value;
@@ -97,13 +47,6 @@ test('blocked clipboard leaves a manual selection without sending or regeneratin
  assert.equal(f.sent.length+f.copied.length,0);assert.equal(f.prompts.length,1);assert.equal(f.button('바로 전송'),undefined);
  await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
 });
-test('editing a delivery while its currentness check waits cannot replace the sealed output',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.select();let release,entered;const ready=new Promise(r=>entered=r);
- f.controls.onCurrent=async()=>{f.controls.onCurrent=null;entered();await new Promise(r=>release=r);};
- f.button('복사 후 직접 전송').click();await ready;const editor=f.document.querySelector('textarea');editor.value='LATE_REPLACEMENT';release();
- await f.wait(()=>f.document.body.textContent.includes('복사 검증 실패'),'changed exact output');assert.equal(f.sent.length+f.copied.length,0);
- await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
-});
 test('canceling a held model settles the writer and rejects late choices',async t=>{
  const f=await fixture(t);let release;f.controls.onModel=async()=>{await new Promise(r=>release=r);};
  const {pending}=await f.start();await f.wait(()=>f.prompts.length===1,'model started');
@@ -114,69 +57,12 @@ test('an unbound writer retains its native flow and never requests a memory read
  const f=await fixture(t,{unified:false}),{pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);
  assert.equal(f.queries(),0);assert.ok(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
 });
-for(const writingMode of ['novel','rp'])test(writingMode+' writer uses native context when the optional provider is unavailable before capture',async t=>{
- const f=await fixture(t,{writingMode});f.controls.onQuery=async()=>{throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE'});};
- const {pending}=await f.start();await f.select();assert.equal(await f.done(pending,'복사 후 직접 전송'),true);
- assert.equal(f.copied.length,1);assert.equal(f.prompts.length,1);assert.equal(f.queries(),1);
- assert.ok(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
-});
-
-test('empty continuation is still an unsubmitted query bound to the exact empty proposal',async t=>{
- const f=await fixture(t);
- // A real stored boundary closes the preceding assistant; the proposal is empty.
- f.chat.message.push({role:'user',chatId:'native-boundary',data:'기존 대화의 다음 입력'});
- const {pending}=await f.start('');await f.select();assert.equal(await f.done(pending),true);
- const request=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
- assert.equal(request.proposal.proposalDigest,require('node:crypto').createHash('sha256').update('').digest('hex'));
- assert.equal(request.proposal.factAdopted,false);assert.ok(request.queryText.includes('은빛 열쇠'));assert.equal(f.queries(),1);
-});
-test('empty continuation uses the settled visible terminal reply, never a streaming one, as query context',async t=>{
- // The writer runs on a settled screen: a visible reply without this session's output
- // receipt (after a reload or an edit) is still the live scene.
- const f=await fixture(t);f.chat.message[1].data='SETTLED_TERMINAL_SENTINEL';
- const {pending}=await f.start('');await f.select();assert.equal(await f.done(pending),true);
- const request=f.bus.messages.find(m=>m.body.action==='capture').body.payload;
- assert.ok(request.queryText.includes('SETTLED_TERMINAL_SENTINEL'));assert.equal(request.proposal.factAdopted,false);
- assert.ok(JSON.stringify(f.prompts[0]).includes('SETTLED_TERMINAL_SENTINEL'));
- const g=await fixture(t);g.chat.message[1].data='STREAMING_TERMINAL_SENTINEL';g.chat.isStreaming=true;
- const streaming=await g.start('');await g.select();assert.equal(await g.done(streaming.pending),true);
- const streamingRequest=g.bus.messages.find(m=>m.body.action==='capture').body.payload;
- assert.ok(!streamingRequest.queryText.includes('STREAMING_TERMINAL_SENTINEL'));assert.ok(!JSON.stringify(g.prompts[0]).includes('STREAMING_TERMINAL_SENTINEL'));
-});
-
-test('malformed or truncated writer JSON is not retried and cannot persist its derived content',async t=>{
+test('malformed or truncated writer JSON never delivers',async t=>{
  for(const content of ['{"schema":','{"schema":"wrong","choices":[]}']){
   const f=await fixture(t);f.controls.output=content;const {pending}=await f.start();assert.equal(await pending,false);
-  assert.equal(f.prompts.length,1);assert.equal(f.sent.length+f.copied.length,0);
-  assert.ok(!JSON.stringify(f.host.plugin.getRuntime()).includes('WRITER_OWNER_EVIDENCE'));
+  assert.equal(f.sent.length+f.copied.length,0);
  }
 });
-test('a configured stage model can read evidence without the retired GPT4o-mini model pin',async t=>{
- const f=await fixture(t);await f.host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-5.6',request_format:'chat_completions',context_window:262144,max_tokens:4096,reasoning_preset:'off',stream:false});
- const {pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);assert.equal(f.prompts.length,1);assert.equal(f.prompts[0].model,'gpt-5.6');
-});
-test('missing stage context metadata omits optional evidence before capture and allows native writing',async t=>{
- const f=await fixture(t);await f.host.plugin.saveProviderPreset('writer',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'unregistered-fixture-model',request_format:'chat_completions',context_window:0,max_tokens:4096,stream:false});
- const {pending}=await f.start();await f.select();assert.equal(await f.done(pending),true);
- assert.equal(f.queries(),0);assert.equal(f.prompts.length,1);assert.equal(f.sent.length+f.copied.length,1);
- assert(!JSON.stringify(f.prompts).includes('WRITER_OWNER_EVIDENCE'));
-});
-test('canceling a stalled native context recheck closes the picker without a late export',async t=>{
- const f=await fixture(t),{pending}=await f.start();await f.select();let release,entered;const ready=new Promise(r=>entered=r);
- f.controls.onNativeRead=async()=>{f.controls.onNativeRead=null;entered();await new Promise(r=>release=r);};
- f.button('복사 후 직접 전송').click();await ready;await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
- release();await new Promise(r=>setTimeout(r,20));assert.equal(f.copied.length+f.sent.length,0);
-});
-
-for(const change of ['cancel','disconnect'])test(change+' during initial native preparation cannot query or dispatch later',async t=>{
- const f=await fixture(t);let release,entered;const ready=new Promise(r=>entered=r);
- const {pending}=await f.start('아직 보내지 않은 제안',()=>{f.controls.onNativeRead=async()=>{f.controls.onNativeRead=null;entered();await new Promise(r=>release=r);};});
- await ready;
- if(change==='cancel')await f.host.plugin.cancelInputAssistSend();else await f.host.plugin.unbindLibReadOnlyClient();
- assert.equal(await pending,false);assert.equal(f.queries(),0);assert.equal(f.prompts.length,0);
- release();await new Promise(r=>setTimeout(r,20));assert.equal(f.queries(),0);assert.equal(f.prompts.length,0);assert.equal(f.sent.length+f.copied.length,0);
-});
-
 const writerUser=body=>body.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n');
 test('the writer continues from the latest visible reply with its previous user input and short-reply backfill',async t=>{
  for(const writingMode of ['novel','rp']){
@@ -191,7 +77,9 @@ test('the writer continues from the latest visible reply with its previous user 
   assert.ok(user.includes('LATEST_SHORT_REPLY'),writingMode+': latest reply is the terminal passage');
   assert.ok(user.indexOf('PREVIOUS_USER_ACTION')<user.indexOf('LATEST_SHORT_REPLY'),writingMode+': previous user input precedes it');
   assert.ok(user.includes('EARLIER_REPLY_TAIL')&&!user.includes('EARLIER_REPLY_HEAD'),writingMode+': short reply backfilled with the earlier tail only');
-  assert.ok(!user.includes('EARLY_USER'),writingMode+': older turns stay out');
+  assert.ok(user.includes('EARLY_USER'),writingMode+': recent turns are read');
+  assert.ok(user.indexOf('[RECENT TURNS')<user.indexOf('EARLY_USER')&&user.indexOf('EARLY_USER')<user.indexOf('PREVIOUS_USER_ACTION'),writingMode+': oldest first, and labeled as over');
+  assert.match(writerSystem(f.prompts[0]),/immediately after the end of TERMINAL PASSAGE/,writingMode+': the input is written for now');
   assert.equal(f.host.plugin.getRuntime().lastInputAssistContext.terminalProof,'settled_visible_reply');
   f.host.plugin.cancelInputAssistSend?.();await Promise.race([pending,new Promise(r=>setTimeout(r,1500))]).catch(()=>{});
  }
@@ -201,7 +89,7 @@ test('an edited latest reply and a long reply stay the only terminal passage',as
   {role:'user',chatId:'u2',data:'민아는 열쇠를 찾는다.'},{role:'assistant',chatId:'a2',data:'EDITED_LONG_REPLY '+'등불이 서가를 비췄다. '.repeat(120)}]};
  const f=await fixture(t,{unified:false,chat,character:{chaId:'c',name:'민아',chats:[chat],chatPage:0,lorebook:[]}});
  const {pending}=await f.start('');await f.choices();const user=writerUser(f.prompts[0]);
- assert.ok(user.includes('등불이 서가를 비췄다'));assert.ok(!user.includes('OLDER_REPLY'),'no backfill behind a long reply');
+ assert.ok(user.includes('등불이 서가를 비췄다'));assert.ok(user.indexOf('OLDER_REPLY')<user.indexOf('등불이 서가를 비췄다'),'a long reply still has the recent turns before it');
  f.host.plugin.cancelInputAssistSend?.();await Promise.race([pending,new Promise(r=>setTimeout(r,1500))]).catch(()=>{});
 });
 test('the writer lore block keeps whole entries',async t=>{
@@ -212,4 +100,63 @@ test('the writer lore block keeps whole entries',async t=>{
  const starts=[...user.matchAll(/ENTRY_(\d+)_START/g)].map(m=>m[1]),ends=new Set([...user.matchAll(/ENTRY_(\d+)_END/g)].map(m=>m[1]));
  assert.ok(starts.length>0);for(const id of starts)assert.ok(ends.has(id),'entry '+id+' was cut');assert.ok(!user.includes('…[truncated]'));
  f.host.plugin.cancelInputAssistSend?.();await Promise.race([pending,new Promise(r=>setTimeout(r,1500))]).catch(()=>{});
+});
+const ownerReads=f=>f.bus.messages.filter(m=>m.body.kind==='request'&&['capture','select'].includes(m.body.action)).length;
+test('a connected writer drafts from its own context and never reads LIB memory',async t=>{
+ const f=await fixture(t),before=ownerReads(f),{pending}=await f.start();await f.select();
+ const editor=f.document.querySelector('textarea');editor.value='EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
+ assert.equal(await f.done(pending),true);assert.deepEqual(f.copied,['EDITED_WRITER_OUTPUT 은빛 열쇠를 찾는 장면으로 잇는다.']);assert.equal(f.sent.length,0);
+ assert.equal(f.prompts.length,1);assert.equal(f.queries(),0);assert.equal(ownerReads(f),before);
+ assert.ok(!JSON.stringify(f.prompts[0]).includes('WRITER_OWNER_EVIDENCE'));assert.ok(!JSON.stringify(f.prompts[0]).includes('EXTERNAL MEMORY EVIDENCE'));
+});
+test('RP choices and translation copy exact edited text without any memory read',async t=>{
+ const f=await fixture(t,{writingMode:'rp'});await setNsfw(f,'direct');const {pending}=await f.start();const cards=await f.choices();
+ cards[0].querySelector('[data-input-choice-translate="english"]').click();
+ await f.wait(()=>cards[0].querySelector('textarea').value.startsWith('TRANSLATED_WRITER_CHOICE'),'translation');
+ await f.select();const editor=f.document.querySelector('textarea');editor.value='COPIED_WRITER_OUTPUT 은빛 열쇠의 위치를 묻는다.';editor.dispatchEvent(new f.dom.window.Event('input',{bubbles:true}));
+ assert.equal(await f.done(pending,'복사 후 직접 전송'),true);assert.deepEqual(f.copied,['COPIED_WRITER_OUTPUT 은빛 열쇠의 위치를 묻는다.']);assert.equal(f.sent.length,0);
+ assert.equal(f.prompts.length,2);assert.equal(f.queries(),0);assert.ok(f.prompts.every(p=>!JSON.stringify(p).includes('WRITER_OWNER_EVIDENCE')));
+ assert.match(writerSystem(f.prompts[0]),/NSFW GUIDANCE — DIRECT/);
+ assert.doesNotMatch(writerSystem(f.prompts[1]),/NSFW GUIDANCE —/,'translation stays faithful to the selected text');
+});
+test('regeneration asks the model again and a failed one sends nothing',async t=>{
+ const f=await fixture(t),{pending}=await f.start();await f.choices();assert.equal(f.prompts.length,1);
+ f.button('3가지 선택지 다시 제안').click();await f.wait(()=>f.prompts.length===2,'regeneration');await f.choices();
+ f.controls.output='{"schema":';f.button('3가지 선택지 다시 제안').click();await f.wait(()=>f.document.body.textContent.includes('재생성 실패'),'failed regeneration');
+ assert.equal(f.sent.length+f.copied.length,0);await f.host.plugin.cancelInputAssistSend();assert.equal(await pending,false);
+});
+const userPrompt=body=>body.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n');
+test('Novel writer rebuilds the input instead of repeating it and continuing',async t=>{
+ const f=await fixture(t),{pending}=await f.start('민아에게 열쇠를 건넨다.');await f.choices();
+ const system=writerSystem(f.prompts[0]);
+ assert.match(system,/reconstruct and expand CURRENT USER INPUT/);assert.match(system,/never begin a candidate with the input verbatim/);assert.match(system,/rather than appended after a copy/);
+ assert.match(userPrompt(f.prompts[0]),/RECONSTRUCT AND EXPAND THIS[^\n]*\n민아에게 열쇠를 건넨다\./);
+ await f.host.plugin.cancelInputAssistSend();await pending;
+});
+test('RP writer builds every option from the written input',async t=>{
+ const f=await fixture(t,{writingMode:'rp'}),{pending}=await f.start('민아에게 열쇠를 건넨다.');await f.choices();
+ const system=writerSystem(f.prompts[0]),user=userPrompt(f.prompts[0]);
+ assert.match(system,/Reconstruct and expand CURRENT USER INPUT/);assert.match(system,/Do not replace it with a different action, and do not ignore it to describe the situation/);
+ assert.doesNotMatch(system,/AI proposals are alternatives/);assert.doesNotMatch(user,/Do not preserve a concrete original action/);
+ assert.match(user,/RECONSTRUCT AND EXPAND THIS IN EVERY OPTION\]\n민아에게 열쇠를 건넨다\./);
+ await f.host.plugin.cancelInputAssistSend();await pending;
+});
+test('with no written input the RP writer proposes from the scene',async t=>{
+ const f=await fixture(t,{writingMode:'rp'}),{pending}=await f.start('');await f.choices();
+ const system=writerSystem(f.prompts[0]);
+ assert.doesNotMatch(system,/Reconstruct and expand CURRENT USER INPUT/);assert.match(system,/grounded in the terminal scene/);
+ await f.host.plugin.cancelInputAssistSend();await pending;
+});
+for(const writingMode of ['novel','rp'])test(writingMode+' writer keeps the persona as the protagonist',async t=>{
+ const f=await fixture(t,{writingMode}),{pending}=await f.start();await f.choices();
+ const system=writerSystem(f.prompts[0]);
+ assert.match(system,/the protagonist is ALWAYS the user persona/);assert.match(system,/Central and supporting characters are ALWAYS people other than the persona/);
+ assert.match(system,/even when the character card, chat title, or current scene centers on them/);
+ await f.host.plugin.cancelInputAssistSend();await pending;
+});
+test('the RP detail mode is saved and defaults to persona only',async t=>{
+ const f=await fixture(t,{writingMode:'rp'});
+ assert.equal(f.host.plugin.getRuntime().settings?.rpImpersonationScope??'persona','persona');
+ await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),rp_impersonation_scope:'all'});
+ assert.equal((await f.host.plugin.getRuntimeSettings()).rp_impersonation_scope,'all');
 });

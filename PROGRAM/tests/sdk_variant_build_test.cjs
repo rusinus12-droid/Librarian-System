@@ -18,7 +18,7 @@ test('default SDK sync preserves the six current plugin bodies and WM receipt',(
 module.exports={runTool};
 
 const {STORAGE_VARIANTS,extractStorageSdk}=require('../tools/lib/sdk_variants.cjs');
-for(const name of ['LIA_Persona_Linker.js','RETRACE.js','GRADIA.js'])test('preserved consumer changes fail closed: '+name,()=>{
+for(const name of ['RETRACE.js','GRADIA.js'])test('preserved consumer changes fail closed: '+name,()=>{
  const source=fs.readFileSync(path.join(root,'plugins',name),'utf8'),sdk=extractStorageSdk(source,name);
  const replacements={['plugins/'+name]:source.replace(sdk,sdk.replace('STORAGE SDK v1.8.24','STORAGE SDK v1.8.25'))};
  assert.equal(runTool('check_sdk_sync.cjs',replacements).exit,1);

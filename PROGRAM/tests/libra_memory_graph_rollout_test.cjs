@@ -379,13 +379,13 @@ test('E2 Registered API (D01, D02, D04, D05): executeMemoryGraphUnifiedQuery run
     assert.ok(unifiedRecall.memories.length >= 1);
     assert.ok(unifiedRecall.packet.renderedText.includes('consumer=classic'));
 
-    // N00: historical format-only consumers (e.g. planner) render without model dispatch authority
-    const plannerRecall = await host.f.r.api.previewUnifiedMemoryRecall({
+    // N00: historical format-only consumers (e.g. input_writer) render without model dispatch authority
+    const historicalRecall = await host.f.r.api.previewUnifiedMemoryRecall({
       queryText: QUOTE,
       unifiedEngineMode: 'unified',
-      consumer: 'planner'
+      consumer: 'input_writer'
     });
-    assert.equal(plannerRecall.diagnostics.unifiedMemoryEngine.modelDispatchEligible, false);
+    assert.equal(historicalRecall.diagnostics.unifiedMemoryEngine.modelDispatchEligible, false);
 
     // Former serving modes are input compatibility, not a second search path.
     const migrated = await host.f.r.api.previewUnifiedMemoryRecall({queryText:QUOTE,unifiedEngineMode:'shadow'});

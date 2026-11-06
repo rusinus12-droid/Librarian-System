@@ -1,0 +1,43 @@
+'use strict';
+// Plugin mode against real owners with a long chat and a large store, which a short fixture never reaches.
+const { test } = require('node:test'), assert = require('node:assert/strict'), path = require('node:path');
+const createBus = require('./fixtures/libra_gradia_read_bus.cjs');
+const { createFlashback } = require('./fixtures/embedding_contract_harness.cjs');
+const writer = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
+test('a long chat keeps every owner request under the channel limit, and a large Flashback store still answers', { timeout: 180000 }, async t => {
+  const bus = createBus();
+  const long = '민아는 은빛 열쇠를 손에 쥔 채 복도를 따라 걸었다. '.repeat(170);
+  const chat = { id: 'long-chat', message: [] };
+  for (let i = 0; i < 8; i++) chat.message.push({ role: 'user', chatId: 'u' + i, data: '복도를 계속 걷는다 ' + i }, { role: 'assistant', chatId: 'a' + i, data: long + i });
+  chat.message.push({ role: 'user', chatId: 'current', data: '은빛 열쇠의 기록을 확인한다.' });
+  chat.messages = chat.message;
+  const character = { chaId: 'c', name: '민아', chats: [chat], chatPage: 0, lorebook: [] };
+  const nativeApi = { getCurrentCharacterIndex: async () => 0, getCurrentChatIndex: async () => 0, getCharacter: async () => character, getChar: async () => character, getCharacterFromIndex: async () => character,
+    getChat: async () => chat, getCurrentChat: async () => chat, getChatFromIndex: async () => chat, getDatabase: async () => ({ characters: [character], personas: [], modules: [] }) };
+  const flashback = await createFlashback(path.join(__dirname, '..'), { waitForLoaded: true, hostOverrides: { ...nativeApi, ...bus.api('flashback_memory') } });
+  t.after(() => flashback.cleanup());
+  await writer.wait(() => flashback.audit.Runtime.lastWorldlineReconciliation?.at, 'Flashback startup maintenance', 12000);
+  const cfg = flashback.api._test.normalizeSettings({ embeddingEnabled: false, embeddingAutoProcess: false, autoEpisodeIndex: false });
+  await flashback.api.saveSettings(cfg);
+  const scope = await flashback.api.resolveCurrentScope(false);
+  const body = '은빛 열쇠와 서재의 기록이 이어진다. '.repeat(250);
+  const rows = await flashback.api._test.buildRecordsFromSources(Array.from({ length: 120 }, (_, i) => ({ sourceType: 'response', sourceId: 'big-' + i, sourceHash: 'big-hash-' + i, origin: 'live_chat', role: 'turn_pair', turnIndex: i + 20, pairIndex: i + 20, text: 'FLASHBACK_LONG ' + i + ': ' + body })), cfg, scope, { deferEmbedding: true });
+  await flashback.api._test.saveAllRecords(rows, cfg, scope);
+  const f = await writer.fixture(t, { unified: false, bus, chat, character });
+  await f.host.plugin.connectLibReadOnly('', 'plugin_ipc');
+  assert.equal(f.host.plugin.getLibReadOnlyStatus().connection.state, 'connected');
+  f.controls.output = '민아는 은빛 열쇠를 확인하고 문 앞에서 기다렸다. The grounded scene continued in the quiet room.';
+  await f.host.plugin.saveRuntimeSettings({ mode: 'lite', default_preset: 'writer', input_assist_mode: 'off', multi_pipeline_mode: 'lightweight', enable_shadow_act: true, enable_character_aide: false, enable_world_aide: false, enable_plot_aide: false, failure_mode: 'hard', lore_activation_mode: 'off' });
+  bus.messages.length = 0;
+  const messages = chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId }));
+  await f.host.hooks.beforeRequest(messages, 'model');
+  const captures = bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture');
+  assert.ok(captures.length >= 1);
+  for (const message of captures) assert.ok(Buffer.byteLength(JSON.stringify(message.body)) < 65536, 'an owner silently ignores anything larger');
+  assert.equal(captures[0].body.recentChatTurns, 8, 'owners search over what the response request carries');
+  assert.ok(captures[0].body.requestChars > 40000);
+  const reply = bus.messages.find(m => m.sender === 'flashback_memory' && m.body.kind === 'response' && m.body.action === 'capture');
+  assert.ok(reply && !reply.body.error, JSON.stringify(reply?.body?.error));
+  assert.equal(reply.body.result.engine.source, 'owner_selection');
+  assert.ok(f.prompts.length >= 1);
+});

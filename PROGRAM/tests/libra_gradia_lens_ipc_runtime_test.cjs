@@ -67,10 +67,10 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  assert.equal(lensBytes(),before,'reading creates no lens storage mutations');assert.equal(f.control.calls.length,calls);
  const replies=bus.messages.filter(m=>m.body.action==='capture'&&m.body.result?.items?.some(item=>item.content.includes('LENS_IPC_ONLY'))||m.body.result?.engine?.lensEvidence?.itemCount);
  assert.ok(replies.length,'real host-routed reply contains lens bytes');
- // A registry-only change must revoke the issued lens evidence even when the graph body is unchanged.
+ // Selected memory is held as selected: a later lens change neither stops the run nor discards the draft.
  prompts.length=0;onModel=async()=>{await f.r.api.updateLens(lens.lensId,{recall:{enabled:false,mode:'recent',share:100,maxItems:2}});};
- await assert.rejects(()=>g.hooks.beforeRequest(messages,'model'),e=>/^LIB_READ_/.test(e.code));
- assert.equal(prompts.length,1,'changed lens evidence cannot feed AIDE or host handoff');
+ await g.hooks.beforeRequest(messages,'model');
+ assert.ok(prompts.length>=1);
  assert.ok(!JSON.stringify(g.plugin.getRuntime()).includes('LENS_IPC_ONLY'),'no generic runtime evidence copy');
 });
 test('upstream host enforces mutual allowed-ipc and supplies the actual sender',async()=>{

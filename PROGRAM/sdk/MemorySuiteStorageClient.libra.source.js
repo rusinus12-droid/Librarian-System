@@ -572,7 +572,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The server address is kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const SAVED_SERVER_URL_KEY = `__memory_suite_internal_server_url_v1__:${namespace}`;
+  const readSavedServerUrl = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_URL_KEY);
+      return value === undefined || value === null ? '' : String(value).trim();
+    } catch (_) { return ''; }
+  };
+  const writeSavedServerUrl = async value => {
+    const storage = rawPluginStorage();
+    await storage.setItem(SAVED_SERVER_URL_KEY, String(value));
+    if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
+    return true;
+  };
   const getArgumentValue = async (names, fallback = '') => {
+    if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
       for (const api of apiCandidates()) {
         try {
@@ -587,6 +602,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const setArgumentValue = async (name, value) => {
+    if (urlArguments.includes(name) && rawPluginStorage()) return await writeSavedServerUrl(value);
     let lastError = null;
     for (const api of apiCandidates()) {
       try {

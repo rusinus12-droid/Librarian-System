@@ -14,13 +14,13 @@ const expose = source => source
     'if (typeof document === "undefined") return parseLLMResult(preservedLLMResultText || "");'
   )
   .replace(
-    '      getLiveSyncCaptureState:',
+    '      getScopePersonaCatalog:',
     `      auditSetDraft: raw => { preservedLLMResultText = String(raw || ''); },
       auditSetName: raw => { preservedGeneratedPersonaNameText = String(raw || '').trim(); },
       auditSaveNew: async () => saveEditedResultAsNewPersona(),
       auditSaveCurrent: async () => saveEditedResultToCurrentPersona(),
       auditReadLogs: async () => await readLogStore(true),
-      getLiveSyncCaptureState:`
+      getScopePersonaCatalog:`
   );
 
 const contextFor = fixture => ({

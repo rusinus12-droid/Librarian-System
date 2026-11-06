@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: LIA no longer uses the server SDK.'); process.exit(0);
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -183,10 +184,6 @@ function exposeSource(source) {
   const helpers = `{
     RESULT_VAULT_STORAGE_KEY,
     WORLD_BLUEPRINT_STORAGE_KEY,
-    LIVE_PERSONA_STORAGE_KEY,
-    LIVE_PERSONA_INDEX_STORAGE_KEY,
-    LIVE_PERSONA_INDEX_SCHEMA,
-    LIVE_PERSONA_SCOPE_STORAGE_PREFIX,
     PERSONA_PROOF_STORAGE_KEY,
     PERSONA_VISUAL_ASSET_STORAGE_KEY,
     PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY,
@@ -226,17 +223,6 @@ function sharedFixture(env) {
   const h = env.helpers;
   const scopeKey = String(env.scope.scopeKey || env.scope.scopeId || '');
   const now = '2026-08-26T00:00:00.000Z';
-  const shardKey = `${h.LIVE_PERSONA_SCOPE_STORAGE_PREFIX}${h.hashText(scopeKey).slice(0,24)}`;
-  const binding = {
-    scopeKey, enabled:true, policy:'conservative', managerVersion:h.PERSONA_BINDING_MANAGER_VERSION,
-    livePersonaId:'lia-live-restored', livePersonaName:'Restored Persona',
-    ledgers:[], liveState:[], coreOverlay:[], coreCandidateHistory:{}, createdAt:now, updatedAt:now
-  };
-  const bindingRaw = JSON.stringify(binding);
-  const index = {
-    schema:h.LIVE_PERSONA_INDEX_SCHEMA, version:2, updatedAt:now,
-    entries:{ [scopeKey]: { storageKey:shardKey, digest:h.hashText(bindingRaw), livePersonaId:binding.livePersonaId, updatedAt:now } }
-  };
   const proof = { version:1, proofs:{ [scopeKey]: { scopeKey, requestId:'proof-1', createdAt:now } } };
   const resultVault = {
     version:1,
@@ -247,10 +233,6 @@ function sharedFixture(env) {
     version:1,
     items:[{ key:'lia-world-blueprint:v1:test', createdAt:now, updatedAt:now,
       targetCharacterId:'char-test', targetCharacterName:'Test Character', blueprint:{ summary:'A test world preserved by the server.' } }]
-  };
-  const legacyStore = {
-    version:h.PERSONA_BINDING_MANAGER_VERSION,
-    bindings:{ 'legacy-scope': { scopeKey:'legacy-scope', enabled:true, policy:'conservative', ledgers:[], liveState:[], coreOverlay:[], createdAt:now, updatedAt:now } }
   };
   const backupId = 'asset-lia-restore-test';
   const bytes = Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,1,2,3,4,5,6,7,8]);
@@ -276,22 +258,19 @@ function sharedFixture(env) {
   };
   const backupManifest = { version:1, mime:'image/png', bytes:bytes.length, base64Chars:base64.length, chunks:1, savedAt:now };
   const rows = new Map([
-    [h.LIVE_PERSONA_INDEX_STORAGE_KEY, JSON.stringify(index)],
-    [shardKey, bindingRaw],
     [h.PERSONA_PROOF_STORAGE_KEY, JSON.stringify(proof)],
     [h.RESULT_VAULT_STORAGE_KEY, JSON.stringify(resultVault)],
     [h.WORLD_BLUEPRINT_STORAGE_KEY, JSON.stringify(worldVault)],
-    [h.LIVE_PERSONA_STORAGE_KEY, JSON.stringify(legacyStore)],
     [h.PERSONA_VISUAL_ASSET_STORAGE_KEY, JSON.stringify(assetStore)],
     [h.PERSONA_VISUAL_ASSET_PRESET_STORAGE_KEY, JSON.stringify(presetStore)],
     [backupManifestKey, JSON.stringify(backupManifest)],
     [backupChunkKey, base64]
   ]);
-  return { rows, shardKey, backupId, backupManifestKey, backupChunkKey, base64 };
+  return { rows, backupId, backupManifestKey, backupChunkKey, base64 };
 }
 
 function legacySnapshot(env, fixture, includeScope=true) {
-  const h=env.helpers,entries=[...fixture.rows].filter(([key])=>includeScope||![h.LIVE_PERSONA_INDEX_STORAGE_KEY,fixture.shardKey,h.PERSONA_PROOF_STORAGE_KEY].includes(key));
+  const h=env.helpers,entries=[...fixture.rows].filter(([key])=>includeScope||![h.PERSONA_PROOF_STORAGE_KEY].includes(key));
   const file=path.join(env.dataDir,'preexisting-legacy-owner-response.json');fs.writeFileSync(file,JSON.stringify(entries));
   const transport=createSnapshotBridge(env.bridge,file),recovery=h.createRecovery(transport.api);
   return {file,entries,recovery,transport};
@@ -301,7 +280,7 @@ async function currentScopeAndSharedRestoreCase() {
   try {
     const fixture=sharedFixture(env),snapshot=legacySnapshot(env,fixture),before=fs.readFileSync(snapshot.file,'utf8');
     const preview=await snapshot.recovery.preview();assert.equal(preview.validated,true);assert.equal(preview.conflicts.length,0);
-    assert(fixture.rows.size>=10);for(const [key] of fixture.rows)assert.equal(await env.pluginStorage.getItem(key),null,'preview never publishes');
+    assert(fixture.rows.size>=7);for(const [key] of fixture.rows)assert.equal(await env.pluginStorage.getItem(key),null,'preview never publishes');
     const restored=await snapshot.recovery.publish(preview);assert.equal(restored.verified,true);assert.equal(restored.serverWrites,0);assert.equal(restored.serverDeletes,0);
     for(const [key,value] of fixture.rows)assert.equal(await env.pluginStorage.getItem(key),value,`explicit local publication exact physical bytes: ${key}`);
     const vault=await env.helpers.readStoredResultVault();assert(vault.some(row=>row.personaPrompt.includes('Archivist')),'actual owner reader sees restored body');

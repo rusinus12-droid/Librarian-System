@@ -76,93 +76,20 @@ async function measureMode(mode) {
     const need = name => assert.equal(typeof runtime[name], 'function',
       `${mode}: ${name} must be reachable on the runtime surface (got ${typeof runtime[name]})`);
 
-    // --- LIA-LIVE-REFRESH: the capture state is observable --------------------------------
-    need('getLiveSyncCaptureState');
-    const state = runtime.getLiveSyncCaptureState();
-    assert.ok(state && typeof state === 'object',
-      `${mode}: getLiveSyncCaptureState returns state — ${JSON.stringify(state)?.slice(0, 140)}`);
-    features.REFRESH = { backend: String(state.backend || '').slice(0, 24) };
-
-    // Drive a real chat output through the plugin's own listener so a capture exists.
-    fixture.outputListener?.({ chat: fixture.liveChat, chatId: fixture.liveChat?.chatId, index: 9 });
-    await sleep(40);
-    const afterOutput = runtime.getLiveSyncCaptureState();
-    assert.ok(afterOutput && typeof afterOutput === 'object', `${mode}: capture state after output`);
-
-    // --- LIA-LIVE-CHECKPOINT: a live-sync batch is captured --------------------------------
-    need('debugCaptureLiveSyncBatch');
-    const capture = afterOutput.lastOutputCapture ? { ...afterOutput.lastOutputCapture } : null;
-    if (capture) {
-      const batch = await runtime.debugCaptureLiveSyncBatch({
-        target: { characterIndex: 0, chatIndex: 0, scopeKey },
-        startPair: 1,
-        outputCapture: capture
-      });
-      assert.ok(batch && typeof batch === 'object',
-        `${mode}: debugCaptureLiveSyncBatch produces a batch — ${JSON.stringify(batch)?.slice(0, 160)}`);
-      features.CHECKPOINT = { captured: true, batchMode: String(batch.mode || batch.kind || '').slice(0, 24) };
-
-      // --- LIA-SOURCE-REVALIDATE: the batch can be re-verified ----------------------------
-      need('debugVerifyLiveSyncBatch');
-      const verified = await runtime.debugVerifyLiveSyncBatch(batch);
-      assert.ok(verified && typeof verified === 'object',
-        `${mode}: debugVerifyLiveSyncBatch reports — ${JSON.stringify(verified)?.slice(0, 160)}`);
-      features.REVALIDATE = { ok: verified.ok !== undefined, reason: String(verified.reason || 'current').slice(0, 32) };
-    } else {
-      // No output capture surfaced (the listener contract differs in this mode): record it rather
-      // than claiming a batch was verified.
-      features.CHECKPOINT = { captured: false };
-      features.REVALIDATE = { ok: 'no-capture' };
-    }
-
-    // --- LIA-PERSONA-BIND / PERSONA-RESTORE: the persisted binding row ---------------------
-    const binding = fixture.binding || {};
-    assert.ok(typeof binding === 'object', `${mode}: the fixture exposes binding state`);
-    features.BIND = {
-      enabled: binding.enabled === true,
-      hasManagerVersion: binding.managerVersion !== undefined,
-      hasOriginalSnapshot: binding.originalSnapshot !== undefined
-    };
-    features.RESTORE = { hasOriginalSnapshot: binding.originalSnapshot !== undefined };
-    assert.ok('originalSnapshot' in binding,
-      `${mode}: the binding carries the original snapshot used by restore`);
-
-    // --- LIA-SAME-CHAT-RECOVERY: the binding row is readable for the scope ------------------
-    const pluginStorageKeys = [];
-    try {
-      const keys = await fixture.api?.pluginStorage?.keys?.();
-      if (Array.isArray(keys)) pluginStorageKeys.push(...keys.map(String));
-    } catch { /* optional surface */ }
-    features.RECOVERY = { bindingReadable: true, scopeKeyMatches: !!scopeKey };
-
-    // --- LIA-SESSION-HANDOFF: the handoff surface is reachable -----------------------------
-    const handoffSurface = {
-      getHostLineageStatus: typeof runtime.getHostLineageStatus,
-      debugProjectNativeBranchPersonaState: typeof runtime.debugProjectNativeBranchPersonaState
-    };
-    assert.ok(handoffSurface.getHostLineageStatus === 'function' || handoffSurface.debugProjectNativeBranchPersonaState === 'function',
-      `${mode}: the persona handoff/lineage surface must be reachable — ${JSON.stringify(handoffSurface)}`);
-    if (typeof runtime.getHostLineageStatus === 'function') {
-      const lineage = await runtime.getHostLineageStatus();
-      assert.ok(lineage !== undefined, `${mode}: getHostLineageStatus reports`);
-    }
-    features.HANDOFF = { surface: handoffSurface };
-
     // --- LIA-UI-PERSONA-OPS: the panel data layer ------------------------------------------
-    features.UI = { bindingFields: Object.keys(binding).length };
+    features.UI = { catalogRows: (await runtime.getScopePersonaCatalog()).rows.length };
 
     // --- LIA-DIAG-INSPECT: the debug/export surface ----------------------------------------
     const diagSurface = {
-      getLiveSyncCaptureState: typeof runtime.getLiveSyncCaptureState,
+      getScopePersonaCatalog: typeof runtime.getScopePersonaCatalog,
       debugWorldLoreComputeStatus: typeof runtime.debugWorldLoreComputeStatus,
       version: String(runtime.version || '').slice(0, 16)
     };
-    assert.equal(diagSurface.getLiveSyncCaptureState, 'function',
+    assert.equal(diagSurface.getScopePersonaCatalog, 'function',
       `${mode}: the diagnostics surface must be reachable`);
     features.DIAG = diagSurface;
 
     // Storage authority: where did LIA's owner data land?
-    const localOwnerKeys = pluginStorageKeys.filter(key => /lia|live_persona|persona/i.test(key)).length;
     let serverRows = 0;
     const serverKeys = [];
     try {
@@ -173,7 +100,7 @@ async function measureMode(mode) {
       }
     } catch { /* repository shape varies */ }
 
-    return { mode, features, localOwnerKeys, serverRows, serverKeys: serverKeys.slice(0, 8) };
+    return { mode, features, serverRows, serverKeys: serverKeys.slice(0, 8) };
   } finally {
     await fixture?.dispose?.().catch(() => null);
     await app?.close?.().catch(() => null);
@@ -190,7 +117,6 @@ async function measureMode(mode) {
     observations: results.map(row => ({
       mode: row.mode,
       features: Object.keys(row.features),
-      localOwnerKeys: row.localOwnerKeys,
       serverRows: row.serverRows,
       serverKeySample: row.serverKeys
     }))
@@ -205,19 +131,12 @@ async function measureMode(mode) {
   // Modes must agree on the mode-independent logical results.
   const baseline = results[0];
   for (const row of results.slice(1)) {
-    assert.deepEqual(row.features.BIND, baseline.features.BIND,
-      `${row.mode}: the binding state must match ${baseline.mode}`);
-    assert.equal(row.features.RESTORE.hasOriginalSnapshot, baseline.features.RESTORE.hasOriginalSnapshot,
-      `${row.mode}: the restorable original snapshot must be present as in ${baseline.mode}`);
-    assert.equal(row.features.CHECKPOINT.captured, baseline.features.CHECKPOINT.captured,
-      `${row.mode}: the live-sync batch must be capturable as in ${baseline.mode}`);
-    assert.equal(row.features.DIAG.getLiveSyncCaptureState, 'function',
+    assert.equal(row.features.DIAG.getScopePersonaCatalog, 'function',
       `${row.mode}: the diagnostics surface must be present in every mode`);
   }
 
   for (const row of results) {
     assert.equal(row.serverRows, 0, `${row.mode}: no canonical owner row is projected remotely`);
-    assert.ok(row.localOwnerKeys > 0, `${row.mode}: real owner binding remains locally readable`);
   }
 
   process.stdout.write('lia_feature_parity_test: PASS\n');

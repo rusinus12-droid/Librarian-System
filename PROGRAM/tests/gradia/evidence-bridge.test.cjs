@@ -12,12 +12,11 @@ function instrument(source,options={}){
  const ast=acorn.parse(source,{ecmaVersion:'latest'}), functions=[],calls=[];
  function walk(n,parent){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression')functions.push({node:n,parent});if(n.type==='CallExpression')calls.push(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(x=>walk(x,n));else if(v&&typeof v==='object')walk(v,n)}walk(ast);
  const find=marker=>functions.filter(f=>source.slice(f.node.start,f.node.end).includes(marker)).sort((a,b)=>(a.node.end-a.node.start)-(b.node.end-b.node.start))[0];
- const factory=find('gradia.lib-read-consumer.v1'),pipeline=find('shadow_act_disabled');assert.ok((options.server||factory)&&pipeline);
+ const pipeline=find('shadow_act_disabled');assert.ok(pipeline);
  const recent=functions.filter(f=>source.slice(f.node.start,f.node.end).includes('filtered_conversation_record')&&source.slice(f.node.start,f.node.end).includes('loreSearchMessages')).sort((a,b)=>(a.node.end-a.node.start)-(b.node.end-b.node.start))[0];assert.ok(recent);
  const edits=[{start:recent.node.start,end:recent.node.end,value:'(globalThis.__testBuildRecent='+source.slice(recent.node.start,recent.node.end)+')'},{start:pipeline.node.start,end:pipeline.node.end,value:'(globalThis.__testPipeline='+source.slice(pipeline.node.start,pipeline.node.end)+')'}];
  if(options.server){}
- else if(factory.parent.type==='CallExpression')edits.push({start:factory.parent.start,end:factory.parent.end,value:'('+source.slice(factory.node.start,factory.node.end)+')(globalThis.__testDependencies)'});
- else for(const n of calls)if(n.callee.type==='Identifier'&&(n.callee.name===factory.parent.id.name&&!n.arguments.length||n.callee.name==='createLibServerReadConsumer'))edits.push({start:n.start,end:n.end,value:factory.parent.id.name+'(globalThis.__testDependencies)'});
+ else for(const n of calls)if(n.callee.type==='Identifier'&&n.callee.name==='createLibServerReadConsumer')edits.push({start:n.start,end:n.end,value:'('+require('node:fs').readFileSync(require('node:path').join(__dirname,'fixtures/lib-read-consumer-double.source.js'),'utf8').split('\n').slice(1).join('\n').trim()+')(globalThis.__testDependencies)'});
  for(const e of edits.sort((a,b)=>b.start-a.start))source=source.slice(0,e.start)+e.value+source.slice(e.end);
  return source;
 }

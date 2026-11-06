@@ -1,11 +1,12 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (five-pair Live Persona analysis UI).'); process.exit(0);
 const assert = require('node:assert/strict');
 let JSDOM;
 ({ JSDOM } = require('jsdom'));
 const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
-const expose = source => source.replace('      getLiveSyncCaptureState:', `
+const expose = source => source.replace('      getScopePersonaCatalog:', `
       manualUi: async () => renderPreview(await getContext(), {skipCapture:true}),
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 (async () => {
   const f = await createFixture('official', { transformSource: expose });

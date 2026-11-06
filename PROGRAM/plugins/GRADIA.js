@@ -1,97 +1,12 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.13
+//@display-name GRADIA v0.28.27
 //@api 3.0
-//@version 0.28.13
+//@version 0.28.27
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
 
-/* v0.25.84 completes ordinary RisuAI native chat-copy continuity: heuristic source selection now prioritizes the longest verified U+A transcript prefix over Copy-title proximity, Story Arc/Writer state can repair a shorter legacy copy when the verified source is further advanced, and Narrative Archive state is merged into the target scope without re-embedding while reusing existing vector references/shared archive history. A v2 completeness receipt verifies Story Arc, Writer, and Narrative Archive readback, and legacy v1 receipts are repaired idempotently instead of being frozen as already adopted. RE:TRACE next-session handoff remains separate and source-immutable. */
-/* v0.25.82 makes WebRisu credential persistence update-safe by mirroring every provider-preset secret, Narrative Archive embedding key, and hosting token into verified pluginStorage backups while retaining localPluginStorage; startup reads repair a missing local copy from the synced backup, and the active narrative-embedding/hosting credentials also use host arguments when available without changing provider/model selection. */
-/* v0.25.81 aligns GRADIA with RE:TRACE peer-compatibility v1 and makes all next-session state handoff source-immutable: Narrative Archive preparation no longer empties or rewrites the source scope, source Story Arc/Writer/Narrative fingerprints are proven unchanged across prepare/adopt, and future GRADIA versions are negotiated by stable protocol/features instead of exact version gates. */
-/* v0.25.49 fixes the button-only Input Writer GUI capability probe that was referenced by the composer/delivery flow but missing from both the source feature branch and the merged canonical build. v0.25.48 merges the explicit button-only Input Writer flow while preserving the shared Narrative Archive, local Float32 vector tier, and RE:TRACE summary-only handoff contract. */
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
-//@arg mode string off|lite|normal
-//@arg multi_pipeline_mode string lightweight|heavyweight — lightweight combines analysis and drafting in one call per stage; heavyweight separates them
-//@arg writing_mode string novel|rp — top-level writing control; novel is author-directed full-cast fiction, rp is strict player-controlled user-agency protection
-//@arg shadow_draft_mode string classic|input_inclusive|author_directed — compatibility draft key; RP keeps the legacy author_directed storage value but applies the strict player-controlled contract
-//@arg turn_window int Legacy global recent-turn fallback; migrated once into each stage slot
-//@arg max_recent_chars int Legacy global context fallback; migrated once into each stage slot
-//@arg max_previous_stage_chars int Maximum latest same-turn draft characters available to the next serial AIDE
-//@arg max_injection_chars int Preferred final-overlay budget; expands only when needed to preserve the complete draft and required synthesis contract
-//@arg gradation_mode string full_draft — SHADOW ACT writes the first full draft and serial AIDEs patch the latest same-turn draft
-//@arg output_mode string draft_guided — final draft is handed to the normal host response
-//@arg internal_draft_language string korean|english|japanese — fixed language for generated draft prose, AIDE patch prose, and final scene realization
-//@arg built_in_style_preset string unified_stylepack
-//@arg injection_position string before_last_user|first_system|last_system
-//@arg failure_mode string soft|degraded|hard
-//@arg stage_timeout_ms int Global stage timeout (ms) for stage slots without their own timeout
-//@arg model_presets_json string JSON object of saved model presets
-//@arg provider_presets_json string LIBRA/RE-compatible alias for model_presets_json
-//@arg provider_presets_risuai_enabled string Reserved LIBRA-compatible flag: true|false
-//@arg default_preset string Default model preset name
-//@arg shadow_act_preset string Model preset for SHADOW ACT
-//@arg character_aide_preset string Model preset for Character AIDE
-//@arg world_aide_preset string Model preset for World AIDE
-//@arg plot_aide_preset string Model preset for Plot AIDE
-//@arg input_assist_preset string Optional model preset for the per-turn Input Manager
-//@arg user_intent_ooc_preset string Optional model preset for the target-selectable Creative Direction OOC
-//@arg input_assist_mode string off|user_focus|npc_focus|offscreen_focus|random — active-mode carrier; Novel non-off opens three perspectives, RP non-off opens three player-action choices
-//@arg rp_input_assist_mode string off|user_focus — remembered RP-mode action-choice adviser state; user_focus means enabled
-//@arg input_assist_scope string full_pipeline|standalone
-//@arg input_assist_target_chars string 300|500|800|1000|omakase
-//@arg input_assist_confirmation_mode string direct|confirm
-//@arg input_assist_lore_activation_mode string unified — legacy-compatible carrier; all previous values migrate to the single unified lore retrieval engine
-//@arg information_transfer_mode string draft_only — private stage analysis is never handed off
-//@arg nsfw_mode string off|soft|direct|explicit — shared mature-scene guidance for Input Writer, SHADOW ACT and all three AIDEs
-//@arg nsfw_guidance_enabled string true|false — apply selected NSFW guidance to input candidates and internal drafts
-//@arg nsfw_inject_final_request string true|false — forward mature-scene guidance to RisuAI's final response request when enabled
-//@arg lore_activation_mode string unified — single lore retrieval engine combining RisuAI host selection, activation-key evidence, BM25F/Jaccard/entity retrieval, RRF and MMR
-//@arg lore_reranker_top_k int Adaptive lore starting count per SHADOW/AIDE stage; GRADIA expands beyond it when protected evidence, uncovered anchors, flat relevance clusters, or available context require more lore; default 8
-//@arg selected_module_lore_ids string JSON/comma-separated IDs or namespaces of module lorebooks GRADIA may read
-//@arg excluded_module_lore_ids string JSON/comma-separated stable IDs of entries inside selected module lorebooks GRADIA must not read
-//@arg excluded_character_lore_ids string JSON/comma-separated stable IDs of character lorebook entries GRADIA must never read
-//@arg aide_stage_order string JSON/comma-separated order for Character, World, Plot AIDE; SHADOW ACT is always first
-//@arg llm_provider string Fallback main LLM provider
-//@arg llm_url string Fallback main LLM URL
-//@arg llm_key string Fallback main LLM API key / Vertex bearer token / JSON placeholder
-//@arg llm_model string Fallback main LLM model
-//@arg llm_temp string Fallback main LLM temperature
-//@arg llm_timeout int Fallback main LLM timeout ms
-//@arg llm_timeout_ms int RE-compatible fallback timeout alias
-//@arg llm_max_completion_tokens int Fallback main LLM max completion tokens
-//@arg llm_request_format string Fallback request format: chat_completions|responses
-//@arg llm_reasoning_preset string Fallback reasoning preset: auto|off|gpt|openrouter|gemini|gemini_budget|claude|claude_budget|deepseek|kimi|glm|ollama|custom
-//@arg llm_reasoning_effort string Fallback reasoning effort: none|minimal|low|medium|high|xhigh|max
-//@arg llm_reasoning_budget_tokens int Fallback reasoning budget tokens (-1 enables dynamic Gemini budget)
-//@arg llm_thinking_type string Fallback thinking toggle: enabled|disabled
-//@arg llm_glm_thinking_type string Backward-compatible GLM thinking type alias
-//@arg llm_glm_thinking string Fallback GLM thinking alias
-//@arg llm_service_tier string Fallback service tier: off|auto|default|flex|priority|scale
-//@arg custom_service_tier_passthrough string LIBRA-compatible custom provider service_tier passthrough: true|false
-//@arg vertex_flex_mode string LIBRA-compatible Vertex Flex mode: off|provisioned_then_flex|flex_only
-//@arg llm_stream string Fallback stream flag: true|false
-//@arg enable_shadow_act string true|false
-//@arg enable_character_aide string true|false
-//@arg enable_world_aide string true|false
-//@arg enable_plot_aide string true|false
-//@arg shadow_prompt_extra string Legacy SHADOW ACT addendum; automatically merged into the user creative instruction
-//@arg character_prompt_extra string Legacy Character AIDE addendum; automatically merged into the user creative instruction
-//@arg world_prompt_extra string Legacy World AIDE addendum; automatically merged into the user creative instruction
-//@arg plot_prompt_extra string Legacy Plot AIDE addendum; automatically merged into the user creative instruction
-//@arg shadow_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg character_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg world_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg plot_prompt_mode string builtin|replace — legacy replace means direction guidance enabled, not prompt replacement
-//@arg shadow_prompt_custom string SHADOW ACT creative instruction for analysis and writing; built-in structure is always preserved
-//@arg character_prompt_custom string Character AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg world_prompt_custom string World AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg plot_prompt_custom string Plot AIDE creative instruction for analysis and writing; built-in structure is always preserved
-//@arg llm_extra_body_json string Fallback extra JSON body merged into provider requests
-//@arg debug_log string true|false
-//@arg shadow_include_risu_context string Legacy RAG toggle; migrated once into per-stage RisuAI reference switches
-//@arg shadow_risu_context_max_chars int Legacy RAG context fallback; migrated once into per-stage context limits
-//@arg enable_gui string true|false
 
 /*
  * Serial Gradation Agents for RP v0.23.3
@@ -936,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.13';
+  const PLUGIN_VERSION = '0.28.27';
   
   
   
@@ -1019,9 +934,16 @@
   const REFERENCE_BUDGET_MIGRATION_VERSION = 3;
   const REFERENCE_BUDGET_CUSTOM_MAX_CHARS = 240000;
   const REFERENCE_PROFILE_CAPS = Object.freeze({
-    fast: 48000,
-    balanced: 96000,
-    quality: 160000,
+    fast: 24000,
+    balanced: 48000,
+    quality: 96000,
+    custom: REFERENCE_BUDGET_CUSTOM_MAX_CHARS
+  });
+  // What owners may hand over for one run. A custom setup without its own value keeps the old ceiling.
+  const MEMORY_PROFILE_CAPS = Object.freeze({
+    fast: 12000,
+    balanced: 24000,
+    quality: 48000,
     custom: REFERENCE_BUDGET_CUSTOM_MAX_CHARS
   });
   // Stage model-call timeout. Slow cloud models routinely need 20-80 s per stage call and
@@ -1033,15 +955,11 @@
   const MAX_STAGE_TIMEOUT_MS = 600000;
   const DEFAULT_STAGE_CONTEXT_CHARS = REFERENCE_PROFILE_CAPS.balanced;
   const DEFAULT_MAX_STAGE_TOKENS = 16384;
+  // Korean text runs near this; a higher figure lets a request overflow the model's context.
+  const INPUT_CHARS_PER_TOKEN = 2.0;
   const MAX_ANALYSIS_OUTPUT_TOKENS = 4096;
   const MIN_JSON_LENGTH_RETRY_TOKENS = 6144;
   const MAX_ANALYSIS_RETRY_OUTPUT_TOKENS = 8192;
-  const STAGE_ANALYSIS_OUTPUT_TOKENS = Object.freeze({
-    shadow_act: 3200,
-    aide_character: 4096,
-    aide_world: 3200,
-    aide_plot: 3200
-  });
   const AIDE_PATCH_OUTPUT_TOKEN_CAPS = Object.freeze({
     fast: 1200,
     balanced: 1800,
@@ -1278,13 +1196,14 @@
 
   const MANUAL_SKILL_SELECTION_VERSION = 'gradia_manual_skill_selection_v1';
   const GRADIA_BASE_SKILL_IDS = Object.freeze(['knowledge-access-boundary', 'standing-state-continuity', 'character-distinctness', 'single-signal-restraint', 'scene-performance', 'user-agency-boundary', 'output-contract-discipline']);
-  const SKILL_COMPILER_VERSION = 'gradia_skill_compiler_v2';
+  const SKILL_COMPILER_VERSION = 'gradia_skill_compiler_v3';
   const SKILL_PRIORITY_MIN = 0;
   const SKILL_PRIORITY_MAX = 200;
   const DEFAULT_CUSTOM_SKILL_PRIORITY = 45;
   const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot']);
   const MANUAL_SKILL_MAX_CHARS = 24000;
-  const MANUAL_SKILL_INPUT_SHARE = 0.10;
+  const MANUAL_SKILL_INPUT_SHARE = 0.20;
+  const MANUAL_SKILL_MAX_PER_STAGE = 3;
   // Explicit user-applied recommendations, never a scene classifier or routing policy.
   const SKILL_GENRE_PRESETS = Object.freeze([
     {id:'everyday',label:'일상 · 문학',reference:'literary-attentiveness-lens',shadow:'quiet-interior-beat',character:'dialogue-scene-execution',world:'lore-to-action-binding',plot:'relationship-state-shift'},
@@ -1489,8 +1408,8 @@
     const headingRe = new RegExp(`^##\\s+${escaped}\\s*$`, 'mi');
     const match = headingRe.exec(body);
     if (!match) return '';
-    const tail = body.slice(match.index + match[0].length).replace(/^\\s*\\n?/, '');
-    const nextHeading = tail.search(/^##\\s+/m);
+    const tail = body.slice(match.index + match[0].length).replace(/^\s*\n?/, '');
+    const nextHeading = tail.search(/^##\s+/m);
     return (nextHeading >= 0 ? tail.slice(0, nextHeading) : tail).trim();
   };
 
@@ -1555,11 +1474,12 @@
     const response = skillSourceSection(skill, 'Do this in the response');
     const boundary = skillSourceSection(skill, 'Boundary with adjacent skills');
     const visible = skillSourceSection(skill, 'What should stay visible in the response');
+    const replacements = skillSourceSection(skill, 'Typical failure → replacement');
     const fallback = skillFallbackProcedureBody(skill);
     const isAnalysis = phase === 'analysis';
     const sourceParts = isAnalysis
       ? [why && `[FAILURE MODE]\n${why}`, check && `[DIAGNOSIS]\n${check}`, boundary && `[BOUNDARY]\n${boundary}`]
-      : [check && `[PRE-CHECK]\n${check}`, response && `[EXECUTION]\n${response}`, visible && `[VISIBLE SUCCESS]\n${visible}`, boundary && `[BOUNDARY]\n${boundary}`];
+      : [check && `[PRE-CHECK]\n${check}`, response && `[EXECUTION]\n${response}`, replacements && `[FAILURE → REPLACEMENT]\n${replacements}`, visible && `[VISIBLE SUCCESS]\n${visible}`, boundary && `[BOUNDARY]\n${boundary}`];
     let selectedSource = sourceParts.filter(Boolean).join('\n\n');
     if (!selectedSource) selectedSource = `[SOURCE PROCEDURE]\n${fallback}`;
     const referenceBlock = (selectedItem?.references || []).map(ref =>
@@ -1667,10 +1587,10 @@
     const ollamaContext=canonicalProvider(preset.provider)==='ollama'?ollamaContextWindowTokens(preset):0;
     const estimatedContext=estimateModelContextTokens(preset);
     const contextTokens=manualContext||catalogContext||ollamaContext||estimatedContext;
-    // Same dated 2.4 chars/token estimate used by context recovery. Reserve the full
+    // Same chars/token estimate used by context recovery. Reserve the full
     // configured completion envelope (including thinking), 10% margin and framing.
     const outputTokens=Number(outputOverride??preset.max_tokens)||DEFAULT_MAX_STAGE_TOKENS;
-    const maxInputChars=contextTokens?Math.max(0,Math.floor((contextTokens*0.90-outputTokens)*2.4)-4096):null;
+    const maxInputChars=contextTokens?Math.max(0,Math.floor((contextTokens*0.90-outputTokens)*INPUT_CHARS_PER_TOKEN)-4096):null;
     // Only manual, catalog or provider metadata is authoritative enough to block a run.
     const source=manualContext?'manual':catalogContext?'catalog':ollamaContext?'provider_default':estimatedContext?'model_heuristic':'profile_fallback';
     return {contextTokens,outputTokens,maxInputChars,model:preset.model||'',verified:contextTokens>0,source,
@@ -1923,23 +1843,21 @@
   );
   const WRITING_MODES = Object.freeze(['novel', 'rp']);
   const DEFAULT_WRITING_MODE = 'novel';
-  const WRITING_MODE_DEFS = Object.freeze({
-    novel: Object.freeze({
-      label: '소설 모드',
-      description: 'USER는 작가·감독이고 GRADIA는 유저 페르소나를 포함한 전체 캐스트와 세계를 집필합니다. 현재 인풋은 장면 지시·인월드 재료·혼합 지시가 될 수 있습니다.',
-      meta: '작가 지시형 전체 캐스트 집필 · Classic / Input-inclusive'
-    }),
-    rp: Object.freeze({
-      label: 'RP 모드',
-      description: '유저 캐릭터의 행동·대사·감정·선택은 유저 입력에 있는 것만 성립합니다. GRADIA는 유저를 사칭하지 않으면서 NPC와 세계를 자율적으로 움직이고, 새 유저 행동이 실제로 필요해지는 경계에서 멈춥니다.',
-      meta: '유저 행동 불가침 · NPC/세계 자율 전개'
-    })
-  });
   const normalizeWritingMode = (value, fallback = DEFAULT_WRITING_MODE) => {
     const raw = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
     const aliases = { novel_mode: 'novel', story: 'novel', original: 'novel', rp_mode: 'rp', roleplay: 'rp', role_play: 'rp', author_directed: 'rp' };
     return normalizeChoice(aliases[raw] || raw, WRITING_MODES, fallback);
   };
+  const RP_IMPERSONATION_SCOPES = Object.freeze(['persona', 'persona_cast', 'all']);
+  const DEFAULT_RP_IMPERSONATION_SCOPE = 'persona';
+  const RP_IMPERSONATION_SCOPE_DEFS = Object.freeze({
+    persona: Object.freeze({ label: '페르소나만 사칭 금지', description: '페르소나의 행동·대사는 유저가 정합니다. 주변 인물과 세계가 어떻게 반응하는지는 AI가 쓰고, 다음 선택이 필요한 곳에서 멈춥니다.' }),
+    persona_cast: Object.freeze({ label: '장면 연출', description: '페르소나·주변 인물 사칭 금지. 모든 인물의 행동과 대사는 유저가 정합니다. AI는 적힌 행동의 표정·몸짓·말투를 연출하고, 날씨·소리·먼 기척 같은 세계의 변화를 씁니다.' }),
+    all: Object.freeze({ label: '문장화', description: '모두 사칭 금지. 줄거리를 직접 쓰는 모드입니다. 적힌 사건을 감각 묘사와 함께 문장으로 옮길 뿐 사건을 더하지 않으므로, 짧게 쓰면 짧게 나옵니다.' })
+  });
+  const normalizeRpImpersonationScope = value => normalizeChoice(String(value ?? '').trim().toLowerCase(), RP_IMPERSONATION_SCOPES, DEFAULT_RP_IMPERSONATION_SCOPE);
+  // Quoted speech and nothing else is the persona talking, not a direction or narration.
+  const isQuotedPersonaSpeechInput = value => /^(?:\s*(?:"[^"]+"|“[^”]+”|「[^」]+」|『[^』]+』)\s*)+$/.test(String(value || ''));
   const SHADOW_DRAFT_MODES = Object.freeze(['classic', 'input_inclusive', 'author_directed']);
   const NOVEL_SHADOW_DRAFT_MODES = Object.freeze(['classic', 'input_inclusive']);
   const DEFAULT_SHADOW_DRAFT_MODE = 'classic';
@@ -1956,7 +1874,7 @@
     }),
     author_directed: Object.freeze({
       label: 'RP 모드 전용',
-      description: '현재 인풋을 이미 성립한 유저 캐릭터의 완전한 이번 턴 기여로 취급합니다. AI는 그 행동을 다시 연기하거나 새 유저 행동을 추가하지 않고 NPC·세계의 자율 행동·사건·반응을 인과적으로 진행합니다.',
+      description: '인풋에 적힌 유저 캐릭터의 행동·대사는 이미 성립한 이번 턴 기여로 취급합니다. AI는 그것을 다시 연기하거나 새 유저 행동을 추가하지 않고, 인풋에 적힌 다른 인물의 행동·상황을 먼저 묘사한 뒤 NPC·세계의 반응을 진행합니다.',
       meta: '내부 호환 키 author_directed · 실제 계약은 player-controlled'
     })
   });
@@ -1999,6 +1917,54 @@
   const isNovelWritingMode = settings => !isPlayerControlledDraftMode(settings);
   // Compatibility alias retained for older internal call sites; top-level RP semantics are player-controlled from v0.25.35.
   const isAuthorDirectedDraftMode = isPlayerControlledDraftMode;
+  const rpImpersonationScope = settings => normalizeRpImpersonationScope(settings?.rpImpersonationScope);
+  const rpScopeLocksCast = settings => isPlayerControlledDraftMode(settings) && rpImpersonationScope(settings) !== 'persona';
+  const RP_BACKGROUND_MEANING = 'Development means changes in the surroundings: the background outside the main situation of the persona and the other characters, such as weather, ambient activity, or distant events.';
+  // Every mode leaves something for the next turn; the modes differ in where it may come from.
+  const NEXT_TURN_SEED_RULES = 'It need not be a question. It must come from what is already in the scene, and it must not decide what the persona does next. Never end on a new arrival, footsteps, a voice or noise from elsewhere, or an interruption brought in only to create an ending.';
+  const buildRpNextTurnSeedLine = settings => {
+    const scope = rpImpersonationScope(settings);
+    if (scope === 'all') return 'END ON A SEED: add no event. Close on something unresolved that the input already contains, shown as still unresolved: what is still shut, still unanswered, still out of reach. If the input contains nothing unresolved, simply stop. The ending must not decide what the persona does next.';
+    if (scope === 'persona_cast') return 'END ON A SEED: finish on one change in the surroundings that moves no character and is left unexplained, such as a sound that stops at the end of the corridor or a light that goes out and stays out. It must not settle back to calm. It need not be a question, and it must not decide what the persona does next.';
+    return 'END ON THE NEXT CHOICE: finish where the persona has to choose next, on one seed that others or the world hand to the persona, such as something held out and waiting, a line that expects an answer, or a change right in front of them. Do not wrap the exchange up. ' + NEXT_TURN_SEED_RULES;
+  };
+  const NOVEL_NEXT_TURN_SEED_LINE = 'END ON A SEED: deepen the current scene and stop just before it resolves. Do not finish the arc in one response: no wrapping up the search, leaving the place, reaching the conclusion, or a closing reflection, unless the author explicitly asks for that ending. Leave one concrete unresolved thing inside the scene for the next turn, taken from what the characters have found, said, or noticed, such as a torn last page or a question left unanswered. ' + NEXT_TURN_SEED_RULES;
+  // What the model may write in each RP mode. It overrides every other line of the prompt that gives the model more.
+  const buildRpImpersonationScopeLines = settings => {
+    if (!isPlayerControlledDraftMode(settings)) return [];
+    const scope = rpImpersonationScope(settings);
+    const speech = 'Inventing includes spoken lines: not one line of dialogue may be made up for anyone covered here.';
+    if (scope === 'all') return [
+      'RP PROSE MODE — THE USER DECIDES EVERY EVENT (overrides any other line that lets the model act for anyone or advance anything):',
+      'The current user input is the source of the scene. Write out everything it states, including what the persona does and says, in the order given, as prose with sensory detail. Add no action, reaction, decision, feeling, or development beyond it.',
+      speech,
+      'Quote lines the input gives. Length follows the input: a short input gives a short response. Stop when what the input states has been written.',
+      buildRpNextTurnSeedLine(settings)
+    ];
+    if (scope === 'persona_cast') return [
+      'RP SCENE-STAGING MODE — THE USER DECIDES WHAT EVERY CHARACTER DOES AND SAYS (overrides any other line that lets the model act for NPCs):',
+      'The current user input is the source of the scene. Write out everything it states, including what the persona does and says, in the order given. Characters make no move, line, reaction, or decision beyond it.',
+      speech,
+      'Staging is yours: the expression, gesture, tone, and breath with which a stated action or line is done. That describes a stated act and adds none.',
+      'Changes in the world are yours too. ' + RP_BACKGROUND_MEANING,
+      'A character the input gives no action to stays as established: do not write their glance, expression, or grip changing as a reaction either.',
+      'Stop rather than make a character take a new step or speak.',
+      buildRpNextTurnSeedLine(settings)
+    ];
+    return [
+      'RP DETAIL MODE — THE PERSONA MAY NOT BE INVENTED:',
+      'The persona does only what the current user input states. Other characters and development are yours to interpret and describe freely. ' + RP_BACKGROUND_MEANING,
+      'Anything the input states beyond the persona, such as what other characters do or say or what happens around them, has not been written yet: show it first, in the order given, and then write how others and the world react.',
+      'Inventing includes spoken lines: not one line of dialogue may be made up for the persona.',
+      buildRpNextTurnSeedLine(settings)
+    ];
+  };
+  // Stage instructions speak of "NPC/world" as model-owned. In a locked mode only the unlocked part stays model-owned.
+  const applyRpScopeToSystemPrompt = (settings, prompt) => {
+    if (!rpScopeLocksCast(settings) || typeof prompt !== 'string') return prompt;
+    const owned = rpImpersonationScope(settings) === 'all' ? 'input-stated' : 'background';
+    return prompt.replace(/NPCs?\/world/g, owned).replace(/model-owned/g, owned);
+  };
   const buildNovelAuthorshipContract = (settings = {}, phase = 'writing') => {
     if (!isNovelWritingMode(settings)) return '';
     const phaseLine = phase === 'analysis'
@@ -2011,34 +1977,45 @@
       phaseLine,
       '- USER ROLE: author/director. AI ROLE: scene writer for the user persona, NPCs, other characters, environment, and world.',
       '- The current input may fix exact events, dialogue, outcomes, relationships, tone, scene goals, prohibitions, or merely a direction. Preserve what the author explicitly fixes; fill unspecified story behavior naturally.',
-      '- USER PERSONA IS MODEL-AUTHORABLE in Novel mode. You may write their new action, dialogue, thought, feeling, decision, consent/refusal, movement, perception, and reaction when needed to realize the authorial scene and when not contradicted by explicit author direction or canon.',
+      '- FULL AUTONOMY: the input is a starting point, not a limit. Freely interpret it and go beyond it: add actions, dialogue, and developments for the persona, the other characters, and the story that the user did not ask for. Only what the author explicitly fixes or reserves, and established canon, bind you.',
+      '- USER PERSONA IS MODEL-AUTHORABLE in Novel mode. You may freely write their new action, dialogue, thought, feeling, decision, consent/refusal, movement, perception, and reaction, whether or not the input asks for it, when not contradicted by explicit author direction or canon.',
       '- Do NOT reinterpret unspecified persona behavior as protected player agency. The player-only boundary belongs to RP mode, not Novel mode.',
       '- If the user explicitly reserves a choice/outcome, says not to decide something, marks something hypothetical/attempted, or sets a hard boundary, preserve that reservation exactly.',
       '- Explicitly completed/fixed authorial events stay completed/fixed. Do not downgrade them. Conversely, do not promote an attempt, rumor, hypothetical, or uncertainty into pre-existing canon unless the authorial instruction intentionally resolves it inside this response.',
-      '- Story Arc, Narrative Archive, lore, memory, Skills, and Author Note may guide full-cast fiction, but current user authorial direction and newer visible canon outrank them.'
+      '- Story Arc, Narrative Archive, lore, memory, Skills, and Author Note may guide full-cast fiction, but current user authorial direction and newer visible canon outrank them.',
+      NOVEL_NEXT_TURN_SEED_LINE
     ].join('\n');
   };
   const shadowDraftModeContract = (settings = {}, phase = 'writing') => {
     const mode = normalizeShadowDraftMode(settings?.shadowDraftMode);
+    if (rpScopeLocksCast(settings)) return [
+      'SHADOW FIRST-DRAFT REALIZATION MODE — PLAYER-CONTROLLED RP:',
+      ...buildRpImpersonationScopeLines(settings),
+      phase === 'analysis'
+        ? 'Extract exactly what the current input states, then plan only how to describe it'+(rpImpersonationScope(settings) === 'all' ? '.' : ' and what the background does.')
+        : 'Render what the current input states as prose'+(rpImpersonationScope(settings) === 'all' ? '.' : ', with the background moving around it.'),
+      '- A user attempt or request is not proof of success or of anyone\'s acceptance unless the input itself states the result.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings) || mode === 'author_directed') {
       const phaseLine = phase === 'analysis'
-        ? 'Treat the Current Submitted User Input as the already-authored complete USER-CHARACTER contribution for this turn. Extract what the user actually did/said/attempted/asked, then plan only NPC/world reactions and consequences that follow from it.'
-        : 'Begin visible prose at the first NPC/world reaction or external consequence caused by the Current Submitted User Input. The user input is already enacted; do not perform it again for the user.';
+        ? 'Split the Current Submitted User Input in two. What the persona does and says is the already-authored complete USER-CHARACTER contribution: extract what the user actually did/said/attempted/asked. What it states about other characters or the situation still has to be shown. Plan that first, then the NPC/world reactions and consequences that follow.'
+        : 'What the persona does and says in the Current Submitted User Input is already enacted; do not perform it again for the user. What it states about other characters or the situation has not been written yet: begin with that, in the order given. With nothing of that kind, begin at the first NPC/world reaction or external consequence.'
       return [
         'SHADOW FIRST-DRAFT REALIZATION MODE — PLAYER-CONTROLLED RP:',
+        ...buildRpImpersonationScopeLines(settings),
         phaseLine,
         '- USER AGENCY IS EXCLUSIVE: never invent, extend, paraphrase-as-new-action, or complete a user-character action, dialogue, consent/refusal, decision, private thought, feeling, motive, sensory experience, voluntary movement, or final choice that is not explicitly present in the current submitted input.',
-        '- Explicit user-authored completed actions/dialogue are already canonical input facts. Preserve their actor/action/target and completion state, but normally do not restage them in assistant prose. A minimal causal reference is allowed only when grammar or perception would otherwise be unclear.',
+        '- The persona’s own explicit completed actions/dialogue are already canonical input facts. Preserve their actor/action/target and completion state, but normally do not restage them in assistant prose. This covers the persona only: what the input states other characters do or say must be shown. A minimal causal reference is allowed only when grammar or perception would otherwise be unclear.',
         '- The model owns NPCs, non-user actors, environment, institutions, and world consequences. Let them react autonomously and continue causally until the next meaningful beat would require a NEW user-character choice or action; stop before crossing that boundary.',
         '- Externally caused, mechanically unavoidable effects on the user character may be described only when directly caused by NPC/world action or established physics. Do not convert an external effect into a voluntary user reaction, emotion, decision, or self-initiated movement.',
         '- A user attempt/request is not proof of success, NPC acceptance, consent, transfer, relationship change, or any other external result. Determine only the world/NPC side from valid causality and canon.',
         '- If the user input is blank, silence, or an explicit continue cue, the user character contributes NO new action or dialogue. Continue only NPC/world motion already in progress or a causally adjacent response, then stop at the next point requiring user agency.',
         '- Story Arc, Narrative Archive recall, Skills, lore, memory, Author Note, and length targets may guide NPC/world portrayal, model-owned initiative, and continuity. None of them can authorize a new user-character behavior.',
-        '- MODEL-OWNED AUTONOMY IS REAL: NPCs/world may initiate conversation, make decisions, reveal what they know, create grounded complications/opportunities, arrive/leave, change location, or close a sub-scene when those beats follow current goals, pressure, canon, or established causality. RP does not mean freezing the world until the player moves.',
+        '- MODEL-OWNED AUTONOMY IS REAL: NPCs/world may initiate conversation, make decisions, reveal what they know, create grounded complications/opportunities, arrive/leave, or change location when those beats follow current goals, pressure, canon, or established causality. RP does not mean freezing the world until the player moves.',
         '- Do not force an unrelated sequel, random interruption, arbitrary reveal, relocation, or escalation merely to fill length. New model-owned beats are allowed when they are causally earned and do not require silently choosing the player character’s response.',
         '- USER-AGENCY FRONTIER: continue through as many model-owned beats as remain causally self-sufficient. Stop only before the next meaningful beat whose truth depends on a NEW user-character action, dialogue, consent/refusal, decision, private reaction, or voluntary movement.',
-        '- Natural NPC departure, goodbye, scene transition, or time passage is allowed when it is itself model-owned and does not skip a player decision that the scene has actually placed in front of the user. It is a defect only when used to bypass or pre-answer such a player-owned beat.',
-        '- A direct question/open hook is optional, not mandatory. The response may end on an open interaction, a changed situation, or a naturally completed model-owned beat; never manufacture interactivity after the scene has genuinely resolved on the NPC/world side.'
+        '- An NPC may leave or say goodbye, and time may pass, when that is itself model-owned and does not skip a player decision that the scene has actually placed in front of the user. It is a defect when used to bypass or pre-answer such a player-owned beat, and the response still ends where the persona can respond.',
+        '- The closing seed is required even when the NPC/world side of the exchange feels finished. It need not be a direct question, and it is never manufactured from nothing.'
       ].join('\n');
     }
     if (mode === 'input_inclusive') {
@@ -2062,12 +2039,20 @@
         : 'Realize the current submitted input as author-directed fiction without mechanically restating the raw instruction. Write the whole cast, including the user persona, as needed to fulfill it.',
       buildNovelAuthorshipContract(settings, phase === 'analysis' ? 'analysis' : 'writing'),
       '- Preserve explicit fixed events, actors, targets, outcomes, quoted dialogue, modality, and boundaries from the user input, but fill unspecified actions, dialogue, interiority, and transitions naturally.',
-      '- Avoid raw-input replay as a framing device. The goal is to realize the authorial meaning as polished scene prose, not to treat the input as a protected player action that must remain outside the response.'
+      '- Avoid raw-input replay as a framing device. The goal is to realize the authorial meaning as polished scene prose, not to treat the input as a protected player action that must remain outside the response.',
+      '- Begin immediately after the end of the previous response. Everything in earlier turns has already happened: never re-narrate, re-enact, or summarize it, and do not move back to an earlier place or time. Refer to it only in passing when the new scene needs it.'
     ].filter(Boolean).join('\n');
   };
   const shadowDraftModeAideInheritanceContract = (settings = {}, stageName = '', phase = 'patch') => {
     if (!CORE_AIDE_STAGE_IDS?.includes?.(stageName)) return '';
     const mode = normalizeShadowDraftMode(settings?.shadowDraftMode);
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP — AIDE INHERITANCE:',
+      ...buildRpImpersonationScopeLines(settings),
+      phase === 'analysis'
+        ? '- Diagnose every sentence of CURRENT_SAME_TURN_DRAFT that goes beyond the input in a way this detail mode forbids.'
+        : '- Remove or rewrite every passage of the draft that this detail mode forbids, and keep the closing seed. Do not add any new character action in its place.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings) || mode === 'author_directed') {
       const domainLine = stageName === 'aide_character'
         ? '- Character AIDE may improve NPC characterization, NPC dialogue, knowledge boundaries, and relationship response. It must not write the user character’s new dialogue, feelings, thoughts, consent, decision, or voluntary action.'
@@ -2077,14 +2062,14 @@
       return [
         'PLAYER-CONTROLLED RP — AIDE INHERITANCE:',
         '- CURRENT_SAME_TURN_DRAFT must remain a response to the current user-authored contribution, not a continuation that puppets the user character.',
-        '- Preserve the exact user-authored actor/action/target/completion state as already-established input fact. Remove or rewrite any draft sentence that invents additional user behavior or unnecessarily reenacts the input as assistant-authored action.',
+        '- Preserve the exact user-authored actor/action/target/completion state as already-established input fact. Remove or rewrite any draft sentence that invents additional user behavior or unnecessarily reenacts the persona’s part of the input. What the input states about other characters stays shown.',
         '- NPC/world autonomy is allowed and expected when causally supported. Do not over-correct by freezing NPCs, demanding a player reply too early, or stripping model-owned initiative from the scene.',
         '- Story Arc, skills, lore, and length targets can improve model-owned reactions and grounded NPC/world initiative; they cannot create user-character behavior.',
-        '- Preserve the USER-AGENCY FRONTIER, not a mandatory open ending. NPC/world may naturally depart, transition, or finish a model-owned exchange if no pending beat requires a new player decision.',
+        '- Preserve the USER-AGENCY FRONTIER and the closing seed. NPC/world may depart or transition, but the response must still end where the next player choice is needed.',
         domainLine,
         phase === 'analysis'
-          ? '- Diagnose user-agency crossings AND AGENCY-BYPASS CLOSURE explicitly. A closure is defective only when it skips, pre-answers, or consumes a meaningful player-owned action/decision that was actually pending; natural model-owned closure is valid.'
-          : '- If the inherited draft crosses user agency or uses closure/time-skip to bypass a pending player-owned beat, repair from the first invalid passage and stop before that player beat. Preserve natural NPC/world closure when it does not consume user agency.'
+          ? '- Diagnose user-agency crossings, AGENCY-BYPASS CLOSURE, and endings that close everything. An ending is defective when it skips or pre-answers a player-owned beat, or when it leaves nothing for the next player choice.'
+          : '- If the inherited draft crosses user agency or uses closure/time-skip to bypass a pending player-owned beat, repair from the first invalid passage and stop before that player beat. If the ending closes everything, repair it so that it ends on a seed from the scene.'
       ].join('\n');
     }
     if (mode === 'input_inclusive') {
@@ -2115,10 +2100,20 @@
     const inputHash = stableDraftHash(currentInput);
     const excerptLimit = clampInt(maxInputChars, 400, 7000, 2600);
     const finalization = options?.finalization === true;
+    const speechOnly = isQuotedPersonaSpeechInput(currentInput);
+    const speechLine = speechOnly ? 'INPUT TYPE: the input is only quoted speech. It is the persona\'s own spoken line, said exactly as written; it is not narration, a direction, or another character\'s line.' : '';
+    if (rpScopeLocksCast(options?.settings)) return [
+      '[PLAYER-CONTROLLED USER AGENCY LEDGER — HARD BOUNDARY]',
+      speechLine,
+      currentInput ? `USER-AUTHORED CONTRIBUTION EXCERPT:\n${compact(currentInput, excerptLimit)}` : 'USER-AUTHORED CONTRIBUTION: (none this turn)',
+      ...buildRpImpersonationScopeLines(options?.settings)
+    ].filter(Boolean).join('\n');
     return [
       '[PLAYER-CONTROLLED USER AGENCY LEDGER — HARD BOUNDARY]',
+      speechLine,
+      ...buildRpImpersonationScopeLines(options?.settings),
       `current_input_hash=${inputHash}; passive_continuation=${cue.active === true}`,
-      currentInput ? `USER-AUTHORED CONTRIBUTION EXCERPT (already enacted / do not reenact):\n${compact(currentInput, excerptLimit)}` : 'USER-AUTHORED CONTRIBUTION: (none; user takes no new action this turn)',
+      currentInput ? `CURRENT INPUT EXCERPT (the persona’s part is already enacted, do not reenact it; what it states about others stays shown):\n${compact(currentInput, excerptLimit)}` : 'USER-AUTHORED CONTRIBUTION: (none; user takes no new action this turn)',
       currentInput.length > excerptLimit ? '- The full exact current submitted input is supplied separately in this prompt/request and is the complete authority; this excerpt is only a compact guard copy.' : '',
       '- Only behavior explicitly contained in the full CURRENT SUBMITTED USER INPUT belongs to the user character for this turn.',
       finalization
@@ -2139,16 +2134,23 @@
     '- Any selected Skill that generates decisions, actions, escalation, movement, intimacy, dialogue tactics, or causal turns may target NPCs/world/model-owned actors only.',
     '- A Skill never authorizes the user persona to act, speak, consent/refuse, feel, decide, move, or reveal an interior state beyond the current submitted input.',
     '- If a Skill recommendation would cross the user-agency boundary, apply its useful part to NPC/world response or omit it.',
-    '- RP AUTONOMY OVERRIDE: do not interpret a Skill\'s restraint/minimality language as a command to keep NPC/world passive. Model-owned actors may take substantial causally earned actions or transitions; the hard limit is authorship of the player character, not the amount of NPC/world motion.'
+    rpScopeLocksCast(settings)
+      ? '- RP DETAIL MODE: a Skill never authorizes anything this detail mode forbids.'
+      : '- RP AUTONOMY OVERRIDE: do not interpret a Skill\'s restraint/minimality language as a command to keep NPC/world passive. Model-owned actors may take substantial causally earned actions or transitions; the hard limit is authorship of the player character, not the amount of NPC/world motion.'
   ].join('\n') : '';
 
   const playerControlledTurnHandoffContract = (settings = {}, stageName = '', phase = 'writing') => {
     if (!isPlayerControlledDraftMode(settings)) return '';
     const stage = text(stageName || '').trim();
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP — HARD CONTRACT:',
+      ...buildRpImpersonationScopeLines(settings),
+      ...(phase === 'final' ? ['- Preserve the candidate endpoint and its closing seed, and remove any passage of it this detail mode forbids.'] : [])
+    ].join('\n');
     if (phase === 'final') return [
       'PLAYER-CONTROLLED RP — FINAL CANDIDATE ENDPOINT CONTRACT:',
       '- The candidate has already selected its user-agency frontier and terminal beat. Preserve that endpoint; do not continue toward a later frontier.',
-      '- Preserve a natural model-owned closure already present. Preserve an open handoff already present. Manufacture neither.',
+      '- Preserve the closing seed already present, and do not resolve it.',
       '- Repair a departure, time skip, relocation, summary, or closure only when it actually skips or pre-answers a meaningful player-owned beat already pending.',
       '- Never write the player response, and never add a new NPC/world beat after the candidate endpoint.'
     ].join('\n');
@@ -2158,9 +2160,9 @@
       '- Do not confuse user-agency protection with passivity. NPCs/world should act with their own goals, knowledge, pressure, timing, and consequences when causally supported.',
       '- MODEL-OWNED CONTINUATION: after the already-enacted user contribution, continue through any NPC/world dialogue, actions, decisions, reveals, arrivals/departures, grounded complications/opportunities, or scene transitions that do NOT require inventing a new player-character response.',
       '- USER-AGENCY FRONTIER: stop immediately before the first meaningful beat that depends on a NEW player-character action, dialogue, consent/refusal, decision, private thought/feeling, sensory conclusion, or voluntary movement.',
-      '- A player-facing question/request/offer/challenge is one common frontier, but it is not required. If model-owned causality naturally finishes or changes the scene without needing player input, that closure/transition is valid.',
+      '- A player-facing question/request/offer/challenge is one common frontier, but it is not required. Whatever the form, the response ends with a seed for the next player choice; an ending that closes everything is a defect.',
       '- AGENCY-BYPASS CLOSURE is the defect: do not use goodbye, NPC departure, time skip, relocation, summary, or scene closure to silently skip or pre-answer a player-owned choice that is already pending.',
-      '- Do not manufacture a fake cliffhanger, arbitrary danger, random interruption, or forced question merely to hand the turn back. Interactivity must emerge from the actual scene.',
+      '- Do not manufacture a fake cliffhanger, arbitrary danger, random interruption, or forced question merely to hand the turn back. The seed must emerge from the actual scene.',
       '- Never write the player response beyond the frontier.'
     ];
     if (stage === 'shadow_act') lines.push(
@@ -2173,17 +2175,16 @@
       '- World AIDE duty: allow grounded external events, physical consequences, institutional/world responses, and model-owned transitions. Reject only those that require an invented player response or violate established causality.'
     );
     if (stage === 'aide_plot') lines.push(
-      '- Plot AIDE duty: distinguish NATURAL MODEL-OWNED CLOSURE from AGENCY-BYPASS CLOSURE. NPC departure/time-skip/scene transition is valid when no pending player-owned beat is skipped; repair only when closure consumes such a beat.',
+      '- Plot AIDE duty: repair AGENCY-BYPASS CLOSURE and any ending that closes everything. The response must end where the next player choice is needed, on a seed from the scene.',
       '- Plot AIDE must also inspect every post-input user-character action/dialogue/interior-state sentence. Any unprovided player behavior is a hard defect even when earlier analysis called the draft acceptable.'
     );
     if (phase === 'analysis') lines.push(
-      '- ANALYSIS CHECK: explicitly identify (a) user-agency crossings, (b) the next actual user-agency frontier if one exists, and (c) whether any closure bypasses that frontier. Do not penalize natural model-owned closure merely for being closed.'
+      '- ANALYSIS CHECK: explicitly identify (a) user-agency crossings, (b) the next actual user-agency frontier, (c) whether any closure bypasses that frontier, and (d) whether the ending leaves a seed for the next player choice.'
     );
     return lines.join('\n');
   };
 
   const normalizeLoreActivationMode = value => {
-    // v0.25.72: risu_selected / risu_key / gradia_extended are migration aliases only.
     // Runtime retrieval always uses the single unified evidence-fusion path.
     void value;
     return UNIFIED_LORE_ACTIVATION_MODE;
@@ -2192,13 +2193,6 @@
     void value;
     return UNIFIED_LORE_ACTIVATION_MODE;
   };
-  const INPUT_ASSIST_MODE_DEFS = Object.freeze({
-    off: Object.freeze({ label: '사용 안 함', description: '원래 입력을 그대로 초안 작성 단계로 전달합니다.' }),
-    user_focus: Object.freeze({ label: '유저 중심', description: '유저가 선언한 의도와 행동을 중심으로 입력 전체를 자연스럽게 재구성합니다.' }),
-    npc_focus: Object.freeze({ label: 'NPC 중심', description: '현재 NPC의 능동적인 행동과 반응 가능성이 드러나도록 입력 전체를 재구성합니다.' }),
-    offscreen_focus: Object.freeze({ label: '미등장 NPC·세력', description: '미등장 인물과 세력의 인과적인 움직임이 이어지도록 입력 전체를 재구성합니다.' }),
-    random: Object.freeze({ label: '랜덤 가챠', description: '위 세 재구성 관점 중 하나를 매 실행마다 무작위로 선택합니다.' })
-  });
   const CORE_AIDE_STAGE_IDS = Object.freeze(['aide_character', 'aide_world', 'aide_plot']);
   const DEFAULT_AIDE_STAGE_ORDER = Object.freeze(CORE_AIDE_STAGE_IDS.slice());
   const AIDE_STAGE_ALIAS_MAP = Object.freeze({
@@ -2230,21 +2224,20 @@
     return ordered.slice(0, CORE_AIDE_STAGE_IDS.length);
   };
   const orderedAideStageDefs = (value) => normalizeAideStageOrder(value).map(stageId => STAGE_DEF_MAP[stageId]).filter(Boolean);
-  const orderedBeforeStageDefs = (value) => [STAGE_DEF_MAP.shadow_act, ...orderedAideStageDefs(value)];
   const QUICK_PROFILE_IDS = Object.freeze(['fast', 'balanced', 'quality', 'custom']);
   const QUICK_PROFILE_DEFS = Object.freeze({
     fast: Object.freeze({
-      label: '빠르게', summary: '핵심 오류만 간결하게 분석하고 빠르게 초안을 만듭니다.', bestFor: '짧고 단순한 장면',
+      label: '적게', summary: '자료를 적게 읽고 핵심 오류만 분석해 빠르게 초안을 만듭니다.', bestFor: '짧고 단순한 장면',
       turnWindow: 4, maxChars: REFERENCE_PROFILE_CAPS.fast,
       analysisTokenScale: 0.45, analysisLabel: '핵심 분석'
     }),
     balanced: Object.freeze({
-      label: '균형 있게', summary: '중요한 정합성과 묘사 품질을 균형 있게 검토합니다.', bestFor: '대부분의 RP에 추천',
+      label: '균형', summary: '중요한 정합성과 묘사 품질을 균형 있게 검토합니다.', bestFor: '대부분의 RP에 추천',
       turnWindow: 8, maxChars: REFERENCE_PROFILE_CAPS.balanced,
       analysisTokenScale: 0.7, analysisLabel: '표준 분석'
     }),
     quality: Object.freeze({
-      label: '꼼꼼하게', summary: '넓은 문맥을 읽고 각 단계의 정합성을 세밀하게 검토합니다.', bestFor: '복잡한 설정·다인 장면',
+      label: '많이', summary: '자료를 많이 읽고 각 단계의 정합성을 세밀하게 검토합니다.', bestFor: '복잡한 설정·다인 장면',
       turnWindow: 12, maxChars: REFERENCE_PROFILE_CAPS.quality,
       analysisTokenScale: 1, analysisLabel: '심층 분석'
     }),
@@ -2253,12 +2246,6 @@
       analysisTokenScale: 1, analysisLabel: '심층 분석'
     })
   });
-  const SIMPLE_TURN_CHOICES = Object.freeze([
-    Object.freeze({ value: 4, label: '짧게', description: '가벼운 대화와 빠른 장면', meta: '최근 4턴' }),
-    Object.freeze({ value: 8, label: '보통', description: '대부분의 RP에 알맞은 범위', meta: '최근 8턴 · 추천' }),
-    Object.freeze({ value: 12, label: '넓게', description: '복잡한 관계와 설정을 더 많이 참고', meta: '최근 12턴' }),
-    Object.freeze({ value: 24, label: '아주 넓게', description: '장기 문맥을 많이 참고하지만 더 무거움', meta: '최근 24턴' })
-  ]);
   const SIMPLE_LENGTH_CHOICES = Object.freeze([
     Object.freeze({
       id: 'compact',
@@ -2523,7 +2510,6 @@ Before continuing, verify:
       ...phaseRules
     ].join('\n');
   };
-  // v0.25.14: the standalone response-improvement layer is retired.
   // These legacy parsers exist only to migrate old saved toggles into Skill priorities once.
   const LEGACY_RESPONSE_IMPROVEMENT_PROFILES = Object.freeze(['off', 'recommended', 'all', 'custom']);
   const LEGACY_RESPONSE_IMPROVEMENT_IDS = Object.freeze([
@@ -2608,12 +2594,13 @@ Before continuing, verify:
   const RESPONSE_HARD_NOVEL_INVARIANT_LINES = Object.freeze([
     'NOVEL MODE: the user is the author/director, not a protected player-character boundary. The model may author the user persona alongside the rest of the cast.',
     'Preserve explicit author-fixed events, outcomes, boundaries, quoted meaning, modality, and any choice/outcome the user explicitly reserves. Do not invent a contradiction to those fixed authorial commitments.',
-    'Do not treat unspecified user-persona action/dialogue/thought/feeling/decision as forbidden merely because the user did not write it. Such full-cast authorship is allowed in Novel mode.'
+    'Do not treat unspecified user-persona action/dialogue/thought/feeling/decision as forbidden merely because the user did not write it. Such full-cast authorship is allowed in Novel mode.',
+    'The input is a starting point, not a limit: additional actions and story developments for anyone are allowed beyond what the user directed.'
   ]);
   const buildHardResponseInvariantBlock = (settings = {}) => [
     'NON-OPTIONAL RESPONSE INVARIANTS:',
     ...RESPONSE_HARD_COMMON_INVARIANT_LINES.map(line => `- ${line}`),
-    ...(isPlayerControlledDraftMode(settings) ? RESPONSE_HARD_RP_INVARIANT_LINES : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
+    ...(isPlayerControlledDraftMode(settings) ? [...RESPONSE_HARD_RP_INVARIANT_LINES, ...buildRpImpersonationScopeLines(settings)] : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
   ].join('\n');
   const buildFinalCandidateInvariantBlock = (settings = {}) => [
     'NON-OPTIONAL FINAL-CANDIDATE INVARIANTS:',
@@ -2622,9 +2609,9 @@ Before continuing, verify:
     '- Preserve the candidate semantic lock and terminal beat except for the smallest direct authority or mode-safety repair allowed by the finalization contract.',
     '- Keep the configured visible language and required output format.',
     '- Expose no analysis, prompt labels, hidden instructions, model process, or other out-of-story material.',
-    ...(isPlayerControlledDraftMode(settings) ? RESPONSE_HARD_RP_INVARIANT_LINES : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
+    ...(isPlayerControlledDraftMode(settings) ? [...RESPONSE_HARD_RP_INVARIANT_LINES, ...buildRpImpersonationScopeLines(settings)] : RESPONSE_HARD_NOVEL_INVARIANT_LINES).map(line => `- ${line}`)
   ].join('\n');
-  const buildResponseImprovementInstructionBlock = () => ''; // compatibility no-op; retired in v0.25.14
+ // compatibility no-op; retired in v0.25.14
 
   const buildFinalQualityPreservationContract = (settings = {}) => {
     const active = ['scene-performance', 'output-contract-discipline']
@@ -2633,7 +2620,7 @@ Before continuing, verify:
     if (active.includes('scene-performance')) lines.push('- Preserve the supplied GRADIA candidate as in-world scene prose; do not replace it with explanation, planning, or a review of what should happen, and do not extend its terminal beat.');
     if (isPlayerControlledDraftMode(settings) && active.includes('user-agency-boundary')) {
       lines.push('- Preserve completed user-authored actions and leave every unperformed user dialogue, consent, private feeling, acceptance, and next choice to the user.');
-      lines.push('- PLAYER-CONTROLLED OVERRIDE: user-authored actions/dialogue in the current input are already enacted facts, not assistant-authored prose to replay. Preserve their factual completion while never adding a new user action, dialogue, consent, feeling, decision, or voluntary reaction.');
+      lines.push('- PLAYER-CONTROLLED OVERRIDE: the persona’s actions/dialogue in the current input are already enacted facts, not assistant-authored prose to replay. Preserve their factual completion while never adding a new user action, dialogue, consent, feeling, decision, or voluntary reaction.');
     } else if (isNovelWritingMode(settings)) {
       lines.push('- NOVEL AUTHORSHIP: preserve the author’s explicit fixed/reserved commitments. Full-cast fiction—including user-persona action, dialogue, thought, feeling, and decision—is allowed only while realizing the candidate’s existing beats; this Skill contract never authorizes a later beat.');
     }
@@ -2641,15 +2628,6 @@ Before continuing, verify:
     return ['FINAL QUALITY PRESERVATION CONTRACT:', ...lines].join('\n');
   };
 
-  const AIDE_ORDER_CHOICES = Object.freeze([
-    Object.freeze(['aide_character', 'aide_world', 'aide_plot']),
-    Object.freeze(['aide_character', 'aide_plot', 'aide_world']),
-    Object.freeze(['aide_world', 'aide_character', 'aide_plot']),
-    Object.freeze(['aide_world', 'aide_plot', 'aide_character']),
-    Object.freeze(['aide_plot', 'aide_character', 'aide_world']),
-    Object.freeze(['aide_plot', 'aide_world', 'aide_character'])
-  ]);
-  const aideOrderValue = value => normalizeAideStageOrder(value).join('>');
   const aideOrderLabel = value => orderedAideStageDefs(value).map(def => def.label.replace(' AIDE', '')).join(' → ');
 
   const normalizeSelectedModuleLoreIds = value => {
@@ -3180,10 +3158,8 @@ Before continuing, verify:
   // metadata, so its own num_ctx policy is the only limit this route defines.
   const libOllamaServedRoute = (providerId, url) => providerId === 'ollama_cloud'
     || /(^|\.)ollama\.com$/i.test((() => { try { return new URL(text(url)).hostname; } catch (_) { return ''; } })());
-  const LIB_MODEL_CONTEXT_MISS_TTL_MS = 600000;
   // A route whose catalogue cannot bound this model id stays unproven for a
   // while: the writer preflight must not pay its three-second probe per turn.
-  const libModelContextMisses = new Map();
   const libModelContextProfile = (preset, name) => {
     const providerId = canonicalProvider(preset.provider || 'custom'), modelId = preset.model;
     const mode = modeForProvider(providerId);
@@ -3209,25 +3185,6 @@ Before continuing, verify:
       : manual ? 'configured' : 'provider_default';
     return Object.freeze({ providerId, modelId, requestFormat, context: Object.freeze({ source, limit,
       sourceIdentity: `${source}:${name}:${modelId}:${metadataAt}`, providerId, modelId }) });
-  };
-  const discoverLibModelContext = async (preset, name) => {
-    const known = libModelContextProfile(preset, name);
-    if (known) return known;
-    const missKey = `${canonicalProvider(preset.provider || 'custom')}|${text(preset.url)}|${text(preset.model)}|${providerCredentialCacheFingerprint(preset.key)}`;
-    const missedAt = Number(libModelContextMisses.get(missKey) || 0);
-    if (missedAt && Date.now() - missedAt < LIB_MODEL_CONTEXT_MISS_TTL_MS) return null;
-    let timer;
-    try {
-      // Bound response parsing as well as fetching headers. A late catalogue can
-      // warm the route-bound cache, but cannot resume this writer's owner read.
-      await Promise.race([listProviderModels(preset, { timeoutMs: 3000 }),
-        new Promise(resolve => { timer = setTimeout(resolve, 3000); })]);
-    }
-    catch (_) { libModelContextMisses.set(missKey, Date.now()); return null; }
-    finally { clearTimeout(timer); }
-    const resolved = libModelContextProfile(preset, name);
-    if (!resolved) libModelContextMisses.set(missKey, Date.now());
-    return resolved;
   };
 
   const REASONING_PRESETS = Object.freeze({
@@ -3584,7 +3541,18 @@ Before continuing, verify:
   const LIB_EVIDENCE_TRANSPORT_MARKER = 'GRADIA_LIB_EVIDENCE_NO_REUSE_V1';
   let activeLibEvidenceRun = null;
   let libEvidenceResponseRedactionRequired = false;
-  const libEvidenceError = code => Object.assign(new Error(code), { code });
+  const libReadFailureDetails = error => {
+    const source = error?.readDiagnostic || {};
+    const token = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_.-]{0,159}$/.test(value) ? value : '';
+    const reason = token(error?.dispatchReason) || token(source.dispatchReason) || token(error?.message);
+    const diagnostic = {};
+    for (const key of ['stage','dispatchReason','stopReason','deliveryOutcome']) if (token(source[key])) diagnostic[key] = source[key];
+    for (const key of ['ownerAuthority','modelDispatchEligible']) if (typeof source[key] === 'boolean') diagnostic[key] = source[key];
+    return { ...(reason ? {dispatchReason:reason} : {}),
+      ...(/^LIB_READ_[A-Z_]+$/.test(error?.causeCode || error?.code || '') ? {causeCode:error.causeCode || error.code} : {}),
+      ...(Object.keys(diagnostic).length ? {readDiagnostic:diagnostic} : {}) };
+  };
+  const libEvidenceError = (code, cause) => Object.assign(new Error(code), { code }, libReadFailureDetails(cause));
   const hasLibEvidenceMarker = value => typeof value === 'string' && value.includes(LIB_EVIDENCE_TRANSPORT_MARKER);
   const evidenceDerivedEntry = entry => !!entry && (entry.externalEvidence === true
     || entry.finalDraftMeta?.externalEvidence === true || hasLibEvidenceMarker(entry.injection));
@@ -3596,8 +3564,7 @@ Before continuing, verify:
     shadow_act: 'SHADOW: draw relationship history, promises, unresolved threads, and established facts from it so the first draft continues the story instead of restarting it.',
     aide_character: 'Character AIDE: check what each character knows, remembers, feels toward others, and has promised against it. Repair only contradictions inside the draft.',
     aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
-    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
-    [INPUT_ASSIST_STAGE_ID]: 'Input Manager: use it only to keep proposed inputs consistent with established relationships, promises, and facts. The terminal passage decides where the scene is now; never propose resuming a remembered scene.'
+    aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
     const use = LIB_EVIDENCE_STAGE_USE[stageName];
@@ -3607,9 +3574,7 @@ Before continuing, verify:
       '- It is past-state memory. Current user input, the latest visible scene, and newer canon outrank it; when they differ, the memory is outdated.',
       '- Use it as background continuity. Do not replay remembered scenes, quote it, mention memory or sources, or move characters to a remembered location.',
       '- Lens notes are non-canonical reference memos. Prefer canonical memory when they disagree.',
-      stageName === INPUT_ASSIST_STAGE_ID
-        ? '- Memory may suggest which next inputs make sense; it is not a record of what happens now.'
-        : isPlayerControlledDraftMode(settings)
+      isPlayerControlledDraftMode(settings)
           ? '- In RP mode, memory never authorizes a new user-character action, line, feeling, or decision.'
           : '- In Novel mode, memory may inform the user persona like any other cast member, but explicit author direction wins.',
       `- ${use}`
@@ -3665,7 +3630,9 @@ Before continuing, verify:
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
   const libEvidenceBudget = (settings = {}) => {
     const profile = normalizeChoice(settings.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
-    const maxChars = REFERENCE_PROFILE_CAPS[profile] || REFERENCE_PROFILE_CAPS.balanced;
+    const configured = Number(settings.memoryBudgetChars);
+    const maxChars = Number.isSafeInteger(configured) && configured >= 1000 ? Math.min(configured, REFERENCE_BUDGET_CUSTOM_MAX_CHARS)
+      : (MEMORY_PROFILE_CAPS[profile] || MEMORY_PROFILE_CAPS.balanced);
     return Object.freeze({ maxChars, maxBytes: Math.min(LIB_EVIDENCE_MAX_BYTES, Math.max(65536, maxChars * 4 + 8192)) });
   };
   // JSON escaping prevents structural delimiter/template spoofing. This is NOT
@@ -3859,56 +3826,6 @@ Before continuing, verify:
       }
     };
   };
-  // Relevance order for multi-owner evidence. The newest items of every owner keep
-  // live-scene continuity; the rest follow BM25 against the current input (Hangul
-  // and other CJK runs as character bigrams, other words whole); items with no
-  // overlap keep the previous newest-first round robin. No model calls.
-  const LIB_EVIDENCE_RECENT_PER_OWNER = 2;
-  const LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS = 8000;
-  const libEvidenceTerms = value => {
-    const terms = [];
-    for (const word of String(value || '').normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []) {
-      if (!/[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(word) || word.length < 2) { terms.push(word); continue; }
-      for (let index = 0; index + 2 <= word.length; index += 1) terms.push(word.slice(index, index + 2));
-    }
-    return terms;
-  };
-  const orderLibEvidenceCandidates = (queues, owners, queryText) => {
-    const pending = new Map(owners.map(owner => [owner, [...(queues.get(owner) || [])]]));
-    const ordered = [];
-    const roundRobin = limitPerOwner => {
-      const taken = new Map(owners.map(owner => [owner, 0]));
-      while (owners.some(owner => pending.get(owner).length && taken.get(owner) < limitPerOwner)) {
-        for (const owner of owners) {
-          if (taken.get(owner) >= limitPerOwner) continue;
-          const item = pending.get(owner).pop();
-          if (item) { ordered.push(item); taken.set(owner, taken.get(owner) + 1); }
-        }
-      }
-    };
-    roundRobin(LIB_EVIDENCE_RECENT_PER_OWNER);
-    const query = [...new Set(libEvidenceTerms(queryText))];
-    const rest = owners.flatMap(owner => pending.get(owner).map((item, index) => ({ item, owner, index })));
-    if (query.length && rest.length) {
-      const docs = rest.map(entry => { const tf = new Map(); const terms = libEvidenceTerms(entry.item.content); terms.forEach(term => tf.set(term, (tf.get(term) || 0) + 1)); return { entry, tf, length: terms.length }; });
-      const average = docs.reduce((sum, doc) => sum + doc.length, 0) / docs.length || 1;
-      const df = new Map(query.map(term => [term, docs.filter(doc => doc.tf.has(term)).length]));
-      for (const doc of docs) {
-        doc.score = query.reduce((sum, term) => {
-          const frequency = doc.tf.get(term) || 0;
-          if (!frequency) return sum;
-          const idf = Math.log(1 + (docs.length - df.get(term) + 0.5) / (df.get(term) + 0.5));
-          return sum + idf * frequency * 2.2 / (frequency + 1.2 * (0.25 + 0.75 * doc.length / average));
-        }, 0);
-      }
-      const relevant = docs.filter(doc => doc.score > 0).sort((a, b) => b.score - a.score || b.entry.index - a.entry.index);
-      const chosen = new Set(relevant.map(doc => doc.entry.item));
-      ordered.push(...relevant.map(doc => doc.entry.item));
-      for (const owner of owners) pending.set(owner, pending.get(owner).filter(item => !chosen.has(item)));
-    }
-    roundRobin(Infinity);
-    return ordered;
-  };
   const libNativePromptView = recent => ({
     ...Object.fromEntries(['latestUser', 'latestAssistantRaw', 'latestAssistant', 'terminalVisibleScene',
       'previousTurnUser', 'previousTurnAssistant', 'previousTurnText', 'earlierTurnsText',
@@ -4038,14 +3955,14 @@ Before continuing, verify:
     return { schema: 'gradia.native-read-set.v1', currentInputRef: effectiveRef(inputMessage), selections,
       currentInput: contentToText(inputContent), query: baseRecent.latestUser, turns: [...selected.values()] };
   };
-  const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope) => {
+  const captureLibNativeReadSetFromHost = async (messages, settings, baseRecent, scope, options = {}) => {
     const fastResolved = resolveSgaCurrentTurn(messages);
     const fastLastAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const hasUnboundOrDuplicatePendingUser = fastResolved.requestIndex >= 0 && (
       !nativeTurnMessageId(messages[fastResolved.requestIndex])
       || messages.some((message, idx) => idx > fastLastAssistant && idx !== fastResolved.requestIndex && currentTurnRole(message) === 'user' && message?.turnMeta?.supersededPendingDuplicate !== true)
     );
-    if (!hasUnboundOrDuplicatePendingUser) {
+    if (!options.forceHostRead && !hasUnboundOrDuplicatePendingUser) {
       try {
         const snapshot = captureLibNativeReadSet(messages, settings, baseRecent);
         return { messages, snapshot, selections: snapshot.selections, assertCurrent: async () => true };
@@ -4078,6 +3995,7 @@ Before continuing, verify:
         messages: chat.message,
         characterName,
         userName,
+        scope: nativeTurnScope(character, chat),
         witness: JSON.stringify([indexes,scope.characterId,scope.chatId,characterName,userName,chat.message])
       };
     };
@@ -4128,6 +4046,9 @@ Before continuing, verify:
       if (candidates.length !== 1 || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) return { ...message };
       const row = candidates[0];
       const rawRowText = contentToText(row.data ?? row.content ?? '');
+      const ref = nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText });
+      const hostScope = host.scope || (scope ? JSON.stringify([scope.characterId, scope.chatId]) : '');
+      const isVerified = receiptMatches(hostScope, ref);
       return {
         ...message,
         chatId: nativeTurnMessageId(row),
@@ -4137,7 +4058,9 @@ Before continuing, verify:
           ...message?.turnMeta,
           nativeContent: rawRowText,
           stageContent: applyBasicRisuPlaceholdersForRag(rawRowText, host.characterName, host.userName),
-          ref: nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText })
+          nativeSelected: true,
+          verifiedCompletion: isVerified,
+          ref
         }
       };
     });
@@ -4273,12 +4196,18 @@ Before continuing, verify:
     await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
-  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, proposalContext = null, nativeBinding = null) => {
+  // Product rules for this path: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like. Owners search with their own settings and budgets exactly as they
+  // would in their own hook; GRADIA only limits how much of the result it takes in total.
+  let libRunHints = {};
+  const libOwnerRunHints = () => libRunHints;
+  const libQueryText = value => { const encoder = new TextEncoder(); let out = '', size = 0; for (const char of String(value || '')) { size += encoder.encode(char).length; if (size > 16000) break; out += char; } return out; };
+  const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, nativeBinding = null, openingController = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
     const settingsSignature = requestSettingsSignature(settings);
     const runtimeSettingsSignature = requestSettingsSignature(Runtime.settings || {});
-    const controller = proposalContext?.controller || new AbortController();
+    const controller = openingController || new AbortController();
     let session;
     let certifiedSelections = [];
     let nativeHostBinding = nativeBinding;
@@ -4290,22 +4219,20 @@ Before continuing, verify:
       if (st.state === 'error') {
         return { status: 'unavailable', reason: st.reason || 'LIB_READ_CONNECTION_UNAVAILABLE', assertCurrent: async () => true, close() {} };
       }
-      if (!proposalContext) {
-        const routeOwners = st.draftReadOwners || LIB_READ_OWNERS;
-        if (Array.isArray(routeOwners) && routeOwners.length === 0) {
-          return { status: 'unavailable', reason: 'LIB_READ_OWNERS_DISABLED', assertCurrent: async () => true, close() {} };
-        }
+      const routeOwners = st.draftReadOwners || LIB_READ_OWNERS;
+      if (Array.isArray(routeOwners) && routeOwners.length === 0) {
+        return { status: 'unavailable', reason: 'LIB_READ_OWNERS_DISABLED', assertCurrent: async () => true, close() {} };
       }
       if (nativeBinding?.error) throw nativeBinding.error;
       nativeBinding?.assertLocal?.();
       await LibReadConnection.ensureConnected();
-      session = await (proposalContext ? LibWriterReadConsumer : LibReadConsumer).beginRead({ requestId, signal: controller.signal, queryText: baseRecent.latestUser,
+      libRunHints = { recentChatTurns: requestMessages.filter(message => message?.role === 'assistant').length,
+        requestChars: requestMessages.reduce((total, message) => total + contentToText(message?.content).length, 0) };
+      session = await LibReadConsumer.beginRead({ requestId, signal: controller.signal, queryText: libQueryText(baseRecent.latestUser),
         evidenceBudget: libEvidenceBudget(settings),
-        ...(proposalContext ? { proposal: proposalContext.proposal } : {}),
         // Snapshot construction is lazy: unbound/plugin-only performs no identity,
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: capability => {
-          if (proposalContext) { proposalContext.assertLocal(); return; }
           if (capability?.contract === 'existing-server-logical-read.v1') {
             return captureLibNativeReadSetFromHost(requestMessages,settings,baseRecent,capability.scope).then(binding => {
               if (!nativeHostBinding) nativeHostBinding = binding;
@@ -4317,21 +4244,18 @@ Before continuing, verify:
           return snapshot;
         } });
     } catch (error) {
-      if (proposalContext || /CANCELED|SUPERSEDED|MODE_CHANGED/.test(error?.code || '')) throw error;
+      if (/CANCELED|SUPERSEDED|MODE_CHANGED|NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/.test(error?.code || '')) throw error;
       const connection = LibReadConnection.status();
       const code = error?.code === 'LIB_READ_CONNECTION_UNAVAILABLE'
         ? connection.reason || (connection.state === 'connecting' ? 'LIB_READ_CONNECTION_PENDING' : error.code) : error?.code;
       return { status: 'unavailable', reason: /^LIB_READ_[A-Z_]+$/.test(code || '') ? code : 'LIB_READ_UNAVAILABLE',
+        ...libReadFailureDetails(error),
         assertCurrent: async () => true, close() {} };
     }
     if (session.status !== 'ready') return { ...session, close() {} };
     const budgetMeter = createGradiaModelContextBudget({ digest: libReadSha256 });
-    if (proposalContext && (session.engine?.purpose !== 'input_writer_proposal'
-      || JSON.stringify(session.engine?.proposal) !== JSON.stringify(proposalContext.proposal))) {
-      session.invalidate('LIB_READ_PROPOSAL_CHANGED'); throw libEvidenceError('LIB_READ_PROPOSAL_CHANGED');
-    }
-    const run = { status: 'ready', purpose: proposalContext ? 'input_writer' : 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
-      fail(code) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); } return libEvidenceError(code); },
+    const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
+      fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
         // Native reconstruction may add only the already-verified scope to the
@@ -4339,7 +4263,7 @@ Before continuing, verify:
         // match exactly; foreign scopes are never removed by this comparison.
         const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
           ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
-        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : value);
+        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
         if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
@@ -4352,7 +4276,7 @@ Before continuing, verify:
         }
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() { proposalContext?.assertLocal(); for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
+      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
       assertLocalCurrent() {
         if (this.failed) throw libEvidenceError(this.failed);
         try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
@@ -4375,10 +4299,7 @@ Before continuing, verify:
         if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
           && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
         const checkStartedAt = Date.now();
-        // The native/proposal check after the owner check also covers any change made
-        // before or during it; checking it on both sides doubled a full host snapshot
-        // reload (character, DB, chat) on every check of the input writer.
-        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); if (proposalContext) await proposalContext.assertCurrent(); }
+        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
         catch (error) {
           // A run that already failed (model timeout, cancellation) aborted this
           // check itself; report that cause, not "currentness lost".
@@ -4386,7 +4307,7 @@ Before continuing, verify:
           Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
             at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
             causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
-          throw this.fail('LIB_READ_CURRENTNESS_LOST');
+          throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
         }
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
@@ -4404,18 +4325,11 @@ Before continuing, verify:
       async beforeModel(stage, phase, recovery = '') {
         await this.assertCurrent();
         if (recovery) {
-          const base = `${stage}:${phase}`, key = `${proposalContext ? 'input_writer:' : ''}${base}:${recovery}`;
+          const base = `${stage}:${phase}`, key = `${base}:${recovery}`;
           if (!['stall', 'length'].includes(recovery) || this.recoveries.has(key) || this.recoveries.size >= LIB_EVIDENCE_MAX_RECOVERIES
-            || (proposalContext
-              ? stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16
-              : !this.calls.has(base))) throw this.fail('LIB_READ_RETRY_DISABLED');
+            || !this.calls.has(base)) throw this.fail('LIB_READ_RETRY_DISABLED');
           this.recoveries.add(key);
-          if (proposalContext) this.calls.add('input_writer:' + this.calls.size);
           return;
-        }
-        if (proposalContext) {
-          if (stage !== INPUT_ASSIST_STAGE_ID || !['analysis','draft'].includes(phase) || this.calls.size >= 16) throw this.fail('LIB_READ_RETRY_DISABLED');
-          this.calls.add('input_writer:' + this.calls.size); return;
         }
         const allowed = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
           ? ['analysis', stage === 'shadow_act' ? 'draft' : 'patch'] : [stage === 'shadow_act' ? 'draft' : 'patch'];
@@ -4549,7 +4463,7 @@ Before continuing, verify:
       async finalize(draft) { await this.assertCurrent({ coalesce: true }); await session.bindDraft(draft);
         const final = await session.finalizeDraft(); await this.assertCurrent(); return final; },
       close() { this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate('LIB_READ_CLOSED');
-        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); if (proposalContext) purgeInputWriterEvidenceRuntime(); activeLibEvidenceRun = null; } }
+        if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); activeLibEvidenceRun = null; } }
     };
     activeLibEvidenceRun = run;
     try {
@@ -4565,188 +4479,55 @@ Before continuing, verify:
     return run;
   };
 
-  let inputWriterEvidenceLease = null;
-  let inputWriterDialogCancel = null;
-  const purgeInputWriterEvidenceRuntime = () => {
-    Runtime.lastInputAssist = null; Runtime.lastInputAssistContext = null;
-    Runtime.lastInputAssistMaterialUsage = null; Runtime.lastInputAssistTranslation = null;
-    Runtime.inputAssistStaticCandidate = null; Runtime.inputAssistStaticHandoff = null;
-    Runtime.inputAssistConfirmation = null;
-    if (Runtime.inputAssistSend) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, generated: '' };
-  };
-  const closeInputWriterEvidence = (code = 'LIB_READ_CLOSED', expected = inputWriterEvidenceLease) => {
-    if (!expected) return;
-    expected.failed ||= code;
-    expected.controller.abort();
-    if (expected.run) { expected.run.fail?.(code); expected.run.close?.(); }
-    if (inputWriterEvidenceLease === expected) inputWriterEvidenceLease = null;
-  };
-  const inputWriterNativeView = snapshot => JSON.stringify({
-    identity: snapshot?.chatInfo?.identity,
-    character: Object.fromEntries(Object.entries(snapshot?.character || {}).filter(([key]) => key !== 'chats')),
-    chat: snapshot?.chatInfo?.chat,
-    db: Object.fromEntries(['personas','selectedPersona','modules','enabledModules','moduleIntergration'].map(key => [key, snapshot?.db?.[key]]))
-  }, (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
-    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
-  const prepareInputWriterEvidence = () => {
-    inputWriterEvidenceLease = null;
-    const st = LibReadConnection.status();
-    if (st.readSource === 'off') return null;
-    if (!['unified_engine','plugin_ipc'].includes(libReadBinding?.readSource)) return null;
-    if (activeLibEvidenceRun) throw libEvidenceError('LIB_READ_BUSY');
-    const lease = { operationId: globalThis.crypto?.randomUUID?.() || idForInputWriter(), failed: '', run: null, controller: new AbortController(),
-      binding: libReadBinding, parentRequestId: Runtime.inputAssistSend?.busy ? Runtime.inputAssistSend.requestId : null };
-    inputWriterEvidenceLease = lease; return lease;
-  };
-  const assertInputWriterLease = lease => {
-    if (lease.failed || lease.controller.signal.aborted || inputWriterEvidenceLease !== lease || libReadBinding !== lease.binding)
-      throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    if (lease.parentRequestId !== null && (Runtime.inputAssistSend?.requestId !== lease.parentRequestId
-      || Runtime.inputAssistSend?.cancelRequested)) throw libEvidenceError('LIB_READ_CANCELED');
-  };
-  const guardInputWriterRead = async (lease, operation) => {
-    assertInputWriterLease(lease); let timer, abort;
-    const canceled = new Promise((_, reject) => {
-      abort = () => reject(libEvidenceError('LIB_READ_CANCELED'));
-      lease.controller.signal.addEventListener('abort', abort, { once: true });
-      timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 30000);
-    });
-    try { const result = await Promise.race([Promise.resolve().then(operation), canceled]); assertInputWriterLease(lease); return result; }
-    finally { clearTimeout(timer); lease.controller.signal.removeEventListener('abort', abort); }
-  };
-  const openInputWriterEvidence = async (original, settings, options, staticSnapshot, terminalScene, lease) => {
-    if (!lease) return null;
-    const assertLocal = () => assertInputWriterLease(lease);
-    const startedAt = Date.now();
-    let notedStage = '';
-    const noteDiagnostic = (status, code, stage) => {
-      notedStage = String(stage || '');
-      const transport = globalThis.__gradiaLibReadTransportCause;
-      Runtime.lastInputWriterReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'input_writer_proposal',
-        status: String(status || ''), code: String(code || ''), stage: String(stage || ''),
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        ...(status !== 'ready' && transport && transport.at >= startedAt ? { transportCause: transport } : {}) });
-    };
-    const initialNative = inputWriterNativeView(staticSnapshot);
-    let assertNative;
-    try {
-      const proposalDigest = await libReadSha256(original), nativeContextDigest = await libReadSha256(initialNative);
-      assertLocal();
-      const rawQuery = [original, terminalScene].filter(Boolean).join('\n\n') || 'Continue the existing scene with an unsubmitted input proposal.';
-      let query = '', queryBytes = 0;
-      for (const char of rawQuery) { const size = new TextEncoder().encode(char).length; if (queryBytes + size > 12000) break; query += char; queryBytes += size; }
-      const proposal = Object.freeze({ schema: 'gradia.input-writer-proposal.v1', purpose: 'input_writer_proposal',
-        operationId: lease.operationId, proposalDigest, nativeContextDigest, queryTruncated: query.length !== rawQuery.length, factAdopted: false });
-      // Overlapping checks (UI actions while a model call re-verifies) join the
-      // read already in flight instead of each reloading the whole host snapshot.
-      let nativeCheck = null;
-      const context = { proposal, controller: lease.controller, assertLocal, async assertCurrent() {
-        if (!nativeCheck) nativeCheck = (async () => {
-          const nativeStartedAt = Date.now();
-          const current = await guardInputWriterRead(lease, () => loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }));
-          const changed = !current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
-            || inputWriterNativeView(current) !== initialNative;
-          noteEvidenceCheck('native', nativeStartedAt);
-          if (changed) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-        })().finally(() => { nativeCheck = null; });
-        return await nativeCheck;
-      } };
-      assertNative = context.assertCurrent;
-      // Resolve capacity before acquiring owner evidence. Only an unavailable
-      // optional source at this point can fall back to native context.
-      const st = LibReadConnection.status();
-      if (st.readSource === 'off') {
-        closeInputWriterEvidence('LIB_READ_DISABLED', lease);
-        noteDiagnostic('disabled', 'LIB_READ_DISABLED', 'owner_read');
-        return null;
-      }
-      const routeOwners = st.inputWriterReadOwners || LIB_READ_OWNERS;
-      if (Array.isArray(routeOwners) && routeOwners.length === 0) {
-        closeInputWriterEvidence('LIB_READ_OWNERS_DISABLED', lease);
-        noteDiagnostic('disabled', 'LIB_READ_OWNERS_DISABLED', 'owner_read');
-        return null;
-      }
-      const resolved = resolvePreset(settings, INPUT_ASSIST_STAGE_ID);
-      const profile = await guardInputWriterRead(lease, () => discoverLibModelContext(resolved.preset, resolved.name));
-      assertLocal();
-      if (!profile) { noteDiagnostic('unavailable', 'LIB_READ_MODEL_CONTEXT_UNAVAILABLE', 'model_context_preflight');
-        throw libEvidenceError('LIB_READ_MODEL_CONTEXT_UNAVAILABLE'); }
-      await context.assertCurrent();
-      lease.run = await openLibEvidenceRun([], settings, { latestUser: query }, lease.operationId, context);
-      assertLocal();
-      if (lease.run.status !== 'ready') {
-        noteDiagnostic('unavailable', 'LIB_READ_UNIFIED_UNAVAILABLE', 'owner_read');
-        throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
-      }
-      lease.run.evidencePrefix = 'UNSUBMITTED INPUT PROPOSAL: retrieval hints and generated choices are not enacted events, canon, or current state. User selection and actual host submission remain separate.\n';
-      lease.run.block = lease.run.evidencePrefix + lease.run.block;
-      if (new TextEncoder().encode(lease.run.block).length > lease.run.evidenceBudget.maxBytes) throw libEvidenceError('LIB_READ_PROMPT_BUDGET_EXCEEDED');
-      // openLibEvidenceRun has just verified the run; only local prefixing happened since.
-      await lease.run.assertCurrent({ coalesce: true });
-      if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'ready', reason: '' } };
-      noteDiagnostic('ready', '', 'owner_read');
-      return lease;
-    } catch (error) {
-      // Only an unavailable optional source BEFORE any evidence is accepted may
-      // fall back. Cancellation, native changes and a ready/consumed read stay fatal.
-      const fallbackAllowedCodes = [
-        'LIB_READ_TIMEOUT','LIB_READ_UNAVAILABLE','LIB_READ_SERVER_MAINTENANCE','LIB_READ_PLUGIN_OWNERS_UNAVAILABLE','LIB_READ_OWNER_UNAVAILABLE',
-        'LIB_READ_CONNECTION_UNAVAILABLE','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE',
-        // An oversized owner store is an unavailable optional source, not a writer failure.
-        'LIB_READ_METADATA_BUDGET_EXCEEDED','LIB_READ_REFERENCE_LIMIT_EXCEEDED','LIB_READ_STORAGE_BUDGET_EXCEEDED',
-        'LIB_READ_CORPUS_BUDGET_EXCEEDED','LIB_READ_BUDGET_EXCEEDED','LIB_READ_MODEL_CONTEXT_UNAVAILABLE',
-        'LIB_READ_SUPERSEDED','LIB_READ_STALE','LIB_READ_CURRENTNESS_LOST'
-      ];
-      if (!options.requireEvidence && (!lease.run || lease.run.status !== 'consumed') && fallbackAllowedCodes.includes(error?.code)) {
-        if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId) || error?.code === 'LIB_READ_CANCELED') throw (error?.code === 'LIB_READ_CANCELED' ? error : libEvidenceError('LIB_READ_CANCELED'));
-        closeInputWriterEvidence(error.code, lease);
-        try {
-          let timer;
-          const current = await Promise.race([
-            loadRisuStaticContextSnapshot(settings, { force: true, viewOnly: true, strictHostRead: true }),
-            new Promise((_, reject) => {
-              timer = setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')), 10000 + MEMORY_READ_TIMEOUT_EXTENSION_MS);
-            })
-          ]).finally(() => clearTimeout(timer));
-          if (Runtime.inputAssistSend?.cancelRequested || (lease.parentRequestId !== null && Runtime.inputAssistSend?.requestId !== lease.parentRequestId)) {
-            throw libEvidenceError('LIB_READ_CANCELED');
-          }
-          if (!current?.character || !current?.chatInfo?.chat || !current?.chatInfo?.identity
-            || inputWriterNativeView(current) !== initialNative) {
-            throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-          }
-        } catch (nativeError) {
-          const failureCode = /^LIB_READ_[A-Z_]+$/.test(nativeError?.code || '') ? nativeError.code : 'LIB_READ_NATIVE_UNAVAILABLE';
-          const failure = nativeError?.code === failureCode ? nativeError : libEvidenceError(failureCode);
-          noteDiagnostic('failed', failureCode, 'native_revalidation');
-          throw failure;
+  // Reacquire an unavailable owner handle only while opening, before any model
+  // can consume its evidence. The retry shares the original 110-second bound.
+  const openResponseLibEvidenceRun = async (messages, settings, recent, requestId, nativeBinding) => {
+    const startedAt = Date.now(), deadlineAt = startedAt + LIB_MEMORY_OWNER_READ_TIMEOUT_MS;
+    const requestSignature = JSON.stringify(messages), settingsSignature = requestSettingsSignature(settings);
+    const runtimeSignature = requestSettingsSignature(Runtime.settings || {});
+    let previousFailure = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      let expired = false;
+      const timer = setTimeout(() => { expired = true; controller.abort(); }, Math.max(1,deadlineAt-Date.now()));
+      try {
+        const run = await openLibEvidenceRun(messages,settings,recent,requestId,nativeBinding,controller);
+        if (expired || Date.now() >= deadlineAt) { run.close(); throw libEvidenceError('LIB_READ_TIMEOUT'); }
+        if (attempt > 0 && run.status !== 'ready') { run.close(); throw libEvidenceError(run.reason || 'LIB_READ_UNIFIED_UNAVAILABLE',run); }
+        Runtime.lastLibReadDiagnostic = Object.freeze({at:Date.now(),purpose:'response_evidence',
+          status:run.status,code:run.reason || '',phase:'opening',attempts:attempt+1,retryCount:attempt,
+          ...libReadFailureDetails(run),...(previousFailure ? {previousFailure} : {}),
+          connection:LibReadConnection.status(),elapsedMs:Date.now()-startedAt});
+        return run;
+      } catch (caught) {
+        controller.abort();
+        let error = expired || Date.now() >= deadlineAt ? libEvidenceError('LIB_READ_TIMEOUT',caught) : caught;
+        const code = error?.code === 'LIB_READ_CURRENTNESS_LOST' ? error.causeCode : error?.code;
+        // Older LIBRA transports used the generic code even for a typed refusal.
+        const reportedCode = /^LIB_READ_[A-Z_]+$/.test(error?.dispatchReason || '') ? error.dispatchReason : code;
+        const retryable = attempt === 0 && reportedCode === 'LIB_READ_UNIFIED_UNAVAILABLE' && Date.now() < deadlineAt;
+        if (retryable) {
+          try {
+            nativeBinding?.assertLocal?.();
+            if (JSON.stringify(messages)!==requestSignature || requestSettingsSignature(settings)!==settingsSignature
+              || requestSettingsSignature(Runtime.settings || {})!==runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+            let nativeTimer;
+            try { await Promise.race([Promise.resolve().then(() => nativeBinding?.assertCurrent?.()),new Promise((_,reject) => {
+              nativeTimer=setTimeout(() => reject(libEvidenceError('LIB_READ_TIMEOUT')),Math.max(1,deadlineAt-Date.now()));
+            })]); } finally { clearTimeout(nativeTimer); }
+          } catch (nativeError) { error = nativeError; }
         }
-        if (Runtime.inputAssistSend?.busy) Runtime.inputAssistSend = { ...Runtime.inputAssistSend, memory: { status: 'unavailable', reason: error.code } };
-        // Keep the boundary that actually failed (e.g. model_context_preflight).
-        noteDiagnostic('unavailable', error.code, notedStage || 'owner_read');
-        warn('input_writer_memory_unavailable', error.code);
-        return null;
-      }
-      closeInputWriterEvidence(/^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', lease);
-      noteDiagnostic('failed', /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE', notedStage || 'owner_read');
-      throw error;
+        const details = libReadFailureDetails(error);
+        Runtime.lastLibReadDiagnostic = Object.freeze({at:Date.now(),purpose:'response_evidence',status:'failed',
+          code:error?.code || 'LIB_READ_UNAVAILABLE',phase:'opening',attempts:attempt+1,retryCount:attempt,...details,
+          ...(previousFailure ? {previousFailure} : {}),connection:LibReadConnection.status(),elapsedMs:Date.now()-startedAt});
+        if (!retryable || error !== caught) throw error;
+        previousFailure = Object.freeze({code:error.code,...details});
+      } finally { clearTimeout(timer); }
     }
   };
-  const idForInputWriter = () => 'input-writer:' + Date.now() + ':' + Math.random().toString(36).slice(2);
-  const assertInputWriterDeliveryLocal = lease => {
-    if (!lease) return true;
-    if (lease.failed || inputWriterEvidenceLease !== lease || !lease.run) throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    lease.run.assertLocalCurrent(); return true;
-  };
-  const assertInputWriterDelivery = async (lease, value, currentValue = () => value) => {
-    if (!lease) return value;
-    if (lease.failed || inputWriterEvidenceLease !== lease || !lease.run) throw libEvidenceError(lease.failed || 'LIB_READ_SUPERSEDED');
-    const exact = text(value);
-    await lease.run.finalize(exact);
-    if (text(currentValue()) !== exact || inputWriterEvidenceLease !== lease) throw lease.run.fail('LIB_READ_PROPOSAL_CHANGED');
-    lease.run.assertLocalCurrent(); return exact;
-  };
 
+  let inputWriterDialogCancel = null;
   const log = (...args) => {
     if (activeLibEvidenceRun) return;
     if (Runtime.settings?.debugLog) console.log(PUBLIC_LOG_PREFIX, ...args);
@@ -5160,10 +4941,6 @@ Before continuing, verify:
     const p = canonicalProvider(provider);
     return !!PROVIDER_PRESETS[p]?.local || ['ollama', 'lmstudio', 'custom'].includes(p);
   };
-  const providerRequiresUrl = (provider) => {
-    const p = canonicalProvider(provider);
-    return ['custom', 'vertex', 'vertex-openai'].includes(p) || directProviderDefinition(p)?.requiresConfiguredUrl === true;
-  };
   const allowsEmptyKey = providerAllowsEmptyKey;
 
   const stripBearerPrefix = (value) => text(value || '').trim().replace(/^Bearer\s+/i, '').trim();
@@ -5413,7 +5190,7 @@ Before continuing, verify:
       maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode',
       stageTimeoutMs: 'stage_timeout_ms', defaultPresetName: 'default_preset', aideStageOrder: 'aide_stage_order', quickProfile: 'quick_profile', multiPipelineMode: 'multi_pipeline_mode', writingMode: 'writing_mode', shadowDraftMode: 'shadow_draft_mode', novelShadowDraftMode: 'novel_shadow_draft_mode',
       gradationMode: 'gradation_mode', outputMode: 'output_mode', internalDraftLanguage: 'internal_draft_language', builtInStylePreset: 'built_in_style_preset', debugLog: 'debug_log', enableShadowRisuContext: 'shadow_include_risu_context', shadowRisuContextMaxChars: 'shadow_risu_context_max_chars', twoCallAide: 'two_call_aide', targetDraftMinChars: 'target_draft_min_chars', targetDraftMaxChars: 'target_draft_max_chars', guiEnabled: 'enable_gui',
-      inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', novelInputAssistMode: 'novel_input_assist_mode', rpInputAssistMode: 'rp_input_assist_mode', novelInputAssistScope: 'novel_input_assist_scope', novelInputAssistConfirmationMode: 'novel_input_assist_confirmation_mode', informationTransferMode: 'information_transfer_mode',
+      rpImpersonationScope: 'rp_impersonation_scope', memoryBudgetChars: 'memory_budget_chars', inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', novelInputAssistMode: 'novel_input_assist_mode', rpInputAssistMode: 'rp_input_assist_mode', novelInputAssistScope: 'novel_input_assist_scope', novelInputAssistConfirmationMode: 'novel_input_assist_confirmation_mode', informationTransferMode: 'information_transfer_mode',
       nsfwMode: 'nsfw_mode', nsfwGuidanceEnabled: 'nsfw_guidance_enabled', nsfwInjectFinalRequest: 'nsfw_inject_final_request',
       responseImprovementProfile: 'response_improvement_profile', responseImprovementToggles: 'response_improvement_toggles',
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
@@ -5517,8 +5294,6 @@ Before continuing, verify:
     return out;
   };
 
-  // v0.12.6: optional post-response agents were removed. Old data is ignored.
-  const normalizeStoredPostProcessors = () => ({ mode: 'off' });
 
   // Legacy storage/API names use customPrompt + replace. Semantically this is
   // direction guidance only; built-in prompt structure is never replaced.
@@ -5837,19 +5612,6 @@ Before continuing, verify:
 
   
 
-  const retainTelemetryArcCallPlan = (settings = {}, plannedCalls = 0) => {
-    const telemetry = Runtime.callTelemetry;
-    if (!telemetry || telemetry.completedAt) return 0;
-    telemetry.plannedArcBoundaryCalls = Math.max(
-      0,
-      Number(telemetry.plannedArcBoundaryCalls || 0),
-      Number(plannedCalls || 0)
-    );
-    telemetry.expected = expectedTotalCallPlan(settings, {
-      arcBoundaryCalls: telemetry.plannedArcBoundaryCalls
-    });
-    return telemetry.plannedArcBoundaryCalls;
-  };
 
   
 
@@ -5894,6 +5656,8 @@ Before continuing, verify:
         novel_shadow_draft_mode: flat.novel_shadow_draft_mode ?? flat.novelShadowDraftMode,
         internal_draft_language: flat.internal_draft_language ?? flat.internalDraftLanguage,
         novel_input_assist_mode: flat.novel_input_assist_mode ?? flat.novelInputAssistMode,
+        rp_impersonation_scope: flat.rp_impersonation_scope ?? flat.rpImpersonationScope,
+        memory_budget_chars: flat.memory_budget_chars ?? flat.memoryBudgetChars,
         rp_input_assist_mode: flat.rp_input_assist_mode ?? flat.rpInputAssistMode,
         novel_input_assist_scope: flat.novel_input_assist_scope ?? flat.novelInputAssistScope,
         novel_input_assist_confirmation_mode: flat.novel_input_assist_confirmation_mode ?? flat.novelInputAssistConfirmationMode,
@@ -6381,6 +6145,8 @@ Before continuing, verify:
       'novel_input_assist_mode',
       writingMode === 'rp' ? 'off' : configuredInputAssistMode
     ), INPUT_ASSIST_MODES, 'off');
+    const memoryBudgetSetting = Number.parseInt(await runtimeCfg('memory_budget_chars', ''), 10);
+    const rpImpersonationScopeSetting = normalizeRpImpersonationScope(await runtimeCfg('rp_impersonation_scope', DEFAULT_RP_IMPERSONATION_SCOPE));
     const rpInputAssistMode = normalizeChoice(await runtimeCfg(
       'rp_input_assist_mode',
       writingMode === 'rp' ? configuredInputAssistMode : 'user_focus'
@@ -6425,7 +6191,6 @@ Before continuing, verify:
     const loreTopKRepairVersion = Math.max(0, Number(runtimeStored.lore_reranker_top_k_repair_v1 || 0) || 0);
     let loreRerankerTopK = rawLoreRerankerTopK;
     if (loreTopKRepairVersion < LORE_RERANK_TOP_K_REPAIR_VERSION && rawLoreRerankerTopK === 1) {
-      // v0.25.51-era settings could surface Top-K=1 even though the product default is 8.
       // Repair that legacy value exactly once. After the marker is stored, an explicit user
       // choice of 1 is respected on later loads.
       loreRerankerTopK = DEFAULT_STAGE_LORE_RERANK_TOP_K;
@@ -6486,6 +6251,8 @@ Before continuing, verify:
       inputAssistTargetChars,
       inputAssistConfirmationMode,
       novelInputAssistMode,
+      rpImpersonationScope: rpImpersonationScopeSetting,
+      memoryBudgetChars: Number.isSafeInteger(memoryBudgetSetting) && memoryBudgetSetting >= 1000 ? memoryBudgetSetting : null,
       rpInputAssistMode,
       novelInputAssistScope,
       novelInputAssistConfirmationMode,
@@ -6580,6 +6347,8 @@ Before continuing, verify:
     const shadowStage = settings.stageOptions.shadow_act;
     settings.turnWindow = shadowStage.turn_window;
     settings.maxRecentChars = shadowStage.max_chars;
+    if (settings.quickProfile !== 'custom' && ['shadow_act', ...normalizeAideStageOrder(settings.aideStageOrder)]
+      .some(stageId => Number(settings.stageOptions?.[stageId]?.max_chars) !== REFERENCE_PROFILE_CAPS[settings.quickProfile])) settings.quickProfile = 'custom';
     {
       const rawGlobal = Number.parseInt(await runtimeCfg('stage_timeout_ms', ''), 10);
       settings.globalStageTimeoutMs = Number.isFinite(rawGlobal) && rawGlobal > 0
@@ -7359,7 +7128,6 @@ ${text(paired.leadingAssistant.content || '')}
   };
 
   const buildRecentChat = (messages, settings) => {
-    // v0.25.76: keep old message bodies as lightweight strings while pairing the
     // recent window, then run the expensive history sanitizer only on content that
     // can actually reach a prompt. This preserves turn numbering without repeatedly
     // regex-cleaning hundreds/thousands of old messages.
@@ -7653,7 +7421,6 @@ ${text(paired.leadingAssistant.content || '')}
       for (const match of memberMatches) add(match[1]);
     });
 
-    // v0.25.76: merge alias-equivalent entries in linear time. The previous
     // merged.find(...aliasKeys...) path became O(E²) on large WingLore databases.
     const merged = [];
     const aliasOwner = new Map();
@@ -8975,31 +8742,7 @@ function agentCbsCalculateRpn(expression) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
-function hashAgentCbsContext(cbsContext) {
-  const hasher = createTextHasher()
-    .update('agent-cbs')
-    .update(cbsContext?.characterName || '')
-    .update(cbsContext?.userName || '')
-    .update(cbsContext?.randomSeedText || '')
-    .update(cbsContext?.randomMessageCount ?? 0);
-  const appendObject = (label, value) => {
-    const entries = Object.entries(value || {}).sort((a, b) => a[0].localeCompare(b[0]));
-    hasher.update(label).update(entries.length);
-    entries.forEach(([key, entryValue]) => {
-      hasher.update(key).update(entryValue);
-    });
-  };
-  appendObject('chatVars', cbsContext?.chatVars);
-  appendObject('globalVars', cbsContext?.globalVars);
-  appendObject('defaultVars', cbsContext?.defaultVars);
-  return hasher.digest();
-}
 
-function formatPromptForRunLog(messages) {
-  return (Array.isArray(messages) ? messages : [])
-    .map((message, idx) => `[${idx}] ${message?.role || '(none)'}\n${String(message?.content ?? '')}`)
-    .join('\n\n');
-}
 
 function renderAgentCbsMessages(messages, cbsContext, options = {}) {
   const state = createAgentCbsRenderState(options);
@@ -9628,17 +9371,6 @@ function summarizeAgentCbsTag(rawContent) {
   return text.length > 90 ? `${text.slice(0, 87)}...` : text;
 }
 
-function mergeAgentCbsWarnings(...warningLists) {
-  const seen = new Set();
-  const merged = [];
-  warningLists.flat().forEach((warning) => {
-    const text = String(warning || '').trim();
-    if (!text || seen.has(text)) return;
-    seen.add(text);
-    if (merged.length < AGENT_CBS_MAX_WARNINGS) merged.push(text);
-  });
-  return merged;
-}
 
 
   const parseLoreDecoratorArgs = (raw = '') => text(raw || '')
@@ -10211,27 +9943,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     return all ? allMatched : false;
   };
 
-  const loreKeyMatches = (candidate, haystack) => {
-    if (candidate.alwaysActive) return true;
-    if (candidate.mode === 'folder') return false;
-    const keys = candidate.keys.length ? candidate.keys : candidate.secondaryKeys;
-    if (!keys.length) return false;
-    for (const key of keys) {
-      if (!key) continue;
-      if (candidate.useRegex || /^\/.+\/[a-z]*$/i.test(key)) {
-        const regex = makeLoreRegex(key);
-        if (regex) {
-          regex.lastIndex = 0;
-          if (regex.test(haystack)) return true;
-        }
-      } else if (haystack.includes(normalizeForLoreMatch(key).replace(/ /g, ''))) {
-        return true;
-      } else if (normalizeForLoreMatch(haystack).includes(normalizeForLoreMatch(key))) {
-        return true;
-      }
-    }
-    return false;
-  };
 
   const loreContinuityIdentity = candidate => [
     candidate?.sourceType || '',
@@ -11071,19 +10782,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     return loreJaccardUnique(grams, limit);
   };
 
-  const loreJaccardLexicalStats = (queryTokens = [], textTokens = []) => {
-    const left = new Set(queryTokens.map(loreJaccardNormalizeKey).filter(Boolean));
-    const right = new Set(textTokens.map(loreJaccardNormalizeKey).filter(Boolean));
-    if (!left.size || !right.size) return { jaccard: 0, coverage: 0, overlap: 0 };
-    let overlap = 0;
-    left.forEach(token => { if (right.has(token)) overlap += 1; });
-    const union = left.size + right.size - overlap;
-    return {
-      jaccard: union > 0 ? overlap / union : 0,
-      coverage: overlap / left.size,
-      overlap
-    };
-  };
 
   const loreJaccardTokenWeight = token => {
     const raw = text(token || '');
@@ -11519,9 +11217,6 @@ function mergeAgentCbsWarnings(...warningLists) {
     );
   };
 
-  const loreBm25fSectionScores = (query, sections = []) => (
-    loreBm25fSectionScoreDetails(query, sections).scores.map(item => Number(item.score || 0))
-  );
 
   const loreFullTextIndexIdentityText = lore => [
     lore?.label,
@@ -13601,73 +13296,6 @@ ${passage.text || ''}`, 420));
     ...promoteLoreCandidatesWithJaccard(candidates, activeLore, query, options)
   });
 
-  const retrieveActiveLoreWithJaccard = (activeLore = [], primaryQuery = '', continuityQuery = '', maxContextChars = DEFAULT_SHADOW_RISU_CONTEXT_CHARS) => {
-    const currentQuery = compact(primaryQuery, 2400);
-    const supportQuery = compact(continuityQuery, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
-    const routeBoost = route => ({
-      jaccard_current_input: 0.48,
-      terminal_entity: 0.44,
-      current_input: 0.42,
-      recent_context: 0.34,
-      recursive: 0.26,
-      forced: 0.22,
-      chat_local_always: 0.18,
-      always: 0.04
-    }[route] || 0);
-    const scoring = activeLore.map((lore, order) => {
-      const identity = [lore.label, lore.key, lore.source].filter(Boolean).join('\n');
-      const primary = retrieveLoreExcerptWithJaccard(lore.content, currentQuery || supportQuery, 1800);
-      const support = supportQuery
-        ? loreJaccardScoreText(supportQuery, `${identity}\n${compactMiddle(lore.content, 2600)}`, identity)
-        : { score: 0 };
-      const identityScore = loreJaccardScoreText(currentQuery || supportQuery, identity, identity);
-      return {
-        lore,
-        order,
-        score: Math.max(primary.score, identityScore.score) * LORE_JACCARD_TUNING.currentInputWeight
-          + Number(support.score || 0) * LORE_JACCARD_TUNING.continuityWeight
-          + routeBoost(lore.activationRoute)
-          + Math.min(0.1, Math.max(0, Number(lore.priority || 0)) / 1000),
-        primary
-      };
-    }).sort((left, right) => right.score - left.score || left.order - right.order);
-    let remaining = clampInt(Math.floor(Number(maxContextChars || DEFAULT_SHADOW_RISU_CONTEXT_CHARS) * 0.62), 1200, 9000, 6000);
-    const retrieved = [];
-    for (let rank = 0; rank < scoring.length && retrieved.length < DEFAULT_SHADOW_ACTIVE_LORE_LIMIT; rank += 1) {
-      const entry = scoring[rank];
-      if (remaining < 220) break;
-      const itemsLeft = Math.max(1, scoring.length - rank);
-      const preferred = rank === 0
-        ? Math.min(3600, Math.max(1800, Math.floor(remaining * 0.52)))
-        : rank === 1
-          ? Math.min(2200, Math.max(1000, Math.floor(remaining * 0.42)))
-          : Math.min(1500, Math.max(700, Math.floor(remaining / itemsLeft)));
-      const budget = Math.max(220, Math.min(remaining, preferred));
-      const excerpt = retrieveLoreExcerptWithJaccard(entry.lore.content, currentQuery || supportQuery, budget);
-      if (!text(excerpt.text).trim()) continue;
-      remaining = Math.max(0, remaining - text(excerpt.text).length);
-      retrieved.push({
-        ...entry.lore,
-        retrievedContent: excerpt.text,
-        retrieval: {
-          engine: LORE_HYBRID_RETRIEVAL_ENGINE_VERSION,
-          score: Number(entry.score.toFixed(4)),
-          excerptScore: Number(excerpt.score.toFixed(4)),
-          bm25: Number(Number(excerpt.bm25 || 0).toFixed(4)),
-          bm25f: Number(Number(excerpt.bm25 || 0).toFixed(4)),
-          bm25fRaw: Number(Number(excerpt.bm25Raw || 0).toFixed(4)),
-          bm25fEngine: excerpt.bm25Engine || LORE_BM25F_ENGINE_VERSION,
-          entityAnchor: Number(Number(excerpt.entityAnchor || 0).toFixed(4)),
-          matchedSections: excerpt.matchedSections,
-          fallback: excerpt.fallback,
-          rawChars: text(entry.lore.content).length,
-          excerptChars: text(excerpt.text).length,
-          rank: rank + 1
-        }
-      });
-    }
-    return retrieved;
-  };
 
 
   const loreStageRouteWeight = (stageName, route) => {
@@ -14208,7 +13836,6 @@ ${passage.text || ''}`, 420));
     const terminalQuery = compact(options.terminalQuery || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
     const bm25fCurrentCorpus = loreBm25fLoreCorpusScores(source, primaryQuery, 6200);
     const bm25fTerminalCorpus = loreBm25fLoreCorpusScores(source, terminalQuery, 4200);
-    // v0.25.77: once the full-text index has searched every permitted lore, precision
     // reranking also scores every candidate in its bounded result pool. Do not use a
     // wall-clock cutoff that can silently leave later lore unscored.
     const scoredEntries = source.map((lore, order) => {
@@ -14307,7 +13934,6 @@ ${passage.text || ''}`, 420));
       )
     ));
 
-    // v0.25.78: the configured value is a starting frontier, not a hard cut. The
     // selector expands for candidate-protected evidence, uncovered query anchors and
     // flat relevance clusters, then constrains optional evidence by the actual lore
     // budget. Long lore contributes query-ranked passages built from its complete source.
@@ -14575,9 +14201,11 @@ ${passage.text || ''}`, 420));
   const selectManualSkillsForStage = (stage, settings = {}) => {
     if (!SKILL_STAGE_IDS.includes(stage)) return {engine:MANUAL_SKILL_SELECTION_VERSION,stage,selected:[],baselineIds:[]};
     const library = skillLibraryForSettings(settings, true);
-    const ids = normalizeSkillStageSelections(settings.skillStageSelections)[stage];
+    const allIds = normalizeSkillStageSelections(settings.skillStageSelections)[stage].filter(id => !GRADIA_BASE_SKILL_IDS.includes(id));
+    const ids = allIds.slice(0, MANUAL_SKILL_MAX_PER_STAGE), overCount = allIds.slice(MANUAL_SKILL_MAX_PER_STAGE);
     const references = normalizeSkillStageReferences(settings.skillStageReferences)[stage];
     const selected = [];
+    if (overCount.length) warn(`skill_count_limit:${stage}`, `단계당 스킬은 ${MANUAL_SKILL_MAX_PER_STAGE}개까지입니다. ${overCount.join(', ')}은(는) 적용하지 않았습니다.`);
     for (const id of ids) {
       // Baseline rules are a separate fixed layer, never duplicated as full skills.
       if (GRADIA_BASE_SKILL_IDS.includes(id)) continue;
@@ -14590,7 +14218,14 @@ ${passage.text || ''}`, 420));
       });
       selected.push({id,source:skill.source || 'builtin',rank:selected.length+1,references:refs});
     }
-    return {engine:MANUAL_SKILL_SELECTION_VERSION,compiler:SKILL_COMPILER_VERSION,stage,baselineIds:baseQualityIds(settings),selected};
+    const selection = {engine:MANUAL_SKILL_SELECTION_VERSION,compiler:SKILL_COMPILER_VERSION,stage,baselineIds:baseQualityIds(settings),selected};
+    if (!['soft', 'degraded'].includes(settings.failureMode) || !selected.length) return selection;
+    const capacity = manualSkillCapacity(stage, settings);
+    if (!capacity.verified) return selection;
+    const left = [];
+    while (selected.length && manualSkillBudget(selection, stage, settings, capacity).chars > capacity.maxSkillChars) left.unshift(selected.pop().id);
+    if (left.length) { selection.leftOut = left; warn(`skill_budget_trimmed:${stage}`, `문맥 여유가 부족해 스킬 ${left.join(', ')}을(를) 이번 단계에서 뺐습니다. 한도 ${capacity.maxSkillChars}자.`); }
+    return selection;
   };
   const stageSkillBlockForPrompt = (recent, phase = 'analysis', settings = {}) => {
     const stage = recent?.skillSelection?.stage || settings?.activeStageName || '';
@@ -15772,22 +15407,6 @@ ${passage.text || ''}`, 420));
         : false
   );
 
-  const reuseShadowLorePack = (shared, refs) => {
-    const sourcePack = shared?.shadowLorePack;
-    const entries = Array.isArray(sourcePack?.entries)
-      ? sourcePack.entries.filter(entry => loreAllowedByRisuReferences(entry?.lore, refs))
-      : [];
-    return {
-      stage: 'shadow_act',
-      blocks: entries.map(entry => entry.block),
-      selected: entries.map(entry => entry.selected),
-      entries,
-      dropped: Array.isArray(sourcePack?.dropped) ? sourcePack.dropped : [],
-      budgetChars: Number(sourcePack?.budgetChars || 0),
-      usedChars: entries.reduce((sum, entry) => sum + text(entry?.block || '').length + 2, 0),
-      reusedFromShadow: true
-    };
-  };
 
   // Materialize a stage view from the one request-scoped reference snapshot.
   // Character/persona loading, module scanning, activation, and Jaccard promotion
@@ -18124,7 +17743,7 @@ ${passage.text || ''}`, 420));
   };
 
   const estimateTokensFromText = (value) => Math.max(1, Math.ceil(text(value || '').length / 3.4));
-  const estimateContextTokensFromText = (value) => Math.max(1, Math.ceil(text(value || '').length / 2.4));
+  const estimateContextTokensFromText = (value) => Math.max(1, Math.ceil(text(value || '').length / INPUT_CHARS_PER_TOKEN));
   const nextPowerOfTwo = (value) => {
     let n = 1024;
     const target = Math.max(1024, Number(value) || 1024);
@@ -18141,10 +17760,6 @@ ${passage.text || ''}`, 420));
     const presetMax = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
     const isAnalysis = /private RP analysis stage|analysis phase|serial_gradation_agents_for_rp_analysis_v\d+/i.test(systemPrompt || '');
     const draftChars = clampInt(settings?.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS, 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS);
-    const profileId = normalizeChoice(settings?.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
-    const profile = QUICK_PROFILE_DEFS[profileId] || QUICK_PROFILE_DEFS.custom;
-    const analysisScale = Math.max(0.25, Math.min(1, Number(profile.analysisTokenScale) || 1));
-    const baseAnalysisWanted = STAGE_ANALYSIS_OUTPUT_TOKENS[stageName] || 2800;
     const targetDraftChars = Math.round((
       clampInt(settings?.targetDraftMinChars, 100, 20000, DEFAULT_TARGET_DRAFT_MIN_CHARS)
       + clampInt(settings?.targetDraftMaxChars, 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS)
@@ -18153,7 +17768,7 @@ ${passage.text || ''}`, 420));
     const shadowPlanningFloor = stageName === 'shadow_act'
       ? 1400 + shadowBeatCount * 140
       : 0;
-    const analysisWanted = Math.max(768, Math.round(baseAnalysisWanted * analysisScale), shadowPlanningFloor);
+    const analysisWanted = Math.max(MAX_ANALYSIS_OUTPUT_TOKENS, shadowPlanningFloor);
     const charsPerToken = draftCharsPerToken(settings);
     const visibleWanted = isAnalysis ? analysisWanted : Math.ceil(draftChars / charsPerToken) + 1536;
     const reasoningFamily = effectiveReasoningFamilyForPreset(preset);
@@ -18517,7 +18132,6 @@ ${passage.text || ''}`, 420));
     return done ? `thinking_only:${done}` : 'thinking_only';
   };
 
-  const parseSseChatText = (raw, provider = 'openai') => parseStreamText(raw, provider).content;
 
   const providerFinishReason = (data) => {
     if (!data || typeof data !== 'object') return '';
@@ -19802,7 +19416,8 @@ ${passage.text || ''}`, 420));
     return telemetry;
   };
 
-  const callLLMWithPreset = async (settings, stageName, systemPrompt, userPrompt, options = {}) => {
+  const callLLMWithPreset = async (settings, stageName, rawSystemPrompt, userPrompt, options = {}) => {
+    let systemPrompt = stageName === INPUT_ASSIST_STAGE_ID ? rawSystemPrompt : applyRpScopeToSystemPrompt(settings, rawSystemPrompt);
     if ((stageName === ARC_DIRECTOR_STAGE_ID)) throw retiredMemoryError();
     const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
     if (evidenceRun) {
@@ -20283,29 +19898,6 @@ ${passage.text || ''}`, 420));
     return candidates[Math.floor(Math.random() * candidates.length)] || 'user_focus';
   };
 
-  const inputAssistModeInstruction = mode => ({
-    user_focus: [
-      'MODE: USER-CENTERED INPUT RECONSTRUCTION.',
-      'Rebuild the whole input around the user’s intended action, attention, question, or goal instead of retaining the original sentences and appending material.',
-      'Clarify the actionable focus, remove redundancy, reorder information, and integrate strongly implied interaction hooks into one cohesive input.',
-      'Preserve the original action modality and completion state literally. An action explicitly stated as completed must remain completed; never downgrade it into a thought, draft, intention, attempt, hesitation, cancellation, or unsent action.',
-      'Never invent a new user decision, consent, success, result, spoken line, or action that changes what the user chose.'
-    ],
-    npc_focus: [
-      'MODE: PRESENT-NPC-CENTERED INPUT RECONSTRUCTION.',
-      'Rebuild the whole input so the user’s current stimulus and the present NPCs’ room to act are expressed as one coherent request.',
-      'Requested NPC behavior must follow the current relationship, personality, knowledge, incentives, and the specific user stimulus.',
-      'Do not merely append a sentence asking NPCs to react. Integrate that focus naturally into the reorganized input.',
-      'Do not pre-write the NPC response or force feelings; leave the actual response to the downstream response model.'
-    ],
-    offscreen_focus: [
-      'MODE: OFFSCREEN LOW-FREQUENCY NPC AND FACTION INPUT RECONSTRUCTION.',
-      'Rebuild the whole input so the current action and causally reachable offscreen movement form one coherent scene request.',
-      'Prefer causally reachable signals such as rumors, messages, orders, traces, delays, agents, consequences, or converging plans.',
-      'Do not retain the original paragraph and append an unrelated offscreen-event request; reorganize and integrate the focus.',
-      'Do not teleport actors into the scene, reveal information without a path, or override established canon merely to create activity.'
-    ]
-  }[mode] || []);
 
   const playerControlledInputVoiceContext = (original = '', cbsContext = null) => {
     const aliases = new Set();
@@ -20346,11 +19938,24 @@ ${passage.text || ''}`, 420));
     return output;
   };
 
-  const authorDirectedInputAssistInstruction = (voiceContext = {}) => {
+  // Which person is which never depends on the character card's name or the focus of a choice.
+  const inputWriterCastRules = (voiceContext = {}) => [
+    `CAST: the protagonist is ALWAYS the user persona${voiceContext.playerName ? ` (${voiceContext.playerName})` : ''}. Central and supporting characters are ALWAYS people other than the persona.`,
+    'Never present a non-persona character as the protagonist, even when the character card, chat title, or current scene centers on them, and never treat the persona as a central or supporting character.',
+    'A candidate that focuses on other people still keeps the persona as its protagonist; only the emphasis moves.'
+  ];
+
+  const authorDirectedInputAssistInstruction = (voiceContext = {}, targetChoice = {}) => {
     const aliases = Array.isArray(voiceContext?.aliases) ? voiceContext.aliases.filter(Boolean) : [];
     return [
       'MODE: PLAYER-CONTROLLED RP ACTION CHOICE ADVISER.',
-      'Generate alternative USER ACTION INPUTS the user may explicitly choose. Do not write assistant RP prose and do not describe the NPC/world response after the proposed user action.',
+      voiceContext.hasInput
+        ? 'Reconstruct and expand CURRENT USER INPUT into different ready-to-send USER ACTION INPUTS the user may explicitly choose. Every option is built from what the user wrote: the same action, target, and intent, made fuller and clearer. Do not replace it with a different action, and do not ignore it to describe the situation.'
+        : 'Propose different ready-to-send USER ACTION INPUTS the user may explicitly choose, grounded in the terminal scene.',
+      'Do not write assistant RP prose and do not describe the NPC/world response after the proposed user action.',
+      voiceContext.speechOnly ? 'CURRENT USER INPUT is only quoted speech, which is the persona\'s own spoken line. Keep that line in every option and build the option around it.' : '',
+      ...inputWriterCastRules(voiceContext),
+      'TIME: every candidate happens right now, immediately after the end of TERMINAL PASSAGE, in that place and at that moment. Earlier turns are finished: use what they established, carry their unresolved threads, and never redo them or move back to them.',
       'Nothing you propose is canon or enacted until the user explicitly selects that option in the GRADIA choice UI.',
       'Each option must be a ready-to-send user input: what the user character chooses to do/say/attempt/ask NOW, not a scene brief telling the assistant what outcomes must happen.',
       'PLAYER INPUT VOICE: write from the player side, NOT as a narrator describing the persona from outside.',
@@ -20359,11 +19964,14 @@ ${passage.text || ''}`, 420));
       'Do not continue into the NPC/world answer. `그러자 보라가 대답했다...` is assistant-owned outcome and must NOT appear in a choice. If useful, the player input may end with a user-owned handoff such as `대답을 기다렸다.`',
       'Prefer immediately playable outward action/dialogue/question over a paragraph of private reflection. An observe/wait option should describe the player staying quiet, watching, or waiting—not decide a long hidden emotional conclusion for the persona.',
       'In languages where a subject is grammatically necessary, prefer natural first-person player voice over third-person persona narration.',
-      'Options may differ meaningfully in tactic, tone, target, restraint, question, movement, or decision space. Never pre-decide the NPC/world response, success, consent from others, hidden facts, or aftermath.',
+      (voiceContext.hasInput
+        ? 'Options differ in how the written action is carried out: tactic, tone, detail, wording of what is said, or pacing. Never pre-decide'
+        : 'Options may differ meaningfully in tactic, tone, target, restraint, question, movement, or decision space. Never pre-decide') + ' the NPC/world response, success, consent from others, hidden facts, or aftermath.',
       'Respect the terminal scene, current continuity, knowledge/relationship boundaries, and explicit OOC constraints in CURRENT USER INPUT. If CURRENT USER INPUT already contains a hard constraint, preserve it across compatible proposals.',
-      'If the user already wrote a concrete action, the original input remains a separate selectable option; AI proposals are alternatives and are not allowed to silently overwrite it.',
+      'The original input also stays separately selectable; a chosen option is the user\'s own input made fuller, never a silent replacement of it.',
       'Story Arc future beats are optional inspiration only. They may suggest opportunities presented TO the user but cannot become user behavior unless the user selects a matching option.',
-      'Prefer three materially different choices rather than cosmetic rewrites. Do not recommend, rank, preselect, or mark a best choice.'
+      targetChoice?.chars ? inputAssistLengthLine(targetChoice, { writingMode: 'rp' }) + ' Fill it with the player\'s own action, dialogue, and what they notice; the length never licenses writing the NPC/world response.' : '',
+      'Prefer three clearly different choices rather than cosmetic rewrites. Do not recommend, rank, preselect, or mark a best choice.'
     ].filter(Boolean);
   };
 
@@ -20464,34 +20072,25 @@ ${passage.text || ''}`, 420));
     return NOVEL_INPUT_CHOICE_PERSPECTIVES.map(perspective => byPerspective.get(perspective)).filter(Boolean);
   };
 
-  const novelInputAssistChoiceInstruction = (continuationCue = {}, targetChoice = {}) => [
+  const novelInputAssistChoiceInstruction = (continuationCue = {}, targetChoice = {}, voiceContext = {}) => [
     'MODE: NOVEL-MODE THREE-PERSPECTIVE AUTHOR-DIRECTION CHOICE ADVISER.',
+    ...inputWriterCastRules(voiceContext),
     `Generate EXACTLY ${NOVEL_INPUT_CHOICE_TARGET} candidate AUTHOR INPUTS. The required perspectives are, in order: user_focus, npc_focus, offscreen_focus.`,
     'All three candidates must preserve the same CORE AUTHOR INTENT: explicit hard constraints, fixed events/outcomes, named entities, polarity, prohibitions, relationship boundaries, and any irreversible decision the user explicitly commits. Unspecified micro-actions and prose choices do NOT need to be identical.',
     'user_focus: realize the same author intent through the user persona/protagonist’s experience, action, dialogue, interiority, or decision emphasis. You MAY propose new protagonist details consistent with the authorial direction; this is Novel mode, not player-controlled RP.',
     'npc_focus: preserve the core author intent while emphasizing current NPC initiative, dialogue, reaction, relationship dynamics, and scene interaction. You may vary protagonist micro-actions when they are not explicitly fixed by the user.',
     'offscreen_focus: preserve the core author intent while emphasizing causally reachable offscreen NPC/faction/world movement such as messages, orders, delays, traces, rumors, consequences, or converging plans. Do not teleport actors, invent arbitrary crises, or reveal information without a path.',
+    'TIME: every candidate happens right now, immediately after the end of TERMINAL PASSAGE, in that place and at that moment. Earlier turns are finished: use what they established, carry their unresolved threads, and never redo them or move back to them.',
     continuationCue?.active
       ? 'CONTINUATION CASE: the user supplied no new fixed action. Propose three different authorial directions for the nearest continuation supported by the terminal scene. The protagonist may be authored as part of those proposals; do not introduce a disconnected new plot.'
-      : 'NORMAL INPUT CASE: reconstruct the input as an author-facing scene direction rather than freezing every user-persona micro-action. Preserve explicit commitments and allow the perspective to change how the scene is realized.',
+      : 'NORMAL INPUT CASE: reconstruct and expand CURRENT USER INPUT as an author-facing scene direction rather than freezing every user-persona micro-action. Preserve explicit commitments and allow the perspective to change how the scene is realized. Rewrite the input as one integrated whole: never copy its sentences and then add what happens next, and never begin a candidate with the input verbatim. Expansion may add actions, dialogue, and developments the user did not write, woven into the rebuilt input rather than appended after a copy of it.',
     targetChoice?.chars
-      ? `Each candidate may use up to about ${targetChoice.chars} characters as a soft practical ceiling. Use fewer when complete; never pad.`
+      ? inputAssistLengthLine(targetChoice, { writingMode: 'novel' })
       : 'Use the shortest length that makes each candidate clear and executable. Never pad.',
     'Each candidate must be a ready-to-send USER/AUTHOR input in the conversation language, not the assistant’s finished scene and not commentary about how to write.',
     'Do not recommend, rank, preselect, or label one candidate as best. The user decides in a separate GRADIA choice UI.'
   ].filter(Boolean);
 
-  const inputAssistTargetInstruction = value => {
-    const choice = inputAssistTargetChoice(value);
-    if (!choice.chars) return [
-      'TARGET LENGTH: OMAKASE.',
-      'Choose the shortest length that can reconstruct the request clearly from the available input and context. Do not pad the result.'
-    ];
-    return [
-      `TARGET LENGTH: use ${choice.chars} characters as a soft preference and practical ceiling, not a mandatory minimum.`,
-      'Use fewer characters when the reconstructed input is already complete. Never pad, repeat, invent history, or trigger a retry merely to approach the target.'
-    ];
-  };
 
   const cleanInputAssistResult = value => {
     let body = text(value || '').trim();
@@ -20663,6 +20262,20 @@ ${passage.text || ''}`, 420));
   // edit). Streaming, error, comment, disabled and empty replies stay excluded, and the
   // draft pipeline keeps its stricter completion rule.
   const INPUT_ASSIST_PREVIOUS_USER_MAX_CHARS = 600;
+  // Measured: "about N characters" and sentence counts both came back near 40% of N. Paragraphs are followed.
+  const inputAssistLengthLine = (targetChoice, settings = {}) => {
+    const chars = Number(targetChoice?.chars || 0);
+    if (!chars) return '';
+    const paragraphs = Math.max(2, Math.round(chars / (isPlayerControlledDraftMode(settings) ? 120 : 165)));
+    return `LENGTH: each candidate is about ${chars} characters: exactly ${paragraphs} paragraphs separated by a blank line, each paragraph 4 to 5 full sentences. A candidate with fewer paragraphs is wrong.`;
+  };
+  const inputAssistOutputTokens = targetChoice => {
+    const chars = Number(targetChoice?.chars || 0);
+    return chars ? Math.min(8000, Math.ceil(chars * 4) + 1200) : 2600;
+  };
+  const INPUT_ASSIST_RECENT_TURNS = 5;
+  const INPUT_ASSIST_RECENT_TURN_REPLY_CHARS = 700;
+  const INPUT_ASSIST_RECENT_TURN_USER_CHARS = 200;
   const INPUT_ASSIST_SHORT_TERMINAL_CHARS = 800;
   const inputAssistLiveScene = async (content, settings, requestMessages = [], staticSnapshot = null) => {
     const source = staticSnapshot || await loadRisuStaticContextSnapshot(settings);
@@ -20679,18 +20292,17 @@ ${passage.text || ''}`, 420));
       settledVisibleReply = true;
       return { ...message, turnMeta: { ...message.turnMeta, verifiedCompletion: true, settledVisibleReply: true } };
     });
-    const window = buildCompleteRecentTurnWindow(writerMessages, 2, '');
+    const window = buildCompleteRecentTurnWindow(writerMessages, INPUT_ASSIST_RECENT_TURNS + 1, '');
     const terminal = window.previousTurn?.assistant || window.leadingAssistant;
     const terminalTail = extractInputAssistTerminalTail(terminal?.content || '');
     const previousUserInput = window.previousTurn?.user
       ? compact(window.previousTurn.user.content || '', INPUT_ASSIST_PREVIOUS_USER_MAX_CHARS)
       : '';
-    // A short terminal reply alone rarely shows the scene, so the end of the reply before it
-    // fills the remaining terminal budget as clearly separated earlier context.
-    const earlierTurn = window.selectedTurns.length > 1 ? window.selectedTurns[window.selectedTurns.length - 2] : null;
-    const earlierSceneTail = terminalTail && terminalTail.length < INPUT_ASSIST_SHORT_TERMINAL_CHARS && earlierTurn?.assistant
-      ? extractInputAssistTerminalTail(earlierTurn.assistant.content || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS - terminalTail.length)
-      : '';
+    // Turns before the terminal one keep the story in mind. Only the terminal passage says where things stand now.
+    const recentTurns = window.selectedTurns.slice(0, -1).map(turn => ({
+      user: compact(turn.user?.content || '', INPUT_ASSIST_RECENT_TURN_USER_CHARS),
+      assistant: turn.assistant ? extractInputAssistTerminalTail(turn.assistant.content || '', INPUT_ASSIST_RECENT_TURN_REPLY_CHARS) : ''
+    })).filter(turn => turn.user || turn.assistant);
     const terminalProof = !window.previousTurn ? (terminal ? 'leading_assistant' : 'none')
       : window.previousTurn.assistantMessages?.some(message => message.turnMeta?.settledVisibleReply === true) ? 'settled_visible_reply'
         : window.previousTurn.proofKind;
@@ -20707,13 +20319,13 @@ ${passage.text || ''}`, 420));
       discardedHistoricalMessageCount: Math.max(0, storedMessages.length - (terminalTail ? 1 : 0)),
       terminalOnly: true, terminalTailChars: terminalTail.length, terminalAssistantHash: stableDraftHash(terminalTail),
       terminalProof, settledVisibleReplyAccepted: settledVisibleReply && terminalProof === 'settled_visible_reply',
-      previousUserInputChars: previousUserInput.length, earlierSceneTailChars: earlierSceneTail.length,
+      previousUserInputChars: previousUserInput.length, recentTurnCount: recentTurns.length,
       turnEligibility: window.turnEligibility, currentInputAdopted: false
     };
     return {
       messages: messages.length ? messages : [{ role: 'user', content: cleanInput, turnMeta: { currentInput: true, currentInputProven: false, unsubmittedProposal: true } }],
       previousUserInput,
-      earlierSceneTail,
+      recentTurns,
       terminalProof
     };
   };
@@ -20721,8 +20333,8 @@ ${passage.text || ''}`, 420));
     (await inputAssistLiveScene(content, settings, requestMessages, staticSnapshot)).messages;
   // Chronological live-scene blocks placed before the terminal passage in both choice modes.
   const inputAssistLiveSceneBlocks = liveScene => [
-    liveScene?.earlierSceneTail
-      ? `[EARLIER PASSAGE — READ-ONLY CONTEXT BEFORE THE TERMINAL PASSAGE]\n${liveScene.earlierSceneTail}\n`
+    liveScene?.recentTurns?.length
+      ? `[RECENT TURNS — OLDEST FIRST. ALL OF THIS IS OVER. READ IT TO KEEP THE STORY, WHO KNOWS WHAT, AND WHAT IS UNRESOLVED; NEVER WRITE AN INPUT FOR ONE OF THESE MOMENTS]\n${liveScene.recentTurns.map(turn => [turn.user && `User: ${turn.user}`, turn.assistant && `Response (end): ${turn.assistant}`].filter(Boolean).join('\n')).join('\n---\n')}\n`
       : '',
     liveScene?.previousUserInput
       ? `[PREVIOUS USER INPUT — ALREADY HAPPENED; THE TERMINAL PASSAGE ANSWERS IT]\n${liveScene.previousUserInput}\n`
@@ -20786,8 +20398,6 @@ ${passage.text || ''}`, 420));
   };
 
   const runInputAssistForContent = async (content, settings, options = {}) => {
-    const requireEvidence = !!inputWriterEvidenceLease?.run;
-    closeInputWriterEvidence('LIB_READ_SUPERSEDED');
     Runtime.lastInputAssistMaterialUsage = null;
     // A static snapshot belongs to exactly one delivery cycle. Regeneration may
     // replace it inside the same cycle, while a newly submitted input must never
@@ -20802,10 +20412,7 @@ ${passage.text || ''}`, 420));
     const continuationCue = classifyInputAssistContinuationCue(original);
     if (requestedMode === 'off') return original;
     if (/data:image\/|<svg|base64,/i.test(original) && original.length > 2500) return original;
-    const preparation = prepareInputWriterEvidence();
-    const inputAssistStaticSnapshot = preparation
-      ? await guardInputWriterRead(preparation, () => loadRisuStaticContextSnapshot(settings))
-      : await loadRisuStaticContextSnapshot(settings);
+    const inputAssistStaticSnapshot = await loadRisuStaticContextSnapshot(settings);
     const storedMessages = Array.isArray(inputAssistStaticSnapshot?.chatInfo?.chat?.message)
       ? inputAssistStaticSnapshot.chatInfo.chat.message.map(normalizeInputAssistHistoryMessage).filter(Boolean)
       : [];
@@ -20940,8 +20547,6 @@ ${passage.text || ''}`, 420));
       INPUT_ASSIST_STAGE_ID, recent, scoped, null, null
     );
     recent.materialsUsed = Runtime.lastInputAssistMaterialUsage;
-    const writerEvidence = await openInputWriterEvidence(original, settings, {...options,requireEvidence}, inputAssistStaticSnapshot, terminalVisibleScene, preparation);
-    if (writerEvidence) scoped[LIB_EVIDENCE_CONTEXT] = writerEvidence.run;
     if (Runtime.inputAssistSend?.busy) {
       void setInputAssistContinuePanel(authorDirectedDraft ? 'RP 행동 선택지를 작성하고 있습니다…' : '세 작가 관점 인풋 후보를 작성하고 있습니다…', 'working', 0, false);
     }
@@ -20950,7 +20555,7 @@ ${passage.text || ''}`, 420));
       const playerInputVoice = playerControlledInputVoiceContext(original, scoped.ragCbsContext);
       const systemPrompt = [
         'You are GRADIA Input Manager in PLAYER-CONTROLLED RP ACTION CHOICE ADVISER mode.',
-        ...authorDirectedInputAssistInstruction(playerInputVoice),
+        ...authorDirectedInputAssistInstruction({ ...playerInputVoice, hasInput: !!text(original).trim(), speechOnly: isQuotedPersonaSpeechInput(original) }, inputAssistTargetChoice(settings.inputAssistTargetChars)),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}.`,
         `Return ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET} distinct choices when possible, using this exact shape: {"schema":"${AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA}","choices":[{"id":"A","title":"short label","summary":"what this player action emphasizes","input":"ready-to-send user action input"}]}.`,
@@ -20963,27 +20568,27 @@ ${passage.text || ''}`, 420));
         terminalVisibleScene || '(No preceding assistant passage was available.)',
         '',
         original
-          ? `[CURRENT USER INPUT — ORIGINAL OPTION / CONSTRAINT SOURCE]\n${original}`
+          ? `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS IN EVERY OPTION]\n${original}`
           : '[CURRENT USER INPUT]\n(no new user action; propose plausible player-controlled actions or an observe/wait option)',
         '',
         recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
         '[CHOICE CONTRACT]',
-        '- Each option must be materially different in the USER action/tactic, not merely different wording.',
+        original ? '- Every option must keep the action and intent of CURRENT USER INPUT and differ in how it is carried out, not merely in wording.' : '- Each option must be materially different in the USER action/tactic, not merely different wording.',
         '- In Korean, write each choice as subject-omitted player action/dialogue whenever natural. Do not prefix the choice with the persona name as a third-person actor.',
         '- End each choice on the player side. Do not write what the NPC/world does in response; GRADIA will generate that only after the user selects the choice.',
-        '- Preserve explicit OOC/agency constraints across every compatible option. Do not preserve a concrete original action as mandatory when the point of the picker is to offer alternatives.',
-        '- Do not enact any option. The user will choose after generation.'
+        '- Preserve explicit OOC/agency constraints across every option.',
+        '- Do not enact any option. The user will choose after generation.',
+        inputAssistLengthLine(inputAssistTargetChoice(settings.inputAssistTargetChars), settings)
       ].filter(Boolean).join('\n');
       const requestPlayerChoices = async (attempt) => {
         const response = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, attempt
           ? `${systemPrompt}\nThe previous answer could not be read. Reply with the single JSON object only, starting with { and ending with }.`
           : systemPrompt, userPrompt, {
-          maxTokens: 2600,
+          maxTokens: inputAssistOutputTokens(inputAssistTargetChoice(settings.inputAssistTargetChars)),
           temp: attempt ? 0.4 : 0.65,
           forceNoThinking: true,
-          jsonMode: true,
-          omitNativeJsonMode: !!writerEvidence
+          jsonMode: true
         });
         const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), AUTHOR_DIRECTED_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
         return { result: response, schemaOk: envelope.schemaOk,
@@ -21027,7 +20632,7 @@ ${passage.text || ''}`, 420));
           risuContextChars: text(recent.risuContext || '').length,
           terminalProof: liveScene.terminalProof,
           previousUserInputChars: liveScene.previousUserInput.length,
-          earlierSceneTailChars: liveScene.earlierSceneTail.length
+          recentTurnCount: liveScene.recentTurns.length
         }
       };
       Runtime.lastInputAssist = {
@@ -21061,7 +20666,7 @@ ${passage.text || ''}`, 420));
       const systemPrompt = [
         'You are GRADIA Input Manager in NOVEL-MODE THREE-PERSPECTIVE CHOICE mode.',
         resolveModelBehaviorAdapterForStage(scoped, INPUT_ASSIST_STAGE_ID, 'input').prompt,
-        ...novelInputAssistChoiceInstruction(continuationCue, targetChoice),
+        ...novelInputAssistChoiceInstruction(continuationCue, targetChoice, playerControlledInputVoiceContext(original, scoped.ragCbsContext)),
         buildNsfwGuidanceBlock(scoped, 'input_writer'),
         `Return strict JSON with schema ${NOVEL_INPUT_CHOICES_SCHEMA}.`,
         `Return exactly this shape: {"schema":"${NOVEL_INPUT_CHOICES_SCHEMA}","choices":[{"perspective":"user_focus","title":"주인공 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"npc_focus","title":"현장 인물 중심","summary":"short explanation","input":"ready-to-send user input"},{"perspective":"offscreen_focus","title":"세계·외부 인물 중심","summary":"short explanation","input":"ready-to-send user input"}]}.`,
@@ -21074,7 +20679,7 @@ ${passage.text || ''}`, 420));
         '',
         continuationCue.active
           ? `[CONTINUATION REQUEST]\nType: ${continuationCue.kind}\n${continuationCue.preserveSilence ? 'The source input is silence. In Novel mode this is not a player-agency lock; propose authorial continuations that respect the silence as the starting condition.' : 'Continue from the nearest unresolved motion already present.'}`
-          : `[CURRENT USER INPUT — PRESERVE CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
+          : `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS, PRESERVING CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
         '',
         recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
@@ -21084,10 +20689,11 @@ ${passage.text || ''}`, 420));
         '- Candidate 3 must be perspective=offscreen_focus.',
         '- The three candidates must be materially different in emphasis, not cosmetic paraphrases.',
         '- In normal-input mode, all three must preserve explicit author-fixed constraints/events/outcomes and named commitments. Unspecified protagonist micro-actions, dialogue, interiority, and scene execution may differ by perspective.',
-        '- Do not enact any option. The user will choose after generation.'
+        '- Do not enact any option. The user will choose after generation.',
+        inputAssistLengthLine(inputAssistTargetChoice(settings.inputAssistTargetChars), settings)
       ].filter(Boolean).join('\n\n');
       const maxTokens = targetChoice.chars
-        ? Math.min(2400, Math.max(1200, Math.ceil(targetChoice.chars * 2.2)))
+        ? inputAssistOutputTokens(targetChoice)
         : 1800;
       const requestNovelChoices = async (attempt) => {
         const response = await callLLMWithPreset(scoped, INPUT_ASSIST_STAGE_ID, attempt
@@ -21096,8 +20702,7 @@ ${passage.text || ''}`, 420));
           maxTokens,
           temp: attempt ? 0.35 : 0.58,
           forceNoThinking: true,
-          jsonMode: true,
-          omitNativeJsonMode: !!writerEvidence
+          jsonMode: true
         });
         const envelope = response.ok ? coerceInputChoicesPayload(parseInputChoicesResponse(response.content), NOVEL_INPUT_CHOICES_SCHEMA) : { schemaOk: false };
         const normalized = envelope.schemaOk ? normalizeNovelInputChoices(envelope.payload, original) : [];
@@ -21149,7 +20754,7 @@ ${passage.text || ''}`, 420));
           risuContextChars: text(recent.risuContext || '').length,
           terminalProof: liveScene.terminalProof,
           previousUserInputChars: liveScene.previousUserInput.length,
-          earlierSceneTailChars: liveScene.earlierSceneTail.length
+          recentTurnCount: liveScene.recentTurns.length
         }
       };
       Runtime.lastInputAssist = {
@@ -21191,7 +20796,6 @@ ${passage.text || ''}`, 420));
     const languageLabel = language === 'korean' ? 'Korean' : language === 'japanese' ? 'Japanese' : 'English';
     const localizedLabel = language === 'korean' ? '한국어' : language === 'japanese' ? '일본어' : '영어';
     const scoped = scopedSettingsForStage(settings, INPUT_ASSIST_STAGE_ID);
-    if (inputWriterEvidenceLease?.run) scoped[LIB_EVIDENCE_CONTEXT] = inputWriterEvidenceLease.run;
     const systemPrompt = [
       'You are a faithful RP input translator.',
       `Translate the supplied message into natural ${languageLabel} and return ONLY the ${languageLabel} translation.`,
@@ -21286,9 +20890,6 @@ ${passage.text || ''}`, 420));
       last.trace.parsed.deliveredInputHash = last.deliveredInputHash;
       last.trace.parsed.deliverySource = deliverySource;
       last.trace.parsed.deliveredGenerated = deliveredGenerated;
-    }
-    if (activeLibEvidenceRun?.purpose === 'input_writer') {
-      clearInputAssistStaticHandoff('input_writer_evidence_not_reusable'); last.externalEvidence = true; return deliveredInput;
     }
     const candidate = Runtime.inputAssistStaticCandidate;
     Runtime.inputAssistStaticCandidate = null;
@@ -21654,19 +21255,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
   });
 
-  const INPUT_ASSIST_MEMORY_SKIP_LABELS = Object.freeze({ LIB_READ_MODEL_CONTEXT_UNAVAILABLE: '모델 문맥 한도 미확인',
-    LIB_READ_TIMEOUT: '기억 서버 응답 지연', LIB_READ_UNAVAILABLE: '기억 서버 읽기 실패', LIB_READ_SERVER_MAINTENANCE: '기억 서버 점검 중' });
-  const inputAssistMemoryNotice = () => {
-    const memory = Runtime.inputAssistSend?.memory;
-    if (memory?.status !== 'unavailable' || !memory.reason) return '';
-    return ` · 기억 참고 생략: ${INPUT_ASSIST_MEMORY_SKIP_LABELS[memory.reason] || memory.reason}`;
-  };
-  const refreshInputAssistMemoryNotice = app => {
-    const node = app.querySelector('[data-input-memory-notice]');
-    if (!node) return;
-    node.dataset.memoryBase ??= node.textContent;
-    node.textContent = node.dataset.memoryBase + inputAssistMemoryNotice();
-  };
   const setInputAssistContinuePanel = async (message = '', state = 'working', autoClearMs = 0, cancelable = false) => {
     const panelEpoch = ++InputAssistContinuePanelEpoch;
     await unbindInputAssistContinueCancelButton();
@@ -21811,7 +21399,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       cancelled: false,
       reason: 'user_cancelled'
     };
-    closeInputWriterEvidence('LIB_READ_CANCELED');
     if (inputWriterDialogCancel) await inputWriterDialogCancel();
     await setInputAssistContinuePanel(
       current.phase === 'generating'
@@ -22498,7 +22085,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       continuationMode ? '직전 장면을 바탕으로 이어질 인풋을 작성하고 있습니다…' : '작성한 인풋을 바탕으로 확장안을 만들고 있습니다…',
       'working', 0, true
     );
-    let writerLease = null;
     try {
       const settings = await loadSettings();
       if (settings.inputAssistMode === 'off') throw new Error('쉬운 설정에서 인풋 관리자 모드를 먼저 선택해 주세요.');
@@ -22507,7 +22093,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
         telemetryNewCycle: true
       });
-      writerLease = inputWriterEvidenceLease;
       if (inputAssistContinueCancelled(requestId)) throw inputAssistContinueCancellationError();
       let choiceEdited = false;
       let choiceSourceEdited = false;
@@ -22519,17 +22104,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length < 2) throw new Error(Runtime.lastInputAssist?.reason || '유저 행동 선택지를 충분히 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
+        await setInputAssistContinuePanel('선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
         const reviewed = await showAuthorDirectedInputChoicePicker({
           original: originalInput,
           choices,
-          onValidate: writerLease ? () => assertInputWriterDeliveryLocal(writerLease) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_author_choice_regenerate' : 'explicit_input_writer_author_choice_regenerate' });
             const next = Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
-            if (next.length < 2) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
-            writerLease = inputWriterEvidenceLease; return next;
+            if (next.length < 2) throw new Error('선택지를 충분히 다시 만들지 못했습니다.');
+            return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -22545,17 +22129,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         const choices = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
         if (Runtime.lastInputAssist?.ok !== true || choices.length !== NOVEL_INPUT_CHOICE_TARGET) throw new Error(Runtime.lastInputAssist?.reason || '소설 모드의 세 작가 관점 선택지를 모두 만들지 못했습니다.');
         Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'confirming', generated: '' };
-        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.' + inputAssistMemoryNotice(), 'working', 0, false);
+        await setInputAssistContinuePanel('세 작가 관점 선택지 생성 완료 · 사용할 인풋을 직접 선택하세요.', 'working', 0, false);
         const reviewed = await showNovelInputChoicePicker({
           original: originalInput,
           choices,
-          onValidate: writerLease ? () => assertInputWriterDeliveryLocal(writerLease) : null,
           source: continuationMode ? 'explicit_continue_button' : 'explicit_input_writer',
           onRegenerate: async () => {
             await runInputAssistForContent(originalInput, settings, { source: continuationMode ? 'explicit_continue_novel_choice_regenerate' : 'explicit_input_writer_novel_choice_regenerate' });
             const next = Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
-            if (next.length < 3) throw libEvidenceError('LIB_READ_WRITER_CHOICES_INVALID');
-            writerLease = inputWriterEvidenceLease; return next;
+            if (next.length < 3) throw new Error('선택지를 충분히 다시 만들지 못했습니다.');
+            return next;
           },
           onTranslate: async (value, targetLanguage) => (
             await translateInputAssistReviewText(value, settings, targetLanguage)
@@ -22569,9 +22152,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         choiceTranslationLanguage = text(reviewed.translationLanguage || '');
       }
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, phase: 'reviewing', generated };
-      assertInputWriterDeliveryLocal(writerLease);
       const delivery = await showInputAssistDeliveryPicker(generated, {
-        onValidate: writerLease ? (value, current) => assertInputWriterDelivery(writerLease, value, current) : null,
         onTranslate: async (value, targetLanguage) => (
           await translateInputAssistReviewText(value, settings, targetLanguage)
         )
@@ -22608,8 +22189,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
           Runtime.lastInputAssist.trace.parsed.choiceTranslationLanguage = choiceTranslationLanguage;
         }
       }
-      // The delivery screen verified this exact text right before copying.
-      assertInputWriterDeliveryLocal(writerLease);
       generated = finalizeInputAssistDelivery(generated, deliverySource, settings).trim();
       Runtime.inputAssistSend = { ...Runtime.inputAssistSend, busy: false, phase: 'copied', generated, ok: true, reason: 'manual_copy', lastAt: Date.now() };
       await setInputAssistContinuePanel('인풋을 복사했습니다. RisuAI 입력창에 붙여넣어 직접 전송하세요.', 'done', 6000);
@@ -22629,444 +22208,21 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       await notifyInputAssistContinueError(reason);
       finishCallTelemetry('explicit_input_writer_failed');
       return false;
-    } finally {
-      closeInputWriterEvidence('LIB_READ_CLOSED', writerLease);
-      if (inputWriterEvidenceLease?.parentRequestId === requestId) closeInputWriterEvidence();
-      if (writerLease && Runtime.inputAssistSend?.requestId === requestId) purgeInputWriterEvidenceRuntime();
     }
   };
 
-  const BEFORE_REQUEST_INPUT_HIJACK_TTL_MS = 120000;
-  const BEFORE_REQUEST_INPUT_HIJACK_CACHE_MAX = 12;
-  const BeforeRequestInputHijackCache = new Map();
 
-  const beforeRequestInputHijackFingerprint = (messages, type) => {
-    const hasher = createTextHasher()
-      .update('gradia-before-request-input-hijack-v1')
-      .update(normalizeRequestType(type));
-    for (const message of (Array.isArray(messages) ? messages : [])) {
-      hasher
-        .update(currentTurnRole(message))
-        .update(rawCurrentTurnBody(message));
-    }
-    return hasher.digest();
-  };
 
-  const pruneBeforeRequestInputHijackCache = () => {
-    const now = Date.now();
-    for (const [key, entry] of BeforeRequestInputHijackCache.entries()) {
-      if (!entry || Number(entry.expiresAt || 0) <= now) BeforeRequestInputHijackCache.delete(key);
-    }
-    while (BeforeRequestInputHijackCache.size > BEFORE_REQUEST_INPUT_HIJACK_CACHE_MAX) {
-      const oldest = BeforeRequestInputHijackCache.keys().next().value;
-      if (oldest == null) break;
-      BeforeRequestInputHijackCache.delete(oldest);
-    }
-  };
 
-  const isNativeContinueResponseRequest = messages => (Array.isArray(messages) ? messages : []).some(message =>
-    /\[\s*Continue the last response\s*\]/i.test(rawCurrentTurnBody(message))
-  );
 
-  const continuationCueFromRequestBody = value => {
-    const body = text(value || '').trim();
-    if (!body) return null;
-    const wrapped = currentInputFrom(body);
-    if (wrapped) {
-      const cue = classifyInputAssistContinuationCue(wrapped);
-      if (cue.active) return { original: wrapped, cue, source: 'current_input_wrapper' };
-    }
-    const direct = classifyInputAssistContinuationCue(body);
-    if (direct.active) return { original: body, cue: direct, source: 'direct_body' };
-    const silentMatch = body.match(/\*+\s*(?:(?:the\s+user\s+)?says?\s+nothing)\s*\*+/i);
-    if (silentMatch?.[0]) {
-      const original = silentMatch[0];
-      const cue = classifyInputAssistContinuationCue(original);
-      if (cue.active) return { original, cue, source: 'embedded_silent_cue' };
-    }
-    const dewrapped = body
-      .replace(/<[^>]{1,160}>/g, '\n')
-      .replace(/^[^\n:]{1,80}:\s*/gm, '')
-      .split(/\n+/)
-      .map(line => line.trim())
-      .filter(Boolean);
-    for (let i = dewrapped.length - 1; i >= 0; i -= 1) {
-      const cue = classifyInputAssistContinuationCue(dewrapped[i]);
-      if (cue.active) return { original: dewrapped[i], cue, source: 'dewrapped_line' };
-    }
-    return null;
-  };
 
-  const detectRequestInputHijackCandidate = messages => {
-    const source = Array.isArray(messages) ? messages : [];
-    let latestUserIndex = -1;
-    let provenanceBacked = false;
-    for (let i = source.length - 1; i >= 0; i -= 1) {
-      if (currentTurnRole(source[i]) !== 'user') continue;
-      if (!hasSgaChatProvenance(source[i])) continue;
-      latestUserIndex = i;
-      provenanceBacked = true;
-      break;
-    }
-    if (latestUserIndex < 0) {
-      for (let i = source.length - 1; i >= 0; i -= 1) {
-        if (currentTurnRole(source[i]) !== 'user') continue;
-        latestUserIndex = i;
-        break;
-      }
-    }
-    if (latestUserIndex < 0) return null;
-    const assistantAfter = source.slice(latestUserIndex + 1).some(message => {
-      if (currentTurnRole(message) !== 'assistant') return false;
-      return provenanceBacked ? hasSgaChatProvenance(message) : true;
-    });
-    if (assistantAfter) return null;
-    const detected = continuationCueFromRequestBody(rawCurrentTurnBody(source[latestUserIndex]));
-    if (!detected) return null;
-    return {
-      kind: 'request_user_continuation_cue',
-      original: detected.original,
-      anchorText: '',
-      cue: detected.cue,
-      requestIndex: latestUserIndex,
-      requestSource: detected.source,
-      provenanceBacked,
-      requestFingerprint: storedChatMessageFingerprint(source[latestUserIndex])
-    };
-  };
 
-  const storedChatMessageFingerprint = message => createTextHasher()
-    .update(currentTurnRole(message))
-    .update(contentToText(message?.data ?? message?.content ?? ''))
-    .update(message?.time ?? message?.timestamp ?? '')
-    .digest();
 
-  const finiteRisuIndex = value => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
 
-  const detectBeforeRequestInputHijackCandidate = async (messages, type, settings) => {
-    if (!isMainNarrativeRequest(type) || settings.inputAssistMode === 'off') return null;
-    if (isNativeContinueResponseRequest(messages)) return null;
-    const requestCandidate = detectRequestInputHijackCandidate(messages);
-    const chatApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
-    const canReadChat = typeof chatApi?.getCurrentCharacterIndex === 'function'
-      && typeof chatApi?.getCurrentChatIndex === 'function'
-      && typeof chatApi?.getChatFromIndex === 'function';
-    const charIndexRaw = canReadChat
-      ? await safeApi('blankHijack.getCurrentCharacterIndex', () => chatApi.getCurrentCharacterIndex(), settings.debugLog)
-      : null;
-    const chatIndexRaw = canReadChat
-      ? await safeApi('blankHijack.getCurrentChatIndex', () => chatApi.getCurrentChatIndex(), settings.debugLog)
-      : null;
-    const charIndex = finiteRisuIndex(charIndexRaw);
-    const chatIndex = finiteRisuIndex(chatIndexRaw);
-    const chat = charIndex !== null && chatIndex !== null
-      ? await safeApi('blankHijack.getChatFromIndex', () => chatApi.getChatFromIndex(charIndex, chatIndex), settings.debugLog)
-      : null;
-    const storedMessages = Array.isArray(chat?.message) ? chat.message : [];
-    if (!storedMessages.length) return requestCandidate;
-    const lastIndex = storedMessages.length - 1;
-    const lastMessage = storedMessages[lastIndex];
-    const lastRole = currentTurnRole(lastMessage);
-    const lastText = contentToText(lastMessage?.data ?? lastMessage?.content ?? '').trim();
-    const lastFingerprint = storedChatMessageFingerprint(lastMessage);
-    if (lastRole === 'user') {
-      const cue = classifyInputAssistContinuationCue(lastText);
-      if (cue.active) {
-        return {
-          kind: 'stored_user_continuation_cue',
-          original: lastText,
-          anchorText: '',
-          cue,
-          charIndex,
-          chatIndex,
-          lastIndex,
-          lastFingerprint
-        };
-      }
-    }
-    if (requestCandidate) {
-      return {
-        ...requestCandidate,
-        charIndex,
-        chatIndex,
-        lastIndex,
-        lastFingerprint
-      };
-    }
-    if (lastRole === 'assistant') {
-      const injectedChatId = `gradia-input-${Date.now().toString(36)}-${lastFingerprint.slice(0, 12)}`;
-      return {
-        kind: 'blank_without_user_message',
-        original: '',
-        anchorText: lastText,
-        injectedChatId,
-        cue: classifyInputAssistContinuationCue(''),
-        charIndex,
-        chatIndex,
-        lastIndex,
-        lastFingerprint
-      };
-    }
-    return null;
-  };
 
-  const replaceContinuationCueInContent = (content, original, rewritten) => {
-    const replaceText = value => {
-      const body = text(value || '');
-      const wrapped = currentInputFrom(body);
-      if (wrapped && classifyInputAssistContinuationCue(wrapped).active) return body.replace(wrapped, rewritten);
-      if (original && body.includes(original)) return body.replace(original, rewritten);
-      if (classifyInputAssistContinuationCue(body).active) return rewritten;
-      return body;
-    };
-    if (typeof content === 'string') return replaceText(content);
-    if (Array.isArray(content)) {
-      const next = content.map(part => {
-        if (!part || typeof part !== 'object') return part;
-        if (part.type === 'text' || part.type === 'input_text') {
-          const replaced = replaceText(part.text || '');
-          return replaced === part.text ? part : { ...part, text: replaced };
-        }
-        return part;
-      });
-      return next;
-    }
-    return rewritten;
-  };
 
-  const applyInputAssistHijackToRequest = (messages, original, rewritten, options = {}) => {
-    const source = Array.isArray(messages) ? messages : [];
-    const next = source.slice();
-    let targetIndex = -1;
-    for (let i = source.length - 1; i >= 0; i -= 1) {
-      if (currentTurnRole(source[i]) !== 'user') continue;
-      const body = rawCurrentTurnBody(source[i]).trim();
-      const wrapped = currentInputFrom(body);
-      if (
-        (original && (sameRagChatContent(body, original) || sameRagChatContent(wrapped, original)))
-        || classifyInputAssistContinuationCue(wrapped || body).active
-      ) {
-        targetIndex = i;
-        break;
-      }
-    }
-    if (targetIndex >= 0) {
-      const message = source[targetIndex] || {};
-      next[targetIndex] = {
-        ...message,
-        content: replaceContinuationCueInContent(message.content ?? message.data ?? '', original, rewritten)
-      };
-      if ('data' in next[targetIndex] && !('content' in message)) {
-        next[targetIndex].data = next[targetIndex].content;
-        delete next[targetIndex].content;
-      }
-      return { messages: next, changed: true, mode: 'replace_user', targetIndex };
-    }
-    let insertIndex = -1;
-    const anchorText = text(options.anchorText || '').trim();
-    if (options.kind === 'blank_without_user_message' && anchorText) {
-      for (let i = source.length - 1; i >= 0; i -= 1) {
-        if (currentTurnRole(source[i]) !== 'assistant') continue;
-        if (!sameRagChatContent(rawCurrentTurnBody(source[i]), anchorText)) continue;
-        insertIndex = i + 1;
-        break;
-      }
-    }
-    if (insertIndex < 0) {
-      const terminalPrefillIndex = findSgaTerminalAssistantPrefillIndex(source);
-      insertIndex = terminalPrefillIndex >= 0 ? terminalPrefillIndex : source.length;
-    }
-    const inserted = { role: 'user', content: rewritten };
-    if (text(options.injectedChatId || '').trim()) inserted.memo = text(options.injectedChatId).trim();
-    next.splice(insertIndex, 0, inserted);
-    return { messages: next, changed: true, mode: 'insert_user', targetIndex: insertIndex };
-  };
 
-  const syncInputAssistHijackToVisibleChat = async (candidate, rewritten, settings) => {
-    const chatApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex', 'setChatToIndex']);
-    if (!candidate || typeof chatApi?.setChatToIndex !== 'function') return { ok: false, reason: 'setChatToIndex_unavailable' };
-    if (candidate.charIndex === null || candidate.charIndex === undefined || candidate.chatIndex === null || candidate.chatIndex === undefined) {
-      return { ok: false, reason: 'chat_index_unavailable' };
-    }
-    const currentCharIndex = finiteRisuIndex(await safeApi('blankHijack.syncCurrentCharacterIndex', () => chatApi.getCurrentCharacterIndex(), settings.debugLog));
-    const currentChatIndex = finiteRisuIndex(await safeApi('blankHijack.syncCurrentChatIndex', () => chatApi.getCurrentChatIndex(), settings.debugLog));
-    if (currentCharIndex !== candidate.charIndex || currentChatIndex !== candidate.chatIndex) {
-      return { ok: false, reason: 'active_chat_changed' };
-    }
-    const chat = await safeApi('blankHijack.syncGetChat', () => chatApi.getChatFromIndex(candidate.charIndex, candidate.chatIndex), settings.debugLog);
-    const storedMessages = Array.isArray(chat?.message) ? chat.message : [];
-    const currentLast = storedMessages[storedMessages.length - 1];
-    if (!currentLast || (candidate.lastFingerprint && storedChatMessageFingerprint(currentLast) !== candidate.lastFingerprint)) {
-      return { ok: false, reason: 'chat_tail_changed' };
-    }
-    const nextChat = { ...chat, message: storedMessages.slice() };
-    if (candidate.kind === 'stored_user_continuation_cue' || candidate.kind === 'request_user_continuation_cue') {
-      let replacementIndex = Number.isInteger(candidate.lastIndex) ? candidate.lastIndex : -1;
-      if (
-        replacementIndex < 0
-        || currentTurnRole(nextChat.message[replacementIndex]) !== 'user'
-        || !classifyInputAssistContinuationCue(contentToText(nextChat.message[replacementIndex]?.data ?? nextChat.message[replacementIndex]?.content ?? '')).active
-      ) {
-        replacementIndex = -1;
-        for (let i = nextChat.message.length - 1; i >= 0; i -= 1) {
-          const message = nextChat.message[i];
-          if (currentTurnRole(message) !== 'user') continue;
-          if (classifyInputAssistContinuationCue(contentToText(message?.data ?? message?.content ?? '')).active) {
-            replacementIndex = i;
-          }
-          break;
-        }
-      }
-      const current = nextChat.message[replacementIndex];
-      if (!current || currentTurnRole(current) !== 'user') return { ok: false, reason: 'placeholder_missing' };
-      const currentText = contentToText(current?.data ?? current?.content ?? '').trim();
-      if (!classifyInputAssistContinuationCue(currentText).active) return { ok: false, reason: 'placeholder_replaced_elsewhere' };
-      const replacement = { ...current };
-      if ('data' in replacement || !('content' in replacement)) replacement.data = rewritten;
-      else replacement.content = rewritten;
-      nextChat.message[replacementIndex] = replacement;
-    } else {
-      nextChat.message.push({
-        role: 'user',
-        data: rewritten,
-        time: Date.now(),
-        chatId: candidate.injectedChatId || undefined
-      });
-    }
-    const saved = await safeApi(
-      'blankHijack.setChatToIndex',
-      () => chatApi.setChatToIndex(candidate.charIndex, candidate.chatIndex, nextChat),
-      settings.debugLog
-    );
-    const replacingCue = candidate.kind === 'stored_user_continuation_cue' || candidate.kind === 'request_user_continuation_cue';
-    return { ok: saved !== null, reason: saved === null ? 'chat_save_failed' : '', mode: replacingCue ? 'replace_placeholder' : 'append_user' };
-  };
 
-  const maybeHijackBeforeRequestInput = async (messages, type, settings) => {
-    const unchanged = { messages, hijacked: false, cached: false, reason: '' };
-    if (!isMainNarrativeRequest(type) || settings.inputAssistMode === 'off') {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: !isMainNarrativeRequest(type) ? `non_model_request:${normalizeRequestType(type) || 'missing'}` : 'input_assist_off'
-      };
-      return { ...unchanged, reason: Runtime.lastInputAssistHijack.reason };
-    }
-    if (isNativeContinueResponseRequest(messages)) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: 'native_continue_response'
-      };
-      return { ...unchanged, reason: 'native_continue_response' };
-    }
-    pruneBeforeRequestInputHijackCache();
-    const fingerprint = beforeRequestInputHijackFingerprint(messages, type);
-    const cached = BeforeRequestInputHijackCache.get(fingerprint);
-    if (cached?.rewritten) {
-      const applied = applyInputAssistHijackToRequest(messages, cached.original || '', cached.rewritten, {
-        kind: cached.kind,
-        anchorText: cached.anchorText || '',
-        injectedChatId: cached.injectedChatId || ''
-      });
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        cached: true,
-        kind: cached.kind,
-        requestSource: cached.requestSource || '',
-        provenanceBacked: cached.provenanceBacked === true,
-        requestMode: applied.mode,
-        chatSync: cached.chatSync || null,
-        fingerprint
-      };
-      return { messages: applied.messages, hijacked: true, cached: true, reason: '', fingerprint };
-    }
-    const candidate = await detectBeforeRequestInputHijackCandidate(messages, type, settings);
-    if (!candidate) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: true,
-        skipped: true,
-        reason: 'no_blank_input_candidate'
-      };
-      return { ...unchanged, reason: 'no_blank_input_candidate' };
-    }
-    let rewritten = await runInputAssistForContent(candidate.original, settings, {
-      allowExistingContinuationCue: true,
-      source: 'before_request_blank_hijack',
-      requestMessages: messages,
-      telemetryNewCycle: true
-    });
-    const valid = Runtime.lastInputAssist?.ok === true
-      && !!text(rewritten).trim()
-      && !classifyInputAssistContinuationCue(rewritten).active;
-    if (!valid) {
-      Runtime.lastInputAssistHijack = {
-        at: Date.now(),
-        ok: false,
-        cached: false,
-        kind: candidate.kind,
-        requestSource: candidate.requestSource || '',
-        provenanceBacked: candidate.provenanceBacked === true,
-        reason: Runtime.lastInputAssist?.reason || 'input_assist_hijack_rewrite_failed',
-        fingerprint
-      };
-      return { ...unchanged, reason: Runtime.lastInputAssistHijack.reason };
-    }
-    rewritten = finalizeInputAssistDelivery(rewritten, 'before_request_hijack', settings);
-    const applied = applyInputAssistHijackToRequest(messages, candidate.original, rewritten, {
-      kind: candidate.kind,
-      anchorText: candidate.anchorText || '',
-      injectedChatId: candidate.injectedChatId || ''
-    });
-    const chatSync = await syncInputAssistHijackToVisibleChat(candidate, rewritten, settings);
-    const entry = {
-      original: candidate.original,
-      anchorText: candidate.anchorText || '',
-      injectedChatId: candidate.injectedChatId || '',
-      rewritten,
-      kind: candidate.kind,
-      requestSource: candidate.requestSource || '',
-      provenanceBacked: candidate.provenanceBacked === true,
-      chatSync,
-      storedAt: Date.now(),
-      expiresAt: Date.now() + BEFORE_REQUEST_INPUT_HIJACK_TTL_MS
-    };
-    BeforeRequestInputHijackCache.set(fingerprint, entry);
-    pruneBeforeRequestInputHijackCache();
-    Runtime.lastInputAssistHijack = {
-      at: Date.now(),
-      ok: true,
-      cached: false,
-      kind: candidate.kind,
-      requestSource: candidate.requestSource || '',
-      provenanceBacked: candidate.provenanceBacked === true,
-      requestMode: applied.mode,
-      chatSync,
-      fingerprint
-    };
-    Runtime.lastInputAssist = {
-      ...(Runtime.lastInputAssist || {}),
-      lateHijack: true,
-      lateHijackKind: candidate.kind,
-      requestRewriteMode: applied.mode,
-      chatSync
-    };
-    if (Runtime.lastInputAssist?.trace?.parsed) {
-      Runtime.lastInputAssist.trace.parsed.lateHijack = true;
-      Runtime.lastInputAssist.trace.parsed.lateHijackKind = candidate.kind;
-      Runtime.lastInputAssist.trace.parsed.requestRewriteMode = applied.mode;
-      Runtime.lastInputAssist.trace.parsed.chatSync = chatSync;
-    }
-    return { messages: applied.messages, hijacked: true, cached: false, reason: '', fingerprint };
-  };
 
   const testProviderPreset = async (preset) => {
     const clean = sanitizePreset(preset || {});
@@ -23575,42 +22731,9 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     return (hash >>> 0).toString(16).padStart(8, '0');
   };
 
-  const lineageGramSet = (value, gram = 3) => {
-    const body = normalizeLineageComparableText(value);
-    const out = new Set();
-    if (!body) return out;
-    if (body.length <= gram) { out.add(body); return out; }
-    for (let i = 0; i <= body.length - gram; i += 1) out.add(body.slice(i, i + gram));
-    return out;
-  };
 
-  const draftSimilarity = (left, right) => {
-    const aText = normalizeLineageComparableText(left);
-    const bText = normalizeLineageComparableText(right);
-    if (!aText || !bText) return 0;
-    if (aText === bText) return 1;
-    const a = lineageGramSet(aText);
-    const b = lineageGramSet(bText);
-    if (!a.size || !b.size) return 0;
-    let overlap = 0;
-    const [small, large] = a.size <= b.size ? [a, b] : [b, a];
-    for (const token of small) if (large.has(token)) overlap += 1;
-    return (2 * overlap) / (a.size + b.size);
-  };
 
-  const draftContainment = (candidate, reference) => {
-    const a = lineageGramSet(candidate);
-    const b = lineageGramSet(reference);
-    if (!a.size || !b.size) return 0;
-    let overlap = 0;
-    for (const token of b) if (a.has(token)) overlap += 1;
-    return overlap / b.size;
-  };
 
-  const draftPrefixSimilarity = (left, right, maxChars = 700) => draftSimilarity(
-    normalizeLineageComparableText(left).slice(0, maxChars),
-    normalizeLineageComparableText(right).slice(0, maxChars)
-  );
 
   const bestDraftCandidate = (candidates = []) => {
     const normalized = candidates
@@ -24570,7 +23693,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   };
 
   const recordStageTrace = (entry) => {
-    if (activeLibEvidenceRun && (entry.stage !== INPUT_ASSIST_STAGE_ID || activeLibEvidenceRun.purpose === 'input_writer')) return;
+    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -24667,24 +23790,29 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const shadowDraftLengthBeatContract = (settings = {}, phase = 'write') => {
     const plan = shadowDraftLengthPlan(settings);
+    if (rpScopeLocksCast(settings)) return [
+      'PLAYER-CONTROLLED RP LENGTH AND BEAT CONTRACT:',
+      `Length limit: at most ${plan.maxChars} characters. This is a ceiling with no minimum, never permission to invent what the detail mode forbids. A much shorter response is correct when the input gives little to describe.`,
+      buildRpNextTurnSeedLine(settings)
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings)) {
       const lines = [
         'PLAYER-CONTROLLED RP LENGTH AND BEAT CONTRACT:',
-        `Configured draft range: ${plan.minChars}-${plan.maxChars} characters. This is a presentation preference, never permission to invent user-character behavior or unrelated incidents.`,
+        `Length limit: at most ${plan.maxChars} characters. This is a ceiling with no minimum, never a goal to fill and never permission to invent user-character behavior or unrelated incidents.`,
         'There is NO minimum beat count that must be filled. The necessary beat inventory is determined by the user action plus causally owed NPC/world reactions.',
         'Develop the response through NPC dialogue, autonomous NPC decisions, environmental/world consequences, physical causality, relationship pressure, and sensory staging that belongs to model-owned actors/world.',
         'Continue through all causally useful model-owned beats, and stop only when the next meaningful progression requires a new user-character action, dialogue, consent/refusal, feeling, decision, or voluntary movement. A shorter response is correct when that boundary arrives early.',
-        'Do not artificially preserve an open interaction if NPC/world causality naturally produces a departure, transition, or closure that does not require the player to decide anything. Conversely, do not use closure to bypass a player-owned beat that is already pending.',
-        'The final beat may be an open player-facing situation OR a naturally completed model-owned beat. A direct question is optional. What matters is that the model never writes the player’s next contribution.',
+        'End where the next player choice is needed. If NPC/world causality produces a departure or transition, let it happen, but still leave that choice open, and do not use closure to bypass a player-owned beat that is already pending.',
+        'The final beat is a seed for that choice, something from the scene handed to the persona. A direct question is optional. What matters is that the model never writes the player’s next contribution.',
         'Never pad by replaying the user input, puppeting the user character, adding an unrelated random event, or jumping to a causally unsupported sequel scene.'
       ];
       if (phase === 'analysis') {
         lines.push(
-          'Plan the causally necessary/valuable NPC-world response beats after the user contribution. If a next player-owned decision/action becomes necessary, leave it open; if model-owned causality naturally closes/transitions first, that is valid.'
+          'Plan the causally necessary/valuable NPC-world response beats after the user contribution, end the plan where the next player choice is needed, and name the seed left for it.'
         );
       } else {
         lines.push(
-          'Begin after the enacted user contribution, realize the NPC/world response fully, and end before crossing the next user-agency boundary.'
+          'Show first anything the input states about others or the situation, realize the NPC/world response fully, and end before crossing the next user-agency boundary, on a seed for the next choice.'
         );
       }
       return lines.join('\n');
@@ -24694,18 +23822,18 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       `Requested draft range: ${plan.minChars}-${plan.maxChars} characters.`,
       `Working draft target: about ${plan.targetChars} characters.`,
       `Minimum distinct scene beats: ${plan.minBeats}.`,
-      'A scene beat is one meaningful stimulus/action -> observable reaction -> changed conversational, relational, physical, or decision pressure. It is not a sentence count and must not require a time skip, new major event, or sequel scene.',
+      'A scene beat is one meaningful stimulus/action -> observable reaction -> changed conversational, relational, physical, or decision pressure. It is not a sentence count and does not by itself require a time skip or a new major event, though the story may move there.',
       'Use additional beats to deepen the current scene through dialogue exchange, counter-reaction, physical behavior, social consequences, sensory grounding, and unresolved pressure. Do not pad with repetition, profile exposition, redundant introspection, or decorative description.'
     ];
     if (phase === 'analysis') {
       lines.push(
         `Plan at least ${plan.minBeats} causally ordered entries in domain.story_author_plan.beats before the writing call, then give those beats a concrete execution treatment in domain.director_brief.`,
-        'The first beat must realize the current submitted authorial input against the terminal scene. The final beat should fulfill the intended scene purpose; it may resolve, transition, or remain open according to the authorial brief, without forcing an outcome the author explicitly reserved.'
+        'The first beat must realize the current submitted authorial input against the terminal scene. The final beat stops just before the scene resolves and leaves something unresolved inside it, unless the author explicitly asks for an ending. Never force an outcome the author explicitly reserved.'
       );
     } else {
       lines.push(
-        `Realize at least ${plan.minBeats} distinct planned beats in the complete response_draft and aim for ${plan.minChars}-${plan.maxChars} characters.`,
-        'Continue beyond the opening reaction, first glance, first contact, or first exchange. Expand inward within this response’s existing scene boundary, not forward into a later scene.'
+        `Realize at least ${plan.minBeats} distinct planned beats in the complete response_draft and aim for ${plan.minChars}-${plan.maxChars} characters. Write about ${Math.round(plan.targetChars / 55)} paragraphs in all, counting each dialogue line as one; fewer means the draft is unfinished, so keep developing the scene rather than ending early.`,
+        'Continue beyond the opening reaction, first glance, first contact, or first exchange. Spend the length deepening the current scene through what people say, do, and find in it, rather than hurrying through further events. ' + NOVEL_NEXT_TURN_SEED_LINE
       );
     }
     return lines.join('\n');
@@ -24713,13 +23841,19 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const shadowActIntegratedPlanningContract = (settings = {}) => {
     const plan = shadowDraftLengthPlan(settings);
+    if (rpScopeLocksCast(settings)) return [
+      'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE PLANNING:',
+      ...buildRpImpersonationScopeLines(settings),
+      'Before writing, silently list what the submitted input states, and mark everything else this detail mode forbids.',
+      'The visible output must contain only in-world RP prose.'
+    ].join('\n');
     if (isPlayerControlledDraftMode(settings)) {
       return [
         'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE REACTION PLANNING:',
-        'Before writing, silently identify the exact user-authored contribution already enacted this turn. Do not restage it.',
+        'Before writing, silently identify the exact user-authored contribution already enacted this turn. Do not restage it. Anything the input states about other characters or the situation has not been written yet: show it first.',
         'PASS 1 — USER AGENCY BOUNDARY: identify actor/action/target/dialogue/completion state actually present in the submitted input and mark every unprovided user behavior as forbidden.',
         'PASS 2 — NPC/WORLD REACTION DIRECTOR: choose causally supported NPC actions/dialogue, world consequences, staging, timing, sensory grounding, and relationship response.',
-        'PASS 3 — USER AGENCY FRONTIER: after planning satisfying NPC/world motion, identify the first later beat that actually requires a NEW player-character contribution. Continue model-owned causality until that boundary; if no such boundary is reached before a natural model-owned closure/transition, the closure is valid.',
+        'PASS 3 — USER AGENCY FRONTIER: after planning satisfying NPC/world motion, identify the first later beat that actually requires a NEW player-character contribution. Continue model-owned causality until that boundary, then end there on a seed from the scene.',
         'Do not stop artificially early just to ask the player something, and do not continue past the actual user-agency frontier by inventing the player response.',
         'Story Arc, skills, lore, and length targets may shape NPC/world response but never authorize user-character behavior.',
         'The visible output must contain only in-world RP prose.'
@@ -24729,8 +23863,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       'LIGHTWEIGHT SHADOW ACT — INTEGRATED PRIVATE PLANNING:',
       'Before writing, silently complete the following two compact internal passes in this same call. Do not output, label, summarize, or expose either pass.',
       `PASS 1 — STORY AUTHOR: determine the scene purpose, primary unresolved tension, direct alignment with the Current Submitted User Input, open questions, conditional payoff candidates, do-not-resolve boundaries, and at least ${plan.minBeats} causally ordered stimulus/action -> observable reaction -> changed-pressure beats.`,
-      'PASS 2 — DIRECTOR: translate that exact plan into required visible outcomes, continuity locks, forbidden moves, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary that best fulfills the authorial scene purpose.',
-      'Every planned beat must receive an observable treatment inside this same response. Director execution must not replace Story Author meaning, contradict explicit author-fixed events/reservations, add a sequel scene, or force an uncertain pre-existing fact. The user persona may be authored as part of the whole cast.',
+      'PASS 2 — DIRECTOR: translate that exact plan into required visible outcomes, continuity locks, forbidden moves, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary just before the scene resolves.',
+      'Every planned beat must receive an observable treatment inside this same response. Director execution must not replace Story Author meaning, contradict explicit author-fixed events/reservations, or force an uncertain pre-existing fact. The user persona may be authored as part of the whole cast.',
       'After both private passes, write the complete RP response. The visible output must contain only in-world RP prose; never output analysis, plans, labels, JSON, reasoning, or metadata.'
     ].join('\n');
   };
@@ -25058,7 +24192,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       "staging_instructions": ["observable blocking, movement, distance, props, sensory grounding, and reaction timing"],
       "dialogue_rhythm": ["turn-taking, interruption, silence, response length, or subtext instructions grounded in the scene"],
       "pacing_instructions": ["where to expand, compress, pause, accelerate, or let consequences breathe inside this response"],
-      "ending_requirement": "${playerControlled ? 'where to stop before the next actual player-owned beat, allowing natural NPC/world closure when it arrives first' : 'the ending that best fulfills the authorial scene purpose while preserving only explicit author-reserved decisions/outcomes'}"
+      "ending_requirement": "${playerControlled ? 'where to stop before the next actual player-owned beat, and the seed left for that choice' : 'where to stop just before the scene resolves, naming what stays unresolved, while preserving explicit author-reserved decisions/outcomes'}"
     },
     "unsupported_outcomes_to_avoid": ["${playerControlled ? 'success, acceptance, exact state changes, feelings, or facts not established by evidence/player input' : 'unsupported pre-existing canon, exact historical/state facts, or outcomes that contradict the authorial brief; ordinary current-scene character feelings/actions/decisions are authorable'}"]
   }`;
@@ -25128,7 +24262,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     "commit_barrier_checks": ["${playerControlled ? 'attempt/proposal/pending result that must not be treated as completed without world-side confirmation' : 'attempt/proposal/pending factual claim not fixed by the author; explicitly author-fixed current-scene outcomes may be realized'}"],
     "replay_and_last_known_risks": ["old scene/activity/emotion/routine the draft repeats or falsely treats as current"],
     "overresolution_or_derailment_risks": ["forced closure, arbitrary escalation, fake cliffhanger, scene replacement, optional cameo/cutaway, or writing-mode authority violation"],
-    "next_turn_openings": ["${playerControlled ? 'natural player-facing openings or valid model-owned closure after this response' : 'natural continuation paths or closure after the intended authorial scene; openness is optional'}"]
+    "next_turn_openings": ["${playerControlled ? 'the seed left for the next player choice after this response' : 'what stays unresolved inside the scene for the next turn'}"]
   }`;
     return '"domain": {}';
   };
@@ -25172,7 +24306,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ? '- PLAYER-CONTROLLED RP: preserve player agency. Do not decide the user character hidden thoughts, feelings, choices, dialogue, consent/refusal, or voluntary action unless the user already provided them.'
       : '- NOVEL MODE AUTHORSHIP: the user is the author/director. You may write the user persona’s new actions, dialogue, thoughts, feelings, choices, consent/refusal, movement, and reactions as part of the fiction; preserve only explicit author-fixed/reserved boundaries and established canon.',
     '- Maintain grounded continuity. Visible causes should lead to visible effects, physical and social constraints should stay active, and bystanders or public context should not vanish.',
-    '- Expand weak parts only when it improves the current response. Do not bloat, derail, skip ahead, or replace the current scene with a different next beat.',
+    isPlayerControlledDraftMode(settings)
+      ? '- Expand weak parts only when it improves the current response. Do not bloat, derail, skip ahead, or replace the current scene with a different next beat.'
+      : '- Expand weak parts only when it improves the current response. Do not bloat or lose the thread; moving the story onward is allowed.',
     '- Keep the response entirely within the story. Never output <Thoughts>, reasoning, key beats, structure notes, constraint checks, labels, technical comments, or other non-story material.',
     '- Output only the RP response itself without machine-readable appendices or side notes.'
   ].join('\n');
@@ -25184,7 +24320,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '- After those two user-authored directives, the final visible passage of the immediately preceding assistant response, capped at 2,400 characters, is the primary live-scene continuity anchor. Continue from its final physical, emotional, conversational, and social state before consulting older history.',
     '- When the Author Note deliberately redirects a lower-ranked scene condition, stage the necessary transition coherently instead of resetting continuity or claiming the old state never happened.',
     isAuthorDirectedDraftMode(settings)
-      ? '- PLAYER-CONTROLLED RP: treat the current input as the already-enacted complete player contribution for this turn. Do not realize or restage it; write only NPC/world/model-owned continuation. Continue causally until a new player contribution is actually required, then stop before it. Natural model-owned closure/transition is allowed.'
+      ? (rpScopeLocksCast(settings)
+          ? '- PLAYER-CONTROLLED RP: follow the RP detail mode above for what may be written.'
+          : '- PLAYER-CONTROLLED RP: what the persona does and says in the current input is the already-enacted player contribution for this turn; do not restage that part. Show first what the input states about others or the situation, then write NPC/world/model-owned continuation. Continue causally until a new player contribution is actually required, and stop there on a seed for that choice.')
       : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
         ? '- Start from the terminal handoff and fold the user-authored in-world portion of the current input into the opening as one continuous scene beat; do not reset the older scene or duplicate the incorporated input afterward.'
         : '- NOVEL CLASSIC: use the previous assistant endpoint as the factual handoff and interpret the current input as an author brief/scene seed, not automatically as already-enacted player behavior. Realize the requested scene from that handoff without mechanical input replay, and freely author the user persona unless the author explicitly fixed/reserved a choice.',
@@ -25232,7 +24370,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Make the latest user action receive a clear response, preserve relevant unresolved tension and hidden information, order beats by cause and effect, and respect the COMMIT BARRIER.',
       isPlayerControlledDraftMode(settings)
         ? 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that force the user character’s next action or hidden feelings.'
-        : 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
+        : 'Repair repetition, premature resolution, arbitrary escalation, fake cliffhangers, exposition drag, endings that wrap up the whole arc when the author did not ask for it, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
       'Improve pacing and payoff only where needed, preserve unaffected blocks exactly, and expose only the required compact patch JSON. Do not append a sequel scene.'
     ]
   }[stageName] || ['ROLE: full-response draft rewriter.']).join('\n');
@@ -25314,7 +24452,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : 'The inherited SHADOW draft is the same-turn primary composition. Revise only inside this AIDE domain.'
     ],
     task: stageName === 'shadow_act'
-      ? (isPlayerControlledDraftMode(settings) ? 'Write the first complete NPC/world response draft for this player-controlled turn.' : 'Write the first complete author-directed Novel-mode scene draft, including the user persona as part of the cast.')
+      ? (isPlayerControlledDraftMode(settings) ? (rpScopeLocksCast(settings) ? 'Write the first complete response draft for this turn within the RP detail mode.' : 'Write the first complete NPC/world response draft for this player-controlled turn.') : 'Write the first complete author-directed Novel-mode scene draft, including the user persona as part of the cast.')
       : 'Return the improved same-turn scene draft without advancing beyond its existing scene boundary.',
     hardConstraints: [
       buildHardResponseInvariantBlock(settings),
@@ -25398,7 +24536,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const shadowDraftBridge = stageName === 'shadow_act' ? shadowActDraftStyleBridgePrompt(settings) : '';
     const authorNoteAuthority = stageName === 'shadow_act' ? buildShadowAuthorNoteAuthorityBlock(recent, settings) : '';
     const sameTurnLock = aideSameTurnRevisionLock(stageName);
-    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '';
+    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '';
     const shadowModeInheritance = stageName === 'shadow_act' ? '' : shadowDraftModeAideInheritanceContract(settings, stageName, 'patch');
     const lengthGuide = stageName === 'shadow_act'
       ? shadowDraftLengthBeatContract(settings, 'write')
@@ -25502,10 +24640,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
       shadowDraftLengthBeatContract(settings, 'write'),
       '',
       isAuthorDirectedDraftMode(settings)
-        ? '현재 유저 인풋은 이미 성립한 유저 캐릭터의 이번 턴 행동/대사이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 말고, 그 행동이 세계에 닿은 지점부터 NPC·세계의 반응과 인과적 결과를 작성한 뒤 다음 유저 행동이 필요해지는 순간 멈춰라.'
+        ? (rpScopeLocksCast(settings)
+            ? (rpImpersonationScope(settings) === 'all'
+                ? '현재 유저 인풋이 이 장면의 원본이다. 페르소나의 행동과 대사를 포함해 적힌 내용을 빠짐없이, 적힌 순서대로 감각 묘사와 함께 문장으로 옮겨라. 인물의 행동·대사와 전개를 지어내지 말고, 적힌 내용을 다 쓰면 멈춰라. 인풋이 짧으면 응답도 짧다. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 물건 꺼내기, 자물쇠나 문 열기, 앞장서기, 말하기처럼 인풋에 없는 행동과 그 결과는 한 줄도 쓰지 마라. 인풋이 제안이면 그 자리까지 가는 모습까지만 쓴다. 사건을 더하지 말고, 인풋에 이미 있는 것 가운데 아직 풀리지 않은 것(아직 잠긴 것, 답이 없는 것)에 초점을 두고 끝내라.'
+                : '현재 유저 인풋이 이 장면의 원본이다. 페르소나와 다른 인물의 행동·대사를 적힌 내용 그대로, 적힌 순서대로 빠짐없이 묘사하라. 그 행동을 할 때의 표정, 몸짓, 말투, 숨은 연출해도 된다. 그러나 인풋에 없는 새 행동, 대사, 결정은 쓰지 마라. 장면에 있는 인물은 그대로 등장한다. 그 인물의 위치, 모습, 이미 지닌 물건처럼 확립된 상태는 묘사해도 된다. 금지되는 것은 인풋에 없는 새 행동, 대사, 반응, 결정이다. 인풋에 행동이 없는 인물은 시선이나 표정이 반응으로 바뀌는 것도 쓰지 마라. 주변 인물이 물건을 꺼내거나 문을 열거나 앞장서거나 말하는 것도 인풋에 없으면 쓰지 마라. 날씨, 소리, 먼 기척 같은 세계의 변화는 자율적으로 쓰고, 마지막은 인물을 움직이지 않는 세계의 변화 하나로 끝내라. 그 변화는 설명되지 않은 채 남아야 하며 다시 잠잠해지면 안 된다. 질문일 필요는 없고, 페르소나의 다음 선택을 정해서도 안 된다.')
+            : '직전 응답까지의 일은 다시 쓰지 마라. 현재 유저 인풋에서 페르소나의 행동/대사는 이미 일어난 일이다. 그것을 다시 연기하거나 새 유저 행동을 만들지 마라. 인풋에 적힌 다른 인물의 행동·대사와 상황은 아직 쓰이지 않았으니 맨 앞에서부터 적힌 순서대로 빠짐없이 먼저 묘사하라. 적힌 끝 지점으로 건너뛰지 마라. 그 뒤 NPC·세계의 반응과 인과적 결과를 작성하고, 페르소나의 다음 선택이 필요해지는 순간 멈춰라. 마지막에는 장면에 있는 인물이나 세계가 페르소나에게 건네는 것(내민 물건, 대답을 기다리는 말, 눈앞의 변화) 하나를 남겨라. 질문일 필요는 없고, 일을 매듭짓지 마라. 복도의 발소리, 새로 나타난 사람, 어디선가 들리는 소리처럼 끝을 만들려고 끌어온 방해로 끝내지 마라.')
         : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
-          ? '직전 완료 턴의 끝과 현재 유저 인풋의 사용자가 직접 쓴 장면 요소를 하나의 연속된 사건으로 자연스럽게 결합한 뒤, 그에 대한 반응과 결과까지 이어지는 첫 번째 complete RP response_draft를 지금 작성하라.'
-          : '직전 완료 턴의 끝을 현재 장면의 사실적 출발점으로 삼고, 현재 유저 입력은 이미 수행된 플레이어 행동이 아니라 작가의 장면 지시/소재로 해석하라. 작가가 명시한 사건·결과·경계는 지키되 문장을 기계적으로 재현하지 말고, 유저 페르소나를 포함한 전체 인물을 집필하여 첫 번째 complete RP response_draft를 지금 작성하라.'
+          ? '직전 완료 턴의 끝과 현재 유저 인풋의 사용자가 직접 쓴 장면 요소를 하나의 연속된 사건으로 자연스럽게 결합한 뒤, 그에 대한 반응과 결과까지 이어지는 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.'
+          : '첫 문장은 직전 응답이 끝난 바로 그 장소와 그 순간에서 시작하라. 그보다 앞선 장소로 돌아가거나 이미 끝난 장면을 다시 쓰거나 요약하지 마라. 직전 완료 턴의 끝을 현재 장면의 사실적 출발점으로 삼고, 현재 유저 입력은 이미 수행된 플레이어 행동이 아니라 작가의 장면 지시/소재로 해석하라. 작가가 명시한 사건·결과·경계는 지키되 문장을 기계적으로 재현하지 말고, 유저 페르소나를 포함한 전체 인물을 집필하여 첫 번째 complete RP response_draft를 지금 작성하라. 장면을 완결하지 말고 깊게 쓴 뒤 해결 직전에서 멈춰라. 작가가 결말을 지시하지 않았다면 탐색을 마무리하거나 그 자리를 떠나거나 결론을 내리지 마라. 마지막에는 인물들이 찾아내거나 말하거나 알아챈 것 가운데 아직 풀리지 않은 구체적인 것 하나를 남겨라(찢겨 나간 마지막 장, 답을 듣지 못한 물음). 어디선가 들리는 소리, 발소리, 새로 나타난 사람으로 끝내지 마라. 페르소나의 다음 선택을 정하지는 마라.'
     ].join('\n');
   };
 
@@ -25748,7 +24890,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : stageName === 'shadow_act'
         ? arcDirectorBriefForPrompt(recent, 'shadow')
         : (arcControl, arcAudience, '');
-    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '';
+    const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '';
     const common = [
       'Analyze the supplied roleplay material privately for the current same-turn rewrite.',
       analysisSourceMaterialRules(stageName),
@@ -25794,7 +24936,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'INTERNAL PASS 2 — DIRECTOR: after the Story Author plan is complete, translate that exact meaning into visible required outcomes, forbidden moves, continuity locks, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary.',
         isPlayerControlledDraftMode(settings)
           ? 'Director owns execution guardrails only. It may not replace the Story Author purpose, add a different plot, alter the player’s declared action, or convert uncertain pressure into a forced outcome.'
-          : 'Director owns execution guardrails only. It may not replace the Story Author purpose, add a different plot, contradict an explicit author-fixed event/reservation, or mislabel an uncertain pre-existing fact as canon. It MAY choose unspecified user-persona behavior and current-scene outcomes needed to realize the authorial plan.',
+          : 'Director owns execution guardrails only. It may not replace the Story Author purpose, contradict an explicit author-fixed event/reservation, or mislabel an uncertain pre-existing fact as canon. It MAY choose user-persona behavior, current-scene outcomes, and added developments that serve the story.',
         isAuthorDirectedDraftMode(settings)
           ? 'Every planned NPC/world reaction beat must receive a realizable Director treatment, but the Director must stop before inventing the user character’s next action, line, emotion, or choice.'
           : 'Every Story Author beat must have a realizable Director treatment inside this same response. Prefer observable behavior over explanatory labels, but do not prescribe generic gaze, silence, or gestures unless they specifically express this scene’s evidence and pressure.',
@@ -25847,11 +24989,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? 'Under the PLAYER-CONTROLLED RP contract, perform an explicit sentence-by-sentence agency audit: after the submitted user contribution, flag every newly authored user-character action, dialogue, voluntary movement, private thought/feeling/motive, sensory conclusion, consent/refusal, or decision even if an earlier stage called it acceptable.'
           : '',
         isPlayerControlledDraftMode(settings)
-          ? 'Also audit the final portion for AGENCY-BYPASS CLOSURE: NPC departure/goodbye, time skip, transition, reflective epilogue, summary, or resolution is a defect only when it skips or pre-answers a meaningful player-owned beat already pending. Natural model-owned closure is valid.'
+          ? 'Also audit the final portion for AGENCY-BYPASS CLOSURE: NPC departure/goodbye, time skip, transition, reflective epilogue, summary, or resolution is a defect when it skips or pre-answers a meaningful player-owned beat already pending, or when it leaves nothing for the next player choice.'
           : '',
         isPlayerControlledDraftMode(settings)
           ? 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, agency-bypass closure, and endings that decide the user character’s next move.'
-          : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, sequel-scene appendices, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
+          : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, endings that wrap up the whole arc when the author did not ask for it, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
         'Recommend direction only inside this same response. next_turn_openings are natural remaining possibilities, not instructions to write the next scene now.',
         'Do not write or revise the response draft. Return precise plot notes and direct rewrite actions.'
       ]
@@ -26355,7 +25497,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const inputDraftHash = stableDraftHash(previousDraft);
     const system = [
       fullDraftStageSystemShell(stageName, settings),
-      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, 2200) : '',
+      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, 2200, { settings }) : '',
       shadowDraftModeAideInheritanceContract(settings, stageName, 'patch'),
       playerControlledSkillSubjectGate(settings),
       playerControlledTurnHandoffContract(settings, stageName, 'repair'),
@@ -26363,7 +25505,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'The previous output was rejected because it matched a prior-turn assistant response more strongly than the immediate same-turn input draft.',
       'Rewrite only CURRENT_SAME_TURN_DRAFT. The earlier chat transcript is intentionally omitted.',
       isPlayerControlledDraftMode(settings)
-        ? 'PLAYER-CONTROLLED RECOVERY: preserve only NPC/world/model-owned continuation and externally caused consequences. Remove any new or reenacted user-character behavior. Repair closure only when it bypasses a pending player-owned beat; otherwise preserve natural model-owned closure/transition and stop before the next actual player contribution.'
+        ? 'PLAYER-CONTROLLED RECOVERY: preserve only NPC/world/model-owned continuation and externally caused consequences. Remove any new or reenacted user-character behavior. Repair closure that bypasses a pending player-owned beat, and stop before the next actual player contribution on a seed from the scene.'
         : '',
       'Return a fresh complete RP response draft. Do not quote lineage metadata or explain the correction.'
     ].filter(Boolean).join('\n\n');
@@ -26946,7 +26088,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Own why each admitted beat appears now and where this response stops; preserve established character voice and world rules while changing only the local ordering, emphasis, bridge, or ending required by scene purpose.',
       'Patch only paragraphs that materially need plot-domain compression, reordering by local replacement, development, or removal. Preserve every unaffected block exactly.',
       isPlayerControlledDraftMode(settings)
-        ? 'Under the PLAYER-CONTROLLED RP contract, the inherited ending is NOT protected if it puppets the user or uses closure/transition to bypass a pending player-owned beat. Remove/rewrite from the first agency crossing or agency-bypass closure; preserve natural model-owned closure and stop before the next actual player contribution.'
+        ? 'Under the PLAYER-CONTROLLED RP contract, the inherited ending is NOT protected if it puppets the user or uses closure/transition to bypass a pending player-owned beat. Remove/rewrite from the first agency crossing or agency-bypass closure, and stop before the next actual player contribution on a seed from the scene.'
         : '',
       isPlayerControlledDraftMode(settings)
         ? 'Do not append a sequel scene, revive an older thread without a present bridge, or decide the user character’s next action.'
@@ -26981,10 +26123,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
 
   const aidePatchExpansionContract = (stageName, settings = {}) => {
+    if (rpScopeLocksCast(settings)) return rpImpersonationScope(settings) === 'all'
+      ? 'NO NEW CONTENT: this detail mode allows no added prose. Never use insert_before or insert_after, and never add an action, line, or result in a replace. Only correct or remove what is already written; a character simply being present, as already established, is not a fault and stays. No edits at all is the normal answer.'
+      : 'NEW CONTENT IS STAGING AND BACKGROUND ONLY: an insert may add the expression, gesture, tone, or breath of a stated action or line, how characters already in the scene look or stand as established, and surroundings or background. Never add a new action, line, reaction, or decision for the persona or any other character, never remove a character merely for being present, and keep the closing seed.';
     const domainExpansion = {
       aide_character: 'You may insert a new paragraph for a missing observable reaction, counter-reaction, dialogue turn, knowledge-limited response, or relationship-pressure beat that the current action logically calls for.',
       aide_world: 'You may insert a new paragraph for a missing physical transition, spatial consequence, object interaction, witness response, environmental reaction, or established-rule consequence needed to make the scene physically and socially coherent.',
-      aide_plot: 'You may insert a new paragraph for a missing causal bridge, escalation or release of existing pressure, reciprocal beat, consequence, or ending beat needed to fulfill the current scene purpose.'
+      aide_plot: 'You may insert a new paragraph for a missing causal bridge, escalation or release of existing pressure, reciprocal beat, consequence, or, only when the ending leaves nothing open, a closing seed. Never insert after a closing seed that is already there.'
     }[stageName] || 'You may insert a new paragraph when the assigned domain materially requires development.';
     return [
       'SCOPED CONTENT DEVELOPMENT:',
@@ -27128,7 +26273,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         : 'Analyze the full draft privately, but expose only the compact analysis fields and structural edits in the required JSON.',
       buildInternalDraftLanguageContract(settings, 'patch'),
       resolveModelBehaviorAdapterForStage(settings, stageName, 'patch').prompt,
-      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent) : '',
+      isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '',
       shadowDraftModeAideInheritanceContract(settings, stageName, 'patch'),
       aidePatchRoleContract(stageName, settings),
       aidePatchExpansionContract(stageName, settings),
@@ -27301,6 +26446,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         return fallback;
       }
 
+      // 'all' allows nothing beyond the input, so an insert is refused here whatever the model answered.
+      if (rpScopeLocksCast(settings) && rpImpersonationScope(settings) === 'all' && Array.isArray(patch?.edits)) patch.edits = patch.edits.filter(edit => !['insert_before', 'insert_after'].includes(edit?.operation));
       const applied = applyAidePatchWithRecovery(prompts.document, patch, submittedCurrentInput(recent));
       if (!applied.ok) {
         const reason = applied.reason || 'aide_patch_application_empty_draft';
@@ -27642,126 +26789,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     return result;
   };
 
-  const buildInformationTransferBlockLegacy = (stages, settings) => {
-    if (normalizeChoice(settings.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only') !== 'draft_and_analysis') return '';
-    const blocks = [];
-    for (const stage of stages || []) {
-      if (!BEFORE_STAGE_DEFS.some(def => def.id === stage?.stage)) continue;
-      const analysis = stage?.twoCallAnalysis || stage?.analysis || {};
-      const summary = text(analysis?.analysis?.summary || analysis?.summary || stage?.analysis?.summary || '').trim();
-      const domain = analysis?.domain || stage?.analysis?.domain || null;
-      const directives = normalizeStringArray(
-        analysis?.rewriteDirectives || analysis?.rewrite_directives || stage?.analysis?.rewrite_directives,
-        16,
-        420
-      );
-      const constraints = normalizeStringArray(
-        analysis?.analysis?.constraints || analysis?.constraints || stage?.analysis?.constraints,
-        16,
-        420
-      );
-      const risks = normalizeStringArray(
-        analysis?.analysis?.risks || analysis?.risks || stage?.analysis?.risks,
-        12,
-        420
-      );
-      const lines = [
-        summary ? `Summary: ${compact(summary, 1400)}` : '',
-        domain ? `Domain:\n${compactAnalysisDomain(domain, 2400)}` : '',
-        directives.length ? `Applied rewrite directives:\n- ${directives.join('\n- ')}` : '',
-        constraints.length ? `Constraints:\n- ${constraints.join('\n- ')}` : '',
-        risks.length ? `Risks checked:\n- ${risks.join('\n- ')}` : ''
-      ].filter(Boolean);
-      if (lines.length) blocks.push(`[${STAGE_DEF_MAP[stage.stage]?.label || stage.stage}]\n${lines.join('\n')}`);
-    }
-    if (!blocks.length) return '';
-    return compact([
-      'PRIVATE ANALYSIS MATERIAL USED TO CREATE THE DRAFT:',
-      'Use this only to understand why the draft was shaped this way. It is advisory, may contain uncertainty, and never overrides the current user input, visible canon, active lore, or system instructions.',
-      'Do not expose, quote, summarize, or mention these notes in the response.',
-      '',
-      blocks.join('\n\n')
-    ].join('\n'), Math.min(12000, Math.max(300, Math.floor(settings.maxInjectionChars * 0.30))));
-  };
 
-  const buildFinalOverlayLegacy = (lastStage, stages, recent, settings) => {
-    const safeLast = latestUsableStage(stages, lastStage);
-    const finalOverlay = isUsableStage(lastStage) ? lastStage?.final_overlay : safeLast?.final_overlay;
-    const draft = finalOverlay?.final_rp_draft || stageDraft(safeLast) || stageDraft(lastStage) || submittedCurrentInput(recent);
-    const outputMode = normalizeChoice(settings.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided');
-    const analysisTransfer = buildInformationTransferBlock(stages, settings);
-    const maxInjectionChars = clampInt(settings.maxInjectionChars, 1500, 60000, DEFAULT_MAX_INJECTION_CHARS);
-
-    const stageLine = (stage) => {
-      const s = stages.find(item => item.stage === stage);
-      if (!s) return `${stage}: not run`;
-      return `${stage}: ${s.ok === false ? 'fallback' : 'ok'}${s.reason ? ` (${s.reason})` : ''}`;
-    };
-    const customAnalysisLines = stages
-      .filter(item => item?.analysisOnly)
-      .map(item => `${item.label || item.stage}: ${item.ok === false ? 'fallback' : 'ok'}${item.summary ? ` — ${compact(item.summary, 180)}` : ''}`);
-    const fullContextExpansionRequirements = [
-      'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
-      '- Treat the supplied draft as the authoritative same-turn scene seed and primary response blueprint, not as immutable wording and not as a sequel prompt.',
-      '- Recompose it into the final RP response. Preserve its core beats, causal order, dialogue intent, character positions, continuity, and unresolved choices.',
-      '- Expand inward, not forward: develop underwritten actions, context-appropriate NPC reactions, dialogue rhythm, pauses, gaze, distance, sensory grounding, and causal transitions inside the draft’s existing scene boundary.',
-      '- Strengthen the scene with established character details, active setting facts, recent events, remembered continuity, and unresolved obligations that are relevant to the present moment.',
-      '- Convert relevant context into natural behavior, dialogue, physical detail, remembered obligations, relationship texture, knowledge limits, object/injury/position continuity, and unresolved tension. Do not recite profiles, summarize memory blocks, or insert lore merely to prove it was read.',
-      '- When details conflict, follow the current user input first, then the latest visible scene and exact active canon, then older continuity. Treat the response draft as the primary composition to preserve and refine.',
-      '- If memory or an older summary conflicts with newer visible events, follow the newer events. Treat uncertain recollection, rumor, inference, and last-known offscreen state as uncertain rather than confirmed present fact.',
-      '- Do not give a character knowledge without a valid in-world path. Do not teleport offscreen actors or introduce a new major event only because a lore or memory entry mentions it.',
-      '- Do not append a sequel scene, time skip, new aftermath, or event beyond the draft’s final intended beat. Do not make the response longer merely for length; compress repetition and expand only material that improves this scene.',
-      '- Preserve POV/knowledge boundaries and explicit author-fixed/reserved choices. In Novel mode the user persona is authorable; do not impose RP player-agency restrictions on their new dialogue, thought, feeling, or action.',
-      '- Keep the response entirely within the story. Express relevant context through natural behavior, dialogue, knowledge limits, physical continuity, and consequences instead of explaining the source material.'
-    ].join('\n');
-    const compactContextExpansionRequirements = [
-      'CONTEXT-GROUNDED SAME-SCENE EXPANSION:',
-      'Use the draft as a same-turn scene seed. Expand inward through action, reaction, dialogue, sensory and causal detail—not into a sequel.',
-      'Use relevant established facts, recent events, and remembered continuity naturally. Newer visible canon wins; preserve knowledge paths and active writing-mode authority; keep the response entirely within the story.'
-    ].join('\n');
-    const contextExpansionRequirements = compact(
-      maxInjectionChars < 5000 ? compactContextExpansionRequirements : fullContextExpansionRequirements,
-      maxInjectionChars < 5000
-        ? Math.min(720, Math.max(360, Math.floor(maxInjectionChars * 0.28)))
-        : Math.min(4200, Math.max(1200, Math.floor(maxInjectionChars * 0.34)))
-    );
-    const stageTraceText = maxInjectionChars < 5000 ? '' : compact([
-      'STAGE TRACE SUMMARY:',
-      ['shadow_act', ...normalizeAideStageOrder(settings.aideStageOrder)].map(stageLine).join('\n'),
-      customAnalysisLines.length ? `\nCUSTOM ANALYSIS SUMMARY:\n${customAnalysisLines.join('\n')}` : ''
-    ].filter(Boolean).join('\n'), Math.min(1200, Math.max(420, Math.floor(maxInjectionChars * 0.09))));
-    const openingInstruction = maxInjectionChars < 5000
-      ? 'Use the response draft as the same-turn scene seed. Develop its existing scene with relevant established context and keep the result entirely within the story.'
-      : outputMode === 'risu_engine'
-        ? 'Finalize the same-turn RP scene seed below. Preserve its direction and selectively develop it with established character, setting, recent-event, and continuity facts.'
-        : 'Use the final RP response draft below as the same-turn scene seed and primary response blueprint. Preserve its direction and develop its existing scene with established character, setting, recent-event, and continuity facts.';
-    const fixedReserve = [
-      INJECTION_HEADER,
-      openingInstruction,
-      contextExpansionRequirements,
-      recent.sceneAnchor || '',
-      analysisTransfer,
-      stageTraceText,
-      'FINAL RESPONSE DRAFT:'
-    ].join('\n').length + (maxInjectionChars < 5000 ? 140 : 320);
-    const draftBudget = Math.max(320, maxInjectionChars - fixedReserve);
-    const block = [
-      INJECTION_HEADER,
-      openingInstruction,
-      '',
-      contextExpansionRequirements,
-      '',
-      'LATEST SCENE ANCHOR:',
-      recent.sceneAnchor || '(none detected; preserve the latest visible scene from recent chat)',
-      '',
-      'FINAL RESPONSE DRAFT:',
-      compactMiddle(draft, draftBudget),
-      analysisTransfer ? `\n${analysisTransfer}` : '',
-      '',
-      stageTraceText
-    ].filter(Boolean).join('\n');
-    return compact(block, maxInjectionChars);
-  };
 
   const isSuccessfulCurrentRunStage = (stage, recent = {}) => {
     if (!stage || stage.ok === false || stage.fallback) return false;
@@ -28061,7 +27089,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
 
   const PLAYER_CONTROLLED_AGENCY_KERNEL = [
     '[PLAYER-CONTROLLED RP — HARD AGENCY KERNEL]',
-    '- The current user input is the complete, already-enacted user-character contribution for this turn. Preserve exactly what the user explicitly did, said, attempted, requested, or left undecided.',
+    '- What the persona does and says in the current user input is the complete, already-enacted user-character contribution for this turn. Preserve exactly what the user explicitly did, said, attempted, requested, or left undecided.',
     '- An attempt or request does not establish success, NPC consent, acceptance, relationship change, or another external result.',
     '- Do not invent user-character dialogue, intentional action, voluntary movement, consent/refusal, decision, private thought, emotion, motive, interpretation, sensory conclusion, or chosen reaction.',
     '- A brief causal reference to an exact user-authored fact is allowed when needed for coherent prose, but it must add no new player behavior.',
@@ -28071,7 +27099,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   const PLAYER_CONTROLLED_CANDIDATE_INTEGRATION = [
     '[GRADIA NPC/WORLD CANDIDATE — PRIMARY SAME-TURN COMPOSITION]',
     '- Presume all supported candidate NPC/world beats are accepted. Preserve their actors, event inventory, causal order, positions, knowledge boundaries, dialogue purpose, unresolved player-owned choices, scene function, terminal beat, and earned ending.',
-    '- Do not add any new NPC/world beat after the candidate endpoint. NPC/world autonomy here means preserving and polishing valid initiative, transition, or natural closure already present in the candidate—not generating more of it.',
+    '- Do not add any new NPC/world beat after the candidate endpoint. NPC/world autonomy here means preserving and polishing valid initiative, transition, or a closing seed already present in the candidate—not generating more of it.',
     '- Change a candidate-level event only to repair: newly invented player behavior; agency-bypass closure; a direct conflict with current input, literal terminal state, or authoritative canon; or an impossible causal, spatial, or knowledge-state error.',
     '- If a violation begins mid-candidate, preserve the valid prefix and repair or truncate from the first violating passage. Do not discard valid earlier NPC/world material.',
     '- An open handoff and natural model-owned closure are both valid. Preserve whichever ending the candidate earned; manufacture neither a question nor a closure.'
@@ -28424,7 +27452,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         ? ['compact', 'tiny']
         : ['tiny'];
     const rawLanguageContract = buildInternalDraftLanguageContract(settings, 'final');
-    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3000, { finalization: true });
+    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3000, { finalization: true, settings });
     const terminalEvidence = playerControlledRpTerminalEvidenceBlock(recent, 3000);
     const continuityGuard = buildPlayerControlledFinalContinuityGuard(recent, 3400);
     const hardTransfer = buildPlayerControlledFinalHardTransferBlock(stages, settings, recent, 2400);
@@ -28447,11 +27475,11 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
           phase: 'final',
           stage: 'final',
           authority: [
-            'PLAYER-CONTROLLED RP MODE. The current submitted user input is already-enacted player behavior and is the sole authority over user-character behavior for this turn.',
+            'PLAYER-CONTROLLED RP MODE. The persona’s part of the current submitted user input is already-enacted player behavior, and the input is the sole authority over user-character behavior for this turn.',
             'The literal terminal scene and exact canon define the incoming world state. The supplied NPC/world response candidate is the only same-turn composition target.'
           ],
           task: preservationMode
-            ? 'Perform a preservation-only finish on the NPC/world response candidate. Remove any surviving reenactment or invented user-character behavior and repair only closure/transition that bypasses a pending player-owned beat; otherwise preserve valid model-owned initiative, transition, and closure without expanding the scene.'
+            ? 'Perform a preservation-only finish on the NPC/world response candidate. Remove any surviving reenactment or invented user-character behavior and repair only closure/transition that bypasses a pending player-owned beat; otherwise preserve valid model-owned initiative, transition, and the closing seed without expanding the scene.'
             : 'Produce a polished replacement of the supplied NPC/world candidate inside its existing event interval. Preserve its valid model-owned causality and ending; do not generate another beat after it.',
           evidenceSections: 'The terminal scene is the pre-draft starting state; continuity is a repair guard. Neither may supply new player behavior, a new plot direction, or a beat after the candidate endpoint.',
           hardConstraints: [
@@ -28527,155 +27555,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       : buildNovelFinalOverlay(lastStage, stages, recent, settings)
   );
 
-  const formatRisuEngineLoreEntries = (activeLore = [], predicate = () => true, maxChars = 7000) => {
-    const entries = (activeLore || []).filter(predicate);
-    if (!entries.length) return '';
-    return compact(entries.map((lore, idx) => [
-      `[Lore ${idx + 1}: ${lore.label || lore.source || 'entry'}]`,
-      lore.source ? `source=${lore.source}` : '',
-      lore.key ? `key=${lore.key}` : '',
-      lore.position ? `position=${lore.position}${lore.depth ? `:${lore.depth}` : ''}` : '',
-      lore.role && lore.role !== 'system' ? `role=${lore.role}` : '',
-      compact(lore.content, 1800)
-    ].filter(Boolean).join('\n')).join('\n\n'), maxChars);
-  };
 
-  const formatRisuEngineLedger = (ledger = {}) => {
-    const blocks = [];
-    const constraintBlock = buildConstraintBlock(ledger);
-    if (constraintBlock) blocks.push(constraintBlock);
-    if (ledger.customAnalyses?.length) {
-      blocks.push(`CUSTOM ANALYSIS LEDGER JSON:\n${compact(JSON.stringify(ledger.customAnalyses, null, 2), 7000)}`);
-    }
-    return blocks.join('\n\n');
-  };
 
-  const buildRisuEnginePromptPlan = (recent, finalDraft, stages, settings, ledger) => {
-    const activeLore = recent?.risuActiveLore || [];
-    const descLore = formatRisuEngineLoreEntries(activeLore, lore => ['before_desc', 'after_desc', 'personality', 'scenario'].includes(lore.position), 5000);
-    const normalLore = formatRisuEngineLoreEntries(activeLore, lore => !lore.position || lore.position === '', 9000);
-    const postLore = formatRisuEngineLoreEntries(activeLore, lore => lore.position === 'depth' && Number(lore.depth || 0) === 0, 5000);
-    const otherPositionLore = formatRisuEngineLoreEntries(activeLore, lore => lore.position && !['before_desc', 'after_desc', 'personality', 'scenario', 'depth'].includes(lore.position), 5000);
-    const ledgerText = formatRisuEngineLedger(ledger);
-    const stageSummary = (stages || []).map(stage => `${stage.label || STAGE_DEF_MAP[stage.stage]?.label || stage.stage}: ${stage.ok === false ? 'fallback' : 'ok'}${stage.reason ? ` (${stage.reason})` : ''}`).join('\n');
-    const visibleMessages = recent?.visibleMessages || [];
-    const olderChat = visibleMessages.slice(0, -2).map((m, idx) => `#${idx + 1} <${m.role}${m.name ? `:${m.name}` : ''}>\n${m.content}`).join('\n\n---\n\n');
-    const latestChat = visibleMessages.slice(-2).map((m, idx) => `#${idx + 1} <${m.role}${m.name ? `:${m.name}` : ''}>\n${m.content}`).join('\n\n---\n\n') || recent?.visibleText || recent?.text || '';
-    return [
-      {
-        type: 'plain',
-        type2: 'main',
-        role: 'system',
-        name: 'Main response instructions',
-        content: [
-          'You are the final RP response composer.',
-          'Use the ordered setting, character, continuity, conversation, and response-draft material to compose one coherent response.',
-          'Return only the final assistant RP response. No JSON, markdown fence, analysis, labels, technical terminology, or out-of-story explanation.'
-        ].join('\n')
-      },
-      {
-        type: 'description',
-        role: 'system',
-        innerFormat: '[Roleplay Setting]\n{{slot}}',
-        content: compact([recent?.risuContext || '', descLore].filter(Boolean).join('\n\n'), settings.shadowRisuContextMaxChars || DEFAULT_SHADOW_RISU_CONTEXT_CHARS)
-      },
-      {
-        type: 'persona',
-        role: 'system',
-        innerFormat: '[User Persona / Character Profile]\n{{slot}}',
-        content: compact(recent?.risuContextMeta?.persona ? recent.risuContext : '', 5000)
-      },
-      {
-        type: 'plain',
-        type2: 'normal',
-        role: 'system',
-        name: 'Supplementary Information',
-        content: '[Supplementary Information]'
-      },
-      {
-        type: 'lorebook',
-        role: 'system',
-        content: normalLore || '(No normal-position lorebook entry was activated.)'
-      },
-      {
-        type: 'plain',
-        type2: 'globalNote',
-        role: 'system',
-        name: 'Global Note / Built-in Style',
-        content: builtInStylePresetPrompt(settings)
-      },
-      {
-        type: 'authornote',
-        role: 'system',
-        innerFormat: '[Author Note]\n{{slot}}',
-        content: recent?.sceneAnchor ? `Latest scene anchor: ${recent.sceneAnchor}` : ''
-      },
-      {
-        type: 'memory',
-        role: 'system',
-        innerFormat: '[Roleplay Summary / Retrieved Memory]\n{{slot}}',
-        content: compact([recent?.risuMemory || '', recent?.othersInfo || '', ledgerText].filter(Boolean).join('\n\n'), 12000)
-      },
-      {
-        type: 'plain',
-        type2: 'normal',
-        role: 'system',
-        name: 'Response Instruction',
-        content: [
-          'RESPONSE INSTRUCTION:',
-          ...(isAuthorDirectedDraftMode(settings) ? [
-            '- PLAYER-CONTROLLED RP: the latest user input is already the complete user-character contribution for this turn. Do not reenact it or add further user behavior.',
-            '- Treat the serial draft as the NPC/world response candidate. Improve model-owned reactions, causality, dialogue, staging, sensory grounding, and continuity without crossing the next user-agency boundary.',
-            '- NPC/world may act autonomously when causally supported, including grounded initiatives, reveals, arrivals/departures, transitions, and natural closure. Do not add an unrelated hook/sequel or continue after a new user action/decision is actually required.',
-            '- Do not force a live player-facing opening. Closure/time-skip/relocation is valid when model-owned and causally earned; it is invalid only when it skips or pre-answers a pending player-owned beat.',
-            '- User-authored behavior in the latest input is already enacted fact; normally do not restage it. Never add a user-character choice, dialogue, consent, feeling, movement, or action absent from that input.',
-            '- Story Arc, lore, memory, and older plans may guide NPC/world continuity only; they cannot authorize user-character behavior.'
-          ] : [
-            '- Use the serial draft as the same-turn scene seed and primary response blueprint. Recompose it rather than merely copying its wording.',
-            '- Expand inward, not forward: develop underwritten action/reaction causality, dialogue rhythm, sensory grounding, and transitions inside the existing scene boundary. Do not write the next scene after the draft.',
-            '- NOVEL MODE FULL-CAST AUTHORSHIP: the user persona is part of the fiction you may write. Preserve explicit author-fixed/reserved constraints, but you may author new user-persona thoughts, feelings, choices, dialogue, and actions inside the current scene.'
-          ]),
-          '- Use relevant persona, character, activated lore, author-note, memory, Others Info, and recent-chat items in this prompt plan as private writing evidence. Integrate them through behavior, knowledge limits, physical continuity, relationship texture, and unresolved tension instead of exposition.',
-          '- Newer visible events and the latest user input override older or uncertain memory. A memory fact does not grant every character knowledge of it without an in-world path.',
-          '- Keep functional status/interface blocks and image-command rules when present, but do not add # 응답, volume/chapter, Chatindex, or automatic timestamp wrappers like ⏱️[YYYY-MM-DD...] unless the latest user explicitly asks for them.',
-          '- Preserve prose datelines that carry scene time/place, such as "밤 10:20 PM, 시끌벅적한 고기집의 한구석."; those are story text, not removable headers.',
-          '- Let established lore and remembered events shape natural behavior and continuity. Do not recite reference material or reveal facts unavailable to the current viewpoint.',
-          postLore ? `\n[Depth 0 / PostEverything Lore]\n${postLore}` : '',
-          otherPositionLore ? `\n[Positioned Lore]\n${otherPositionLore}` : ''
-        ].filter(Boolean).join('\n')
-      },
-      {
-        type: 'chat',
-        rangeStart: 0,
-        rangeEnd: -2,
-        chatAsOriginalOnSystem: true,
-        content: olderChat || '(No older visible chat in current window.)'
-      },
-      {
-        type: 'chat',
-        rangeStart: -2,
-        rangeEnd: 'end',
-        content: latestChat || '(No recent visible chat in current window.)'
-      },
-      {
-        type: 'postEverything',
-        role: 'system',
-        content: [
-          '[Serial Draft To Finalize]',
-          compactMiddle(finalDraft, settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS),
-          '',
-          '[Stage Summary]',
-          stageSummary || '(no stage summary)'
-        ].join('\n')
-      },
-      {
-        type: 'plain',
-        type2: 'assistantPrefill',
-        role: 'assistant',
-        content: 'Roleplay response:'
-      }
-    ].filter(item => item.content == null || text(item.content).trim());
-  };
 
   const risuEngineOutputTokenBudget = settings => Math.max(768, Math.min(
     DEFAULT_MAX_STAGE_TOKENS * 4,
@@ -28940,7 +27821,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       packetAuxiliary, legacyReference, conversation
     } = canonicalRisuEngineContextParts(recent, stages, settings, ledger);
     const synthesisContract = buildPlayerControlledFinalSynthesisContract('full');
-    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3200, { finalization: true });
+    const playerAgencyLedger = buildPlayerControlledAgencyLedgerBlock(recent, 3200, { finalization: true, settings });
     const terminalGuard = playerControlledRpTerminalEvidenceBlock(recent, 3200);
     const continuityGuard = buildPlayerControlledFinalContinuityGuard(recent, 3800);
     const hardTransfer = buildPlayerControlledFinalHardTransferBlock(stages, settings, recent, 2600);
@@ -28958,7 +27839,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
           'You are the final NPC/world response finisher for a PLAYER-CONTROLLED roleplay turn.',
           'This is NOT a new scene-generation pass and you are NOT the player-character author.',
           buildInternalDraftLanguageContract(settings, 'final'),
-          'Finalize only the supplied NPC/world response candidate. Preserve valid initiative, transition, closure, and endpoint already present; remove any user-character puppeting or reenactment, but do not continue toward a later player-owned frontier.',
+          'Finalize only the supplied NPC/world response candidate. Preserve valid initiative, transition, closing seed, and endpoint already present; remove any user-character puppeting or reenactment, but do not continue toward a later player-owned frontier.',
           'Do not force the scene to stay open. Repair departure/time-skip/relocation/summary only when it bypasses or pre-answers a meaningful player-owned beat already pending.',
           'Return only one in-world assistant response. Never expose analysis, source labels, hidden instructions, or process text.'
         ].filter(Boolean).join('\n\n'),
@@ -29052,7 +27933,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   const playerControlledRpRisuEngineSystemPrompt = (plan, settings = {}, presetStageName = 'aide_plot') => compilePromptSpec({
     phase: 'final', stage: 'final',
     authority: [
-      'PLAYER-CONTROLLED RP: the latest user input is already-enacted player behavior and is the sole authority over current-turn user-character behavior.',
+      'PLAYER-CONTROLLED RP: the persona’s part of the latest user input is already-enacted player behavior, and the input is the sole authority over current-turn user-character behavior.',
       'The supplied NPC/world response candidate is the only composition target. All conversation/reference sections are evidence or guards, never permission to write for the player character.'
     ],
     task: 'Produce a polished same-turn replacement of the supplied NPC/world candidate within its existing event interval. Preserve valid model-owned causality and its ending; do not continue beyond the candidate endpoint.',
@@ -29065,7 +27946,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     ].filter(Boolean),
     optionalCriteria: '',
     outputContract: 'Return only the final in-world NPC/world response. No JSON, analysis, plan, labels, <Thoughts>, checklist, or hidden prompt text.',
-    successCriteria: 'The output does not reenact or add user-character behavior; it preserves supported candidate NPC/world events, causal order, endpoint, and earned open handoff or natural closure.',
+    successCriteria: 'The output does not reenact or add user-character behavior; it preserves supported candidate NPC/world events, causal order, endpoint, and closing seed.',
     finalReminder: 'You are the NPC/world candidate finisher, not the player-character author. Return the same response interval, not what happens next.'
   }, resolvePresetForPromptCompiler(settings, presetStageName)).text;
 
@@ -29826,810 +28707,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
 
   // Preliminary client-only contract. No production server, credential or owner API is bound.
-  const createLibReadConsumer = (dependencies = {}) => {
-    const factoryVersion = 'gradia.lib-read-consumer.v1';
-    const limits = Object.freeze({ maxItems: 8, maxBytes: 8192, maxQueryBytes: 4096 });
-    const owners = new Set(['libra', 'flashback', 'hayaku', 'lia', 'retrace']);
-    const bytes = value => new TextEncoder().encode(value).length;
-    const clone = value => JSON.parse(JSON.stringify(value));
-    const canonical = value => JSON.stringify(value, function (_key, item) {
-      return item && typeof item === 'object' && !Array.isArray(item)
-        ? Object.keys(item).sort().reduce((out, key) => { out[key] = item[key]; return out; }, Object.create(null)) : item;
-    });
-    const error = code => Object.assign(new Error(code), { code });
-    const requireText = value => typeof value === 'string' && value.trim().length > 0 && value.length <= 4096;
-    const requireHash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-    const timeoutMs = Math.max(10, Math.min(5000, Number(dependencies.timeoutMs) || 1500));
-    let generation = 0;
-    let active = null;
-    const stop = (record, reason) => {
-      if (!record || record.invalidated) return;
-      record.invalidated = true;
-      record.reason = reason;
-      record.packet = null;
-      record.draft = '';
-      record.draftHash = '';
-      record.removeAbort?.();
-      record.controller.abort(error(reason));
-      if (active === record) generation += 1;
-    };
-    const invalidate = (reason = 'LIB_READ_INVALIDATED') => {
-      stop(active, /^LIB_READ_[A-Z_]+$/.test(reason) ? reason : 'LIB_READ_INVALIDATED');
-    };
-    const check = record => {
-      if (record.invalidated || active !== record || record.generation !== generation) throw error(record.reason || 'LIB_READ_SUPERSEDED');
-    };
-    const guarded = async (record, operation) => {
-      check(record);
-      let timer, onAbort;
-      try {
-        const canceled = new Promise((_, reject) => {
-          onAbort = () => reject(error(record.reason || 'LIB_READ_CANCELED'));
-          record.controller.signal.addEventListener('abort', onAbort, { once: true });
-          timer = setTimeout(() => stop(record, 'LIB_READ_TIMEOUT'), timeoutMs);
-        });
-        const value = await Promise.race([Promise.resolve().then(() => { check(record); return operation(); }), canceled]);
-        check(record);
-        return value;
-      } finally {
-        clearTimeout(timer);
-        if (onAbort) record.controller.signal.removeEventListener('abort', onAbort);
-      }
-    };
-    const normalizeBoundary = raw => {
-      if (!raw || raw.transition === true || !['plugin_only', 'server_only'].includes(raw.mode)) throw error('LIB_READ_MODE_UNAVAILABLE');
-      if (raw.mode === 'plugin_only') return { mode: 'plugin_only' };
-      const scope = {};
-      for (const key of ['characterId', 'chatId', 'branchId', 'personaId', 'worldlineRevision']) {
-        if (!requireText(raw.scope?.[key])) throw error('LIB_READ_SCOPE_UNAVAILABLE');
-        scope[key] = raw.scope[key];
-      }
-      if (!Number.isSafeInteger(raw.modeGeneration) || raw.modeGeneration < 0
-          || !requireText(raw.data?.instanceId) || !requireText(raw.data?.resetEpoch)
-          || !requireText(raw.nativeRevision) || !requireHash(raw.currentInputHash) || !requireHash(raw.recentTurnDigest)) throw error('LIB_READ_BOUNDARY_UNAVAILABLE');
-      return { mode: raw.mode, modeGeneration: raw.modeGeneration, scope,
-        data: { instanceId: raw.data.instanceId, resetEpoch: raw.data.resetEpoch }, nativeRevision: raw.nativeRevision,
-        currentInputHash: raw.currentInputHash, recentTurnDigest: raw.recentTurnDigest };
-    };
-    const disabledSession = () => Object.freeze({ status: 'disabled', reason: 'plugin_only',
-      assertCurrent: async () => true, getEvidence: async () => null,
-      bindDraft: async () => { throw error('LIB_READ_DISABLED'); }, finalizeDraft: async () => { throw error('LIB_READ_DISABLED'); } });
-    const beginRead = async (input = {}) => {
-      invalidate('LIB_READ_SUPERSEDED');
-      // Production defaults here without inspecting input or loading connection settings.
-      if (typeof dependencies.getBoundary !== 'function') return disabledSession();
-      const record = { generation, controller: new AbortController(), invalidated: false, packet: null, draft: '', draftHash: '', reason: '' };
-      active = record;
-      const signal = input.signal;
-      if (signal) {
-        const cancel = () => stop(record, 'LIB_READ_CANCELED');
-        signal.addEventListener('abort', cancel, { once: true });
-        record.removeAbort = () => signal.removeEventListener('abort', cancel);
-        if (signal.aborted) cancel();
-      }
-      try {
-        // Copy request primitives before the first await; callers retain their input object.
-        const captured = { requestId: input.requestId, currentInputHash: input.currentInputHash,
-          recentTurnDigest: input.recentTurnDigest, query: input.query,
-          allowedOwners: Array.isArray(input.allowedOwners) ? input.allowedOwners.slice() : null };
-        const boundary = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-        if (boundary.mode === 'plugin_only') { stop(record, 'LIB_READ_DISABLED'); return disabledSession(); }
-        if (typeof dependencies.recall !== 'function' || typeof dependencies.assertCurrent !== 'function'
-            || typeof dependencies.digest !== 'function') throw error('LIB_READ_CONTRACT_UNAVAILABLE');
-        if (typeof input.pipelineSnapshot === 'function') {
-          const snapshot = clone(input.pipelineSnapshot());
-          captured.currentInputHash = await guarded(record, () => dependencies.digest(snapshot.currentInput));
-          const nativeReadSet = { schema: snapshot.schema, currentInputRef: snapshot.currentInputRef, selections: [], turns: [] };
-          for (const selection of snapshot.selections) {
-            const viewSHA256 = await guarded(record, () => dependencies.digest(canonical(selection.view)));
-            if (!requireHash(viewSHA256)) throw error('LIB_READ_HASH_UNAVAILABLE');
-            nativeReadSet.selections.push({ stage: selection.stage, turns: selection.turns, viewSHA256 });
-          }
-          for (const item of snapshot.turns) nativeReadSet.turns.push({ ...item.ref, role: item.role,
-            contentSHA256: await guarded(record, () => dependencies.digest(item.content)) });
-          if (bytes(canonical(nativeReadSet)) > 65536) throw error('LIB_READ_REQUEST_BUDGET_EXCEEDED');
-          captured.recentTurnDigest = await guarded(record, () => dependencies.digest(canonical(nativeReadSet)));
-          captured.nativeReadSet = nativeReadSet;
-          captured.query = '';
-          for (const char of snapshot.query) {
-            if (bytes(captured.query + char) > limits.maxQueryBytes) break;
-            captured.query += char;
-          }
-          captured.allowedOwners = ['libra'];
-          const afterDigest = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-          if (canonical(afterDigest) !== canonical(boundary)) throw error('LIB_READ_BOUNDARY_CHANGED');
-        }
-        if (!requireText(captured.requestId) || captured.currentInputHash !== boundary.currentInputHash
-            || captured.recentTurnDigest !== boundary.recentTurnDigest || typeof captured.query !== 'string'
-            || bytes(captured.query) > limits.maxQueryBytes || !Array.isArray(captured.allowedOwners)
-            || !captured.allowedOwners.length || captured.allowedOwners.length > owners.size
-            || captured.allowedOwners.some(owner => !owners.has(owner))) throw error('LIB_READ_REQUEST_INVALID');
-        const request = clone({ requestId: captured.requestId, currentInputHash: captured.currentInputHash,
-          recentTurnDigest: captured.recentTurnDigest, query: captured.query, allowedOwners: [...new Set(captured.allowedOwners)],
-          boundary, budget: limits, ...(captured.nativeReadSet ? { nativeReadSet: captured.nativeReadSet } : {}) });
-        const boundaryKey = canonical(boundary);
-        const assertBoundary = async () => {
-          const current = normalizeBoundary(await guarded(record, () => dependencies.getBoundary()));
-          if (canonical(current) !== boundaryKey) throw error('LIB_READ_BOUNDARY_CHANGED');
-        };
-        const response = await guarded(record, () => dependencies.recall(clone(request), { signal: record.controller.signal }));
-        const serializedReceipt = JSON.stringify(response);
-        if (typeof serializedReceipt !== 'string' || bytes(serializedReceipt) > 65536) throw error('LIB_READ_BUDGET_EXCEEDED');
-        const receipt = JSON.parse(serializedReceipt);
-        await assertBoundary();
-        if (receipt?.schema !== 'gradia.lib-read-receipt.v1' || receipt.requestId !== request.requestId
-            || canonical(receipt.boundary) !== boundaryKey || !requireText(receipt.evidenceRevision)) throw error('LIB_READ_RECEIPT_MISMATCH');
-        if (receipt.completeness !== 'complete' || receipt.truncated !== false) throw error('LIB_READ_INCOMPLETE');
-        if (!Array.isArray(receipt.items) || receipt.items.length > limits.maxItems) throw error('LIB_READ_BUDGET_EXCEEDED');
-        const seen = new Set(); let totalBytes = 0;
-        for (const item of receipt.items) {
-          if (!requireText(item.id) || seen.has(item.id) || !request.allowedOwners.includes(item.owner)
-              || item.authority !== 'owner_memory' || item.eligibility !== 'eligible'
-              || typeof item.content !== 'string' || !requireHash(item.contentHash)
-              || canonical(item.source?.scope) !== canonical(boundary.scope)
-              || !requireText(item.source?.sourceRevision) || !requireText(item.source?.variantId)
-              || !requireText(item.source?.handle) || !Array.isArray(item.source?.turnIds)
-              || !item.source.turnIds.length || item.source.turnIds.length > 64
-              || item.source.turnIds.some(id => !requireText(id))
-              || new Set(item.source.turnIds).size !== item.source.turnIds.length) throw error('LIB_READ_SOURCE_INVALID');
-          seen.add(item.id); totalBytes += bytes(item.content);
-          if (totalBytes > limits.maxBytes) throw error('LIB_READ_BUDGET_EXCEEDED');
-          const digest = await guarded(record, () => dependencies.digest(item.content));
-          if (digest !== item.contentHash) throw error('LIB_READ_CONTENT_MISMATCH');
-        }
-        record.packet = receipt;
-        const assertCurrent = async () => {
-          try {
-            check(record);
-            await assertBoundary();
-            const current = await guarded(record, () => dependencies.assertCurrent(clone(record.packet), { signal: record.controller.signal }));
-            if (current !== true) throw error('LIB_READ_STALE');
-            await assertBoundary();
-            check(record);
-            return true;
-          } catch (caught) {
-            const code = /^LIB_READ_/.test(caught?.code || '') ? caught.code : 'LIB_READ_UNAVAILABLE';
-            stop(record, code); throw error(code);
-          }
-        };
-        await assertCurrent();
-        check(record);
-        const evidenceRevision = receipt.evidenceRevision;
-        return Object.freeze({ status: 'ready',
-          invalidate: reason => stop(record, /^LIB_READ_[A-Z_]+$/.test(reason) ? reason : 'LIB_READ_INVALIDATED'),
-          assertLocalCurrent: () => check(record),
-          assertCurrent,
-          getEvidence: async () => { await assertCurrent(); check(record); return clone(record.packet); },
-          bindDraft: async draft => {
-            await assertCurrent();
-            check(record);
-            if (typeof draft !== 'string' || !draft || bytes(draft) > 320000) throw error('LIB_READ_DRAFT_INVALID');
-            const digest = await guarded(record, () => dependencies.digest(draft));
-            await assertCurrent();
-            check(record);
-            if (!requireHash(digest)) throw error('LIB_READ_DRAFT_INVALID');
-            record.draft = draft; record.draftHash = digest;
-            return Object.freeze({ requestId: request.requestId, draftHash: digest, evidenceRevision });
-          },
-          finalizeDraft: async () => {
-            await assertCurrent();
-            check(record);
-            if (!record.draft || !record.draftHash) throw error('LIB_READ_DRAFT_UNBOUND');
-            return record.draft;
-          }
-        });
-      } catch (caught) {
-        const code = /^LIB_READ_/.test(caught?.code || '') ? caught.code : 'LIB_READ_UNAVAILABLE';
-        stop(record, code); throw error(code);
-      }
-    };
-    return Object.freeze({ factoryVersion, beginRead, invalidate,
-      getState: () => Object.freeze({ generation, hasEvidence: !!active?.packet, hasDraft: !!active?.draft,
-        reason: active?.reason || '', productionRemoteEnabled: false }) });
-  };
   // Narrow existing-server adapter. This is a logical read session, not an owner
   // certificate or the stronger, still separate MiB-v2 observer contract.
   // BEGIN pinned pure G2 factory (unchanged implementation).
 'use strict';
 // Pure, locally issued budget evidence. This is not owner authentication and is
 // not embedded into GRADIA runtime. Content is bounded; framing is an estimate.
-/* GRADIA RANKED EVIDENCE V2 COMPONENTS BEGIN */
-// Source: sdk/gradia/GradiaReadV2Protocol.source.js sha256=da14a645ed32ce1d30f35e07c91f5579be7b39c0aa9bb3cf85ce7ad0a6c059c6
-'use strict';
-// Pure transport validation. A digest establishes integrity, never owner authority.
-function createGradiaReadV2Protocol({sha256}) {
-  if (typeof sha256 !== 'function') throw new TypeError('GRADIA_V2_HASH_REQUIRED');
-  const MiB = 1048576;
-  const defaults = {contentBytes:4*MiB,items:1024,metadataBytes:2*MiB,nativeMetadataBytes:MiB,
-    queryBytes:32768,frameBytes:MiB,fragmentBytes:131072,frames:256,transferBytes:32*MiB,
-    issuedRecordBytes:8*MiB,issuedRecords:4,physicalReads:4,managedBytes:64*MiB,
-    renderedBytes:262144,metadataDepth:8,metadataNodes:131072};
-  const maxima = {contentBytes:32*MiB,items:8192,metadataBytes:16*MiB,nativeMetadataBytes:8*MiB,
-    queryBytes:131072,frameBytes:MiB,fragmentBytes:131072,frames:2048,transferBytes:256*MiB,
-    issuedRecordBytes:64*MiB,issuedRecords:4,physicalReads:4,managedBytes:256*MiB,
-    renderedBytes:4*MiB,metadataDepth:8,metadataNodes:1048576};
-  const fail = reason => { throw new TypeError('GRADIA_V2_' + reason); };
-  const integer = (value, positive=false) => {
-    if (!Number.isSafeInteger(value) || value < (positive ? 1 : 0) || Object.is(value,-0)) fail('INTEGER');
-    return value;
-  };
-  const checkedAdd = (a,b) => { integer(a);integer(b);if(a>Number.MAX_SAFE_INTEGER-b)fail('OVERFLOW');return a+b; };
-  const checkedMultiply = (a,b) => { integer(a);integer(b);if(b && a>Math.floor(Number.MAX_SAFE_INTEGER/b))fail('OVERFLOW');return a*b; };
-  function plain(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('OBJECT');
-    const proto=Object.getPrototypeOf(value);
-    if(proto!==null && proto!==Object.prototype) fail('PROTOTYPE');
-  }
-  function fields(value,required,optional=[]) {
-    plain(value);const keys=Reflect.ownKeys(value),out=Object.create(null);
-    if(keys.length>required.length+optional.length)fail('FIELDS');
-    for(const key of keys){if(typeof key!=='string'||(!required.includes(key)&&!optional.includes(key)))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(value,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out[key]=d.value;}
-    for(const key of required)if(!Object.hasOwn(out,key))fail('MISSING_FIELD');
-    return out;
-  }
-  function array(value,max=1048576){
-    if(!Array.isArray(value))fail('ARRAY');if(Object.getPrototypeOf(value)!==Array.prototype)fail('PROTOTYPE');const length=Object.getOwnPropertyDescriptor(value,'length').value;integer(length);if(length>max)fail('NODES');
-    const keys=Reflect.ownKeys(value);if(keys.length!==length+1)fail('ARRAY_FIELDS');
-    const out=[];for(let i=0;i<length;i++){const d=Object.getOwnPropertyDescriptor(value,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out.push(d.value);}return out;
-  }
-  // Exact JSON string byte measure without allocating a serialized string/buffer.
-  function stringSize(value,max=16*MiB,nonempty=false){
-    if(typeof value!=='string'||(nonempty&&!value.length)||value.length>max)fail('STRING');
-    let utf8=0,jsonBytes=2;
-    for(let i=0;i<value.length;i++){
-      const c=value.charCodeAt(i);let bytes;
-      if(c>=0xd800&&c<=0xdbff){const next=value.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))fail('UNSUPPORTED_TEXT');bytes=4;}
-      else if(c>=0xdc00&&c<=0xdfff)fail('UNSUPPORTED_TEXT');
-      else bytes=c<128?1:c<2048?2:3;
-      // Input code units are capped at 32 MiB before this loop: UTF-8 <= 3*n
-      // and JSON <= 6*n+2, both far below the safe-integer ceiling.
-      utf8+=bytes;
-      jsonBytes+=c===34||c===92?2:c<32?(c===8||c===9||c===10||c===12||c===13?2:6):bytes;
-      if(utf8>max)fail('STRING_BYTES');
-    }
-    return {utf8,jsonBytes};
-  }
-  function prepareCanonical(value,maxBytes){
-    let bytes=0,nodes=0;const ancestors=new Set();
-    const add=n=>{bytes=checkedAdd(bytes,n);if(bytes>maxBytes)fail('CANONICAL_BYTES');};
-    function visit(v,depth){
-      if(depth>8)fail('DEPTH');if(++nodes>1048576)fail('NODES');
-      if(v===null){add(4);return null;}
-      if(typeof v==='string'){add(stringSize(v).jsonBytes);return v;}
-      if(typeof v==='number'){integer(v);add(String(v).length);return v;}
-      if(typeof v==='boolean'){add(v?4:5);return v;}
-      if(!v||typeof v!=='object')fail('VALUE');if(ancestors.has(v))fail('CYCLE');ancestors.add(v);
-      let out;
-      if(Array.isArray(v)){
-        const values=array(v);add(2+Math.max(0,values.length-1));out=[];for(const item of values)out.push(visit(item,depth+1));
-      }else{
-        plain(v);const keys=Reflect.ownKeys(v);if(keys.length>1048576-nodes)fail('NODES');if(keys.some(k=>typeof k!=='string'))fail('FIELDS');keys.sort();out=Object.create(null);add(2+Math.max(0,keys.length-1));
-        for(const key of keys){const d=Object.getOwnPropertyDescriptor(v,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');if(++nodes>1048576)fail('NODES');add(stringSize(key,256).jsonBytes+1);out[key]=visit(d.value,depth+1);}
-      }
-      ancestors.delete(v);return out;
-    }
-    return {normalized:visit(value,0),bytes};
-  }
-  function encodePrepared(prepared){
-    // Object insertion order cannot encode lexical integer-like keys. Emit the
-    // already-validated bounded tree directly, serializing primitives only.
-    const parts=[];
-    function emit(value){
-      if(value===null||typeof value!=='object'){parts.push(JSON.stringify(value));return;}
-      if(Array.isArray(value)){
-        parts.push('[');for(let i=0;i<value.length;i++){if(i)parts.push(',');emit(value[i]);}parts.push(']');
-      }else{
-        const keys=Object.keys(value).sort();parts.push('{');
-        for(let i=0;i<keys.length;i++){if(i)parts.push(',');parts.push(JSON.stringify(keys[i]),':');emit(value[keys[i]]);}parts.push('}');
-      }
-    }
-    emit(prepared.normalized);
-    const encoded=new TextEncoder().encode(parts.join(''));
-    if(encoded.byteLength!==prepared.bytes)fail('ENCODING_MISMATCH');return encoded;
-  }
-  function canonicalBytes(value){return encodePrepared(prepareCanonical(value,16*MiB));}
-  function validateLimits(raw={}){
-    const value=fields(raw,[],[...Object.keys(defaults),'itemBytes']),out={};
-    for(const key of Object.keys(defaults)){const n=Object.hasOwn(value,key)?integer(value[key],true):defaults[key];if(n>maxima[key])fail('LIMIT_'+key);out[key]=n;}
-    if(Object.hasOwn(value,'itemBytes')&&value.itemBytes!==out.contentBytes)fail('ITEM_LIMIT');
-    out.itemBytes=out.contentBytes;return Object.freeze(out);
-  }
-  const id=value=>{stringSize(value,256,true);return value;};
-  const nullableId=value=>value===null?null:id(value);
-  const hash=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value))fail('HASH');return value;};
-  const kinds=['content','corpus-metadata','native-metadata','selection-metadata'];
-  function entry(raw,pageKind){
-    plain(raw);const discriminant=Object.getOwnPropertyDescriptor(raw,'kind');if(discriminant&&!('value'in discriminant))fail('ACCESSOR');
-    let e;
-    if(!discriminant){
-      if(pageKind!=='content')fail('ENTRY_KIND');e=fields(raw,['itemId','fragmentIndex','text','utf8Bytes']);id(e.itemId);integer(e.fragmentIndex);integer(e.utf8Bytes);if(stringSize(e.text,131072).utf8!==e.utf8Bytes)fail('CONTENT_BYTES');
-    }else if(discriminant.value==='item-descriptor'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','itemId','profile','contentBytes','contentHash','groupId']);id(e.itemId);nullableId(e.groupId);integer(e.contentBytes);if(e.contentBytes>32*MiB)fail('CONTENT_BYTES');hash(e.contentHash);
-      if(!['libra.canonical.memory-text.v1','libra.micro.claims-text.v1','libra.micro.source-span.v1'].includes(e.profile))fail('PROFILE');
-    }else if(discriminant.value==='source-proof'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','proofId','sourceId','sourceHash']);id(e.proofId);id(e.sourceId);hash(e.sourceHash);
-    }else if(discriminant.value==='native-ref'){
-      if(pageKind!=='native-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','messageId','generationId','speakerId','speakerName','contentHash','requestContentHash']);id(e.messageId);for(const key of ['generationId','speakerId','speakerName'])nullableId(e[key]);if(typeof e.contentHash!=='string'||!/^[a-f0-9]{8}:[0-9]{1,16}$/.test(e.contentHash))fail('NATIVE_HASH');hash(e.requestContentHash);
-    }else if(discriminant.value==='selection-item'){
-      if(pageKind!=='selection-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','selectionIndex','itemId']);integer(e.selectionIndex);id(e.itemId);
-    }else fail('ENTRY_KIND');
-    return Object.freeze(e);
-  }
-  function validateFrame(raw){
-    const frame=fields(raw,['schema','requestId','issuerId','transferId','pageKind','pageIndex','entries','frameHash']);
-    if(frame.schema!=='gradia.owner-read.v2'||!kinds.includes(frame.pageKind))fail('SCHEMA');for(const key of ['requestId','issuerId','transferId'])id(frame[key]);integer(frame.pageIndex);if(frame.pageIndex>=2048)fail('PAGE_INDEX');hash(frame.frameHash);
-    // Each closed entry is larger than 32 wire bytes; bound the reference array
-    // before walking it. Check the cumulative complete envelope before encoding
-    // and stop at the first overflowing entry, rather than scanning the transfer.
-    const inputs=array(frame.entries,Math.floor(MiB/32));frame.entries=[];
-    let wireBytes=prepareCanonical(frame,MiB).bytes;
-    for(const rawEntry of inputs){
-      const normalized=entry(rawEntry,frame.pageKind);
-      wireBytes=checkedAdd(wireBytes,prepareCanonical(normalized,MiB).bytes+(frame.entries.length?1:0));
-      if(wireBytes>MiB)fail('FRAME_BYTES');frame.entries.push(normalized);
-    }
-    if(!frame.entries.length)fail('EMPTY_FRAME');Object.freeze(frame.entries);
-    const core=Object.create(null);for(const key of Object.keys(frame))if(key!=='frameHash')core[key]=frame[key];
-    if(hash(sha256(encodePrepared(prepareCanonical(core,MiB))))!==frame.frameHash)fail('FRAME_HASH');return Object.freeze(frame);
-  }
-  return Object.freeze({validateLimits,validateFrame,canonicalBytes,checkedAdd,checkedMultiply});
-}
-
-// Source: sdk/gradia/GradiaReadV2Credit.source.js sha256=d00649128173c221303abf07d1f50bfc34c007f0118be9856ad9e4ce77db80f4
-'use strict';
-// Application-declared representation bytes, not JavaScript/host peak heap.
-function createGradiaReadV2Credit({maxManagedBytes,maxPhysicalReads}) {
-  const fail=reason=>{throw new TypeError('GRADIA_V2_CREDIT_'+reason);};
-  const integer=(value,positive=false)=>{if(!Number.isSafeInteger(value)||value<(positive?1:0)||Object.is(value,-0))fail('INTEGER');return value;};
-  integer(maxManagedBytes,true);integer(maxPhysicalReads,true);
-  if(maxManagedBytes>268435456||maxPhysicalReads>4)fail('LIMIT');
-  const records=new Map();let managedBytes=0,physicalReads=0;
-  const kinds=new Set(['utf16-text','bytes','metadata','frame','reassembly','encoding','selected-prompt','physical']);
-  function id(value){if(typeof value!=='string'||!value.length||value.length>256)fail('ID');let bytes=0;for(let i=0;i<value.length;i++){const c=value.charCodeAt(i);if(c>=0xd800&&c<=0xdbff){const n=value.charCodeAt(++i);if(!(n>=0xdc00&&n<=0xdfff))fail('ID');bytes+=4;}else if(c>=0xdc00&&c<=0xdfff)fail('ID');else bytes+=c<128?1:c<2048?2:3;if(bytes>256)fail('ID');}return value;}
-  function data(raw,keys){if(!raw||typeof raw!=='object'||Array.isArray(raw))fail('FIELDS');const proto=Object.getPrototypeOf(raw);if(proto!==null&&proto!==Object.prototype)fail('PROTOTYPE');const own=Reflect.ownKeys(raw);if(own.length!==keys.length)fail('FIELDS');const result={};for(const key of own){if(!keys.includes(key))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(raw,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');result[key]=d.value;}return result;}
-  function add(raw,physical){const r=data(raw,physical?['id','bytes']:['id','bytes','kind']);id(r.id);integer(r.bytes);if(!physical&&!kinds.has(r.kind))fail('KIND');if(records.has(r.id))fail('DUPLICATE');if(r.bytes>maxManagedBytes-managedBytes)fail('BYTES');if(physical&&physicalReads>=maxPhysicalReads)fail('PHYSICAL_READS');
-    records.set(r.id,{bytes:r.bytes,kind:physical?'physical':r.kind,physical,pending:physical,retired:false});managedBytes+=r.bytes;if(physical)physicalReads++;return Object.freeze({id:r.id,bytes:r.bytes});}
-  const get=key=>{id(key);const record=records.get(key);if(!record)fail('UNKNOWN');return record;};
-  const reserve=raw=>add(raw,false),beginPhysical=raw=>add(raw,true);
-  const retire=key=>{const record=get(key);record.retired=true;};
-  const settle=key=>{const record=get(key);if(!record.physical||!record.pending)fail('SETTLEMENT');record.pending=false;physicalReads--;return Object.freeze({retired:record.retired,retainedBytes:record.bytes});};
-  const release=key=>{const record=get(key);if(record.pending)fail('UNSETTLED');managedBytes-=record.bytes;records.delete(key);};
-  const snapshot=()=>{const byKind=Object.create(null);let retired=0,settledPhysical=0;for(const record of records.values()){byKind[record.kind]=(byKind[record.kind]||0)+record.bytes;if(record.retired)retired++;if(record.physical&&!record.pending)settledPhysical++;}return {managedBytes,physicalReads,reservations:records.size,retired,settledPhysical,kinds:byKind};};
-  return Object.freeze({reserve,beginPhysical,retire,settle,release,snapshot});
-}
-
-// Source: sdk/gradia/GradiaReadV2Frames.source.js sha256=ae52d772bf7f06747f03f6fe12da8b29d516d583c154d22b70b51a87834de94a
-'use strict';
-// Fixed closed page schemas. Transport integrity is not producer/native authority.
-// Caller reserves iterator.reservationBytes before next(); retained outputs need
-// their own reservations. This module cannot mutate the endpoint credit ledger.
-function createGradiaReadV2Frames({protocol,sha256}) {
-  if(!protocol||typeof protocol.canonicalBytes!=='function'||typeof sha256!=='function')throw new TypeError('GRADIA_V2_FRAMES_DEPENDENCY');
-  const MiB=1048576;
-  const fail=reason=>{throw new TypeError('GRADIA_V2_FRAMES_'+reason);};
-  const integer=(value,positive=false)=>{if(!Number.isSafeInteger(value)||value<(positive?1:0)||Object.is(value,-0))fail('INTEGER');return value;};
-  const checkedAdd=protocol.checkedAdd,checkedMultiply=protocol.checkedMultiply;
-  // Executable sources are private, trusted synchronous producers, never IPC data.
-  // Capture intrinsics instead of looking up next/return/iterator on a producer.
-  const generatorPrototype=Object.getPrototypeOf(Object.getPrototypeOf((function*(){})()));
-  const iteratorPrototype=Object.getPrototypeOf(generatorPrototype);
-  const generatorNext=Object.getOwnPropertyDescriptor(generatorPrototype,'next').value;
-  const generatorReturn=Object.getOwnPropertyDescriptor(generatorPrototype,'return').value;
-  const iteratorIdentity=Object.getOwnPropertyDescriptor(iteratorPrototype,Symbol.iterator).value;
-  function admitGenerator(value){
-    if(!value||typeof value!=='object')fail('ITERATOR');
-    const proto=Object.getPrototypeOf(value);
-    if(!proto||Object.getPrototypeOf(proto)!==generatorPrototype||Reflect.ownKeys(proto).length!==0)fail('ITERATOR_PROTOTYPE');
-    const own=Reflect.ownKeys(value);
-    if(own.some(key=>key!=='reservationBytes'))fail('ITERATOR_FIELDS');
-    if(own.length){const descriptor=Object.getOwnPropertyDescriptor(value,'reservationBytes');if(!descriptor||!('value'in descriptor))fail('ACCESSOR');integer(descriptor.value);}
-    if(Object.getPrototypeOf(generatorPrototype)!==iteratorPrototype
-      ||Object.getOwnPropertyDescriptor(generatorPrototype,'next')?.value!==generatorNext
-      ||Object.getOwnPropertyDescriptor(generatorPrototype,'return')?.value!==generatorReturn
-      ||Object.getOwnPropertyDescriptor(iteratorPrototype,Symbol.iterator)?.value!==iteratorIdentity)fail('ITERATOR_INTRINSICS');
-  }
-
-  function plain(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) fail('OBJECT');
-    const proto=Object.getPrototypeOf(value);
-    if(proto!==null && proto!==Object.prototype) fail('PROTOTYPE');
-  }
-  function fields(value,required,optional=[]) {
-    plain(value);const keys=Reflect.ownKeys(value),out=Object.create(null);
-    if(keys.length>required.length+optional.length)fail('FIELDS');
-    for(const key of keys){if(typeof key!=='string'||(!required.includes(key)&&!optional.includes(key)))fail('FIELDS');const d=Object.getOwnPropertyDescriptor(value,key);if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out[key]=d.value;}
-    for(const key of required)if(!Object.hasOwn(out,key))fail('MISSING_FIELD');
-    return out;
-  }
-  function array(value,max=1048576){
-    if(!Array.isArray(value))fail('ARRAY');if(Object.getPrototypeOf(value)!==Array.prototype)fail('PROTOTYPE');const length=Object.getOwnPropertyDescriptor(value,'length').value;integer(length);if(length>max)fail('NODES');
-    const keys=Reflect.ownKeys(value);if(keys.length!==length+1)fail('ARRAY_FIELDS');
-    const out=[];for(let i=0;i<length;i++){const d=Object.getOwnPropertyDescriptor(value,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');out.push(d.value);}return out;
-  }
-  // Exact JSON string byte measure without allocating a serialized string/buffer.
-  function stringSize(value,max=16*MiB,nonempty=false){
-    if(typeof value!=='string'||(nonempty&&!value.length)||value.length>max)fail('STRING');
-    let utf8=0,jsonBytes=2;
-    for(let i=0;i<value.length;i++){
-      const c=value.charCodeAt(i);let bytes;
-      if(c>=0xd800&&c<=0xdbff){const next=value.charCodeAt(++i);if(!(next>=0xdc00&&next<=0xdfff))fail('UNSUPPORTED_TEXT');bytes=4;}
-      else if(c>=0xdc00&&c<=0xdfff)fail('UNSUPPORTED_TEXT');
-      else bytes=c<128?1:c<2048?2:3;
-      // Input code units are capped at 32 MiB before this loop: UTF-8 <= 3*n
-      // and JSON <= 6*n+2, both far below the safe-integer ceiling.
-      utf8+=bytes;
-      jsonBytes+=c===34||c===92?2:c<32?(c===8||c===9||c===10||c===12||c===13?2:6):bytes;
-      if(utf8>max)fail('STRING_BYTES');
-    }
-    return {utf8,jsonBytes};
-  }
-  const id=value=>{stringSize(value,256,true);return value;};
-  const nullableId=value=>value===null?null:id(value);
-  const hash=value=>{if(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value))fail('HASH');return value;};
-  const kinds=['content','corpus-metadata','native-metadata','selection-metadata'];
-  function entry(raw,pageKind){
-    plain(raw);const discriminant=Object.getOwnPropertyDescriptor(raw,'kind');if(discriminant&&!('value'in discriminant))fail('ACCESSOR');
-    let e;
-    if(!discriminant){
-      if(pageKind!=='content')fail('ENTRY_KIND');e=fields(raw,['itemId','fragmentIndex','text','utf8Bytes']);id(e.itemId);integer(e.fragmentIndex);integer(e.utf8Bytes);if(stringSize(e.text,131072).utf8!==e.utf8Bytes)fail('CONTENT_BYTES');
-    }else if(discriminant.value==='item-descriptor'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','itemId','profile','contentBytes','contentHash','groupId']);id(e.itemId);nullableId(e.groupId);integer(e.contentBytes);if(e.contentBytes>32*MiB)fail('CONTENT_BYTES');hash(e.contentHash);
-      if(!['libra.canonical.memory-text.v1','libra.micro.claims-text.v1','libra.micro.source-span.v1'].includes(e.profile))fail('PROFILE');
-    }else if(discriminant.value==='source-proof'){
-      if(pageKind!=='corpus-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','proofId','sourceId','sourceHash']);id(e.proofId);id(e.sourceId);hash(e.sourceHash);
-    }else if(discriminant.value==='native-ref'){
-      if(pageKind!=='native-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','messageId','generationId','speakerId','speakerName','contentHash','requestContentHash']);id(e.messageId);for(const key of ['generationId','speakerId','speakerName'])nullableId(e[key]);if(typeof e.contentHash!=='string'||!/^[a-f0-9]{8}:[0-9]{1,16}$/.test(e.contentHash))fail('NATIVE_HASH');hash(e.requestContentHash);
-    }else if(discriminant.value==='selection-item'){
-      if(pageKind!=='selection-metadata')fail('ENTRY_KIND');e=fields(raw,['kind','selectionIndex','itemId']);integer(e.selectionIndex);id(e.itemId);
-    }else fail('ENTRY_KIND');
-    return Object.freeze(e);
-  }
-  function measuredScalar(value){
-    if(value===null)return 4;
-    if(typeof value==='string')return stringSize(value).jsonBytes;
-    if(typeof value==='number'){integer(value);return String(value).length;}
-    if(Array.isArray(value)&&value.length===0)return 2;
-    fail('SCALAR');
-  }
-  function measureRecord(value){let bytes=2;const keys=Object.keys(value);if(keys.length)bytes+=keys.length-1;for(const key of keys)bytes=checkedAdd(bytes,stringSize(key,256).jsonBytes+1+measuredScalar(value[key]));return bytes;}
-  function expose(generator,reservationBytes){Object.defineProperty(generator,'reservationBytes',{value:reservationBytes,enumerable:true});return generator;}
-  function fragmentText(raw){
-    const input=fields(raw,['itemId','text'],['maxFragmentBytes']);id(input.itemId);const max=input.maxFragmentBytes===undefined?131072:integer(input.maxFragmentBytes,true);if(max>131072)fail('FRAGMENT_BYTES');if(typeof input.text!=='string')fail('STRING');
-    const reservationBytes=checkedAdd(checkedMultiply(max,2),1024);
-    return expose((function*(){
-      stringSize(input.text,32*MiB); // whole-input validity, no whole-input encoding/copy
-      if(!input.text.length){yield Object.freeze({itemId:input.itemId,fragmentIndex:0,text:'',utf8Bytes:0});return;}
-      let start=0,bytes=0,index=0;
-      for(let i=0;i<input.text.length;){const c=input.text.charCodeAt(i),units=c>=0xd800&&c<=0xdbff?2:1,n=units===2?4:c<128?1:c<2048?2:3;if(n>max)fail('CODE_POINT_EXCEEDS_FRAGMENT');
-        if(bytes+n>max){yield Object.freeze({itemId:input.itemId,fragmentIndex:index++,text:input.text.slice(start,i),utf8Bytes:bytes});start=i;bytes=0;}
-        bytes+=n;i+=units;
-      }
-      if(start<input.text.length)yield Object.freeze({itemId:input.itemId,fragmentIndex:index,text:input.text.slice(start),utf8Bytes:bytes});
-    })(),reservationBytes);
-  }
-  function iterateFrames(raw){
-    const input=fields(raw,['binding','entries','limits']);
-    const limits=protocol.validateLimits(input.limits);
-    const binding=fields(input.binding,['schema','requestId','issuerId','transferId','pageKind']);
-    if(binding.schema!=='gradia.owner-read.v2'||!kinds.includes(binding.pageKind))fail('SCHEMA');for(const key of ['requestId','issuerId','transferId'])id(binding[key]);Object.freeze(binding);
-    // Conservative application-controlled simultaneous bytes: UTF-16 core/wire,
-    // their UTF-8 buffers, bounded hash-input copy, pending-entry encoding and
-    // fragment text. Engine/host allocation overhead remains separately qualified.
-    let arrayLength=null;
-    if(Array.isArray(input.entries)){
-      if(Object.getPrototypeOf(input.entries)!==Array.prototype)fail('PROTOTYPE');
-      arrayLength=integer(Object.getOwnPropertyDescriptor(input.entries,'length').value);
-      if(arrayLength>limits.metadataNodes)fail('NODES');
-    }else admitGenerator(input.entries);
-    // Array inputs are already caller-owned. Reserve their bounded key scan as
-    // well; values are still read one at a time, without copying the transfer.
-    const reservationBytes=checkedAdd(checkedAdd(checkedMultiply(limits.frameBytes,16),4096),arrayLength===null?0:checkedMultiply(arrayLength,64));
-    function* source(){
-      if(arrayLength!==null){
-        if(Reflect.ownKeys(input.entries).length!==arrayLength+1)fail('ARRAY_FIELDS');
-        for(let i=0;i<arrayLength;i++){const d=Object.getOwnPropertyDescriptor(input.entries,String(i));if(!d||!('value'in d)||!d.enumerable)fail('ACCESSOR');yield d.value;}
-      }else{
-        let done=false;
-        try{for(;;){const step=generatorNext.call(input.entries);if(step.done){done=true;return;}yield step.value;}}
-        finally{if(!done)generatorReturn.call(input.entries);}
-      }
-    }
-    return expose((function*(){
-      if(reservationBytes>limits.managedBytes)fail('MANAGED_BYTES');
-      let pageIndex=0,aggregate=0,contentBytes=0,metadataBytes=2,metadataNodes=1;
-      let group=[],entryBytes=0,lastItem=null,lastFragment=-1,itemBytes=0,selectionIndex=0;
-      const seen=new Set();
-      const baseBytes=()=>measureRecord({...binding,pageIndex,entries:[]});
-      const wireSize=(count,size)=>checkedAdd(baseBytes()+size+Math.max(0,count-1),79); // comma + "frameHash":64-hex
-      function finish(){
-        const predicted=wireSize(group.length,entryBytes);
-        if(pageIndex>=limits.frames||predicted>limits.frameBytes)fail('FRAME_LIMIT');
-        const nextAggregate=checkedAdd(aggregate,predicted);if(nextAggregate>limits.transferBytes)fail('TRANSFER_BYTES');
-        const core={...binding,pageIndex,entries:Object.freeze(group)};
-        const preimage=protocol.canonicalBytes(core),frameHash=hash(sha256(preimage));
-        const frame=Object.freeze({...core,frameHash});
-        const wireBytes=protocol.canonicalBytes(frame).byteLength;
-        if(wireBytes!==predicted)fail('MEASUREMENT');
-        aggregate=nextAggregate;pageIndex=checkedAdd(pageIndex,1);
-        const result=Object.freeze({frame,wireBytes,coreBytes:preimage.byteLength,reservationBytes});
-        group=[];entryBytes=0;return result;
-      }
-      for(const rawEntry of source()){
-        const e=entry(rawEntry,binding.pageKind),size=measureRecord(e);
-        metadataNodes=checkedAdd(metadataNodes,1+2*Object.keys(e).length);if(metadataNodes>limits.metadataNodes)fail('NODES');
-        if(binding.pageKind==='content'){
-          if(e.utf8Bytes>limits.fragmentBytes)fail('FRAGMENT_BYTES');
-          if(e.itemId!==lastItem){if(seen.has(e.itemId)||e.fragmentIndex!==0)fail('FRAGMENT_ORDER');seen.add(e.itemId);if(seen.size>limits.items)fail('ITEMS');lastItem=e.itemId;lastFragment=-1;itemBytes=0;}
-          if(e.fragmentIndex!==(lastFragment<0?0:checkedAdd(lastFragment,1)))fail('FRAGMENT_ORDER');lastFragment=e.fragmentIndex;
-          itemBytes=checkedAdd(itemBytes,e.utf8Bytes);contentBytes=checkedAdd(contentBytes,e.utf8Bytes);if(itemBytes>limits.itemBytes||contentBytes>limits.contentBytes)fail('CONTENT_BYTES');
-        }else{
-          metadataBytes=checkedAdd(metadataBytes,size+(metadataBytes===2?0:1));
-          if(metadataBytes>(binding.pageKind==='native-metadata'?limits.nativeMetadataBytes:limits.metadataBytes))fail('METADATA_BYTES');
-          if(e.kind==='item-descriptor'||e.kind==='selection-item'){if(seen.has(e.itemId))fail('DUPLICATE_ITEM');seen.add(e.itemId);if(seen.size>limits.items)fail('ITEMS');}
-          if(e.kind==='selection-item'&&e.selectionIndex!==selectionIndex++)fail('SELECTION_ORDER');
-        }
-        if(group.length&&wireSize(group.length+1,checkedAdd(entryBytes,size))>limits.frameBytes)yield finish();
-        if(wireSize(group.length+1,checkedAdd(entryBytes,size))>limits.frameBytes)fail('ENTRY_EXCEEDS_FRAME');
-        group.push(e);entryBytes=checkedAdd(entryBytes,size);
-      }
-      if(group.length)yield finish();
-    })(),reservationBytes);
-  }
-  return Object.freeze({fragmentText,iterateFrames});
-}
-
-// Source: sdk/GradiaEvidenceRender.v2.source.js sha256=3ce9514e8ab32ed4a9f3b433c19d31f731c04002b0ebb5abb0fc716408c6744d
-'use strict';
-// Shared deterministic complete-item renderer and the existing LIBRA MMR policy.
-// Integrity/currentness is the caller's responsibility; this module mints no authority.
-function createGradiaEvidenceRender({ protocol }) {
-  if (!protocol || typeof protocol.checkedAdd !== 'function') throw new TypeError('GRADIA_V2_RENDER_DEPENDENCY');
-  const fail = reason => { throw new TypeError('GRADIA_V2_RENDER_' + reason); };
-  const add = protocol.checkedAdd, mul = protocol.checkedMultiply;
-  const integer = (n, positive = false) => { if (!Number.isSafeInteger(n) || Object.is(n, -0) || n < (positive ? 1 : 0)) fail('INTEGER'); return n; };
-  const profiles = new Set(['libra.canonical.memory-text.v1', 'libra.micro.claims-text.v1', 'libra.micro.source-span.v1']);
-  // Measure escaped JSON text without allocating the escaped copy. Escape HTML
-  // delimiters as well: source content can never close the evidence wrapper.
-  function stringMeasure(text, cap = 33554432) {
-    if (typeof text !== 'string' || text.length > cap) fail('TEXT');
-    let raw = 0, bytes = 2, units = 2;
-    for (let i = 0; i < text.length; i++) {
-      const c = text.charCodeAt(i); let b, u = 1;
-      if (c >= 0xd800 && c <= 0xdbff) {
-        const low = text.charCodeAt(++i); if (!(low >= 0xdc00 && low <= 0xdfff)) fail('UNSUPPORTED_TEXT'); b = 4; u = 2;
-      } else if (c >= 0xdc00 && c <= 0xdfff) fail('UNSUPPORTED_TEXT');
-      else b = c < 128 ? 1 : c < 2048 ? 2 : 3;
-      raw = add(raw, b); if (raw > cap) fail('TEXT_BYTES');
-      if (c === 60 || c === 62 || c === 38 || c === 0x2028 || c === 0x2029) { bytes = add(bytes, 6); units = add(units, 6); }
-      else if (c === 34 || c === 92 || [8, 9, 10, 12, 13].includes(c)) { bytes = add(bytes, 2); units = add(units, 2); }
-      else if (c < 32) { bytes = add(bytes, 6); units = add(units, 6); }
-      else { bytes = add(bytes, b); units = add(units, u); }
-    }
-    return Object.freeze({ rawUtf8Bytes: raw, utf8Bytes: bytes, utf16Bytes: mul(units, 2) });
-  }
-  const escaped = text => JSON.stringify(text).replace(/[<>&\u2028\u2029]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
-  const id = value => { if (!value || typeof value !== 'string') fail('ID'); stringMeasure(value, 256); return value; };
-  function validateItems(items) {
-    if (!Array.isArray(items) || items.length > 8192) fail('ITEMS');
-    const map = new Map();
-    for (const item of items) {
-      if (!item || map.has(id(item.itemId)) || !profiles.has(item.profile)) fail('ITEM');
-      id(item.sourceHandle); if (item.groupId !== null && item.groupId !== undefined) id(item.groupId);
-      if (!/^[a-f0-9]{64}$/.test(item.contentHash)) fail('HASH');
-      integer(item.contentBytes, true);
-      const measure = stringMeasure(item.content);
-      if (measure.rawUtf8Bytes !== item.contentBytes) fail('CONTENT_BYTES');
-      map.set(item.itemId, item);
-    }
-    return map;
-  }
-  function prepare({ corpusId, items, selectedItemIds, byteLimit }) {
-    id(corpusId); integer(byteLimit, true); if (byteLimit > 4194304) fail('RENDERED_BYTES');
-    const map = validateItems(items);
-    if (!Array.isArray(selectedItemIds) || selectedItemIds.length > items.length) fail('SELECTION');
-    const seen = new Set(), selected = [];
-    for (const key of selectedItemIds) { if (seen.has(key) || !map.has(key)) fail('SELECTION'); seen.add(key); selected.push(map.get(key)); }
-    // A named semantic group is a complete unit, never an arbitrary text slice.
-    const groups = new Set(selected.filter(item => item.groupId).map(item => item.groupId));
-    for (const item of items) if (groups.has(item.groupId) && !seen.has(item.itemId)) fail('INCOMPLETE_GROUP');
-    const prefix = '<lib_evidence_v2 corpus=' + escaped(corpusId) + '>\n';
-    const suffix = '</lib_evidence_v2>';
-    let utf8Bytes = stringMeasure(prefix).rawUtf8Bytes + suffix.length, utf16Bytes = (prefix.length + suffix.length) * 2;
-    for (const item of selected) {
-      // Field order is part of gradia.evidence-render.v2.
-      const header = '{"itemId":' + escaped(item.itemId) + ',"profile":' + escaped(item.profile) + ',"sourceHandle":' + escaped(item.sourceHandle) + ',"content":';
-      const content = stringMeasure(item.content);
-      utf8Bytes = add(utf8Bytes, add(stringMeasure(header).rawUtf8Bytes, add(content.utf8Bytes, 2)));
-      utf16Bytes = add(utf16Bytes, add(header.length * 2, add(content.utf16Bytes, 4)));
-      if (utf8Bytes > byteLimit) fail('RENDERED_BYTES');
-    }
-    if (utf8Bytes > byteLimit) fail('RENDERED_BYTES');
-    return { selected, prefix, suffix, utf8Bytes, utf16Bytes };
-  }
-  function measure(input) { const p = prepare(input); return Object.freeze({ utf8Bytes: p.utf8Bytes, utf16Bytes: p.utf16Bytes, items: p.selected.length }); }
-  function render(input) {
-    const p = prepare(input), parts = [p.prefix];
-    for (const item of p.selected) parts.push('{"itemId":' + escaped(item.itemId) + ',"profile":' + escaped(item.profile) + ',"sourceHandle":' + escaped(item.sourceHandle) + ',"content":' + escaped(item.content) + '}\n');
-    parts.push(p.suffix);
-    const text = parts.join('');
-    if (text.length * 2 !== p.utf16Bytes || stringMeasure(text, 4194304).rawUtf8Bytes !== p.utf8Bytes) fail('MEASURE_MISMATCH');
-    return Object.freeze({ text, utf8Bytes: p.utf8Bytes, utf16Bytes: p.utf16Bytes, items: p.selected.length });
-  }
-  function rank({ items, ranking, similarities, policy, countLimit }) {
-    integer(countLimit); if (countLimit > 8192 || !Array.isArray(ranking) || ranking.length !== items.length) fail('RANKING');
-    if (!policy || policy.schema !== 'libra.recall-mmr.v2' || ![40, 80, 160, 320].includes(policy.candidateLimit)
-      || typeof policy.mmrEnabled !== 'boolean' || !Number.isFinite(policy.mmrLambda) || policy.mmrLambda < 0 || policy.mmrLambda > 1) fail('POLICY');
-    const seen = new Set(), indices = new Map(items.map((item, i) => [id(item.itemId), i]));
-    if (indices.size !== items.length || !Array.isArray(similarities) || similarities.length !== items.length) fail('SIMILARITIES');
-    for (const row of similarities) if (!Array.isArray(row) || row.length !== items.length || row.some(n => !Number.isFinite(n) || n < 0 || n > 1)) fail('SIMILARITIES');
-    for (const row of ranking) {
-      if (!indices.has(row.itemId) || seen.has(row.itemId) || typeof row.forced !== 'boolean'
-        || ['relevance', 'exactScore', 'sparseEvidence'].some(key => !Number.isFinite(row[key]) || row[key] < 0 || row[key] > 1)) fail('RANKING');
-      seen.add(row.itemId);
-    }
-    const pool = ranking.slice(0, policy.candidateLimit), selected = [], omissions = [];
-    if (!policy.mmrEnabled) selected.push(...pool.splice(0, countLimit));
-    else while (pool.length && selected.length < countLimit) {
-      let bestIndex = 0, bestScore = -Infinity;
-      for (let index = 0; index < pool.length; index++) {
-        const candidate = pool[index]; let redundancy = 0;
-        for (const previous of selected) redundancy = Math.max(redundancy, similarities[indices.get(candidate.itemId)][indices.get(previous.itemId)]);
-        const penalty = redundancy >= .985 && !candidate.forced && candidate.exactScore < .30 && candidate.sparseEvidence < .30 ? .65 : 0;
-        const score = policy.mmrLambda * candidate.relevance - (1 - policy.mmrLambda) * redundancy - penalty;
-        if (score > bestScore) { bestScore = score; bestIndex = index; }
-      }
-      if (selected.length && bestScore < .02 && !pool[bestIndex].forced) break;
-      selected.push(pool.splice(bestIndex, 1)[0]);
-    }
-    for (const row of pool) omissions.push(Object.freeze({ itemId: row.itemId, reason: selected.length >= countLimit ? 'selection_count_limit' : 'mmr_score_floor' }));
-    for (const row of ranking.slice(policy.candidateLimit)) omissions.push(Object.freeze({ itemId: row.itemId, reason: 'mmr_candidate_limit' }));
-    return Object.freeze({ selectedItemIds: Object.freeze(selected.map(row => row.itemId)), omissions: Object.freeze(omissions) });
-  }
-  return Object.freeze({ contract: 'gradia.evidence-render.v2', stringMeasure, validateItems, measure, render, rank });
-}
-
-// Source: sdk/gradia/GradiaEvidenceSelection.source.js sha256=60841b56427227d11fea4b785a854eac62417fa919f2800d7e9cc405f3173a8f
-'use strict';
-// Per-stage selection over one verified immutable corpus. This component does not
-// discover owners, perform retrieval, authenticate a route, or dispatch a model.
-function createGradiaEvidenceSelection({ protocol, render, budget, digest, creditFactory }) {
-  if (!protocol || !render || !budget || typeof digest !== 'function' || typeof creditFactory !== 'function') throw new TypeError('GRADIA_V2_SELECTION_DEPENDENCY');
-  const fail = reason => { throw new TypeError('GRADIA_V2_SELECTION_' + reason); };
-  const add = protocol.checkedAdd, mul = protocol.checkedMultiply;
-  const id = value => { if (typeof value !== 'string' || !value) fail('ID'); render.stringMeasure(value, 256); return value; };
-  const frozen = value => { if (!value || !Object.isFrozen(value)) fail('IMMUTABLE_REQUIRED'); return value; };
-  async function openVerifiedCorpus({ identity, items, ranking, similarities, policy, readLimits = {}, owner }) {
-    frozen(identity); frozen(items); frozen(ranking); frozen(similarities); frozen(policy);
-    for (const key of ['corpusId', 'requestId', 'issuerId']) id(identity[key]);
-    if (!/^[a-f0-9]{64}$/.test(identity.manifestHash)) fail('MANIFEST_HASH');
-    for (const item of items) frozen(item);
-    for (const row of ranking) frozen(row);
-    for (const row of similarities) frozen(row);
-    for (const method of ['assertCorpusCurrent', 'bindSelection', 'assertSelectionCurrent']) if (typeof owner?.[method] !== 'function') fail('OWNER_UNAVAILABLE');
-    const limits = protocol.validateLimits(readLimits), credit = creditFactory({ maxManagedBytes: limits.managedBytes, maxPhysicalReads: limits.physicalReads });
-    if (items.length > limits.items || items.length > policy.candidateLimit + 2) fail('ITEM_LIMIT');
-    let closed = false, serial = 0, contentBytes = 0, operations = 0;
-    const allocations = new Set(), stages = new Map(), consumed = new Set(), pendingStages = new Set(), byId = new Map(), groups = new Map();
-    let issued = new WeakMap();
-    const reserve = (key, bytes, kind) => { credit.reserve({ id: key, bytes, kind }); allocations.add(key); };
-    const release = key => { if (allocations.delete(key)) credit.release(key); };
-    const dispose = () => { for (const key of [...allocations]) release(key); stages.clear(); consumed.clear(); pendingStages.clear(); byId.clear(); groups.clear(); issued = new WeakMap(); items = []; ranking = []; similarities = []; identity = null; policy = null; owner = null; };
-    const close = () => { if (closed) return; closed = true; if (!operations) dispose(); };
-    const use = async operation => { if (closed) fail('CLOSED'); operations++; try { return await operation(); } finally { operations--; if (closed && !operations) dispose(); } };
-    const current = async () => { if (closed || await owner.assertCorpusCurrent(identity) !== true || closed) fail('CORPUS_CHANGED'); };
-    try {
-      // Owned immutable strings are retained by reference, never JSON-cloned.
-      for (const item of items) {
-        if (!Number.isSafeInteger(item.contentBytes) || item.contentBytes <= 0) fail('ITEM_BYTES');
-        contentBytes = add(contentBytes, item.contentBytes); if (contentBytes > limits.contentBytes) fail('CONTENT_LIMIT');
-        reserve('corpus:' + allocations.size, add(mul(item.content.length, 2), 1024), 'utf16-text');
-      }
-      reserve('ranking', add(mul(mul(items.length, items.length), 16), mul(items.length, 1024)), 'metadata');
-      render.validateItems(items);
-      for (const item of items) if (await digest(item.content) !== item.contentHash) fail('CONTENT_HASH');
-      await current();
-      const ordered = render.rank({ items, ranking, similarities, policy, countLimit: limits.items });
-      for (const item of items) byId.set(item.itemId, item);
-      for (const item of items) { const key = item.groupId ? 'group:' + item.groupId : 'item:' + item.itemId; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(item.itemId); }
-      async function selectStage(input) {
-        await current();
-        const stage = id(input.stage), phase = id(input.phase), stageKey = stage + ':' + phase;
-        if (stages.has(stageKey) || pendingStages.has(stageKey) || stages.size + pendingStages.size >= 8) fail('STAGE_REUSE_OR_LIMIT');
-        pendingStages.add(stageKey);
-        try {
-        if (typeof input.baseBody !== 'string' || render.stringMeasure(input.baseBody, 128000).rawUtf8Bytes > 128000) return Object.freeze({ status: 'unavailable', reason: 'payload_budget_exceeded' });
-        const context = Object.freeze({ ...input.context });
-        const envelope = Object.freeze({ providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity, requestFormat: input.requestFormat, context, baseBody: input.baseBody });
-        const baseCredit = 'base:' + (++serial); reserve(baseCredit, mul(envelope.baseBody.length, 6), 'selected-prompt');
-        let retained = null;
-        const omissions = ordered.omissions.map(value => ({ ...value })), selected = [], handled = new Set();
-        async function trial(selectedItemIds) {
-          let measure;
-          try { measure = selectedItemIds.length ? render.measure({ corpusId: identity.corpusId, items, selectedItemIds, byteLimit: limits.renderedBytes }) : { utf8Bytes: 0, utf16Bytes: 0 }; }
-          catch (error) { if (/RENDERED_BYTES/.test(error.message)) return { status: 'omitted', reason: 'rendered_evidence_budget' }; throw error; }
-          const allocation = 'trial:' + (++serial);
-          // Render chunks + joined string + JSON payload (escaping <= 6x raw).
-          const declaredBytes = add(mul(envelope.baseBody.length, 6), add(mul(measure.utf16Bytes, 3), mul(measure.utf8Bytes, 12)));
-          try { reserve(allocation, declaredBytes, 'selected-prompt'); }
-          catch (error) { if (/CREDIT_BYTES/.test(error.message)) return { status: 'omitted', reason: 'managed_credit_budget' }; throw error; }
-          try {
-            const evidence = selectedItemIds.length ? render.render({ corpusId: identity.corpusId, items, selectedItemIds, byteLimit: limits.renderedBytes }).text : '';
-            let native;
-            try { native = JSON.parse(envelope.baseBody); } catch (_) { release(allocation); return { status: 'unavailable', reason: 'payload_format_unsupported' }; }
-            const last = native?.messages?.at(-1);
-            if (!last || last.role !== 'user' || typeof last.content !== 'string') { release(allocation); return { status: 'unavailable', reason: 'payload_format_unsupported' }; }
-            if (evidence) last.content += '\n\n' + evidence;
-            const body = evidence ? JSON.stringify(native) : envelope.baseBody;
-            const decision = await budget.evaluate({ ...envelope, finalBody: body, renderedEvidence: evidence, renderedByteLimit: limits.renderedBytes });
-            if (closed) fail('CLOSED');
-            if (decision.status !== 'available') { release(allocation); return decision; }
-            if (!decision.fits) { release(allocation); return { status: 'omitted', reason: 'model_context_budget' }; }
-            return { status: 'available', allocation, body, evidence, witness: decision.witness };
-          } catch (error) { release(allocation); throw error; }
-        }
-        try {
-          retained = await trial([]);
-          if (retained.status !== 'available') return Object.freeze({ status: 'unavailable', reason: retained.reason });
-          const rankedIds = new Set(ordered.selectedItemIds);
-          for (const itemId of ordered.selectedItemIds) {
-            const item = byId.get(itemId), groupKey = item.groupId ? 'group:' + item.groupId : 'item:' + itemId;
-            if (handled.has(groupKey)) continue; handled.add(groupKey);
-            const members = groups.get(groupKey);
-            if (members.some(key => !rankedIds.has(key))) {
-              for (const key of members) if (!omissions.some(row => row.itemId === key)) omissions.push({ itemId: key, reason: 'semantic_group_not_selected' });
-              continue;
-            }
-            // Keep MMR order inside each indivisible complete group.
-            const unit = ordered.selectedItemIds.filter(key => members.includes(key));
-            const candidate = await trial([...selected, ...unit]);
-            if (candidate.status === 'unavailable') {
-              if (candidate.reason === 'payload_budget_exceeded') { for (const key of unit) omissions.push({ itemId: key, reason: 'model_context_budget' }); continue; }
-              return Object.freeze({ status: 'unavailable', reason: candidate.reason });
-            }
-            if (candidate.status !== 'available') { for (const key of unit) omissions.push({ itemId: key, reason: candidate.reason }); continue; }
-            release(retained.allocation); retained = candidate; selected.push(...unit);
-          }
-          await current();
-          const selectedItemIds = Object.freeze(selected), frozenOmissions = Object.freeze(omissions.map(Object.freeze));
-          const proposalCore = Object.freeze({ schema: 'gradia.model-evidence-selection.v2', corpusId: identity.corpusId, requestId: identity.requestId,
-            issuerId: identity.issuerId, manifestHash: identity.manifestHash, stage, phase,
-            renderer: render.contract, mmrPolicy: policy, selectedItemIds,
-            selectedItems: Object.freeze(selected.map(key => { const item = byId.get(key); return Object.freeze({ itemId: key, sourceHandle: item.sourceHandle, contentHash: item.contentHash, contentBytes: item.contentBytes, groupId: item.groupId || null }); })),
-            renderedEvidenceHash: await digest(retained.evidence), omissions: frozenOmissions, budgetWitness: retained.witness });
-          const proposal = Object.freeze({ ...proposalCore, selectionHash: await digest(JSON.stringify(proposalCore)) });
-          const receipt = await owner.bindSelection(proposal);
-          await current();
-          if (!receipt || !Object.isFrozen(receipt) || receipt.schema !== proposal.schema || receipt.corpusId !== identity.corpusId || receipt.requestId !== identity.requestId
-            || receipt.stage !== stage || receipt.phase !== phase || receipt.selectionHash !== proposal.selectionHash) fail('OWNER_RECEIPT');
-          id(receipt.receiptHandle);
-          const handle = Object.freeze({}), record = { receipt, witness: retained.witness, envelope, body: retained.body, allocation: retained.allocation };
-          issued.set(handle, record); stages.set(stageKey, handle);
-          const result = Object.freeze({ status: 'available', authorityQualified: false, handle, stage, phase, body: retained.body, evidence: retained.evidence,
-            selectedItemIds, omissions: frozenOmissions, receipt, budgetWitness: retained.witness });
-          retained = null; return result;
-        } finally { release(baseCredit); if (retained?.allocation) release(retained.allocation); }
-        } finally { pendingStages.delete(stageKey); }
-      }
-      async function assertDispatch(handle, actual) {
-        await current(); const record = issued.get(handle); if (!record) fail('UNISSUED_SELECTION');
-        budget.assertDispatch(record.witness, actual);
-        if (await owner.assertSelectionCurrent(record.receipt) !== true) fail('SELECTION_CHANGED');
-        await current(); consumed.add(handle); return true;
-      }
-      async function assertConsumedCurrent() {
-        await current();
-        for (const handle of consumed) if (await owner.assertSelectionCurrent(issued.get(handle).receipt) !== true) fail('SELECTION_CHANGED');
-        await current(); return Object.freeze({ consumedSelections: consumed.size });
-      }
-      return Object.freeze({ contract: 'gradia.verified-corpus-selection-component.v2', authorityQualified: false,
-        selectStage: input => use(() => selectStage(input)), assertDispatch: (handle, actual) => use(() => assertDispatch(handle, actual)),
-        assertConsumedCurrent: () => use(assertConsumedCurrent), close, creditSnapshot: credit.snapshot });
-    } catch (error) { close(); throw error; }
-  }
-  return Object.freeze({ contract: 'gradia.evidence-selection.v2', authorityQualified: false, openVerifiedCorpus });
-}
-/* GRADIA RANKED EVIDENCE V2 COMPONENTS END */
-
 /* GRADIA MODEL CONTEXT BUDGET BEGIN */
 // Source: sdk/GradiaModelContextBudget.source.js sha256=610925c140c711e12e6e8dc3388c7d57b3005f93d1c2eeda1195a15e528fd214
 'use strict';
@@ -30836,189 +28919,6 @@ function createGradiaModelContextBudget({ digest }) {
 
 /* GRADIA MODEL CONTEXT BUDGET END */
 
-function createGradiaEvidenceBudget({ digest }) {
-  if (typeof digest !== 'function') throw new TypeError('GRADIA_V2_BUDGET_DIGEST_REQUIRED');
-  const MODEL = 'gpt-4o-mini-2024-07-18';
-  const ROUTE = 'https://api.openai.com/v1/chat/completions';
-  const MAX_CONTEXT = 128000;
-  const PROFILE = 'openai-gpt4omini-20240718-chattext-conservative.v1';
-  const STRUCTURED_PROFILE = 'openai-gpt4omini-20240718-gradia-schema-conservative.v1';
-  // Exact production wrappers for successful four/eight-stage profiles only.
-  // Schema, names, descriptions and serialization changes require requalification.
-  const STRUCTURED_SCHEMA_PINS = Object.freeze({
-    "gradia_shadow_act_analysis": "eab576bde604cd1d0eea59d5982b15ec1330cb956aa398bf889ed1a2331d4360",
-    "gradia_aide_character_analysis": "87ac9b6ae219a49caab8ad84861fcc9e101a40be2a890769d1f1791922e459f7",
-    "gradia_aide_character_patch": "c75cefb3ee0a1c16f54d38b8bf6e07a2101b1a1a24108fa073f8bf825b9b921f",
-    "gradia_aide_world_analysis": "a86eededd2d3d47680d13dd579641cb39f87031f3a37d2656ecaf0c94d069641",
-    "gradia_aide_world_patch": "f28a548fd7e02c46cc6923abc3271dc6371919c8a6f60a795b1795783d6c345f",
-    "gradia_aide_plot_analysis": "3927b606ab067bb9532b997bed89cd7ef0ec866d66b9a61c2e31e60cb2e87bfb",
-    "gradia_aide_plot_patch": "917ba51651879ffe86dff333a0c80a6f5c19c213235ffa25beb4d146a518d7e1"
-});
-  const issued = new WeakMap();
-  const stop = reason => { throw Object.assign(new TypeError(reason), { budgetReason: reason }); };
-  const integer = (value, positive = false) => Number.isSafeInteger(value)
-    && !Object.is(value, -0) && value >= (positive ? 1 : 0);
-  const add = (left, right) => {
-    if (!integer(left) || !integer(right) || right > Number.MAX_SAFE_INTEGER - left) stop('limits_invalid');
-    return left + right;
-  };
-  function fields(raw, required, optional, reason) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) stop(reason);
-    const proto = Object.getPrototypeOf(raw);
-    if (proto !== null && proto !== Object.prototype) stop(reason);
-    const keys = Reflect.ownKeys(raw);
-    if (keys.length > required.length + optional.length) stop(reason);
-    const out = Object.create(null);
-    for (const key of keys) {
-      if (typeof key !== 'string' || (!required.includes(key) && !optional.includes(key))) stop(reason);
-      const descriptor = Object.getOwnPropertyDescriptor(raw, key);
-      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) stop(reason);
-      out[key] = descriptor.value;
-    }
-    for (const key of required) if (!Object.hasOwn(out, key)) stop(reason);
-    return out;
-  }
-  // No encoding buffer is allocated. Reject malformed text instead of silently
-  // letting TextEncoder replace it. A cap bounds the scan and later JSON parse.
-  function utf8(value, cap, overflow) {
-    if (typeof value !== 'string') stop('input_invalid');
-    if (value.length > cap) stop(overflow);
-    let size = 0;
-    for (let index = 0; index < value.length; index++) {
-      const code = value.charCodeAt(index);
-      if (code >= 0xd800 && code <= 0xdbff) {
-        const low = value.charCodeAt(++index);
-        if (!(low >= 0xdc00 && low <= 0xdfff)) stop('unsupported_text');
-        size += 4;
-      } else if (code >= 0xdc00 && code <= 0xdfff) stop('unsupported_text');
-      else size += code < 0x80 ? 1 : code < 0x800 ? 2 : 3;
-      if (size > cap) stop(overflow);
-    }
-    return size;
-  }
-  function capacity(raw, identity) {
-    const value = fields(raw, ['source', 'limit', 'sourceIdentity', 'providerId', 'modelId', 'routeIdentity'], [], 'model_context_unavailable');
-    if (!['configured', 'catalog'].includes(value.source) || !integer(value.limit, true)
-      || value.providerId !== identity.providerId || value.modelId !== identity.modelId
-      || value.routeIdentity !== identity.routeIdentity || typeof value.sourceIdentity !== 'string'
-      || !value.sourceIdentity.trim() || value.sourceIdentity.length > 1024) stop('model_context_unavailable');
-    utf8(value.sourceIdentity, 4096, 'model_context_unavailable');
-    return { limit: Math.min(value.limit, MAX_CONTEXT), source: value.source, identity: value.sourceIdentity };
-  }
-  function payload(serialized) {
-    let body;
-    try { body = JSON.parse(serialized); } catch (_) { stop('payload_format_unsupported'); }
-    // Actual builder serialization round-trips exactly. This rejects duplicate
-    // keys, whitespace and alternate encodings instead of interpreting ambiguity.
-    if (JSON.stringify(body) !== serialized) stop('payload_format_unsupported');
-    const value = fields(body, ['model', 'messages', 'temperature', 'stream'], ['max_tokens', 'max_completion_tokens', 'stream_options', 'response_format'], 'token_accounting_unavailable');
-    if (value.model !== MODEL || typeof value.stream !== 'boolean'
-      || typeof value.temperature !== 'number' || !Number.isFinite(value.temperature)
-      || value.temperature < 0 || value.temperature > 2 || Object.is(value.temperature, -0)) stop('token_accounting_unavailable');
-    const hasTokens = Object.hasOwn(value, 'max_tokens'), hasCompletion = Object.hasOwn(value, 'max_completion_tokens');
-    if (hasTokens === hasCompletion) stop('token_accounting_unavailable');
-    const output = hasTokens ? value.max_tokens : value.max_completion_tokens;
-    if (!integer(output, true) || output > 16384) stop('token_accounting_unavailable');
-    if (Object.hasOwn(value, 'stream_options')) {
-      const stream = fields(value.stream_options, ['include_usage'], [], 'token_accounting_unavailable');
-      if (!value.stream || stream.include_usage !== true) stop('token_accounting_unavailable');
-    }
-    if (!Array.isArray(value.messages) || value.messages.length < 1 || value.messages.length > 3) stop('token_accounting_unavailable');
-    let content = 0;
-    for (let index = 0; index < value.messages.length; index++) {
-      const message = fields(value.messages[index], ['role', 'content'], [], 'token_accounting_unavailable');
-      if (message.role !== (index === value.messages.length - 1 ? 'user' : 'system')
-        || typeof message.content !== 'string') stop('token_accounting_unavailable');
-      content = add(content, utf8(message.role, MAX_CONTEXT, 'payload_budget_exceeded'));
-      content = add(content, utf8(message.content, MAX_CONTEXT, 'payload_budget_exceeded'));
-    }
-    let structuredName = '', structuredSerialized = '', structuredBytes = 0;
-    if (Object.hasOwn(value, 'response_format')) {
-      const format = fields(value.response_format, ['type', 'json_schema'], [], 'token_accounting_unavailable');
-      const schema = fields(format.json_schema, ['name', 'strict', 'schema'], [], 'token_accounting_unavailable');
-      if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string'
-        || !Object.hasOwn(STRUCTURED_SCHEMA_PINS, schema.name) || !schema.schema
-        || typeof schema.schema !== 'object' || Array.isArray(schema.schema)) stop('token_accounting_unavailable');
-      structuredName = schema.name;
-      structuredSerialized = JSON.stringify(value.response_format);
-      structuredBytes = utf8(structuredSerialized, MAX_CONTEXT, 'payload_budget_exceeded');
-    }
-    return { body, content, output, structuredName, structuredSerialized, structuredBytes };
-  }
-  function sameBase(base, final, evidence) {
-    const left = base.body, right = final.body;
-    const keys = Object.keys(left);
-    if (keys.length !== Object.keys(right).length || left.messages.length !== right.messages.length) stop('payload_binding_changed');
-    for (const key of keys) {
-      if (key !== 'messages' && JSON.stringify(left[key]) !== JSON.stringify(right[key])) stop('payload_binding_changed');
-    }
-    for (let index = 0; index < left.messages.length; index++) {
-      const original = left.messages[index], current = right.messages[index];
-      const suffix = index === left.messages.length - 1 && evidence ? '\n\n' + evidence : '';
-      if (original.role !== current.role || current.content !== original.content + suffix) stop('payload_binding_changed');
-    }
-  }
-  async function evaluate(raw) {
-    try {
-      const input = fields(raw, ['providerId', 'modelId', 'routeIdentity', 'requestFormat', 'context', 'baseBody', 'finalBody', 'renderedEvidence', 'renderedByteLimit'], [], 'input_invalid');
-      if (input.providerId !== 'openai' || input.modelId !== MODEL || input.routeIdentity !== ROUTE || input.requestFormat !== 'chat_completions') stop('token_accounting_unavailable');
-      const context = capacity(input.context, input);
-      if (!integer(input.renderedByteLimit, true) || input.renderedByteLimit > 4194304) stop('limits_invalid');
-      const evidenceBytes = utf8(input.renderedEvidence, input.renderedByteLimit, 'rendered_budget_exceeded');
-      // Check both immutable bodies before parsing either, including JSON escaping.
-      utf8(input.baseBody, MAX_CONTEXT, 'payload_budget_exceeded');
-      const serializedBytes = utf8(input.finalBody, MAX_CONTEXT, 'payload_budget_exceeded');
-      const base = payload(input.baseBody), final = payload(input.finalBody);
-      sameBase(base, final, input.renderedEvidence);
-      if (!input.renderedEvidence && input.baseBody !== input.finalBody) stop('payload_binding_changed');
-      const selectedContent = input.renderedEvidence ? add(2, evidenceBytes) : 0;
-      if (final.content !== add(base.content, selectedContent)) stop('payload_binding_changed');
-      let structuredSchemaSha256 = null;
-      if (final.structuredBytes) {
-        try { structuredSchemaSha256 = await digest(final.structuredSerialized); }
-        catch (_) { stop('payload_hash_unavailable'); }
-        if (structuredSchemaSha256 !== STRUCTURED_SCHEMA_PINS[final.structuredName]) stop('token_accounting_unavailable');
-      }
-      // The raw envelope already charges the schema once. Reserve its complete
-      // UTF-8 wrapper again for structured framing; this remains a conservative
-      // engineering estimate, not a provider tokenizer or server-internals proof.
-      const framing = add(Math.max(3 * final.body.messages.length + 3, serializedBytes - final.content, 0), final.structuredBytes);
-      const allowance = add(final.content, framing), margin = Math.max(1024, Math.ceil(context.limit * 0.05));
-      const fits = add(add(allowance, final.output), margin) <= context.limit;
-      const witnessFields = { providerId: input.providerId, modelId: input.modelId, routeIdentity: input.routeIdentity,
-        requestFormat: input.requestFormat, contextLimit: context.limit, contextSource: context.source,
-        contextSourceIdentity: context.identity, meterId: final.structuredBytes ? STRUCTURED_PROFILE : PROFILE, meterVersion: 1,
-        meterKind: 'content-bound-plus-framing-estimate', baseContentTokenBound: base.content,
-        framingAllowance: framing, effectiveOutputReserve: final.output, explicitReasoningReserve: 0,
-        safetyMargin: margin, selectedContentTokenBound: selectedContent,
-        renderedEvidenceBytes: evidenceBytes, finalInputAllowance: allowance,
-        ...(final.structuredBytes ? { structuredSchemaName: final.structuredName, structuredSchemaSha256, structuredSchemaByteAllowance: final.structuredBytes } : {}) };
-      // Only already captured primitives survive the await; caller mutations cannot
-      // replace the body or envelope. The adapter owns cancellation/generation.
-      const body = input.finalBody;
-      let hash;
-      try { hash = await digest(body); } catch (_) { stop('payload_hash_unavailable'); }
-      if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) stop('payload_hash_unavailable');
-      const witness = Object.freeze({ ...witnessFields, finalPayloadHash: hash });
-      if (fits) issued.set(witness, Object.freeze({ providerId: witness.providerId, modelId: witness.modelId,
-        routeIdentity: witness.routeIdentity, requestFormat: witness.requestFormat, method: 'POST', body }));
-      return Object.freeze({ status: 'available', fits, reason: fits ? 'fit' : 'model_context_exceeded', witness });
-    } catch (error) {
-      return Object.freeze({ status: 'unavailable', reason: error?.budgetReason || 'input_invalid' });
-    }
-  }
-  function assertDispatch(witness, raw) {
-    const record = witness && typeof witness === 'object' ? issued.get(witness) : null;
-    if (!record) throw new TypeError('GRADIA_V2_BUDGET_WITNESS_UNISSUED');
-    let input;
-    try { input = fields(raw, ['providerId', 'modelId', 'routeIdentity', 'requestFormat', 'method', 'body'], [], 'dispatch_invalid'); }
-    catch (_) { throw new TypeError('GRADIA_V2_BUDGET_DISPATCH_CHANGED'); }
-    for (const key of Object.keys(record)) if (input[key] !== record[key]) throw new TypeError('GRADIA_V2_BUDGET_DISPATCH_CHANGED');
-    return true;
-  }
-  return Object.freeze({ factoryVersion: 'gradia.evidence-budget.v2', evaluate, assertDispatch });
-}
-
   // END pinned pure G2 factory.
   const libReadSha256 = async value => {
     if (!globalThis.crypto?.subtle) throw libEvidenceError('LIB_READ_HASH_UNAVAILABLE');
@@ -31029,7 +28929,7 @@ function createGradiaEvidenceBudget({ digest }) {
   let libReadBindingGeneration = 0;
   let libReadSelection = null;
   const createLibServerReadConsumer = (dependencies = {}) => {
-    const fail = code => { throw libEvidenceError(code); };
+    const fail = (code, cause) => { throw libEvidenceError(code, cause); };
     const bytes = value => new TextEncoder().encode(value).length;
     const copyMeta = value => JSON.parse(JSON.stringify(value));
     const freeze = value => { if (value && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value); } return value; };
@@ -31102,7 +29002,7 @@ function createGradiaEvidenceBudget({ digest }) {
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
         let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-          queryText: input.queryText, ...(input.proposal ? {proposal: input.proposal} : {}) }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
+          queryText: input.queryText }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
         if (typeof read?.close === 'function') record.releaseRead = read.close;
         await assertBinding();
         // The declared source must be the one that answered. A silent fall back to the server read would
@@ -31120,7 +29020,26 @@ function createGradiaEvidenceBudget({ digest }) {
           || JSON.stringify(raw.scope) !== JSON.stringify(scope) || !Array.isArray(raw.items) || raw.items.length > 4096
           || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
           || typeof read.assertCurrent !== 'function' || typeof read.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
-        const assertReadCurrent = read.assertCurrent, assertReadCurrentSync = read.assertCurrentSync;
+        // Once selected, memory is held as selected, as in an owner's own hook: a later background write
+        // to the store neither removes it nor discards a draft written from it.
+        const assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
+        const assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
+        // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
+        // their own memory, and an owner that is not running contributes none.
+        let ownerUnavailable = null;
+        if (multipleOwners && readSource === 'unified_engine' && typeof dependencies.selectOwnerRecall === 'function') {
+          const kept = raw.items.filter(item => item?.owner === 'libra');
+          ownerUnavailable = {};
+          const peers = raw.owners.filter(value => value !== 'libra');
+          const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
+          for (const [index, owner] of peers.entries()) {
+            const selected = answers[index];
+            if (selected.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
+            if (selected.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
+              source: { namespace: owner, kind: 'owner_recall_prompt', finalDelivery: selected.finalDelivery !== false } });
+          }
+          raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
+        }
         let corpusBytes = 0, metadataBytes = 0; const seen = new Set(), corpus = [];
         for (const item of raw.items) {
           const owner = multipleOwners ? item?.owner : 'libra', ownerKey = JSON.stringify([owner,item?.key,...(multipleOwners ? [item?.id] : [])]);
@@ -31134,17 +29053,16 @@ function createGradiaEvidenceBudget({ digest }) {
           if (bytes(metadata) > 65536 || metadataBytes > 1048576) fail('LIB_READ_METADATA_BUDGET_EXCEEDED');
           // Copy only bounded metadata. Immutable JS text primitives are shared,
           // never full-corpus JSON-stringified, cloned or re-parsed.
-          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: libMemoryModelContent(owner, item.content),
-            foldedContent: owner === 'hayaku' ? projectHayakuPacketText(item.content, { fold: true }) : null }));
+          const ownerPrompt = item.source.kind === 'owner_recall_prompt';
+          corpus.push(Object.freeze({ ...freeze(JSON.parse(metadata)), owner, content: ownerPrompt ? item.content : libMemoryModelContent(owner, item.content),
+            foldedContent: !ownerPrompt && owner === 'hayaku' ? projectHayakuPacketText(item.content, { fold: true }) : null }));
         }
         if (corpusBytes !== raw.corpusBytes) fail('LIB_READ_RESPONSE_INVALID');
         record.corpus = Object.freeze(corpus);
         const evidenceRevision = raw.evidenceRevision, selected = [];
         raw = null; read = null;
         // Legacy LIBRA selection stays unchanged. The multiowner path keeps exact-content
-        // dedup and every contributing owner identity in model-visible provenance, and
-        // orders candidates by orderLibEvidenceCandidates (recent per owner, then BM25
-        // relevance to the current input, then newest-first round robin).
+        // dedup and every contributing owner identity in model-visible provenance.
         let candidates = [...corpus].reverse(), deduplicatedItems = 0;
         if (multipleOwners) {
           const groups = new Map(), queues = new Map(allowedOwners.map(owner => [owner,[]]));
@@ -31168,35 +29086,31 @@ function createGradiaEvidenceBudget({ digest }) {
               || a.key.localeCompare(b.key) || a.id.localeCompare(b.id));
             freeze(group);
           }
-          candidates = orderLibEvidenceCandidates(queues, allowedOwners, input.queryText);
+          // Each owner has already chosen what is relevant; GRADIA does not rank it again and takes turns between owners.
+          candidates = [];
+          for (let turn = 0; candidates.length < groups.size; turn += 1) for (const owner of allowedOwners) { const item = queues.get(owner)[turn]; if (item) candidates.push(item); }
         }
         const packer = createLibEvidencePacker('gradia.lib-server-evidence.v1', evidenceRevision, evidenceBudget);
-        // An Input Writer proposal needs only a little record-level memory beside the live
-        // scene: HAYAKU/Flashback records share a small whole-record budget (the first one is
-        // always admitted). The LIBRA owner bundle is unchanged.
-        const recordCharCap = input.proposal ? LIB_INPUT_WRITER_RECORD_EVIDENCE_CHARS : Infinity;
-        let recordChars = 0;
         for (const item of candidates) {
           let target = item;
-          const record = target.owner !== 'libra';
-          const overCap = bytes(target.content) > evidenceBudget.maxBytes
-            || (record && recordChars > 0 && recordChars + target.content.length > recordCharCap)
-            || !packer.canFit(target);
+          const overCap = bytes(target.content) > evidenceBudget.maxBytes || !packer.canFit(target);
           if (overCap && target.owner === 'hayaku' && target.foldedContent && target.content !== target.foldedContent) {
             target = Object.freeze({ ...target, content: target.foldedContent, folded: true });
           }
           if (bytes(target.content) > evidenceBudget.maxBytes) continue;
-          if (record && recordChars > 0 && recordChars + target.content.length > recordCharCap) continue;
-          if (packer.tryAdd(target)) {
-            selected.push(target);
-            if (record) recordChars += target.content.length;
-          }
+          if (packer.tryAdd(target)) selected.push(target);
+        }
+        // An owner over budget is left out and told so: incomplete memory reads as if it were complete.
+        for (const owner of new Set(corpus.map(item => item.owner))) {
+          if (!selected.some(item => item.owner === owner || item.provenance?.some?.(row => row.owner === owner))) dependencies.onOwnerOmitted?.(owner, 'LIB_READ_MEMORY_BUDGET_EXCEEDED');
         }
         // The packer's arithmetic is checked once against the real renderer.
         if (selected.length) renderLibEvidence({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected }, evidenceBudget);
         if (!selected.length) fail(corpus.length ? 'LIB_READ_NO_COMPLETE_ITEM_FITS_PROMPT' : 'LIB_READ_NO_EVIDENCE');
         record.evidence = freeze({ schema: 'gradia.lib-server-evidence.v1', evidenceRevision, items: selected });
-        const selection = Object.freeze({ corpusBytes, corpusItems: corpus.length, selectedItems: selected.length,
+        const unavailableOwners = { ...readEngine?.unavailableOwners, ...ownerUnavailable };
+        const selection = Object.freeze({ ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}),
+          corpusBytes, corpusItems: corpus.length, selectedItems: selected.length,
           omittedItems: candidates.length - selected.length, ...(multipleOwners ? {deduplicatedItems,owners:allowedOwners.filter(owner=>corpus.some(item=>item.owner===owner))} : {}),
           truncated: false, promptByteLimit: evidenceBudget.maxBytes, promptCharLimit:evidenceBudget.maxChars, readSource,
           // Display-only digest of what reached the model, for the run results page.
@@ -31207,7 +29121,7 @@ function createGradiaEvidenceBudget({ digest }) {
           reason: selected.length === candidates.length ? 'all_complete_items' : 'complete_items_prompt_budget' });
         const assertCurrent = async () => {
           try { await assertBinding(); if (await guarded(() => assertReadCurrent()) !== true) fail('LIB_READ_STALE'); await assertBinding(); check(record); return true; }
-          catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code); }
+          catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_STALE'; stop(record, code); fail(code, error); }
         };
         await assertCurrent();
         dependencies.onSelection?.(selection);
@@ -31229,7 +29143,7 @@ function createGradiaEvidenceBudget({ digest }) {
             const hash = await guarded(() => digest(draft)); await assertCurrent(); if (!/^[a-f0-9]{64}$/.test(hash)) fail('LIB_READ_HASH_UNAVAILABLE'); record.draft = draft; return Object.freeze({ evidenceRevision, draftHash: hash }); },
           finalizeDraft: async () => { await assertCurrent(); if (!record.draft) fail('LIB_READ_DRAFT_UNBOUND'); return record.draft; }
         });
-      } catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'; stop(record, code); fail(code); }
+      } catch (error) { const code = /^LIB_READ_/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'; stop(record, code); fail(code, error); }
     };
     return Object.freeze({ factoryVersion: 'gradia.lib-server-read-consumer.v1', beginRead, invalidate });
   };
@@ -31252,7 +29166,6 @@ function createGradiaEvidenceBudget({ digest }) {
     const requestedSource = options.readSource === undefined ? 'unified_engine' : String(options.readSource);
     const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
     if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
-    closeInputWriterEvidence('LIB_READ_BOUNDARY_CHANGED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
     libReadSelection = null;
@@ -31260,7 +29173,6 @@ function createGradiaEvidenceBudget({ digest }) {
     return Object.freeze({ status: 'bound', liveConnectionVerified: false, maxCorpusBytes });
   };
   const unbindLibReadOnlyClient = () => {
-    closeInputWriterEvidence('LIB_READ_CONNECTION_UNAVAILABLE');
     LibReadConsumer.invalidate('LIB_READ_CONNECTION_UNAVAILABLE');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_CONNECTION_UNAVAILABLE'); old.close(); }
     libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;
@@ -38533,7 +36445,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         authorizationProof=unifiedReadAuthorizations.get(authorizationKey);
         if(!authorizationProof)reject('LIB_READ_PRINCIPAL_REQUIRED');
         await authorizationCurrent();
+        return true;
       }
+      return false;
     };
     const sourceRead=source==='unified_engine'?async(action,body)=>{
       await assertRoute();
@@ -38554,7 +36468,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const result=action==='capture'?await provider.capture({...body,queryText:readOptions.queryText,signal:readOptions.signal,...(readOptions.proposal?{proposal:readOptions.proposal}:{}),
         binding:{url:connection.url,dataInstanceId:connection.dataInstanceId,resetEpoch:epoch}})
         :await provider.current({proof:body,signal:readOptions.signal});
-      try{await assertRoute();await authorizationCurrent();return result;}
+      try{
+        await assertRoute();
+        // Graph preparation may publish derived owner data during capture. The
+        // server corpus is only an authorization witness in unified mode. Refresh
+        // it before accepting evidence, then revalidate the actual owner receipt.
+        const refreshed=await authorizationCurrent(action==='capture');
+        if(refreshed){
+          const proof={scope:result.scope,readIdentity:result.readIdentity,dependencies:result.dependencies,
+            evidenceRevision:result.evidenceRevision,dataInstanceId:result.dataInstanceId,resetEpoch:result.resetEpoch};
+          const current=await provider.current({proof,signal:readOptions.signal});
+          if(current?.current!==true||current.evidenceRevision!==proof.evidenceRevision
+            ||JSON.stringify(current.scope)!==JSON.stringify(proof.scope)
+            ||current.dataInstanceId!==proof.dataInstanceId||current.resetEpoch!==proof.resetEpoch)reject('LIB_READ_STALE');
+          await assertRoute();await authorizationCurrent();
+        }
+        return result;
+      }
       catch(error){if(action==='capture')await Promise.resolve(provider.release?.(result?.readIdentity?.ownerReceiptId)).catch(()=>{});throw error;}
     }:read;
     const result=await sourceRead('capture',{scope:sourceScope,maxCorpusBytes,...(maxRawBytes===undefined?{}:{maxRawBytes})});
@@ -39230,7 +37160,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
     let inspecting = null, lastInspection = null;
-    let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS], inputWriterReadOwners = [...LIB_READ_OWNERS];
+    let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS];
     let isLegacyV1Consent = false;
     let unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
@@ -39242,7 +37172,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const status = () => Object.freeze({state,reason,url,explicit,readSource,
       readOwners:Object.freeze([...readOwners]),
       draftReadOwners:Object.freeze([...draftReadOwners]),
-      inputWriterReadOwners:Object.freeze([...inputWriterReadOwners]),
       reconnectAttempts,
       inspecting:!!inspecting,lastInspection,
       activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
@@ -39312,7 +37241,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // A canceled startup read may never reveal saved consent. Retain that
         // uncertainty until a verified false write, so a failed revoke can retry.
         consentMayBeStored = true;
-        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); }
+        try { await persistPreference({schema:'gradia.lib-read-connection.v2',url,explicit:false,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); }
         catch (error) { state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh(); throw error; }
       }
     };
@@ -39356,19 +37285,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (Array.isArray(config.draftReadOwners)) {
         draftReadOwners = config.draftReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
       }
-      if (Array.isArray(config.inputWriterReadOwners)) {
-        inputWriterReadOwners = config.inputWriterReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
-      }
       let targetOwners = requestedOwners;
       if (!Array.isArray(targetOwners)) {
         if (isLegacyV1Consent) {
           targetOwners = [...LIB_READ_OWNERS];
           draftReadOwners = [...LIB_READ_OWNERS];
-          inputWriterReadOwners = [...LIB_READ_OWNERS];
           isLegacyV1Consent = false;
         } else {
-          const union = new Set([...draftReadOwners, ...inputWriterReadOwners]);
-          targetOwners = LIB_READ_OWNERS.filter(o => union.has(o));
+          targetOwners = LIB_READ_OWNERS.filter(o => draftReadOwners.includes(o));
           if (!targetOwners.length) targetOwners = [...LIB_READ_OWNERS];
         }
       }
@@ -39389,7 +37313,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
         if (readSource === 'plugin_ipc') {
           const native = await readLibPluginNativeIdentity(); check();
-          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(),
+          const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), runHints: libOwnerRunHints,
             describeTimeoutMs:3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
             api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
           bridge = next;
@@ -39398,10 +37322,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           await assertScope(scope); check();
           if (!startup) {
             pendingConsent = {url:target};
-            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
+            await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); check();
             await assertScope(scope); check(); pendingConsent = null; explicit = true;
           }
-          bindLibReadOnlyClient(next.createClient(resolved.scopes),{scope,readSource});
+          bindLibReadOnlyClient(independentOwnerClient(resolved.scopes, value => next.createClient(value)),{scope,readSource});
           watch(epoch); state = 'connected'; reason = ''; refresh(); return status();
         }
         const normalized = normalizeLibReadUrl(target);
@@ -39425,12 +37349,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         scopeBundle = resolvedBundle; unavailable = {...resolvedBundle.unavailable}; scope = resolved;
         watch(epoch);
         await assertScope(resolved); check();
-        const client = readOwners.length === 1 && readOwners[0] === 'libra' ? next.createLibraReadOnlyClient() : next.createMemoryReadOnlyClient(resolvedBundle.scopes);
+        const client = readOwners.length === 1 && readOwners[0] === 'libra' ? next.createLibraReadOnlyClient() : independentOwnerClient(resolvedBundle.scopes, value => next.createMemoryReadOnlyClient(value));
         let read = await client.openReadSession(resolved,{maxCorpusBytes:4194304}); check();
         await read.assertCurrent(); read = null; await assertScope(resolved); check();
         if (!startup) {
           pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners],inputWriterReadOwners:[...inputWriterReadOwners]}); check();
+          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); check();
           await assertScope(resolved); check();
           pendingConsent = null; explicit = true;
         }
@@ -39507,7 +37431,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         url = normalizeLibReadUrl(saved.url);
         if (saved.readSource) readSource = saved.readSource;
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
-        if (Array.isArray(saved.inputWriterReadOwners)) inputWriterReadOwners = saved.inputWriterReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;
           state = 'disconnected';
@@ -39518,11 +37441,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (saved.schema === 'gradia.lib-read-connection.v1') {
           isLegacyV1Consent = true;
           draftReadOwners = ['libra'];
-          inputWriterReadOwners = ['libra'];
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
+          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -39532,12 +37454,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         draftReadOwners = Array.isArray(saved.draftReadOwners)
           ? saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
           : [...savedOwners];
-        inputWriterReadOwners = Array.isArray(saved.inputWriterReadOwners)
-          ? saved.inputWriterReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner))
-          : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners, inputWriterReadOwners });
+        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -39566,15 +37485,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       setDraftReadOwners: async owners => {
         if (Array.isArray(owners)) {
           draftReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
-          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
-          refresh();
-        }
-        return status();
-      },
-      setInputWriterReadOwners: async owners => {
-        if (Array.isArray(owners)) {
-          inputWriterReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
-          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners, inputWriterReadOwners });
+          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners });
           refresh();
         }
         return status();
@@ -39584,9 +37495,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           const valid = owners.filter(o => LIB_READ_OWNERS.includes(o));
           if (valid.length) {
             draftReadOwners = [...valid];
-            inputWriterReadOwners = [...valid];
             readOwners = [...valid];
-            if (state === 'connected') return await connect(false, valid, readSource, { draftReadOwners, inputWriterReadOwners });
+            if (state === 'connected') return await connect(false, valid, readSource, { draftReadOwners });
             refresh();
           }
         }
@@ -39598,8 +37508,168 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
   })();
 
-  const LibReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
-  const LibWriterReadConsumer = createLibServerReadConsumer({ getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope });
+  // LIBRA, HAYAKU and Flashback are separate memory paths. Each gets its own read session, deadline and
+  // budget share, so one owner's failure removes only that owner. What stops the whole run is what does
+  // not belong to any owner: cancellation, or the chat itself changing.
+  // An owner's own boundary or shutdown stays that owner's failure; cancellation counts only when this run was canceled.
+  const LIB_READ_RUN_WIDE_FAILURE = /NATIVE_(?:VIEW_CHANGED|SCOPE_CHANGED|CHANGED)/;
+  const LIB_OWNER_DEADLINE_MS = LIB_MEMORY_OWNER_READ_TIMEOUT_MS - 10000;
+  const libOwnerFailureCode = error => /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_OWNER_UNAVAILABLE';
+  const withinLibOwnerDeadline = (operation, onExpired = () => {}) => {
+    let timer;
+    const expired = new Promise((_, reject) => { timer = setTimeout(() => { onExpired(); reject(libEvidenceError('LIB_READ_TIMEOUT')); }, LIB_OWNER_DEADLINE_MS); });
+    return Promise.race([Promise.resolve().then(operation), expired]).finally(() => clearTimeout(timer));
+  };
+  const createIndependentOwnerReadClient = ({ scopes, clientFor, routeOwners = () => null, onOwnerFailed = () => {} }) => Object.freeze({
+    schema: 'memory-suite.memory-read-client.v1', pluginId: 'serial_gradation_agents_for_rp',
+    async openReadSession(scope, input = {}) {
+      const route = routeOwners();
+      const owners = Object.keys(scopes).filter(owner => !Array.isArray(route) || route.includes(owner));
+      if (!owners.length) throw libEvidenceError('LIB_READ_OWNERS_DISABLED');
+      const sessions = new Map(), unavailableOwners = {};
+      let closed = false;
+      const loseOwner = (owner, code) => {
+        if (closed || unavailableOwners[owner]) return;
+        unavailableOwners[owner] = code;
+        const session = sessions.get(owner);
+        sessions.delete(owner);
+        try { session?.read.close?.(); } catch (_) { /* The owner is already out of this run. */ }
+        onOwnerFailed(owner, code);
+      };
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        for (const session of sessions.values()) { try { session.read.close?.(); } catch (_) { /* Closing is best effort. */ } }
+        sessions.clear();
+      };
+      const share = Math.max(1, Math.floor(input.maxCorpusBytes / owners.length));
+      const opened = await Promise.allSettled(owners.map(async owner => {
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        input.signal?.addEventListener('abort', abort, { once: true });
+        if (input.signal?.aborted) abort();
+        let expired = false;
+        const pending = Promise.resolve().then(() => clientFor(owner).openReadSession(scopes[owner], { ...input, maxCorpusBytes: share, signal: controller.signal }));
+        // A read that arrives after its deadline still holds a receipt.
+        pending.then(read => { if (expired) read?.close?.(); }, () => {});
+        try { return { owner, read: await withinLibOwnerDeadline(() => pending, () => { expired = true; abort(); }) }; }
+        finally { input.signal?.removeEventListener('abort', abort); }
+      }));
+      if (input.signal?.aborted) {
+        for (const result of opened) if (result.status === 'fulfilled') result.value.read?.close?.();
+        throw libEvidenceError('LIB_READ_CANCELED');
+      }
+      const runWide = opened.find(result => result.status === 'rejected' && LIB_READ_RUN_WIDE_FAILURE.test(result.reason?.code || ''));
+      if (runWide) {
+        for (const result of opened) if (result.status === 'fulfilled') result.value.read?.close?.();
+        throw runWide.reason;
+      }
+      let firstFailure = null;
+      const items = [], revisions = [], engines = [];
+      let corpusBytes = 0;
+      opened.forEach((result, index) => {
+        const owner = owners[index];
+        if (result.status === 'rejected') { firstFailure ||= result.reason; loseOwner(owner, libOwnerFailureCode(result.reason)); return; }
+        const read = result.value.read, snapshot = read?.snapshot;
+        sessions.set(owner, { read });
+        if (!snapshot?.owners?.includes?.(owner)) {
+          const code = read?.engine?.unavailableOwners?.[owner] || 'LIB_READ_OWNER_UNAVAILABLE';
+          firstFailure ||= libEvidenceError(code); loseOwner(owner, code); return;
+        }
+        if (snapshot.complete !== true || snapshot.readOnly !== true || !Array.isArray(snapshot.items) || !/^[a-f0-9]{64}$/.test(snapshot.evidenceRevision || '')
+          || snapshot.items.some(item => typeof item?.content !== 'string' || item.source?.namespace !== owner)) {
+          firstFailure ||= libEvidenceError('LIB_READ_RESPONSE_INVALID'); loseOwner(owner, 'LIB_READ_RESPONSE_INVALID'); return;
+        }
+        for (const item of snapshot.items) items.push(item.owner === owner ? item : { ...item, owner });
+        corpusBytes += snapshot.items.reduce((total, item) => total + new TextEncoder().encode(item.content).length, 0);
+        revisions.push([owner, snapshot.evidenceRevision]);
+        if (read.engine) engines.push(read.engine);
+      });
+      if (!sessions.size) { close(); throw firstFailure || libEvidenceError('LIB_READ_OWNER_UNAVAILABLE'); }
+      const assertCurrentSync = () => {
+        if (input.signal?.aborted) throw libEvidenceError('LIB_READ_CANCELED');
+        if (closed) throw libEvidenceError('LIB_READ_STALE');
+        for (const [owner, session] of [...sessions]) {
+          try { if (session.read.assertCurrentSync() !== true) loseOwner(owner, 'LIB_READ_STALE'); }
+          catch (error) { if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '')) throw error; loseOwner(owner, libOwnerFailureCode(error)); }
+        }
+        return true;
+      };
+      const assertCurrent = async () => {
+        assertCurrentSync();
+        const checked = [...sessions];
+        const results = await Promise.allSettled(checked.map(([, session]) => withinLibOwnerDeadline(() => session.read.assertCurrent())));
+        results.forEach((result, index) => {
+          const owner = checked[index][0];
+          if (result.status === 'rejected') {
+            if (LIB_READ_RUN_WIDE_FAILURE.test(result.reason?.code || '')) throw result.reason;
+            loseOwner(owner, libOwnerFailureCode(result.reason));
+          } else if (result.value !== true) loseOwner(owner, 'LIB_READ_STALE');
+        });
+        return assertCurrentSync();
+      };
+      const evidenceRevision = await libReadSha256(JSON.stringify(revisions));
+      const answering = revisions.map(([owner]) => owner);
+      return Object.freeze({ source: input.source, engine: Object.freeze({ ...Object.assign({}, ...engines), purpose: 'response_evidence',
+          sourceByOwner: Object.fromEntries(answering.map(owner => [owner, sessions.get(owner).read.source])),
+          ...(Object.keys(unavailableOwners).length ? { unavailableOwners: { ...unavailableOwners } } : {}) }),
+        snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope, owners: answering, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+        assertCurrent, assertCurrentSync, close });
+    }
+  });
+  const libReadRoute = () => LibReadConnection.status().draftReadOwners;
+  // Owners that dropped out of this response run: they no longer reach the final request.
+  const libOwnersLost = new Set();
+  const noteLibOwnerLost = (owner, code) => {
+    libOwnersLost.add(owner); libOwnersAwaitingDelivery.delete(owner); reportLibOwnerDelivery(owner, 'failed', code); warn('lib_owner_read_failed', owner + ':' + code);
+  };
+  const independentOwnerClient = (scopes, clientForScopes) => Object.keys(scopes).length < 2 ? clientForScopes(scopes)
+    : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
+  let libOwnerSelectionReader = null;
+  const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
+    describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
+  const reportLibOwnerDelivery = (owner, status, code = '') => { void libOwnerReader().notify(owner, 'delivered', { status, code }); };
+  // Owners stop searching in their own hook while this holds. It expires, so a removed GRADIA cannot silence them.
+  const announceLibReads = async (given = Runtime.settings) => {
+    let settings = given;
+    const connection = LibReadConnection.status();
+    const connected = connection.readSource !== 'off' && connection.state === 'connected';
+    // A save clears the cached settings. Loading them here could put old values back behind that save,
+    // so only the stored mode is read: turning GRADIA off must not wait for the next request.
+    if (!settings && connected) {
+      const stored = await readRuntimeSettings().catch(() => null);
+      if (stored?.mode !== 'off') return;
+      settings = stored;
+    }
+    // GRADIA skips a request it has no provider for, so owners must keep their own recall then.
+    let providerReady = false;
+    try { providerReady = !providerConfigurationIssues(resolvePreset(settings, 'shadow_act').preset).length; } catch (_) { providerReady = false; }
+    const active = providerReady && connected && settings?.mode !== 'off';
+    const routeOwners = connection.draftReadOwners || LIB_READ_OWNERS;
+    // An owner GRADIA holds no session for must keep its own recall, or its memory reaches nobody.
+    const boundOwners = connection.activeOwners || [];
+    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner) && boundOwners.includes(owner), ttlMs: 90000 });
+  };
+  // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
+  const libOwnerAbsentUntil = new Map();
+  // Owners whose selection this response run holds and has not yet reported an outcome for.
+  const libOwnersAwaitingDelivery = new Set();
+  const failUndeliveredLibOwners = code => { for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'failed', code); libOwnersAwaitingDelivery.clear(); };
+  const selectLibOwnerRecall = async (owner, scope, queryText, signal) => {
+    if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
+    let answer;
+    // A refusal or timeout here costs only this owner, and it is asked again next turn.
+    try { answer = await libOwnerReader().select(owner, scope, queryText, signal); }
+    catch (error) {
+      if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '') || signal?.aborted) throw error;
+      const code = libOwnerFailureCode(error);
+      noteLibOwnerLost(owner, code);
+      return { absent: true, code };
+    }
+    if (answer.absent) { libOwnerAbsentUntil.set(owner, Date.now() + 60000); reportLibOwnerDelivery(owner, 'failed', answer.code || 'LIB_READ_IPC_UNAVAILABLE'); } else libOwnerAbsentUntil.delete(owner);
+    return answer;
+  };
+  const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
 
   const runPipeline = async (messages, type, settings) => {
     const pipelineStartedAt = Date.now();
@@ -39619,7 +37689,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (libReadBinding) {
           const incoming = messages, incomingSignature = JSON.stringify(incoming);
           const settingsSignature = requestSettingsSignature(settings), runtimeSignature = requestSettingsSignature(Runtime.settings || {});
-          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope);
+          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope,
+            {forceHostRead:LibReadConnection.status().state === 'connected'});
           nativeBinding = { ...bound, assertLocal() {
             if (JSON.stringify(incoming) !== incomingSignature || requestSettingsSignature(settings) !== settingsSignature
               || requestSettingsSignature(Runtime.settings || {}) !== runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
@@ -39657,12 +37728,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
     const libReadStartedAt = Date.now();
-    const libReadSession = await openLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, null, nativeBinding);
+    const libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
     const usesLibEvidence = libReadSession.status === 'ready';
     // Owner-side failures are mapped to a single code at the read boundary. Keep
     // the attempt record so an "unavailable" turn can say which boundary failed
     // and how long it spent instead of only that no evidence arrived.
-    Runtime.lastLibReadDiagnostic = Object.freeze({ at: Date.now(), purpose: 'response_evidence',
+    Runtime.lastLibReadDiagnostic = Object.freeze({ ...Runtime.lastLibReadDiagnostic, at: Date.now(), purpose: 'response_evidence',
       status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
       connection: LibReadConnection.status(),
       elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
@@ -39675,7 +37746,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
 
-    // v0.25.16: Arc Director is maintenance-only. It updates Story Arc DB on completed 5-turn boundaries;
     // it is not a normal draft stage and never supervises SHADOW/AIDEs. SHADOW and Input Manager only read the DB.
     ;
     risuSnapshot = null;
@@ -39802,7 +37872,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         referenceCapacity: sharedRisuContext.referenceCapacity || null,
         meta: sharedRisuContext.meta
       };
-      // v0.25.66: decide prompt caching by the exact rendered shared-prefix hash, not by
       // whether one individual stage happens to make two calls. Lightweight SHADOW/World/Plot
       // frequently reuse the same 80k+ prefix and should share one cache entry (a Gemini
       // CachedContent resource, an OpenAI/Anthropic prefix breakpoint), while a
@@ -39982,71 +38051,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       timing.totalMs = timing.modelCompletedAt - timing.prepareStartedAt;
     };
 
-    const prepareRisuEngineRecent = async (seedRecent, presetSourceStage) => {
-      const refs = stageRisuRefsByStage[presetSourceStage] || sharedRisuRefs || defaultRisuReferencesForStage('shadow_act');
-      const scopedSettings = {
-        ...settings,
-        sharedReferencePromptCacheEnabled: promptCachePlan[RISU_ENGINE_STAGE]?.enabled === true,
-        activeStageName: RISU_ENGINE_STAGE,
-        activeStageOptions: {
-          maxChars: Math.max(settings.maxRecentChars || DEFAULT_MAX_RECENT_CHARS, settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS),
-          turnWindow: settings.turnWindow || DEFAULT_RECENT_TURNS,
-          timeoutMs: settings.stageTimeoutMs || DEFAULT_STAGE_TIMEOUT_MS,
-          risuRefs: refs
-        }
-      };
-      const builtRecent = buildRecentChat(messages, scopedSettings);
-      const recent = {
-        ...builtRecent,
-        sceneAnchor: seedRecent?.sceneAnchor || builtRecent.sceneAnchor,
-        previousResponseEvidence: seedRecent?.previousResponseEvidence || builtRecent.previousResponseEvidence,
-        runLineage
-      };
-      attachInputAssistContinuityState(recent, settings);
-      const contextStartedAt = Date.now();
-      const risuContext = materializeSharedRisuContext(sharedRisuContext, recent, scopedSettings, refs);
-      const contextElapsedMs = Date.now() - contextStartedAt;
-      risuSnapshot = risuContext.snapshot || risuSnapshot;
-      const stageReferenceRetryState = makeStageReferenceRetryState(risuContext);
-      stageReferenceRetryStates[RISU_ENGINE_STAGE] = stageReferenceRetryState;
-      recent.risuContext = risuContext.block || seedRecent?.risuContext || '';
-      recent.referencePacketBlock = stageReferenceRetryState?.block || risuContext.referencePacketBlock || seedRecent?.referencePacketBlock || recent.risuContext;
-      recent.referencePacket = stageReferenceRetryState?.packet || risuContext.referencePacket || seedRecent?.referencePacket || null;
-      recent.referencePacketHash = stageReferenceRetryState?.hash || risuContext.referencePacketHash || seedRecent?.referencePacketHash || '';
-      recent.referenceCapacity = risuContext.referenceCapacity || seedRecent?.referenceCapacity || null;
-      recent.risuContextMeta = risuContext.meta || seedRecent?.risuContextMeta || {};
-      recent.risuActiveLore = risuContext.activeLore || seedRecent?.risuActiveLore || [];
-      recent.risuSelectedLoreCandidates = risuContext.selectedCandidates || seedRecent?.risuSelectedLoreCandidates || [];
-      recent.risuMemory = '';
-      scopedSettings.ragCbsContext = risuContext.cbsContext || risuSnapshot?.cbsContext || null;
-      scopedSettings.ragRouteVersion = RAG_ROUTE_VERSION;
-      scopedSettings.referencePacket = recent.referencePacket;
-      scopedSettings.sharedReferenceRetryState = stageReferenceRetryState;
-      scopedSettings.sharedReferencePromptBlock = recent.referencePacketBlock;
-      scopedSettings.sharedReferencePromptHash = recent.referencePacketHash;
-      stageRecents[RISU_ENGINE_STAGE] = recent;
-      Runtime.lastRisuContext.stages[RISU_ENGINE_STAGE] = {
-        block: recent.risuContext,
-        referencePacketHash: recent.referencePacketHash,
-        selectionHash: recent.referencePacket?.selectionHash || '',
-        packedHash: recent.referencePacket?.packedHash || '',
-        meta: recent.risuContextMeta,
-        presetSourceStage
-      };
-      Runtime.lastRisuContext.last = Runtime.lastRisuContext.stages[RISU_ENGINE_STAGE];
-      Runtime.pipelineTimings.sharedContext.reusedByStages.push(RISU_ENGINE_STAGE);
-      Runtime.pipelineTimings.stages[RISU_ENGINE_STAGE] = {
-        prepareStartedAt: contextStartedAt,
-        preparedAt: Date.now(),
-        prepareMs: Date.now() - contextStartedAt,
-        contextMaterializeMs: contextElapsedMs,
-        sharedContextReused: true,
-        modelStartedAt: 0,
-        modelCompletedAt: 0,
-        modelMs: 0
-      };
-      return { recent, settings: scopedSettings };
-    };
 
     const shadowEnv = await prepareStage('shadow_act', null);
     const multiPipelineMode = normalizeMultiPipelineMode(settings.multiPipelineMode);
@@ -40261,6 +38265,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(finalBodyIssue === 'refusal' ? { refusalDraftChars: boundFinalDraft.length } : {}) };
     }
     let injection = suppressedReason ? '' : buildFinalOverlay(current, stages, finalRecent, settings);
+    // The memory the draft used also reaches the response model, unless its owner turned that off.
+    const ownerRecallItems = usesLibEvidence ? [...(libReadSession.evidencePacket?.items || [])] : [];
+    const finalRecallBlockNow = () => ownerRecallItems.filter(item => item.source?.finalDelivery !== false && !libOwnersLost.has(item.owner)).map(item => String(item.content || '').trim()).filter(Boolean).join('\n\n');
+    const finalRecallBlock = finalRecallBlockNow();
     if (usesLibEvidence && !suppressedReason) {
       await libReadSession.finalize(boundFinalDraft);
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
@@ -40271,6 +38279,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       reason: suppressedReason,
       injection,
       externalEvidence: usesLibEvidence,
+      finalRecallBlock,
+      finalRecallBlockNow,
+      ownerRecallItems,
       finalizeHandoff: usesLibEvidence ? async () => {
         const final = await libReadSession.finalize(injection);
         await libReadSession.assertCurrent();
@@ -40318,7 +38329,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const beforeRequest = async (messages, type) => {
-    if (isMainNarrativeRequest(type)) closeInputWriterEvidence('LIB_READ_SUPERSEDED');
+    if (isMainNarrativeRequest(type)) await announceLibReads(Runtime.settings || await loadSettings().catch(() => null));
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
@@ -40582,6 +38593,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.lastProviderError = null;
 
     const startedAt = Date.now();
+    libOwnersAwaitingDelivery.clear();
+    libOwnersLost.clear();
+    const libRunConnection = LibReadConnection.status();
+    if (libRunConnection.state === 'connected' && libRunConnection.readSource !== 'off') for (const owner of libRunConnection.draftReadOwners || LIB_READ_OWNERS) libOwnersAwaitingDelivery.add(owner);
     try {
       const result = await runPipeline(messages, type, requestSettings);
       const suppressionMeta = Runtime.finalDraftMeta?.suppressed === result.reason ? {
@@ -40603,10 +38618,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();
-          const injected = injectSystemMessage(messages, injection, requestSettings);
+          const recallBlock = result.finalRecallBlockNow();
+          const injected = injectSystemMessage(messages, recallBlock ? `${injection}\n\n<MEMORY_RECALL>\n${recallBlock}\n</MEMORY_RECALL>` : injection, requestSettings);
           if (!verifyOriginalMessagePreservation(messages, injected).preserved) throw libEvidenceError('LIB_READ_TRANSPORT_CHANGED');
           Runtime.last = { at: Date.now(), ok: true, externalEvidence: true, stageCount: result.stages.length };
           result.assertHandoffLocalCurrent();
+          for (const item of result.ownerRecallItems) { if (libOwnersLost.has(item.owner)) continue; reportLibOwnerDelivery(item.owner, item.source?.finalDelivery === false ? 'draft_only' : 'final_delivered'); libOwnersAwaitingDelivery.delete(item.owner); }
+          for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'empty');
+          libOwnersAwaitingDelivery.clear();
           libEvidenceResponseRedactionRequired = true;
           return injected;
         } finally { result.closeEvidence(); }
@@ -40680,6 +38699,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (activeLibEvidenceRun) activeLibEvidenceRun.close();
         purgeLibEvidenceRuntime();
         Runtime.last = { at: Date.now(), ok: false, reason: error.code };
+        Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
+          at:Date.now(),purpose:'response_evidence',status:'failed',code:error.code,...libReadFailureDetails(error)});
+        await finishPipelineWorkStatus('기억 근거 검증에 실패해 GRADIA 작업을 중단했습니다. '+error.code, false, 6000, 'pipeline_error');
         throw error;
       }
       warn('beforeRequest failed', error);
@@ -40694,6 +38716,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (settings.failureMode === 'hard') throw error;
       return messages;
     } finally {
+      failUndeliveredLibOwners(String(Runtime.last?.reason || 'LIB_READ_DRAFT_UNAVAILABLE'));
       Runtime.inFlight = false;
       finishCallTelemetry(Runtime.last?.ok === false ? 'failed' : 'completed');
       scheduleGuiTraceRefresh();
@@ -40871,20 +38894,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const GUI_PAGE_IDS = Object.freeze(GUI_PAGE_REGISTRY.map(item => item.id));
   const guiPageDefinition = pageId => GUI_PAGE_REGISTRY.find(item => item.id === pageId) || GUI_PAGE_REGISTRY[0];
 
-  const guiPageDisplayDefinition = (page, writingMode = currentWritingModeFromGui()) => {
-    if (!page) return page;
-    if (writingMode !== 'rp') return page;
-    const overrides = {
-      overview: { label: 'RP 개요', description: '유저 행동 불가침과 현재 반응 파이프라인 상태' },
-      quick: { label: 'RP 빠른 설정', description: 'RP 전용 선택지·반응 파이프라인 핵심 설정' },
-      input: { label: '행동 선택지', description: '선택형 유저 행동 제안 또는 직접 입력' },
-      pipeline: { label: 'RP 반응 파이프라인', description: 'SHADOW ACT와 AIDE의 NPC·세계 반응 작성' },
-      ooc: { label: '연출 지침 OOC', description: '유저 행동을 침범하지 않는 단계별 연출 지침' },
-      arc: { label: '서사 연속성', description: 'Story Arc 연속성 가드와 NPC·세계 소프트 방향' },
-      output: { label: 'RP 최종 응답', description: '유저 행동 불가침을 유지한 최종 합성' }
-    };
-    return overrides[page.id] ? { ...page, ...overrides[page.id] } : page;
-  };
 
   const normalizeGuiRoute = (tab = 'flow', section = 'overview') => {
     const key = text(section || '').trim() || 'overview';
@@ -41102,6 +39111,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     inputAssistTargetChars: normalizeInputAssistTargetChars(settings.inputAssistTargetChars),
     inputAssistConfirmationMode: normalizeChoice(settings.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
     novelInputAssistMode: normalizeChoice(settings.novelInputAssistMode || (settings.writingMode === 'rp' ? 'off' : settings.inputAssistMode) || 'off', INPUT_ASSIST_MODES, 'off'),
+    rpImpersonationScope: normalizeRpImpersonationScope(settings.rpImpersonationScope),
+    memoryBudgetChars: Number(settings.memoryBudgetChars) >= 1000 ? Number(settings.memoryBudgetChars) : null,
     rpInputAssistMode: normalizeChoice(settings.rpInputAssistMode || (settings.writingMode === 'rp' ? settings.inputAssistMode : 'user_focus') || 'user_focus', ['off', 'user_focus'], 'user_focus'),
     novelInputAssistScope: normalizeChoice(settings.novelInputAssistScope || (settings.writingMode === 'rp' ? 'full_pipeline' : settings.inputAssistScope) || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
     novelInputAssistConfirmationMode: normalizeChoice(settings.novelInputAssistConfirmationMode || (settings.writingMode === 'rp' ? 'direct' : settings.inputAssistConfirmationMode) || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
@@ -41247,12 +39258,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (Number(slot.turnWindow) !== Number(profile.turnWindow)) return false;
       if (Number(slot.maxChars) !== Number(profile.maxChars)) return false;
     }
+    if (runtime.memoryBudgetChars != null && Number(runtime.memoryBudgetChars) !== MEMORY_PROFILE_CAPS[profileId]) return false;
     return true;
   };
 
   const inferQuickProfileFromGuiState = (runtime = {}, agents = {}) => {
     const stored = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
-    if (stored !== 'custom') return stored;
+    if (stored !== 'custom' && quickProfileMatchesGuiState(stored, runtime, agents)) return stored;
     return ['fast', 'balanced', 'quality'].find(profileId => quickProfileMatchesGuiState(profileId, runtime, agents)) || 'custom';
   };
 
@@ -41429,23 +39441,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 
 
-  const builtInStageSystem = (stageId, settings = {}) => builtInStagePrompt(
-    stageId,
-    { text: '{{recent_chat}}', latestUser: '{{latest_user}}', latestAssistant: '{{latest_assistant}}' },
-    null,
-    {
-      mode: settings.mode || 'normal',
-      gradationMode: settings.gradationMode || 'full_draft',
-      outputMode: normalizeChoice(settings.outputMode || 'draft_guided', OUTPUT_MODES, 'draft_guided'),
-      writingMode: normalizeWritingMode(settings.writingMode, writingModeFromDraftMode(settings.shadowDraftMode)),
-      shadowDraftMode: normalizeShadowDraftMode(settings.shadowDraftMode),
-      internalDraftLanguage: normalizeInternalDraftLanguage(settings.internalDraftLanguage),
-      builtInStylePreset: normalizeBuiltInStylePreset(settings.builtInStylePreset),
-      maxRecentChars: settings.maxRecentChars || DEFAULT_MAX_RECENT_CHARS,
-      maxPreviousStageChars: settings.maxPreviousStageChars || DEFAULT_MAX_PREVIOUS_STAGE_CHARS,
-      beforeExtraPrompts: settings.beforeExtraPrompts || {}
-    }
-  ).system;
 
 
   
@@ -41481,6 +39476,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ? (normalizeChoice(runtime.rpInputAssistMode || runtime.inputAssistMode || 'off', ['off', 'user_focus'], 'off') === 'off' ? 'direct' : 'confirm')
           : normalizeChoice(runtime.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
         novel_input_assist_mode: normalizeChoice(runtime.novelInputAssistMode || 'off', INPUT_ASSIST_MODES, 'off'),
+        rp_impersonation_scope: normalizeRpImpersonationScope(runtime.rpImpersonationScope),
+        ...(Number(runtime.memoryBudgetChars) >= 1000 ? { memory_budget_chars: String(Math.min(Number(runtime.memoryBudgetChars), REFERENCE_BUDGET_CUSTOM_MAX_CHARS)) } : {}),
         rp_input_assist_mode: normalizeChoice(runtime.rpInputAssistMode || (runtime.writingMode === 'rp' ? runtime.inputAssistMode : 'user_focus') || 'user_focus', ['off', 'user_focus'], 'user_focus'),
         novel_input_assist_scope: normalizeChoice(runtime.novelInputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
         novel_input_assist_confirmation_mode: normalizeChoice(runtime.novelInputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
@@ -41667,7 +39664,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}";
   const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>"};
-  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s0\" id=\"mini-s0\" data-go=\"pipeline\">인풋 관리자 · 사용 안 함</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" data-go=\"pipeline\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>속도와 품질</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">속도·품질 프로필을 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3 data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h3><p data-novel=\"전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).\" data-rp=\"직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다. 후보는 제안일 뿐 유저의 확정 행동이 아닙니다.\">전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).</p></div>\n          <div class=\"choices\" id=\"q-input\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b data-novel=\"사용 안 함\" data-rp=\"직접 입력\">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class=\"choice\"><b data-novel=\"사용\" data-rp=\"행동 3가지 제안\">사용</b><span data-novel=\"세부 방식은 ‘파이프라인’에서 바꿉니다.\" data-rp=\"NPC 반응·성공·결과는 미리 정하지 않습니다.\">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>속도와 품질 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>최근 문맥과 분석 깊이를 단계별로 함께 조정합니다. 전문가 설정을 직접 바꾸면 “직접 조정”으로 표시됩니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>빠르게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형 있게</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>꼼꼼하게</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 분량이 유저 행동을 추가할 권한이 되지 않습니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          <button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">사용 안 함</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\"><b>원본 입력</b>을 그대로 보내거나, 유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 직접 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            <div class=\"choices\" id=\"inp-mode\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b>사용 안 함</b><span>원본 입력을 그대로 전달 · 추가 호출 없음</span></button><button class=\"choice\"><b data-novel=\"사용 (세 관점 후보)\" data-rp=\"사용 (행동 후보 3개)\">사용 (세 관점 후보)</b><span>전송 전 후보 선택 화면이 열립니다.</span></button></div>\n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><div class=\"banner banner--warn\" style=\"margin:10px 0\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>정보 전달</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 + 기본 지시 (draft_only)</b><span>단계 분석은 메인 응답에 전달하지 않습니다.</span></button></div><span class=\"hint\">현재 화면에서 고를 수 있는 전달 방식은 이 한 가지입니다.</span></div>\n            <div class=\"field\"><label>응답 마무리</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 기반 마무리 (draft_guided)</b><span>최종 AI가 초안을 바탕으로 마무리합니다.</span></button></div></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback의 현재 채팅 서버 기억을 읽습니다. 쓰기 권한은 없습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>연결됨 · 3개 생산자</span></span></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>서버 URL</label><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:8787\"></div><dl class=\"kv\" style=\"align-self:end\"><dt>활성 읽기</dt><dd>LIBRA · HAYAKU · Flashback</dd><dt>코퍼스</dt><dd>128개 / 1.4 MiB (한도 4 MiB)</dd></dl></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결</button><button class=\"btn\" id=\"lib-disconnect\">연결 해제</button><button class=\"btn\" id=\"lib-check\">현재 기억 연결 확인</button></div>\n        <div class=\"state-grid\" style=\"margin-top:12px\">\n          <div><b>서버 연결</b><span id=\"lib-state\">✓ 연결됨 (읽기 전용)</span></div>\n          <div><b>활성 읽기 대상</b>LIBRA · HAYAKU · Flashback<br><span class=\"hint\">Flashback: 현재 채팅 scope가 아직 없어 읽을 수 없음 (표본)</span></div>\n          <div><b>현재 채팅 scope</b>아스텔 / 에피소드 42 · 채팅이 바뀌면 다시 연결하세요</div>\n          <div><b>단계 모델 호환</b>⚠ <b style=\"display:inline;color:var(--warn-ink)\">검증 조합 아님</b><br><span class=\"hint\">현재 SHADOW 모델 <span id=\"src-shadow-model\">claude-sonnet</span></span></div></div>\n        <div class=\"note note--warn\" style=\"margin-top:12px\"><b>연결됨 ≠ 생성 호환.</b> 기억을 포함한 생성의 검증 조합은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18입니다. 연결이 성공해도 다른 모델은 이 조합으로 검증되지 않았습니다. 서버 URL을 바꾸거나, 가져오기·연결 해제를 하면 읽기 <b>동의가 초기화</b>됩니다.</div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"i\">입력 도우미</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"s\">SHADOW ACT</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\">폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯</button></div>\n      <div data-subpanel=\"i\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div>\n      <div data-subpanel=\"s\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s0\" id=\"mini-s0\" data-go=\"pipeline\">인풋 관리자 · 사용 안 함</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" data-go=\"pipeline\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3 data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h3><p data-novel=\"전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).\" data-rp=\"직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다. 후보는 제안일 뿐 유저의 확정 행동이 아닙니다.\">전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).</p></div>\n          <div class=\"choices\" id=\"q-input\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b data-novel=\"사용 안 함\" data-rp=\"직접 입력\">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class=\"choice\"><b data-novel=\"사용\" data-rp=\"행동 3가지 제안\">사용</b><span data-novel=\"세부 방식은 ‘파이프라인’에서 바꿉니다.\" data-rp=\"NPC 반응·성공·결과는 미리 정하지 않습니다.\">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          <button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">사용 안 함</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\"><b>원본 입력</b>을 그대로 보내거나, 유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 직접 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            <div class=\"choices\" id=\"inp-mode\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b>사용 안 함</b><span>원본 입력을 그대로 전달 · 추가 호출 없음</span></button><button class=\"choice\"><b data-novel=\"사용 (세 관점 후보)\" data-rp=\"사용 (행동 후보 3개)\">사용 (세 관점 후보)</b><span>전송 전 후보 선택 화면이 열립니다.</span></button></div>\n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><div class=\"banner banner--warn\" style=\"margin:10px 0\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>정보 전달</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 + 기본 지시 (draft_only)</b><span>단계 분석은 메인 응답에 전달하지 않습니다.</span></button></div><span class=\"hint\">현재 화면에서 고를 수 있는 전달 방식은 이 한 가지입니다.</span></div>\n            <div class=\"field\"><label>응답 마무리</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 기반 마무리 (draft_guided)</b><span>최종 AI가 초안을 바탕으로 마무리합니다.</span></button></div></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback의 현재 채팅 서버 기억을 읽습니다. 쓰기 권한은 없습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>연결됨 · 3개 생산자</span></span></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>서버 URL</label><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:8787\"></div><dl class=\"kv\" style=\"align-self:end\"><dt>활성 읽기</dt><dd>LIBRA · HAYAKU · Flashback</dd><dt>코퍼스</dt><dd>128개 / 1.4 MiB (한도 4 MiB)</dd></dl></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결</button><button class=\"btn\" id=\"lib-disconnect\">연결 해제</button><button class=\"btn\" id=\"lib-check\">현재 기억 연결 확인</button></div>\n        <div class=\"state-grid\" style=\"margin-top:12px\">\n          <div><b>서버 연결</b><span id=\"lib-state\">✓ 연결됨 (읽기 전용)</span></div>\n          <div><b>활성 읽기 대상</b>LIBRA · HAYAKU · Flashback<br><span class=\"hint\">Flashback: 현재 채팅 scope가 아직 없어 읽을 수 없음 (표본)</span></div>\n          <div><b>현재 채팅 scope</b>아스텔 / 에피소드 42 · 채팅이 바뀌면 다시 연결하세요</div>\n          <div><b>단계 모델 호환</b>⚠ <b style=\"display:inline;color:var(--warn-ink)\">검증 조합 아님</b><br><span class=\"hint\">현재 SHADOW 모델 <span id=\"src-shadow-model\">claude-sonnet</span></span></div></div>\n        <div class=\"note note--warn\" style=\"margin-top:12px\"><b>연결됨 ≠ 생성 호환.</b> 기억을 포함한 생성의 검증 조합은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18입니다. 연결이 성공해도 다른 모델은 이 조합으로 검증되지 않았습니다. 서버 URL을 바꾸거나, 가져오기·연결 해제를 하면 읽기 <b>동의가 초기화</b>됩니다.</div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"i\">입력 도우미</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"s\">SHADOW ACT</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\">폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯</button></div>\n      <div data-subpanel=\"i\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div>\n      <div data-subpanel=\"s\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
 
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -41886,11 +39883,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     guiEl('label', { text: label }), control, note ? guiEl('small', { text: note }) : null
   ]);
 
-  const inputAssistConfirmationEnabled = settings => (
-    isAuthorDirectedDraftMode(settings)
-      ? normalizeChoice(settings?.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off'
-      : normalizeChoice(settings?.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct') === 'confirm'
-  );
 
   const recordInputAssistConfirmationDecision = (decision, selected) => {
     const selectedText = text(selected || '');
@@ -42118,7 +40110,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   } = {}) => {
     const initialOriginal = text(original || '').trim();
     let currentChoices = Array.isArray(choices) ? choices.map(item => ({ ...item })).filter(item => text(item?.brief).trim()) : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || source === 'explicit_input_writer';
     if (typeof document === 'undefined') {
       // Never auto-select an AI proposal in headless mode. Preserve the user's own
       // authored direction when available; explicit continuation without UI cancels.
@@ -42238,7 +40230,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
-        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -42296,12 +40287,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       const cancelDialog = () => finish('cancelled', '', null);
-      if (onValidate) inputWriterDialogCancel = cancelDialog;
+      inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: 'RP 행동 선택' }),
-          guiEl('p', { 'data-input-memory-notice': '', text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
+          guiEl('p', { text: '인풋 도우미는 유저가 할 수 있는 행동만 제안합니다. 선택한 항목만 유저 입력이 되고, NPC·세계 반응은 이후 GRADIA가 작성합니다.' })
         ]),
         closeButton
       ]));
@@ -42361,7 +40352,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let currentChoices = Array.isArray(choices)
       ? choices.map(item => ({ ...item })).filter(item => text(item?.input).trim())
       : [];
-    const sourceIsExplicitContinue = source === 'explicit_continue_button' || typeof onValidate === 'function';
+    const sourceIsExplicitContinue = source === 'explicit_continue_button' || source === 'explicit_input_writer';
     if (typeof document === 'undefined') {
       // Never auto-select an AI candidate without an interactive picker.
       if (initialOriginal) {
@@ -42480,7 +40471,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       };
       const renderCards = () => {
-        refreshInputAssistMemoryNotice(app);
         if (typeof bodyNode.replaceChildren === 'function') bodyNode.replaceChildren();
         else while (bodyNode.firstChild) bodyNode.removeChild(bodyNode.firstChild);
         if (initialOriginal) {
@@ -42542,12 +40532,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (typeof onRegenerate !== 'function') regenerateButton.disabled = true;
       closeButton.addEventListener('click', () => { void close(); });
       const cancelDialog = () => finish('cancelled', '', null);
-      if (onValidate) inputWriterDialogCancel = cancelDialog;
+      inputWriterDialogCancel = cancelDialog;
       document.addEventListener('keydown', keyHandler);
       app.appendChild(guiEl('div', { class: 'page-head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: '소설 모드 · 인풋 선택' }),
-          guiEl('p', { 'data-input-memory-notice': '', text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
+          guiEl('p', { text: '주인공 중심 · 현장 인물 중심 · 세계/외부 인물 중심의 세 작가 관점을 비교하고, 이번 턴에 사용할 입력을 직접 고릅니다.' })
         ]),
         closeButton
       ]));
@@ -42961,20 +40951,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return slot.presetName || Gui.state?.runtime?.defaultPresetName || 'default';
   };
 
-  const resolvedModelBehaviorForStageInGui = stageId => {
-    const presetName = resolvedPresetNameForStage(stageId);
-    const preset = Gui.state?.providers?.[presetName] || Gui.state?.providers?.default || {};
-    const family = detectModelBehaviorFamily(preset);
-    return {
-      family,
-      label: MODEL_BEHAVIOR_FAMILY_LABELS[family] || MODEL_BEHAVIOR_FAMILY_LABELS.generic
-    };
-  };
 
-  const isStageConfiguredInGui = stageId => {
-    const name = resolvedPresetNameForStage(stageId);
-    return providerConfigured(Gui.state?.providers?.[name] || Gui.state?.providers?.default || {});
-  };
 
   const uniquePresetName = (base = '새 프리셋') => {
     const bank = Gui.state?.providers || {};
@@ -43009,24 +40986,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     markGuiDirty();
   };
 
-  const deleteGuiPreset = () => {
-    const names = presetNamesFromState();
-    if (names.length <= 1) throw new Error('최소 1개의 프로바이더 프리셋은 남겨야 합니다.');
-    const target = Gui.selectedPreset;
-    delete Gui.state.providers[target];
-    const fallback = Gui.state.providers.default ? 'default' : Object.keys(Gui.state.providers)[0];
-    if (Gui.state.runtime.defaultPresetName === target) Gui.state.runtime.defaultPresetName = fallback;
-    const beforeSlots = BEFORE_STAGE_DEFS.map(def => Gui.state.agents?.[def.id]).filter(Boolean);
-    for (const slot of beforeSlots) {
-      if (slot.presetName === target) slot.presetName = '';
-    }
-    Gui.selectedPreset = fallback;
-    markGuiDirty();
-  };
 
   const isVertexProvider = (provider) => ['vertex', 'vertex-openai'].includes(canonicalProvider(provider));
 
-  const inferReasoningFamily = (preset = {}) => effectiveReasoningFamilyForPreset(preset);
 
   const applyVertexCredentialsToPreset = (preset, rawText, allowPlainToken = false) => {
     const raw = text(rawText || '').trim();
@@ -43049,24 +41011,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return { kind: parsed.access_token || parsed.token ? 'access_token_json' : 'service_account_json', projectId, location };
   };
 
-  const providerPresetUsageLabels = presetName => {
-    const name = text(presetName || '').trim();
-    if (!name) return [];
-    const labels = [];
-    if (text(Gui.state?.runtime?.defaultPresetName || '').trim() === name) labels.push('기본');
-    for (const def of CONFIGURABLE_STAGE_DEFS) {
-      if (text(Gui.state?.agents?.[def.id]?.presetName || '').trim() !== name) continue;
-      labels.push(def.id === 'shadow_act' ? 'SHADOW'
-        : def.id === 'aide_character' ? '인물'
-          : def.id === 'aide_world' ? '세계'
-            : def.id === 'aide_plot' ? '플롯'
-              : def.id === INPUT_ASSIST_STAGE_ID ? 'Input'
-                : def.id === ARC_DIRECTOR_STAGE_ID ? 'Arc'
-                  : def.id === USER_INTENT_OOC_STAGE_ID ? 'OOC'
-                    : def.label);
-    }
-    return Array.from(new Set(labels));
-  };
 
   const latestTraceForStage = (stageId) => {
     const traces = Runtime.stageTrace;
@@ -43113,55 +41057,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return { label: '실패', className: 'danger', elapsed, title: reason || '최근 실행이 실패했습니다.' };
   };
 
-  const resultListText = (items) => {
-    if (!items) return '';
-    if (!Array.isArray(items)) return typeof items === 'object' ? JSON.stringify(items, null, 2) : text(items);
-    return items.map((item, index) => {
-      if (item == null) return '';
-      if (typeof item === 'string') return `- ${item}`;
-      if (typeof item !== 'object') return `- ${text(item)}`;
-      const body = [item.type || item.kind || `#${index + 1}`, item.reason || item.summary || item.evidence || '', item.change || item.fix || item.note || ''].filter(Boolean).join(' | ');
-      return `- ${body}`;
-    }).filter(Boolean).join('\n');
-  };
 
-  const resultFindingsText = (items) => {
-    if (!Array.isArray(items)) return resultListText(items);
-    return items.map((item, index) => {
-      if (item == null) return '';
-      if (typeof item !== 'object') return `- ${text(item)}`;
-      const head = [item.severity, item.type || item.category || `finding_${index + 1}`].filter(Boolean).join(' / ');
-      const detail = [item.evidence, item.fix || item.change].filter(Boolean).join(' -> ');
-      return `- ${head}${detail ? `: ${detail}` : ''}`;
-    }).filter(Boolean).join('\n');
-  };
 
-  const traceJsonForDisplay = (def, trace, parsed) => {
-    const base = {
-      stage: def.id,
-      label: def.label,
-      ok: trace.ok,
-      reason: trace.reason || parsed?.reason || '',
-      elapsedMs: trace.elapsedMs || 0,
-      provider: trace.provider || '',
-      presetName: trace.presetName || '',
-      model: trace.model || ''
-    };
-    const values = parsed?.analysisOnly ? {
-      summary: parsed.summary || parsed.analysis?.summary || '',
-      constraints: parsed.constraints || parsed.analysis?.constraints || [],
-      risks: parsed.risks || parsed.analysis?.risks || [],
-      notes: parsed.notes || parsed.draft?.notes || [],
-      handoff: parsed.handoff || ''
-    } : {
-      analysis: parsed?.analysis || {},
-      edits: parsed?.edits || [],
-      change_log: parsed?.change_log || [],
-      draft: parsed?.draft || {},
-      final_overlay: parsed?.final_overlay || null
-    };
-    return JSON.stringify({ status: base, materials_used: trace?.materialsUsed || null, values }, null, 2);
-  };
 
   const executionResultTracesForStage = stageId =>
     (Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
@@ -43202,29 +41099,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     || null
   );
 
-  const stageMaterialUsageSummaryText = usage => {
-    if (!usage) return '';
-    const refs = Array.isArray(usage.referenceMaterials) ? usage.referenceMaterials : [];
-    const contexts = Array.isArray(usage.contextMaterials) ? usage.contextMaterials : [];
-    const skills = Array.isArray(usage.skillMaterials) ? usage.skillMaterials : [];
-    const counts = usage.counts || {};
-    const kindSummary = Object.entries(counts.byKind || {})
-      .filter(([, count]) => Number(count) > 0)
-      .map(([kind, count]) => `${stageMaterialKindLabel(kind)} ${count}`)
-      .join(' · ');
-    const names = refs.slice(0, 12).map(item => item.label).filter(Boolean);
-    const contextNames = contexts.map(item => item.label).filter(Boolean);
-    return [
-      `직접 참조 자료 ${refs.length}개${kindSummary ? ` · ${kindSummary}` : ''}`,
-      names.length ? `사용 자료: ${names.join(', ')}${refs.length > names.length ? ` 외 ${refs.length - names.length}개` : ''}` : '직접 주입된 참조 자료 없음',
-      contextNames.length ? `함께 사용된 문맥: ${contextNames.join(', ')}` : '',
-      usage.qualityRules?.length ? `기본 품질 규칙: ${usage.qualityRules.length}개 · 항상 적용` : '',
-      skills.length ? `적용 Skill: ${skills.map(item => item.label).filter(Boolean).join(', ')}` : '',
-      usage.referenceBudget
-        ? `참조 예산: ${Number(usage.referenceBudget.usedChars || 0).toLocaleString()} / ${Number(usage.referenceBudget.effectiveBudgetChars || 0).toLocaleString()}자${Number(usage.referenceBudget.omittedChars || 0) > 0 ? ` · 예산으로 미주입 ${Number(usage.referenceBudget.omittedChars || 0).toLocaleString()}자` : ''}`
-        : ''
-    ].filter(Boolean).join('\n');
-  };
 
   const stageMaterialUsageFullText = usage => {
     if (!usage) return '(사용 자료 기록 없음)';
@@ -43307,6 +41181,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       slot.turnWindow = profile.turnWindow;
       slot.maxChars = profile.maxChars;
     }
+    runtime.memoryBudgetChars = MEMORY_PROFILE_CAPS[effectiveProfileId];
     return { runtime, agents };
   };
 
@@ -43318,22 +41193,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const applyQuickStageProviderToGui = (stageId, presetName) => {
-    const agents = Gui.state.agents || (Gui.state.agents = {});
-    const slot = agents[stageId] || (agents[stageId] = {});
-    slot.presetName = compact(presetName || '', 120);
-    // 단계별 AI 연결은 속도/품질 프로필과 독립된 쉬운 설정입니다.
-    setTimeout(() => renderSettingsGui(), 0);
-  };
 
-  const applyQuickTurnWindowToGui = value => {
-    const turns = clampInt(value, 1, 64, 8);
-    for (const def of BEFORE_STAGE_DEFS) {
-      if (Gui.state.agents?.[def.id]) Gui.state.agents[def.id].turnWindow = turns;
-    }
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const simpleLengthChoiceForRange = (min, max) => SIMPLE_LENGTH_CHOICES.find(choice =>
     Number(min) === choice.min && Number(max) === choice.max
@@ -43359,21 +41219,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const simplePriorityIdForOrder = value => {
-    const normalized = aideOrderValue(value);
-    for (const [id, def] of Object.entries(SIMPLE_PRIORITY_DEFS)) {
-      if (aideOrderValue(def.order) === normalized) return id;
-    }
-    return 'custom';
-  };
 
-  const applySimplePriorityToGui = priorityId => {
-    const def = SIMPLE_PRIORITY_DEFS[priorityId] || SIMPLE_PRIORITY_DEFS.character;
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.aideStageOrder = normalizeAideStageOrder(def.order);
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const applySimpleOutputToGui = mode => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -43469,12 +41315,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     renderSettingsGui();
   };
 
-  const applyLoreActivationModeToGui = mode => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.loreActivationMode = UNIFIED_LORE_ACTIVATION_MODE;
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const applyMultiPipelineModeToGui = mode => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -43574,7 +41414,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         guiEl('div', { class: 'note' }, [guiEl('span', { text: '인풋 관리자' }), guiEl('strong', { text: '입력 재작성 가능' }), guiEl('b', { text: `선택 사용 · 유저 행동 ${AUTHOR_DIRECTED_INPUT_CHOICE_TARGET}개 제안 · 직접 선택` })]),
         guiEl('div', { class: 'note' }, [guiEl('span', { text: 'SHADOW ACT' }), guiEl('strong', { text: '다음 장면 창작' }), guiEl('b', { text: '유저 행동 이후 NPC·세계 자율 전개 · 유저 경계에서 정지' })]),
         guiEl('div', { class: 'note' }, [guiEl('span', { text: 'Character / World / Plot AIDE' }), guiEl('strong', { text: '전개 보강 가능' }), guiEl('b', { text: 'NPC·세계 자율성/인과 보강 · 유저 행동 생성 금지' })]),
-        guiEl('div', { class: 'note' }, [guiEl('span', { text: '분량과 종료' }), guiEl('strong', { text: '모델 소유 전개는 충분히 진행' }), guiEl('b', { text: '질문형 말미 강제 없음 · 새 유저 행동이 실제로 필요해지는 지점에서 정지' })]),
+        guiEl('div', { class: 'note' }, [guiEl('span', { text: '분량과 종료' }), guiEl('strong', { text: '다음 선택이 필요한 곳에서 멈춤' }), guiEl('b', { text: '질문이 아니어도 됨 · 장면에서 나온 다음 전개의 씨앗을 남김' })]),
         guiEl('div', { class: 'note note--warn', text: '경량/중량 선택, 단계별 LLM 프로필, 로어/Skill/NSFW 설정은 그대로 유지됩니다. 현재 소설 모드의 Classic/Input-inclusive 및 인풋 관리자 설정은 별도로 기억했다가 소설 모드로 돌아올 때 복원합니다.' })
       ],
       actions: [
@@ -43646,28 +41486,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return state;
   };
 
-  const resetSimpleSettingsToRecommended = () => {
-    applyRecommendedSettingsToState(Gui.state);
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
   const simpleProfileSummary = profileId => {
     const profile = QUICK_PROFILE_DEFS[profileId] || QUICK_PROFILE_DEFS.custom;
     if (profileId === 'custom') return '전문가 설정에서 일부 값을 직접 바꾼 상태입니다.';
-    return `${profile.label} · 최근 ${profile.turnWindow}턴 · 참고 상한 ${profile.maxChars.toLocaleString('ko-KR')}자 · ${profile.analysisLabel}`;
+    return `${profile.label} · 최근 ${profile.turnWindow}턴 · 참고 상한 ${profile.maxChars.toLocaleString('ko-KR')}자 · 기억 ${MEMORY_PROFILE_CAPS[profileId].toLocaleString('ko-KR')}자 · ${profile.analysisLabel}`;
   };
 
-  const saveSimpleSettingsFromGui = async () => {
-    try {
-      guiSetStatus('선택한 설정을 저장하고 있습니다…', false, true);
-      await saveGuiState();
-      await renderSettingsGui();
-      guiSetStatus('쉬운 설정을 저장했습니다. 다음 대화부터 적용됩니다.');
-    } catch (error) {
-      guiSetStatus(error?.message || String(error), true, true);
-    }
-  };
 
   const moveAideStageInGui = (stageId, direction) => {
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
@@ -44030,7 +41855,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
     libReadConnection: LibReadConnection.status(),
-    lastInputWriterReadDiagnostic: Runtime.lastInputWriterReadDiagnostic || null,
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
     lastStageViewMismatch: Runtime.lastStageViewMismatch || null,
@@ -44073,7 +41897,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       lastAt: Number(Runtime.inputAssistSend?.lastAt) || 0,
       ok: Runtime.inputAssistSend?.ok ?? null,
       reason: Runtime.inputAssistSend?.reason || '',
-      memory: Runtime.inputAssistSend?.memory || null,
       generatedPreview: compact(Runtime.inputAssistSend?.generated || '', 2400)
     },
     pipelineWorkStatus: JSON.parse(JSON.stringify(Runtime.pipelineWorkStatus || null)),
@@ -44099,6 +41922,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const runtime=mockupRuntime(), selections=normalizeSkillStageSelections(runtime.skillStageSelections);
     selections[stage]=enabled ? [...new Set([...selections[stage],id])] : selections[stage].filter(value=>value!==id);
     const custom=normalizeCustomSkillLibrary(runtime.skillCustomLibrary||{});if(enabled&&custom[id])custom[id].enabled=true;
+    if(enabled&&selections[stage].filter(value=>!GRADIA_BASE_SKILL_IDS.includes(value)).length>MANUAL_SKILL_MAX_PER_STAGE){guiSetStatus(`단계당 스킬은 ${MANUAL_SKILL_MAX_PER_STAGE}개까지 고를 수 있습니다.`,true,true);mockupRenderSkills();return;}
     if(!enabled){runtime.skillStageSelections=selections;markGuiDirty();mockupRefreshStatus();mockupRenderSkills();return;}
     tryManualSkillGuiChange({skillStageSelections:selections,skillCustomLibrary:custom},[stage]);
   };
@@ -44230,11 +42054,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }, 0);
   };
 
-  const navigateToStageAgent = async (stageId, sectionKey) => {
-    const alias = ({ shadow_act:'shadow', aide_character:'char', aide_world:'world', aide_plot:'plot' })[stageId];
-    await navigateGui('flow', '', 'pipeline');
-    if (alias) setTimeout(() => Gui.app?.querySelector(`.node[data-select-row="${alias}"]`)?.click(), 0);
-  };
 
   const closeGuiDialog = () => {
     if (!Gui.dialogLayer) return;
@@ -44341,7 +42160,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const guiRecommendedChangeLabel = parts => {
     if (parts.some(guiPrivateChangeField)) return '인증 정보';
     const runtimeLabels = {
-      mode: '실행 모드', aideStageOrder: 'AIDE 실행 순서', quickProfile: '속도와 품질',
+      mode: '실행 모드', aideStageOrder: 'AIDE 실행 순서', quickProfile: '작업 규모',
       inputAssistMode: '인풋 관리자 · 방식', inputAssistScope: '인풋 관리자 · 적용 범위',
       inputAssistTargetChars: '인풋 관리자 · 목표 글자 수', inputAssistConfirmationMode: '인풋 관리자 · 확인 방식',
       inputAssistLoreActivationMode: '인풋 관리자 · 로어 검색', informationTransferMode: '정보 전달 방식',
@@ -44350,7 +42169,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       skillCustomLibrary: 'Skill · 사용자 라이브러리', skillLegacyRouterSettings: 'Skill · 이전 설정 보관',
       multiPipelineMode: '분석·작성 호출 방식', writingMode: '작성 모드', shadowDraftMode: 'SHADOW · 첫 초안 방식',
       novelShadowDraftMode: '소설 모드 · 첫 초안 방식', novelInputAssistMode: '소설 모드 · 인풋 방식',
-      rpInputAssistMode: 'RP 모드 · 인풋 방식', novelInputAssistScope: '소설 모드 · 인풋 적용 범위',
+      rpImpersonationScope: 'RP 모드 · 세부 모드', memoryBudgetChars: '작업 규모 · 기억 상한', rpInputAssistMode: 'RP 모드 · 인풋 방식', novelInputAssistScope: '소설 모드 · 인풋 적용 범위',
       novelInputAssistConfirmationMode: '소설 모드 · 인풋 확인 방식', outputMode: '응답 마무리 방식',
       internalDraftLanguage: '내부 초안 언어', nsfwMode: '성인 장면 지침 · 강도', nsfwGuidanceEnabled: '성인 장면 지침 · 사용',
       nsfwInjectFinalRequest: '성인 장면 지침 · 최종 요청 전달',
@@ -44440,10 +42259,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ooc: 'pipeline', improve: 'pipeline', output: 'pipeline', references: 'sources', skills: 'sources',
     providers: 'providers', advanced: 'manage', management: 'manage'
   })[pageId] || 'home';
-  const mockupInternalRoute = page => ({
-    home: 'overview', results: 'results', pipeline: 'pipeline', sources: 'references',
-    providers: 'providers', manage: 'management'
-  })[page] || 'overview';
   const mockupSetChoice = (group, index) => {
     if (!group) return;
     [...group.querySelectorAll(':scope > .choice')].forEach((node, i) => {
@@ -44477,6 +42292,159 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const hint=app.querySelector('#ladder + .cluster .hint');if(hint)hint.textContent=`AIDE 순서 · ${name}`;
     app.querySelectorAll('[data-aide-order]').forEach(button=>{button.dataset.aideOrderStage=selected;button.disabled=button.dataset.aideOrder==='-1'?index<=0:index>=order.length-1;button.setAttribute('aria-label',`${name} ${button.dataset.aideOrder==='-1'?'위로':'아래로'} 이동`);});
   };
+  // Everything the home page's work scale has to agree with, computed from the unsaved GUI state.
+  const workScaleOutputNeed = (stageId, preset, runtime) => {
+    const reasoning = resolveProviderOutputBudget(preset, { maxTokens: preset.max_tokens }, effectiveReasoningFamilyForPreset(preset)).reasoningAllowed === true;
+    if (stageId === 'shadow_act') {
+      const visible = Math.ceil(clampInt(runtime.targetDraftMaxChars, 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS) / draftCharsPerToken(runtime)) + 1536;
+      return Math.min(32768, visible + (reasoning ? Math.max(2048, Math.ceil(visible * 0.75)) : 0));
+    }
+    return MIN_JSON_LENGTH_RETRY_TOKENS + (reasoning ? Math.max(1536, Math.ceil(MIN_JSON_LENGTH_RETRY_TOKENS * 0.65)) : 0);
+  };
+  const inspectWorkScale = (runtime = {}, agents = {}, providers = {}, connection = null) => {
+    const stages = [], items = [];
+    const note = (level, message) => items.push({ level, text: message });
+    const lite = runtime.mode === 'lite';
+    const draftMax = clampInt(runtime.targetDraftMaxChars, 500, 60000, DEFAULT_TARGET_DRAFT_MAX_CHARS);
+    const profileId = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
+    const memory = Number(runtime.memoryBudgetChars) >= 1000 ? Number(runtime.memoryBudgetChars) : MEMORY_PROFILE_CAPS[profileId];
+    const previous = clampInt(runtime.maxPreviousStageChars, 1000, 60000, DEFAULT_MAX_PREVIOUS_STAGE_CHARS);
+    for (const def of BEFORE_STAGE_DEFS) {
+      const slot = agents[def.id] || {};
+      if (slot.enabled === false || (lite && ['aide_character', 'aide_world'].includes(def.id))) continue;
+      const presetName = compact(slot.presetName || runtime.defaultPresetName || '', 120), preset = providers[presetName];
+      if (!preset || providerConfigurationIssues(preset).length) {
+        stages.push({ id: def.id, label: def.label, presetName, model: '', maxTokens: 0, need: 0, ok: false });
+        note('error', `${def.label}: AI 연결을 확인할 수 없습니다.`);
+        continue;
+      }
+      const maxTokens = clampInt(preset.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), need = workScaleOutputNeed(def.id, preset, runtime);
+      stages.push({ id: def.id, label: def.label, presetName, model: preset.model || '', maxTokens, need, ok: maxTokens >= need });
+      if (maxTokens < need) note('warn', `${def.label}: ${presetName} 맥스 토큰 ${maxTokens.toLocaleString('ko-KR')} / 필요 ${need.toLocaleString('ko-KR')}. 응답이 잘릴 수 있습니다.`);
+      const context = clampInt(preset.context_window, 0, 4000000, 0) || clampInt(preset.catalog_context_window, 0, 4000000, 0) || estimateModelContextTokens(preset);
+      const input = Number(slot.maxChars || REFERENCE_PROFILE_CAPS.balanced) + memory + previous + Number(slot.turnWindow || DEFAULT_RECENT_TURNS) * draftMax;
+      if (!context) note('info', `${def.label}: ${presetName}의 문맥 크기를 알 수 없어 입력량을 비교하지 못했습니다.`);
+      else {
+        const limit = Math.floor((context * 0.9 - maxTokens) * INPUT_CHARS_PER_TOKEN);
+        if (input > limit) note('warn', `${def.label}: 입력이 최대 약 ${input.toLocaleString('ko-KR')}자로, 모델 문맥(약 ${Math.max(0, limit).toLocaleString('ko-KR')}자)을 넘을 수 있습니다. 자료가 줄어들 수 있으니 작업 규모를 낮추세요.`);
+      }
+    }
+    const lengthChoice = SIMPLE_LENGTH_CHOICES.find(item => item.min === Number(runtime.targetDraftMinChars) && item.max === Number(runtime.targetDraftMaxChars));
+    if (lengthChoice && (previous !== lengthChoice.supportChars || Number(runtime.maxInjectionChars) !== lengthChoice.supportChars)) {
+      note('warn', `목표 분량 ${lengthChoice.label}에 맞는 초안 보조 분량은 ${lengthChoice.supportChars.toLocaleString('ko-KR')}자인데 다르게 설정되어 있습니다.`);
+    }
+    if (profileId === 'custom') note('info', '작업 규모가 직접 조정 상태입니다.');
+    if (connection) {
+      if (connection.readSource === 'off') note('info', '기억 읽기가 꺼져 있습니다.');
+      else if (connection.state === 'connected') {
+        const owners = connection.draftReadOwners || [];
+        if (owners.length) note('ok', `기억 읽기 연결됨: ${owners.map(owner => owner.toUpperCase()).join(' · ')}`);
+        else note('info', '기억 읽기가 연결됐지만 읽을 플러그인을 모두 껐습니다.');
+      } else note('warn', `기억 읽기가 연결되지 않았습니다${connection.reason ? ` (${connection.reason})` : ''}.`);
+    }
+    if (!items.some(item => item.level === 'error' || item.level === 'warn')) note('ok', '설정이 서로 맞습니다.');
+    return { stages, items };
+  };
+  // What 권장안 적용 would change. Model presets are listed so nothing moves without being seen.
+  const workScaleRecommendation = (runtime = {}, agents = {}, providers = {}) => {
+    const profileId = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
+    const target = profileId === 'custom' ? 'balanced' : profileId;
+    const raises = new Map();
+    for (const stage of inspectWorkScale(runtime, agents, providers).stages) {
+      if (stage.need > stage.maxTokens && stage.need) raises.set(stage.presetName, Math.max(raises.get(stage.presetName) || 0, stage.need));
+    }
+    const lengthChoice = SIMPLE_LENGTH_CHOICES.find(item => item.min === Number(runtime.targetDraftMinChars) && item.max === Number(runtime.targetDraftMaxChars));
+    return { target, raises: [...raises].map(([presetName, to]) => ({ presetName, from: clampInt(providers[presetName]?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), to })), supportChars: lengthChoice?.supportChars || 0 };
+  };
+  const applyWorkScaleRecommendation = () => {
+    const runtime = Gui.state.runtime || (Gui.state.runtime = {}), agents = Gui.state.agents || (Gui.state.agents = {}), providers = Gui.state.providers || (Gui.state.providers = {});
+    const plan = workScaleRecommendation(runtime, agents, providers);
+    applyQuickProfileValues(plan.target, runtime, agents);
+    if (plan.supportChars) { runtime.maxPreviousStageChars = plan.supportChars; runtime.maxInjectionChars = plan.supportChars; }
+    for (const raise of plan.raises) providers[raise.presetName] = { ...providers[raise.presetName], max_tokens: raise.to };
+  };
+  const mockupRenderWorkScale = app => {
+    const group = app.querySelector('#q-quality');
+    if (!group) return;
+    let panel = app.querySelector('[data-work-scale]');
+    if (!panel) {
+      panel = mockupNode('div', 'stack stack--sm'); panel.dataset.workScale = 'true'; panel.style.marginTop = '12px'; panel.style.gridColumn = '1 / -1';
+      group.after(panel);
+      panel.addEventListener('click', event => {
+        const action = event.target.closest?.('[data-work-scale-action]')?.dataset.workScaleAction;
+        if (!action) return;
+        if (action === 'recommend') {
+          Gui.workScaleConfirm = true; Gui.workScaleResult = false;
+        } else if (action === 'confirm') {
+          applyWorkScaleRecommendation(); Gui.workScaleConfirm = false; Gui.workScaleResult = true; markGuiDirty();
+        } else if (action === 'cancel') Gui.workScaleConfirm = false;
+        else if (action === 'custom') Gui.workScaleCustom = !Gui.workScaleCustom;
+        else if (action === 'inspect') { Gui.workScaleResult = !Gui.workScaleResult; Gui.workScaleConfirm = false; }
+        renderSettingsGui();
+      });
+      panel.addEventListener('change', event => {
+        const input = event.target.closest?.('[data-work-scale-field]');
+        if (!input) return;
+        const runtime = Gui.state.runtime || (Gui.state.runtime = {}), agents = Gui.state.agents || (Gui.state.agents = {}), field = input.dataset.workScaleField, value = Number(input.value);
+        if (!Number.isFinite(value)) return;
+        if (field === 'turns' || field === 'reference') {
+          for (const def of BEFORE_STAGE_DEFS) { const slot = agents[def.id] || (agents[def.id] = {}); if (field === 'turns') slot.turnWindow = clampInt(value, 1, 64, DEFAULT_RECENT_TURNS); else slot.maxChars = clampInt(value, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, REFERENCE_PROFILE_CAPS.balanced); }
+        } else if (field === 'memory') runtime.memoryBudgetChars = clampInt(value, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, MEMORY_PROFILE_CAPS.balanced);
+        else if (field === 'maxTokens') { const name = input.dataset.workScalePreset; if (Gui.state.providers?.[name]) Gui.state.providers[name] = { ...Gui.state.providers[name], max_tokens: clampInt(value, 64, 200000, DEFAULT_MAX_STAGE_TOKENS) }; }
+        if (field !== 'maxTokens') runtime.quickProfile = inferQuickProfileFromGuiState({ ...runtime, quickProfile: 'custom' }, agents);
+        markGuiDirty();
+        renderSettingsGui();
+      });
+    }
+    const runtime = Gui.state?.runtime || {}, agents = Gui.state?.agents || {}, providers = Gui.state?.providers || {};
+    const inspection = inspectWorkScale(runtime, agents, providers, LibReadConnection.status());
+    const button = (action, label, primary = false) => { const node = mockupNode('button', primary ? 'btn btn--sm btn--primary' : 'btn btn--sm', label); node.type = 'button'; node.dataset.workScaleAction = action; return node; };
+    const profileId = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
+    const firstAgent = agents[BEFORE_STAGE_DEFS[0]?.id] || {};
+    const nodes = [mockupNode('p', 'hint', profileId === 'custom'
+      ? `직접 조정 · 최근 ${firstAgent.turnWindow || DEFAULT_RECENT_TURNS}턴 · 참조 ${Number(firstAgent.maxChars || 0).toLocaleString('ko-KR')}자 · 기억 ${Number(runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS.custom).toLocaleString('ko-KR')}자`
+      : simpleProfileSummary(profileId))];
+    const check = mockupNode('div', 'stack stack--sm'); check.dataset.workScaleCheck = 'true';
+    for (const stage of inspection.stages) {
+      const row = mockupNode('p', 'hint', stage.need
+        ? `${stage.ok ? '✓' : '⚠'} ${stage.label} · ${stage.model || stage.presetName} · 맥스 ${stage.maxTokens.toLocaleString('ko-KR')} / 필요 ${stage.need.toLocaleString('ko-KR')}`
+        : `✖ ${stage.label} · AI 연결 없음`);
+      row.dataset.workScaleStage = stage.id; check.append(row);
+    }
+    nodes.push(check);
+    const actions = mockupNode('div', 'cluster'); actions.append(button('recommend', '권장안 적용'), button('custom', Gui.workScaleCustom ? '커스텀 닫기' : '커스텀'), button('inspect', '설정 점검'));
+    nodes.push(actions);
+    if (Gui.workScaleConfirm) {
+      const plan = workScaleRecommendation(runtime, agents, providers);
+      const box = mockupNode('div', 'note'); box.dataset.workScaleConfirm = 'true';
+      box.append(mockupNode('p', '', `작업 규모: ${QUICK_PROFILE_DEFS[plan.target].label} · ${simpleProfileSummary(plan.target)}`));
+      for (const raise of plan.raises) box.append(mockupNode('p', '', `모델 프리셋 ${raise.presetName}: 맥스 토큰 ${raise.from.toLocaleString('ko-KR')} → ${raise.to.toLocaleString('ko-KR')}`));
+      if (!plan.raises.length) box.append(mockupNode('p', '', '바꿀 모델 프리셋은 없습니다.'));
+      const confirm = mockupNode('div', 'cluster'); confirm.append(button('confirm', '이대로 적용', true), button('cancel', '취소'));
+      box.append(confirm); nodes.push(box);
+    }
+    if (Gui.workScaleCustom) {
+      const fields = mockupNode('div', 'stack stack--sm'); fields.dataset.workScaleCustom = 'true';
+      const field = (label, key, value, preset = '') => {
+        const row = mockupNode('label', 'field'); row.append(mockupNode('span', 'label', label));
+        const input = document.createElement('input'); input.type = 'number'; input.className = 'input'; input.value = String(value ?? ''); input.dataset.workScaleField = key; input.setAttribute('aria-label', label);
+        if (preset) input.dataset.workScalePreset = preset;
+        row.append(input); fields.append(row);
+      };
+      field('최근 턴 수', 'turns', firstAgent.turnWindow || DEFAULT_RECENT_TURNS);
+      field('참조 자료 (자)', 'reference', firstAgent.maxChars || REFERENCE_PROFILE_CAPS.balanced);
+      field('기억 상한 (자)', 'memory', runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS[profileId]);
+      for (const presetName of new Set(inspection.stages.filter(stage => stage.need).map(stage => stage.presetName))) field(`${presetName} 맥스 토큰`, 'maxTokens', clampInt(providers[presetName]?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), presetName);
+      nodes.push(fields);
+    }
+    if (Gui.workScaleResult) {
+      const result = mockupNode('div', 'note'); result.dataset.workScaleResult = 'true';
+      const mark = { ok: '✓', info: 'ⓘ', warn: '⚠', error: '✖' };
+      for (const item of inspection.items) result.append(mockupNode('p', '', `${mark[item.level]} ${item.text}`));
+      nodes.push(result);
+    }
+    panel.replaceChildren(...nodes);
+  };
   const mockupRefreshStatus = () => {
     const app = Gui.app;
     if (!app || !Gui.state) return;
@@ -44487,6 +42455,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(key==='nsfwGuidanceEnabled')control.checked=runtime.nsfwGuidanceEnabled!==false;
       else if(key==='nsfwInjectFinalRequest'){control.checked=runtime.nsfwInjectFinalRequest===true;control.disabled=!nsfwEffective;}
       else if(key==='shadowDraftMode'){control.value=normalizeNovelShadowDraftMode(runtime.novelShadowDraftMode||runtime.shadowDraftMode);control.disabled=mode==='rp';}
+      else if(key==='rpImpersonationScope'){control.value=normalizeRpImpersonationScope(runtime.rpImpersonationScope);control.title=RP_IMPERSONATION_SCOPE_DEFS[control.value].description;control.hidden=mode!=='rp';const scopeHint=control.closest('.app')?.querySelector('[data-rp-scope-description]');if(scopeHint){scopeHint.textContent=control.title;scopeHint.hidden=mode!=='rp';}}
     });
     const draftHint=app.querySelector('[data-existing-draft-mode-hint]');if(draftHint)draftHint.textContent=mode==='rp'?'RP 모드에서는 유저 행동 불가침 계약으로 고정됩니다. 소설 모드로 돌아오면 이전 초안 방식을 복원합니다.':SHADOW_DRAFT_MODE_DEFS[normalizeNovelShadowDraftMode(runtime.shadowDraftMode)]?.description||'';
     const nsfwPreview=app.querySelector('[data-existing-nsfw-preview]');if(nsfwPreview){const writingPreview=buildNsfwGuidanceBlock(runtime,'writing'),finalPreview=buildNsfwGuidanceBlock(runtime,'final');nsfwPreview.value=writingPreview?(finalPreview?`${writingPreview}\n\n[FINAL REQUEST]\n${finalPreview}`:writingPreview):'(현재 지침 주입이 꺼져 있습니다.)';}
@@ -44529,6 +42498,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     mockupSetChoice(app.querySelector('#q-weight'), normalizeMultiPipelineMode(runtime.multiPipelineMode) === 'heavyweight' ? 1 : 0);
     const profileIndex = ({ fast: 0, balanced: 1, quality: 2 })[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')] ?? -1;
     mockupSetChoice(app.querySelector('#q-quality'), profileIndex);
+    mockupRenderWorkScale(app);
     const lengths = [[1000,2000],[3000,5000],[5000,7000],[8000,20000]];
     const lengthIndex = lengths.findIndex(pair => Number(runtime.targetDraftMinChars) === pair[0] && Number(runtime.targetDraftMaxChars) === pair[1]);
     mockupSetChoice(app.querySelector('#q-length'), lengthIndex);
@@ -44707,7 +42677,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (nextSource === 'off') {
           void LibReadConnection.connect({ readSource: 'off' }).then(() => {
             Gui.libDraftReadOwnersDraft = null;
-            Gui.libInputWriterReadOwnersDraft = null;
             mockupRenderSources();
             guiSetStatus('LIB 기억 읽기를 해제했습니다 (사용 안 함).');
           }).catch(err => {
@@ -44720,16 +42689,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const nextDraftOwners = Gui.libDraftReadOwnersDraft !== undefined && Gui.libDraftReadOwnersDraft !== null
           ? Gui.libDraftReadOwnersDraft
           : (st.draftReadOwners || st.readOwners);
-        const nextInputOwners = Gui.libInputWriterReadOwnersDraft !== undefined && Gui.libInputWriterReadOwnersDraft !== null
-          ? Gui.libInputWriterReadOwnersDraft
-          : (st.inputWriterReadOwners || st.readOwners);
         void LibReadConnection.connect({
           draftReadOwners: nextDraftOwners,
-          inputWriterReadOwners: nextInputOwners,
           readSource: nextSource
         }).then(()=>{
           Gui.libDraftReadOwnersDraft = null;
-          Gui.libInputWriterReadOwnersDraft = null;
           mockupRenderSources();
           guiSetStatus('LIB 기억 읽기 대상 및 연결 상태를 갱신했습니다.');
         });
@@ -44776,6 +42740,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(key==='nsfwGuidanceEnabled')applyNsfwGuidanceEnabledToGui(control.checked);
       else if(key==='nsfwInjectFinalRequest')applyNsfwInjectFinalRequestToGui(control.checked);
       else if(key==='shadowDraftMode'&&currentWritingModeFromGui()!=='rp')applyShadowDraftModeToGui(control.value);
+      else if(key==='rpImpersonationScope'){(Gui.state.runtime||(Gui.state.runtime={})).rpImpersonationScope=normalizeRpImpersonationScope(control.value);markGuiDirty();renderSettingsGui();}
       return;
     }
     if(control.matches?.('[data-stage-ref][data-stage-ref-owner]')){const id=control.dataset.stageRefOwner,key=control.dataset.stageRef;if(Gui.state.agents?.[id]){Gui.state.agents[id].risuRefs=normalizeRisuReferences(Gui.state.agents[id].risuRefs,defaultRisuReferencesForStage(id));Gui.state.agents[id].risuRefs[key]=control.checked;markGuiDirty();mockupRefreshStatus();}return;}
@@ -44863,15 +42828,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       mockupRenderSources({preserveUrlDraft:true});
       return;
     }
-    if (control.matches?.('[data-lib-input-writer-owner]')) {
-      const targetOwner = control.dataset.libInputWriterOwner;
-      const current = new Set(Gui.libInputWriterReadOwnersDraft || LibReadConnection.status().inputWriterReadOwners || LibReadConnection.status().readOwners);
-      if (control.checked) current.add(targetOwner);
-      else current.delete(targetOwner);
-      Gui.libInputWriterReadOwnersDraft = LIB_READ_OWNERS.filter(o => current.has(o));
-      mockupRenderSources({preserveUrlDraft:true});
-      return;
-    }
     const providerStage=control.closest('.stage-detail[data-detail]');
     if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
   };
@@ -44926,6 +42882,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     app.querySelectorAll('.stage-detail').forEach(detail=>{
       detail.querySelectorAll('button').forEach(button=>{if(button.textContent.includes('프롬프트 미리보기'))button.dataset.action='prompt-preview';});
     });
+    const modeSwitch=page.closest('.app')?.querySelector('.mode-switch');
+    if(modeSwitch&&!modeSwitch.parentElement.querySelector('[data-existing-response-field="rpImpersonationScope"]')){
+      const scopeSelect=document.createElement('select');scopeSelect.className='select';scopeSelect.style.width='auto';scopeSelect.dataset.existingResponseField='rpImpersonationScope';scopeSelect.setAttribute('aria-label','RP 세부 모드');
+      RP_IMPERSONATION_SCOPES.forEach(value=>{const option=document.createElement('option');option.value=value;option.textContent=RP_IMPERSONATION_SCOPE_DEFS[value].label;scopeSelect.append(option);});
+      modeSwitch.after(scopeSelect);
+      const scopeHint=mockupNode('p','hint');scopeHint.dataset.rpScopeDescription='true';scopeHint.style.cssText='margin:0;padding:10px 24px;border-bottom:1px solid var(--border2);';scopeHint.hidden=true;const scopeBody=page.closest('.app')?.querySelector('.main .page-body');scopeBody?.before(scopeHint);
+    }
     const expert=page.closest('.app')?.querySelector('[data-page="manage"] [data-subpanel="adv"] .stack');
     if(expert&&!expert.querySelector('[data-existing-response-options]')){
       const fold=document.createElement('details');fold.className='fold';fold.dataset.existingResponseOptions='true';
@@ -45107,9 +43070,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ? '이 조합은 선택한 AI에 너무 큽니다. 스킬을 조금 줄여 주세요.'
     : '스킬 구성을 확인해 주세요. 사용할 수 없는 스킬이 포함되어 있습니다.';
 
-  const applySkillGenreToGui = (id,scope='all') => {
+  const applySkillGenreToGui = id => {
     const preset=skillGenrePreset(id);if(!preset)return false;
-    const runtime=mockupRuntime(),stages=scope==='all'?SKILL_STAGE_IDS:[Gui.selectedSkillStage||'shadow_act'];
+    const runtime=mockupRuntime(),stages=SKILL_STAGE_IDS;
     const selections=normalizeSkillStageSelections(runtime.skillStageSelections),references=normalizeSkillStageReferences(runtime.skillStageReferences);
     for(const stage of stages){selections[stage]=preset.selections[stage].slice();references[stage]=cloneJson(preset.references[stage]);}
     return tryManualSkillGuiChange({skillStageSelections:selections,skillStageReferences:references},stages);
@@ -45148,14 +43111,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       stages.append(section);
     }
     const status=mockupNode('p','genre-detail-status');status.hidden=true;status.setAttribute('role','status');
-    const apply=scope=>{
-      if(applySkillGenreToGui(id,scope)){closeGuiDialog();guiSetStatus(`${preset.label} 스타일을 골랐습니다. 저장하면 적용됩니다.`);}
+    const apply=()=>{
+      if(applySkillGenreToGui(id)){closeGuiDialog();guiSetStatus(`${preset.label} 스타일을 골랐습니다. 저장하면 적용됩니다.`);}
       else{status.textContent='이 조합은 선택한 AI에 너무 큽니다. 스킬을 조금 줄이거나 다른 AI를 선택해 주세요.';status.hidden=false;}
     };
     openGuiDialog({title:preset.label,description:SKILL_GENRE_PRESENTATION[id].description,body:[stages,status],actions:[
       guiEl('button',{class:'btn',text:'닫기',onClick:closeGuiDialog}),
-      guiEl('button',{class:'btn',text:'현재 단계에만 적용',dataset:{skillGenreApply:'stage'},onClick:()=>apply('stage')}),
-      guiEl('button',{class:'btn btn--primary',text:'이 스타일 적용',dataset:{skillGenreApply:'all'},onClick:()=>apply('all')})
+      guiEl('button',{class:'btn btn--primary',text:'이 스타일 적용',dataset:{skillGenreApply:'all'},onClick:apply})
     ]});
     const dialog=Gui.dialogLayer.querySelector('.dialog');
     if(dialog){
@@ -45317,11 +43279,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const draftLabel=mockupNode('span','label','초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
       const draftCluster=mockupNode('div','cluster');draftCluster.style.marginTop='6px';draftCluster.style.display='flex';draftCluster.style.flexWrap='wrap';draftCluster.style.gap='14px';
 
-      const inputField=mockupNode('div','field');inputField.id='lib-input-writer-read-owners';
-      inputField.style.marginTop='8px';
-      const inputLabel=mockupNode('span','label','인풋 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
-      const inputCluster=mockupNode('div','cluster');inputCluster.style.marginTop='6px';inputCluster.style.display='flex';inputCluster.style.flexWrap='wrap';inputCluster.style.gap='14px';
-
       const ownerDefs=[
         {id:'libra',label:'LIBRA (미크로·통합 기억)'},
         {id:'hayaku',label:'HAYAKU (로케이터·연속성)'},
@@ -45331,25 +43288,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const dRow=mockupNode('label','cluster');dRow.style.cursor='pointer';dRow.style.display='inline-flex';dRow.style.alignItems='center';dRow.style.gap='5px';
         const dCb=document.createElement('input');dCb.type='checkbox';dCb.dataset.libDraftOwner=def.id;
         dRow.append(dCb,document.createTextNode(def.label));draftCluster.append(dRow);
-
-        const iRow=mockupNode('label','cluster');iRow.style.cursor='pointer';iRow.style.display='inline-flex';iRow.style.alignItems='center';iRow.style.gap='5px';
-        const iCb=document.createElement('input');iCb.type='checkbox';iCb.dataset.libInputWriterOwner=def.id;
-        iRow.append(iCb,document.createTextNode(def.label));inputCluster.append(iRow);
       }
       draftField.append(draftLabel,draftCluster);
-      inputField.append(inputLabel,inputCluster);
-      container.append(draftField,inputField);
+      container.append(draftField);
       connectButton.parentElement?.prepend(container);
     }
     const activeDraftOwners = Gui.libDraftReadOwnersDraft || status.draftReadOwners || status.readOwners;
     const selectedSource=Gui.libReadSourceDraft||status.readSource;
     page.querySelectorAll('[data-lib-draft-owner]').forEach(cb => {
       cb.checked = activeDraftOwners.includes(cb.dataset.libDraftOwner);
-      cb.disabled = status.state === 'connecting' || selectedSource === 'off';
-    });
-    const activeInputOwners = Gui.libInputWriterReadOwnersDraft || status.inputWriterReadOwners || status.readOwners;
-    page.querySelectorAll('[data-lib-input-writer-owner]').forEach(cb => {
-      cb.checked = activeInputOwners.includes(cb.dataset.libInputWriterOwner);
       cb.disabled = status.state === 'connecting' || selectedSource === 'off';
     });
     const modeLabel=source=>source==='off'?'기억 읽기 끄기 (사용 안 함)':source==='plugin_ipc'?'플러그인 모드':'서버 모드 · LIB 백엔드';
@@ -45377,18 +43324,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const hint = reasonHint(status.reason);
     const draftSummary = activeDraftOwners.length ? activeDraftOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
-    const inputSummary = activeInputOwners.length ? activeInputOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
-    const ownersChanged = (Gui.libDraftReadOwnersDraft && (
+    const ownersChanged = Gui.libDraftReadOwnersDraft && (
       Gui.libDraftReadOwnersDraft.length !== status.draftReadOwners.length ||
       Gui.libDraftReadOwnersDraft.some(o => !status.draftReadOwners.includes(o))
-    )) || (Gui.libInputWriterReadOwnersDraft && (
-      Gui.libInputWriterReadOwnersDraft.length !== status.inputWriterReadOwners.length ||
-      Gui.libInputWriterReadOwnersDraft.some(o => !status.inputWriterReadOwners.includes(o))
-    ));
+    );
     const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
-    if(modeStatus)modeStatus.textContent=(status.readSource==='off'?'현재 적용: 기억 읽기 끄기 (LIB 기억 사용 안 함)':status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+' / 인풋: '+status.inputWriterReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
+    if(modeStatus)modeStatus.textContent=(status.readSource==='off'?'현재 적용: 기억 읽기 끄기 (LIB 기억 사용 안 함)':status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
       +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')
-      +(ownersChanged && selectedSource!=='off'?' · 대상 변경 (초안: '+draftSummary+' / 인풋: '+inputSummary+') (연결·적용 필요)':'')
+      +(ownersChanged && selectedSource!=='off'?' · 대상 변경 (초안: '+draftSummary+') (연결·적용 필요)':'')
       +(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
       +(status.inspecting?' · 기억 연결 확인 중…':status.lastInspection?' · '+(status.lastInspection.ok?'연결 확인 완료 · 실제 기억 검색은 실행 시 수행':`연결 확인 실패 · ${status.lastInspection.code}`)+' ('+new Date(status.lastInspection.at).toLocaleTimeString('ko-KR')+')':'');
     Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
@@ -45988,7 +43931,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
@@ -46012,7 +43955,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
+      catch (error) {
+        const code = error?.code || error?.message || '';
+        reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(code) ? code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) };
+      }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;
@@ -46207,13 +44153,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
+      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
+      else if (action === 'select') {
+        // Server storage is read through the server, but only the owner decides what is relevant.
+        if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        const value = await options.boundary();
+        if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+      }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
         await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
@@ -46221,6 +44178,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -46330,6 +44288,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
+  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
+  const select = async (owner, scope, queryText, signal) => {
+    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+  };
+  // Fire and forget: an owner that is not running simply does not hear it.
+  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -46346,26 +44318,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
-        const isInput = !!input.proposal;
+        // A route that turned an owner off is not asked at all.
         const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
-        const routeOwners = isInput ? connStatus?.inputWriterReadOwners : connStatus?.draftReadOwners;
-        let queryOwners = requestedOwners;
-        if (Array.isArray(routeOwners)) {
-          const filtered = queryOwners.filter(owner => routeOwners.includes(owner));
-          if (filtered.length) queryOwners = filtered;
-        }
-        const available = await describe(scope, queryOwners);
+        const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
+        const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        // An empty route means the user turned these owners off, never "ask everyone".
+        if (Array.isArray(routeOwners) && !allowedOwners.length) fail('LIB_READ_OWNERS_DISABLED');
+        const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);
         for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
-        const items = [];
+        const items = [], unavailableOwners = { ...available.unavailable };
+        let firstRefusal = null;
         for (const owner of owners) {
           assertCurrentSync();
           const remaining = input.maxCorpusBytes - corpusBytes;
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
-          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
-            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          let result;
+          try {
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
+              maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          } catch (error) {
+            // One owner's refusal must not take its peers' memory with it. Cancellation and
+            // changed sources still stop the whole read.
+            if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
+            unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
+            firstRefusal ||= error;
+            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
+            continue;
+          }
           // Retain the receipt before validating the response or cancellation.
           if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
           assertCurrentSync();
@@ -46380,13 +44362,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
           corpusBytes += actual;
         }
+        if (!captured.length && firstRefusal) throw firstRefusal;
+        const answeringOwners = captured.map(value => value.owner);
         const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
-            const found = await describe(scope, owners);
+            const found = await describe(scope, answeringOwners);
             assertCurrentSync();
-            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
+            for (const owner of answeringOwners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
@@ -46399,9 +44383,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
+          ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
-            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+            owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
           assertCurrent, assertCurrentSync, close });
       } catch (error) { close(); throw error; }
     }
@@ -46416,7 +44401,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, createClient, dispose });
+  return Object.freeze({ start, describe, select, notify, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
@@ -46783,7 +44768,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           telemetryNewCycle: true
         });
       } finally {
-        closeInputWriterEvidence('LIB_READ_CLOSED');
         clearInputAssistStaticHandoff('public_rewrite_not_delivered');
         finishCallTelemetry('public_rewrite');
       }
@@ -47829,6 +45813,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     debugSerializeSharedReferenceTransport(packet = {}, options = {}) {
       return serializeSharedReferenceTransport(packet?.packet || packet || {}, options || {});
     },
+    debugInspectWorkScale() { return inspectWorkScale(Gui.state?.runtime || {}, Gui.state?.agents || {}, Gui.state?.providers || {}, LibReadConnection.status()); },
     debugRepackReferencePacket(packet = {}, budgetChars = REFERENCE_PROFILE_CAPS.balanced, options = {}) {
       return cloneJson(repackCanonicalReferencePacketForBudget(
         packet?.packet || packet || {},
@@ -47994,216 +45979,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   });
 
   try {
-    const registerInputAssistHandler = async () => {
-      const inputApi = getLiveApi(['addRisuScriptHandler']);
-      if (typeof inputApi?.addRisuScriptHandler !== 'function') {
-        Runtime.hookStatus.input = false;
-        warn('RisuAI addRisuScriptHandler input API is unavailable. Input Writing Assistant is disabled.');
-        return false;
-      }
-      const handler = async content => {
-        const explicitContinueSend = Runtime.inputAssistSend?.busy === true
-          && Runtime.inputAssistSend?.phase === 'sending';
-        if (!explicitContinueSend && Runtime.inFlight) {
-          // Preserve the active request's telemetry, progress panel, and draft
-          // lineage. The beforeRequest guard will pass this overlap through.
-          return content;
-        }
-        await updatePipelineWorkPanel('사용자 입력을 확인하고 있습니다…', 'input_received', {
-          begin: true,
-          source: explicitContinueSend ? 'explicit_continue' : 'normal_input',
-          stagePlan: [],
-          currentStage: ''
-        });
-        try {
-          if (explicitContinueSend) {
-            await updatePipelineWorkPanel('상황 이어가기 인풋 확인 완료 · 초안 파이프라인으로 전달합니다.', 'input_ready', {
-              autoClearMs: 20000
-            });
-            return content;
-          }
-          const settings = await loadSettings();
-          ;
-          if (settings.inputAssistMode !== 'off') {
-            await updatePipelineWorkPanel(isAuthorDirectedDraftMode(settings) ? '인풋 관리자가 현재 장면에서 가능한 유저 행동 선택지를 제안하고 있습니다…' : '인풋 관리자가 핵심 작가 의도를 주인공·현장 인물·세계/외부 인물의 세 관점으로 구체화하고 있습니다…', 'input_assist');
-          }
-          let rewritten = text(content || '');
-          try {
-            rewritten = await runInputAssistForContent(content, settings, {
-              source: 'normal_input',
-              telemetryNewCycle: true
-            });
-          } catch (assistError) {
-            const failureReason = compact(assistError?.message || assistError || 'input_assist_exception', 500);
-            warn('input_assist_generation_failed', failureReason);
-            Runtime.lastInputAssist = {
-              at: Date.now(),
-              ok: false,
-              reason: failureReason,
-              requestedMode: settings.inputAssistMode || 'unknown',
-              effectiveMode: 'unknown',
-              scope: settings.inputAssistScope || 'unknown',
-              original: text(content || ''),
-              rewritten: text(content || ''),
-              trace: null
-            };
-            rewritten = text(content || '');
-          }
-          const authorChoiceAssist = isAuthorDirectedDraftMode(settings)
-            && normalizeChoice(settings.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off';
-          if (authorChoiceAssist) {
-            const choices = Array.isArray(Runtime.lastInputAssist?.authorChoices)
-              ? Runtime.lastInputAssist.authorChoices
-              : [];
-            if (Runtime.lastInputAssist?.ok === true && choices.length >= 2) {
-              await updatePipelineWorkPanel('유저 행동 선택지 생성 완료 · 이번 턴에 할 행동을 선택하세요.', 'input_assist_confirmation');
-              const reviewed = await showAuthorDirectedInputChoicePicker({
-                original: content,
-                choices,
-                source: 'normal_input',
-                onRegenerate: async () => {
-                  await runInputAssistForContent(content, settings, { source: 'normal_input_author_choice_regenerate' });
-                  return Array.isArray(Runtime.lastInputAssist?.authorChoices) ? Runtime.lastInputAssist.authorChoices : [];
-                },
-                onTranslate: async (value, targetLanguage) => (
-                  await translateInputAssistReviewText(value, settings, targetLanguage)
-                )
-              });
-              rewritten = text(reviewed.content || '');
-              const deliverySource = reviewed.action || 'author_choice_unknown';
-              rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-              await updatePipelineWorkPanel(
-                reviewed.choice ? '유저 행동 선택 완료 · 그 행동 이후 NPC·세계 반응 파이프라인을 시작합니다.' : '원본 유저 입력 유지 · 그 행동 이후 NPC·세계 반응 파이프라인을 시작합니다.',
-                'input_ready',
-                { autoClearMs: 20000 }
-              );
-              return rewritten;
-            }
-            // Choice generation failure must never result in an AI-selected fallback.
-            // Preserve the user's own direction exactly and continue fail-soft.
-            rewritten = finalizeInputAssistDelivery(text(content || ''), 'author_choice_generation_failed_original', settings);
-            await updatePipelineWorkPanel('RP 행동 선택지를 만들지 못해 원본 유저 입력을 그대로 사용합니다.', 'input_assist_fallback', { autoClearMs: 20000 });
-            return rewritten;
-          }
-          const novelChoiceAssist = !isAuthorDirectedDraftMode(settings)
-            && normalizeChoice(settings.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off';
-          if (novelChoiceAssist) {
-            const choices = Array.isArray(Runtime.lastInputAssist?.novelChoices)
-              ? Runtime.lastInputAssist.novelChoices
-              : [];
-            if (Runtime.lastInputAssist?.ok === true && choices.length === NOVEL_INPUT_CHOICE_TARGET) {
-              await updatePipelineWorkPanel('세 작가 관점 인풋 선택지 생성 완료 · 이번 턴에 사용할 방향을 선택하세요.', 'input_assist_confirmation');
-              const reviewed = await showNovelInputChoicePicker({
-                original: content,
-                choices,
-                source: 'normal_input',
-                onRegenerate: async () => {
-                  await runInputAssistForContent(content, settings, { source: 'normal_input_novel_choice_regenerate' });
-                  return Array.isArray(Runtime.lastInputAssist?.novelChoices) ? Runtime.lastInputAssist.novelChoices : [];
-                },
-                onTranslate: async (value, targetLanguage) => (
-                  await translateInputAssistReviewText(value, settings, targetLanguage)
-                )
-              });
-              rewritten = text(reviewed.content || '');
-              const deliverySource = reviewed.action || 'novel_choice_unknown';
-              rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-              await updatePipelineWorkPanel(
-                reviewed.choice ? `인풋 선택 완료 · ${NOVEL_INPUT_CHOICE_PERSPECTIVE_DEFS[reviewed.choice.perspective]?.label || '선택한 관점'}으로 초안 파이프라인을 시작합니다.` : '원본 입력 유지 · 초안 파이프라인을 시작합니다.',
-                'input_ready',
-                { autoClearMs: 20000 }
-              );
-              return rewritten;
-            }
-            rewritten = finalizeInputAssistDelivery(text(content || ''), 'novel_choice_generation_failed_original', settings);
-            await updatePipelineWorkPanel('세 작가 관점 선택지를 모두 만들지 못해 원본 입력을 그대로 사용합니다.', 'input_assist_fallback', { autoClearMs: 20000 });
-            return rewritten;
-          }
-          const deliveryPlan = resolveInputAssistDeliveryPlan(content, rewritten, settings);
-          rewritten = deliveryPlan.deliveryBase;
-          let deliverySource = deliveryPlan.bypassed ? 'original_bypass' : deliveryPlan.fallbackUsed ? 'fallback_original' : 'generated_direct';
-          if (Runtime.lastInputAssist && deliveryPlan.fallbackUsed) {
-            Runtime.lastInputAssist.deliveryFallback = true;
-            Runtime.lastInputAssist.deliveryFallbackReason = deliveryPlan.fallbackReason;
-            Runtime.lastInputAssist.rewritten = rewritten;
-            Runtime.lastInputAssist.outputChars = text(rewritten).length;
-            if (Runtime.lastInputAssist.trace?.parsed) {
-              Runtime.lastInputAssist.trace.parsed.deliveryFallback = true;
-              Runtime.lastInputAssist.trace.parsed.deliveryFallbackReason = deliveryPlan.fallbackReason;
-              Runtime.lastInputAssist.trace.parsed.rewrittenInput = compact(rewritten, 8000);
-              Runtime.lastInputAssist.trace.parsed.outputChars = text(rewritten).length;
-            }
-          }
-          if (deliveryPlan.shouldConfirm && !!text(rewritten).trim()) {
-            await updatePipelineWorkPanel(
-              deliveryPlan.fallbackUsed
-                ? '인풋 확장 실패 · 확인창에서 원본 또는 폴백 메시지를 선택하세요.'
-                : '인풋 확장 완료 · 확인창에서 보낼 메시지를 선택하세요.',
-              'input_assist_confirmation'
-            );
-            const fallbackNotice = deliveryPlan.fallbackUsed
-              ? `인풋 확장에 실패하여 원본을 폴백 후보로 준비했습니다. 자동 전송하지 않으므로 원하는 쪽을 선택하거나 재생성하세요. 확장 실패 원인: ${compact(deliveryPlan.fallbackReason, 320)}`
-              : '';
-            const reviewed = await showInputAssistConfirmation({
-              original: content,
-              expanded: rewritten,
-              source: 'normal_input',
-              canUseOriginal: true,
-              notice: fallbackNotice,
-              expandedTitle: deliveryPlan.fallbackUsed ? '폴백 메시지' : '확장 메시지',
-              expandedActionLabel: deliveryPlan.fallbackUsed ? '폴백 메시지 보내기' : '확장 메시지 보내기',
-              onRegenerate: async () => {
-                const next = await runInputAssistForContent(content, settings, {
-                  source: 'normal_input_regenerate'
-                });
-                const nextPlan = resolveInputAssistDeliveryPlan(content, next, settings);
-                return nextPlan.deliveryBase;
-              },
-              onTranslate: async (value, targetLanguage) => (
-                await translateInputAssistReviewText(value, settings, targetLanguage)
-              )
-            });
-            rewritten = text(reviewed.content);
-            deliverySource = reviewed.action
-              ? `${reviewed.action}${Runtime.lastInputAssist?.confirmationEdited ? '_edited' : ''}`
-              : deliverySource;
-          }
-          if (settings.inputAssistMode !== 'off') rewritten = finalizeInputAssistDelivery(rewritten, deliverySource, settings);
-          await updatePipelineWorkPanel(
-            settings.inputAssistMode === 'off'
-              ? '입력 확인 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…'
-              : deliveryPlan.fallbackUsed
-                ? '원본 폴백 선택 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…'
-                : '입력 재구성 완료 · GRADIA 초안 파이프라인을 기다리고 있습니다…',
-            'input_ready',
-            { autoClearMs: 20000 }
-          );
-          return rewritten;
-        } catch (error) {
-          warn('input_assist_handler_failed', error);
-          Runtime.lastInputAssist = {
-            at: Date.now(),
-            ok: false,
-            reason: compact(error?.message || error, 500),
-            requestedMode: 'unknown',
-            effectiveMode: 'unknown',
-            scope: 'unknown',
-            original: text(content || ''),
-            rewritten: text(content || ''),
-            trace: null
-          };
-          finalizeInputAssistDelivery(content, 'fallback_original', {});
-          await updatePipelineWorkPanel('인풋 관리자를 건너뛰고 원래 입력으로 초안 파이프라인을 계속합니다…', 'input_assist_fallback', {
-            autoClearMs: 20000
-          });
-          return content;
-        }
-      };
-      await inputApi.addRisuScriptHandler('input', handler);
-      registered.input = handler;
-      Runtime.hookStatus.input = true;
-      return true;
-    };
 
     const registerBeforeRequestHook = async () => {
       if (typeof API.addRisuReplacer !== 'function') {
@@ -48244,7 +46019,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return true;
     };
-    // v0.25.48: keep the legacy automatic Input Manager implementation for compatibility/debug,
     // but do not register it. Input writing is entered only through the explicit chat button.
     Runtime.hookStatus.input = false;
     await registerBeforeRequestHook();
@@ -48254,7 +46028,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     
 
+    const libReadAnnouncement = setInterval(() => { void announceLibReads(); }, 10000);
+    libReadAnnouncement.unref?.();
     const unload = async () => {
+      clearInterval(libReadAnnouncement);
+      // Owners take their own recall back now rather than when the announcement expires.
+      await Promise.allSettled(LIB_READ_OWNERS.map(owner => libOwnerReader().notify(owner, 'attach', { active: false, ttlMs: 0 })));
       await LibReadConnection.dispose();
       LibReadConsumer.invalidate('LIB_READ_CANCELED');
       libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;

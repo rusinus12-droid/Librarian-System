@@ -26,6 +26,12 @@ test('issued owner receipt serves one shared query and reports bounded query cov
  assert.equal((await f.client.current({proof:f.proof(r)})).current,true);assert.equal(f.queries(),1);
  await assert.rejects(()=>f.client.current({proof:{...f.proof(r),evidenceRevision:'0'.repeat(64)}}),e=>e.code==='LIB_READ_STALE');
 });
+
+for(const code of ['LIB_READ_STALE','LIB_READ_NATIVE_SCOPE_CHANGED','LIB_READ_CANCELED'])test(`plain owner error retains its typed boundary code: ${code}`,async t=>{
+ const f=await fixture(t,{onVerify:()=>{throw Error(code);}});
+ await assert.rejects(()=>f.client.capture(f.input),error=>error.code===code);
+ assert.equal(f.queries(),1);assert.equal(f.releases(),1);
+});
 test('owner currentness and native-boundary changes reject the previously issued receipt',async t=>{
  const f=await fixture(t),r=await f.client.capture(f.input);f.setCurrent(false);
  await assert.rejects(()=>f.client.current({proof:f.proof(r)}),e=>e.code==='LIB_READ_STALE');

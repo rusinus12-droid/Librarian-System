@@ -5,17 +5,16 @@ const assert = require('node:assert/strict');
 const { createFixture } = require('./fixtures/lia_native_runtime_fixture.cjs');
 
 const expose = source => source.replace(
-  '      getLiveSyncCaptureState:',
+  '      getScopePersonaCatalog:',
   `      auditGetContext: async () => await getContext(),
       auditRenderMine: ctx => {
-        const slots = new Map(['#pocket','#upd-badge','#upd-dots','#upd-hint','#mine-list','#live-persona-state','.scope span:last-child','.brand__ver'].map(key => [key,{setAttribute(){}}]));
+        const slots = new Map(['#pocket','#mine-list','.scope span:last-child','.brand__ver'].map(key => [key,{setAttribute(){}}]));
         const app = { querySelector: key => slots.get(key) || null };
         const state = renderMockupMine(ctx, app);
         return { state, list:slots.get('#mine-list').innerHTML, pocket:slots.get('#pocket').innerHTML };
       },
       auditRenderPersonaSelect: ctx => renderPersonaSelect(ctx),
-      auditRenderLivePersonaOptions: ctx => renderLivePersonaOptions(ctx),
-      getLiveSyncCaptureState:`
+      getScopePersonaCatalog:`
 );
 
 const FAILURE_COPY = 'RisuAI Persona 목록을 읽지 못했습니다.';
@@ -34,7 +33,6 @@ const RETRY_COPY = 'Database 접근 권한 동의를 확인한 뒤 ↻ 새로고
         ctx,
         mine: fixture.runtime.auditRenderMine(ctx),
         personaSelect: fixture.runtime.auditRenderPersonaSelect(ctx),
-        livePersonaSelect: fixture.runtime.auditRenderLivePersonaOptions(ctx),
       };
     };
 
@@ -45,15 +43,12 @@ const RETRY_COPY = 'Database 접근 권한 동의를 확인한 뒤 ↻ 새로고
     assert.match(denied.personaSelect, new RegExp(FAILURE_COPY));
     assert.match(denied.personaSelect, new RegExp(RETRY_COPY));
     assert.match(denied.personaSelect, /disabled/);
-    assert.match(denied.livePersonaSelect, new RegExp(FAILURE_COPY));
-    assert.match(denied.livePersonaSelect, new RegExp(RETRY_COPY));
     assert.equal(denied.ctx.personaDatabaseReadStatus?.available, false);
 
     const empty = await readAndRender({ personas: [], selectedPersona: '' });
     assert.equal(empty.ctx.personaDatabaseReadStatus?.available, true);
     assert.match(empty.mine.list, /Persona가 없습니다/);
     assert.doesNotMatch(empty.mine.list, new RegExp(FAILURE_COPY));
-    assert.match(empty.livePersonaSelect, /사용 가능한 Persona 없음/);
     assert.match(empty.personaSelect, /Auto - /);
     assert.doesNotMatch(empty.personaSelect, new RegExp(FAILURE_COPY));
 

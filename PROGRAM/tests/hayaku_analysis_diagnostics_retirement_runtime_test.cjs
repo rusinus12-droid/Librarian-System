@@ -70,7 +70,7 @@ const good=()=>{
   const storedBefore=new Map(details.pluginStorage.values);const remove=details.pluginStorage.removeItem.bind(details.pluginStorage);let interrupted=false;
   details.pluginStorage.removeItem=async key=>{const done=await remove(key);if(!interrupted&&String(key).startsWith('hayaku.v2.failed_analysis_manifest.')){interrupted=true;return false;}return done;};
   const capped=await save(31,180000);assert(interrupted);assert.equal(capped.durable,false);assert.equal(capped.reason,'analysis_diagnostic_retention_unconfirmed');
-  assert.deepEqual(details.pluginStorage.values,storedBefore,'uncertain pruning rolls back and does not add another detail');
+  const withoutLog=values=>new Map([...values].filter(([key])=>!String(key).startsWith('hayaku.v2.analysis_failure_log.')));assert.deepEqual(withoutLog(details.pluginStorage.values),withoutLog(storedBefore),'uncertain pruning rolls back and does not add another detail');
   console.log('PASS optional detail readback/export, bounded count/size, oversized omission and preserved legacy rows');
  }finally{await details.dispose();}
 

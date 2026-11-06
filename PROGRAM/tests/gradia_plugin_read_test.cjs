@@ -85,3 +85,28 @@ test('a receipt from a different operation is rejected and the real pending capt
   await assert.rejects(pending,/RESPONSE_INVALID/);resolve();
   await new Promise(r=>setTimeout(r,10));assert.equal(f.state.close,1);
 });
+test('one owner refusing a capture keeps its peers and reports the refusal', async t => {
+  const bus = createBus(), peerScope = { ...scope, scopeKey: 'peer' };
+  const healthy = create({ role: 'owner', owner: 'flashback', api: bus.api('flashback_memory'), primitives,
+    boundary: async () => ({ scope: peerScope, mode: 'plugin_only' }), capture: async () => ({ items: [{ id: 'p', key: 'p', content: 'PEER_EVIDENCE', source: { namespace: 'flashback' } }], assertCurrent: async () => true }) });
+  const broken = create({ role: 'owner', owner: 'hayaku', api: bus.api('hayaku_locator_continuity'), primitives,
+    boundary: async () => ({ scope, mode: 'plugin_only' }), capture: async () => { throw new Error('gradia_read_dependencies_invalid'); } });
+  const reader = create({ role: 'reader', api: bus.api('serial_gradation_agents_for_rp'), primitives, timeoutMs: 500 });
+  await healthy.start(); await broken.start();
+  t.after(async () => { await reader.dispose(); await healthy.dispose(); await broken.dispose(); });
+  const read = await reader.createClient({ hayaku: scope, flashback: peerScope }).openReadSession(scope, { maxCorpusBytes: 10000 });
+  assert.deepEqual(read.snapshot.items.map(item => item.content), ['PEER_EVIDENCE']);
+  assert.deepEqual(read.snapshot.owners, ['flashback']);
+  assert.equal(read.engine.unavailableOwners.hayaku, 'LIB_READ_OWNER_UNAVAILABLE');
+  assert.equal(await read.assertCurrent(), true);
+  read.close();
+});
+test('every owner refusing still fails the read with the refusal', async t => {
+  const bus = createBus();
+  const broken = create({ role: 'owner', owner: 'hayaku', api: bus.api('hayaku_locator_continuity'), primitives,
+    boundary: async () => ({ scope, mode: 'plugin_only' }), capture: async () => { throw new Error('gradia_read_dependencies_invalid'); } });
+  const reader = create({ role: 'reader', api: bus.api('serial_gradation_agents_for_rp'), primitives, timeoutMs: 500 });
+  await broken.start();
+  t.after(async () => { await reader.dispose(); await broken.dispose(); });
+  await assert.rejects(reader.createClient({ hayaku: scope }).openReadSession(scope, { maxCorpusBytes: 10000 }), /LIB_READ_OWNER_UNAVAILABLE/);
+});

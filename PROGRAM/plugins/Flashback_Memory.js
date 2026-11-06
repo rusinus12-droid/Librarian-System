@@ -1,93 +1,10 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.16
+//@display-name ⚡ FLASHBACK Memory v1.3.24
 //@api 3.0
-//@version 1.3.16
+//@version 1.3.24
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
-//@arg mode string off|normal; blank uses normal
-//@arg embedding_provider string openai|voyageai|voyage_context|gemini|gemini-embedding|cohere|jina|mistral|bedrock|dashscope|ollama|lmstudio|localai|tei|vertex|vertex-embedding|openai_compat|openai_compat_local|custom_http|custom; blank leaves model embedding unconfigured; legacy hash is migration-only
-//@arg embedding_url string Embedding endpoint/base URL; blank uses the selected provider default
-//@arg embedding_endpoint string Optional exact embedding endpoint; blank derives it from embedding_url
-//@arg embedding_model string Embedding model name; blank uses the selected provider default (hash: nomic-embed-text)
-//@arg embedding_key string Optional API key; blank means no arg-level key
-//@arg embedding_enabled string true|false; blank uses true
-//@arg embedding_timeout_ms string Embedding request timeout in milliseconds; blank uses 30000
-//@arg embedding_dimensions string Requested output dimensions; blank or 0 uses provider auto detection
-//@arg hook_recall_timeout_ms string Maximum total recall time inside beforeRequest; blank uses 20000
-//@arg embedding_batch_size string Number of chunks embedded per request when endpoint supports batching; blank uses 8
-//@arg embedding_max_retries string Retry count for transient embedding failures; blank uses 2
-//@arg embedding_query_task string Optional provider query task/input type
-//@arg embedding_document_task string Optional provider document task/input type
-//@arg embedding_query_prefix string Optional query prefix
-//@arg embedding_document_prefix string Optional document prefix
-//@arg embedding_normalize string true|false; blank uses true
-//@arg fallback_hash_embedding string Legacy setting, ignored; model-only retrieval never substitutes local vectors
-//@arg hash_dimensions string Legacy vector metadata compatibility only; no new hash embeddings
-//@arg top_k string Number of vector records injected per request; blank uses 12
-//@arg min_score string Minimum cosine score for recall; blank uses 0.12
-//@arg lexical_weight string Small lexical overlap boost added to cosine score; blank uses 0.12
-//@arg max_injection_chars string Maximum dynamic evidence characters injected into beforeRequest; blank uses 4000
-//@arg injection_position string before_current_input|last_system|before_last_user; blank uses before_current_input
-//@arg prompt_cache_mode string off|existing_only|safe_auto; blank uses existing_only
-//@arg chunk_chars string Maximum source chunk characters before embedding; blank uses 1200
-//@arg chunk_overlap string Overlap characters between chunks; blank uses 160
-//@arg max_response_items string Maximum complete captured U+A turns retained per chat scope; blank uses 1200
-//@arg capture_after_request string true|false; blank uses true
-//@arg min_capture_chars string Legacy compatibility only; finalized non-empty responses are always captured
-//@arg enable_gui string true|false; blank uses true
-//@arg auto_open_gui string true|false; blank uses false (legacy compatibility only)
-//@arg debug_log string true|false; blank uses false
-//@arg operation_log_enabled string true|false; blank uses false
-//@arg heuristic_recall string true|false; blank uses true
-//@arg candidate_limit string Vector candidates to rerank before MMR; blank uses 80
-//@arg evidence_gate string true|false; blank uses true
-//@arg mmr_enabled string true|false; blank uses true
-//@arg mmr_lambda string 0.0-1.0, higher means relevance over diversity; blank uses 0.72
-//@arg recency_half_life_days string Half-life used for response recency boost; blank uses 14
-//@arg recency_half_life_turns string Half-life in story turns used for response recency when turnIndex exists; blank uses 6
-//@arg continuation_recent_items string Number of recent response records boosted for continuation prompts; blank uses 5
-//@arg episode_index_enabled string true|false; blank uses true
-//@arg episode_boundary_similarity string Cosine threshold for response-to-response episode boundary detection; blank uses 0.35
-//@arg current_scene_tail_enabled string true|false; blank uses true
-//@arg current_scene_tail_turns string Recent response turns considered current scene tail; blank uses 2
-//@arg current_scene_tail_limit string Maximum current scene tail candidates; blank uses 4
-//@arg current_scene_tail_min_keep string Minimum current scene tail records kept after MMR; blank uses 1
-//@arg entity_focused_recall_enabled string true|false; blank uses true
-//@arg entity_focused_per_anchor string Per-anchor entity-focused candidates; blank uses 1
-//@arg entity_focused_max_total string Maximum total entity-focused candidates; blank uses 3
-//@arg max_recall_per_source_hash string Hard cap for final recall records sharing sourceHash; blank uses 2
-//@arg max_recall_per_turn string Hard cap for final recall records sharing sourceType+turnIndex; blank uses 3
-//@arg latest_turn_boost string Additional score boost for the latest captured response turn; blank uses 0.12
-//@arg continuation_tail_messages string Legacy previous-turn context setting retained for compatibility; blank uses 4
-//@arg recall_relatedness_weight string 0-100 relevance preference after the evidence gate; blank uses 70
-//@arg recall_recency_weight string 0-100 story-turn recency preference after the evidence gate; blank uses 30
-//@arg recall_context_messages string Maximum recent user/assistant messages used as a separate scene-context query; blank uses 5
-//@arg adaptive_context_window string true|false; blank uses true
-//@arg multi_query_recall string true|false; blank uses true
-//@arg contradiction_bundle_enabled string true|false; blank uses true
-//@arg multi_resolution_recall_enabled string true|false; blank uses true
-//@arg recall_stability_enabled string true|false; blank uses true
-//@arg recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
-//@arg gate_high_cosine string Cosine threshold that can pass the evidence gate directly; blank uses 0.42
-//@arg gate_exact_anchor string Exact-anchor evidence threshold; blank uses 0.14
-//@arg gate_keyword_overlap string Keyword-overlap evidence threshold; blank uses 0.12
-//@arg gate_name_overlap string Name-overlap evidence threshold; blank uses 0.18
-//@arg raw_excerpt_mode string sentence_window|record; blank uses sentence_window
-//@arg raw_sentence_window string Sentences retained around the best matching sentence; blank uses 1
-//@arg cold_start_scope string current|all; blank uses current
-//@arg cold_start_history_limit string Maximum chat history items synchronized into response turns; blank uses 0 (unlimited)
-//@arg episode_min_records string Minimum response records per episode; blank uses 2
-//@arg episode_max_records string Maximum response records per episode; blank uses 12
-//@arg episode_recall_count string Episode centroids considered during recall; blank uses 3
-//@arg episode_child_limit string Maximum child records expanded from matching episodes; blank uses 24
-//@arg structured_state_enabled string true|false; blank uses true
-//@arg recall_shard_limit string Maximum indexed storage shards loaded for one recall; blank uses 12
-//@arg recall_full_scan_threshold string Full-scan scopes at or below this shard count; blank uses 8
-//@arg episode_hierarchy_enabled string true|false; blank uses true
-//@arg episode_parent_size string Scene episodes grouped into one higher-level session index; blank uses 6
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -322,72 +239,8 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 }
 /* End RisuAI native-branch target storage preparation */
 
-/* 1.0.79: Stop synchronization on failed worldline persistence, preserve failure diagnostics, and distinguish empty maintenance results. */
-/* 1.0.66: Isolate consent journal failures from existing canonical memory and recall. */
-/* 1.0.64: Restore exact legacy Voyage profile compatibility and distinguish response variants from source edits. */
-/* 1.0.63: Apply continuity-control / recall-film GUI with authoritative status and accessible responsive views. */
-/* 1.0.59: Remove natural-language state-property inference; use stored structured facts or explicit state markers only. */
-/* 1.0.48: One joint context query replaces fixed query weights and candidate quotas. Semantic recall bypasses word-derived intent, forced keyword arms and heuristic score overrides. */
-/* 1.0.42: Retain independent evidence under pair caps, require exact source links for complete support, and restore selection tie priorities. */
-/* 1.0.41: RRF zero and arm deduplication, shared normal/API/emergency selection and budgeted fragment delivery. */
 /* Remaining implementation: explicit generation policy, bounded terminal streams, owner metadata migration and maintenance telemetry. Offline verification is separate from real provider certification. */
-/* 1.0.40: Maintenance-only execution card with themed status, responsive metrics, expandable details and accessible cancellation. Storage and embedding execution contracts retained. */
-/* 1.0.39: Durable owner-local embedding checkpoints, physical pending and late settlement, contextual dimensions/provenance, hash recovery through final recall. Raw U+A and server fencing retained. Real host/provider validation remains separate. */
-/* 1.0.36 / Integrated Implementation 10+11: Shared embedding identity and physical budgets, strict vectors and sidecars, isolated probes, source-bound maintenance and bounded runtime hash recovery. Original U+A and refs retained. Development application; host/model NOT_RUN. */
-/* 1.0.32 / Integrated Implementation 02: Shared own-iframe full source review and version-bound selected approval; existing raw storage, recall and no-summary-LLM policy remain. */
-/* 1.0.31 / Integrated Implementation 01: Shared Source Edit Consent 1.1.0 rejects missing/unknown selected keys and binds permits to identity/basis. Existing before/after review and raw recall retained. */
-/* v1.0.30 / BOOK_UX 5.22: stored-original inspection independent of recall eligibility; lazy full text, explicit read faults, read-only worldline workspace, and maintenance-scoped source-edit consent. */
-/* v1.0.28 / BOOK_UX 5.18: verified RisuAI native branch prefixes, source-bound adoption, preserved consent and read-only lineage status. */
-/* v1.0.27: source-edit confirmation, exact U+A hash-first replacement and consent-bound index/embedding refresh; old versions stay outside active recall. */
-/* v1.0.26 suppresses only durably saved output revisions; failed/indeterminate writes remain retryable without losing pending capture ownership. */
-/* v1.0.25 makes Character+Chat the canonical Flashback storage identity. Persona remains diagnostic metadata only; official chat_output_v3 events without Persona now bind to the same pending turn, existing Persona-specific scopes are preserved and adopted into an empty canonical scope without re-embedding, and output-backend health is cleared only after a captured or proven-duplicate result. */
-/* v1.0.24 keeps the complete selected recall text in the session detail model and renders every recalled memory as an independently expandable card without nested height clipping. */
-/* v1.0.23 makes Storage manual editing directly discoverable, limits editing to supported response-turn records, and presents derived episode indexes as read-only automatic data instead of routing them into the response editor. */
-/* v1.0.22 keeps first-turn recall fail-open without misreporting an empty memory as an error: pending capture is armed before storage preparation, its proof journal is persisted off the foreground path, truly empty first-turn scopes skip registry-wide discovery, and empty-scope key/legacy discovery is deferred outside beforeRequest with phase-specific diagnostics. */
-/* v1.0.21 derives hash Compute routing from the current scope's Storage mode and combines Storage and Compute controls into one fail-open server panel. */
-/* v1.0.20 replaces the ARG setting groups' native details/summary shell with explicit accessible toggle buttons and controlled panels so RisuAI hosts cannot collapse the group labels and fields into empty border rows. Setting IDs, values, precedence, locking, persistence, and readback contracts are unchanged. */
-/* v1.0.19 adds an explicit Korean/English/Japanese/Chinese bidirectional embedding recall verifier with fixed non-user fixtures, hard-negative separation, current Evidence Gate evaluation, cache-isolated provider calls, profile-staleness detection, and read-only re-embedding guidance. */
-/* v1.0.18 exposes every active ARG-backed setting through grouped GUI controls, shows effective default/GUI/ARG ownership, locks explicit ARG overrides, and clears overrides only after exact host readback; legacy and self-locking arguments remain visible with read-only policy. */
-/* v1.0.17 adds an overview-first information architecture, goal-grouped sidebar, collapsible last-recall detail, readable desktop density, and mobile scope/action preservation without changing storage, capture, recall, maintenance, Portable Memory, or server/Compute behavior. */
-/* v1.0.16 adds accessible tab and dialog semantics, persistent Escape handling, focus containment/restoration, and arrow/Home/End tab navigation without changing storage, capture, recall, maintenance, Portable Memory, or server/Compute behavior. */
-/* v1.0.15 keeps provisional committed-output revisions as durable evidence but excludes them from recall until live-chat reconciliation marks them confirmed or replaces them with the authoritative finalized revision. */
-/* v1.0.14 adopts Storage SDK 1.8.13 paged key discovery, bounded batch reads, oversized-record fallback, and the 4 MiB interactive value guard. Canonical capture, archive shards, vectors, recall, RE:TRACE ownership, and local Compute fallback are unchanged. */
-/* v1.0.13 lets RE:TRACE remove a pure Flashback server-registry shell only after two stable catalog scans plus two owner-side server absence checks. Current/server-only scopes and any server or local physical/tombstone key remain protected; the local shared registry rewrite preserves siblings and requires readback before the server's existing backup and conditional deletion plan. */
-/* v1.0.12 prevents absent manifests and server connection failures from degrading known scope metadata into Unknown/zero rows, stops GUI hydration after the first shared transport failure, and adds two-observation registry repair plus registry-only cleanup that never deletes physical memory data. */
-/* v1.0.11 makes RE:TRACE discovery a storage-free fast path: capability responses report the already-cached Storage status instead of waiting on durable scope-mode resolution. Owner discovery therefore remains responsive while RisuAI chat/context APIs or pluginStorage are busy; storage mode changes, owner mutations and canonical memory behavior are unchanged. */
-/* v1.0.10 exposes the plugin-global Compute mode in the Server GUI through the shared Compute panel. The panel requires no user token or pairing key, keeps local as the zero-network fallback, and mounts independently from Storage connection diagnostics. */
-/* v1.0.9 adopts the Librarian System product name and Storage SDK 1.8.11 / Compute SDK 0.3.2 labels without changing storage keys, protocol schemas, local fallback, recall, capture, vector, archive, or ownership behavior. */
-/* v1.0.8 keeps automatic, Storage-independent Compute bootstrap with no token or pairing input and hardens lifecycle cleanup: direct requests are cancelled on disconnect and outstanding background Jobs receive best-effort cancellation on unload. Local remains the zero-network default and every failure retains the existing local-kernel fallback. */
-/* v1.0.6 adds an optional Librarian System Compute Bridge around the existing hash embedding batch while keeping local execution as the zero-network default. Shadow mode always adopts the original local result and compares a verified server candidate in the background; prefer_server adopts only exact operation, fingerprint, digest, binding and result-shape matches and otherwise runs the same local kernel exactly once. The plugin remains a single JavaScript owner of hooks, GUI, storage and final adoption, and server compute never changes canonical memory data. */
-/* v1.0.5 makes archive vector overlays authoritative in live and routed recall, including bounded repair reads when parent/overlay shard selection diverges, instead of allowing stale parent vectors or missing replacements. Archived episode indexes now participate in full, automatic, and progressive re-embedding and maintenance counts. Portable export is scope-write-locked and includes only manifest-active shards, preventing commit races and retired sidecar dependencies. */
-/* v1.0.4 makes immutable archive memories first-class re-embedding targets. Full, automatic, and progressive vector maintenance now write a verified copy-on-write archive snapshot and atomically switch only the current chat's archiveRef; shared predecessor archives remain byte-unchanged, archive-only scopes no longer report zero work, and progressive success counts include only durably committed local/archive vectors. */
-/* v1.0.3 expands Portable JSON Memory Restore into three fail-closed workflows: exact same-chat replacement, empty-chat migration as an immutable inherited archive, and exact-transcript chat-copy recovery with scope rebinding and worldline reconstruction. Cross-chat imports require actor compatibility, refuse non-empty targets, verify every durable write and rollback, preserve local vector sidecars without re-embedding, and never mutate the source scope. */
-/* v1.0.2 scopes the Portable JSON Memory Backup host to FLASHBACK's own maintenance GUI and preserves the shared busy/operation state when that GUI is rebuilt. This prevents cross-plugin host collisions and misleading active controls after remount without changing backup format, restore policy, storage schemas, vectors, archives, recall, or peer contracts. */
-/* v1.0.1 integrates Portable JSON Memory Backup into the Memory Maintenance page, removes the detached floating controls, serializes backup/restore against maintenance and other GUI storage work, and adds executable DOM remount coverage. Storage schemas, restore policy, vectors, archives, recall, and peer contracts are unchanged. */
-/* v1.0.0 promotes FLASHBACK Memory to its stable release line without changing U+A record/shard/vector/archive/worldline formats, embedding behavior, recall semantics, RE:TRACE peer protocol, or DATA layout from v0.11.40. The version change is release metadata only and requires no re-embedding. */
-/* v0.11.40 adds an exact scope-bound live-chat revision cache for long sessions. Unchanged messages reuse normalized descriptors and unchanged transcripts reuse the U+A pair state; edits/rerolls recompute only changed message descriptors, rollbacks prune disappeared entries, and cache memory is bounded. Official output capture, worldline identities, shards, vectors, archives, recall, and RE:TRACE contracts are unchanged. */
-/* v0.11.39 makes Portable Memory Backup truly self-contained for dense vectors: every Flashback local Float32 vector sidecar referenced by active or immutable-archive shards is exported with its own digest, required on restore, written/read-back transactionally before record activation, and rolled back on failure. Portable envelopes now also carry the real plugin version metadata. Recall, embeddings, archive ownership, worldlines, server routing, and RE:TRACE handoff semantics are unchanged. */
-/* v0.11.38 makes Portable Memory Backup UI mounting no-DOM safe so worker/headless hosts skip only the UI while capture, U+A evidence, archive/vector storage, restore, and RE:TRACE contracts continue to initialize unchanged. */
-/* v0.11.37 adds strict same-chat portable U+A evidence/manifest/shard/archive/vector backup and transactional restore with immutable-source safeguards. */
-/* v0.11.32 upgrades the existing recall shard index into a Memory Lane v1 coarse router without creating a second memory store. Shard fingerprints now retain TF/DF/IDF-ready term statistics, bounded phrase/entity anchors and existing-vector centroids; routing uses rare-feature weighting, exact-anchor protection, adaptive score-gap selection, low-confidence expansion and full-scan fail-open. Canonical records, vector calls, archive/shard ownership, worldlines and fine recall are unchanged. */
-/* v0.11.33 adopts RisuAI 2026.8.240 addRisuChatListener('output') as the authoritative committed-output event source. Committed U+A snapshots are keyed as logical turns and upserted as revisioned local-hash provisional evidence without remote embedding; auto-continue updates replace the same turn, the next beforeRequest reconciles IGP/post-output drift from the exact live chat before recall, and only that latest revision receives the remote embedding upgrade. Long finalized-chat polling is disabled while the official listener is active; afterRequest remains cleanup/fallback only and legacy monitoring is used only when the listener is unavailable. */
-/* v0.11.34 formalizes mutually-exclusive capture backends for old RisuAI and fork hosts. CHAT_OUTPUT_V3 remains authoritative when available; otherwise SCRIPT_OUTPUT_LEGACY uses the old output script event as a completion candidate and reconciles it against live chat, and AFTER_REQUEST_RECONCILE remains the final fallback. Only the selected backend may create U+A capture candidates, while finalized live-chat verification, hash-first durability, reroll/rollback worldline checks and remote-embedding-after-confirmation remain unchanged. Debug state exposes backend registration, fallback reason, observed events, revisions, duplicates and stale/superseded drops. */
-/* v0.11.35 adds API-v3 dispatch-health failover without reintroducing timing-based finalization. A main afterRequest arms a non-authoritative health witness while CHAT_OUTPUT_V3 owns capture; if the next main beforeRequest arrives before any official output callback, Flashback removes the silent listener, promotes one legacy backend, and resumes the existing authoritative live-chat reconciliation/hash-first durability path for the missed pending turn. */
-/* v0.11.36 adds official getRuntimeInfo() diagnostics for environment-aware support logs. Only apiVersion/platform/saveMethod are retained; runtime strings never replace capability detection or capture dispatch-health checks, and recall/capture/storage/vector behavior is unchanged. */
-/* v0.11.31 adopts Storage SDK v1.8.10: mode changes use a no-write conflict preflight, mirror sync applies server tombstones without resurrection, and restored owner data remains fail-closed. */
-/* v0.11.29 adopts Storage SDK v1.8.8: the active plugin-only scope is a strict zero-network boundary even when other scopes use the server, shared and foreign-scope keys stay local, and applying plugin-only does not reconnect. */
-/* v0.11.28 includes immutable archive-layer manifest statistics in the GUI without hydrating archive shards, labels unverifiable archive totals as partial, restores only the immutable archive dependencies linked by the current manifest, and rejects server-to-pluginStorage recovery unless the restored current/archive manifests, shards, checksums, and vector sidecars pass owner readback validation. */
-/* v0.11.27 adopts Storage SDK v1.8.6: timed-out server requests are aborted, failed data routes open the shared offline circuit, background resources are disposed on unload, and hot-reload globals are released safely. */
-/* v0.11.26 keeps summary inspection manifest-local instead of traversing up to 256 immutable archive manifests, and pre-resolves global/shared/explicit scope storage routes without redundant current-chat discovery. Full record reads, maintenance, and handoff verification still validate the complete archive chain. */
-/* v0.11.22 adds a protected adaptive recall controller: the current user input remains authoritative while a separately embedded recent-scene context, multi-topic sparse arms, relevance-versus-recency preference mixing, must-carry evidence coverage, contradiction pairing, multi-resolution episode expansion, and scene-stability diagnostics strengthen recall without changing canonical U+A storage, vectors, archives, worldlines, or handoff semantics. */
-/* v0.11.21 formalizes RisuAI stable message identity without changing existing storage keys: msg.chatId is the canonical first choice, fallback identity source/quality is recorded, and a persona-independent canonical character+chat identity is carried alongside the legacy physical scope for safer same-chat recovery. */
-/* v0.11.20 adds Librarian System server diagnostics to Flashback debug exports. The export now fetches the current scope’s privacy-scrubbed server event journal, namespace integrity, server/protocol state, log rotation statistics and offline error state without exposing memory bodies, raw storage keys, API credentials or authorization tokens. */
-/* v0.11.19 changes Librarian System storage selection from one plugin-wide ARG to an independent current-scope route. Every new chat scope defaults to pluginStorage; plugin-only/mirror/server-only can differ by scope, existing global 0.2.6 mode is imported once into only the active scope, current-scope sync/restore/deletion never touches other scopes, and server-only startup keeps the GUI/hooks alive while memory I/O reports the offline server. */
-/* v0.11.18 makes Librarian System data moves observable and non-blocking in the server-connection side panel. Initial pluginStorage→server seeding, manual mirror sync, and server→pluginStorage restore now run as resumable background jobs with live phase, item count, bytes, elapsed time, last activity, retry/failure, and current-key diagnostics; the prior storage mode stays authoritative until baseline/readback/integrity verification completes. */
-/* v0.11.17 adds a first-class 서버 연결 page to the Flashback side panel. The page exposes plugin-only/mirror/server-only storage modes, the loopback server URL, live connection testing, server/protocol status, synchronization, recovery, and guarded pluginStorage deletion without changing recall or capture behavior. */
-/* v0.11.16 adds the RE:TRACE server-scope deletion owner proof. Before an active server scope can be removed, Flashback verifies the exact scoped server keys in pluginStorage/local storage, restores server-only data when necessary, and durably switches to plugin_only. Recall, capture, vector, archive, and worldline behavior are unchanged. */
 
-/* v0.11.16 adds RE:TRACE/Librarian System handoff synchronization: server/mirror storage is verified before and after owner-led session adoption, while plugin-only behavior is unchanged. */
 /*
  * ⚡ FLASHBACK Memory v0.11.14
  *
@@ -1485,7 +1338,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.16';
+const PLUGIN_VERSION = '1.3.24';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1857,6 +1710,7 @@ const PLUGIN_VERSION = '1.3.16';
     recallRecencyWeight: 30,
     recallContextMessages: 5,
     contextualRecall: true,
+    gradiaFinalDelivery: true,
     adaptiveContextWindow: true,
     multiQueryRecall: true,
     contradictionBundleEnabled: true,
@@ -1893,8 +1747,6 @@ const PLUGIN_VERSION = '1.3.16';
     maxRecallPerTurn: 3,
     shardSize: 64
   });
-  const CONVERSATION_DRIFT_CONFIRM_DELAY_MS = 1600;
-  const CONVERSATION_DRIFT_DISMISS_MS = 10 * 60 * 1000;
   const PENDING_TURN_MAX_AGE_MS = 30 * 60 * 1000;
   const MAX_PENDING_TURNS = 8;
   const PENDING_CAPTURE_JOURNAL_VERSION = 3;
@@ -1996,7 +1848,6 @@ const PLUGIN_VERSION = '1.3.16';
   // set) is released when the recall ends. Shards whose records still carry inline
   // vectors while awaiting re-embedding reach ~2.5M chars, beyond the cache cap.
   const RECALL_REQUEST_READ_MAX_BYTES = 64 * 1024 * 1024;
-  const RECALL_SHARD_CACHE_TTL_MS = 5 * 60 * 1000;
   const FLASHBACK_STATIC_CONTRACT_CACHE = new Map();
 
   const normalizeQueryForEmbeddingCache = (value) => text(value || '')
@@ -2245,17 +2096,6 @@ const PLUGIN_VERSION = '1.3.16';
       fallbackSkipped: 0,
       invalidations: 0
     },
-    recallShardCache: new Map(),
-    recallShardCacheStats: {
-      hits: 0,
-      misses: 0,
-      evictions: 0,
-      invalidations: 0,
-      oversizedSkips: 0,
-      bytes: 0,
-      peakBytes: 0,
-      maxBytes: RECALL_SHARD_CACHE_MAX_BYTES
-    },
     localVectorShardCache: new Map(),
     localVectorShardStats: {
       reads: 0,
@@ -2426,12 +2266,6 @@ const PLUGIN_VERSION = '1.3.16';
     return barrier;
   };
 
-  const takePendingCaptureBarrier = () => {
-    const barrier = Runtime.pendingCaptureBarrier;
-    if (!barrier) return null;
-    Runtime.pendingCaptureBarrier = null;
-    return barrier;
-  };
 
   const currentPendingCaptureBarrier = () => Runtime.pendingCaptureBarrier || null;
 
@@ -2473,41 +2307,7 @@ const PLUGIN_VERSION = '1.3.16';
     return removed;
   };
 
-  const expiredUnconfirmedShortPendingIds = (pendingList = [], options = {}) => {
-    const now = Date.now();
-    const scopeKey = text(options.scopeKey || '');
-    const excludeIds = new Set((Array.isArray(options.excludeIds) ? options.excludeIds : []).map(id => text(id)).filter(Boolean));
-    return (Array.isArray(pendingList) ? pendingList : [])
-      .filter(item => item?.pendingId && !excludeIds.has(item.pendingId))
-      .filter(item => !scopeKey || !item?.scope?.scopeKey || item.scope.scopeKey === scopeKey)
-      .filter(item => Number(item?.shortAssistantSeenAt || 0) > 0)
-      .filter(item => !item?.shortAssistantConfirmed)
-      .filter(item => now - Number(item.shortAssistantSeenAt || 0) > PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS)
-      .map(item => item.pendingId);
-  };
 
-  const markPendingTurnsShortAssistant = (pendingIds = [], assistant = '', options = {}) => {
-    const ids = new Set((Array.isArray(pendingIds) ? pendingIds : []).map(id => text(id)).filter(Boolean));
-    const body = text(assistant || '').trim();
-    if (!ids.size || !body) return [];
-    const list = Array.isArray(Runtime.pendingTurns) ? Runtime.pendingTurns : [];
-    const marked = [];
-    const now = Date.now();
-    Runtime.pendingTurns = list.map(item => {
-      if (!ids.has(item?.pendingId || '')) return item;
-      const next = {
-        ...item,
-        shortAssistantSeenAt: now,
-        shortAssistantConfirmed: !!options.confirmed,
-        shortAssistantPosition: Number(options.position || 0) || 0,
-        shortAssistantText: compact(body, 240)
-      };
-      marked.push(next);
-      return next;
-    });
-    Runtime.pendingTurn = Runtime.pendingTurns[Runtime.pendingTurns.length - 1] || null;
-    return marked;
-  };
 
   const nowIso = () => new Date().toISOString();
   const text = (value) => {
@@ -3030,7 +2830,6 @@ const PLUGIN_VERSION = '1.3.16';
     return store;
   };
 
-  const appendOperationLogEntry = async (entry) => await appendOperationLogEntries([entry]);
 
   const cancelOperationLogFlushTimer = () => {
     const timer = Runtime.operationLogFlushTimer;
@@ -3399,7 +3198,7 @@ const PLUGIN_VERSION = '1.3.16';
     const key = text(scopeKey || '');
     if (!key) return;
     Runtime.chatMonitorByScope.delete(key);
-    invalidateRecallShardCache(key);
+    invalidateRecallCache();
     for (const signature of Array.from(Runtime.driftDismissed.keys())) {
       if (text(signature).includes(key)) Runtime.driftDismissed.delete(signature);
     }
@@ -3714,11 +3513,6 @@ const PLUGIN_VERSION = '1.3.16';
     return out;
   };
 
-  const getAssistantVisibleText = (contentOrMessage) => {
-    if (typeof contentOrMessage === 'string') return contentOrMessage;
-    if (!contentOrMessage || typeof contentOrMessage !== 'object') return '';
-    return contentToText(contentOrMessage.content ?? contentOrMessage.text ?? contentOrMessage.message ?? '');
-  };
 
   const isOwnInjection = (value) => {
     const body = text(value);
@@ -4962,7 +4756,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The server address is kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const SAVED_SERVER_URL_KEY = `__memory_suite_internal_server_url_v1__:${namespace}`;
+  const readSavedServerUrl = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_URL_KEY);
+      return value === undefined || value === null ? '' : String(value).trim();
+    } catch (_) { return ''; }
+  };
+  const writeSavedServerUrl = async value => {
+    const storage = rawPluginStorage();
+    await storage.setItem(SAVED_SERVER_URL_KEY, String(value));
+    if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
+    return true;
+  };
   const getArgumentValue = async (names, fallback = '') => {
+    if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
       for (const api of apiCandidates()) {
         try {
@@ -4977,6 +4786,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const setArgumentValue = async (name, value) => {
+    if (urlArguments.includes(name) && rawPluginStorage()) return await writeSavedServerUrl(value);
     let lastError = null;
     for (const api of apiCandidates()) {
       try {
@@ -14009,6 +13819,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const connection = state.bootstrap.value, generation = dataBinding.generation;
     const connectionWitness = JSON.stringify(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -14162,6 +13974,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const executionIdentity = value => JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback ?? 0]);
     const executionIdentityWitness = executionIdentity(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -15852,7 +15666,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     embeddingQueryTask: 'embeddingQueryTask', embeddingDocumentTask: 'embeddingDocumentTask', embeddingQueryPrefix: 'embeddingQueryPrefix', embeddingDocumentPrefix: 'embeddingDocumentPrefix',
     embeddingNormalize: 'embeddingNormalize', captureAfterRequest: 'captureAfterRequest', operationLogEnabled: 'operationLogEnabled',
     promptCacheMode: 'promptCacheMode', evidenceGate: 'evidenceGate', currentSceneTailEnabled: 'currentSceneTailEnabled', entityFocusedRecallEnabled: 'entityFocusedRecallEnabled',
-    contextualRecall: 'contextualRecall', episodeIndexEnabled: 'episodeIndexEnabled', adaptiveContextWindow: 'adaptiveContextWindow', multiQueryRecall: 'multiQueryRecall', contradictionBundleEnabled: 'contradictionBundleEnabled',
+    contextualRecall: 'contextualRecall', gradiaFinalDelivery: 'gradiaFinalDelivery', episodeIndexEnabled: 'episodeIndexEnabled', adaptiveContextWindow: 'adaptiveContextWindow', multiQueryRecall: 'multiQueryRecall', contradictionBundleEnabled: 'contradictionBundleEnabled',
     multiResolutionRecallEnabled: 'multiResolutionRecallEnabled', recallStabilityEnabled: 'recallStabilityEnabled', recallRelatednessWeight: 'recallRelatednessWeight', recallRecencyWeight: 'recallRecencyWeight',
     recallContextMessages: 'recallContextMessages', recallStabilityBoost: 'recallStabilityBoost', topK: 'topK', minScore: 'minScore', candidateLimit: 'candidateLimit', gateHighCosine: 'gateHighCosine',
     maxInjectionChars: 'maxInjectionChars', hookRecallTimeoutMs: 'hookRecallTimeoutMs'
@@ -15862,7 +15676,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const argumentSettingField = key => FLASHBACK_ARGUMENT_SETTING_FIELDS.find(field => field.key === key) || null;
   const argumentSettingControlForKey = key => argumentSettingField(key) ? argumentSettingControlId(key) : (FLASHBACK_EXISTING_SETTING_CONTROLS[key] || '');
   const argumentNameToSettingKey = name => text(name).replace(/_([a-z])/g, (_match, letter) => letter.toUpperCase());
-  const settingKeyToArgumentName = key => SETTING_ARGUMENT_NAMES.find(name => argumentNameToSettingKey(name) === key) || '';
   const flashbackSettingSource = (settingKey, argumentOverrides = Runtime.argumentOverrides || {}, storedOverrides = Runtime.storedSettingsOverrides || {}) => {
     if (Object.prototype.hasOwnProperty.call(argumentOverrides || {}, settingKey)) return 'argument';
     if (Object.prototype.hasOwnProperty.call(storedOverrides || {}, settingKey)) return 'saved';
@@ -15885,7 +15698,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           const value = await reader(key);
           if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) continue;
           // Old `int` declarations return numeric 0 when the field is blank.
-          // v0.8.2+ declares numeric inputs as strings, so an intentional zero is
           // the distinguishable string "0" and remains a valid override.
           if (numeric && typeof value === 'number' && value === 0) {
             legacyZeroSeen = true;
@@ -16001,6 +15813,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallRecencyWeight: clampNumber(raw.recallRecencyWeight ?? raw.recall_recency_weight, 0, 100, DEFAULTS.recallRecencyWeight),
       recallContextMessages: clampInt(raw.recallContextMessages ?? raw.recall_context_messages, 0, 20, DEFAULTS.recallContextMessages),
       contextualRecall: asBool(raw.contextualRecall, DEFAULTS.contextualRecall),
+      gradiaFinalDelivery: asBool(raw.gradiaFinalDelivery, true),
       adaptiveContextWindow: asBool(raw.adaptiveContextWindow ?? raw.adaptive_context_window, DEFAULTS.adaptiveContextWindow),
       multiQueryRecall: asBool(raw.multiQueryRecall ?? raw.multi_query_recall, DEFAULTS.multiQueryRecall),
       contradictionBundleEnabled: asBool(raw.contradictionBundleEnabled ?? raw.contradiction_bundle_enabled, DEFAULTS.contradictionBundleEnabled),
@@ -16429,7 +16242,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
 
-  const storedEmbeddingKeyValue = value => storedEmbeddingCredentialMeta(value).key;
 
   const embeddingCredentialEnvelope = (key = '') => ({
     schema: EMBEDDING_CREDENTIAL_SCHEMA,
@@ -19312,19 +19124,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return textBoundaryCapped(value, max);
   };
 
-  const joinLabeledFields = (fields = []) => {
-    const out = [];
-    const seen = new Set();
-    for (const [label, value] of fields) {
-      const body = knowledgeText(value).trim();
-      if (!body || body === '{}' || body === '[]' || body === '[object Object]') continue;
-      const key = stableHash(`${label}\n${body}`);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(label ? `${label}: ${body}` : body);
-    }
-    return out.join('\n\n');
-  };
 
   const collectionFrom = (value) => {
     if (Array.isArray(value)) return value.filter(item => item && typeof item === 'object');
@@ -19792,7 +19591,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // Flashback v1.0.25: durable ownership is Character + Chat. Persona is only
     // presentation/diagnostic state and MUST NOT split storage or pending capture.
     // Keep the exact legacy Persona key beside the canonical key so an existing
-    // v1.0.24 store can be discovered and copied without mutating the source.
     const characterId = firstFilled(character.id, character._id, character.uid, character.uuid, character.key, characterName, charIndex >= 0 ? `charIndex:${charIndex}` : 'character:unknown');
     const personaId = firstFilled(persona.id, persona._id, persona.uid, persona.uuid, persona.key, personaName, 'persona:unknown');
     const chatStableId = firstFilled(chat.id, chat._id, chat.uid, chat.uuid, chat.key, chat.chatId, chat.fileName, chat.filename, chatIndex >= 0 ? `chatIndex:${chatIndex}` : '');
@@ -21670,7 +21468,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         && Number(summary?.responseTurnMax || 0) >= turn)
       .map(item => item.index);
     if (exact.length) return Array.from(new Set(exact)).sort((a, b) => a - b);
-    // v0.7.0 summaries used assistant message positions for finalized turns.
     // Their newest response shard is still the safest bounded fallback.
     const latest = Math.max(0, ...summaries.map(summary => Number(summary?.responseTurnMax || 0) || 0));
     return summaries.map((summary, index) => ({ summary, index: Number(summary?.shardIndex ?? index) }))
@@ -22819,79 +22616,16 @@ const MemorySuiteSnapshotCache = (() => {
   };
 
 
-  const recallShardCacheKey = (scopeKey, commitId, shardIndex) => `${text(scopeKey)}\u0000${text(commitId)}\u0000${Number(shardIndex)}`;
 
-  const dropRecallShardCacheEntry = cacheKey => {
-    const entry = Runtime.recallShardCache.get(cacheKey);
-    if (!entry) return false;
-    Runtime.recallShardCache.delete(cacheKey);
-    Runtime.recallShardCacheStats.bytes = Math.max(0, Number(Runtime.recallShardCacheStats.bytes || 0) - Math.max(0, Number(entry.estimatedBytes || 0) || 0));
-    return true;
-  };
 
-  const recallShardCacheRecordForStorage = record => {
-    const ref = normalizeFlashbackVectorRef(record?.vectorRef);
-    if (!ref || !Array.isArray(record?.vector) || !record.vector.length) return record;
-    // Dense vectors backed by the local Float32 sidecar are request-local only. The
-    // shard cache keeps the canonical record/body plus vectorRef, not another Number[].
-    return { ...record, vector: [], dim: Number(record.dim || ref.length || 0) || ref.length, vectorPayloadLocal: true };
-  };
 
-  const estimateRecallShardCacheRecordBytes = record => {
-    if (!record || typeof record !== 'object') return 0;
-    const vectorBytes = Array.isArray(record.vector) ? record.vector.length * 8 : 0;
-    let jsonChars = 0;
-    try { jsonChars = JSON.stringify({ ...record, vector: undefined }).length; }
-    catch (_) { jsonChars = text(record.text || '').length + text(record.title || '').length + 256; }
-    return Math.max(256, jsonChars * 2 + vectorBytes + 192);
-  };
 
-  const invalidateRecallShardCache = (scopeKey = '', commitId = '') => {
+  const invalidateRecallCache = () => {
     // Advance even when empty: an outstanding read must not restore invalid data.
     flashbackRecallCacheEpoch += 1;
     flashbackSnapshotCache.invalidate({ namespace: 'Flashback' }, 'source_invalidated');
-    const wantedScope = text(scopeKey || '');
-    const wantedCommit = text(commitId || '');
-    let removed = 0;
-    for (const [key, entry] of Runtime.recallShardCache.entries()) {
-      if (wantedScope && text(entry?.scopeKey || '') !== wantedScope) continue;
-      if (wantedCommit && text(entry?.commitId || '') !== wantedCommit) continue;
-      if (dropRecallShardCacheEntry(key)) removed += 1;
-    }
-    if (removed) Runtime.recallShardCacheStats.invalidations += removed;
-    return removed;
   };
 
-  const rememberRecallShardCache = (scopeKey, commitId, shardIndex, records, expectedRecordCount) => {
-    if (!scopeKey || !commitId || !Array.isArray(records)) return false;
-    const key = recallShardCacheKey(scopeKey, commitId, shardIndex);
-    dropRecallShardCacheEntry(key);
-    const cacheRecords = records.map(recallShardCacheRecordForStorage);
-    const estimatedBytes = cacheRecords.reduce((sum, record) => sum + estimateRecallShardCacheRecordBytes(record), 256);
-    if (estimatedBytes > RECALL_SHARD_CACHE_MAX_BYTES) {
-      Runtime.recallShardCacheStats.oversizedSkips += 1;
-      return false;
-    }
-    while (Runtime.recallShardCache.size >= RECALL_SHARD_CACHE_MAX
-      || Number(Runtime.recallShardCacheStats.bytes || 0) + estimatedBytes > RECALL_SHARD_CACHE_MAX_BYTES) {
-      const oldest = Runtime.recallShardCache.keys().next().value;
-      if (!oldest) break;
-      if (dropRecallShardCacheEntry(oldest)) Runtime.recallShardCacheStats.evictions += 1;
-      else break;
-    }
-    Runtime.recallShardCache.set(key, {
-      scopeKey: text(scopeKey),
-      commitId: text(commitId),
-      shardIndex: Number(shardIndex),
-      expectedRecordCount,
-      estimatedBytes,
-      records: cacheRecords,
-      at: Date.now()
-    });
-    Runtime.recallShardCacheStats.bytes = Math.max(0, Number(Runtime.recallShardCacheStats.bytes || 0)) + estimatedBytes;
-    Runtime.recallShardCacheStats.peakBytes = Math.max(Number(Runtime.recallShardCacheStats.peakBytes || 0), Runtime.recallShardCacheStats.bytes);
-    return true;
-  };
 
   const bumpStorageMetric = (metrics, key, amount = 1) => {
     if (!metrics || typeof metrics !== 'object') return;
@@ -23385,7 +23119,7 @@ const MemorySuiteSnapshotCache = (() => {
       await removeFlashbackLocalVectorShard(scopeKey, cleanCommitId, i).catch(() => false);
       removed += 1;
     }
-    invalidateRecallShardCache(scopeKey, cleanCommitId);
+    invalidateRecallCache();
     return removed;
   };
 
@@ -23410,8 +23144,7 @@ const MemorySuiteSnapshotCache = (() => {
       else await RisuCompat.removeItem(legacyKey);
       removed += 1;
     }
-    if (commitId) invalidateRecallShardCache(scopeKey, commitId);
-    else invalidateRecallShardCache(scopeKey);
+    invalidateRecallCache();
     return removed;
   };
 
@@ -23459,12 +23192,6 @@ const MemorySuiteSnapshotCache = (() => {
       if (!/:records:(?:commit:[^:]+:)?shard:\d{4}$/.test(k)) continue;
       await RisuCompat.removeItem(k);
       removed += 1;
-    }
-    for (const [cacheKey, entry] of Runtime.recallShardCache.entries()) {
-      if (text(entry?.scopeKey || '') !== text(scopeKey)) continue;
-      if (activeCommitId && text(entry?.commitId || '') === text(activeCommitId)) continue;
-      dropRecallShardCacheEntry(cacheKey);
-      Runtime.recallShardCacheStats.invalidations += 1;
     }
     return removed;
   };
@@ -24445,11 +24172,6 @@ const MemorySuiteSnapshotCache = (() => {
     return task;
   };
 
-  const cloneBaseTitle = (value = '') => text(value || '')
-    .trim()
-    .replace(/\s*(?:\((?:copy|복사(?:본)?)\)|(?:copy|복사(?:본)?)(?:\s*\d+)?)\s*$/i, '')
-    .trim()
-    .toLowerCase();
 
   // Persona identity is presentation/current-user state, not the durable identity
   // of a finalized RisuAI chat. Older Flashback scopes included personaId in the
@@ -27197,7 +26919,6 @@ const MemorySuiteSnapshotCache = (() => {
 
   // Only the authenticated bridge handler below can create this capability.
   // Payload booleans/objects are deliberately not authority on public/runtime APIs.
-  const authenticatedRetraceLiaContinuity = new WeakSet();
   const adoptSessionHandoff = async (options = {}) => {
     const expectedTargetChatId = text(options.targetChatId || '').trim();
     const expectedTransferId = text(options.transferId || '').trim();
@@ -27270,20 +26991,6 @@ const MemorySuiteSnapshotCache = (() => {
           && text(freshScope.personaId || '') === expectedTargetPersonaId;
       };
 
-      const liaContinuity = options.__authenticatedLiaContinuity;
-      const continuityMatches = liaContinuity && authenticatedRetraceLiaContinuity.has(liaContinuity)
-        && liaContinuity.verified === true && liaContinuity.durable === true
-        && text(liaContinuity.sourceChatId || '') === text(markerState.sourceChatId || '')
-        && text(liaContinuity.targetChatId || '') === expectedTargetChatId
-        && text(liaContinuity.transferId || '') === expectedTransferId
-        && text(liaContinuity.sourceScopeKey || '') !== ''
-        && text(liaContinuity.targetScopeKey || '') !== ''
-        && text(liaContinuity.sourceLivePersonaId || '') !== ''
-        && text(liaContinuity.targetLivePersonaId || '') !== ''
-        && text(liaContinuity.sourceLivePersonaId || '') !== text(liaContinuity.targetLivePersonaId || '')
-        && text(liaContinuity.characterId || '') === text(targetScope.characterId || '');
-      // Existing receipts are not permission to skip the current actor check.
-      if (liaContinuity && !continuityMatches) return { ...targetBase, reason: 'lia_continuity_mismatch' };
       const sourceLocalForActor = await loadScopeRecordsRaw(sourceScopeKey);
       assertCompleteScopeLoad(sourceLocalForActor, 'session handoff receipt actor verification');
       const sourceManifestForActor = sourceLocalForActor.manifest || {};
@@ -27291,11 +26998,7 @@ const MemorySuiteSnapshotCache = (() => {
         || text(sourceManifestForActor.chatId) === text(markerState.sourceChatId);
       const directActorMatchesForActor = (!sourceManifestForActor.characterId || !targetScope.characterId || text(sourceManifestForActor.characterId) === text(targetScope.characterId))
         && (!sourceManifestForActor.personaId || !targetScope.personaId || text(sourceManifestForActor.personaId) === text(targetScope.personaId));
-      const forkActorMatchesForActor = continuityMatches
-        && (!sourceManifestForActor.characterId || text(sourceManifestForActor.characterId) === text(liaContinuity.characterId || ''))
-        && text(sourceManifestForActor.personaId || '') === text(liaContinuity.sourceLivePersonaId || '')
-        && text(targetScope.personaId || '') === text(liaContinuity.targetLivePersonaId || '');
-      if (!sourceChatMatchesForActor || !(directActorMatchesForActor || forkActorMatchesForActor)) {
+      if (!sourceChatMatchesForActor || !directActorMatchesForActor) {
         return { ...targetBase, sourceScopeKey, reason: !sourceChatMatchesForActor ? 'source_chat_mismatch' : 'source_actor_mismatch' };
       }
       if (!await targetBindingStillCurrent()) return { ...targetBase, sourceScopeKey, reason: 'target_binding_drift_before_receipt' };
@@ -27365,11 +27068,7 @@ const MemorySuiteSnapshotCache = (() => {
       const sourceChatMatches = !sourceManifest.chatId || !markerState.sourceChatId || text(sourceManifest.chatId) === text(markerState.sourceChatId);
       const directActorMatches = (!sourceManifest.characterId || !targetScope.characterId || text(sourceManifest.characterId) === text(targetScope.characterId))
         && (!sourceManifest.personaId || !targetScope.personaId || text(sourceManifest.personaId) === text(targetScope.personaId));
-      const forkActorMatches = continuityMatches
-        && (!sourceManifest.characterId || text(sourceManifest.characterId) === text(liaContinuity.characterId || ''))
-        && text(sourceManifest.personaId || '') === text(liaContinuity.sourceLivePersonaId || '')
-        && text(targetScope.personaId || '') === text(liaContinuity.targetLivePersonaId || '');
-      const actorMatches = directActorMatches || forkActorMatches;
+      const actorMatches = directActorMatches;
       if (!sourceChatMatches || !actorMatches) {
         return { ...targetBase, sourceScopeKey, records: sourceRecordCount, expectedRecords, reason: !sourceChatMatches ? 'source_chat_mismatch' : 'source_actor_mismatch' };
       }
@@ -27671,10 +27370,6 @@ const MemorySuiteSnapshotCache = (() => {
     }
   };
 
-  const loadAllRecords = async (scopeOverride = null) => {
-    const scope = scopeOverride?.scopeKey ? scopeOverride : (scopeOverride ? { scopeKey: scopeOverride } : await resolveCurrentScope(false));
-    return await loadScopeRecords(scope.scopeKey);
-  };
 
   const saveAllRecords = async (records, settings = null, scopeOverride = null) => {
     const scope = scopeOverride?.scopeKey ? scopeOverride : (scopeOverride ? { scopeKey: scopeOverride } : await resolveCurrentScope(false));
@@ -27831,13 +27526,6 @@ const MemorySuiteSnapshotCache = (() => {
     return false;
   };
 
-  const trimNarrativeSpan = (body, start, end) => {
-    let left = Math.max(0, Number(start || 0) || 0);
-    let right = Math.min(body.length, Math.max(left, Number(end || 0) || 0));
-    while (left < right && /\s/u.test(body[left])) left += 1;
-    while (right > left && /\s/u.test(body[right - 1])) right -= 1;
-    return { start: left, end: right };
-  };
 
   const previousNarrativeGraphemeBoundary = (body, desired, minimum = 0) => {
     const min = Math.max(0, Math.min(body.length, Number(minimum || 0) || 0));
@@ -28169,7 +27857,6 @@ const MemorySuiteSnapshotCache = (() => {
     schemaVersion: { value: NARRATIVE_CHUNK_SCHEMA_VERSION, enumerable: false }
   });
 
-  const makeRecordId = (manifest, index = 0) => `vrm_${(manifest.nextId || 1) + index}`;
 
   const isLowValueMemoryChunk = (chunk, source = {}) => {
     const body = sanitizeSourceText(chunk || '').trim();
@@ -29997,26 +29684,8 @@ const MemorySuiteSnapshotCache = (() => {
     pruneRuntimeEphemera();
   };
 
-  const isDismissedConversationDrift = (signature) => {
-    const until = Number(Runtime.driftDismissed.get(signature) || 0);
-    if (!until) return false;
-    if (Date.now() <= until) return true;
-    Runtime.driftDismissed.delete(signature);
-    return false;
-  };
 
-  const dismissConversationDrift = (signature) => {
-    if (signature) Runtime.driftDismissed.set(signature, Date.now() + CONVERSATION_DRIFT_DISMISS_MS);
-    pruneRuntimeEphemera();
-  };
 
-  const isAfterRequestResponseRecord = (record = {}) => {
-    const type = record.sourceType === 'chat_turn' ? 'response' : record.sourceType;
-    return type === 'response'
-      && !(record.autoEpisode || record.sourceType === 'episode_index')
-      && ['afterRequest', 'finalized_live_chat'].includes(record.origin)
-      && Number(record.turnIndex || 0) > 0;
-  };
 
   const responseTurnGroupKey = (record = {}) => compact(record.sourceHash || record.sourceId || `${record.turnIndex}:${record.id || record.hash || ''}`, 240);
 
@@ -30086,7 +29755,6 @@ const MemorySuiteSnapshotCache = (() => {
       if (marker.role !== 'assistant') continue;
       const end = index + 1 < markers.length ? markers[index + 1].start : source.length;
       let rawFragment = source.slice(marker.end, end);
-      // v0.10.12 and older cold-start records could encode consecutive assistant
       // fragments as `Assistant A -> --- -> Assistant B`.  The live turn model
       // canonically represents the same assistant fragments with a blank line.
       // Remove only the synthetic trailing separator immediately before the next
@@ -30116,46 +29784,8 @@ const MemorySuiteSnapshotCache = (() => {
     return fragments.join('\n\n');
   };
 
-  const buildResponseTurnGroups = (records = []) => {
-    const groups = new Map();
-    for (const record of records || []) {
-      if (!isAfterRequestResponseRecord(record)) continue;
-      const key = responseTurnGroupKey(record);
-      if (!key) continue;
-      const assistantPosition = Number(record.assistantMessagePosition || record.turnIndex || 0) || 0;
-      if (!groups.has(key)) groups.set(key, {
-        key,
-        turnIndex: finiteTurnIndex(record),
-        pairIndex: Number(record.pairIndex || 0) || inferPairIndexFromAssistantPosition(assistantPosition),
-        userPosition: Number(record.userMessagePosition || 0) || 0,
-        assistantPosition,
-        bucketNos: [],
-        records: [],
-        title: record.title || '',
-        sourceId: record.sourceId || '',
-        sourceHash: record.sourceHash || ''
-      });
-      groups.get(key).records.push(record);
-    }
-    for (const group of groups.values()) {
-      group.records.sort((a, b) => Number(a.chunkIndex || 0) - Number(b.chunkIndex || 0) || text(a.id).localeCompare(text(b.id)));
-      const body = reconstructChunkGroupText(group.records);
-      group.userText = userTextFromStoredResponseBody(body);
-      group.assistantText = assistantTextFromStoredResponseBody(body);
-    }
-    return Array.from(groups.values()).sort((a, b) => a.turnIndex - b.turnIndex || a.key.localeCompare(b.key));
-  };
 
-  const responseTurnGroupsForCurrentScope = async (scope) => {
-    const loaded = await loadScopeRecords(scope.scopeKey);
-    return { ...loaded, groups: buildResponseTurnGroups(loaded.records) };
-  };
 
-  const storedConversationBaselineForScope = async (scope) => {
-    if (!scope?.scopeKey) return { groups: [], state: { count: 0, assistants: new Map() } };
-    const { groups } = await responseTurnGroupsForCurrentScope(scope);
-    return { groups, state: liveChatStateFromResponseGroups(groups) };
-  };
 
   const samePairUserText = (left = '', right = '') => {
     const a = canonicalTurnCompareText(left).replace(/\s+---\s*$/g, '').trim();
@@ -30164,19 +29794,6 @@ const MemorySuiteSnapshotCache = (() => {
     return a === b || a.includes(b) || b.includes(a);
   };
 
-  const storedResponseGroupPresentInLive = (group = {}, liveState = {}) => {
-    const state = conversationStateWithIndexes(liveState);
-    const assistant = canonicalChatResponseText(group.assistantText || '');
-    if (!assistant) return false;
-    const user = canonicalChatUserText(group.userText || '');
-    let assistantOnlyMatch = false;
-    for (const pair of state.pairs) {
-      if (!sameTurnText(assistant, pair.assistantText)) continue;
-      if (!user || !pair.userText || samePairUserText(user, pair.userText)) return true;
-      assistantOnlyMatch = true;
-    }
-    return assistantOnlyMatch;
-  };
 
   const changedConversationPairIndexes = (previousState = {}, liveState = {}) => {
     const previous = conversationStateWithIndexes(previousState);
@@ -30192,153 +29809,12 @@ const MemorySuiteSnapshotCache = (() => {
     return changed;
   };
 
-  const findRollbackGroups = (groups = [], liveState = {}) => {
-    const count = Number(liveState.count || 0) || 0;
-    const livePairCount = Number(liveState.pairCount || 0) || 0;
-    return groups.filter(group => {
-      if (storedResponseGroupPresentInLive(group, liveState)) return false;
-      const pairIndex = Number(group.pairIndex || 0) || inferPairIndexFromAssistantPosition(group.assistantPosition || group.turnIndex || 0);
-      const assistantPosition = Number(group.assistantPosition || group.turnIndex || 0) || 0;
-      return pairIndex > livePairCount || assistantPosition > count;
-    });
-  };
 
-  const findRerollGroups = (groups = [], liveState = {}, positions = null) => {
-    const allowed = positions instanceof Set ? positions : null;
-    const out = [];
-    for (const group of groups || []) {
-      const pos = Number(group.pairIndex || 0) || inferPairIndexFromAssistantPosition(group.assistantPosition || group.turnIndex || 0);
-      if (!pos || (allowed && !allowed.has(pos))) continue;
-      if (storedResponseGroupPresentInLive(group, liveState)) continue;
-      const livePair = liveState.pairByIndex instanceof Map ? liveState.pairByIndex.get(pos) : null;
-      if (!livePair || !group.assistantText) continue;
-      if (group.userText && livePair.userText && !samePairUserText(group.userText, livePair.userText)) continue;
-      if (!sameTurnText(group.assistantText, livePair.assistantText)) out.push(group);
-    }
-    return out;
-  };
 
-  const deleteResponseTurnGroups = async (scope, groupKeys = [], reason = 'conversation_drift') => {
-    const keys = new Set();
-    for (const item of groupKeys || []) {
-      if (item && typeof item === 'object') {
-        const key = text(item.key || '').trim();
-        if (key) keys.add(key);
-      } else {
-        const key = text(item || '').trim();
-        if (key) keys.add(key);
-      }
-    }
-    if (!scope?.scopeKey || !keys.size) return { removedRecords: 0, removedGroups: 0, scopeKey: scope?.scopeKey || '' };
-    const settings = await loadSettings(true);
-    const result = await withScopeWriteLock(scope.scopeKey, async () => {
-      const loaded = await loadScopeRecords(scope.scopeKey);
-      assertCompleteScopeLoad(loaded, 'conversation drift cleanup');
-      let removedRecords = 0;
-      const keptBase = [];
-      const episodeRecords = [];
-      for (const record of loaded.records) {
-        if (record.autoEpisode || record.sourceType === 'episode_index') {
-          episodeRecords.push(record);
-          continue;
-        }
-        if (isAfterRequestResponseRecord(record) && keys.has(responseTurnGroupKey(record))) {
-          removedRecords += 1;
-          continue;
-        }
-        keptBase.push(record);
-      }
-      const removedEpisodes = removedRecords > 0 ? episodeRecords.length : 0;
-      const kept = removedRecords > 0 ? keptBase : [...keptBase, ...episodeRecords];
-      if (!removedRecords) {
-        return { removedRecords: 0, removedEpisodes: 0, total: loaded.records.length, manifest: loaded.manifest };
-      }
-      const saved = await saveScopeRecords(scope, kept, settings, scope);
-      return { removedRecords, removedEpisodes, total: saved.records.length, manifest: saved.manifest };
-    });
-    if (result.removedRecords > 0) {
-      await maybeRebuildEpisodeIndex(scope, settings, null, { force: true, reason });
-      Runtime.lastStorageAction = {
-        at: Date.now(),
-        conversationDrift: reason,
-        scopeKey: scope.scopeKey,
-        removedRecords: result.removedRecords,
-        removedGroups: keys.size,
-        removedEpisodeIndexes: result.removedEpisodes,
-        total: result.total
-      };
-      invalidateGuiDataCache('all');
-      refreshEmbeddingCostPanel().catch(error => warn('embedding cost panel refresh failed', error));
-    }
-    return { ...result, removedGroups: keys.size, scopeKey: scope.scopeKey };
-  };
 
-  const loadCurrentScopeAndLiveState = async () => {
-    const snapshot = await loadRisuSnapshot(false);
-    const scope = resolveScopeFromSnapshot(snapshot);
-    const liveChat = liveChatReadState(snapshot.chat || {}, scope?.scopeKey || '');
-    return { snapshot, scope, liveState: liveChatStateFromNormalized(liveChat.normalized), liveKnown: liveChat.known };
-  };
 
-  const confirmRollbackDrift = async (scopeKey, previousCount, initialCount, signature) => {
-    try {
-      const { scope, liveState, liveKnown } = await loadCurrentScopeAndLiveState();
-      if (scope.scopeKey !== scopeKey) return;
-      if (!liveKnown) return;
-      if (Number(liveState.pairCount || 0) >= Number(previousCount || 0)) return;
-      const { groups } = await responseTurnGroupsForCurrentScope(scope);
-      const targets = findRollbackGroups(groups, liveState);
-      if (!targets.length) return;
-      const ok = await guiYesNo('롤백이 감지되었습니다. 맞다면 확인, 아니면 아니오를 눌러주세요.', '롤백 감지');
-      if (!ok) {
-        dismissConversationDrift(signature);
-        updateChatMonitor(scope, liveState);
-        return;
-      }
-      await deleteResponseTurnGroups(scope, targets.map(group => ({ key: group.key, bucketNos: group.bucketNos || [] })), 'rollback_detected');
-      updateChatMonitor(scope, liveState);
-    } catch (error) {
-      warn('rollback drift confirmation failed', error);
-    } finally {
-      Runtime.driftChecksInFlight.delete(signature);
-    }
-  };
 
-  const confirmRerollDrift = async (scopeKey, positions, signature) => {
-    try {
-      const { scope, liveState, liveKnown } = await loadCurrentScopeAndLiveState();
-      if (scope.scopeKey !== scopeKey) return;
-      if (!liveKnown) return;
-      const positionSet = new Set((positions || []).map(Number).filter(Boolean));
-      const { groups } = await responseTurnGroupsForCurrentScope(scope);
-      const targets = findRerollGroups(groups, liveState, positionSet.size ? positionSet : null);
-      if (!targets.length) return;
-      const ok = await guiYesNo('리롤이 감지되었습니다. 맞다면 확인, 아니면 아니오를 눌러주세요.', '리롤 감지');
-      if (!ok) {
-        dismissConversationDrift(signature);
-        updateChatMonitor(scope, liveState);
-        return;
-      }
-      await deleteResponseTurnGroups(scope, targets.map(group => ({ key: group.key, bucketNos: group.bucketNos || [] })), 'reroll_detected');
-      updateChatMonitor(scope, liveState);
-    } catch (error) {
-      warn('reroll drift confirmation failed', error);
-    } finally {
-      Runtime.driftChecksInFlight.delete(signature);
-    }
-  };
 
-  const scheduleConversationDriftCheck = (signature, fn) => {
-    if (!signature || Runtime.driftChecksInFlight.has(signature) || isDismissedConversationDrift(signature)) return false;
-    Runtime.driftChecksInFlight.add(signature);
-    scheduleTimer(() => {
-      Promise.resolve()
-        .then(fn)
-        .catch(error => warn('conversation drift check failed', error))
-        .finally(() => Runtime.driftChecksInFlight.delete(signature));
-    }, CONVERSATION_DRIFT_CONFIRM_DELAY_MS);
-    return true;
-  };
 
   const maybeScheduleConversationDriftCheck = async (scope, normalizedMessages = [], options = {}) => {
     if (!scope?.scopeKey) return { scheduled: false, reason: 'no_scope' };
@@ -31268,7 +30744,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       for(const r of newRecords)if(!readback.records.some(x=>x.hash===r.hash && x.text===r.text))throw new Error('SOURCE_EDIT_RAW_READBACK_FAILED');
       const manifest=await saveScopeManifest({...saved.manifest,turnWorldlineLiveHash:'',turnWorldlineRevision:nextWorldline.revision},scope,saveOptions);
       await options.sourceEditValidate();
-      invalidateRecallShardCache(scope.scopeKey);
+      invalidateRecallCache();
       return {inserted:newRecords.length,updated:0,deduped:0,replacedRecords:replaced.length,invalidatedEpisodeIndexes:loaded.records.length-kept.length-replaced.length,total:next.length,manifest,scopeKey:scope.scopeKey};
     }catch(error){
       // Keep both immutable generations until final validation. Roll back only
@@ -31305,7 +30781,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         };
         await assertWorldlineRestore();
         if(currentWorldline!==beforeWorldlineRaw)await saveTurnWorldline(scope.scopeKey,beforeWorldline,{assertCurrent:assertWorldlineRestore});
-        invalidateRecallShardCache(scope.scopeKey);
+        invalidateRecallCache();
       } catch(rollbackError){if(rollbackError)error.message += ' · 이전 정본 복원 확인 필요: '+String(rollbackError?.message||rollbackError);}
       throw error;
     }
@@ -31731,7 +31207,7 @@ const MemorySuiteHealthRecovery = (() => {
       binding:JSON.stringify([scope.scopeKey,scope.canonicalCharacterId,scope.canonicalChatId,snapshot.chat?.bindedPersona||'',scope.hostLineage,observed.binding,raw,snapshot.chat?.message||snapshot.chat?.messages||[]])};
   };
   const flashbackDerivedCacheRecovery=MemorySuiteHealthRecovery.ownerAdapter({owner:'FLASHBACK',snapshot:flashbackHealthSnapshot,
-    clear:scopeKey=>invalidateRecallShardCache(scopeKey),empty:scopeKey=>![...Runtime.recallShardCache.values()].some(entry=>entry?.scopeKey===scopeKey)});
+    clear:scopeKey=>invalidateRecallCache(),empty:()=>true});
   const coordinateFlashbackRecoveryActions = actions => {
     let inFlight=null;
     const denied=()=>Object.freeze({allowed:false,ok:false,status:'blocked',reason:'operation_in_progress'});
@@ -31853,7 +31329,7 @@ const MemorySuiteHealthRecovery = (() => {
           {replaceTurnPair:true,deferEmbedding:true,sourceEditValidate:assertCurrent,sourceEditReplacement:true});
         const readback=await loadScopeRecords(scopeKey);assertCompleteScopeLoad(readback,'explicit reanalysis readback');
         if(diffLiveChatSourcesAgainstRecords(sources,readback.records).unchanged.length!==sources.length)throw Error('SOURCE_EDIT_RAW_READBACK_FAILED');
-        invalidateRecallShardCache(scopeKey);
+        invalidateRecallCache();
         const remoteEmbeddingQueued=schedulePendingEmbeddingWork(scopeKey,{reason:'explicit_reanalysis_published'});
         const done={ok:true,committed:true,scopeKey,rawSaved:true,remoteEmbeddingQueued,chunks:result.chunks,turns:units.map(u=>u.start)};
         flashbackReanalysisStatus={scopeKey,running:false,error:'',lastResult:done};return done;
@@ -33698,11 +33174,6 @@ const MemorySuiteHealthRecovery = (() => {
       return {entityId:String(row.id || row.ref || name),normalized:name,kind:'person',origin:'public_character_metadata',matchForm:'declared',aliases:aliases.map(RecallKeywordFeatures.normalize)};
     }).filter(row=>row.normalized && !row.normalized.startsWith('@'));
   };
-  const resolveRecallEntities = (value, records=[]) => {
-    const entries=new Map();
-    for(const record of records)for(const row of recallEntitiesForRecord(record))entries.set(row.entityId+'\0'+row.normalized,row);
-    return RecallKeywordFeatures.resolveMentions(value,Array.from(entries.values()));
-  };
   const recallFocusForRecord = (record,anchors) => RecallKeywordFeatures.evidenceFocus(record,anchors?.queryPlan || {targets:RecallKeywordFeatures.directAnchors(anchors?.surfaceAnchors||[])},{entities:recallEntitiesForRecord(record),facts:recordStructuredStateFacts(record),properties:[...extractQueryStateProperties(anchors?.queryPlan?.requestText||'')]});
   // Lexical evidence for a semantic candidate, 0..1: an exact surface match counts
   // fully, a BM25 hit decays with its rank. Used as a bounded boost, never alone
@@ -33756,21 +33227,12 @@ const MemorySuiteHealthRecovery = (() => {
     return new Set(focus.evidence.filter(e=>e.kind==='entity_mention').map(e=>e.targetId)).size/Math.max(1,focus.total);
   };
 
-  const visibleRecallClauses = value => sanitizeAssistantForMemory(value || '', { stripRolePrefix: false })
-    .split(/(?<=[.!?。！？…])\s+|\n+/u)
-    .map(clause => clause.trim())
-    .filter(Boolean)
-    .slice(0, 260);
 
-  const collectVisibleClauses = (clauses = [], pattern, limit = 80) => clauses
-    .filter(clause => pattern.test(clause))
-    .slice(0, limit);
 
   const visibleRecallFieldsForRecord = record => {
     const visibleBody = sanitizeAssistantForMemory(record?.text || '', { stripRolePrefix: false });
     const title = sanitizeAssistantForMemory(record?.title || '', { stripRolePrefix: false });
     const tags = Array.isArray(record?.tags) ? record.tags.map(value => text(value)).filter(Boolean) : [];
-    const clauses = visibleRecallClauses(visibleBody);
     const identities = recallEntitiesForRecord(record).flatMap(row=>[row.normalized,...row.aliases]);
     const lexicalAnchors = Array.from(lexicalTokens(`${title}\n${tags.join(' ')}\n${visibleBody}`));
     const titleTokens = Array.from(lexicalTokens(`${title}\n${tags.join(' ')}`)).slice(0, 80);
@@ -33801,7 +33263,6 @@ const MemorySuiteHealthRecovery = (() => {
   };
 
   // Compatibility helper deliberately returns no peer projection.
-  const sparsePublicProjection = _record => ({});
 
   const buildSparseFieldsForRecord = (record = {}, settings = Runtime.settings || DEFAULTS) => visibleRecallFieldsForRecord(record);
 
@@ -34267,6 +33728,7 @@ const MemorySuiteHealthRecovery = (() => {
   };
 
   const contextExcludedPreviousTurnMatchesRecord = (record = {}, context = {}) => {
+    if (context.excludedRecentChatTurns?.has(responseTurnGroupKey(record))) return true;
     const sourceHash = text(context.excludedPreviousTurnSourceHash || '');
     if (sourceHash) return text(record.sourceHash || '') === sourceHash;
     return !isInheritedScopeMemoryRecord(record)
@@ -34638,10 +34100,6 @@ const MemorySuiteHealthRecovery = (() => {
 
   const numberAnchors = (value) => Array.from(new Set((text(value || '').match(/\b\d{1,4}(?:[.:/-]\d{1,4}){0,3}\b/g) || []).slice(0, 32)));
 
-  const hasAnyHint = (value, hints) => {
-    const normalized = normalizeForLexical(value);
-    return hints.some(hint => RecallKeywordFeatures.hint(normalized,hint));
-  };
 
   // Importance is a structural fallback only. Semantic labels such as event,
   // emotion, or state change must be supplied by the analyzer in metadata;
@@ -34813,7 +34271,6 @@ const MemorySuiteHealthRecovery = (() => {
     const storedTurn = Number(record?.turnIndex);
     const pair = Number(record?.pairIndex);
     const origin = text(record?.origin || '');
-    // v0.7.0 cold-start records already used turnIndex as the pair number but
     // could contain an inferred, smaller pairIndex. Preserve that legacy fact.
     const n = /^(?:cold_start_)?live_chat:/.test(origin) && Number.isFinite(storedTurn) && storedTurn > 0
       ? storedTurn
@@ -34881,6 +34338,22 @@ const MemorySuiteHealthRecovery = (() => {
       .filter(body => body && !isOwnInjection(body));
     if (visibleBodies.some(body => sameTurnText(body, wanted))) return true;
     return visibleBodies.length > 1 && sameTurnText(visibleBodies.join('\n\n'), wanted);
+  };
+
+  // Stored turns the model already sees in its recent chat. They are not delivered again as memory,
+  // which also leaves their budget to older turns.
+  const recentChatDuplicateTurns = (records = [], options = {}) => {
+    const canonical = value => text(canonicalTurnCompareText(value) || '');
+    const shown = normalizedMessagesFrom(options.messages || []).filter(message => message?.role === 'assistant');
+    const bodies = shown.map(message => message?.contentText || message?.content || '').filter(body => body && !isOwnInjection(body)).map(canonical).filter(Boolean);
+    const duplicates = new Set();
+    if (!bodies.length) return duplicates;
+    const groups = buildStoredTurnVectorGroups(records.filter(isRecallIndexableRecord)).sort((a, b) => b.turnIndex - a.turnIndex).slice(0, 128);
+    for (const group of groups) {
+      const stored = canonical(group.assistantText);
+      if (Array.from(stored).length >= 12 && bodies.some(body => body.includes(stored))) duplicates.add(group.key);
+    }
+    return duplicates;
   };
 
   const selectPreviousTurnVectorContext = (records = [], options = {}) => {
@@ -35776,13 +35249,6 @@ const MemorySuiteHealthRecovery = (() => {
       .filter(Boolean);
   };
 
-  const recordHasEntityAnchor = (record, anchor) => {
-    const clean = normalizeEntityAnchor(anchor);
-    if (!clean || MEMORY_META_ANCHOR_STOPWORDS.has(clean)) return false;
-    if (recordEntityAnchorSet(record).has(clean)) return true;
-    const haystack = normalizeForLexical(`${record?.title || ''}\n${Array.isArray(record?.tags) ? record.tags.join(' ') : ''}\n${record?.text || ''}`);
-    return haystack.split(/\s+/).map(normalizeEntityAnchor).filter(Boolean).includes(clean);
-  };
 
   const collectEntityFocusedCandidates = (queryAnchors, items = [], settings = Runtime.settings || DEFAULTS) => {
     if (!settings.entityFocusedRecallEnabled) return [];
@@ -35813,7 +35279,6 @@ const MemorySuiteHealthRecovery = (() => {
     return out;
   };
 
-  const ensureForcedRecallItems = (selected = [], forced = [], settings = Runtime.settings || DEFAULTS) => selectFlashbackLegacyCandidates([...forced,...selected],settings);
 
   const applyPerSourceDiversityLimit = (items = [], settings = Runtime.settings || DEFAULTS, context = {}) => selectFlashbackLegacyCandidates(items,settings,context);
 
@@ -36439,7 +35904,8 @@ const MemorySuiteHealthRecovery = (() => {
       return { records: [], currentStateFacts, total: 0, storedTotal: Math.max(0, Number(manifest.count || 0) || 0) + Math.max(0, Number(manifest.archiveRef?.recordCount || 0) || 0), loadedTotal: storedRecords.length, externalSuppressed, storageMissingShards, storageCorruptShards, storageManifestCorrupt, storageForeignScopeKey, storageRecordCountMismatch, queryDim: queryVector.length, queryText: primaryQueryText, requestedQueryText, scopeKey: scope.scopeKey, candidates: 0, gateRejected: 0, scoreRejected: 0, shardSelection, queryEmbeddingCost, queryType, temporalIntent, truthIntent, queryIntent, overlay, previousTurnRecall, inactiveBranchFiltered, worldlineMismatchFiltered, privacyFiltered, sourceEditFiltered, stageElapsed,
         ...(lexicalFallback ? { fallbackWarning: '임베딩 검색을 쓸 수 없어 이번 요청은 키워드 검색으로 기억을 찾았습니다.', modelReadiness: { status: 'lexical_fallback', ready: false, reason: lexicalFallback.status, error: lexicalFallback.error } } : {}) };
     }
-    const recallContext = { scopeKey: scope.scopeKey, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
+    const excludedRecentChatTurns = recentChatDuplicateTurns(records, options);
+    const recallContext = { scopeKey: scope.scopeKey, excludedRecentChatTurns, currentUser: primaryQueryText, recentResponseRanks, latestStateByEntity, queryStateProperties, stateQueryAnchors: rawQueryAnchors, queryType, temporalIntent, truthIntent, queryIntent, overlay, strategy, records, latestResponseTurn, queryFallbackUsed, queryProvider, queryModel, queryProfileId, queryVector, allowLexicalFallback: true, sceneContext, queryTopics, previousTurn, previousTurnProfile, previousTurnNumber, excludedPreviousTurnNumber, excludedPreviousTurnSourceHash };
     recallContext.allowLexicalFallback = !!lexicalFallback;
     recallContext.lexicalFallbackStatus = lexicalFallback?.status || '';
     recallContext.allowVectorsPending = lexicalFallback?.status === 'vectors_pending' || (cfg.heuristicRecall && records.some(r => !modelEligible(r)));
@@ -36664,18 +36130,7 @@ const MemorySuiteHealthRecovery = (() => {
         invalidations: Runtime.sparseCacheStats.invalidations,
         size: Runtime.sparseProjectionCache.size
       },
-      shardCache: {
-        hits: Runtime.recallShardCacheStats.hits,
-        misses: Runtime.recallShardCacheStats.misses,
-        evictions: Runtime.recallShardCacheStats.evictions,
-        invalidations: Runtime.recallShardCacheStats.invalidations,
-        oversizedSkips: Runtime.recallShardCacheStats.oversizedSkips,
-        size: Runtime.recallShardCache.size,
-        bytes: Runtime.recallShardCacheStats.bytes,
-        peakBytes: Runtime.recallShardCacheStats.peakBytes,
-        maxBytes: RECALL_SHARD_CACHE_MAX_BYTES,
-        primary: loaded.performance || null
-      },
+      recallRead: { primary: loaded.performance || null },
       stageElapsed,
       diagnostics: {
         candidateArms: candidateArmDiagnostics,
@@ -36688,18 +36143,7 @@ const MemorySuiteHealthRecovery = (() => {
           invalidations: Runtime.sparseCacheStats.invalidations,
           size: Runtime.sparseProjectionCache.size
         },
-        shardCache: {
-          hits: Runtime.recallShardCacheStats.hits,
-          misses: Runtime.recallShardCacheStats.misses,
-          evictions: Runtime.recallShardCacheStats.evictions,
-          invalidations: Runtime.recallShardCacheStats.invalidations,
-          oversizedSkips: Runtime.recallShardCacheStats.oversizedSkips,
-          size: Runtime.recallShardCache.size,
-          bytes: Runtime.recallShardCacheStats.bytes,
-          peakBytes: Runtime.recallShardCacheStats.peakBytes,
-          maxBytes: RECALL_SHARD_CACHE_MAX_BYTES,
-          primary: loaded.performance || null
-        },
+        recallRead: { primary: loaded.performance || null },
         stageElapsed,
         recallAlignment: { ...Runtime.recallAlignment }
       },
@@ -37199,7 +36643,6 @@ const MemorySuiteHealthRecovery = (() => {
     return true;
   };
 
-  const budgetGroupForRecord = (record) => sourceGroup(record?.sourceType || 'other');
 
   const recallNarrativeUnits = (value, maxUnitChars = 700, options = {}) => {
     const src = sanitizeAssistantForMemory(value, { stripRolePrefix: false })
@@ -37409,21 +36852,6 @@ const MemorySuiteHealthRecovery = (() => {
     return fitNarrativeTextToBudget(evidence, 320);
   };
 
-  const evenlySampleChronologicalItems = (items = [], limit = 0) => {
-    const source = Array.isArray(items) ? items : [];
-    const cap = Math.max(0, Number(limit || 0) || 0);
-    if (!cap || source.length <= cap) return source.slice();
-    if (cap === 1) return [source[source.length - 1]];
-    const out = [];
-    const seen = new Set();
-    for (let index = 0; index < cap; index += 1) {
-      const sourceIndex = Math.round((index * (source.length - 1)) / (cap - 1));
-      if (seen.has(sourceIndex)) continue;
-      seen.add(sourceIndex);
-      out.push(source[sourceIndex]);
-    }
-    return out;
-  };
 
   const recallDisplayOrderValue = (record = {}) => {
     const group = sourceGroup(record.sourceType);
@@ -37831,47 +37259,8 @@ const MemorySuiteHealthRecovery = (() => {
     return 0;
   };
 
-  const assistantPositionInLiveMessages = (liveMessages = [], assistant = '', minPosition = 0) => {
-    const wanted = canonicalTurnCompareText(assistant);
-    if (!wanted) return 0;
-    const min = Math.max(0, Number(minPosition || 0) || 0);
-    const assistants = (Array.isArray(liveMessages) ? liveMessages : [])
-      .filter(message => message?.role === 'assistant')
-      .map(message => ({ position: Number(message.index || 0) + 1, body: canonicalTurnCompareText(message.contentText || message.content || '') }))
-      .filter(item => item.position >= min && item.body);
-    for (let i = assistants.length - 1; i >= 0; i -= 1) {
-      if (sameTurnText(assistants[i].body, wanted)) return assistants[i].position;
-    }
-    return 0;
-  };
 
-  const pendingUserNextAssistantPosition = (liveMessages = [], pending = {}) => {
-    const stableLiveUser = uniqueLiveUserByStableIdentity(liveMessages, pending?.requestUserMessageIdHash || '');
-    if (stableLiveUser) return stableLiveUser.position + 1;
-    if (text(pending?.requestUserMessageIdHash || '').trim()) return 0;
-    const latestUser = canonicalTurnCompareText(pending?.latestUser || '');
-    if (!latestUser || !Array.isArray(liveMessages) || !liveMessages.length) return 0;
-    const requestCount = Math.max(0, Number(pending?.requestMessageCount || 0) || 0);
-    const liveCount = liveMessages.reduce((max, message) => Math.max(max, Number(message?.index || 0) + 1), 0);
-    for (let i = liveMessages.length - 1; i >= 0; i -= 1) {
-      const message = liveMessages[i];
-      if (message?.role !== 'user') continue;
-      const body = canonicalTurnCompareText(message.contentText || message.content || '');
-      if (!body || body !== latestUser) continue;
-      const messagePosition = Number(message.index || 0) + 1;
-      if (latestUser.length < 12 && messagePosition < requestCount && liveCount > requestCount) continue;
-      return Number(message.index || 0) + 2;
-    }
-    return 0;
-  };
 
-  const assistantPositionForPending = (liveMessages = [], assistant = '', pending = {}) => {
-    const requestCount = Math.max(0, Number(pending?.requestMessageCount || 0) || 0);
-    let minPosition = requestCount + 1;
-    const expected = pendingUserNextAssistantPosition(liveMessages, pending);
-    if (expected) minPosition = expected;
-    return assistantPositionInLiveMessages(liveMessages, assistant, minPosition);
-  };
 
   const resolvedRequestUserIdentity = (normalizedMessages = [], resolution = {}, latestUser = '') => {
     const messages = Array.isArray(normalizedMessages) ? normalizedMessages : [];
@@ -37980,292 +37369,10 @@ const MemorySuiteHealthRecovery = (() => {
     return result;
   };
 
-  const choosePendingTurnForAssistant = (pendingList = [], assistantPosition = 0, assistant = '', options = {}) => {
-    const scopeKey = text(options.scopeKey || '');
-    const blockedPendingIds = new Set(Array.isArray(options.blockedPendingIds) ? options.blockedPendingIds.map(id => text(id)).filter(Boolean) : []);
-    const list = (Array.isArray(pendingList) ? pendingList : [])
-      .filter(item => item?.pendingId)
-      .filter(item => !blockedPendingIds.has(item.pendingId))
-      .filter(item => !scopeKey || !item?.scope?.scopeKey || item.scope.scopeKey === scopeKey);
-    if (!list.length) return null;
-    const overlapScore = (item) => lexicalOverlap(item?.latestUser || '', assistant || '');
-    const liveMessages = Array.isArray(options.liveMessages) ? options.liveMessages : [];
-    const pendingPosition = (item) => liveMessages.length ? assistantPositionForPending(liveMessages, assistant, item) : 0;
-    if (!assistantPosition) {
-      if (options.requireAssistantPosition) return null;
-      const minOverlap = Number.isFinite(Number(options.minFallbackOverlap)) ? Number(options.minFallbackOverlap) : PENDING_FALLBACK_MIN_OVERLAP;
-      const shortRequiredOverlap = (item) => {
-        const shortSeenAt = Number(item?.shortAssistantSeenAt || 0) || 0;
-        const shortAge = shortSeenAt ? Date.now() - shortSeenAt : 0;
-        const shortNeedsStrongMatch = !!item?.shortAssistantConfirmed || (shortSeenAt && shortAge > PENDING_SHORT_UNCONFIRMED_GRACE_MS);
-        return shortNeedsStrongMatch
-          ? Math.max(minOverlap, PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP)
-          : (shortSeenAt ? minOverlap : 0);
-      };
-      const scored = list.map(item => {
-        const shortSeenAt = Number(item?.shortAssistantSeenAt || 0) || 0;
-        const shortAge = shortSeenAt ? Date.now() - shortSeenAt : 0;
-        const singleGraceShort = list.length === 1
-          && shortSeenAt
-          && !item?.shortAssistantConfirmed
-          && shortAge <= PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS;
-        const baseRequired = singleGraceShort ? 0 : (shortSeenAt ? shortRequiredOverlap(item) : 0);
-        return {
-          item,
-          score: overlapScore(item),
-          shortSeenAt,
-          shortAge,
-          baseRequired,
-          effectiveRequired: baseRequired
-        };
-      });
-      const unmarked = scored.filter(entry => !entry.shortSeenAt);
-      const shortEntries = scored.filter(entry => entry.shortSeenAt);
-      const shortOnlyCompetition = !unmarked.length && shortEntries.length > 1;
-      const strongShort = scored.filter(entry => {
-        if (!entry.shortSeenAt) return false;
-        entry.effectiveRequired = unmarked.length || shortOnlyCompetition
-          ? Math.max(entry.baseRequired, PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP)
-          : entry.baseRequired;
-        return entry.score >= entry.effectiveRequired;
-      });
-      let activeList = [];
-      if (unmarked.length) {
-        activeList = unmarked.concat(strongShort);
-      } else if (strongShort.length) {
-        activeList = strongShort;
-      } else if (shortEntries.length) {
-        const latestShort = shortEntries.slice().sort((a, b) => Number(b.item.at || 0) - Number(a.item.at || 0))[0] || null;
-        const bestShortScore = Math.max(...shortEntries.map(entry => Number(entry.score || 0)));
-        if (latestShort && Number(latestShort.score || 0) + PENDING_SHORT_LATEST_SCORE_SLACK >= bestShortScore) {
-          activeList = [{ ...latestShort, effectiveRequired: latestShort.baseRequired }];
-        }
-      }
-      const best = activeList.slice().sort((a, b) => b.score - a.score || Number(a.item.at || 0) - Number(b.item.at || 0))[0] || null;
-      if (!best) return null;
-      if (activeList.length === 1) {
-        const required = Number(best.effectiveRequired || best.baseRequired || 0);
-        if (best.score >= required) return { item: best.item, position: 0 };
-        if (best.shortSeenAt && !best.item?.shortAssistantConfirmed && Number(best.shortAge || 0) > PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS && required > 0) {
-          const rejectedPendingIds = scored
-            .filter(entry => entry.shortSeenAt && !entry.item?.shortAssistantConfirmed && Number(entry.shortAge || 0) > PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS)
-            .map(entry => entry.item?.pendingId)
-            .filter(Boolean);
-          return { rejected: true, reason: 'expired_short_no_live_fallback', item: best.item, position: 0, score: best.score, required, rejectedPendingIds };
-        }
-        return null;
-      }
-      if (best.shortSeenAt) return { item: best.item, position: 0 };
-      if (best.score >= minOverlap) return { item: best.item, position: 0 };
-      return null;
-    }
-    const positionAllowed = (item, position = assistantPosition) => {
-      const shortSeenAt = Number(item?.shortAssistantSeenAt || 0) || 0;
-      if (!shortSeenAt) return true;
-      const shortPosition = Number(item?.shortAssistantPosition || 0) || 0;
-      const shortAge = Date.now() - shortSeenAt;
-      const expectedLivePosition = pendingUserNextAssistantPosition(liveMessages, item);
-      if (!shortPosition && expectedLivePosition && position === expectedLivePosition) return true;
-      const needsStrongMatch = !!item.shortAssistantConfirmed || shortAge > PENDING_SHORT_UNCONFIRMED_GRACE_MS || (shortPosition && position > shortPosition) || (!shortPosition && !!shortSeenAt);
-      if (!needsStrongMatch) return true;
-      if (shortPosition && position === shortPosition) return true;
-      return overlapScore(item) >= PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP;
-    };
-    const positioned = list
-      .map(item => ({ item, position: liveMessages.length ? pendingPosition(item) : assistantPosition }))
-      .filter(match => match.position > 0 && positionAllowed(match.item, match.position));
-    if (!positioned.length) return null;
-    return positioned.slice().sort((a, b) => {
-      const itemA = a.item;
-      const itemB = b.item;
-      const aExpected = Number(itemA.expectedAssistantPosition || itemA.turnIndex || 0) || 0;
-      const bExpected = Number(itemB.expectedAssistantPosition || itemB.turnIndex || 0) || 0;
-      const aDistance = aExpected ? Math.abs(aExpected - a.position) : 1000000;
-      const bDistance = bExpected ? Math.abs(bExpected - b.position) : 1000000;
-      const aValidRange = Number(itemA.requestMessageCount || 0) < a.position ? 0 : 1;
-      const bValidRange = Number(itemB.requestMessageCount || 0) < b.position ? 0 : 1;
-      return aDistance - bDistance || aValidRange - bValidRange || overlapScore(itemB) - overlapScore(itemA) || Number(itemA.at || 0) - Number(itemB.at || 0);
-    })[0] || null;
-  };
 
-  const consumePendingTurnForAssistant = async (assistant = '', options = {}) => {
-    const list = prunePendingTurns('pending_prune_before_consume').slice();
-    if (!list.length) return null;
-    let assistantPosition = 0;
-    let scopeKey = text(options.scopeKey || '');
-    let liveMessages = [];
-    try {
-      const snapshot = await loadRisuSnapshot(false);
-      if (!scopeKey) scopeKey = resolveScopeFromSnapshot(snapshot)?.scopeKey || Runtime.currentScope?.scopeKey || '';
-      const live = liveChatReadState(snapshot.chat || {}, scopeKey);
-      if (live.known) {
-        liveMessages = Array.isArray(live.normalized) ? live.normalized : [];
-        assistantPosition = assistantPositionInLiveMessages(liveMessages, assistant, 0);
-      }
-    } catch (error) {
-      warn('pending turn assistant match failed', error);
-    }
-    if (!scopeKey && Runtime.currentScope?.scopeKey) scopeKey = Runtime.currentScope.scopeKey;
-    const barrier = options.ignoreBarrier ? null : currentPendingCaptureBarrier();
-    const blockedPendingIds = Array.isArray(options.blockedPendingIds)
-      ? options.blockedPendingIds
-      : (barrier ? barrier.pendingIds || [] : []);
-    const chosen = choosePendingTurnForAssistant(list, assistantPosition, assistant, { ...options, scopeKey, blockedPendingIds, liveMessages });
-    if (!chosen) {
-      const staleShortPendingIds = expiredUnconfirmedShortPendingIds(list, { scopeKey, excludeIds: blockedPendingIds });
-      const removed = staleShortPendingIds.length ? removePendingTurnsByIds(staleShortPendingIds, 'expired_short_cleaned_after_no_match') : [];
-      if (removed.length) return { skipped: true, reason: 'expired_short_cleaned_after_no_match', scopeKey, stalePendingCleared: removed.length };
-      return null;
-    }
-    const chosenItem = chosen?.item || chosen;
-    const chosenPosition = Number(chosen?.position || 0) || 0;
-    if (chosen?.rejected) {
-      const rejectedPendingIds = Array.isArray(chosen.rejectedPendingIds) && chosen.rejectedPendingIds.length
-        ? chosen.rejectedPendingIds
-        : [chosenItem?.pendingId].filter(Boolean);
-      const removed = removePendingTurnsByIds(rejectedPendingIds, chosen.reason || 'pending_rejected');
-      return { skipped: true, reason: chosen.reason || 'pending_rejected', scopeKey, stalePendingCleared: removed.length };
-    }
-    const staleShortPendingIds = expiredUnconfirmedShortPendingIds(list, { scopeKey, excludeIds: [chosenItem?.pendingId, ...blockedPendingIds] });
-    const consumed = removePendingTurnById(chosenItem?.pendingId || '');
-    const removed = consumed && staleShortPendingIds.length ? removePendingTurnsByIds(staleShortPendingIds, 'expired_short_cleaned_after_successful_capture') : [];
-    return consumed ? { ...consumed, matchedAssistantPosition: chosenPosition || assistantPosition || 0, stalePendingCleared: removed.length } : null;
-  };
 
-  const markShortAssistantPendingCandidates = async (assistant = '', requestClass = {}) => {
-    const body = text(assistant || '').trim();
-    if (!body) return [];
-    try {
-      const list = prunePendingTurns('pending_prune_before_short_mark').slice();
-      if (!list.length) return [];
-      const barrier = currentPendingCaptureBarrier();
-      const blockedPendingIds = new Set((barrier?.pendingIds || []).map(id => text(id)).filter(Boolean));
-      let scopeKey = Runtime.currentScope?.scopeKey || '';
-      let liveMessages = [];
-      try {
-        const snapshot = await loadRisuSnapshot(false);
-        scopeKey = resolveScopeFromSnapshot(snapshot)?.scopeKey || scopeKey;
-        const live = liveChatReadState(snapshot.chat || {}, scopeKey);
-        if (live.known) liveMessages = Array.isArray(live.normalized) ? live.normalized : [];
-      } catch (_) {}
-      const scoped = list
-        .filter(item => item?.pendingId && !blockedPendingIds.has(item.pendingId))
-        .filter(item => !scopeKey || !item?.scope?.scopeKey || item.scope.scopeKey === scopeKey);
-      if (!scoped.length) return [];
-      let target = null;
-      let confirmedPosition = 0;
-      if (liveMessages.length) {
-        const liveCount = liveMessages.reduce((max, message) => Math.max(max, Number(message?.index || 0) + 1), 0);
-        const confirmed = scoped
-          .map(item => {
-            const requestCount = Math.max(0, Number(item.requestMessageCount || 0) || 0);
-            let minPosition = requestCount + 1;
-            const latestCanonical = canonicalTurnCompareText(item.latestUser || '');
-            for (let i = liveMessages.length - 1; i >= 0; i -= 1) {
-              const message = liveMessages[i];
-              if (message?.role !== 'user') continue;
-              const messagePosition = Number(message.index || 0) + 1;
-              const messageCanonical = canonicalTurnCompareText(message.contentText || message.content || '');
-              if (!messageCanonical || messageCanonical !== latestCanonical) continue;
-              if (latestCanonical.length < 12 && messagePosition < requestCount && liveCount > requestCount) continue;
-              minPosition = Number(message.index || 0) + 2;
-              break;
-            }
-            return {
-              item,
-              position: assistantPositionInLiveMessages(liveMessages, body, minPosition)
-            };
-          })
-          .filter(match => match.position > 0)
-          .sort((a, b) => Math.abs((Number(a.item.expectedAssistantPosition || a.item.turnIndex || 0) || 0) - a.position) - Math.abs((Number(b.item.expectedAssistantPosition || b.item.turnIndex || 0) || 0) - b.position))[0] || null;
-        if (confirmed) {
-          target = confirmed.item;
-          confirmedPosition = confirmed.position;
-        }
-      }
-      if (!target) {
-        const unmarked = scoped
-          .filter(item => !item?.shortAssistantSeenAt)
-          .sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
-        target = unmarked[0] || (scoped.length === 1 ? scoped[0] : null);
-      }
-      if (!target?.pendingId) return [];
-      if (confirmedPosition) {
-        const marked = markPendingTurnsShortAssistant([target.pendingId], body, { confirmed: true, position: confirmedPosition });
-        if (marked.length) Runtime.lastCapture = {
-          at: Date.now(),
-          skipped: true,
-          reason: 'assistant_too_short_confirmed',
-          scopeKey: target.scope?.scopeKey || '',
-          chars: body.length,
-          position: confirmedPosition,
-          requestType: requestClass.requestType || '',
-          normalizedType: requestClass.normalizedType || ''
-        };
-        return marked;
-      }
-      const marked = markPendingTurnsShortAssistant([target.pendingId], body, { confirmed: false });
-      if (marked.length) Runtime.lastCapture = {
-        at: Date.now(),
-        skipped: true,
-        reason: 'assistant_too_short_marked',
-        scopeKey: target.scope?.scopeKey || '',
-        chars: body.length,
-        requestType: requestClass.requestType || '',
-        normalizedType: requestClass.normalizedType || ''
-      };
-      return marked;
-    } catch (error) {
-      warn('short assistant pending mark failed', error);
-      return [];
-    }
-  };
 
-  const resolveCapturedAssistantTurnIndex = async (pending = {}, fallbackScope = {}, assistant = '') => {
-    const fallback = Number(pending.expectedAssistantPosition || pending.turnIndex || 0) || 0;
-    if (Number(pending.matchedAssistantPosition || 0) > 0) return Number(pending.matchedAssistantPosition || 0);
-    try {
-      const snapshot = await loadRisuSnapshot(false);
-      const live = liveChatReadState(snapshot.chat || {}, pending?.scope?.scopeKey || fallbackScope?.scopeKey || '');
-      if (!live.known) return fallback;
-      const pendingPosition = assistantPositionForPending(live.normalized, assistant, pending);
-      if (pendingPosition) return pendingPosition;
-      const minPosition = Math.max(0, Number(pending.requestMessageCount || 0) || 0) + 1;
-      return assistantPositionInLiveMessages(live.normalized, assistant, minPosition) || fallback;
-    } catch (error) {
-      warn('assistant turn position resolve failed', error);
-      return fallback || Number(fallbackScope?.chatMessageCount || 0) + 1;
-    }
-  };
 
-  const resolveCapturedAssistantPairMeta = async (pending = {}, fallbackScope = {}, assistant = '', assistantPosition = 0) => {
-    const fallbackAssistantPosition = Number(assistantPosition || pending.expectedAssistantPosition || pending.turnIndex || 0) || 0;
-    const fallbackPairIndex = Number(pending.pairIndex || 0) || inferPairIndexFromAssistantPosition(fallbackAssistantPosition);
-    const fallback = {
-      pairIndex: fallbackPairIndex,
-      userPosition: Number(pending.userMessagePosition || 0) || (fallbackAssistantPosition > 1 ? fallbackAssistantPosition - 1 : 0),
-      assistantPosition: fallbackAssistantPosition,
-      userText: pending.latestUser || '',
-      assistantText: assistant || ''
-    };
-    try {
-      const snapshot = await loadRisuSnapshot(false);
-      const live = liveChatReadState(snapshot.chat || {}, pending?.scope?.scopeKey || fallbackScope?.scopeKey || '');
-      if (!live.known) return fallback;
-      const state = liveChatStateFromNormalized(live.normalized);
-      const byPosition = state.pairByAssistantPosition instanceof Map ? state.pairByAssistantPosition.get(fallbackAssistantPosition) : null;
-      if (byPosition && sameTurnText(byPosition.assistantText, assistant)) return byPosition;
-      for (const pair of state.pairs || []) {
-        if (!sameTurnText(pair.assistantText, assistant)) continue;
-        if (pending.latestUser && pair.userText && !sameTurnText(pair.userText, pending.latestUser)) continue;
-        return pair;
-      }
-      return fallback;
-    } catch (error) {
-      warn('assistant pair position resolve failed', error);
-      return fallback;
-    }
-  };
 
   const FLASHBACK_CURRENT_INPUT_TAGS = Object.freeze([
     { name: 'Current Input', source: 'Current\\s+Input' },
@@ -39661,7 +38768,12 @@ const MemorySuiteHealthRecovery = (() => {
     const candidates=(state.pairs||[]).filter(pair=>{
       const idBound=!awaiting&&!!pending.requestUserMessageIdHash&&pair.userMessageIdHash===pending.requestUserMessageIdHash;
       if(!pair.assistantText || (!idBound&&stableHash(canonicalChatUserText(pair.userText||''))!==pending.userTextHash))return false;
-      if(response?.body && !sameMaintenanceTurnText(pair.assistantText,response.body))return false;
+      // Later response hooks may rewrite the candidate before the host commits it.
+      // A bound, unchanged user and logical pair identify that committed response;
+      // an unbound/identity-less request still requires exact candidate affinity.
+      const responseMatches=!response?.body||sameMaintenanceTurnText(pair.assistantText,response.body);
+      const stableTarget=idBound&&stableHash(canonicalChatUserText(pair.userText||''))===pending.userTextHash;
+      if(!responseMatches&&!stableTarget)return false;
       if(awaiting){
         if(Number(pair.pairIndex)>Number(pending.bindingBaseCount||0))return true;
         const baseline=(pending.bindingBaseline||[]).find(row=>row.pairIndex===Number(pair.pairIndex));
@@ -39680,8 +38792,10 @@ const MemorySuiteHealthRecovery = (() => {
       pending.userMessagePosition=Number(pair.userPosition);pending.expectedAssistantPosition=Number(pair.assistantPosition);
     }
     const message=messages.find(row=>Number(row.index)+1===Number(pair.assistantPosition))||{};
+    const responseContentDrift=!!response?.body&&!sameMaintenanceTurnText(pair.assistantText,response.body);
     return {position:Number(pair.assistantPosition),body:canonicalChatResponseText(pair.assistantText),raw:message.rawContentText||message.contentText||pair.assistantText,
-      message,authoritativePair:pair,authoritativeUserText:pair.userText,resolverMismatch:false,identityMatchMode:'request_resolution_v2'};
+      message,authoritativePair:pair,authoritativeUserText:pair.userText,resolverMismatch:false,responseContentDrift,
+      identityMatchMode:responseContentDrift?'request_resolution_v2_committed_response_drift':'request_resolution_v2'};
   };
   const authoritativeFinalizedCandidate = (liveMessages = [], pending = {}) => {
     if(pending.resolutionVersion===2)return resolvedRequestFinalizedCandidate(liveMessages,pending);
@@ -41594,6 +40708,39 @@ const MemorySuiteHealthRecovery = (() => {
     return true;
   };
 
+  // While GRADIA reads Flashback, GRADIA makes the one search of the turn and delivers it; the hook keeps
+  // capture. Its announcement expires, so removing GRADIA restores normal recall.
+  let flashbackGradiaAttachedUntil = 0;
+  const noteFlashbackGradiaAttach = ({ active, ttlMs }) => { flashbackGradiaAttachedUntil = active ? Date.now() + Math.min(Math.max(0, ttlMs), 300000) : 0; };
+  const noteFlashbackGradiaDelivery = ({ status, code }) => { if (Runtime.lastRecall?.gradia) { Runtime.lastRecall.gradia = { ...Runtime.lastRecall.gradia, status, code, reportedAt: Date.now() }; refreshLastRecallPanel(); } };
+  // The dynamic evidence the hook would inject, for another reader. It arms no capture and writes nothing.
+  const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatTurns = 0 } = {}) => {
+    const settings = await loadSettings(true), bundle = await resolveCurrentScopeIdentityBundle(false), query = text(queryValue || '');
+    check();
+    const token = beginFlashbackRecallRequest(bundle.scope.scopeKey);
+    try {
+      // The same request this hook would have received: the turns the response request carries, then the input.
+      const liveMessages = liveChatReadState(bundle.snapshot?.chat || {}, bundle.scope.scopeKey).normalized || [];
+      const stored = liveMessages.at(-1)?.role === 'user' && sameMaintenanceTurnText(liveMessages.at(-1).contentText || liveMessages.at(-1).content || '', query) ? liveMessages.slice(0, -1) : liveMessages;
+      let start = stored.length;
+      for (let shown = 0; start > 0 && shown < recentChatTurns; start -= 1) if (stored[start - 1]?.role === 'assistant') shown += 1;
+      const messages = [...stored.slice(start).map(row => ({ role: row.role, content: row.contentText || row.content || '', chatId: row.chatId })), { role: 'user', content: query }];
+      const normalizedRequest = normalizeMessages(messages);
+      const currentUserResolution = resolveFlashbackCurrentTurn(normalizedRequest, { liveMessages });
+      const latestUser = currentUserResolution.rawText || currentUserResolution.text || query;
+      const liveState = liveChatStateFromNormalized(liveMessages);
+      const lineage = resolveFlashbackCaptureLineage(normalizedRequest, currentUserResolution, latestUser, liveState);
+      const recall = await prepareFlashbackRecall(buildRecallQuery(latestUser, normalizedRequest, settings), settings, bundle.scope, { requestToken: token, requestBranch: 0, currentUser: latestUser,
+        currentUserResolution, requestSpec: currentUserResolution?.requestSpec, currentPairIndex: Number(lineage?.pairIndex || 0) || Number(liveState.pairCount || 0) + 1, liveMessages, messages });
+      check();
+      const plan = settings.maxInjectionChars >= 800 ? planFlashbackEvidenceBudget(recall, settings, settings.maxInjectionChars) : { text: '' };
+      const content = text(plan.text || '').trim();
+      const finalDelivery = settings.gradiaFinalDelivery !== false;
+      Runtime.lastRecall = { ...recall, at: Date.now(), scopeKey: bundle.scope.scopeKey, latestUser: compact(query, 600), evidenceBudgetPlan: { actualChars: content.length }, gradia: { status: 'selected', chars: content.length, finalDelivery } };
+      refreshLastRecallPanel();
+      return { content, finalDelivery };
+    } finally { closeFlashbackRecallReadSet(token); }
+  };
   const beforeRequest = async (messages, type = 'model') => {
     const recallRequestId = ++flashbackRecallRequests.sequence;
     let recallToken = null, recallBranch = 0;
@@ -41894,6 +41041,7 @@ const MemorySuiteHealthRecovery = (() => {
       await waitForBackgroundFlashbackWrites(scope.scopeKey, Math.min(FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS, Math.max(0, hookTimeoutMs / 4)));
       recallToken = beginFlashbackRecallRequest(scope.scopeKey,recallRequestId);
       recallToken.settingsHash = stableHash(JSON.stringify(Runtime.settings || {}));
+      if (Date.now() < flashbackGradiaAttachedUntil) return injectStableFlashbackPrefix(messages, { liveMessages: liveChat.normalized || [], currentUserResolution: pendingCapture.currentUserResolution });
       const recallCallStartedAt = Date.now();
       const preRecallMs = Math.max(0, recallCallStartedAt - hookStartedAt);
       hookDeadlinePhase = 'recall';
@@ -43056,18 +42204,7 @@ const MemorySuiteHealthRecovery = (() => {
         } else if (action === 'adopt_session_handoff') {
           const memorySuiteBefore = await MemorySuiteStorageBridge.ensureHandoffReady({ phase: 'flashback_before_adopt' });
           const payload = request.payload && typeof request.payload === 'object' ? request.payload : {};
-          const lia = payload.liaContinuity && typeof payload.liaContinuity === 'object' ? payload.liaContinuity : null;
-          // Sender authentication is checked by this handler before dispatch.
-          // Keep the resulting capability private to this closure so public
-          // runtime calls cannot turn a forged look-alike into authority.
-          const continuity = lia ? Object.freeze({
-            verified: lia.verified === true, durable: lia.durable === true,
-            sourceChatId: text(lia.sourceChatId || ''), targetChatId: text(lia.targetChatId || ''), transferId: text(lia.transferId || ''),
-            characterId: text(lia.characterId || ''), sourceScopeKey: text(lia.sourceScopeKey || ''), targetScopeKey: text(lia.targetScopeKey || ''),
-            sourceLivePersonaId: text(lia.sourceLivePersonaId || ''), targetLivePersonaId: text(lia.targetLivePersonaId || '')
-          }) : null;
-          if (continuity) authenticatedRetraceLiaContinuity.add(continuity);
-          const adoption = await adoptSessionHandoff({ ...payload, __authenticatedLiaContinuity: continuity });
+          const adoption = await adoptSessionHandoff(payload);
           const memorySuiteAfter = await MemorySuiteStorageBridge.ensureHandoffReady({ phase: 'flashback_after_adopt' });
           result = {
             ...adoption,
@@ -43244,11 +42381,6 @@ const MemorySuiteHealthRecovery = (() => {
       || (expectedProvider === 'hash' && vector.length !== settings.hashDimensions);
   };
 
-  const isProgressiveReembeddingRecord = (record = {}) => {
-    const episode = record.autoEpisode === true || record.sourceType === 'episode_index';
-    if (isResponseMemoryRecord(record) && !episode) return true;
-    return record.archiveReferenceOnly === true && isResponseDerivedIndexRecord(record);
-  };
 
   const flashbackArchiveEmbeddingSnapshotFingerprint = (records = []) => stableHash(safeStringify(
     (Array.isArray(records) ? records : [])
@@ -47687,25 +46819,6 @@ ${cleanedText}`, 80),
     return found ? found[1] : key;
   };
 
-  const exportSourceTypeGroups = (records = []) => {
-    const order = new Map([...sourceTypeOptions, ...COUNT_TYPES, ['episode_index', '에피소드 인덱스'], ['unknown', '기타']]
-      .map(([type], index) => [type, index]));
-    const map = new Map();
-    for (const record of Array.isArray(records) ? records : []) {
-      const type = normalizedRecordSourceType(record);
-      if (!map.has(type)) map.set(type, { type, label: sourceTypeLabel(type), records: 0, tokens: 0, chars: 0 });
-      const group = map.get(type);
-      const body = text(record.text || '');
-      group.records += 1;
-      group.tokens += Number(record.tokenEstimate || 0) || estimateTokens(body);
-      group.chars += body.length;
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      const ao = order.has(a.type) ? order.get(a.type) : 999;
-      const bo = order.has(b.type) ? order.get(b.type) : 999;
-      return ao - bo || a.label.localeCompare(b.label);
-    });
-  };
 
   const ensureManualEditorState = () => {
     const current = Runtime.guiManualEditor && typeof Runtime.guiManualEditor === 'object' ? Runtime.guiManualEditor : {};
@@ -48056,7 +47169,6 @@ ${cleanedText}`, 80),
     return `<dt>${escapeHtml(label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`;
   }).join('');
 
-  const renderStorageTypeCells = (stats) => COUNT_TYPES.map(([type]) => `<td>${formatNumber(stats?.byType?.[type]?.tokens || 0)}</td>`).join('');
 
   const storageScopeSelection = () => {
     if (!(Runtime.guiStorageSelectedScopeKeys instanceof Set)) Runtime.guiStorageSelectedScopeKeys = new Set();
@@ -48378,6 +47490,8 @@ ${cleanedText}`, 80),
     const keywordFallback = recall.modelReadiness?.status === 'lexical_fallback'
       ? `<div class="note note--warn"><b>키워드 검색으로 대체</b><span> ${recall.modelReadiness.reason === 'query_timeout' ? '임베딩 응답이 늦어' : recall.modelReadiness.reason === 'query_cooldown' ? '최근 임베딩 실패 후 1분 동안' : '쿼리 임베딩이 실패해'} 이번 요청은 BM25·정확 일치로 기억을 찾았습니다.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
     if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({reason:recall.reason,normalizedType:recall.normalizedType},'{}'))}</pre></div></details>`;
+    const gradiaLabels = { selected: 'GRADIA에 전달 대기', final_delivered: 'GRADIA에 전달됨 · 최종 응답에도 전달', draft_only: 'GRADIA에 전달됨 · 최종 응답에는 미전달', failed: 'GRADIA 전달 실패', empty: 'GRADIA에 전달된 기억 없음' };
+    const gradiaNote = recall.gradia ? `<div class="note" data-gradia-delivery="${escapeHtml(recall.gradia.status)}"><b>${escapeHtml(gradiaLabels[recall.gradia.status] || recall.gradia.status)}</b>${recall.gradia.code ? `<span> ${escapeHtml(recall.gradia.code)}</span>` : ''}</div>` : '';
     const selected = Array.isArray(recall.selected) ? recall.selected.slice(0, 8) : [];
     const delivery = recall.delivery || {}, pipeline = delivery.pipeline || {};
     const returned = delivery.stage === 'returned_to_hook';
@@ -48394,7 +47508,7 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
+    return gradiaNote + queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
@@ -49038,6 +48152,7 @@ ${cleanedText}`, 80),
     return `<div class="stack">
       <section class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge" id="embeddingProviderBadge">${escapeHtml(providerLabels[settings.embeddingProvider] || settings.embeddingProvider || '모델 미설정')}</span></div>
         <label class="setting"><span><b class="setting__name">임베딩 사용</b><span class="setting__desc" id="embeddingEnabled-description">끄면 새 벡터를 만들지 않습니다. 원문 보관은 계속됩니다.</span></span><span class="switch"><input id="embeddingEnabled" aria-describedby="embeddingEnabled-description" type="checkbox" ${settings.embeddingEnabled?'checked':''}><span class="switch__track"></span></span></label>
+        <label class="setting"><span><b class="setting__name">GRADIA 사용 시 최종 응답 모델에도 기억 전달</b><span class="setting__desc" id="gradiaFinalDelivery-description">끄면 Flashback 회상은 GRADIA 초안 단계에서만 쓰입니다.</span></span><span class="switch"><input id="gradiaFinalDelivery" aria-describedby="gradiaFinalDelivery-description" type="checkbox" ${settings.gradiaFinalDelivery!==false?'checked':''}><span class="switch__track"></span></span></label>
         <label class="setting"><span><b class="setting__name">새 임베딩 작업 자동 시작</b><span class="setting__desc" id="embeddingAutoProcess-description">저장된 새 기억의 임베딩을 자동으로 시작합니다.</span></span><span class="switch"><input id="embeddingAutoProcess" aria-describedby="embeddingAutoProcess-description" type="checkbox" ${settings.embeddingAutoProcess!==false?'checked':''}><span class="switch__track"></span></span></label>
         <div class="grid g2"><div class="field"><label for="embeddingProvider">Provider</label><select class="select" id="embeddingProvider">${providerOptions}</select></div><div class="field"><label for="embeddingModel">모델</label><input class="input" id="embeddingModel" list="embeddingModelSuggestions" value="${escapeHtml(settings.embeddingModel)}"><datalist id="embeddingModelSuggestions">${recommendedModels}</datalist></div>
           ${field('embeddingUrl','Base URL / 서버 주소',settings.embeddingUrl,'placeholder="비워두면 기본값"')}
@@ -49503,17 +48618,6 @@ ${cleanedText}`, 80),
     const deliveredFragments = returned ? (pipeline.budgetedFragments ?? delivery.returnedFragments ?? delivery.delivered ?? null) : null;
     const actualChars = Math.max(0, Number(recall?.evidenceBudgetPlan?.actualChars || 0) || 0);
     const excluded = (delivery.discarded || []).filter(item => item?.reason === 'not_delivered_budget').length;
-    const frameHtml = selected.slice(0, 8).map((item, index) => {
-      const detail = turnPairDisplayText(item?.detail || item?.preview || item?.record?.text || '');
-      const preview = turnPairDisplayText(item?.preview || detail);
-      const title = text(item?.displayTitle || item?.title || item?.record?.title || item?.id || item?.record?.id || '제목 없음');
-      const sourceType = sourceTypeLabel(item?.sourceType || item?.record?.sourceType || item?.record?.type || 'unknown');
-      const score = Number.isFinite(Number(item?.score)) ? Number(item.score).toFixed(3) : '—';
-      const cosine = Number.isFinite(Number(item?.cosine)) ? Number(item.cosine) : null;
-      const turnRange = safeStringify(item?.turnRange || item?.record?.turnRange, '확인 불가');
-      const components = item?.components && typeof item.components === 'object' ? Object.entries(item.components).filter(([,v]) => Number.isFinite(Number(v))).map(([k,v]) => `${k} ${Number(v).toFixed(3)}`).join(' · ') : '구성 점수 확인 불가';
-      return `<details class="frame-card" id="fb-recall-frame-${index}"><summary><div class="frame-card__img fc${index % 4 + 1}">${escapeHtml(preview || '미리보기 없음')}</div><div class="frame-card__row"><div><div class="frame-card__type">FRAME ${String(index + 1).padStart(2,'0')} · ${escapeHtml(sourceType)}</div><div class="frame-card__title">${escapeHtml(title)}</div></div><span class="frame-card__score" aria-label="검색 점수">${score}</span></div><span class="frame-card__more"></span></summary><div class="frame-card__detail">${cosine == null ? '' : `<div class="meter"><span>FOCUS · 벡터 유사도 ${cosine.toFixed(3)}</span><meter min="-1" max="1" value="${Math.max(-1,Math.min(1,cosine))}" aria-label="벡터 유사도"></meter></div>`}<b>기억 내용</b><p>${escapeHtml(detail || '저장된 상세 본문이 없습니다.')}</p><details class="fold"><summary>출처 및 검색 점수</summary><div class="fold__body"><dl class="kv"><dt>출처</dt><dd>${escapeHtml(item?.origin || item?.record?.origin || '확인 불가')} · ${escapeHtml(sourceType)}</dd><dt>턴 범위</dt><dd>${escapeHtml(turnRange)}</dd><dt>검색 점수</dt><dd>${score}</dd><dt>구성</dt><dd>${escapeHtml(components)}</dd></dl><p class="hint">기억 본문입니다. 원문 U+A 전문을 별도로 조회한 결과는 아닙니다.</p></div></details></div></details>`;
-    }).join('');
     const recallFrame = renderLastRecallPanel(recall, current.scope?.scopeKey || '');
     const byType = COUNT_TYPES.map(([type,label]) => ({type,label,...(current.stats?.byType?.[type] || {records:0,tokens:0})}));
     const activityEntries = activityLogSnapshot().slice(-2).reverse();
@@ -49666,7 +48770,6 @@ ${cleanedText}`, 80),
 
   const guiAlert = (message, title = '알림') => guiDialog(message, { title, confirm: false });
   const guiConfirm = (message, title = '확인') => guiDialog(message, { title, confirm: true });
-  const guiYesNo = (message, title = '확인') => guiDialog(message, { title, confirm: true, okText: '예', cancelText: '아니오' });
   const guiError = async (prefix, error) => {
     setBusy(false);
     await guiAlert(`${prefix}: ${formatErrorMessage(error)}`, '오류');
@@ -50384,6 +49487,7 @@ ${cleanedText}`, 80),
       embeddingProvider: value('embeddingProvider', base.embeddingProvider),
       embeddingEnabled: checkbox('embeddingEnabled', base.embeddingEnabled),
       embeddingAutoProcess: checkbox('embeddingAutoProcess', base.embeddingAutoProcess),
+      gradiaFinalDelivery: checkbox('gradiaFinalDelivery', base.gradiaFinalDelivery),
       embeddingUrl: value('embeddingUrl', base.embeddingUrl),
       embeddingEndpoint: value('embeddingEndpoint', base.embeddingEndpoint),
       embeddingModel: value('embeddingModel', base.embeddingModel),
@@ -51873,18 +50977,6 @@ ${cleanedText}`, 80),
     };
   };
 
-  const closeManualEditorPanel = () => {
-    Runtime.guiManualEditor = {
-      sourceType: '',
-      search: '',
-      sort: 'newest',
-      limit: MANUAL_EDITOR_PAGE_SIZE,
-      pendingDeleteKeys: []
-    };
-    const node = getGuiNode('manualEditorPanel');
-    if (node) { node.__manualEditorData = null; node.innerHTML = renderManualEditorPanelHtml(null); }
-    manualEditorRenderToken += 1;
-  };
 
   const openManualEditorForSourceType = async (sourceType = MANUAL_EDITOR_SOURCE_TYPE) => {
     const normalizedSourceType = normalizeDisplaySourceType(sourceType || MANUAL_EDITOR_SOURCE_TYPE);
@@ -53765,7 +52857,6 @@ ${cleanedText}`, 80),
       },
       performance: {
         storage: { ...Runtime.storagePerfStats },
-        shardCache: { ...Runtime.recallShardCacheStats, size: Runtime.recallShardCache.size },
         localVectorShards: { ...Runtime.localVectorShardStats, cacheSize: Runtime.localVectorShardCache.size },
         archiveCompression: { ...Runtime.archiveCompressionStats, supported: flashbackArchiveGzipSupported() },
         sparseCache: { ...Runtime.sparseCacheStats, size: Runtime.sparseProjectionCache.size },
@@ -53996,13 +53087,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
+      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
+      else if (action === 'select') {
+        // Server storage is read through the server, but only the owner decides what is relevant.
+        if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        const value = await options.boundary();
+        if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+      }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
         await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
@@ -54010,6 +53112,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -54119,6 +53222,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
+  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
+  const select = async (owner, scope, queryText, signal) => {
+    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+  };
+  // Fire and forget: an owner that is not running simply does not hear it.
+  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -54135,18 +53252,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
-        const available = await describe(scope, requestedOwners);
+        // A route that turned an owner off is not asked at all.
+        const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
+        const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
+        const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        // An empty route means the user turned these owners off, never "ask everyone".
+        if (Array.isArray(routeOwners) && !allowedOwners.length) fail('LIB_READ_OWNERS_DISABLED');
+        const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);
         for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
-        const items = [];
+        const items = [], unavailableOwners = { ...available.unavailable };
+        let firstRefusal = null;
         for (const owner of owners) {
           assertCurrentSync();
           const remaining = input.maxCorpusBytes - corpusBytes;
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
-          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
-            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          let result;
+          try {
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
+              maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          } catch (error) {
+            // One owner's refusal must not take its peers' memory with it. Cancellation and
+            // changed sources still stop the whole read.
+            if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
+            unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
+            firstRefusal ||= error;
+            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
+            continue;
+          }
           // Retain the receipt before validating the response or cancellation.
           if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
           assertCurrentSync();
@@ -54161,13 +53296,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
           corpusBytes += actual;
         }
+        if (!captured.length && firstRefusal) throw firstRefusal;
+        const answeringOwners = captured.map(value => value.owner);
         const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
-            const found = await describe(scope, owners);
+            const found = await describe(scope, answeringOwners);
             assertCurrentSync();
-            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
+            for (const owner of answeringOwners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
@@ -54180,9 +53317,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
+          ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
-            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+            owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
           assertCurrent, assertCurrentSync, close });
       } catch (error) { close(); throw error; }
     }
@@ -54197,413 +53335,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, createClient, dispose });
+  return Object.freeze({ start, describe, select, notify, createClient, dispose });
 });
-const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
-  const { fingerprint, byteLength } = options.primitives;
-  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
-  const fail = code => { throw Object.assign(new Error(code), { code }); };
-  return async (request, authority = {}) => {
-    let reading = true, closed = false;
-    const cache = new Map();
-    let loadedBytes = 0;
-    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
-    const get = async key => {
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      if (reading && cache.has(key)) return cache.get(key);
-      const value = await options.read(key);
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
-      loadedBytes += size;
-      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-      const row = { value: value ?? null, exists: value != null, tombstone: false,
-        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
-      if (reading) cache.set(key, row);
-      return row;
-    };
-    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
-      get: async (_space, key, limits) => {
-        const row = await get(key);
-        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
-        return row;
-      } };
-    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
-      epochs: () => ({}), canRead: () => !closed });
-    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
-    reading = false; cache.clear();
-    let currentTail = Promise.resolve();
-    return { items: snapshot.items,
-      async assertCurrent() {
-        const task = currentTail.then(async () => {
-          loadedBytes = 0;
-          if (closed) fail('LIB_READ_STALE');
-          return (await session.current(snapshot)).current === true;
-        });
-        currentTail = task.catch(() => {});
-        return await task;
-      },
-      close() { closed = true; cache.clear(); }
-    };
-  };
-});
-function createFlashbackPluginReadSession(primitives) {
-'use strict';
-
-// Request-local read evidence over Flashback's published owner manifests. This
-// does not hydrate vectors, repair storage, recall, or certify host currentness.
-const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
-const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
-  const gunzip = async (compressed, options) => {
-    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
-    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-    const chunks = []; let size = 0;
-    try { while (true) { const next = await stream.read(); if (next.done) break;
-      size += next.value.byteLength;
-      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
-      chunks.push(next.value);
-    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
-    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return { toString: () => text };
-  };
-const PLUGIN_ID = 'serial_gradation_agents_for_rp';
-const CAPTURE_ROUTE = '/v1/flashback/read-session/capture';
-const CURRENT_ROUTE = '/v1/flashback/read-session/current';
-const MiB = 1024 ** 2;
-const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  // 4096 refs at a few KiB of non-text metadata each; raw bytes stay separately bounded.
-  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: 8 * MiB, rawOverheadBytes: 2 * MiB,
-  maxRefs: 4096, currentRequestBytes: 4 * MiB, maxArchiveDepth: 256 });
-const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
-const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
-const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-const sha = value => crypto.createHash('sha256').update(value).digest('hex');
-const hash = value => sha(JSON.stringify(value));
-const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-const bytes = value => Buffer.byteLength(value, 'utf8');
-const deepFreeze = value => {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
-    for (const child of Object.values(value)) deepFreeze(child);
-    Object.freeze(value);
-  }
-  return value;
-};
-const validText = (value, max = 512) => typeof value === 'string' && value.length > 0
-  && value.length <= max && !/[\0\r\n]/.test(value);
-const integer = (value, max = LIMITS.maxRefs) => Number.isSafeInteger(value) && value >= 0 && value <= max;
-const validCommit = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
-const digest64 = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-// Flashback hashes UTF-16 code units, not UTF-8 bytes.
-function keyHash(value) {
-  let result = 0x811c9dc5;
-  for (let i = 0; i < value.length; i++) result = Math.imul(result ^ value.charCodeAt(i), 0x01000193);
-  return (result >>> 0).toString(36);
-}
-function stable(value, depth = 0) {
-  if (depth > 32) fail('gradia_read_metadata_depth_exceeded', 413);
-  if (Array.isArray(value)) return `[${value.map(v => stable(v, depth + 1)).join(',')}]`;
-  if (object(value)) return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stable(value[k], depth + 1)}`).join(',')}}`;
-  return JSON.stringify(value) ?? 'null';
-}
-function scopeOf(value) {
-  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => validText(value[key]))
-    || value.scopeKey !== `char:${keyHash(value.characterId)}|chat:${keyHash(value.chatId)}`) fail('gradia_read_scope_invalid', 400);
-  return { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
-}
-function corpusLimit(value) {
-  if (value === undefined) return LIMITS.defaultCorpusBytes;
-  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
-  return value;
-}
-const prefixFor = scopeKey => `vector_rag_memory:scope:${keyHash(scopeKey)}:`;
-const manifestKeyFor = scopeKey => `${prefixFor(scopeKey)}manifest:v2`;
-const shardKeyFor = (scopeKey, commitId, index) => `${prefixFor(scopeKey)}records:${commitId ? `commit:${commitId}:` : ''}shard:${String(index).padStart(4, '0')}`;
-const allowedKey = key => validText(key, 1200) && /^vector_rag_memory:scope:[a-z0-9]+:(?:manifest:v2|records:(?:commit:[A-Za-z0-9_-]{1,160}:)?shard:[0-9]{4})$/.test(key);
-function decode(value) {
-  if (typeof value === 'string') {
-    try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); }
-  }
-  if (!object(value)) fail('gradia_read_stored_object_invalid');
-  return value;
-}
-async function metadataOf(repository, key) {
-  const value = await repository.getMetadata('plugin', key);
-  return { namespace: 'flashback', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-function validateDependency(value, index, scope) {
-  if (!object(value) || value.namespace !== 'flashback' || value.space !== 'plugin'
-    || (index === 0 ? value.key !== manifestKeyFor(scope.scopeKey) : !allowedKey(value.key))) fail('gradia_read_dependencies_invalid', 400);
-  if (index === 0 && value.exists === false) {
-    const absent = value.tombstone === false && value.revision === 0 && value.digest === ''
-      && value.updatedAt === 0 && value.valueBytes === 0;
-    const deleted = value.tombstone === true && Number.isSafeInteger(value.revision) && value.revision > 0
-      && /^[a-f0-9]{64}$/.test(value.digest || '') && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
-      && Number.isSafeInteger(value.valueBytes) && value.valueBytes >= 0;
-    if (!absent && !deleted) fail('gradia_read_dependencies_invalid', 400);
-    return { namespace: 'flashback', space: 'plugin', key: value.key, exists: false, tombstone: value.tombstone,
-      revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-  }
-  if (value.exists !== true || value.tombstone !== false
-    || !Number.isSafeInteger(value.revision) || value.revision < 1 || !digest64(value.digest)
-    || !Number.isSafeInteger(value.updatedAt) || value.updatedAt < 0
-    || !Number.isSafeInteger(value.valueBytes) || value.valueBytes < 0) fail('gradia_read_dependencies_invalid', 400);
-  return { namespace: 'flashback', space: 'plugin', key: value.key, exists: true, tombstone: false,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-const sourceType = record => {
-  const type = String(record.sourceType || record.type || 'unknown').trim();
-  return type === 'chat_turn' ? 'response' : type;
-};
-function retained(record) {
-  const origin = String(record.origin || '').trim().toLowerCase();
-  return record.autoStatic !== true && origin !== 'manual_gui'
-    && !String(record.sourceId || '').trim().toLowerCase().startsWith('manual:')
-    && !(Array.isArray(record.tags) && record.tags.some(tag => String(tag).trim().toLowerCase() === 'manual'))
-    && (sourceType(record) === 'response' || (sourceType(record) === 'episode_index'
-      && (record.autoEpisode === true || String(record.origin || '').startsWith('episode_index'))));
-}
-function inheritedHistory(record) {
-  return record.permanentSessionHistory === true || record.inheritedSessionHistory === true
-    || String(record.historicalProtection || '').trim() === 'permanent_session_history'
-    || Boolean(String(record.inheritedFromScopeKey || record.clonedFromScopeKey || '').trim());
-}
-function recordIdentity(record) {
-  return String(record.permanentHistoryId || '').trim() || keyHash(JSON.stringify([
-    String(record.sourceHash || ''), String(record.sourceId || ''), sourceType(record),
-    number(record.turnIndex || record.pairIndex), number(record.chunkIndex), String(record.text || '')
-  ], null, 2));
-}
-const timeOf = record => Date.parse(record.updatedAt || record.createdAt || '') || 0;
-const sortKey = row => `${row.record.sourceType || ''}:${row.record.createdAt || ''}:${row.record.id || ''}`;
-function mergeRecords(...lists) {
-  const byId = new Map();
-  for (const row of lists.flat()) {
-    const id = recordIdentity(row.record), previous = byId.get(id);
-    if (!previous || timeOf(row.record) >= timeOf(previous.record)) byId.set(id, row);
-  }
-  return [...byId.values()].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-}
-function archivePointer(value) {
-  if (!object(value) || value.schema !== 'flashback_memory.archive_ref.v1'
-    || !validText(value.archiveId, 160) || !/^[A-Za-z0-9_-]+$/.test(value.archiveId)
-    || value.archiveScopeKey !== `flashback_archive_v1:${value.archiveId}`
-    || !integer(value.generation, LIMITS.maxArchiveDepth) || value.generation < 1
-    || !integer(value.depth, LIMITS.maxArchiveDepth) || value.depth < 1
-    || !integer(value.deltaCount) || !integer(value.recordCount)
-    || !validText(value.digest, 64)) fail('gradia_read_archive_pointer_invalid');
-  return { archiveId: value.archiveId, archiveScopeKey: value.archiveScopeKey,
-    generation: value.generation, depth: value.depth, deltaCount: value.deltaCount,
-    recordCount: value.recordCount, digest: value.digest };
-}
-// A composed reader can only tighten this owner's existing raw-read ceiling.
-function rawLimitOf(value, maxCorpusBytes) {
-  const maximum = 7 * maxCorpusBytes + LIMITS.rawOverheadBytes;
-  if (value === undefined) return maximum;
-  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
-  return value;
-}
-function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
-  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().flashback || 0) });
-  async function readUnit(body) {
-    if (!canRead()) fail('gradia_read_maintenance', 503);
-    const repository = getRepository(), epoch = Number(epochs().flashback || 0);
-    repository.database.exec('BEGIN');
-    try {
-      const result = await body(repository);
-      if (!canRead()) fail('gradia_read_maintenance', 503);
-      if (Number(epochs().flashback || 0) !== epoch) fail('gradia_read_reset_changed');
-      return deepFreeze(result);
-    } finally { repository.database.exec('ROLLBACK'); }
-  }
-  function capture(body) {
-    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
-    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
-    return readUnit(async repository => {
-      const readIdentity = identity(scope), dependencies = [], seen = new Set();
-      const rootKey = manifestKeyFor(scope.scopeKey);
-      const rootMetadata = metadataOf(repository, rootKey);
-      if (!rootMetadata.exists || rootMetadata.tombstone) {
-        const rootDeps = [rootMetadata];
-        return { schema: 'memory-suite.flashback-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
-          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId,
-          resetEpoch: readIdentity.resetEpoch, readIdentity };
-      }
-      let rawBytes = 0, metadataBytes = 0, recordCount = 0;
-      // A repository value can wrap JSON in one additional string; NUL costs
-      // seven bytes there. Gzip expansion is separately bounded before parsing.
-      const chargeMetadata = (value, perItem = false) => {
-        let size;
-        try { size = bytes(JSON.stringify(value)); } catch (_) { fail('gradia_read_metadata_invalid'); }
-        metadataBytes += size;
-        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
-      };
-      const read = async (key, limit) => {
-        if (!allowedKey(key)) fail('gradia_read_memory_pointer_invalid');
-        if (seen.has(key)) fail('gradia_read_duplicate_dependency');
-        if (dependencies.length >= LIMITS.maxRefs + 1) fail('gradia_read_reference_limit_exceeded', 413);
-        const metadata = await metadataOf(repository, key);
-        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
-        const bound = Math.min(limit, rawLimit - rawBytes);
-        if (!Number.isSafeInteger(metadata.valueBytes) || metadata.valueBytes < 0 || metadata.valueBytes > bound) fail('gradia_read_storage_budget_exceeded', 413);
-        let row;
-        try { row = await repository.get('plugin', key, { maxValueBytes: bound }); }
-        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
-        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
-        // Check actual bytes as well as metadata; this is read evidence, not a
-        // producer commit label being mistaken for current content authority.
-        const serialized = JSON.stringify(row.value);
-        if (bytes(serialized) !== metadata.valueBytes || sha(serialized) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
-        rawBytes += metadata.valueBytes;
-        seen.add(key); dependencies.push(metadata);
-        return row.value;
-      };
-      const load = async (scopeKey, isCurrent = false) => {
-        const manifest = decode(await read(manifestKeyFor(scopeKey), Math.min(LIMITS.manifestBytes, 2 * (LIMITS.totalMetadataBytes - metadataBytes))));
-        chargeMetadata(manifest);
-        if (manifest.schema !== 'vector_rag_memory.scope_manifest.v2' || manifest.scopeKey !== scopeKey
-          || (manifest.storageHash && manifest.storageHash !== keyHash(scopeKey))) fail('gradia_read_manifest_scope_mismatch');
-        if (isCurrent && ((manifest.canonicalCharacterId || manifest.characterId) !== scope.characterId
-          || (manifest.canonicalChatId || manifest.chatId) !== scope.chatId
-          || (manifest.canonicalScopeId && manifest.canonicalScopeId !== scope.scopeKey)
-          || manifest.archiveOwner === true)) fail('gradia_read_manifest_scope_mismatch');
-        if (!integer(manifest.count) || !integer(manifest.shardCount)) fail('gradia_read_reference_limit_exceeded', 413);
-        if (manifest.count + recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-        if (manifest.commitId && !validCommit(manifest.commitId)) fail('gradia_read_commit_invalid');
-        const directory = ['rawPageLayout', 'rawPageReferences', 'rawPageDirectoryDigest'].some(key => own(manifest, key));
-        if (directory) {
-          if (manifest.rawPageLayout !== 'flashback.raw_pages.v1' || !Array.isArray(manifest.rawPageReferences)
-            || manifest.rawPageReferences.length !== manifest.shardCount || !digest64(manifest.rawPageDirectoryDigest)) fail('gradia_read_raw_page_directory_invalid');
-          let count = 0;
-          for (let i = 0; i < manifest.shardCount; i++) {
-            const ref = manifest.rawPageReferences[i];
-            if (!object(ref) || ref.scopeKey !== scopeKey || ref.payloadShardIndex !== i || !validCommit(ref.payloadCommitId)
-              || ref.storageKey !== shardKeyFor(scopeKey, ref.payloadCommitId, i) || !integer(ref.recordCount)
-              || !digest64(ref.serializedValueDigest)) fail('gradia_read_raw_page_directory_invalid');
-            count += ref.recordCount;
-          }
-          if (count !== manifest.count || sha(stable(manifest.rawPageReferences)) !== manifest.rawPageDirectoryDigest) fail('gradia_read_raw_page_directory_invalid');
-        }
-        const records = [];
-        let loadedCount = 0;
-        for (let i = 0; i < manifest.shardCount; i++) {
-          const ref = directory ? manifest.rawPageReferences[i] : null;
-          const commitId = ref?.payloadCommitId || manifest.commitId || '';
-          const key = shardKeyFor(scopeKey, commitId, i);
-          const remaining = rawLimit - rawBytes;
-          const raw = await read(key, remaining);
-          if (ref && (typeof raw !== 'string' || sha(stable(raw)) !== ref.serializedValueDigest)) fail('gradia_read_raw_page_digest_invalid');
-          let envelope = decode(raw);
-          if (envelope.schema === 'flashback_memory.archive_shard_gzip.v1') {
-            if (!scopeKey.startsWith('flashback_archive_v1:') || envelope.encoding !== 'gzip+base64'
-              || envelope.scopeKey !== scopeKey || envelope.commitId !== commitId || envelope.shard !== i
-              || typeof envelope.data !== 'string' || (envelope.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(envelope.data))) fail('gradia_read_archive_encoding_invalid');
-            const decodeLimit = Math.min(remaining, rawLimit - rawBytes);
-            if (decodeLimit < 1 || !Number.isSafeInteger(envelope.rawChars) || envelope.rawChars < 1 || envelope.rawChars > decodeLimit) fail('gradia_read_storage_budget_exceeded', 413);
-            const compressed = Buffer.from(envelope.data, 'base64');
-            if (compressed.length !== envelope.compressedBytes) fail('gradia_read_archive_encoding_invalid');
-            let decoded;
-            try { decoded = (await gunzip(compressed, { maxOutputLength: decodeLimit })).toString('utf8'); }
-            catch (error) { fail(error.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
-            rawBytes += bytes(decoded);
-            if (rawBytes > rawLimit) fail('gradia_read_storage_budget_exceeded', 413);
-            if (decoded.length !== envelope.rawChars || keyHash(decoded) !== envelope.rawHash) fail('gradia_read_archive_digest_invalid');
-            chargeMetadata({ ...envelope, data: '' }, true);
-            envelope = decode(decoded);
-          }
-          const rows = envelope.records;
-          if (envelope.version !== 2 || envelope.scopeKey !== scopeKey || (envelope.commitId || '') !== commitId
-            || envelope.shard !== i || !Array.isArray(rows) || !rows.every(object)
-            || envelope.checksum !== keyHash(JSON.stringify(rows, null, 2))) fail('gradia_read_shard_invalid');
-          const summary = Array.isArray(manifest.shardSummaries)
-            ? manifest.shardSummaries.find((row, index) => Number(row?.shardIndex ?? index) === i) : null;
-          if ((ref && rows.length !== ref.recordCount) || (summary && rows.length !== Number(summary.recordCount))) fail('gradia_read_shard_count_mismatch');
-          chargeMetadata({ ...envelope, records: [] }, true);
-          for (const record of rows) {
-            if (++recordCount > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-            loadedCount++;
-            if (record.scopeKey !== scopeKey || typeof record.text !== 'string') fail('gradia_read_memory_scope_mismatch');
-            // Inline embedding vectors are payload already counted in rawBytes,
-            // not metadata; a few hundred 1024-d records would exhaust the budget.
-            chargeMetadata({ ...record, text: '', vector: undefined }, true);
-            if (retained(record)) records.push({ record, key, scopeKey, commitId, inherited: !isCurrent || inheritedHistory(record), archiveShared: !isCurrent });
-          }
-        }
-        if (loadedCount !== manifest.count) fail('gradia_read_shard_count_mismatch');
-        return { manifest, records };
-      };
-      const local = await load(scope.scopeKey, true), layers = [], archiveScopes = new Set();
-      let cursor = local.manifest.archiveRef;
-      const archivePresent = cursor != null && cursor !== '' && cursor !== false;
-      const head = archivePresent ? archivePointer(cursor) : null;
-      while (archivePresent && cursor) {
-        const pointer = archivePointer(cursor);
-        if (layers.length >= LIMITS.maxArchiveDepth || archiveScopes.has(pointer.archiveScopeKey)) fail('gradia_read_archive_cycle_or_depth');
-        archiveScopes.add(pointer.archiveScopeKey);
-        const layer = await load(pointer.archiveScopeKey), manifest = layer.manifest;
-        if (manifest.archiveOwner !== true || manifest.archiveId !== pointer.archiveId
-          || manifest.archiveGeneration !== pointer.generation
-          || (manifest.archiveRecordCount ?? manifest.count) !== pointer.recordCount
-          || manifest.archiveDigest !== pointer.digest || layer.records.length !== pointer.deltaCount) fail('gradia_read_archive_identity_mismatch');
-        const cursorParentRaw = cursor.parentRef || cursor.parentArchiveRef;
-        const cursorParent = cursorParentRaw ? archivePointer(cursorParentRaw) : null;
-        const manifestParentPresent = own(manifest, 'parentArchiveRef') && manifest.parentArchiveRef != null;
-        const manifestParent = manifestParentPresent ? archivePointer(manifest.parentArchiveRef) : null;
-        if (cursorParent && (!manifestParent || !same(cursorParent, manifestParent))) fail('gradia_read_archive_parent_mismatch');
-        const parent = cursorParent || manifestParent;
-        if (!parent) {
-          if (pointer.depth !== 1 || pointer.generation !== 1 || pointer.recordCount !== pointer.deltaCount) fail('gradia_read_archive_parent_required');
-        } else if (parent.depth + 1 !== pointer.depth || parent.generation + 1 !== pointer.generation
-          || (manifest.archiveVectorOverlay === true ? parent.recordCount !== pointer.recordCount : parent.recordCount + pointer.deltaCount !== pointer.recordCount)) fail('gradia_read_archive_parent_mismatch');
-        layers.push(layer);
-        cursor = parent ? { schema: 'flashback_memory.archive_ref.v1', ...parent } : null;
-      }
-      const archiveRecords = mergeRecords(...layers.reverse().map(layer => layer.records));
-      if (head && (archiveRecords.length !== head.recordCount
-        || keyHash(archiveRecords.map(row => recordIdentity(row.record)).sort().join('\u0001')) !== head.digest)) fail('gradia_read_archive_digest_mismatch');
-      const selected = mergeRecords(archiveRecords, local.records), items = [];
-      let corpusBytes = 0;
-      for (const row of selected) {
-        const record = row.record, id = String(record.id || record.hash || recordIdentity(record));
-        if (!validText(id, 1200)) fail('gradia_read_memory_id_invalid');
-        corpusBytes += bytes(record.text);
-        if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
-        const turn = number(record.turnIndex || record.pairIndex);
-        items.push({ id, key: row.key, content: record.text, source: {
-          namespace: 'flashback', space: 'plugin', scopeKey: row.scopeKey, memoryId: id,
-          revision: number(record.revision), sourceDigest: String(record.sourceHash || ''),
-          turnRange: { start: turn, end: turn }, sessionEpoch: number(record.sessionEpoch),
-          inherited: row.inherited, archiveShared: row.archiveShared, commitId: row.commitId,
-          sourceType: sourceType(record), chunkIndex: number(record.chunkIndex)
-        } });
-      }
-      return { schema: 'memory-suite.flashback-read-session.v1', readOnly: true, complete: true, scope, items, dependencies,
-        evidenceRevision: hash(dependencies), corpusBytes, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes, rawBytes, dataInstanceId,
-        resetEpoch: readIdentity.resetEpoch, readIdentity };
-    });
-  }
-  function current(body) {
-    const scope = scopeOf(body?.scope);
-    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
-    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
-    const dependencies = body.dependencies.map((value, index) => validateDependency(value, index, scope));
-    if (new Set(dependencies.map(value => value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid', 400);
-    return readUnit(async repository => {
-      const expected = identity(scope);
-      const bindingMatches = body.dataInstanceId === expected.dataInstanceId && body.resetEpoch === expected.resetEpoch
-        && body.readIdentity.dataInstanceId === expected.dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
-      let current = bindingMatches; for (const value of dependencies) if (!same(value, await metadataOf(repository, value.key))) current = false;
-      return { schema: 'memory-suite.flashback-read-session-current.v1', current, scope,
-        evidenceRevision: body.evidenceRevision, dataInstanceId, resetEpoch: expected.resetEpoch };
-    });
-  }
-  return Object.freeze({ capture, current });
-}
-return createReadSession;
-}
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
   const getGradiaPluginReadOwner = () => {
@@ -54620,8 +53353,19 @@ return createReadSession;
           const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
-      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
-        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+      onAttach: noteFlashbackGradiaAttach, onDelivery: noteFlashbackGradiaDelivery,
+      select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
+      capture: async (request, authority) => {
+        // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
+        try {
+          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
+          return { ...read, engine: { source: 'owner_selection' },
+            items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
+              source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
+        } catch (error) { read.close?.(); throw error; }
+      }
     });
     return gradiaPluginReadOwner;
   };
@@ -54684,7 +53428,8 @@ return createReadSession;
     ingestLiveChatColdStart,
     rebuildCurrentChatMemory,
     recallRecords,
-    _selectionTest: {queryCatalogForManifest,selectFusedRecallCandidates,beforeRequest,afterRequest,resolveFlashbackCaptureLineage,capturePendingTurnForMessages, RecallKeywordFeatures, extractRecallAnchors, lexicalTokens, sparseTokenArray, recallEntitiesForRecord,prepareFlashbackRecall,selectFlashbackEvidencePlan,prepareFlashbackEvidenceUnits,renderFlashbackEvidencePlan,reciprocalRankFusion,
+    _selectionTest: {
+      selectRecallPrompt: selectFlashbackRecallPrompt, noteGradiaAttach: noteFlashbackGradiaAttach,queryCatalogForManifest,selectFusedRecallCandidates,beforeRequest,afterRequest,resolveFlashbackCaptureLineage,capturePendingTurnForMessages, RecallKeywordFeatures, extractRecallAnchors, lexicalTokens, sparseTokenArray, recallEntitiesForRecord,prepareFlashbackRecall,selectFlashbackEvidencePlan,prepareFlashbackEvidenceUnits,renderFlashbackEvidencePlan,reciprocalRankFusion,
       buildFlashbackEvidenceRequirements,beginFlashbackRecallRequest,flashbackRequestCurrent,publishFlashbackRecallDelivery},
     rebuildEpisodeIndex: (scopeOverride = null) => (async () => {
       const settings = await loadSettings(true);
@@ -54717,7 +53462,7 @@ return createReadSession;
     clearOperationLogs,
     getActivityLog: activityLogSnapshot,
     clearActivityLog,
-    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallShardCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
+    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
   });
   publicApi._test.buildUiHtml = buildUiHtml;
   publicApi._test.renderManualEditorPanelHtml = renderManualEditorPanelHtml;
@@ -55160,8 +53905,6 @@ return createReadSession;
         Runtime.activityLog.length = 0;
         Runtime.activityLogSeq = 0;
         Runtime.sessionEmbeddingKey = '';
-        Runtime.recallShardCache.clear();
-        Runtime.recallShardCacheStats.bytes = 0;
         Runtime.localVectorShardCache.clear();
         Runtime.sparseProjectionCache.clear();
         Runtime.sparseProjectionRecordKeys.clear();
@@ -57412,8 +56155,19 @@ return createReadSession;
           const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
-      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createFlashbackPluginReadSession(primitives),
-        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+      onAttach: noteFlashbackGradiaAttach, onDelivery: noteFlashbackGradiaDelivery,
+      select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
+      capture: async (request, authority) => {
+        // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
+        try {
+          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
+          return { ...read, engine: { source: 'owner_selection' },
+            items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
+              source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
+        } catch (error) { read.close?.(); throw error; }
+      }
     });
     return gradiaPluginReadOwner;
   };

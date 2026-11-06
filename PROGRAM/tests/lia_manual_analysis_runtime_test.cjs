@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (five-pair Live Persona analysis).'); process.exit(0);
 
 // Full-plugin, mock-host contract tests. Only the provider boundary and private
 // function visibility are replaced; production context/guards/commits stay real.
@@ -32,12 +33,12 @@ const messages = count => Array.from({ length: count }, (_, index) => {
 function expose(_fixtureSource) {
   if (compiledSource) return compiledSource;
   let source = sourceSnapshot;
-  assert.ok(source.includes('      getLiveSyncCaptureState:'), 'full-plugin runtime exposure seam exists');
+  assert.ok(source.includes('      getScopePersonaCatalog:'), 'full-plugin runtime exposure seam exists');
   assert.ok(source.includes('    globalThis[LIA_RUNTIME_INSTANCE_KEY] = {'), 'provider replacement seam exists');
   source = source.replace('    globalThis[LIA_RUNTIME_INSTANCE_KEY] = {', `
     callIndependentProvider = (...args) => api.__manualTestProvider(...args);
     globalThis[LIA_RUNTIME_INSTANCE_KEY] = {`);
-  source = source.replace('      getLiveSyncCaptureState:', `
+  source = source.replace('      getScopePersonaCatalog:', `
       auditManual: typeof runManualLivePersonaAnalysis === 'function' ? expected => runManualLivePersonaAnalysis(expected) : null,
       auditCancel: typeof cancelManualLivePersonaAnalysis === 'function' ? reason => cancelManualLivePersonaAnalysis(reason) : null,
       auditCheck: options => checkLivePersonaSync(options),
@@ -54,7 +55,7 @@ function expose(_fixtureSource) {
       },
       auditReadBinding: scope => readLivePersonaBindingByScopeKey(scope, true),
       auditPending: () => ({ scheduled: liveSyncScheduledChecks.size, requeued: liveSyncRequeueByScope.size, inFlight: liveSyncInFlightScopes.size, proof: personaProofPendingRequests.length }),
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
   source = source.replace('const fresh=await getLiveRuntimeContext();\n        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh);\n        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding);', 'api.__manualTrace?.("update:fresh-start"); const fresh=await getLiveRuntimeContext(); api.__manualTrace?.("update:fresh-done");\n        fresh.livePersonaBinding=await readLivePersonaBindingForContext(fresh); api.__manualTrace?.("update:binding-done");\n        const plan=manualLivePersonaPlan(fresh,fresh.livePersonaBinding); api.__manualTrace?.("update:plan-done");');
   source = source.replace('  async function getLiveRuntimeContext() {\n    const [db, charIndexRaw] = await Promise.all([', '  async function getLiveRuntimeContext() {\n    api.__manualTrace?.("ctx:begin");\n    const [db, charIndexRaw] = await Promise.all([');
   source = source.replace('  async function boundedLiaHostContextCall(label, operation, fallback = null) {\n    if (typeof operation', '  async function boundedLiaHostContextCall(label, operation, fallback = null) {\n    api.__manualTrace?.(`bounded:${label}`);\n    if (typeof operation');

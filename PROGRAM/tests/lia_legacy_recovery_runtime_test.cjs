@@ -1,15 +1,16 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: LIA no longer imports from the server.'); process.exit(0);
 
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 
-const expose=source=>source.replace('      getLiveSyncCaptureState:',`      auditLegacyRecovery: async (bridge,action)=>{
+const expose=source=>source.replace('      getScopePersonaCatalog:',`      auditLegacyRecovery: async (bridge,action)=>{
         const original=memorySuiteLiaValidateRestore;
         memorySuiteLiaValidateRestore=async()=>({ok:true,metrics:{visualAssetBackupChunks:0}});
         try{return await action(createLiaLegacyServerRecovery(bridge));}
         finally{memorySuiteLiaValidateRestore=original;}
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 
 function bridgeFor(rows,{owner='synthetic-owner',integrityError=null,conflict=false}={}){
   const values=new Map(rows),published=[];
@@ -21,20 +22,17 @@ function bridgeFor(rows,{owner='synthetic-owner',integrityError=null,conflict=fa
     async publishLocalRecovery(input){await input.validate(input.records);published.push(...input.records);return {verified:true,restored:input.records.length};}};
 }
 
-const indexKey='liaPersonaLinkerLivePersonaIndexV2';
-function hashText(value){let hash=2166136261;for(const char of String(value||'')){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619);}return `${(hash>>>0).toString(36)}-${String(value||'').length}`;}
-const ownerScope='char:other|chat:other';
-const shardKey=`liaPersonaLinkerLivePersonaScopeV2::${hashText(ownerScope).slice(0,24)}`;
-const scopedIndex=(scopeId)=>`${indexKey}::memory-suite-scope:v1:${encodeURIComponent(scopeId)}`;
+const proofKey='liaPersonaRequestProofV1';
+const scopedProof=(scopeId)=>`${proofKey}::memory-suite-scope:v1:${encodeURIComponent(scopeId)}`;
 
 (async()=>{
   const f=await createFixture('official',{transformSource:expose});
   try{
-    const valid=bridgeFor([[scopedIndex('synthetic-owner'),JSON.stringify({entries:{'synthetic-owner':{scopeId:'synthetic-owner',scopeKey:ownerScope,storageKey:shardKey,digest:'synthetic',livePersonaId:'foreign-live'}}})],[shardKey,JSON.stringify({scopeKey:ownerScope,livePersonaId:'foreign-live',liveState:[]})]]);
-    const imported=await f.runtime.auditLegacyRecovery(valid,async recovery=>{const summary=await recovery.preview();assert.equal(summary.readOnly,true);assert.equal(summary.serverWrites,0);assert.equal(summary.conflicts.length,0);const result=await recovery.publish(summary);assert.equal(result.verified,true);return result;});
-    assert.equal(imported.restored,2,'valid owner-scoped synthetic recovery publishes the validated index and shard');
-    assert.equal(valid.published.length,2);assert.ok(valid.published.some(row=>JSON.parse(row.value).scopeKey==='char:other|chat:other'),'imported Live Persona shard retains its original owner scope');
-    const invalid=bridgeFor([[scopedIndex('synthetic-owner'),JSON.stringify({entries:{'another-owner':{scopeId:'another-owner',scopeKey:'char:foreign|chat:foreign',storageKey:shardKey}}})],[shardKey,JSON.stringify({scopeKey:'char:foreign|chat:foreign'})]]);
+    const valid=bridgeFor([[scopedProof('synthetic-owner'),JSON.stringify({proofs:{'synthetic-owner':{scopeKey:'synthetic-owner',requestId:'r1'}}})]]);
+    const imported=await f.runtime.auditLegacyRecovery(valid,async recovery=>{const summary=await recovery.preview();assert.equal(summary.readOnly,true);assert.equal(summary.serverWrites,0);assert.equal(summary.conflicts.length,0);return recovery.publish(summary);});
+    assert.equal(imported.restored,1,'valid owner-scoped synthetic recovery publishes the validated proof');
+    assert.equal(valid.published.length,1);assert.ok(JSON.parse(valid.published[0].value).proofs['synthetic-owner'],'imported proof retains its original owner scope');
+    const invalid=bridgeFor([[scopedProof('synthetic-owner'),JSON.stringify({proofs:{'another-owner':{scopeKey:'another-owner'}}})]]);
     await f.runtime.auditLegacyRecovery(invalid,async recovery=>{await assert.rejects(recovery.preview(),error=>error.code==='LIA_RECOVERY_PROJECTION_INVALID');});
     assert.equal(invalid.published.length,0,'invalid owner projection never reaches local publication');
     const conflicting=bridgeFor([['dynamicPersonaLorebookGeneratorResultVault','remote-synthetic-value']],{conflict:true});

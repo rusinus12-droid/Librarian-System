@@ -9,6 +9,7 @@ const pluginPath = path.resolve(__dirname, '..', 'plugins', 'HAYAKU_Locator_Cont
 const source = fs.readFileSync(pluginPath, 'utf8');
 
 const expectedArguments = [
+  'hayaku_gradia_final_delivery',
   'hayaku_enabled',
   'hayaku_mode',
   'hayaku_prompt_mode',
@@ -64,6 +65,19 @@ assert.match(source, /HAYAKU_SETTINGS_ROLLBACK_INCOMPLETE/, 'settings transactio
 assert.match(source, /settingsGuiTransactionV1:\s*true/, 'public capability must advertise the settings transaction');
 // The mounted browser test checks actual named controls; this test checks the full authoritative schema below.
 
+const SETTINGS_KEY = 'hayaku.v2.settings.values.v1';
+const saved = async runtime => { const raw = await runtime.host.pluginStorage.getItem(SETTINGS_KEY); return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}; };
+// Runs a fault against the settings record; rewrite may replace what is actually stored.
+const faultSettingsWrite = (runtime, fault) => {
+  const original = runtime.host.pluginStorage.setItem.bind(runtime.host.pluginStorage);
+  runtime.host.pluginStorage.setItem = async (key, value) => {
+    if (key !== SETTINGS_KEY) return original(key, value);
+    const parsed = JSON.parse(value);
+    const replaced = fault(parsed);
+    return original(key, JSON.stringify(replaced || parsed));
+  };
+};
+
 const run = async () => {
   {
     const runtime = await createHayakuRuntime({
@@ -82,10 +96,12 @@ const run = async () => {
       assert.equal(result.ok, true);
       assert.equal(result.readbackVerified, true);
       assert.deepEqual([...result.changed].sort(), ['hayaku_after_request_auto_repair', 'hayaku_debug', 'hayaku_mode', 'risuai_aux_allow_plugins']);
-      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'deep');
-      assert.equal(runtime.argumentsMap.get('hayaku_debug'), 'true');
-      assert.equal(runtime.argumentsMap.get('hayaku_after_request_auto_repair'), 'false');
-      assert.equal(runtime.argumentsMap.get('risuai_aux_allow_plugins'), 'false', 'an explicit false setting is preserved');
+      assert.equal((await saved(runtime)).hayaku_mode, 'deep');
+      assert.equal((await saved(runtime)).hayaku_debug, 'true');
+      assert.equal((await saved(runtime)).hayaku_after_request_auto_repair, 'false');
+      assert.equal((await saved(runtime)).risuai_aux_allow_plugins, 'false', 'an explicit false setting is preserved');
+      runtime.argumentsMap.clear();
+      assert.equal((await runtime.hayaku.settingsControl.current()).hayaku_mode, 'deep', 'a plugin update clears arguments; saved settings stay');
       assert.equal(runtime.llmCalls.length, 0, 'settings apply must not call an LLM');
     } finally {
       await runtime.dispose();
@@ -95,17 +111,13 @@ const run = async () => {
   {
     const runtime = await createHayakuRuntime({ arguments: { hayaku_mode: 'auto', hayaku_debug: 'false' } });
     try {
-      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
-      runtime.host.setArgument = async (name, value) => {
-        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure');
-        return originalSetArgument(name, value);
-      };
+      faultSettingsWrite(runtime, next => { if (next.hayaku_debug === 'true') throw new Error('fixture_write_failure'); });
       const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
       assert.equal(result.ok, false);
       assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
       assert.equal(result.rollbackVerified, true);
-      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'auto', 'earlier writes must roll back');
-      assert.equal(runtime.argumentsMap.get('hayaku_debug'), 'false');
+      assert.deepEqual(await saved(runtime), {}, 'earlier writes must roll back');
+      assert.equal((await runtime.hayaku.settingsControl.current()).hayaku_mode, 'auto');
       assert.equal(runtime.llmCalls.length, 0);
     } finally {
       await runtime.dispose();
@@ -115,17 +127,12 @@ const run = async () => {
   {
     const runtime = await createHayakuRuntime({ arguments: { hayaku_debug: 'false' } });
     try {
-      assert.equal(runtime.argumentsMap.has('hayaku_mode'), false, 'fixture must begin with an unset mode argument');
-      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
-      runtime.host.setArgument = async (name, value) => {
-        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure_after_unset_mode');
-        return originalSetArgument(name, value);
-      };
+      faultSettingsWrite(runtime, next => { if (next.hayaku_debug === 'true') throw new Error('fixture_write_failure_after_unset_mode'); });
       const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
       assert.equal(result.ok, false);
       assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
       assert.equal(result.rollbackVerified, true);
-      assert.equal(runtime.argumentsMap.get('hayaku_mode'), '', 'rollback must restore the raw blank argument instead of materializing auto');
+      assert.equal((await saved(runtime)).hayaku_mode, undefined, 'rollback must leave the setting unset instead of materializing auto');
       assert.equal((await runtime.hayaku.settingsControl.current()).hayaku_mode, 'auto', 'raw blank must still resolve to the effective default');
       assert.equal(runtime.llmCalls.length, 0);
     } finally {
@@ -136,23 +143,16 @@ const run = async () => {
   {
     const runtime = await createHayakuRuntime({ arguments: { hayaku_debug: 'false' } });
     try {
-      const originalGetArgument = runtime.host.getArgument.bind(runtime.host);
-      const originalSetArgument = runtime.host.setArgument.bind(runtime.host);
-      let exposeRawMismatch = false;
-      runtime.host.getArgument = async name => (
-        name === 'hayaku_mode' && exposeRawMismatch ? 'auto' : originalGetArgument(name)
-      );
-      runtime.host.setArgument = async (name, value) => {
-        if (name === 'hayaku_debug' && value === 'true') throw new Error('fixture_write_failure_before_raw_mismatch');
-        const result = await originalSetArgument(name, value);
-        if (name === 'hayaku_mode' && value === '') exposeRawMismatch = true;
-        return result;
-      };
+      let wroteMode = false;
+      faultSettingsWrite(runtime, next => {
+        if (next.hayaku_debug === 'true') throw new Error('fixture_write_failure_before_raw_mismatch');
+        if (next.hayaku_mode === 'deep') wroteMode = true;
+        else if (wroteMode) return { ...next, hayaku_mode: 'auto' };
+      });
       const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep', hayaku_debug: 'true' });
       assert.equal(result.ok, false);
       assert.equal(result.reason, 'HAYAKU_SETTINGS_ROLLBACK_INCOMPLETE');
-      assert.equal(result.rollbackVerified, false, 'effective auto is insufficient when raw blank readback changed');
-      assert.deepEqual([...result.rollbackRawMismatches], ['hayaku_mode']);
+      assert.equal(result.rollbackVerified, false, 'effective auto is insufficient when the saved value did not return to unset');
       assert.equal(runtime.llmCalls.length, 0);
     } finally {
       await runtime.dispose();
@@ -162,16 +162,13 @@ const run = async () => {
   {
     const runtime = await createHayakuRuntime({ arguments: { hayaku_mode: 'auto' } });
     try {
-      const originalGetArgument = runtime.host.getArgument.bind(runtime.host);
-      runtime.host.getArgument = async name => (
-        name === 'hayaku_mode' ? 'auto' : originalGetArgument(name)
-      );
+      faultSettingsWrite(runtime, next => next.hayaku_mode === 'deep' ? { ...next, hayaku_mode: 'auto' } : null);
       const result = await runtime.hayaku.settingsControl.apply({ hayaku_mode: 'deep' });
       assert.equal(result.ok, false);
       assert.equal(result.reason, 'HAYAKU_SETTINGS_TRANSACTION_ROLLED_BACK');
       assert.equal(result.causeCode, 'HAYAKU_SETTINGS_READBACK_MISMATCH');
       assert.equal(result.rollbackVerified, true);
-      assert.equal(runtime.argumentsMap.get('hayaku_mode'), 'auto');
+      assert.equal((await runtime.hayaku.settingsControl.current()).hayaku_mode, 'auto');
       assert.equal(runtime.llmCalls.length, 0);
     } finally {
       await runtime.dispose();

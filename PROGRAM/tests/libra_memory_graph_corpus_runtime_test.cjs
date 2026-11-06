@@ -53,7 +53,7 @@ test('stored canonical vectors seed the same durable-index frontier without lexi
   assert.equal(result.diagnostics.nativeSemantic.documentEmbeddingCalls,0);
   await api.saveLibraMemorySettings({unifiedMemoryEngineMode:'unified'});
   const output=await x.f.control.hooks.beforeRequest([{role:'user',content:options.queryInput.queryText}],'model');
-  assert.ok(output.some(row=>row.content.includes('[canonical:canonical_assertion]')));
+  assert.ok(output.some(row=>row.content.includes('[canonical]')));
   assert.equal(api.getLastMemoryRecall().corpusRead.mode,'durable_common_index');
   assert.equal(api.getLastMemoryRecall().corpusRead.indexBuildsDuringQuery,0);
   assert.equal(api.getRuntime().lastMemoryInjectionMeta.finalVerification.status,'verified');

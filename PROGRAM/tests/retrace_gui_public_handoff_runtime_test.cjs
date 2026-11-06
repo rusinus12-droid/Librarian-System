@@ -19,7 +19,7 @@ for (const scenario of ['same', 'different']) {
   assert.equal(summary.gui?.confirmations, 1, `${scenario}: canonical named confirmation ran`);
   assert.equal(summary.gui?.completedJobs, 1, `${scenario}: canonical job confirms actual handoff readback`);
   assert.equal(summary.gui?.jobReopened,true,`${scenario}: next-session job task tray reopen retained actual operation`);
-  assert.equal(summary.gui?.jobSteps,4);assert.equal(summary.gui?.ownerResultRows,4);
+  assert.equal(summary.gui?.jobSteps,4);assert.equal(summary.gui?.ownerResultRows,3);
   assert.equal(summary.gui?.providerCallsDuringHandoff, 0, `${scenario}: GUI handoff invokes no model provider`);
   assert.equal(summary.publicResultOk, true);
   assert.equal(summary.journalState, 'completed');

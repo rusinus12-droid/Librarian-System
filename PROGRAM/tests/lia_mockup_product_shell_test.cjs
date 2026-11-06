@@ -44,8 +44,6 @@ assert.match(source, /function updateLiaMockupTranslation\(/, 'translation draft
 assert.match(source, /adoptPersonaFromPane\(source\)/, 'adoption uses the explicit original/translation product operation');
 assert.match(source, /function hydrateLiaMockupSettings\(/, 'settings route hydrates persisted provider values, not sample values');
 assert.match(source, /writeStoredLLMConfig\(/, 'text provider save uses the existing durable writer');
-assert.match(source, /function hydrateLiaMockupUpdate\(/, 'five-pair update route reads the current binding and plan');
-assert.match(source, /runManualLivePersonaAnalysis\(\{\.\.\.fresh,manualAnalysisRange:plan\.range\}\)/, 'manual update fixes the current scope and range before running');
 assert.match(source, /runPersonaEvolution\(\)/, 'full User conversation review uses the existing evolution analysis');
 assert.match(source, /applySelectedPersonaEvolution\(\)/, 'selected evolution applies to draft through product logic');
 

@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
-const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+`\nglobalThis.__viewTest={selection:PersonaSelectionManager,getContext,refreshPreview,refreshModulePicker,renderPreview,manualLivePersonaPlan,readLiaViewContext:typeof readLiaViewContext==='function'?readLiaViewContext:null};`+source.slice(i);};
+const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+`\nglobalThis.__viewTest={selection:PersonaSelectionManager,getContext,refreshPreview,refreshModulePicker,renderPreview,readLiaViewContext:typeof readLiaViewContext==='function'?readLiaViewContext:null};`+source.slice(i);};
 (async()=>{const calls={};let count=false,selectedChat=0;
  const f=await createFixture('official',{transformSource:expose,configureApi(api){
   api.getCurrentChatIndex=async()=>selectedChat;

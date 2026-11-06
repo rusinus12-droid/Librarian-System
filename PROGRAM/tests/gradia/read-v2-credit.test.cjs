@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since GRADIA 0.28.22 / LIBRA 2.6.28: the MiB-v2 ranked evidence design was retired; each owner searches through its own hook.'); process.exit(0);
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 function credit(bytes=1000){const p=path.join(__dirname,'../../sdk/gradia/GradiaReadV2Credit.source.js');assert.ok(fs.existsSync(p),'G1 credit factory must exist');const c=vm.createContext({});vm.runInContext(fs.readFileSync(p,'utf8'),c);const {createRealmAdapter,adaptRealmApi}=require('./fixtures/gradia-projection-reference.cjs');return adaptRealmApi(c.createGradiaReadV2Credit({maxManagedBytes:bytes,maxPhysicalReads:4}),createRealmAdapter(c));}
 test('four physical operations keep their slots and bytes after cancellation',()=>{const c=credit();for(let i=0;i<4;i++)c.beginPhysical({id:'io'+i,bytes:100});for(let i=0;i<4;i++)c.retire('io'+i);assert.equal(c.snapshot().physicalReads,4);assert.equal(c.snapshot().managedBytes,400);assert.throws(()=>c.beginPhysical({id:'fifth',bytes:1}));assert.throws(()=>c.release('io0'));});

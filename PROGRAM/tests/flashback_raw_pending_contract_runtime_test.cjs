@@ -257,7 +257,7 @@ test('an older lost derived vector cannot prevent retaining a newly captured raw
     assert(payloadKeys.length > 0);
     for (const key of payloadKeys) h.safeLocalStorage.values.delete(key);
     h.audit.Runtime.localVectorShardCache.clear();
-    h.api._test.invalidateRecallShardCache(scope.scopeKey);
+    h.api._test.invalidateRecallCache(scope.scopeKey);
     const oldRead = await h.api._test.loadScopeRecords(scope.scopeKey);
     assert.equal(oldRead.records[0].vectorPayloadMissing, true, 'the old vector fault is real');
     const nextUser = 'I examine the brass latch.';

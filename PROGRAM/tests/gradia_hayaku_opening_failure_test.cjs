@@ -47,7 +47,7 @@ test('HAYAKU ledger failure overrides completed-job health and clears after a su
  const audit=f.context.__headerAudit;audit.Memory.nativeRecovery.job={state:'completed',kind:'cold_start'};audit.viewerRenderHeaderHealth();
  assert.match(header().textContent,/원장 확인 필요/);assert.doesNotMatch(header().textContent,/정상 작동|복구 완료/);
  header().click();await pause(50);assert.match(f.doc.body.textContent,/상태 확인 필요 · 원장 및 연속성 점검 필요/);
- f.doc.querySelector('[data-status-log-close]').click();audit.Memory.nativeRecovery.job=null;f.context.__ledgerReadFault=false;f.doc.querySelector('#hayakuOverviewRefresh').click();
+ audit.Memory.nativeRecovery.job=null;f.context.__ledgerReadFault=false;f.doc.querySelector('#hayakuOverviewRefresh').click();
  await until(()=>!header().textContent.includes('원장 확인 필요'),'ledger recovery');snapshot(f.dom,'hayaku-recovered');
  assert.equal(header().classList.contains('health--danger'),false);assert.deepEqual(f.errors,[]);
 });

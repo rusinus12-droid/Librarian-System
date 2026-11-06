@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: LIA no longer imports from the server.'); process.exit(0);
 const assert=require('node:assert/strict');
 const {createFixture}=require('./fixtures/lia_native_runtime_fixture.cjs');
 const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(0,i)+`\nglobalThis.__recoveryTest={create:typeof createLiaLegacyServerRecovery==='function'?createLiaLegacyServerRecovery:null,validate:memorySuiteLiaValidateRestore};`+source.slice(i);};
@@ -13,11 +14,9 @@ const expose=source=>{const i=source.lastIndexOf('\n})();');return source.slice(
  remote.clear();local.clear();const prefix='liaPersonaVisualAssetBlobV1::image';remote.set(prefix+'::manifest',JSON.stringify({version:1,chunks:1,bytes:3,base64Chars:4,mime:'image/png'}));await assert.rejects(recovery.preview(),/VALIDATION/);assert.equal(publishes,1);assert.equal(local.size,0);
  remote.set(prefix+'::chunk::0','YWJj');preview=await recovery.preview();assert.equal(preview.validated,true);assert.equal(publishes,1);await recovery.publish(preview);assert.equal(local.get(prefix+'::chunk::0'),'YWJj');
  remote.clear();local.clear();
- const hash=value=>{let h=2166136261;for(let i=0;i<value.length;i++){h^=value.charCodeAt(i);h=Math.imul(h,16777619);}return `${(h>>>0).toString(36)}-${value.length}`;};
- const oldScope='char:old|chat:old',newScope='char:new|chat:new',oldKey='liaPersonaLinkerLivePersonaScopeV2::'+hash(oldScope).slice(0,24),newKey='liaPersonaLinkerLivePersonaScopeV2::'+hash(newScope).slice(0,24);
- const oldShard=JSON.stringify({scopeKey:oldScope,livePersonaId:'old',unknown:'local-safe'}),newShard=JSON.stringify({scopeKey:newScope,livePersonaId:'new',unknown:'remote-safe'}),indexKey='liaPersonaLinkerLivePersonaIndexV2';
- local.set(oldKey,oldShard);local.set(indexKey,JSON.stringify({schema:'lia.live_persona_index.v2',version:2,unknownLocal:'keep',entries:{[oldScope]:{storageKey:oldKey,digest:hash(oldShard)}}}));
- remote.set(newKey,newShard);remote.set(indexKey+'::memory-suite-scope:v1:'+encodeURIComponent(newScope),JSON.stringify({schema:'lia.live_persona_index.v2',version:2,entries:{[newScope]:{storageKey:newKey,digest:hash(newShard)}}}));
- preview=await recovery.preview();assert.equal(preview.conflicts.length,0);await recovery.publish(preview);const merged=JSON.parse(local.get(indexKey));assert.equal(merged.unknownLocal,'keep');assert.equal(merged.entries[oldScope].storageKey,oldKey);assert.equal(merged.entries[newScope].storageKey,newKey);assert.equal(local.get(oldKey),oldShard);
+ remote.set(vault,JSON.stringify({version:1,items:[]}));
+ remote.set('liaPersonaLinkerLivePersonaIndexV2::memory-suite-scope:v1:old',JSON.stringify({entries:{old:{}}}));
+ remote.set('liaPersonaLinkerLivePersonaScopeV2::old',JSON.stringify({scopeKey:'old'}));
+ preview=await recovery.preview();assert.equal(preview.validated,true);assert.equal(preview.records,1,'rows of the removed store stay out of the recovery');assert.equal(preview.conflicts.length,0);
  console.log('PASS staged legacy recovery: read-only preview, no conflict overwrite, complete image validation before publish, server tombstones retained');
 }finally{await f.dispose();}})().catch(e=>{console.error(e);process.exitCode=1});

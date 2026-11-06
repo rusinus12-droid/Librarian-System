@@ -1,7 +1,14 @@
 'use strict';
+// Server record/head publication is atomic; a partial mirror remains unreadable until repaired.
+// Explicit upgrades use selected source reanalysis. The retired retry endpoint must spend nothing.
 const assert = require('node:assert/strict');
 const {serverFixture} = require('./fixtures/libra_server_runtime_fixture.cjs');
 const {waitFor} = require('./fixtures/libra_vm_harness.cjs');
+const {retryCurrentMicro} = require('./fixtures/libra_explicit_micro_retry.cjs');
+const reanalyze = async f => {
+  const inventory = await f.r.api.listReanalysisRanges({kind: 'micro'});
+  return await f.r.api.reanalyzeSelectedRanges({...inventory, ranges: inventory.ranges.filter(row => row.start === 1)});
+};
 
 const localRows = values => [...values].flatMap(([key, raw]) => {
   try { return [{key, value: JSON.parse(raw)}]; } catch { return []; }
@@ -177,7 +184,6 @@ const microEnvelope = receipt => {
     let failRecordCopy = true;
     splitRecord.backend.setItem = async (key, value) => {
       if (failRecordCopy && String(key).includes(':micro-memory:')) {
-        failRecordCopy = false;
         throw new Error('injected local Micro record failure');
       }
       return originalSet(key, value);
@@ -187,9 +193,17 @@ const microEnvelope = receipt => {
     await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.status === 'pending_reconciliation', 15000);
     assert.equal(records(splitRecord.storedRows(), 'libra.micro_memory.v1').length, 1);
     assert.equal(records(localRows(splitRecord.local), 'libra.micro_memory.v1').length, 0);
-    assert.equal(records(splitRecord.storedRows(), 'libra.micro_memory_head.v1').length, 0);
+    // The server commits record and head atomically before the local mirror is copied.
+    // A failed local copy must block active consumption without undoing the server commit.
+    const remoteHead = records(splitRecord.storedRows(), 'libra.micro_memory_head.v1');
+    assert.equal(remoteHead.length, 1);
+    assert.equal(remoteHead[0].value.recordKey, records(splitRecord.storedRows(), 'libra.micro_memory.v1')[0].key);
+    assert.notEqual((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified', 'a partial mirror cannot be consumed even if its head copy exists');
+    assert.equal(records(localRows(splitRecord.local), 'libra.micro_memory.v1').length, 0, 'the record-copy failure remains in force during the read');
+    failRecordCopy = false;
     recordListener(event);
-    await waitFor(() => records(localRows(splitRecord.local), 'libra.micro_memory_head.v1').length === 1, 15000);
+    await waitFor(() => records(localRows(splitRecord.local), 'libra.micro_memory.v1').length === 1
+      && records(localRows(splitRecord.local), 'libra.micro_memory_head.v1').length === 1, 15000);
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified');
     assert.equal(f.control.calls.length, 1, 'record repair reuses the journaled model result');
     console.log('PASS one-sided mirror Micro record repairs without model replay');
@@ -276,7 +290,7 @@ const microEnvelope = receipt => {
       await waitFor(() => f.r.api.getCaptureBackendState().lastOutputCapture?.duplicate === true, 10000);
       await f.r.api.debugProduceMicroForTurn(1); // join the duplicate's existing publication check
       assert.equal(f.control.calls.length,1,`${mode}: duplicate output does not auto-retry failed Micro`);
-      const manual=await f.r.api.retryMicroAnalysis(await microRetryInput(f));
+      const manual=await retryCurrentMicro(f, 1);
       assert.equal(manual.status,'verified',`${mode}: ${JSON.stringify(manual)}`);
       assert.equal(manual.record?.analysisStatus,'verified',`${mode}: manual attempt stayed source-only`);
       await waitFor(() => records(mode === 'server_only' ? upgrading.storedRows() : localRows(upgrading.local),
@@ -323,39 +337,17 @@ const microEnvelope = receipt => {
     await waitFor(() => records(localRows(splitRetry.local), 'libra.micro_memory_head.v1')[0]
       ?.value.analysisStatus === 'minimum_source_bound', 15000);
     await f.r.api.debugProduceMicroForTurn(1);
-    const originalSet = splitRetry.backend.setItem;
-    let failPlanned = true, failUpgradeResult = true;
-    splitRetry.backend.setItem = async (key, value) => {
-      if (failPlanned && String(key).includes(':micro-work:')
-        && JSON.parse(value).phase === 'manual_planned') {
-        failPlanned = false;
-        throw new Error('injected local retry-reservation failure');
-      }
-      if (failUpgradeResult && String(key).includes(':micro-work:')
-        && JSON.parse(value).status === 'result_ready'
-        && JSON.parse(value).logicalAttempts === 2) {
-        failUpgradeResult = false;
-        throw new Error('injected local upgraded-result failure');
-      }
-      return originalSet(key, value);
-    };
-    const failed = await f.r.api.retryMicroAnalysis(await microRetryInput(f));
-    assert.equal(failed.status, 'pending_reconciliation');
-    assert.equal(f.control.calls.length, 1, 'one-sided retry reservation occurs before another model call');
-    assert.equal(records(splitRetry.storedRows(), 'libra.micro_work.v1')[0].value.phase, 'manual_planned');
-    assert.equal(records(localRows(splitRetry.local), 'libra.micro_work.v1')[0].value.status, 'result_ready');
-    const resultSplit = await f.r.api.retryMicroAnalysis(await microRetryInput(f));
-    assert.equal(resultSplit.status, 'pending_reconciliation');
-    assert.equal(f.control.calls.length, 2, 'one-sided second result is saved without a third model call');
-    assert.equal(records(splitRetry.storedRows(), 'libra.micro_work.v1')[0].value.status, 'result_ready');
-    assert.equal(records(localRows(splitRetry.local), 'libra.micro_work.v1')[0].value.phase, 'invoking');
-    const repaired = await f.r.api.debugProduceMicroForTurn(1);
+    const before = await f.r.api.debugReadActiveMicroMemory(1);
+    await assert.rejects(f.r.api.retryMicroAnalysis(await microRetryInput(f)), error => error.code === 'LIBRA_REANALYSIS_ENTRY_RETIRED');
+    assert.equal(f.control.calls.length, 1, 'the retired retry endpoint spends no model call');
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).recordKey, before.recordKey);
+    const repaired = await retryCurrentMicro(f, 1);
     assert.equal(repaired.status, 'verified');
     assert.equal(repaired.record.analysisStatus, 'verified');
-    assert.equal(f.control.calls.length, 2, 'reservation repair spends the remaining call once');
+    assert.equal(f.control.calls.length, 2, 'the selected reanalysis uses one bounded analysis call');
     assert.deepEqual(records(localRows(splitRetry.local), 'libra.micro_work.v1')[0].value,
       records(splitRetry.storedRows(), 'libra.micro_work.v1')[0].value);
-    console.log('PASS one-sided mirror retry reservation repairs before bounded analysis');
+    console.log('PASS retired mirror retry refuses without writes; selected reanalysis upgrades both copies');
   } finally { await splitRetry.cleanup(); }
 
   let exhaustedListener;
@@ -375,12 +367,14 @@ const microEnvelope = receipt => {
     };
     exhaustedListener({char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 1});
     await waitFor(() => records(localRows(exhausted.local), 'libra.micro_memory_head.v1').length === 1, 15000);
-    await f.r.api.retryMicroAnalysis(await microRetryInput(f));
+    const before = await f.r.api.debugReadActiveMicroMemory(1);
+    assert.equal((await reanalyze(f)).ok, false);
     await f.r.api.debugProduceMicroForTurn(1);
     assert.equal(f.control.calls.length, 2, 'an invalid second analysis cannot exceed the physical budget');
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).record.analysisStatus, 'minimum_source_bound');
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).recordKey, before.recordKey, 'failed explicit reanalysis preserves the published memory');
     assert.equal(records(localRows(exhausted.local), 'libra.micro_work.v1')[0].value.physicalAttemptsUsed, 1);
-    assert.equal(records(localRows(exhausted.local), 'libra.micro_work.v1')[0].value.attemptHistory.length, 2);
+    assert.equal(records(localRows(exhausted.local), 'libra.micro_work.v1')[0].value.attemptHistory.length, 1, 'failed explicit reanalysis does not overwrite the prior result journal');
     console.log('PASS failed Micro upgrade stops at the physical attempt ceiling');
   } finally { await exhausted.cleanup(); }
 
@@ -413,9 +407,9 @@ const microEnvelope = receipt => {
     await waitFor(() => records(localRows(abandoned.local), 'libra.micro_memory_head.v1').length === 1, 15000);
     const recovered = await f.r.api.debugReadActiveMicroMemory(1);
     assert.equal(recovered.status, 'verified');
-    assert.equal(recovered.record.analysisStatus, 'minimum_source_bound');
-    assert.equal(recovered.record.claims.length, 0, 'unknown provider outcome creates no state claim');
+    assert.equal(recovered.record.analysisStatus, 'verified');
+    assert.ok(recovered.record.claims.length > 0, 'the resumed first provider call produces source-verified claims');
     assert.equal(f.control.calls.length, 1, 'durably planned never-started work resumes once');
-    console.log('PASS expired reservation recovers a source-only Micro without model replay');
+    console.log('PASS a durably planned never-started Micro invokes the provider exactly once');
   } finally { await abandoned.cleanup(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

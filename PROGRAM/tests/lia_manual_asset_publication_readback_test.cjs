@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: image AI and its assets were removed.'); process.exit(0);
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const p=path.resolve(__dirname,'..');
 const {createFixture}=require(path.join(p,'tests/fixtures/lia_native_runtime_fixture.cjs'));
@@ -6,7 +7,7 @@ const {createMemorySuiteServer}=require(path.join(p,'server/server.cjs'));
 const transport=require('./helpers/inprocess-review-transport.cjs');
 const PNG=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64');
 const ASSETS='liaPersonaVisualAssetStoreV1';
-const expose=s=>s.replace('      getLiveSyncCaptureState:',`      auditAssets:{importPersonaVisualAssetImage,readPersonaVisualAssetStore,writePersonaVisualAssetStore,writePersonaVisualAssetBackup,readPersonaVisualAssetBackup,ensurePersonaVisualAssetAvailable,bridge:MemorySuiteStorageBridge},\n      getLiveSyncCaptureState:`);
+const expose=s=>s.replace('      getScopePersonaCatalog:',`      auditAssets:{importPersonaVisualAssetImage,readPersonaVisualAssetStore,writePersonaVisualAssetStore,writePersonaVisualAssetBackup,readPersonaVisualAssetBackup,ensurePersonaVisualAssetAvailable,bridge:MemorySuiteStorageBridge},\n      getScopePersonaCatalog:`);
 (async()=>{const results=[];
 for(const mode of ['plugin_only','server_only','mirror'])for(const fault of ['false','dropped','mismatch','success']){
  const dir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'lia-store-')),app=createMemorySuiteServer({dataDir:dir,autoBackup:false,computeEnabled:false,port:47631});const calls=[],route=transport(app,calls);let f;

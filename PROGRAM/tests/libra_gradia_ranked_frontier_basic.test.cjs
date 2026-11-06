@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since GRADIA 0.28.22 / LIBRA 2.6.28: the MiB-v2 ranked evidence design was retired; each owner searches through its own hook.'); process.exit(0);
 // Actual owner algorithms in an in-memory host; no production admission claim.
 const { test } = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');

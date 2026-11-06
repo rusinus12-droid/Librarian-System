@@ -47,7 +47,7 @@ test('the routing writer succeeds on pluginStorage even when the device backup w
 });
 
 test('every embedded client copy carries the same primary-copy rule',()=>{
- for(const name of ['HAYAKU_Locator_Continuity.js','Flashback_Memory.js','RETRACE.js','GRADIA.js','LIBRA.js','LIA_Persona_Linker.js']){
+ for(const name of ['HAYAKU_Locator_Continuity.js','Flashback_Memory.js','RETRACE.js','GRADIA.js','LIBRA.js']){
   const source=fs.readFileSync(path.join(__dirname,'..','plugins',name),'utf8');
   assert.match(source,/const registry = mergeScopeRegistries\(pluginRaw \|\| deviceRaw \|\| serverRaw\);/,name);
   assert.match(source,/const success = pluginStore\?\.setItem \? pluginSuccess : deviceSuccess;/,name);

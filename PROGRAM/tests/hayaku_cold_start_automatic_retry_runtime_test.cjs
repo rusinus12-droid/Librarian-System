@@ -59,7 +59,7 @@ const coldRecords = async r => (await r.hayaku.ledger.inspect({ includeRecords: 
     const r = await createHayakuRuntime({ autoRepair: false, messages });
     try {
       const t = r.hayaku._test;
-      const stray = single(1); stray.packet.speaker_boundaries = [];
+      const stray = single(1); stray.packet.unknown_field = [];
       assert.equal(t.validateNativeRepairEnvelopeShape(t.normalizeNativeRepairEnvelope ? t.normalizeNativeRepairEnvelope(stray) : stray).ok, false);
       const noMeta = single(1); delete noMeta.packet.meta;
       if (t.normalizeNativeRepairEnvelope) assert.equal(t.validateNativeRepairEnvelopeShape(t.normalizeNativeRepairEnvelope(noMeta)).ok, false, 'meta is never synthesized');

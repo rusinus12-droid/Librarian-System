@@ -20,11 +20,11 @@ async function run() {
   try {
     for (const [namespace, pluginId] of [['flashback','flashback_memory'],
       ['hayaku','hayaku_locator_continuity'], ['libra','libra'],
-      ['lia','lia_persona_linker'], ['retrace','flashback_hayaku_bridge']]) {
+      ['retrace','flashback_hayaku_bridge']]) {
       const variant = namespace === 'libra' ? 'MemorySuiteStorageClient.libra.source.js'
         : 'MemorySuiteStorageClient.source.js';
       const program=path.join(__dirname,'..');
-      const preservedFile=namespace==='lia'?'LIA_Persona_Linker.js':namespace==='retrace'?'RETRACE.js':null;
+      const preservedFile=namespace==='retrace'?'RETRACE.js':null;
       const source=preservedFile ? require('../tools/lib/sdk_variants.cjs').expectedStorageSdk(program,preservedFile,fs.readFileSync(path.join(program,'plugins',preservedFile),'utf8')) : fs.readFileSync(path.join(program,'sdk',variant),'utf8');
       const create = new Function(source + '\nreturn createMemorySuiteStorageBridge')();
       const scope = { scopeId:namespace+'-drain', scopeKey:namespace+'-drain', chatId:namespace+'-drain' };

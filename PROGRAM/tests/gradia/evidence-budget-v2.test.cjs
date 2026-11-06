@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since GRADIA 0.28.22 / LIBRA 2.6.28: the MiB-v2 ranked evidence design was retired; each owner searches through its own hook.'); process.exit(0);
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createMeter, request, transformBoth, envelope, sha, MODEL, ROUTE } = require('./fixtures/gradia-budget-profile.cjs');

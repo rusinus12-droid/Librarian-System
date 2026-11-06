@@ -10,7 +10,6 @@ const exercise = async (booted, host, result) => {
   const initial = await api.inspectPendingNextSessionHandoff();
   assert.equal(result.ok, false);
   assert.equal(initial.journal.state, 'pending_owner_handoffs');
-  assert.equal(initial.journal.ownerStatus.lia.verified, true);
   assert.equal(initial.journal.ownerStatus.hayaku.verified, false);
   assert.equal(host.faults.ledgerCorrupted, true, 'real target ledger fault ran');
   host.faults.corruptTargetLedger = false;
@@ -22,7 +21,7 @@ const exercise = async (booted, host, result) => {
   assert.equal((await api.inspectPendingHandoffDurableStatus(initial)).hayaku.verified, true);
 
   const target = () => host.chats.find(chat => chat.id === initial.targetChatId);
-  const livePersonaId = target().bindedPersona;
+  const boundPersonaId = target().bindedPersona;
   const values = host.pluginStorage.values;
   const source = host.chats.find(chat => chat.id === initial.bridge.sourceChatId);
   const sourceBefore = JSON.stringify(source);
@@ -47,11 +46,6 @@ const exercise = async (booted, host, result) => {
   };
   const cases = [];
 
-  target().bindedPersona = 'other-native-persona';
-  await pending('lia');
-  assert.equal(target().bindedPersona, 'other-native-persona', 'refresh never silently rebinds Persona');
-  cases.push('current LIA binding rejects stale success');
-  target().bindedPersona = livePersonaId;
 
   const fbReceipt = initial.journal.ownerStatus.flashback.receipt;
   const fbRow = [...values].find(([, raw]) => {
@@ -87,18 +81,6 @@ const exercise = async (booted, host, result) => {
   values.set(hyKey, hyRaw);
   cases.push('current HAYAKU target rejects stale success');
 
-  // A fresh LIA check must happen after the other owner reads, not before them.
-  let drifted = false;
-  const drift = message => {
-    if (message.action === 'verify_session_handoff' && message.ok === true) {
-      drifted = true; target().bindedPersona = 'other-native-persona';
-    }
-  };
-  host.listeners.get('libra_memory_bridge_response_v1').add(drift);
-  try { await pending('lia'); } finally { host.listeners.get('libra_memory_bridge_response_v1').delete(drift); }
-  assert.equal(drifted, true, 'binding drift occurs during a real owner read');
-  target().bindedPersona = livePersonaId;
-  cases.push('binding drift during another owner read is rejected');
 
   // A concurrent owner retry must not have its journal overwritten by the GUI.
   let updated = false;
@@ -136,11 +118,11 @@ const exercise = async (booted, host, result) => {
       { verified: status.verified, reason: status.reason, error: status.receipt?.error, diagnostics: status.receipt?.diagnostics, verification: status.verification }]))));
   assert.equal(complete.journal.state, 'completed');
   assert.equal(complete.pending, false);
-  for (const owner of ['flashback', 'hayaku', 'libra', 'lia']) {
+  for (const owner of ['flashback', 'hayaku', 'libra']) {
     assert.equal(complete.journal.ownerStatus[owner].required, true);
     assert.equal(complete.journal.ownerStatus[owner].verified, true, `${owner}: fresh verified receipt`);
   }
-  assert.equal(complete.journal.ownerStatus.lia.receipt.livePersonaId, livePersonaId, 'fork identity survives failed checks');
+  assert.equal(target().bindedPersona, boundPersonaId, 'refresh never rebinds the persona');
   assert.equal((await api.reconcilePendingHandoffJournalFromDurableReadback(initial)).reconciled, false,
     'stale GUI preview cannot reopen a completed handoff');
   assert.equal(JSON.stringify(host.chats.find(chat => chat.id === source.id)), sourceBefore);

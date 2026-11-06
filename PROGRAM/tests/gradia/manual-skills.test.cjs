@@ -116,7 +116,7 @@ test('basic quality survives retired router flags and zero priorities in every s
  assert.equal(h.getCalls(),0);assert.equal(h.plugin.debugRouteSkillsForStage,undefined);
 });
 test('explicit choices retain their order beyond the retired top-K and never duplicate baseline rules',async()=>{
- const h=await load(),ids=['physical-conflict','quiet-interior-beat','consequential-decision','information-exchange'];
+ const h=await load(),ids=['physical-conflict','quiet-interior-beat','consequential-decision'];
  const r=h.plugin.debugSkillSelectionForStage('shadow_act',{selections:{shadow_act:[...ids,'scene-performance',ids[0]]},topK:1,enabled:false});
  assert.deepEqual(Array.from(r.selected,s=>s.id),ids);assert.equal(r.compiledExecution.includes('[COMPILED SKILL — scene-performance]'),false);
  assert.ok(ids.every((id,i)=>i===0||r.compiledExecution.indexOf('[COMPILED SKILL — '+id)>r.compiledExecution.indexOf('[COMPILED SKILL — '+ids[i-1])));
@@ -185,12 +185,12 @@ test('nine genre presets contain explicit stage and child-document choices and f
  assert.equal(h.getCalls(),0);
 });
 test('character admission charges full compiled procedures and child documents before any provider call',async()=>{
- const f=await pipelineFixture({runtime:{skill_stage_selections:{aide_plot:['physical-conflict','quiet-interior-beat','consequential-decision','information-exchange']}}});
+ const f=await pipelineFixture({contextWindow:20000,runtime:{skill_stage_selections:{aide_plot:['physical-conflict','quiet-interior-beat','consequential-decision']}}});
  await assert.rejects(()=>f.run(),/추가 Skill.*한도/);assert.equal(f.prompts.length,0);
  const raw='---\nname: compact\ndescription: Compact source\n---\nKeep the current scene.';
- const customSkills=Object.fromEntries(['one','two','three','four','five'].map(id=>[id,{id,raw}]));
+ const customSkills=Object.fromEntries(['one','two','three'].map(id=>[id,{id,raw}]));
  const r=f.h.plugin.debugSkillSelectionForStage('shadow_act',{selections:{shadow_act:Object.keys(customSkills)},customSkills});
- assert.equal(r.selected.length,5);assert.ok(r.budget.fits,'the resource limit is characters, not the retired top-K');
+ assert.equal(r.selected.length,3);assert.ok(r.budget.fits);
  const refs=f.h.plugin.getSkillLibrary()['physical-conflict'].references;
  const withRefs=f.h.plugin.debugSkillSelectionForStage('shadow_act',{selections:{shadow_act:['physical-conflict']},references:{shadow_act:{'physical-conflict':refs.map(r=>r.id)}}});
  const noRefs=f.h.plugin.debugSkillSelectionForStage('shadow_act',{selections:{shadow_act:['physical-conflict']}});
@@ -242,4 +242,27 @@ test('custom skill currentness binds prompt contents rather than regenerated edi
  assert.equal(probe.requestSettingsSignature(a),probe.requestSettingsSignature(b));
  b.skillCustomLibrary.stable.raw+=' Changed actual instructions.';
  assert.notEqual(probe.requestSettingsSignature(a),probe.requestSettingsSignature(b));
+});
+
+test('without hard failures a skill that does not fit is left out, and the draft still runs',async()=>{
+ const big=id=>({id,raw:`---\nname: ${id}\ndescription: Long source\n---\n${'Keep the scene moving. '.repeat(460)}`});
+ const f=await pipelineFixture({runtime:{failure_mode:'soft',skill_custom_library:{'big-a':big('big-a'),'big-b':big('big-b'),'big-c':big('big-c')},skill_stage_selections:{shadow_act:['big-a','big-b','big-c']}}});
+ const out=await f.run();assert.ok(f.prompts.length>=4,'every stage ran');assert.ok(out.some(m=>m.content?.includes(draft)),'the draft reached the handoff');
+ const shadow=JSON.stringify(f.prompts[0]);assert.match(shadow,/COMPILED SKILL — big-a/);assert.doesNotMatch(shadow,/COMPILED SKILL — big-c/);
+});
+test('a compiled skill carries each section once',async()=>{
+ const {plugin}=await load();
+ const compiled=plugin.debugCompileSkill('dialogue-scene-execution','shadow_act','writing');
+ assert.equal(compiled.split('## Typical failure').length,1,'a section stops at the next heading');
+ assert.equal(compiled.split("Don't extend a resolved issue").length-1,1);
+ assert.equal(compiled.split('Two characters each state their case').length-1,1,'the worked examples stay');
+ assert.ok(compiled.length<Object.values(plugin.getSkillLibrary()).find(row=>row.id==='dialogue-scene-execution').raw.length+1000);
+});
+
+test('a stage holds at most three skills, and a preset is one set across all stages',async()=>{
+ const {plugin}=await load();
+ const selection=plugin.debugSkillSelectionForStage('shadow_act',{selections:{shadow_act:['physical-conflict','quiet-interior-beat','consequential-decision','information-exchange','tension-arc']}});
+ assert.deepEqual(Array.from(selection.selected,row=>row.id),['physical-conflict','quiet-interior-beat','consequential-decision']);
+ const three=plugin.debugSkillPromptBudget('shadow_act',{selections:{shadow_act:['scene-boundary-crossing','multi-actor-coordination','consequential-decision']},preset:{context_window:64000}});
+ assert.ok(three.chars<=three.maxSkillChars,'three of the longest fit a 64k model');
 });

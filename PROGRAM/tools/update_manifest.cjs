@@ -962,7 +962,6 @@ manifest.dataContract.liaSharedServerRestore = {
   fixedSharedStores: [
     'dynamicPersonaLorebookGeneratorResultVault',
     'liaPersonaLinkerWorldBlueprintVaultV1',
-    'liaPersonaLinkerLivePersonaSyncV1',
     'liaPersonaVisualAssetStoreV1',
     'liaPersonaVisualAssetPresetStoreV1'
   ],

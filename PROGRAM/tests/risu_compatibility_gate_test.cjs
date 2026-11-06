@@ -160,8 +160,8 @@ test('5. Minification directive loss fails with MINIFICATION_DIRECTIVE_LOSS', ()
       if (!file.endsWith('.js')) continue;
       let text = fs.readFileSync(path.join(programDir, 'plugins', file), 'utf8');
       if (file === 'HAYAKU_Locator_Continuity.js') {
-        // Simulate minifier stripping one //@arg directive
-        text = text.replace(/^\/\/@arg\s+\S+[^\n]*\n/m, '');
+        // Simulate minifier stripping one header directive
+        text = text.replace(/^\/\/@update-url\s+\S+[^\n]*\r?\n/m, '');
       }
       fs.writeFileSync(path.join(tempArtifactDir, file), text, 'utf8');
     }

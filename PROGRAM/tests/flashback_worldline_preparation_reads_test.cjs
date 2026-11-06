@@ -12,7 +12,7 @@ test('worldline record reads overlap at most four shards, preserve records, and 
     await t.saveAllRecords(await t.buildRecordsFromSources(sources,cfg,scope),cfg,scope);
     const serial=await t.loadScopeRecords(scope.scopeKey,{readOnly:true});
     assert.ok(serial.manifest.shardCount>4);
-    t.invalidateRecallShardCache(scope.scopeKey);
+    t.invalidateRecallCache(scope.scopeKey);
     const read=h.pluginStorage.getItem.bind(h.pluginStorage);let active=0,peak=0,reads=0,cancel=false,abort=false;
     // Observe this operation's actual physical reader, excluding independent
     // host monitors that can read the same scope while this await is held.
@@ -26,7 +26,7 @@ test('worldline record reads overlap at most four shards, preserve records, and 
     assert.deepEqual(JSON.parse(JSON.stringify(parallel.records)),JSON.parse(JSON.stringify(serial.records)));
     assert.ok(peak>1&&peak<=4,`bounded shard overlap: ${peak}`);
     assert.equal(reads,serial.manifest.shardCount);
-    reads=0;abort=true;t.invalidateRecallShardCache(scope.scopeKey);
+    reads=0;abort=true;t.invalidateRecallCache(scope.scopeKey);
     await assert.rejects(()=>t.loadScopeRecords(scope.scopeKey,{readOnly:true,shardReadConcurrency:4,useCache:false,readPlugin,
       assertCurrent:()=>{if(cancel)throw Error('CONTROLLED_PREPARATION_DEADLINE');}}),/CONTROLLED_PREPARATION_DEADLINE/);
     assert.ok(reads<=4,'no later shard batch begins after cancellation');

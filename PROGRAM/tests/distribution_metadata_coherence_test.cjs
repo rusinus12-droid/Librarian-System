@@ -41,7 +41,6 @@ function main() {
   assert.deepEqual(manifest.plugins, pluginVersions, 'manifest plugin versions match canonical headers');
   for (const [owner, source] of Object.entries(pluginSources)) {
     const declarations = [...source.matchAll(/^\/\/@arg\s+(\S+)\s+(\S+)/gm)];
-    assert.ok(declarations.length > 0, `${owner} declares plugin arguments`);
     for (const [, argumentName, argumentType] of declarations) {
       assert.ok(['string', 'int'].includes(argumentType), `${owner} ${argumentName} uses a RisuAI-compatible argument type: ${argumentType}`);
     }

@@ -10,13 +10,13 @@ test('GRADIA speed preset preserves stage exclusion and timeout while changing c
   try {
     await f.plugin.openSettingsGui(); await f.plugin.debugNavigateGui('quick', 'flow');
     const before = JSON.parse(f.store.get(AGENTS));
-    const fast = [...f.doc.querySelectorAll('#q-quality .choice')].find(n => n.textContent.includes('빠르게'));
+    const fast = [...f.doc.querySelectorAll('#q-quality .choice')].find(n => n.textContent.includes('적게'));
     assert(fast); fast.click(); await sleep(80);
     f.doc.querySelector('#savebar [data-save]').click(); await wait(() => !f.plugin.debugGuiStateInfo().dirty, 'preset save');
     const after = JSON.parse(f.store.get(AGENTS));
     assert.equal(after.slots.shadow_act.enabled, before.slots.shadow_act.enabled, 'speed choice cannot re-enable a stage');
     assert.equal(after.slots.shadow_act.timeout_ms, 51000, 'speed choice cannot reset timeout');
-    assert.equal(after.slots.shadow_act.turn_window, 4); assert.equal(after.slots.shadow_act.max_chars, 48000);
+    assert.equal(after.slots.shadow_act.turn_window, 4); assert.equal(after.slots.shadow_act.max_chars, 24000);
     assert.equal(JSON.parse(f.store.get(RUNTIME)).settings.quick_profile, 'fast', 'independent fields must not change the selected profile to custom');
     assert.equal(f.getCalls(), 0);
   } finally { await f.close(); }
@@ -59,7 +59,7 @@ test('GRADIA every speed/depth preset owns only context budgets and the profile 
       executionMode: 'legacy-camel', execution_mode: 'legacy-snake', customOption: { keep: true }
     }]));
     for (const [id, profile] of Object.entries(f.plugin.getQuickProfiles()).filter(([id]) => id !== 'custom')) {
-      const expected = structuredClone({ runtime, agents }); expected.runtime.quickProfile = id;
+      const expected = structuredClone({ runtime, agents }); expected.runtime.quickProfile = id; expected.runtime.memoryBudgetChars = { fast: 12000, balanced: 24000, quality: 48000 }[id];
       for (const stage of beforeStages) { expected.agents[stage].turnWindow = profile.turnWindow; expected.agents[stage].maxChars = profile.maxChars; }
       assert.deepEqual(JSON.parse(JSON.stringify(f.plugin.debugApplyQuickProfileState(id, runtime, agents))), expected, id + ' must preserve all independent fields');
     }

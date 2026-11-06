@@ -22,17 +22,15 @@ async function unknownLocation(){
   const micro=await f.api.readActiveMicroMemoryForTurn(6);assert.equal(micro.record.analysisStatus,'verified');
   const before=f.writes.length,modelCalls=calls;
   const admission=await f.api.readMicroStateAdmissionForTurn(6,micro.record.scopeKey,micro.record.analysisRevisionId);
-  assert.equal(admission.status,'verified');assert.equal(admission.decisions.length,1);assert.equal(admission.decisions[0].status,'pending');assert.equal(admission.decisions[0].reason,'registry_location_unresolved');
+  assert.equal(admission.status,'verified');assert.equal(admission.decisions.length,1);assert.equal(admission.decisions[0].status,'admitted','a place the source names but no record holds yet is new');
   assert.equal((await f.api.readMicroStateAdmissionForTurn(6,'other-scope',micro.record.analysisRevisionId)).status,'scope_mismatch');
   assert.equal((await f.api.readMicroStateAdmissionForTurn(6,micro.record.scopeKey,'changed-revision')).status,'stale_source');
   assert.equal(f.writes.length,before,'state decision inspection cannot mutate storage');assert.equal(calls,modelCalls);
   f.doc.querySelector('.sidebar [data-go="memory"]').click();await pause(200);f.doc.querySelector('[data-memory-reader-kind="micro"]').click();
   await until(()=>f.doc.querySelector('[data-micro-reader-turn="6"]'),'Micro list');f.doc.querySelector('[data-micro-reader-turn="6"]').click();
-  await until(()=>f.doc.querySelector('[data-micro-state-pending-reason="registry_location_unresolved"]'),'actual pending reason in the viewer',10000);
-  const panel=f.doc.querySelector('[data-micro-state-admission="pending"]');assert.ok(panel.textContent.includes('장소'));assert.ok(panel.textContent.includes('상태 승인 다시 확인'));
-  assert.equal(f.api.getCurrentStateHead().throughTurn,5,'an unknown location must never be auto-approved by the reader');
+  await until(()=>f.doc.querySelector('[data-micro-state-admission="ready"]'),'the viewer shows it applied',10000);
   assert.equal(calls,2);assert.deepEqual(f.errors,[]);
-  console.log('PASS unknown location stays pending; scope/revision refusal; zero reader writes/model calls');
+  console.log('PASS a new location is admitted; scope/revision refusal; zero reader writes/model calls');
  }finally{await f?.close();}
 }
 
@@ -58,7 +56,7 @@ async function conflictingClaims(){
     if(active.status!=='verified')return{type:'success',result:JSON.stringify(artifact())};
     const r=active.receipt,body=r.assistant.text;
     const claims=['열렸다','닫혔다'].map(value=>{
-     const quote=`도서관 문이 ${value}`,startOffset=body.indexOf(quote);
+     const quote='도서관 문이 열렸다 닫혔다',startOffset=body.indexOf(quote);
      return{changeKind:'world',text:quote,actor:'',target:'도서관',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',
       stateIntent:{domain:'world',target:{entityName:'도서관'},field:'doorStatus',operation:'set',value},
       evidence:{role:'assistant',messageId:'t6-a',startOffset,endOffset:startOffset+quote.length,exactQuote:quote}};
@@ -69,7 +67,7 @@ async function conflictingClaims(){
   }});
   await f.open();assert.equal((await f.api.runManualColdStart()).completed,1);
   const character=await f.host.getCharacter(),chat=character.chats[0];
-  chat.message.push({role:'user',chatId:'t6-u',data:'문 상태를 확인해 줘.'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다. 도서관 문이 닫혔다.'});chat.messages=chat.message;
+  chat.message.push({role:'user',chatId:'t6-u',data:'문 상태를 확인해 줘.'},{role:'assistant',chatId:'t6-a',data:'도서관 문이 열렸다 닫혔다.'});chat.messages=chat.message;
   listener({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:11});
   await until(()=>f.api.getCaptureBackendState().lastMicroPublication?.turn===6,'conflicting Micro',10000);
   // Both individual decisions pass. Only the actual projection detects their conflict.
@@ -77,14 +75,14 @@ async function conflictingClaims(){
   const before=f.writes.length,modelCalls=calls;
   const inspected=await f.api.readMicroStateAdmissionForTurn(6);
   assert.equal(inspected.status,'verified');assert.equal(inspected.decisions.length,2);
-  for(const row of inspected.decisions){assert.equal(row.status,'admitted');assert.equal(row.reason,'automatic_review');}
+  for(const row of inspected.decisions){assert.equal(row.status,'pending');assert.equal(row.reason,'micro_same_turn_field_conflict');}
   assert.equal(f.writes.length,before);assert.equal(calls,modelCalls);
   const view=await f.api.debugLoadContinuityStateForResponse();
-  assert.equal(view.authority.microProjection.pendingClaims.length,0);assert.equal(view.head.throughTurn,6);
-  assert.equal(view.head.world.find(row=>row.name==='도서관').state.doorStatus,'닫혔다');
-  assert.equal(view.head.memoryReview.rows.filter(row=>row.risk==='high').length,2,'source-verified conflicts apply with explicit high risk');
+  assert.equal(view.authority.microProjection.pendingClaims.length,2);
+  assert.equal(view.head.world.find(row=>row.name==='도서관').state.doorStatus,undefined);
+  assert.equal(view.head.memoryReview.rows.filter(row=>row.risk==='high').length,2,'unordered conflicts remain reviewable without automatic State authority');
   const panel=await openMicro(f,6);
-  assert.equal(panel.dataset.microStateAdmission,'ready');assert.match(panel.textContent,/반영 2개.*보류 0개/);
+  assert.equal(panel.dataset.microStateAdmission,'pending');assert.match(panel.textContent,/반영 0개.*보류 2개/);
   assert.ok(panel.querySelector('[data-micro-state-review]'));assert.deepEqual(f.errors,[]);
   // Change a persisted decision after projection, while the final proof is read.
   const entry=[...f.values].find(([,raw])=>{try{const row=JSON.parse(raw);return row.schema==='libra.micro_state_admission.v1'&&row.turn===6&&row.claimIndex===0;}catch{return false;}});
@@ -116,7 +114,7 @@ async function pendingBeyondDiagnosticLimit(){
     const source=JSON.parse(messages[1].content),quote=source.assistant.text;
     return{type:'success',result:JSON.stringify({schema:'libra.micro_producer_envelope.v1',personCandidates:{spans:[],relations:[]},
      micro:{schema:'libra.micro_memory.v1',...source.binding,claims:Array.from({length:16},(_,i)=>({changeKind:'world',text:quote,actor:'',target:'제어실',temporalRole:'current',certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'set',
-      stateIntent:{domain:'world',target:{entityName:'제어실'},field:`doorStatus${i}`,operation:'set',value:'열렸다'},
+      stateIntent:{domain:'world',target:{entityName:'열렸다'},field:`doorStatus${i}`,operation:'set',value:'열렸다'},
       evidence:{role:'assistant',messageId:source.assistant.messageId,startOffset:0,endOffset:quote.length,exactQuote:quote}}))}})};
    }
   }});

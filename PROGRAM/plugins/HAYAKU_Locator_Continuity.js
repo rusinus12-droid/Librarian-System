@@ -1,59 +1,12 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.11
+//@display-name HAYAKU · Locator Continuity v3.3.26
 //@api 3.0
-//@version 3.3.11
+//@version 3.3.26
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
-//@arg memory_suite_server_mode string Legacy 0.2.6 migration only; current scope modes are stored in the routing registry
-//@arg memory_suite_server_url string Librarian System Server URL; blank uses http://127.0.0.1:47630
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
-//@arg hayaku_enabled string true|false
-//@arg hayaku_mode string auto|balanced|fast|deep
-//@arg hayaku_prompt_mode string auto|balanced|full
-//@arg hayaku_packet_output_slot string auto|tail|wrapper|footer
-//@arg hayaku_packet_closing_tag string Optional closing tag, e.g. </Story>
-//@arg hayaku_prompt_cache string off|structural|native
-//@arg hayaku_max_items_per_axis string 3
-//@arg hayaku_recall_short_max_age string Optional source-turn age cutoff; all five temporal fields required
-//@arg hayaku_recall_medium_max_age string Optional source-turn age cutoff, greater than short cutoff
-//@arg hayaku_recall_short_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_medium_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_recall_long_turn_quota string Optional unique source-turn quota, 0 to 24
-//@arg hayaku_bm25_channel string true|false
-//@arg hayaku_bm25_weight string 0.08
-//@arg hayaku_memory_language string ko|en|ja|zh|source; blank uses source to follow the completed text language
-//@arg hayaku_debug string true|false
-//@arg hayaku_packet_recovery string true|false
-//@arg hayaku_after_request_auto_repair string true|false; repair the current missing/unusable packet once inside the normal afterRequest pipeline; blank uses true
-//@arg hayaku_recovery_extra_calls string 0|1; explicit structural recovery allowance per operation; default 0
-//@arg hayaku_background_auto_repair string true|false; retired and ignored; afterRequest repair is the only automatic stage
-//@arg hayaku_native_auto_repair string true|false; retired and ignored
-//@arg risuai_aux_allow_plugins string true|false; allow a plugin-provided RisuAI auxiliary model; blank uses true
-//@arg hayaku_cold_start_batch_turns string 1|5|10; maximum completed U+A turns per Other Ax Cold Start call; blank uses 1
-//@arg hayaku_packet_coverage_audit string true|false
-//@arg hayaku_packet_coverage_fallback_recall string true|false
-//@arg hayaku_display_scrubber string true|false
-//@arg hayaku_recall_relatedness_weight string 0-100 relevance preference after retrieval gate; blank uses 70
-//@arg hayaku_recall_recency_weight string 0-100 story-turn recency preference after retrieval gate; blank uses 30
-//@arg hayaku_recall_context_messages string Fixed recent user/assistant message window before the current input; blank uses 5
-//@arg hayaku_adaptive_context_window string true|false; blank uses true
-//@arg hayaku_multi_query_recall string true|false; blank uses true
-//@arg hayaku_contradiction_bundle string true|false; blank uses true
-//@arg hayaku_multi_resolution_recall string true|false; blank uses true
-//@arg hayaku_recall_stability string true|false; blank uses true
-//@arg hayaku_recall_stability_boost string 0.0-0.08 request-local scene persistence boost; blank uses 0.025
-//@arg hayaku_recovery_vault string true|false; deprecated compatibility argument; exact visible U+A Recovery Journal preservation is always enabled
-//@arg hayaku_raw_passage_recall string true|false; search Recovery Journal evidence with exact/BM25/trigram/proximity passage retrieval; blank uses true
-//@arg hayaku_raw_recall_max_items string retired and ignored; raw passage recall is bounded by hayaku_raw_recall_max_chars
-//@arg hayaku_raw_recall_max_chars string Maximum total verbatim recovery evidence characters; blank uses 2400
-//@arg hayaku_raw_recall_min_score string retired and ignored; raw passage recall uses rank fusion, not a score floor
-//@arg hayaku_typed_memory_graph string true|false; derive deterministic typed relations between packet memory rows; blank uses true
-//@arg hayaku_graph_closure_recall string true|false; admit bounded typed-neighbor evidence after the normal retrieval gate; blank uses true
-//@arg hayaku_graph_closure_max_nodes string Maximum typed graph closure rows kept per request; blank uses 8
-//@arg hayaku_hierarchical_episode_memory string true|false; build router-only scene/turn episode hierarchy from L1 rows; blank uses true
-//@arg hayaku_episode_router_max_hits string Maximum episode routers activated per request; blank uses 3
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -288,139 +241,9 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
 }
 /* End RisuAI native-branch target storage preparation */
 
-/* 3.0.118: Limit structured-output exclusion to active directives; rebuild incomplete injections and report suppression accurately. */
-/* 3.0.107: Retain queued recovery consent while local work is busy; distinguish API availability from model connectivity. */
-/* 3.0.106: Show only actionable maintenance rows; hide empty controls and retain explicit read-error states. */
-/* 3.0.105: Persist regular generation source basis; distinguish downstream review and use white review checkboxes. */
-/* 3.0.104: Align prompt profiles, preserve optional regular evidence, and shorten runtime authoring instructions. */
-/* 3.0.99: Fix full-ingest metadata, separate observed response variants from direct edits, and expose source validation stages. */
-/* 3.0.98: Preserve batch salvage, adopt verified cold-start subsets with durable readback, and resume only the matching partial run. */
-/* 3.0.79: Remove story-word semantic registries; retain only explicit canonical signal fields and namespace tags. */
-/* 3.0.63: Expire recall on observed scope and explicit query changes; rank new group members by incremental delivered cost. */
-/* 3.0.62: One recall selection plan, grouped evidence and returned-hook delivery history; existing canonical storage retained. */
 /* Remaining implementation: explicit generation policy, bounded terminal streams, owner metadata migration and maintenance telemetry. Offline verification is separate from real provider certification. */
-/* 3.0.61: Automatic failed-analysis revalidation, durable per-incident one-call retry budget, strict evidence checks and GUI controls. */
-/* 3.0.60: Reuse verified legacy evidence manifests across writer versions; preserve original hashes and require physical chunk readback. */
-/* 3.0.59: Execution Contract 1.0.1 synchronization. Normal capture and OtherAx roles unchanged. Real host/provider validation remains separate. */
-/* 3.0.54 / Integrated Implementation 10+11: Owner-local shared OtherAx contract, default zero automatic additional calls, explicitly bounded complete-format repair, cancellation and late-result guards. Existing packet/source-review and failure-vault contracts retained. Host/model NOT_RUN. */
-/* 3.0.51 / Integrated Implementation 02: Full source review with one-turn selection, immutable U+A evidence and explicit missing-original acknowledgement. Existing packet validation and recovery remain. */
-/* 3.0.50 / Integrated Implementation 01: Shared Source Edit Consent 1.1.0 and explicit selected keys. Existing recovery/output/packet contracts retained. Common diff UI is a subsequent phase. */
-/* v3.0.49: exact completed-turn coverage, illustration-neutral identities, visible source-edit review, preserve-until-replacement consent, and stale-debt reconciliation. */
-/* v3.0.45 / BOOK_UX 5.18: verified RisuAI native branch prefixes, source-bound adoption, preserved consent and read-only lineage status. */
-/* v3.0.47 / BOOK_UX 5.23: align grounding instructions, readable failure review, preview/source-bound user adoption, verified maintenance I/O and nonblocking recovery minimization. */
-/* v3.0.46 / BOOK_UX 5.20: scoped authoring card below overview metrics; source-edit controls in Recovery Journal; native chat lineage integrated into Worldline. Presentation and guarded review entry only; packet, consent and storage authority unchanged. */
-/* v3.0.43: GUI draft lifetime, truthful record/probe status, paged ledger, main-model authoring receipt, multilingual explicit output slots and schema-first semantic authoring. No extra normal-path model call or memory schema migration. */
-/* v3.0.44: source-edit confirmation, old-carrier exclusion and consent-bound targeted Other Ax repair; normal response-model packet authoring is unchanged. */
-/* v3.0.42 persists indeterminate ledger-write reconciliation metadata in a small durable journal so a RisuAI reload can re-check late physical writes by scope/request nonce/packet hash without another LLM call. Terminal exact/superseding readback removes the journal entry; unresolved entries remain durable for the next safe hook. */
-/* v3.0.41 makes durable ledger writes tri-state instead of treating a 1.5s host timeout as a confirmed failure. Timed-out writes remain indeterminate while their original fenced setItem continues, exact readback can confirm them later without another LLM call, one safe exact replay is allowed only when no newer same-scope ledger supersedes the write, and chat_output capture no longer creates Recovery Journal debt merely because storage acknowledgement was slow. */
-/* v3.0.40 makes Failed Recovery diagnostics actionable: it explains the concrete failure, records the afterRequest/Journal stage, refuses as-is adoption with an explicit reason when the preview is only an empty skeleton, accepts repaired canonical JSON/manual envelope input, and keeps grounded LLM resolution on the immediate verified-adoption path. */
-/* v3.0.39 presents background-recovery confirmation as an independent lightweight dialog. The full ledger viewer is no longer mounted automatically when a Recovery Journal prompt is raised; if the host cannot display a body-level dialog, the call is not started and the durable journal remains pending. */
-/* v3.0.38 moves the RisuAI auxiliary-model call test into Settings while preserving its explicit one-call diagnostic boundary. */
-/* v3.0.37 moves the Recovery Journal status summary into Operation Logs so recovery state is read with its diagnostic activity. */
-/* v3.0.36 removes the overview's duplicate coverage description and navigation shortcuts so the dashboard opens directly on its status and data cards. */
-/* v3.0.35 removes the redundant Worldline status banner and its Recovery Status shortcut so the page leads directly from its heading into the turn-continuity board. */
-/* v3.0.34 starts the existing exact-identity finalized-binding monitor after authoritative chat_output_v3 capture instead of parking it until another user request. Stable U+A, request nonce, message identity, parent/worldline, reroll, and rollback gates remain fail-closed. The viewer also reports unbound records as binding-pending rather than presenting them as an active worldline. */
-/* v3.0.33 makes the Failed Recovery empty-state mutually exclusive with real records at the DOM level: the renderer now updates hidden, aria-hidden, and an important inline display value together so host styles cannot leave the empty placeholder visible above populated failure cards. */
-/* v3.0.32 gives every Failed Recovery list card the same full-width height, clamps long diagnostics, and correctly hides the empty state when records exist. Each card now has a confirmed delete action that atomically removes only its indexed manifest and chunk payload with physical readback and rollback; Recovery Journal debt and exact U+A evidence remain preserved for later repair. */
-/* v3.0.31 moves the large Recovery diagnostics JSON out of the primary recovery workflow and into a collapsed disclosure at the bottom of Operation Log. The existing live diagnostic node and recovery status source are preserved, and opening Logs refreshes the snapshot without invoking an LLM. */
-/* v3.0.30 adopts Flashback's paint-first GUI switching: the mounted shell is reused, tab selection and visibility commit before active-panel hydration, hidden packet/JSON/worldline views are not rebuilt, and background refresh no longer disables or fades the whole viewer. */
-/* v3.0.29 aligns HAYAKU's RisuAI auxiliary transport with LIBRA: otherAx now permits RisuAI plugin-provided models by default, preserves an explicit false setting, serializes physical calls, and keeps RisuAI-owned model selection with no synthetic timeout or retry. */
-/* v3.0.28 adds an explicit session-only RisuAI Other Ax connectivity probe without changing HAYAKU's no-LLM normal chat path. */
-/* v3.0.26 rebuilds the HAYAKU GUI around the Flashback UX shell without changing ledger, recovery, settings, storage, or provider ownership. It adds a health-first Overview, an accessible grouped sidebar, a master-detail packet ledger, and a readable worldline timeline while preserving existing Recovery Journal confirmation, Failed Recovery, Portable Memory, shared Server panels, and 34-argument transactional readback/rollback contracts. */
-/* v3.0.25 repairs a missing/unusable current packet once inside the normal afterRequest pipeline so success remains in the same Assistant transcript entry. Failure always preserves exact visible U+A in the durable Recovery Journal; optional background repair is independent, requires an explicit per-entry confirmation, makes one Other Ax call with prior raw diagnostics, and never starts from a timer. The public GUI exposes both controls and live confirmation/job state while legacy Recovery Vault keys remain readable. */
 /* Core-quality patch: the semantic skeleton guard now detects short but continuity-critical finalized responses (death/injury, movement, acquisition/loss, commitments, revelations, relationship/status changes) instead of exempting every response under 80 characters. */
-/* v3.0.24 preserves complete Recovery Vault evidence in verified chunk sidecars, requires target-grounded Other Ax recovery envelopes before automatic adoption, and gives the single corrective call the concrete prior failure report. */
-/* v3.0.23 makes prompt Auto select Full only for deep/precision recovery with verified headroom, otherwise Balanced; multilingual memory now defaults to source language. */
-/* v3.0.22 preserves raw blank argument values during GUI rollback and requires both raw and effective readback before reporting rollback success. */
-/* v3.0.21 adds a grouped GUI for all 34 user-facing HAYAKU arguments. Changes remain draft-only until one transaction writes them, reloads all settings, and verifies full readback; partial failures restore the previous argument snapshot and verify rollback without an LLM call. Storage/Compute panels remain owned by the shared Librarian System bridges, and the migration-only server-mode argument stays hidden. */
-/* v3.0.20 adds 1/5/10-turn Cold Start Other Ax batches while keeping one canonical packet and checkpoint per evidence unit. Full failed model output and normalization/validation/size diagnostics are stored in a chunked hash/readback vault, and the new Failed Recovery panel supports exact-preview adoption, one user-requested Other Ax repair, or a user-edited packet. Review-pending debt is not silently dropped or automatically retried; exact worldline and durable adoption gates remain mandatory. */
-/* v3.0.19 makes legacy recovery takeover evidence-exact and fail-closed, validates native repair candidate worker/prompt identity, removes retired RE:TRACE recovery IPC/lease/event surfaces, and makes owner/viewer inspection read-only. Legacy artifacts without current U+A proof remain stored but are never auto-adopted; normal Other Ax, ledger, worldline, Portable Memory, and Compute ownership are unchanged. */
-/* v3.0.18 adopts Storage SDK 1.8.13 paged key discovery, bounded batch reads, oversized-record fallback, and the 4 MiB interactive value guard. Ledger, packet, Recovery Vault, worldline, Other Ax, recall, and local Compute ownership are unchanged. */
-/* v3.0.17 stores stable character/chat identity in every newly written ledger, groups recovery/run/candidate dependents into the same server-scope safety boundary, and permits deletion only for a lone semantically empty ledger observed twice and reverified by the authenticated Owner. Packet, archive, Recovery Vault, worldline, recall, Other Ax and local fallback ownership are unchanged. */
-/* v3.0.16 makes RE:TRACE discovery a storage-free fast path: capability responses report the already-cached Storage status instead of waiting on durable scope-mode resolution. Owner discovery therefore remains responsive while RisuAI chat/context APIs or pluginStorage are busy; ledger ownership, recovery, recall and storage-mode changes are unchanged. */
-/* v3.0.15 exposes the plugin-global Compute mode in the Server GUI through the shared Compute panel. The panel requires no user token or pairing key, keeps local as the zero-network fallback, and mounts independently from Storage connection diagnostics. */
-/* v3.0.14 adopts the Librarian System product name and Storage SDK 1.8.11 / Compute SDK 0.3.2 labels without changing ledger, packet, archive, recovery, local fallback, Other Ax, or ownership behavior. */
-/* v3.0.13 makes prefer_server delegate the current deterministic RRF request through a bounded interactive Compute call, while server failure, timeout, stale binding, local mode, and shadow mode preserve the existing JavaScript scorer. Compute bootstrap stays automatic and Storage-independent with no token or pairing input. HAYAKU retains retrieval gates, packet cohesion, graph/transition coverage, final selection, prompt injection, ledger writes, finalized binding, and Other Ax ownership. */
-/* v3.0.11 hardens Portable Memory against re-signed semantic forgeries, cross-scope relabeling, routed-storage bypass, transcript and target time-of-check/time-of-use races, incomplete archive graphs, and auxiliary-state migration collisions. Backup snapshots now share the canonical HAYAKU storage queue; restore readback covers physical archive data, transcript identity, native regeneration state, and touched-key rollback. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider schemas are unchanged. */
-/* v3.0.10 closes Portable Memory's integrity boundaries: exports now follow explicit archive references stored inside serialized ledgers, format-v3 ownership is re-proven from the source scope instead of trusting labels, confirmed imports abort if the target changes before the queued write, shared dependencies are collision-safe and never removed as scope-owned state, and failed cross-chat imports roll back only keys journaled by that transaction. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider schemas are unchanged. */
-/* v3.0.9 makes Portable Memory import transaction-safe: current-chat ownership now requires an exact key or top-level owner identity instead of a recursive provenance mention, every restore/migration/copy transaction runs through the canonical storage queue, failed cross-chat imports restore or remove every touched ledger/archive/meta key with readback, and session-local charIndex fallbacks cannot authorize cross-chat identity. Packet, ledger, archive, Recovery Vault, worldline, and RisuAI provider contracts are unchanged. */
-/* v3.0.8 tightens Recovery-page visual balance: the unavailable-chat state is a compact non-stretching status badge, manual repair and Cold Start use identical primary-action dimensions, and the redundant direct-JSON-paste surface and handler are removed while file-based format-v3 restore remains unchanged. */
-/* v3.0.7 introduces scope-owned Portable Backup format v3, same-chat replacement isolation, new-chat historical migration, copied-chat worldline recovery, JSON paste, pre-commit comparison, visible progress/cancel/minimize controls, verified target rollback, and durable import receipts. */
-/* v3.0.6 versions Portable Memory Backup's collision-safe object encoding as format v2 while retaining explicit format-v1 restore compatibility, uses the scoped pluginStorage proxy for transactional restore, keeps verified regeneration adoption success distinct from secondary GUI refresh failures, and stops hidden viewer progress tickers on close/unload. */
-/* v3.0.5 makes the fullscreen ledger viewer backdrop visually transparent so the underlying RisuAI interface remains visible around the centered HAYAKU window. The viewer window, internal overlays, and modal input blocking remain unchanged; outside clicks do not pass through. */
-/* v3.0.3 adds a unified native-work job center for Cold Start, manual repair, and targeted regeneration with a minimizable central progress surface, live header chip, truthful checkpoint progress, elapsed time, and soft cancellation. Targeted regeneration now stages verified candidates for an old/new comparison and explicit user choice before any tombstone/adoption transaction, while replacement tombstones can be atomically reselected with exact active-worldline validation and durable readback. */
-/* v3.0.2 adds owner-native recovery coverage reporting. The recovery screen now refreshes current-worldline Packet Debt without an LLM call, lists the exact missing completed U+A turns, and separates immediately repairable, retry-backoff, exhausted, leased, user-suppressed, and Cold Start target turns. Cold Start remains user-triggered and recordless sessions are not mislabeled as incremental Packet Debt. */
-/* v3.0.1 keeps the RisuAI API object captured at plugin startup as the authoritative runLLMModel transport, matching the working OFF THE SCREEN adapter. Native recovery no longer loses Other Ax when sandbox globals are hidden after initialization; live aliases remain a fallback, recovery status distinguishes chat-scope failure from requester absence, and packet/ledger/archive/recovery schemas remain unchanged. */
-/* v3.0.0 promotes the stabilized HAYAKU release line without changing packet/ledger/archive schemas, Recovery Vault, native Other Ax repair/Cold Start contracts, RE:TRACE capability ownership, Librarian System routing, or DATA layout from v2.5.1. The version change is release metadata only and requires no packet rebuild. */
-/* v2.5.1 completes native ownership of HAYAKU recovery/Cold Start: explicit targeted regeneration and record replacement now run inside HAYAKU, legacy RE:TRACE staged checkpoints are adopted or resumed without RE:TRACE LLM execution, Cold Start preserves Assistant-only narrative and uses System messages as context-only evidence, and checkpoint reuse is bound to the native worker/prompt authoring contract. RE:TRACE becomes delegation/read-only compatibility for HAYAKU analysis while existing packet/ledger/archive schemas remain unchanged. */
-/* v2.5.0 moves missing-turn repair and first-use Cold Start into HAYAKU itself. Normal chat remains no-LLM; only Recovery Vault debt and explicit Cold Start use the official RisuAI runLLMModel({mode:'otherAx',allowPlugins:false}) background path. Response-level recovery_snapshot authoring is retired, current responses always request one current_snapshot, exact branch revalidation/readback remain mandatory, RE:TRACE repair/cold-start become compatibility fallbacks, and long-chat topology scans reuse exact per-message revision diagnostics instead of reparsing unchanged packets. */
-/* v2.4.46 fixes the Portable Memory Backup envelope metadata contract so exported backups and the public portable-backup API report the actual HAYAKU plugin version. Packet capture, ledger, Recovery Vault, archive, Memory Lane, worldline, storage, and RE:TRACE contracts are unchanged. */
-/* v2.4.45 makes Portable Memory Backup UI mounting no-DOM safe so worker/headless hosts skip only the UI while HAYAKU runtime, ledger, Recovery Vault, archive, storage, and RE:TRACE contracts continue to initialize unchanged. */
-/* v2.4.44 adds strict same-chat portable Ledger/Recovery Vault/archive backup and transactional restore without rewriting chat packets. */
-// v2.4.39: Fixes RE:TRACE next-session handoff false negatives in Recovery Vault source-preservation verification. The vault fingerprint now hashes the physically stored raw value instead of a normalized empty-vault object whose synthetic updatedAt changed on every read; absent vaults therefore remain deterministically unchanged, real source mutations still fail closed, and existing packet/archive/Memory Lane behavior is unchanged.
-// v2.4.40: Adopts RisuAI 2026.8.240 API-v3 addRisuChatListener('output') as the authoritative committed-output capture source. Official events are matched to pending logical U+A turns, revision-upsert the same packet group across auto-continue/reroll, persist with highest capture priority, and defer final identity binding to the next authoritative beforeRequest snapshot so IGP/post-output changes can settle. Long finalized-capture polling and afterRequest/output capture heuristics are disabled while the listener is active; legacy hooks remain sanitizer/fallback-only.
-// v2.4.41: Formalizes the capture backend as one owner at a time: CHAT_OUTPUT_V3 on current RisuAI, AFTER_REQUEST_RECONCILE as the preferred completed-response legacy backend, SCRIPT_OUTPUT_LEGACY only when afterRequest capture is unavailable, and NONE otherwise. Output/editoutput hooks remain available as byte-preserving packet/runtime sanitizers even when they do not own capture. Backend telemetry records fallback reason, observed events, revision/duplicate/stale counts, while legacy finalized capture/binding monitors stay active only outside CHAT_OUTPUT_V3. Packet schema, ledger, Recovery Vault, worldline and RE:TRACE contracts are unchanged.
-// v2.4.42 adds dispatch-health failover for RisuAI forks that successfully register addRisuChatListener but never invoke it. Main afterRequest records a non-capturing health witness; the next main beforeRequest proves a silent listener if no official callback intervened, removes that listener, promotes the already-installed afterRequest/script compatibility owner, and re-enables finalized live-chat recovery for the missed turn. No polling is added to healthy CHAT_OUTPUT_V3 sessions.
-// v2.4.43 gives the Ledger Viewer setting/button stable official UI ids and explicitly unregisters them through unregisterUIPart() when this runtime still owns the viewer. Legacy/fork shared-registration fallback remains intact when unregisterUIPart is unavailable, reducing hot-reload/update UI residue without changing packet, recall, capture, storage, or RE:TRACE behavior.
-// v2.4.38: Integrates Memory Lane principles into the existing Global Packet Router and Hierarchical Episode Router instead of adding a duplicate lane store. Episode fingerprints now use lane-level document frequency, rare lexical/canonical/entity matches and adaptive score-gap selection; ambiguous queries broaden safely, exact signals remain protected, and every routing failure still returns the untouched full candidate rows. Packet bodies, hidden ledgers, audits, archive storage and model-call counts are unchanged.
-/* v2.4.37 adopts Storage SDK v1.8.10 and validates restored archive chains from physical pluginStorage readback, never from a hydrated runtime cache. */
-/* v2.4.35 adopts Storage SDK v1.8.8: the active plugin-only scope is a strict zero-network boundary even when other scopes use the server, shared and foreign-scope keys stay local, and applying plugin-only does not reconnect. */
-/* v2.4.34 adopts Storage SDK v1.8.7: server-to-pluginStorage restore requires verified candidate coverage and readback, failed recovery remains server-only under a durable recovery guard, and terminal work results stay visible. */
-/* v2.4.33 adopts Storage SDK v1.8.6: timed-out server requests are aborted, failed data routes open the shared offline circuit, background resources are disposed on unload, and hot-reload globals are released safely. */
-/* v2.4.32 makes RE:TRACE summary inspection read-only and manifest-local, skips ledger hydration when no bridge capsule exists, avoids repeated current-chat resolution for explicit ledger/archive keys, and keeps startup repair on the non-hydrating ledger path. */
-/* v2.4.28 binds Recovery Vault debt and RE:TRACE repair packets to exact active worldline variants, mirrors reroll/rollback lifecycle into debt and packet state, adds branch-safe repair leases plus authenticated debt IPC/events, suspends candidates during first-observation rollback quarantine, reactivates the exact branch without another LLM call, and rejects superseded/orphaned repairs before canonical adoption. */
-/* v2.4.27 reinforces the v2.4.24-v2.4.26 memory stack as one integrated pipeline: a global packet routing catalog now runs before bounded full/light ingest; hierarchical parents route recursively through child episodes instead of flattened truncated L1 keys; hierarchy capacity is reserved across levels; current-state conflict collapse cannot be undone by closure coverage; derived-index cache keys include graph/episode compiler profiles; packet-debt raw evidence carries epistemic caution and is copied source-immutably during RE:TRACE handoff; and pre-build budget guards can fail soft before expensive graph/episode construction. */
-/* v2.4.26 adds a deterministic Typed Memory Graph, query-directed Graph Closure Evidence Bundles, and a router-only Hierarchical Episode Memory index. Explicit and conservative inferred SUPERSEDES/CONTRADICTS/RESOLVES/FULFILLS/VIOLATES/CAUSES/DEPENDS_ON/CONTINUES edges enrich the existing associative graph; closure can preserve the relevant change chain after the evidence gate; scene/turn clusters and recursively grouped parent episodes route broad or old-memory queries back down to exact L1 packet rows without adding an LLM, embedding provider, durable memory schema, or new handoff authority. */
-/* v2.4.25 adds a packet-debt Recovery Vault and embedding-free Raw Passage Recall. Only finalized active-worldline U+A turns whose current packet is missing or unusable retain exact visible text; request-local exact/phrase, BM25, rare-term, proximity, character n-gram and RRF passage retrieval returns offset-sliced verbatim evidence without changing packet, ledger, worldline, archive, reroll/rollback, or RE:TRACE handoff schemas. */
-/* v2.4.24 adds a protected adaptive recall controller: the current input remains the primary retrieval authority while a separately derived recent-context focus, relevance-versus-recency preference mixing, context-aware full/light packet selection, multi-topic support, contradiction-transition pairing, and scene-stability diagnostics strengthen continuity recall without changing packet schema, ledger keys, worldline, reroll/rollback, archive, or handoff semantics. */
-/* v2.4.23 formalizes the existing live-chat identity contract: msg.chatId is explicitly authoritative when present, fallback source/quality is exposed to lineage diagnostics, and no ledger key, packet schema, reroll, rollback, or worldline semantics are changed. */
-/* v2.4.22 adds current-scope Librarian System server diagnostics to HAYAKU debug JSON. Server events, namespace integrity, protocol/version and offline state are exported through the shared privacy-scrubbed diagnostics contract while live-chat packet authority and ledger contents remain unchanged. */
-/* v2.4.21 makes Librarian System mode chat-scope-specific. Each HAYAKU ledger scope can independently use pluginStorage, mirror, or server-only while new chats default to pluginStorage; shared immutable archive metadata remains safely mirrored only when a server-backed scope exists. Server outages no longer prevent the ledger GUI/server page from registering. */
-/* v2.4.20 adds the shared Librarian System background-sync progress UI. Initial server seeding, mirror synchronization, and restore expose live phase/count/bytes/timing/retry diagnostics while keeping HAYAKU packet authority and existing ledger semantics unchanged; the active storage mode is not committed until server baseline verification finishes. */
-/* v2.4.19 adds a first-class 서버 연결 page to the HAYAKU side panel with storage-mode selection, loopback URL editing, connection testing, server/protocol status, synchronization, recovery, and guarded pluginStorage deletion. Packet capture, binding, recall, and the live-chat-primary dual-ledger contract are unchanged. */
-/* v2.4.18 adds the RE:TRACE server-scope deletion owner proof while preserving HAYAKU's live-chat-primary dual-ledger contract. Active server-scope deletion first verifies/restores the exact ledger data in pluginStorage and switches durably to plugin_only; packet capture, binding, recall, and archive semantics are unchanged. */
 
-/* v2.4.18 adds RE:TRACE/Librarian System handoff synchronization: mirror/server storage is verified around owner-led session adoption without changing live-chat packet authority or source-immutable handoff semantics. */
-/* v2.4.16 adds three Librarian System storage modes with plugin-only as the default, live pluginStorage+server mirroring, server-only storage, verified server-to-pluginStorage recovery, and guarded deletion of only server-backed HAYAKU pluginStorage data after server integrity/coverage proof. Mirror-mode deletion switches automatically to server-only; live-chat packet authority and RE:TRACE compatibility beacons remain untouched. */
-/* v2.4.15 routes HAYAKU's durable v2 packet ledger and immutable shared-archive bodies/meta through the shared Librarian System server. Live-chat packet authority, shared RE:TRACE bridge markers/beacons, packet capture, rollback/reroll binding and source-immutable handoff are unchanged. Existing pluginStorage remains a lazy, non-destructive migration source. */
-/* v2.4.14 accepts both memory-session-bridge-v1 and v2 RE:TRACE handoff markers, repairs already-created v2 target sessions on startup by durably adopting their immutable HAYAKU archive, and exposes the accepted marker/source/count identity in diagnostics. Source HAYAKU storage remains read-only and fingerprint-verified. */
-/* v2.4.13 fixes the v2.4.12 native-copy recovery migration false-negative: before deciding that a copied chat has no RE:TRACE recovery snapshots, HAYAKU now hydrates the source's incremental-recovery capsule into an in-memory source ledger, accepts authoritative bridge_incremental_recovery slot-head records, retries instead of permanently completing the migration when expected recovery records are present but target identity is not stable yet, and exposes source/examined/rejected counts in debug state. The source ledger and recovery capsule remain read-only; shared archives, cold-start history, predecessor-session history, unbound recovery, and unrelated source storage remain excluded. */
-/* v2.4.12 preserves verified RE:TRACE incremental-recovery snapshots across ordinary RisuAI native chat copies without restoring the v2.4.8 over-copy bug: only active bridge_incremental_recovery records whose U+A content hashes exactly match a real pair in the copied transcript are rebound to the copied chat's new worldline/message IDs; shared archives, cold-start material, predecessor history, unbound recovery, and unrelated source storage remain excluded. Existing v2.4.9-v2.4.11 copied chats receive the same one-time verified recovery migration. */
-/* v2.4.11 registers the RE:TRACE owner IPC listener immediately after runtime ownership is claimed, before slower settings/storage initialization can delay discovery; it also publishes a readback-verified shared pluginStorage compatibility beacon so isolated API-v3 peers can identify the installed contract without relying on cross-iframe globals. */
-/* v2.4.10 moves the existing RE:TRACE allowed-ipc declaration into the primary metadata block and exposes the peer-compatibility contract directly on the public HAYAKU runtime API; packet capture, native-copy isolation, and immutable handoff semantics are unchanged. */
-/* v2.4.9 isolates ordinary RisuAI native chat copies from source-only HAYAKU storage: copied chats rebuild only current_snapshot packets physically present in the copied transcript, never inherit source shared archives/cold-start/incremental-recovery records, and automatically detach legacy copied_chat_clone/archive contamination while preserving RE:TRACE immutable handoff behavior. */
-/* v2.4.8 aligns HAYAKU with the RE:TRACE peer-compatibility v1 contract and makes next-session handoff strictly source-immutable: the source ledger is no longer rewritten into an archive-only form, target sessions reference a detached immutable archive, source fingerprints are persisted in the target handoff proof, and future plugin versions are negotiated by protocol/features instead of exact version numbers. */
-/* v2.4.7 prevents internal runtime packet-authoring instructions from leaking into visible chat: prompt-echo blocks are excluded from packet capture before parsing, scrubbed from hook returns only after capture/binding observation, hidden again at display time as a final guard, and recorded with deduplicated diagnostics without weakening the mandatory packet core. */
-/* v2.4.6 makes packet authoring a mandatory core outside HAYAKU optional continuity/recall budgets: adaptive pressure can reduce recall and scene data to zero but cannot suppress the packet contract; only verified physical host headroom below the atomic minimum triggers hard_context_exhaustion with an explicit operation log. */
-/* v2.4.5 makes host token context budgets authoritative over raw-character pressure heuristics, prevents false extreme-pressure suppression on large multilingual prompts, and restores the atomic packet-writing minimum when verified host headroom can safely fit it before allocating recall evidence. */
-/* v2.4.4 makes current-chat selection races fail-soft, gives the UI topology observer a steady-state fast scope path that avoids repeated full copy/verification scans, and adds explicit first-run hook lifecycle diagnostics without changing capture, binding, lineage, recall, or packet-authoring behavior. */
-/* v2.4.3 avoids the Permissions-Policy-blocked Clipboard API inside RisuAI about:srcdoc containers, prefers a synchronous ownerDocument execCommand copy path with focus/selection restoration, and falls back to the existing visible debug JSON panel when copying is unavailable. */
-/* v2.4.2 replaces unavailable host-native confirm() in orphan cleanup with an in-viewer confirmation dialog, so verified cleanup no longer self-cancels in RisuAI plugin containers. */
-/* v2.4.1 keeps rollback/reroll audit branches out of the default ledger view and makes manual orphan cleanup remove the whole verified discarded branch, including orphan-owned audit/quarantine copies, while creating system tombstones so hidden live-chat mirrors cannot resurrect deleted packets. */
-/* v2.4.0 promotes the mature 2.3 continuity core into a long-form RP memory release: evidence-pressure recall budgeting, slot-level current-state projection, validity-aware temporal decay, cue-driven latent episodic reactivation, hardened structured packet normalization, generation-lineage v2 reroll binding, longer fail-soft recall budgets, archive hydration caching, native prompt-cache support, and verified manual orphan cleanup are retained as the new 2.4 baseline without changing the packet schema revision. */
-/* v2.3.78 adds a fail-closed manual orphan cleanup that physically removes only verified local orphan records, reconciles dangling slot heads and orphan-node packet references, preserves all active, quarantined, inherited, permanent, protected, tombstoned, and audit-retained data, and requires explicit UI confirmation. */
-/* v2.3.77 gives every main generation attempt a unique request_lineage_v2 identity, keeps stable U + parent + pair as the turn owner, and permits finalized response-hash refresh only with exact generation output proof while retaining legacy v1 and all foreign-branch rejection gates. */
-/* v2.3.76 preserves a divergent current reroll capture as an unbound same-nonce variant when an older higher-priority live-chat mirror occupies the canonical record id, allowing finalized U+A identity to bind the new sidecar without overwriting or recalling the old variant. */
-/* v2.3.75 accepts a successfully normalized, semantic-valid current_snapshot as validated evidence for the narrow finalized logical-id rebase while preserving nonce, parent, stable-user, reroll, rollback, and quarantine gates. */
-/* v2.3.74 raises the fast recall budget from 2.5 to 10 seconds while preserving the 20/30-second balanced/deep budgets, the 30-second host request deadline, and the bounded 1.5-second individual host-call timeout. */
-/* v2.3.73 raises balanced/deep recall budgets to 20/30 seconds with a matching 30-second host deadline, keeps individual host calls bounded, and guarantees one query-relevant or latest lightweight packet projection when the normal ingest budget expires before any packet is indexed. */
-/* v2.3.72 normalizes structured recall values across every packet axis, recovers legacy world/narrative state wrappers and planner/narrative record shapes, sanitizes knowledge-boundary identifiers, and rejects any final rendered object-stringification artifact without modifying the durable raw ledger. */
-/* v2.3.71 safely flattens object-valued character state into readable recall text, forbids object/array state in the packet-authoring contract, and fail-closes any legacy [object Object] row before indexing or model delivery while preserving the durable raw ledger. */
-/* v2.3.70 adds cue-driven latent episodic reactivation: strongly matching present-scene place/entity cues can revive one old episodic memory despite temporal decay, with a short repeat cooldown, while decay remains a prior rather than deletion and packet-authoring prompts stay unchanged. */
-/* v2.3.69 adds validity-aware temporal decay: obsolete historical snapshots lose retrieval weight progressively by memory class, explicit past lookups relax that decay, unresolved continuity/canonical knowledge remain protected, and carried character slots now age by their own source turn so stale attire/carrying/physical details eventually retire without deleting ledger history. */
-/* v2.3.68 projects repeated character snapshots into slot-level current state: durable attire/carrying/physical state persist until updated, scene-bound location/emotion/status persist only within the same scene, and instant action/expression/posture do not survive an omitted newer observation; historical snapshots stay in the ledger while ordinary current-scene recall prefers the projection. */
-/* v2.3.67 makes recall expansion evidence-pressure driven for narrative/full-persona inputs: every turn first packs into 3,000 chars, expands to 4,500 only when important selected evidence is actually dropped, and reaches 6,000 only when hard required evidence still does not fit or broad timeline/recovery evidence remains under pressure; packet-authoring prompt budgeting stays separate and unchanged. */
-/* v2.3.66 separates recall-data budgeting from packet-authoring prompt budgeting: ordinary recall targets 3,000 chars, precision recall expands to 4,500, and timeline/recovery/complex multi-topic recall expands to 6,000 only when needed, while the packet-writing contract text remains unchanged. */
-/* v2.3.65 caches fully verified immutable archive hydration snapshots by archive-head identity, preventing deep gzip-chain LRU thrashing while keeping the existing layer cache as a bounded fallback and clearing archive caches on unload. */
-/* v2.3.64 activates provider-native prompt-cache interception in native mode, aligns OpenAI explicit breakpoints and Anthropic model thresholds/multi-breakpoint coexistence, and treats Gemini 2.5+ as provider-managed implicit caching while preserving preconfigured explicit cachedContent. */
-/* v2.3.63 makes a unique persisted user-message id authoritative over request/live text-hash drift, rejects conflicting ids and nonces before append affinity, and immediately rekeys a post-processed finalized packet when the same stable U, target pair, and validated request nonce agree. */
-/* v2.3.62 gives the response model a typed continuity-evidence contract, resolves latest valid state and chronological transitions, and keeps unresolved constraints, knowledge boundaries, and prohibited inferences from becoming occurred events. */
-/* v2.3.61 keeps response hooks byte-preserving, recovers the innermost valid packet candidate internally, and removes repeated or damaged reserved packet prefixes consistently from display and visible-identity text. */
-/* v2.3.60 restores only complete, semantically valid bare packet markers through the existing afterRequest/editoutput response path while keeping bare-wrapper restoration disabled for streaming output and leaving render-only scrubbing unchanged. */
-/* v2.3.59 completes safely reconciled finalized bindings during the next beforeRequest and preserves runtime ledger availability after durable reconcile writes. */
-/* v2.3.58 enables the render-only packet scrubber by default, verifies damaged and incomplete packet concealment, and includes output-observation evidence while finalized binding is still waiting. */
-/* v2.3.57 performs one authoritative final-chat reconcile before binding timeout, separates capture durability from binding status, and carries exact-hash rejection for mismatched request nonces through later requests and verified native chat copies. */
-/* v2.3.56 gzip-compresses immutable cold archive layers with browser CompressionStream while keeping compact metadata sidecars uncompressed; archive bodies are decompressed lazily and cached. */
 
 /*
  * HAYAKU · Locator Continuity Plugin
@@ -989,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.11';
+  const PLUGIN_VERSION = '3.3.26';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -1049,7 +872,6 @@ const MemorySuiteExecutionContract = (() => {
   const RAW_RECOVERY_PASSAGE_MAX_CHARS = 1100;
   const RAW_RECOVERY_PASSAGE_MIN_CHARS = 16;
   const RAW_RECOVERY_CANDIDATE_LIMIT = 96;
-  const RAW_RECOVERY_RRF_K = 48;
   const RECOVERY_VAULT_HANDOFF_VERSION = 'hayaku_recovery_vault_handoff_v1';
   const RECOVERY_DEBT_WORLDLINE_VERSION = 'hayaku_recovery_debt_worldline_v1';
   const RECOVERY_DEBT_LEASE_TTL_MS = 10 * 60 * 1000;
@@ -1072,6 +894,7 @@ const MemorySuiteExecutionContract = (() => {
   const HAYAKU_FAILED_ANALYSIS_PAYLOAD_SCHEMA = 'hayaku.failed_analysis.v1';
   const HAYAKU_PARTIAL_MEMORY_KEY_PREFIX = 'hayaku.v2.partial_memory.';
   const HAYAKU_FAILED_ANALYSIS_INDEX_KEY_PREFIX = 'hayaku.v2.failed_analysis_index.';
+  const HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX = 'hayaku.v2.analysis_failure_log.';
   const HAYAKU_FAILED_ANALYSIS_MANIFEST_KEY_PREFIX = 'hayaku.v2.failed_analysis_manifest.';
   const HAYAKU_FAILED_ANALYSIS_CHUNK_KEY_PREFIX = 'hayaku.v2.failed_analysis_chunk.';
   const HAYAKU_FAILED_ANALYSIS_CHUNK_CHARS = 200_000;
@@ -1144,7 +967,6 @@ const MemorySuiteExecutionContract = (() => {
   const HAYAKU_SESSION_HANDOFF_RECEIPT_SCHEMA = 'hayaku.session_handoff.receipt.v1';
   const HAYAKU_RETRACE_COMPATIBILITY_BEACON_SCHEMA = 'hayaku.retrace_compatibility_beacon.v1';
   const HAYAKU_RETRACE_COMPATIBILITY_BEACON_KEY = 'hayaku.v2.retrace_compatibility.v1';
-  // v2.3.33 capacity-only expansion. Ledger schema, keys, lifecycle, recall,
   // rollback/reroll handling, and packet semantics remain unchanged.
   const STORAGE_LEDGER_MAX_RECORDS = 1024;
   const STORAGE_LEDGER_MAX_SLOT_HEADS = 4096;
@@ -1635,7 +1457,6 @@ const MemorySuiteExecutionContract = (() => {
   // exact request lineage and the active scene id; they never contain invented
   // story facts or natural-language placeholders.
   const TAIL_CURRENT_PACKET_EXAMPLE = '{"meta":{"schema":"hayaku_packet_v1","packet_type":"current_snapshot","packet_schema_rev":2,"scene_id":"","turn_anchor":"","confidence":0.2,"summary_memory":{"summary":"","recallAnchors":[],"recallAliases":{},"canonicalAnchors":[],"mentionedEntityNames":[],"confidence":0.2}},"entity":{},"world":{},"narrative":{},"planner":{},"importance":{"overall":0.1,"reason":[]}}';
-  const TAIL_RECOVERY_PACKET_EXAMPLE = '{"meta":{"schema":"hayaku_packet_v1","packet_type":"recovery_snapshot","packet_schema_rev":2,"scene_id":"","turn_anchor":"","confidence":0.2,"summary_memory":{"summary":"","recallAnchors":[],"recallAliases":{},"canonicalAnchors":[],"mentionedEntityNames":[],"confidence":0.2}},"entity":{},"world":{},"narrative":{},"planner":{},"importance":{"overall":0.1,"reason":[]}}';
 
   
 
@@ -2507,6 +2328,8 @@ const MODE_PROFILES = Object.freeze({
     recoveryVaultCache: new Map(),
     failedAnalysisVolatile: new Map(),
     analysisFailureSummaries: [],
+    analysisFailurePendingResolutions: new Map(),
+    analysisFailureReconstructionChecks: new Map(),
     failedAnalysisMutationQueue: Promise.resolve(),
     partialMemoryMutationQueue: Promise.resolve(),
     failedAnalysisStats: { writes: 0, readbacks: 0, failures: 0, volatile: 0, lastError: '' },
@@ -3619,7 +3442,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The server address is kept in pluginStorage: RisuAI clears plugin arguments on every plugin update.
+  const SAVED_SERVER_URL_KEY = `__memory_suite_internal_server_url_v1__:${namespace}`;
+  const readSavedServerUrl = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_URL_KEY);
+      return value === undefined || value === null ? '' : String(value).trim();
+    } catch (_) { return ''; }
+  };
+  const writeSavedServerUrl = async value => {
+    const storage = rawPluginStorage();
+    await storage.setItem(SAVED_SERVER_URL_KEY, String(value));
+    if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
+    return true;
+  };
   const getArgumentValue = async (names, fallback = '') => {
+    if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
       for (const api of apiCandidates()) {
         try {
@@ -3634,6 +3472,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const setArgumentValue = async (name, value) => {
+    if (urlArguments.includes(name) && rawPluginStorage()) return await writeSavedServerUrl(value);
     let lastError = null;
     for (const api of apiCandidates()) {
       try {
@@ -12578,6 +12417,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const connection = state.bootstrap.value, generation = dataBinding.generation;
     const connectionWitness = JSON.stringify(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -12731,6 +12572,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const executionIdentity = value => JSON.stringify([value?.url,value?.dataInstanceId,value?.dataIdentityContract,value?.resetEpochs?.flashback ?? 0]);
     const executionIdentityWitness = executionIdentity(connection);
     const readCurrentUrl = async () => {
+      const savedUrl = await readSavedServerUrl();
+      if (savedUrl) { try { return normalizeServerUrl(savedUrl); } catch (_) {} }
       let readable = false;
       for (const name of urlArguments) for (const api of apiCandidates()) {
         const fn = typeof api?.getArgument === 'function' ? api.getArgument : typeof api?.getArg === 'function' ? api.getArg : null;
@@ -13723,7 +13566,8 @@ async function memorySuiteHayakuDiscoverGlobalScopes(input = {}) {
     ['hayaku.v2.native_repair_run.','hayaku.native_repair_run.v1'],['hayaku.v2.native_repair_candidate.','hayaku.native_repair_candidate.v1'],
     ['hayaku.v2.native_cold_start_run.','hayaku.native_cold_start_run.v1'],['hayaku.v2.native_regeneration_run.','hayaku.native_regeneration_run.v1'],
     ['hayaku.v2.failed_analysis_index.','hayaku.failed_analysis_index.v1'],['hayaku.v2.failed_analysis_manifest.','hayaku.failed_analysis_manifest.v1'],
-    ['hayaku.v2.failed_analysis_chunk.','hayaku.failed_analysis_chunk.v1']
+    ['hayaku.v2.failed_analysis_chunk.','hayaku.failed_analysis_chunk.v1'],
+    ['hayaku.v2.analysis_failure_log.','hayaku.analysis_failure_log.v1']
   ];
   const bytes = value => new TextEncoder().encode(value).length;
   const evidenceManifests = new Map();
@@ -14617,7 +14461,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const characterIndex = directSelection ? -1 : indexes.characterIndex;
         const chatIndex = directSelection ? directSelection.chatIndex : indexes.chatIndex;
 
-        // v2.4.4 steady-state observer fast path. Once a full, verified scope has
         // established the exact character/chat identity, repeated topology polls
         // only need the current indexes plus the current chat body. A chat switch
         // or identity drift falls through to the original full verification path.
@@ -17039,8 +16882,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
     return uniq([...basic, ...scriptGrams], limit);
   };
-  const tokenSetHasAny = (value = '', tokenSet = new Set(), limit = 120) => tokenize(value, limit)
-    .some(token => tokenSet.has(text(token).toLowerCase()) || tokenSet.has(normalizeKey(token)));
   // Narrative classification is structural: quoted speech and prose syntax are
   // evaluated below.  It must not depend on a growing action-word dictionary.
   const NARRATIVE_CONTINUE_RE = /^(?:계속|계속해|이어가|이어줘|다음|응|그래|continue|go\s+on|keep\s+going|続けて|続ける|そのまま)[\s.!?。！？…]*$/i;
@@ -17708,8 +17549,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (promptChars >= 60000) return 'medium';
     return 'normal';
   };
-  const promptPressureRank = value => ({ normal: 0, medium: 1, high: 2, extreme: 3 })[text(value).trim().toLowerCase()] ?? 0;
-  const higherPromptPressure = (...values) => ['normal', 'medium', 'high', 'extreme'][Math.max(0, ...values.map(promptPressureRank))];
   const hostBudgetPromptPressure = (messages = [], contextBudget = null) => {
     const maxContext = Math.max(0, Number(contextBudget?.maxContext || 0) || 0);
     if (maxContext <= 0) return 'normal';
@@ -17983,9 +17822,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!objectish(value)) return [];
     return uniq(names.flatMap(name => ensureArray(value[name])).map(item => structuredFieldText(item)).filter(Boolean), 32);
   };
-  const bodySignatureScore = value => {
-    return clamp(Number(value?.bodySignalScore || 0), 0, 1, 0);
-  };
   const deriveEmotionProfile = value => {
     const body = itemText(value);
     const tags = explicitSignalList(value, ['emotionTags', 'emotion_tags', 'emotions']);
@@ -18256,17 +18092,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Secret knowledge provenance is declared by holder/inference fields. Body
   // wording is intentionally not interpreted here.
-  const boundaryEntityAliases = value => {
-    const raw = text(value).trim();
-    if (!raw) return [];
-    const expanded = raw.replace(/([a-z])([A-Z])/g, '$1 $2');
-    const parts = expanded.split(/[.:/_\-\s]+/).map(part => part.trim()).filter(Boolean);
-    const canonicalCharacterRef = /^(?:entity[.:/_\-])?(?:character|characters|char)[.:/_\-]/i.test(raw);
-    const latinTail = canonicalCharacterRef && parts.length && /^[a-z]{7,}$/i.test(parts[parts.length - 1]) ? parts[parts.length - 1] : '';
-    const suffixes = latinTail ? Array.from({ length: Math.min(8, latinTail.length - 4) }, (_, index) => latinTail.slice(-(5 + index))) : [];
-    return uniq([raw, expanded, ...parts, parts.slice(-2).join(' '), ...suffixes], 24)
-      .filter(alias => normalizeKey(alias).length >= 2);
-  };
   const inferredSecretActors = (source = {}, holders = []) => {
     const explicit = boundaryEntityValues([
       source.inferredByEntityIds, source.inferred_by, source.inferredBy,
@@ -19330,6 +19155,31 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
   const readArg = async (key, fallback = '') => RisuCompat.getArgument(key, fallback);
+  // Settings are kept in pluginStorage: RisuAI keeps it through backups and plugin updates,
+  // and clears plugin arguments on every update. A key absent here reads its default.
+  const HAYAKU_SETTINGS_KEY = 'hayaku.v2.settings.values.v1';
+  let hayakuSavedSettings = null;
+  const readHayakuSavedSettings = async () => {
+    const outcome = await RisuCompat.getStorageItemOutcome(HAYAKU_SETTINGS_KEY);
+    if (outcome.state !== 'fulfilled') return hayakuSavedSettings || {};
+    const raw = outcome.value;
+    const parsed = raw == null || raw === '' ? {} : typeof raw === 'string' ? safeJsonParse(raw, {}) : raw;
+    hayakuSavedSettings = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    return hayakuSavedSettings;
+  };
+  let hayakuSettingsWrite = Promise.resolve();
+  const writeHayakuSavedSetting = (key, value) => {
+    const run = hayakuSettingsWrite.then(async () => {
+      const next = { ...(await readHayakuSavedSettings()) };
+      if (value == null || value === '') delete next[key]; else next[key] = String(value);
+      if (!(await RisuCompat.setStorageItem(HAYAKU_SETTINGS_KEY, JSON.stringify(next)))) throw new Error('hayaku_settings_write_failed');
+      const readback = await readHayakuSavedSettings();
+      if ((readback[key] ?? '') !== (next[key] ?? '')) throw Object.assign(new Error('hayaku_settings_readback_mismatch'), { code: 'HAYAKU_SETTINGS_READBACK_MISMATCH' });
+      return true;
+    });
+    hayakuSettingsWrite = run.catch(() => {});
+    return run;
+  };
   const truthySetting = value => /^(?:true|on|1|yes)$/i.test(text(value).trim());
   const falsySetting = value => /^(?:false|off|0|no)$/i.test(text(value).trim());
   const HAYAKU_TEMPORAL_ARGUMENTS=Object.freeze(['hayaku_recall_short_max_age','hayaku_recall_medium_max_age',
@@ -19345,7 +19195,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const loadSettings = async (force = false) => {
     if (!force && Memory.settingsLoadedAt > 0 && now() - Memory.settingsLoadedAt < SETTINGS_REFRESH_TTL_MS) return Memory.settings;
-    const argumentInputs=new Map(),readArg=(key,fallback='')=>RisuCompat.getArgument(key,fallback,argumentInputs);
+    const argumentInputs=new Map(),savedSettings=await readHayakuSavedSettings();
+    const readArg=(key,fallback='')=>{
+      if(Object.prototype.hasOwnProperty.call(savedSettings,key)){argumentInputs.set(key,savedSettings[key]);return savedSettings[key];}
+      return RisuCompat.getArgument(key,fallback,argumentInputs);
+    };
     const [
       enabledRaw,
       modeRaw,
@@ -19377,6 +19231,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallStabilityRaw,
       recallStabilityBoostRaw,
       recoveryVaultRaw,
+      gradiaFinalDeliveryRaw,
       rawPassageRecallRaw,
       rawRecallMaxItemsRaw,
       rawRecallMaxCharsRaw,
@@ -19417,6 +19272,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       readArg('hayaku_recall_stability', String(DEFAULT_SETTINGS.recallStabilityEnabled)),
       readArg('hayaku_recall_stability_boost', String(DEFAULT_SETTINGS.recallStabilityBoost)),
       readArg('hayaku_recovery_vault', String(DEFAULT_SETTINGS.recoveryVaultEnabled)),
+      readArg('hayaku_gradia_final_delivery', 'true'),
       readArg('hayaku_raw_passage_recall', String(DEFAULT_SETTINGS.rawPassageRecallEnabled)),
       readArg('hayaku_raw_recall_max_items', String(DEFAULT_SETTINGS.rawRecallMaxItems)),
       readArg('hayaku_raw_recall_max_chars', String(DEFAULT_SETTINGS.rawRecallMaxChars)),
@@ -19484,6 +19340,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       contradictionBundleEnabled: falsySetting(contradictionBundleRaw) ? false : true,
       multiResolutionRecallEnabled: falsySetting(multiResolutionRecallRaw) ? false : true,
       recallStabilityEnabled: falsySetting(recallStabilityRaw) ? false : true,
+      gradiaFinalDelivery: falsySetting(gradiaFinalDeliveryRaw) ? false : true,
       recallStabilityBoost: clamp(Number.isFinite(recallStabilityBoost) ? recallStabilityBoost : DEFAULT_SETTINGS.recallStabilityBoost, 0, 0.08, DEFAULT_SETTINGS.recallStabilityBoost),
       // A missing packet must never make its exact visible U+A evidence
       // discardable. Keep the legacy argument readable for migration, but the
@@ -20636,34 +20493,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const headChars = Math.floor(maxChars * 0.62);
     const tailChars = Math.max(120, maxChars - headChars - 18);
     return `${clean.slice(0, headChars).trimEnd()}\n[...]\n${clean.slice(Math.max(0, clean.length - tailChars)).trimStart()}`;
-  };
-  const findLatestAssistantRecoverySource = (messages = []) => {
-    const list = ensureArray(messages);
-    const boundary = recoveryBoundaryIndex(list);
-    const requireProvenance = list.some(hasChatProvenance);
-    for (let i = Math.min(boundary - 1, list.length - 1); i >= 0; i -= 1) {
-      const message = list[i];
-      const role = roleOf(message);
-      if (!/^(assistant|model)$/i.test(role)) continue;
-      if (requireProvenance && !hasChatProvenance(message)) continue;
-      const candidates = packetEvidencePayloadCandidates(message).map(body => text(body)).filter(Boolean);
-      if (!candidates.length) continue;
-      const joined = candidates.join('\n');
-      const visible = compactRecoveryExcerpt(joined);
-      if (visible.length < PACKET_RECOVERY_MIN_VISIBLE_CHARS) continue;
-      if (isBackstageUserPayload(visible) || isExternalMemoryInjectionPayload(visible)) continue;
-      if (RequestKindCore.isModuleOnlyPrompt(visible) || RequestKindCore.isHardAuxiliaryPrompt(visible)) continue;
-      return {
-        message,
-        index: i,
-        boundary,
-        role,
-        visible,
-        visibleChars: visible.length,
-        hasPacketMarkers: hasCompleteHayakuPacketInMessage(message)
-      };
-    }
-    return null;
   };
   const buildAssistantRecoverySource = (message, index, boundary, options = {}) => {
     const role = roleOf(message);
@@ -23064,26 +22893,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const broad = packetCheapRelevanceScore(packet, contextFocus.text);
     return Math.max(broad * 0.42, Number(topicScores[0] || 0) + Number(topicScores[1] || 0) * 0.28);
   };
-  const latestCurrentSnapshotPacket = (messages = [], packets = []) => {
-    const boundary = recoveryBoundaryIndex(messages);
-    let best = null;
-    ensureArray(packets).forEach((packet, packetIndex) => {
-      const messageIndex = Number(packet?.messageIndex);
-      if (!Number.isFinite(messageIndex) || messageIndex >= boundary) return;
-      const materialized = materializeExtractedPacket(packet);
-      const raw = text(materialized.raw || '').trim();
-      if (!raw) return;
-      const parsed = safeJsonParse(raw, null);
-      if (!objectish(parsed)) return;
-      const packetType = recoveryPacketTypeOf(parsed) || 'current_snapshot';
-      if (isRecoveryPacketType(packetType)) return;
-      const rank = messageIndex * 100000 + packetIndex;
-      if (!best || rank > best.rank) {
-        best = { packet: materialized, parsed, packetType, messageIndex, packetIndex, rank };
-      }
-    });
-    return best;
-  };
   const previousTurnBridgeItemText = value => {
     if (value == null) return '';
     if (Array.isArray(value)) return value.map(previousTurnBridgeItemText).filter(Boolean).join(' / ');
@@ -23769,22 +23578,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     node.status === 'quarantined'
     && Number(node.missingObservations || 0) < RETIREMENT_REQUIRED_OBSERVATIONS
   ));
-  const worldlinePacketHashSets = value => {
-    const nodes = normalizeTurnWorldline(value).nodes;
-    return {
-      active: new Set(nodes.filter(node => node.status === 'active').flatMap(node => ensureArray(node.packetHashes)).filter(Boolean)),
-      owned: new Set(nodes.flatMap(node => [
-        ...ensureArray(node.packetHashes),
-        ...ensureArray(node.quarantinedPacketHashes)
-      ]).filter(Boolean))
-    };
-  };
-  const worldlineAllowsPacketHash = (sets, hash) => Boolean(hash) && (
-    sets?.active?.has(hash)
-    // Legacy assistant-only/prefill packets have no Tn = Un + An owner. They stay
-    // recallable while present in the authoritative chat, but never become turns.
-    || !sets?.owned?.has(hash)
-  );
   // Cheap header scan helpers: balanced mode must still see very old packet anchors,
   // but it should not allocate every full packet body before the shortlist is known.
   // These helpers keep only a compact lexical sketch plus body offsets; selected
@@ -24076,16 +23869,24 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
         for (let index = starts.length - 1; index >= 0; index -= 1) {
           const markerStart = starts[index];
-          const rawStart = markerStart + startNeedle.length;
+          let rawStart = markerStart + startNeedle.length;
+          let rawEnd = markerEnd;
+          // Locate marker strings first, then peel only envelope decorations.
+          // Never search past prose for a convenient JSON object or invent lineage.
+          const between = src.slice(rawStart, rawEnd);
+          const leading = /^(?:\s|>>>|<!--|-->|```(?:json)?\s*)*/i.exec(between)[0];
+          const trailing = /(?:\s|<<<|<!--|-->|```)*$/.exec(between.slice(leading.length))[0];
+          rawStart += leading.length;
+          rawEnd -= trailing.length;
           const candidate = {
             rawStart,
-            rawEnd: markerEnd,
+            rawEnd,
             type,
             markerStart,
             markerEnd: markerEnd + endNeedle.length
           };
           if (!fallback) fallback = candidate;
-          if (packetMarkerCandidateLooksUsable(src.slice(rawStart, markerEnd))) {
+          if (packetMarkerCandidateLooksUsable(src.slice(rawStart, rawEnd))) {
             selected = candidate;
             break;
           }
@@ -24241,17 +24042,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return body;
   };
   const canonicalHistoryText = (value, role = '') => memorySuiteCanonicalSource(value,'hayaku') ?? canonicalHistoryTextLegacy(stripIllustrationOnlyCarriers(value), role);
-  const historyPacketHashesFromBody = value => {
-    const body = text(value || '');
-    const hashes = [];
-    const push = ({ rawStart, rawEnd }) => {
-      const raw = body.slice(rawStart, rawEnd).trim();
-      if (raw) hashes.push(stableHash64(raw));
-    };
-    scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html', push);
-    scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible', push);
-    return uniq(hashes, 8);
-  };
   const messageRevisionCacheScope = scopeKeyInput => {
     const scopeKey = compact(scopeKeyInput || '__unknown_scope__', 196) || '__unknown_scope__';
     let cache = Memory.messageRevisionCaches.get(scopeKey);
@@ -24508,33 +24298,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html_diagnostic', push);
     scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible_diagnostic', push);
     return records;
-  };
-  const historyPacketLineageFromBody = value => {
-    const body = text(value || '');
-    const candidates = [];
-    const push = ({ rawStart, rawEnd }) => {
-      const parsed = safeJsonParse(body.slice(rawStart, rawEnd).trim(), null);
-      if (!objectish(parsed)) return;
-      const meta = objectish(parsed.meta) ? parsed.meta : {};
-      const lineage = objectish(meta.lineage) ? meta.lineage : (objectish(meta.worldline) ? meta.worldline : null);
-      if (!lineage) return;
-      candidates.push({
-        packetType: compact(meta.packet_type || meta.packetType || '', 48),
-        declaredParentTurnNodeId: compact(lineage.parent_turn_node_id || lineage.parentTurnNodeId || '', 96),
-        declaredLogicalTurnId: compact(lineage.logical_turn_id || lineage.logicalTurnId || '', 96),
-        requestNonce: compact(lineage.request_nonce || lineage.requestNonce || '', 96),
-        identityVersion: finiteNonNegativeInteger(lineage.identity_version || lineage.identityVersion, 0),
-        lineageSchema: compact(lineage.lineage_schema || lineage.lineageSchema || '', 64),
-        turnOwnerKey: compact(lineage.turn_owner_key || lineage.turnOwnerKey || '', 96),
-        generationAttemptId: compact(lineage.generation_attempt_id || lineage.generationAttemptId || '', 96)
-      });
-    };
-    scanPacketMarkersInBody(body, PACKET_START, PACKET_END, 'history_html_lineage', push);
-    scanPacketMarkersInBody(body, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'history_visible_lineage', push);
-    return candidates.findLast?.(candidate => candidate.packetType === 'current_snapshot')
-      || [...candidates].reverse().find(candidate => candidate.packetType === 'current_snapshot')
-      || candidates[candidates.length - 1]
-      || null;
   };
   const authoritativeHistoryPairs = (chatMessages, scope = {}) => {
     const pairs = [];
@@ -26771,20 +26534,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return { records, staleRecordIds, packetDischargedIds };
   };
-  const pruneRecoveryVaultRecordIds = async (scopeKey, recordIds = [], reason = 'snapshot_reconcile') => {
-    const ids = new Set(ensureArray(recordIds).map(value => compact(value, 196)).filter(Boolean));
-    if (!scopeKey || !ids.size) return { durable: true, removed: 0, reason: 'nothing_to_prune' };
-    return await enqueueStorageOperation(async () => {
-      const vault = await loadRecoveryVault(scopeKey, { force: true });
-      const before = vault.records.length;
-      const records = vault.records.filter(record => !ids.has(recoveryVaultRecordIdentity(record)) && !ids.has(record.recordId));
-      if (records.length === before) return { durable: true, removed: 0, reason: 'already_pruned' };
-      const result = await writeRecoveryVaultDirect(scopeKey, { ...vault, records }, reason);
-      const removed = result.durable === true ? before - records.length : 0;
-      if (removed) Memory.recoveryVaultStats.stalePrunes += removed;
-      return { ...result, removed };
-    });
-  };
 
   // -------------------------------------------------------------------------
   // Request-local, embedding-free Raw Passage Recall
@@ -26955,14 +26704,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for (let index = 0; index < surface.length - 1; index += 1) phrases.push(`${surface[index]} ${surface[index + 1]}`);
     return uniq(phrases.filter(value => value.length >= 4), 12);
   };
-  const rawRecoveryDocFrequency = passages => {
-    const docFreq = new Map();
-    for (const passage of passages) {
-      const unique = new Set(passage.docTokens || []);
-      unique.forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    }
-    return docFreq;
-  };
   const rawRecoveryIdf = (term, docFreq, docCount) => {
     const df = Math.max(0, Number(docFreq.get(normalizeKey(term)) || 0));
     return Math.log(1 + ((Math.max(1, docCount) - df + 0.5) / (df + 0.5)));
@@ -27009,36 +26750,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       matched: positions.length,
       span: Number.isFinite(bestSpan) ? bestSpan : 0
     };
-  };
-  const rawRecoveryRrf = (rows = [], selectors = []) => {
-    const rankMaps = selectors.map(selector => {
-      const ranked = rows.slice().filter(selector.filter || (() => true))
-        .sort((a, b) => selector.score(b) - selector.score(a));
-      return new Map(ranked.map((row, index) => [row.passageId, index + 1]));
-    });
-    let max = 0;
-    const scores = new Map();
-    for (const row of rows) {
-      let score = 0;
-      for (const ranks of rankMaps) {
-        const rank = ranks.get(row.passageId);
-        if (rank) score += 1 / (RAW_RECOVERY_RRF_K + rank);
-      }
-      scores.set(row.passageId, score);
-      max = Math.max(max, score);
-    }
-    return rows.map(row => ({ ...row, rrfScore: max > 0 ? (scores.get(row.passageId) || 0) / max : 0 }));
-  };
-  const rawRecoverySupportTerms = (contextFocus = null, primaryTerms = [], docFreq = new Map(), docCount = 1) => {
-    if (!contextFocus?.active || !contextFocus?.ambiguous) return [];
-    const primary = new Set(primaryTerms.map(normalizeKey));
-    return uniq([
-      ...ensureArray(contextFocus.entityTokens),
-      ...ensureArray(contextFocus.supportTokens),
-      ...ensureArray(contextFocus.primaryTokens)
-    ].map(normalizeKey).filter(term => term.length >= 2 && !primary.has(term) && Number(docFreq.get(term) || 0) > 0), 160)
-      .sort((a, b) => rawRecoveryIdf(b, docFreq, docCount) - rawRecoveryIdf(a, docFreq, docCount))
-      .slice(0, 14);
   };
   const RAW_RECOVERY_PRIVATE_THOUGHT_RE = /(?:속으로|마음속|내심|혼자\s*생각|생각했다|생각하며|독백|아무에게도\s*(?:말하지|알리지)|누구에게도\s*(?:말하지|알리지)|몰래|비밀로|숨기고|감추고|private\s*thought|internally|to\s*(?:himself|herself|themselves)|unspoken|without\s*telling|secretly|心の中|内心|誰にも言わ|秘密に|心里|内心|没有告诉任何人|秘密地)/i;
   const RAW_RECOVERY_PUBLIC_SPEECH_RE = /(?:말했다|대답했다|외쳤다|물었다|알렸다|고백했다|전했다|들었다|보았다|목격했다|said|asked|answered|told|heard|saw|witnessed|言った|聞いた|見た|说道|问道|听到|看到)/i;
@@ -27140,70 +26851,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         primaryEvidence
       }
     };
-  };
-  const ensureRawRecoveryTurnPairCoverage = (gated = [], fused = [], minScore = 0.16) => {
-    const out = gated.slice();
-    const ids = new Set(out.map(row => row.passageId));
-    const seedRows = out.slice(0, 4);
-    for (const seed of seedRows) {
-      const partner = fused
-        .filter(row => row.vaultRecordId === seed.vaultRecordId && row.role !== seed.role && !ids.has(row.passageId))
-        .filter(row => Number(row.score || 0) >= minScore * 0.72)
-        .filter(row => Number(row.components?.primarySurfaceOverlap || 0) >= 1
-          || Number(row.components?.supportCoverage || 0) >= 0.20
-          || Number(row.components?.primaryEvidence || 0) >= 0.12)
-        .sort((a, b) => b.score - a.score)[0] || null;
-      if (!partner) continue;
-      const paired = {
-        ...partner,
-        passed: true,
-        score: Math.max(Number(partner.score || 0), Number(seed.score || 0) * 0.82),
-        reasons: uniq([...ensureArray(partner.reasons), 'paired_turn_context'], 12)
-      };
-      out.push(paired);
-      ids.add(paired.passageId);
-    }
-    return out.sort((a, b) => b.score - a.score || b.pairIndex - a.pairIndex || a.startOffset - b.startOffset);
-  };
-  const rawRecoveryMergeSelections = (rows = [], maxItems = 3, maxChars = 2400) => {
-    const selected = [];
-    let usedChars = 0;
-    for (const row of rows) {
-      if (selected.length >= maxItems) break;
-      const duplicate = selected.find(existing => existing.vaultRecordId === row.vaultRecordId
-        && existing.role === row.role
-        && row.startOffset <= existing.endOffset + 80
-        && row.endOffset >= existing.startOffset - 80);
-      if (duplicate) {
-        const mergedStart = Math.min(duplicate.startOffset, row.startOffset);
-        const mergedEnd = Math.max(duplicate.endOffset, row.endOffset);
-        const mergedText = text(row.fullSourceText || '').slice(mergedStart, mergedEnd);
-        if (mergedText && usedChars - duplicate.text.length + mergedText.length <= maxChars) {
-          usedChars = usedChars - duplicate.text.length + mergedText.length;
-          duplicate.startOffset = mergedStart;
-          duplicate.endOffset = mergedEnd;
-          duplicate.text = mergedText;
-          duplicate.score = Math.max(duplicate.score, row.score);
-          duplicate.reasons = uniq([...duplicate.reasons, ...row.reasons], 12);
-        }
-        continue;
-      }
-      let evidenceText = row.text;
-      let startOffset = row.startOffset;
-      let endOffset = row.endOffset;
-      const remaining = maxChars - usedChars;
-      if (evidenceText.length > remaining) {
-        const focusText = text(row.focusText || '').trim();
-        if (!focusText || focusText.length > remaining || focusText.length < RAW_RECOVERY_PASSAGE_MIN_CHARS) continue;
-        evidenceText = focusText;
-        startOffset = row.focusStartOffset;
-        endOffset = row.focusEndOffset;
-      }
-      if (!evidenceText || evidenceText.length > remaining) continue;
-      selected.push({ ...row, text: evidenceText, startOffset, endOffset });
-      usedChars += evidenceText.length;
-    }
-    return { selected, usedChars };
   };
   const searchRecoveryVaultRawPassages = async (scope={},query='',messages=[],settings=Memory.settings||DEFAULT_SETTINGS,snapshot=null,worldline=null) => {
     const empty=reason=>({version:LOCAL_RECALL_VERSION,active:false,reason,records:[],vaultRecords:0,passages:0,candidates:0});
@@ -27509,55 +27156,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     Memory.authoritativeLedgerCache = next;
     return { packets, worldline, cacheHit: false, previous, current: next };
-  };
-  const authoritativeRecoveryEvidence = (chatMessages = [], settings = Memory.settings || DEFAULT_SETTINGS) => {
-    const sourceMessages = ensureArray(chatMessages);
-    const windowSize = Math.max(8, PACKET_RECOVERY_MAX_CHAIN_MESSAGES * 2 + 2);
-    const windowStart = Math.max(0, sourceMessages.length - windowSize);
-    const messages = sourceMessages.slice(windowStart).map((message, index) => ({
-      role: normalizeMessageRole(message?.role || roleFromUserFlag(message)),
-      content: unescapeRisuStoredPayload(hasOwnProperty(message, 'data') ? message.data : rawMessagePayload(message)),
-      chatId: messageSourceId(message, windowStart + index)
-    }));
-    const packets = [];
-    messages.forEach((message, messageIndex) => {
-      if (!/^(?:assistant|model)$/i.test(roleOf(message))) return;
-      packetEvidencePayloadCandidates(message).forEach(body => {
-        const payloadBody = text(body || '');
-        if (!payloadBody) return;
-        scanPacketMarkersInBody(payloadBody, PACKET_START, PACKET_END, 'authoritative_recovery', ({ rawStart, rawEnd, type }) => {
-          const raw = payloadBody.slice(rawStart, rawEnd).trim();
-          if (!raw) return;
-          packets.push({ raw, hash: stableHash64(raw), messageIndex, messageCount: messages.length, type });
-        });
-        scanPacketMarkersInBody(payloadBody, `<<< ${PACKET_START} >>>`, `<<< ${PACKET_END} >>>`, 'authoritative_recovery_visible', ({ rawStart, rawEnd, type }) => {
-          const raw = payloadBody.slice(rawStart, rawEnd).trim();
-          if (!raw) return;
-          packets.push({ raw, hash: stableHash64(raw), messageIndex, messageCount: messages.length, type });
-        });
-      });
-    });
-    const detected = detectPacketRecovery(messages, packets, settings);
-    const recovery = isDetectedPacketRecoveryRequest(detected)
-      ? {
-          ...detected,
-          evidenceSource: 'authoritative_chat',
-          messageIndex: detected.messageIndex + windowStart,
-          firstMissingMessageIndex: detected.firstMissingMessageIndex + windowStart,
-          messageIndices: ensureArray(detected.messageIndices).map(index => Number(index) + windowStart),
-          boundaryIndex: detected.boundaryIndex + windowStart,
-          messageCount: sourceMessages.length
-        }
-      : null;
-    return {
-      source: 'authoritative_chat',
-      available: true,
-      windowStart,
-      windowMessages: messages.length,
-      assistantMessages: messages.filter(message => /^(?:assistant|model)$/i.test(roleOf(message))).length,
-      packets: packets.length,
-      recovery
-    };
   };
   const cleanPublicSegment = value => normalizeKey(value || 'item').slice(0, 48) || 'item';
   const makePublicRef = (axis, category, id, value = {}) => {
@@ -31874,22 +31472,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for(let i=0;i<=words.length-parts.length;i++)if(parts.every((part,j)=>words[i+j]===part))hits.push({entry,start:i,end:i+parts.length});}
     return [...new Set(hits.filter(hit=>!hits.some(other=>other.start<=hit.start&&other.end>=hit.end&&(other.end-other.start)>(hit.end-hit.start))).map(hit=>hit.entry.canonical))];
   };
-  const queryPrimaryKnowledgeActors = (store = {}, query = '', boundaryMap = characterBoundaryRefMap(store.entity?.characters || [])) => {
-    const rawQuery = text(query);
-    const actors = [];
-    const explicitNames=new Set(queryMentionedEntities(store,rawQuery));
-    ensureArray(store.entity?.characters).forEach(item => {
-      const canonical = canonicalBoundaryEntity(publicRefOf(item) || item.ref || item.id || item.name || '', boundaryMap);
-      if (!canonical || !explicitNames.has(text(item.name||item.title||item.label||'').trim())) return;
-      const names = mergeValues([
-        item.name, item.title, item.label, item.aliases, item.alias,
-        item.nicknames, item.nickname, item.identityAliases
-      ], 48).map(value => text(value).trim()).filter(value => value.length >= 1);
-      const markedAsTopic = names.some(name => new RegExp(`${escapeRegExp(name)}\\s*(?:은|는|이|가|께서는|에게는|한테는|は|が)`, 'i').test(rawQuery));
-      if (markedAsTopic) actors.push(canonical);
-    });
-    return uniq(actors, 8);
-  };
   const normalizeSceneVisibility = value => {
     const raw = text(value).trim().toLowerCase();
     return ['public', 'limited', 'private', 'omniscient'].includes(raw) ? raw : '';
@@ -32016,11 +31598,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       confidence: anchors.confidence == null ? null : clamp(anchors.confidence, 0, 1, null),
       updatedAt
     };
-  };
-  const recentMentionedEntities = (store = {}, settings = Memory.settings) => {
-    const age = now() - Number(store.context?.updatedAt || 0);
-    if (age > Number(settings.recentEntityContextMs || 0)) return [];
-    return uniq(store.context?.recentEntities || [], 32);
   };
   const buildKnowledgeContext = (store={},query='',settings=Memory.settings) => {
     const map=characterBoundaryRefMap(store.entity?.characters||[]),anchors=store.context?.sceneAnchors||{};
@@ -33317,108 +32894,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     Number(r.worldProfile?.pressure || 0),
     Number(r.storyProfile?.priority || 0)
   );
-  const RETRIEVAL_PREFILTER_MIN_ROWS = 240;
-  const RETRIEVAL_PREFILTER_KEEP_LIMITS = Object.freeze({ fast: 280, balanced: 460, deep: 760 });
-  const RETRIEVAL_PREFILTER_PROTECTED_RE = /\b(?:character|secret|pov_memory|relation|current_state|active_event|world_rule|offscreen_thread|faction|region|continuity_lock|do_not_resolve_yet|consequence|payoff|open_invitation|consent_memory|speaker_boundary|overpromotion_risk|summary_memory|conflict_trace|state|scene_delta|theme_motif)\b/i;
-  const prefilterExactScore = (row = {}, signature = {}, docTokens = []) => {
-    const r = row.retrieval || {};
-    const lexical = lexicalStats(signature.tokens, docTokens);
-    const entity = lexicalStats(signature.entityTokens, mergeValues([r.subjectTokens, r.relationEndpoints, r.subject], 120));
-    const concept = lexicalStats(signature.conceptTokens, conceptTokensForRetrieval(r));
-    const canonical = lexicalStats(
-      ensureArray(signature.canonicalTokens),
-      mergeValues([r.canonicalAnchors, r.crossLingualTokens], 160).filter(token => CANONICAL_RECALL_TOKEN_PREFIX_RE.test(token))
-    );
-    const frame = lexicalStats(signature.semanticFrameTokens, r.semanticFrameTokens || []);
-    const surfaceQueryTokens = ensureArray(signature.surfaceQueryTokens);
-    const surfaceRowTokens = surfaceSpecificTokensOf([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '));
-    const surfaceOverlap = surfaceQueryTokens.filter(token => surfaceRowTokens.includes(token)).length;
-    const surfaceSignal = surfaceOverlap > 0 ? surfaceOverlap / Math.max(1, surfaceQueryTokens.length) : 0;
-    const qKey = normalizeKey(signature.rawQuery || '');
-    const subjectKey = normalizeKey(r.subject || '');
-    const subjectMatch = subjectKey.length >= 2 && qKey.includes(subjectKey) ? 1 : 0;
-    const refKey = normalizeKey(row.publicRef || row.id || '');
-    const refMatch = refKey.length >= 4 && qKey.includes(refKey) ? 1 : 0;
-    const contextFocus = requestContextFocusSignalForRow(row, signature.contextFocus, signature.settings || Memory.settings);
-    return Math.max(
-      lexical.coverage * 0.55,
-      lexical.jaccard,
-      entity.coverage * 0.72,
-      concept.coverage * 0.62,
-      canonical.coverage,
-      frame.coverage * 0.58,
-      surfaceSignal * 0.72,
-      contextFocus.signal * 0.86,
-      subjectMatch,
-      refMatch
-    );
-  };
-  const prefilterForceKeep = (row = {}, signature = {}) => {
-    const category = text(row.category || '');
-    const axis = text(row.axis || '');
-    const memoryLifecycle = row?._memoryLifecycle || {};
-    if (memoryLifecycle.tier === 'hot' && memoryLifecycle.mustCarryClass) return true;
-    if (RETRIEVAL_PREFILTER_PROTECTED_RE.test(category)) return true;
-    if (Number(row.importance || 0) >= 0.9) return true;
-    if (retrievalRowPressure(row.retrieval || {}) >= 0.85) return true;
-    if (signature.explicitContinuityIntent && axis === 'planner') return true;
-    if (signature.presentStateQuery && (axis === 'entity' || axis === 'world')) return true;
-    if (requestContextFocusSignalForRow(row, signature.contextFocus, signature.settings || Memory.settings).signal >= 0.58) return true;
-    return false;
-  };
-  const prefilterRetrievalRows = (rows = [], signature = {}, settings = Memory.settings) => {
-    const input = ensureArray(rows);
-    if (input.length < RETRIEVAL_PREFILTER_MIN_ROWS || !ensureArray(signature.tokens).length) return input;
-    const mode = effectivePerformanceModeOf(settings);
-    const keepLimit = Math.min(input.length, RETRIEVAL_PREFILTER_KEEP_LIMITS[mode] || RETRIEVAL_PREFILTER_KEEP_LIMITS.balanced);
-    if (input.length <= keepLimit) return input;
-    const scored = input.map((row, index) => {
-      const docTokens = retrievalBm25Document(row, settings);
-      const exactScore = prefilterExactScore(row, signature, docTokens);
-      const force = prefilterForceKeep(row, signature);
-      return { index, row, force, exactScore };
-    });
-    const positive = scored.filter(item => item.force || item.exactScore > 0);
-    if (positive.length < Math.min(80, Math.ceil(input.length * 0.08))) return input;
-    if (positive.length < keepLimit) return input;
-    const rankPrefilterItem = (a, b) => Number(b.force) - Number(a.force)
-      || b.exactScore - a.exactScore
-      || Number(b.row.importance || 0) - Number(a.row.importance || 0)
-      || Number(b.row.updatedAt || 0) - Number(a.row.updatedAt || 0)
-      || a.index - b.index;
-    const keep = new Set();
-    const forceItems = positive
-      .filter(item => item.force)
-      .sort(rankPrefilterItem);
-    forceItems
-      .slice(0, keepLimit)
-      .forEach(item => keep.add(item.index));
-    if (keep.size >= keepLimit) {
-      return input.filter((_, index) => keep.has(index));
-    }
-    const exactPositive = positive
-      .filter(item => !item.force)
-      .sort(rankPrefilterItem);
-    const fallback = scored
-      .filter(item => !item.force && item.exactScore <= 0)
-      .sort(rankPrefilterItem);
-    const remainingAfterForce = keepLimit - keep.size;
-    const fallbackReserve = Math.min(fallback.length, Math.max(24, Math.ceil(keepLimit * 0.12)), remainingAfterForce);
-    const primaryLimit = Math.max(0, remainingAfterForce - fallbackReserve);
-    exactPositive
-      .slice(0, primaryLimit)
-      .forEach(item => keep.add(item.index));
-    fallback
-      .slice(0, Math.max(0, keepLimit - keep.size))
-      .forEach(item => keep.add(item.index));
-    if (keep.size < keepLimit) {
-      exactPositive
-        .filter(item => !keep.has(item.index))
-        .slice(0, keepLimit - keep.size)
-        .forEach(item => keep.add(item.index));
-    }
-    return input.filter((_, index) => keep.has(index));
-  };
   const scoreRowWithStrengthenedJaccard = (store, row, rowIndex, signature, corpus, profile, settings = Memory.settings) => {
     const r = row.retrieval || {};
     const sparseBreakdown = row.scoreBreakdown || {};
@@ -33754,10 +33229,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const transition = bool(['transition', 'stateTransition', 'state_transition', 'history', 'timeline']);
     return Object.freeze({ version: EXPLICIT_QUERY_INTENT_VERSION, temporal, compare, disputed, relation, contextMode, transition, specified: temporal !== 'unspecified' || disputed || !!relation || contextMode !== 'unspecified' || transition });
   };
-  const isStrongPresentStateLookupQuery = query => explicitQueryIntentOf(query).temporal === 'current';
   const isExplicitStateHistoryComparisonQuery = query => explicitQueryIntentOf(query).compare === true;
   const isPastStateLookupQuery = query => ['past', 'historical', 'timeline'].includes(explicitQueryIntentOf(query).temporal);
-  const isPresentStateLookupQuery = query => explicitQueryIntentOf(query).temporal === 'current';
   const isCurrentStateQuery = query => {
     const intent = explicitQueryIntentOf(query);
     return intent.temporal === 'current' && intent.compare !== true;
@@ -34198,8 +33671,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       viewCharBudget:stateViewCharBudgetForMode(settings.effectivePromptMode||settings.promptMode||'balanced'),totalRowLimit:PACKET_CORE_RECALL_ROW_LIMIT,
       canAdd:(row,chosen)=>!chosen.some(previous=>localRecallSourceKey(previous)===localRecallSourceKey(row))};
   };
-  const selectRowsPerAxis = (rows, settings = Memory.settings, profile = modeProfile(settings?.effectiveMode || settings?.mode), query = '', store = {}) =>
-    selectHayakuRowsOnly(rows,settings,profile,query,store);
   const HAYAKU_RRF_SPARSE_SIGNALS = Object.freeze([
     'bm25fSignal', 'identitySignal', 'canonicalExactSignal', 'associationSignal',
     'charNgramSignal', 'lexicalCoverageSignal', 'sparsePhraseSignal'
@@ -34333,61 +33804,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   // Sparse RRF always runs locally (the Compute SDK was retired); the debug entry point is kept.
   const debugApplyRrfFusionWithCurrentOwner = async (rows = []) => applyRrfFusion(rows);
-  const directRetrievalEvidenceOf = row => {
-    const breakdown = row?.scoreBreakdown || {};
-    return Math.max(
-      Number(breakdown.strengthenedJaccard || 0),
-      Number(breakdown.entitySignal || 0),
-      Number(breakdown.canonicalSignal || 0),
-      Number(breakdown.locatorSignal || 0),
-      Number(breakdown.bm25Signal || 0),
-      Number(breakdown.phraseSignal || 0),
-      Number(breakdown.exactSignal || 0),
-      Number(breakdown.episodeRouterSignal || 0) * 0.72,
-      breakdown.queryEntityHit === true ? 0.24 : 0,
-      breakdown.specificTokenHit === true ? 0.18 : 0
-    );
-  };
-  const applyPacketStructureCohesion = (rows = []) => {
-    const groups = new Map();
-    ensureArray(rows).forEach(row => {
-      const packetHash = text(row?.packetHash || '').trim();
-      if (!packetHash) return;
-      if (!groups.has(packetHash)) groups.set(packetHash, []);
-      groups.get(packetHash).push(row);
-    });
-    const packetSignals = new Map();
-    groups.forEach((group, packetHash) => {
-      const hits = group.map(row => ({ row, evidence: directRetrievalEvidenceOf(row) })).filter(hit => hit.evidence > 0.012);
-      if (!hits.length) return;
-      const channels = new Set(hits.map(hit => hit.row.structuredChannel || hit.row.axis).filter(Boolean));
-      const best = Math.max(...hits.map(hit => hit.evidence));
-      packetSignals.set(packetHash, { best, channelCount: channels.size });
-    });
-    return ensureArray(rows).map(row => {
-      const packetSignal = packetSignals.get(text(row?.packetHash || '').trim());
-      const qualityWeight = clamp(row?.recallQualityWeight, 0.9, 1, 1);
-      const direct = directRetrievalEvidenceOf(row);
-      const siblingEligible = /continuity_lock|do_not_resolve_yet|active_event|world_rule|conflict_trace|summary_memory|character|relation/i.test(text(row?.category || ''))
-        || Number(row?.importance || 0) >= 0.6;
-      const cohesionBoost = packetSignal
-        ? clamp(packetSignal.best * (direct > 0.012 ? 0.045 : (siblingEligible ? 0.075 : 0.025)) + Math.max(0, packetSignal.channelCount - 1) * 0.008, 0, 0.075, 0)
-        : 0;
-      const base = Number(row?.score || 0);
-      const score = clamp((base + cohesionBoost) * qualityWeight, 0, 1.35, base);
-      return {
-        ...row,
-        score,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          packetCohesionSignal: Number(cohesionBoost.toFixed(4)),
-          packetCohesionChannels: Number(packetSignal?.channelCount || 0),
-          recallQualityWeight: Number(qualityWeight.toFixed(4)),
-          scoreBeforePacketCohesion: Number(base.toFixed(4))
-        }
-      };
-    });
-  };
   const searchIndexSparseHybrid = (store, query, settings = Memory.settings, mode = '', options = {}) => {
     const view={...store};if(options.indexRows){view.index=options.indexRows;delete view._recallSourceRows;}
     const rows=localRecallCandidates(view,query,settings),selected=prepareHayakuRecallRows(rows,query,settings,view,[],[]);
@@ -35202,78 +34618,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const rendered = `- ${statements.filter(Boolean).join(' ')}`;
     return hasObjectStringificationArtifact(rendered) ? '' : rendered;
   };
-  const sourceTimeOrderValue = row => {
-    const raw = text(row?.temporal?.eventTime || row?.sourceTime || row?.temporal?.observedAt || row?.temporal?.knownAt || row?.temporal?.lastConfirmedAt || '').trim();
-    const match = raw.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})(?:[^\d]{0,16}(\d{1,2}):(\d{2}))?/);
-    if (match) return Number(`${match[1]}${match[2].padStart(2, '0')}${match[3].padStart(2, '0')}${(match[4] || '0').padStart(2, '0')}${(match[5] || '0').padStart(2, '0')}`);
-    return Number(row?.locator?.messageIndex ?? row?.locator?.turnId ?? 0);
-  };
-  const selectTemporalOrderRows = (store = {}, selected = {}, limit = 4) => {
-    const cap = Math.max(2, Math.min(6, Number(limit) || 4));
-    const keyOf = row => text(row?.packetHash || row?.locator?.sourceHash || `${row?.sourceTime}|${row?.publicText}`).trim();
-    const selectedTimed = ensureArray(selected.world).filter(row => row?.sourceTime).slice(0, 2);
-    const selectedKeys = new Set(selectedTimed.map(keyOf).filter(Boolean));
-    const latest = ensureArray(store.index)
-      .filter(row => row?.axis === 'world' && row?.category === 'current_state' && row?.sourceTime)
-      .slice()
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b));
-    const fill = latest.filter(row => !selectedKeys.has(keyOf(row))).slice(-(cap - selectedTimed.length));
-    const seen = new Set();
-    return [...selectedTimed, ...fill]
-      .filter(row => {
-        const key = keyOf(row);
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b))
-      .slice(-cap);
-  };
-  const temporalOrderRowsFromPackets = (packets = [], limit = 4) => {
-    const cap = Math.max(2, Math.min(6, Number(limit) || 4));
-    const candidates = ensureArray(packets)
-      .slice()
-      .sort((a, b) => Number(a?.messageIndex ?? 0) - Number(b?.messageIndex ?? 0))
-      .slice(-12)
-      .map(packet => {
-        const materialized = materializeExtractedPacket(packet);
-        const parsed = safeJsonParse(materialized?.raw || '', null);
-        const world = objectish(parsed?.world) ? parsed.world : {};
-        const activeEvents = packetItems(world.active_events || world.activeEvents || world.events || [])
-          .slice()
-          .sort((a, b) => Number(b?.importance || b?.priority || 0) - Number(a?.importance || a?.priority || 0))
-          .slice(0, 2);
-        const sourceTime = compact(world.time || parsed?.meta?.event_time || parsed?.meta?.eventTime || activeEvents[0]?.event_time || activeEvents[0]?.eventTime || '', 100);
-        if (!sourceTime) return null;
-        const publicText = compact([
-          ...activeEvents.map(event => itemText(event)),
-          world.location
-        ].filter(Boolean).join(' | '), 220);
-        return {
-          axis: 'world', category: 'current_state',
-          packetHash: materialized?.hash || packet?.hash || '',
-          sourceTime,
-          publicText,
-          sceneRelation: Number(packet?.distanceFromLatest) > 0 ? 'prior_snapshot_unconfirmed' : 'current_or_unknown',
-          locator: {
-            sourceHash: materialized?.hash || packet?.hash || '',
-            messageIndex: Number.isFinite(Number(packet?.messageIndex)) ? Number(packet.messageIndex) : null,
-            distanceFromLatest: Number.isFinite(Number(packet?.distanceFromLatest)) ? Number(packet.distanceFromLatest) : null
-          },
-          lifecycle: { status: '', timeScope: '' },
-          retrieval: {}, importance: 0.5
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => sourceTimeOrderValue(a) - sourceTimeOrderValue(b));
-    const seen = new Set();
-    return candidates.filter(row => {
-      const key = `${normalizeKey(row.sourceTime)}|${normalizeKey(row.publicText)}`;
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }).slice(-cap);
-  };
   const sceneBatonPacketState = packet => {
     const materialized = materializeExtractedPacket(packet);
     const parsed = safeJsonParse(materialized?.raw || '', null) || (objectish(packet?.meta) && objectish(packet?.entity) ? packet : null);
@@ -35658,41 +35002,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       });
   };
   const recallRowPacketHash = row => text(row?.packetHash || row?.locator?.sourceHash || '').trim();
-  const recallRowIsPrior = row => /^prior_/.test(text(row?.sceneRelation || ''))
-    || Number(row?.locator?.distanceFromLatest) > 0
-    || /^prior_snapshot/.test(effectivePublicTimeScope(row));
-  const currentSceneCohort = selected => {
-    const rows = recallCandidateRows(selected).map(item => item.row);
-    const anchors = rows.filter(row => (
-      (row.axis === 'world' && row.category === 'current_state')
-      || (row.axis === 'narrative' && /^(?:summary_memory|state)$/.test(text(row.category)))
-    ) && !recallRowIsPrior(row));
-    if (!anchors.length) return { anchor: null, hashes: new Set(), sceneIds: new Set(), text: '' };
-    const ranked = anchors.slice().sort(compareCurrentWorldFreshness);
-    const anchor = ranked[0];
-    const anchorHash = recallRowPacketHash(anchor);
-    const anchorScene = normalizeKey(anchor?.scene_id || anchor?.locator?.sceneId || '');
-    const cohortRows = rows.filter(row => {
-      const hash = recallRowPacketHash(row);
-      const scene = normalizeKey(row?.scene_id || row?.locator?.sceneId || '');
-      if (anchorHash && hash) return hash === anchorHash;
-      if (anchorScene && scene) return scene === anchorScene && !recallRowIsPrior(row);
-      return row === anchor;
-    });
-    return {
-      anchor,
-      hashes: new Set(cohortRows.map(recallRowPacketHash).filter(Boolean)),
-      sceneIds: new Set(cohortRows.map(row => normalizeKey(row?.scene_id || row?.locator?.sceneId || '')).filter(Boolean)),
-      text: cohortRows.map(row => text(row.publicText || '')).filter(Boolean).join('\n')
-    };
-  };
-  const rowBelongsToCurrentSceneCohort = (row, cohort) => {
-    if (!row || !cohort?.anchor) return false;
-    const hash = recallRowPacketHash(row);
-    if (hash && cohort.hashes?.has(hash)) return true;
-    const scene = normalizeKey(row?.scene_id || row?.locator?.sceneId || '');
-    return Boolean(scene && cohort.sceneIds?.has(scene) && !recallRowIsPrior(row));
-  };
   const characterStateProjectionKeyForRow = row => normalizeKey(
     row?.retrieval?.subject || row?.locator?.subject || characterProfileNames(row)[0] || row?.publicRef || row?.id || ''
   );
@@ -35770,7 +35079,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           `message.content ends with the packet sequence and the final "${PACKET_END} -->".`
         ];
   };
-  const recoveryRequestActive = settings => IN_BAND_RECOVERY_WRITE_ENABLED && isDetectedPacketRecoveryRequest(settings?.packetRecoveryRequest);
   const requestPacketLineageObject = settings => {
     const requestLineage = objectish(settings?.requestLineage) ? settings.requestLineage : null;
     if (!requestLineage?.logicalTurnId) return null;
@@ -36198,9 +35506,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const continuityEvidenceTimeScopeOf = row => normalizeKey(effectivePublicTimeScope(row));
   const continuityEvidenceIsInactive = row => CONTINUITY_EVIDENCE_INACTIVE_STATUS_RE.test(continuityEvidenceStatusOf(row))
     || CONTINUITY_EVIDENCE_INACTIVE_SCOPE_RE.test(continuityEvidenceTimeScopeOf(row));
-  const continuityEvidenceIsHistoryIntent = query => isPastStateLookupQuery(query)
-    || isExplicitStateHistoryComparisonQuery(query)
-    || isLiveOverlayPastOrComparisonQuery(query);
   const continuityEvidenceLaneFor = (axis, row = {}, options = {}) => {
     const override = text(options?.laneOverride || '').trim();
     if (CONTINUITY_EVIDENCE_LANE_ORDER.includes(override)) return override;
@@ -36337,128 +35642,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       || left.score - right.score
       || left.importance - right.importance;
   };
-  const continuityEvidenceEntryStableKey = entry => [
-    normalizeKey(entry?.axis || entry?.row?.axis || ''),
-    continuityEvidenceCategoryOf(entry?.row),
-    ...continuityEvidenceEntryRefs(entry).sort(),
-    normalizeKey(entry?.bodyKey || entry?.memory || entry?.row?.publicText || '')
-  ].join('\u0001');
-  const compareContinuityEvidenceEntryObservation = (left, right) => (
-    compareContinuityEvidenceObservation(left?.row, right?.row)
-    || continuityEvidenceEntryStableKey(left).localeCompare(continuityEvidenceEntryStableKey(right))
-  );
-  const compareContinuityEvidenceEvents = (left, right) => {
-    const leftTime = continuityEvidenceStrictTimeInfo(left?.row);
-    const rightTime = continuityEvidenceStrictTimeInfo(right?.row);
-    if (leftTime && rightTime && leftTime.domain === rightTime.domain && leftTime.value !== rightTime.value) {
-      return leftTime.value - rightTime.value;
-    }
-    return compareContinuityEvidenceEntryObservation(left, right);
-  };
-  const continuityEvidenceSortConfirmed = entries => {
-    const values = ensureArray(entries);
-    if (values.length < 2) return values;
-    const edges = values.map(() => new Set());
-    const indegree = values.map(() => 0);
-    for (let leftIndex = 0; leftIndex < values.length; leftIndex += 1) {
-      const leftTime = continuityEvidenceStrictTimeInfo(values[leftIndex]?.row);
-      if (!leftTime) continue;
-      for (let rightIndex = leftIndex + 1; rightIndex < values.length; rightIndex += 1) {
-        const rightTime = continuityEvidenceStrictTimeInfo(values[rightIndex]?.row);
-        if (!rightTime || leftTime.domain !== rightTime.domain || leftTime.value === rightTime.value) continue;
-        const before = leftTime.value < rightTime.value ? leftIndex : rightIndex;
-        const after = before === leftIndex ? rightIndex : leftIndex;
-        if (!edges[before].has(after)) {
-          edges[before].add(after);
-          indegree[after] += 1;
-        }
-      }
-    }
-    const ready = values.map((_, index) => index).filter(index => indegree[index] === 0);
-    const ordered = [];
-    while (ready.length) {
-      ready.sort((leftIndex, rightIndex) => compareContinuityEvidenceEntryObservation(values[leftIndex], values[rightIndex]));
-      const index = ready.shift();
-      ordered.push(values[index]);
-      for (const next of edges[index]) {
-        indegree[next] -= 1;
-        if (indegree[next] === 0) ready.push(next);
-      }
-    }
-    if (ordered.length !== values.length) return values.sort(compareContinuityEvidenceEntryObservation);
-    values.splice(0, values.length, ...ordered);
-    return values;
-  };
-  const continuityEvidenceStateKey = entry => {
-    const row = entry?.row || {};
-    const axis = text(entry?.axis || row?.axis || '').trim();
-    const category = continuityEvidenceCategoryOf(row);
-    const atomic = objectish(row?.retrieval?.atomicRecord) ? row.retrieval.atomicRecord : {};
-    const subjectRefs = uniq([
-      atomic.subjectRefs,
-      row?.retrieval?.subject,
-      row?.retrieval?.entityNames,
-      row?.retrieval?.relationEndpoints,
-      row?.locator?.subject
-    ].flatMap(value => ensureArray(value)).map(normalizeKey).filter(Boolean).sort(), 24);
-    const canonical = uniq([
-      row?.retrieval?.canonicalAnchors,
-      row?.retrieval?.canonicalTokens,
-      row?.retrieval?.conceptTokens
-    ].flatMap(value => ensureArray(value)).map(normalizeKey)
-      .filter(value => /^(?:entity|person|relation|place|object|info|state|event):/.test(text(value))), 16).sort();
-    const relation = ensureArray(row?.retrieval?.relationEndpoints).map(normalizeKey).filter(Boolean).sort();
-    const ref = normalizeKey(row?.publicRef || row?.ref || row?.id || '');
-    const scene = normalizeKey(row?.scene_id || row?.sceneId || row?.locator?.sceneId || '');
-    const predicate = normalizeKey(atomic.predicate || '');
-    const structuredSubject = subjectRefs.join('|');
-    if (category === 'character') {
-      const characterSubject = normalizeKey(row?.retrieval?.subject || row?.locator?.subject || subjectRefs[0] || ref || 'global');
-      return [axis, category, '', characterSubject || 'global'].join('\u0001');
-    }
-    const subject = relation.length
-      ? [relation.join('|'), predicate].filter(Boolean).join('|')
-      : (predicate && structuredSubject
-          ? [structuredSubject, predicate, canonical.join('|')].filter(Boolean).join('|')
-          : (ref || [structuredSubject, canonical.join('|')].filter(Boolean).join('|') || 'global'));
-    return [axis, category, category === 'currentstate' || category === 'state' ? scene : '', subject].join('\u0001');
-  };
-  const continuityEvidenceEntryRefs = entry => uniq([
-    entry?.row?.publicRef,
-    entry?.row?.ref,
-    entry?.row?.id,
-    entry?.row?._sourceRef
-  ].flatMap(value => ensureArray(value)).map(normalizeKey).filter(Boolean), 24);
-  const continuityEvidenceSameStableIdentity = (left, right) => {
-    const leftAxis = normalizeKey(left?.axis || left?.row?.axis || '');
-    const rightAxis = normalizeKey(right?.axis || right?.row?.axis || '');
-    const leftCategory = continuityEvidenceCategoryOf(left?.row);
-    const rightCategory = continuityEvidenceCategoryOf(right?.row);
-    // A reused public ref is not sufficient across schema axes or evidence
-    // classes. Implicit closure is intentionally narrower than an explicit
-    // replacement edge.
-    if (leftAxis !== rightAxis || leftCategory !== rightCategory) return false;
-    const leftRefs = continuityEvidenceEntryRefs(left);
-    const rightRefs = new Set(continuityEvidenceEntryRefs(right));
-    if (leftRefs.some(ref => rightRefs.has(ref))) return true;
-    if (!/^(?:character|relation|currentstate|state|worldrule|faction|region)$/.test(leftCategory)) return false;
-    const leftKey = continuityEvidenceStateKey(left);
-    const rightKey = continuityEvidenceStateKey(right);
-    if (!leftKey || leftKey !== rightKey) return false;
-    return text(leftKey).split('\u0001').pop() !== 'global';
-  };
-  const continuityEvidenceReplacementTargets = entry => uniq([
-    entry?.row?.lifecycle?.replaces,
-    entry?.row?.replaces,
-    entry?.row?.supersedes,
-    entry?.row?.invalidates
-  ].flatMap(value => ensureArray(value)).flatMap(value => text(value).split(/[\s,|]+/))
-    .map(normalizeKey).filter(Boolean), 24);
-  const continuityEvidenceSameObservationEpoch = (leftRow, rightRow) => {
-    const left = continuityEvidenceObservationRank(leftRow);
-    const right = continuityEvidenceObservationRank(rightRow);
-    return !left.epoch || !right.epoch || left.epoch === right.epoch;
-  };
   const formatHayakuVisibilityBoundaryLine = (row = {}, language = 'ko') => {
     const boundary = objectish(row?.visibility) ? row.visibility : {};
     const category = continuityEvidenceCategoryOf(row);
@@ -36534,21 +35717,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   const packetCoreRecallEntries = (selected = {}, query = '') => {
     const rows = packetCoreRecallRows(selected, PACKET_CORE_RECALL_CANDIDATE_LIMIT, query);
-    const temporalRows = ensureArray(selected?.temporalOrder).filter(Boolean).slice(-6);
     const viewContext = {
       selectedCharacterCount: rows.filter(({ axis, row }) => axis === 'entity' && row.category === 'character').length
     };
     const entries = [];
-    const candidates = [
-      ...rows.map(candidate => ({ ...candidate, laneOverride: '' })),
-      ...temporalRows.map((row, index) => ({
-        axis: row?.axis || 'world',
-        row,
-        laneOverride: index === temporalRows.length - 1
-          ? CONTINUITY_EVIDENCE_LANES.latestState
-          : CONTINUITY_EVIDENCE_LANES.confirmedChanges
-      }))
-    ];
+    const candidates = rows.map(candidate => ({ ...candidate, laneOverride: '' }));
     for (const { axis, row, laneOverride } of candidates) {
       const entry = packetCoreRecallEntryFromRow(axis, row, query, viewContext, { laneOverride });
       if (!entry) continue;
@@ -36624,7 +35797,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Whole literal admission/publication readset. This is deliberately separate
   // from the accepted-packet inventory: an unselected host row is authority too.
-  const HAYAKU_READSET_ARGUMENTS = Object.freeze([
+  const HAYAKU_READSET_ARGUMENTS = Object.freeze(['gradia_final_delivery',
     'enabled','mode','prompt_mode','packet_output_slot','packet_closing_tag','prompt_cache','max_items_per_axis',
     'bm25_channel','bm25_weight','memory_language','debug','packet_recovery','after_request_auto_repair',
     'background_auto_repair','native_auto_repair','cold_start_batch_turns','packet_coverage_audit',
@@ -36668,7 +35841,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!argumentHost) throw Error('HAYAKU_READSET_SETTINGS_UNAVAILABLE');
     let timer;
     try {
-      const argumentsRead=Promise.all(HAYAKU_READSET_ARGUMENTS.map(async key=>[key,await (argumentHost.getArgument||argumentHost.getArg).call(argumentHost,key)]));
+      const savedSettings=await readHayakuSavedSettings();
+      const argumentsRead=Promise.all(HAYAKU_READSET_ARGUMENTS.map(async key=>[key,Object.prototype.hasOwnProperty.call(savedSettings,key)?savedSettings[key]:await (argumentHost.getArgument||argumentHost.getArg).call(argumentHost,key)]));
       const args=await Promise.race([argumentsRead,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HAYAKU_READSET_SETTINGS_UNAVAILABLE')),HOST_API_CALL_TIMEOUT_MS);})]);
       if(JSON.stringify(args.filter(([key])=>!key.startsWith('memory_suite_')).sort())!==Memory.settingsArgumentInputs)throw Error('HAYAKU_READSET_SETTINGS_CHANGED');
       const config=await MemorySuiteStorageBridge.getConnectionSettings({scope:{scopeId:frame.scope.key,scopeKey:frame.scope.key},force:true});
@@ -36715,11 +35889,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // Housekeeping is prepared before any recall frame is admitted. The lane also
   // drains an older semantic consent callback before a newer request snapshots
   // its journal; no already-admitted frame is rebased onto those writes.
-  let hayakuSourceBoundaryQueue=Promise.resolve();
-  const runHayakuSourceBoundary = operation => {
-    const work=hayakuSourceBoundaryQueue.catch(()=>{}).then(operation);
-    hayakuSourceBoundaryQueue=work;return work;
-  };
   const verifyHayakuReadset = async (frame,expectedHead=frame?.head) => {
     if (!frame) return true;
     try {
@@ -36776,7 +35945,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const policy=buildHayakuSelectionPolicy(sourceRows,policySettings,modeProfile(effectivePerformanceModeOf(policySettings)),query,metadata.store||{});
     const byRow=new Map(policy.candidates.map(c=>[hayakuEvidenceRowId(c.row),c]));
     const rows=policy.candidates.map(c=>({axis:c.row.axis,row:c.row})).slice(0,PACKET_CORE_RECALL_CANDIDATE_LIMIT);
-    const temporal=ensureArray(selected?.temporalOrder).filter(Boolean).slice(-6);
     const viewContext={selectedCharacterCount:rows.filter(c=>c.axis==='entity'&&c.row.category==='character').length};
     const entries=[],rejected=[];
     const duplicate = createPacketCoreRecallDuplicateComparator(signatureOwner);
@@ -36789,11 +35957,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }catch(_){rejected.push({id:hayakuEvidenceRowId(row),reason:'dependency_unavailable'});}
     };
     rows.forEach(({axis,row})=>insert(axis,row));
-    for(let i=0;i<temporal.length;i++){
-      const row=temporal[i];
-      if(requestKnowledgeUnavailableForRow(row,query,metadata.store?.context?.mentionedEntities||[],settings))continue;
-      insert(row.axis||'world',row,i===temporal.length-1?CONTINUITY_EVIDENCE_LANES.latestState:CONTINUITY_EVIDENCE_LANES.confirmedChanges);
-    }
     const assessed=assessHayakuEvidence(entries,query);
     const units=assessed.map(entry=>{
       const origins=ensureArray(entry.sourceRows).map(value=>({axis:value.axis,row:value.row}));
@@ -37434,7 +36597,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (key && !out.has(key)) out.set(key, { axis: resolvedAxis, row });
     };
     ['entity', 'world', 'narrative', 'planner'].forEach(axis => ensureArray(selected?.[axis]).forEach(row => add(axis, row)));
-    ensureArray(selected?.temporalOrder).forEach(row => add(row?.axis || 'world', row));
     return out;
   };
   const recallBudgetEvidenceClass = (axis, row = {}, query = '') => {
@@ -38044,12 +37206,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return Memory.captureBackendRegistered;
   };
 
-  const handleBeforeRequest = async (messages = [], requestType = 'model') => {
+  // While GRADIA reads HAYAKU, GRADIA makes the one search of the turn and delivers it; the hook only keeps
+  // capture and the packet instructions. Its announcement expires, so removing GRADIA restores normal recall.
+  let hayakuGradiaAttachedUntil = 0;
+  const noteHayakuGradiaAttach = ({ active, ttlMs }) => { hayakuGradiaAttachedUntil = active ? now() + Math.min(Math.max(0, ttlMs), 300000) : 0; };
+  const noteHayakuGradiaDelivery = ({ status, code }) => { if (Memory.lastViewerRecall?.gradia) Memory.lastViewerRecall.gradia = { ...Memory.lastViewerRecall.gradia, status, code, reportedAt: now() }; };
+  // recallOnly runs the same selection without writing storage or arming capture, and returns the
+  // recall prompt instead of an outgoing request. Another reader asks for this; nothing is sent.
+  const handleBeforeRequest = async (messages = [], requestType = 'model', mode = null) => {
+    const recallOnly = mode?.recallOnly === true;
     const recallRequestId = ++hayakuRecallRequests.sequence;
     const modelRequest = text(requestType || 'model').trim().toLowerCase() === 'model';
     let sourceInputReady = true;
     if (modelRequest) {
-      hayakuInputRequestActive=true;hayakuReanalysisLifetime+=1;
+      if (!recallOnly) { hayakuInputRequestActive=true;hayakuReanalysisLifetime+=1; }
       sourceInputReady = await ensureHayakuSourceInputReady('before_request');
     }
     const startedAt = now();
@@ -38254,7 +37424,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           return hayakuRecallPassthrough(messages);
         }
       }
-      lastHayakuRequestInjectionReceipt = null;
+      if (!recallOnly) lastHayakuRequestInjectionReceipt = null;
       if (!authoritativeChatAvailable) {
         historyMutationSync = {
           ...historyMutationSync,
@@ -38263,7 +37433,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         };
       }
       if (chatScope?.confident) requestScope = { ...chatScope, requestType };
-      if (chatScope?.key) {
+      if (chatScope?.key && !recallOnly) {
         void recoverStorageReconciliationJournal({ scopeKey: chatScope.key }).catch(error => {
           Memory.storageReconciliationJournalStats.failed += 1;
           Memory.storageReconciliationJournalStats.lastAt = now();
@@ -38273,6 +37443,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       initialPacketScanScope = syncPacketScanCacheScope(requestScope);
       let store = emptyStore();
       const query = stage('latestUserText', () => latestUserText(messages));
+      const gradiaCompat = !recallOnly && now() < hayakuGradiaAttachedUntil;
       const currentUserMessage=ensureArray(messages).slice().reverse().find(message=>roleOf(message)==='user' && hayakuRecentContextMessageText(message)===query.trim());
       const currentId=String(currentUserMessage?.chatId||currentUserMessage?.id||currentUserMessage?.messageId||'');
       settings.recallCurrentInputBoundary=currentId?{id:currentId}:null;
@@ -38340,14 +37511,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         };
         if (historySyncGuard.allowed) {
           await stageAsync('awaitStorageWrites', () => Promise.resolve(Memory.storageWriteQueue).catch(() => null));
-          scheduleCaptureRawReplay(chatScope);
+          if (!recallOnly) scheduleCaptureRawReplay(chatScope);
           storageLedger = await stageAsync('loadStorageLedger', () => loadStorageLedger(chatScope, {
             authoritativeSnapshot
           }));
           // No historical edit observer runs during request admission.
           authoritativeSnapshot=hayakuCanonicalTopologySnapshot(authoritativeSnapshot,storageLedger);
           if(authoritativeSnapshot.canonicalIdentityUnresolved){hayakuReadsetRefuse(readsetFrame,'HAYAKU_CANONICAL_NATIVE_IDENTITY_UNRESOLVED');return hayakuRecallPassthrough(messages);}
-          const bridgeColdStartImport = await stageAsync('importBridgeColdStart', () => importBridgeColdStartIntoStorageLedger(
+          const bridgeColdStartImport = recallOnly ? { ledger: storageLedger, changed: false } : await stageAsync('importBridgeColdStart', () => importBridgeColdStartIntoStorageLedger(
             storageLedger,
             chatScope
           ));
@@ -38382,7 +37553,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           // pairs, not from HAYAKU's own packet hashes. Import them only after
           // the authoritative U+A worldline exists so the importer can attach
           // the exact active turn identity in one pass.
-          const bridgeIncrementalRecoveryImport = await stageAsync(
+          const bridgeIncrementalRecoveryImport = recallOnly ? { ledger: storageLedger, changed: false } : await stageAsync(
             'importBridgeIncrementalRecovery',
             () => importBridgeIncrementalRecoveryIntoStorageLedger(storageLedger, chatScope)
           );
@@ -38423,7 +37594,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           // Capture the proved live request before recall's storage publication.
           // A rejected ledger write must not discard the independent afterRequest
           // repair opportunity. The normal admission below upgrades this entry.
-          if (requestLineage?.lineageQuality === 'authoritative'
+          if (!recallOnly && requestLineage?.lineageQuality === 'authoritative'
             && (settings.packetRecovery !== false || settings.recoveryVaultEnabled !== false)) {
             stage('registerRecoveryCaptureOrigin', () => registerPendingCapture(
               chatScope, requestLineage, requestType, authoritativeSnapshot,
@@ -38467,9 +37638,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
             authoritativeSnapshot,
             storageLedger
           );
-          if (storageLedger.copiedChatAdoption === true || storageLedger.copiedChatRepair === true
+          if (!recallOnly && (storageLedger.copiedChatAdoption === true || storageLedger.copiedChatRepair === true
             || bridgeColdStartImport.changed || bridgeIncrementalRecoveryImport.changed
-            || storageMigration.changed || binding.changed || slotHeadReconcile.changed || worldlineChanged) {
+            || storageMigration.changed || binding.changed || slotHeadReconcile.changed || worldlineChanged)) {
             const reconcileReason = bridgeColdStartImport.changed
               ? 'bridge_cold_start'
               : bridgeIncrementalRecoveryImport.changed
@@ -38541,7 +37712,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           requestFallback: true
         };
       }
-      const recoveryDebtLifecycle = authoritativeChatAvailable
+      const recoveryDebtLifecycle = authoritativeChatAvailable && !recallOnly
         ? await stageAsync('recoveryDebtWorldline', () => reconcileRecoveryVaultWorldlineLifecycleDirect(
             chatScope,
             authoritativeSnapshot,
@@ -38592,7 +37763,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         };
         return recovery;
       });
-      if (packetRecovery?.active === true && authoritativeChatAvailable) {
+      if (!recallOnly && packetRecovery?.active === true && authoritativeChatAvailable) {
         // Persist exact U+A for every missing packet inside HAYAKU's established
         // coverage range. Pre-HAYAKU history remains a manual Cold Start backlog.
         scheduleDetectedRecoveryVaultMaterialization({
@@ -38851,7 +38022,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (readsetFrame) recallToken.readsetFrame=readsetFrame;
       settings.retrievalScopeKey=recallToken.scopeKey;
       const [searched, packetHealth, rawRecoveryRecall, partialMemoryRecall] = await stageAsync('parallelRecallProcessing', () => Promise.all([
-        stageAsync('search', () => searchIndexCompositeRecall(
+        stageAsync('search', () => gradiaCompat ? prepareHayakuRecallRows([],retrievalQuery,settings,store,[],[]) : searchIndexCompositeRecall(
           store,
           retrievalQuery,
           searchBudgetGuard
@@ -38864,7 +38035,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           }
         )),
         stageAsync('packetHealth', async () => computePacketHealth(packetResults, store)),
-        stageAsync('rawRecoveryRecall', () => searchRecoveryVaultRawPassages(
+        stageAsync('rawRecoveryRecall', () => gradiaCompat ? null : searchRecoveryVaultRawPassages(
           chatScope,
           retrievalQuery,
           authoritativeChatAvailable ? authoritativeChatMessages : messages,
@@ -38872,7 +38043,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           authoritativeSnapshot,
           authoritativeLedger.worldline
         )),
-        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
+        stageAsync('partialMemoryRecall', () => gradiaCompat ? [] : searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
       ]));
       if(!hayakuRequestCurrent(recallToken)) return hayakuRecallPassthrough(messages);
       const packetCoverageFallbackRecall = stage('packetCoverageFallbackRecall', () => selectPacketCoverageFallbackRows(store, searched, query, settings));
@@ -38882,16 +38053,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ensureArray(rawRecoveryRecall?.records), selectedWithLiveOverlay, query
       ));
       const selectedForModel = selectedWithLiveOverlay;
-      const temporalOrder = [];
       const selectedForContext = {
         ...selectedForModel,
-        temporalOrder,
         partialMemoryEvidence: ensureArray(partialMemoryRecall),
         rawRecoveryEvidence: ensureArray(rawAnchorIntegration?.records)
       };
       carryHayakuRecallPreparation(searched,selectedForContext);
       // budgetMessages was sanitized before prompt-mode resolution so Auto and
       // the final injection budget use the same packet-free physical payload.
+      // A reader sends the size of the request it will make, so context pressure is judged as it would be here.
+      if (recallOnly && Number(mode?.requestChars) > requestPayloadChars(budgetMessages)) budgetMessages = [...budgetMessages, { role: 'system', content: ' '.repeat(Number(mode.requestChars) - requestPayloadChars(budgetMessages)) }];
       const requestCharsBeforeInjection = requestPayloadChars(budgetMessages);
       const requestPressureDecision = promptPressureDecision(budgetMessages, hostContextBudget);
       const requestPressure = requestPressureDecision.pressure;
@@ -39042,7 +38213,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         pushOperationLog('packet_write:budget_invariant_failed', detail, 'error');
       }
       const recallDataBudget = packetBudgetPlan.recallDataBudget || recallBudgetPolicy;
-      const captureOrigin = (packetWriteActive || settings.recoveryVaultEnabled !== false) && requestLineage && chatScope?.confident
+      const captureOrigin = !recallOnly && (packetWriteActive || settings.recoveryVaultEnabled !== false) && requestLineage && chatScope?.confident
         ? stage('registerCaptureOrigin', () => registerPendingCapture(
           chatScope,
           requestLineage,
@@ -39079,7 +38250,23 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
       let memoryContextResult = packetBudgetPlan.memoryContextResult || emptyPacketCoreMemoryResult();
       let memoryBlock = text(packetBudgetPlan.memoryBlock || '');
-      const block = packetBudgetPlan.block || '';
+      // GRADIA delivers the recall in compatibility mode; the packet-writing instructions stay here.
+      const block = gradiaCompat
+        ? packetCoreJoinParts(promptCacheModeOf(promptSettings) === 'off'
+          ? [staticWrite, healthRepairHint, runtimeSkeletonInstruction]
+          : [healthRepairHint, runtimeSkeletonInstruction])
+        : packetBudgetPlan.block || '';
+      if (recallOnly) {
+        // Only recalled continuity. Packet-writing instructions belong to the response model alone.
+        const recallPrompt = packetCoreJoinParts([sceneBatonText, memoryBlock]);
+        const selectedRows = recallCandidateRows(selectedForModel).slice(0, 48).map(({ axis, row }) => ({ axis, category: text(row?.category || ''),
+          ref: compact(row?.publicRef || row?.ref || row?.id || '', 160), state: compact(row?.publicText || row?.text || '', 700),
+          score: Number.isFinite(Number(row?.score)) ? Number(Number(row.score).toFixed(4)) : 0 }));
+        Memory.lastViewerRecall = { at: now(), scopeKey: requestScope.key || '', input: compact(query, 2400), retrievalQuery: compact(retrievalQuery, 3200),
+          selectedRows: selectedRows.length, recallDataChars: recallPrompt.length, rows: selectedRows, gradia: { status: 'selected', chars: recallPrompt.length, finalDelivery: settings.gradiaFinalDelivery !== false } };
+        Memory.store = emptyStore();
+        return { recallPrompt, scopeKey: chatScope?.key || '', selectedRows: ensureArray(memoryContextResult?.deliveredRowKeys).length };
+      }
       const injectionResult = stage('injectPrompt', () => injectPromptDetailed(
         messages,
         block,
@@ -39203,7 +38390,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         graphClosureSignal: Number(Number(row?.scoreBreakdown?.graphClosure?.signal || 0).toFixed(4)),
         typedAssociationCount: ensureArray(row?.retrieval?.typedAssociations).length
       }));
-      Memory.lastViewerRecall = {
+      if (!gradiaCompat) Memory.lastViewerRecall = {
         at: now(),
         scopeKey: requestScope.key || '',
         input: compact(query, 2400),
@@ -39291,6 +38478,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         variableStateViewChars: variableChars,
         maxVariableStateViewChars: variableBudget,
         injectionCapMode: promptMode,
+        gradiaCompat,
         // Legacy names retained for compatibility: these now describe the
         // optional/variable HAYAKU budget, not the mandatory packet core.
         maxInjectedCharsModeCap: optionalInjectionBudgetChars,
@@ -39460,11 +38648,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           hostRequestDeadlineScope: 'diagnostic_only_not_cross_request_host_call_gate',
           hostCallTimeoutMs: HOST_API_CALL_TIMEOUT_MS
         },
-        temporalOrder: temporalOrder.map(row => ({
-          sourceTime: row.sourceTime,
-          sourceScope: effectivePublicTimeScope(row),
-          state: compact(row.publicText || '', 120)
-        })),
         recallDelivery: {
           selectedRows: recallDelivery.selectedRows,
           injectedRows: recallDelivery.injectedRows,
@@ -39580,6 +38763,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return injectionResult.messages;
     } catch (error) {
       if(recallToken)recallToken.cancelled=true;
+      if (recallOnly) { Memory.store = emptyStore(); throw error; }
       const detail = debugError('beforeRequest_failed', error, {
         requestType,
         messages: ensureArray(messages).length,
@@ -39684,7 +38868,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
 
 
-  // v2.3.38 capture-semantic defense. The v2.3.33 authoring contract is
   // unchanged. This layer only prevents structurally valid but semantically
   // empty runtime-skeleton echoes from becoming durable memory when the
   // finalized visible assistant artifact itself contains detectable outcome
@@ -39865,10 +39048,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const inspectHayakuPacketText = (value = '') => {
     const source = text(value);
     const complete = [];
-    const pattern = new RegExp(`<!--\\s*${PACKET_START}\\s*([\\s\\S]*?)\\s*${PACKET_END}\\s*-->`, 'gi');
-    let match;
-    while ((match = pattern.exec(source))) {
-      const raw = text(match[1]).trim();
+    scanPacketMarkersInBody(source, PACKET_START, PACKET_END, 'marker_string', ({rawStart,rawEnd,markerStart,markerEnd}) => {
+      const raw = source.slice(rawStart,rawEnd).trim();
       const parsed = safeJsonParse(raw, null);
       const normalized = objectish(parsed) ? normalizeHayakuPacket(parsed) : null;
       const originalValidation = objectish(parsed) ? validateHayakuPacket(parsed) : { ok: false, errors: ['json_parse_failed'], warnings: [] };
@@ -39881,10 +39062,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         originalValidation,
         validation,
         needsNormalization,
-        start: match.index,
-        end: pattern.lastIndex
+        start: markerStart - (/(?:<!--\s*)?(?:<<<\s*)?$/.exec(source.slice(0,markerStart))?.[0].length || 0),
+        end: markerEnd + (/^(?:\s*>>>)?(?:\s*-->)?/.exec(source.slice(markerEnd))?.[0].length || 0)
       });
-    }
+    });
     const startCount = (source.match(new RegExp(PACKET_START, 'gi')) || []).length;
     const endCount = (source.match(new RegExp(PACKET_END, 'gi')) || []).length;
     // A packet can already satisfy the public contract while still benefiting
@@ -40764,6 +39945,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .forEach(tombstone => tombstonesBySlot.set(tombstone.slotId, tombstone));
     return {
       ...empty,
+      // Written with the recovered records: this proves ordering even when the clock ties.
+      analysisFailureProofs: ensureArray(parsed.analysisFailureProofs).slice(-200).filter(proof =>
+        proof && typeof proof.failureKey === 'string' && proof.failureKey.length <= 196
+        && Number(proof.failureAt) > 0 && Number(proof.failureCount) > 0
+        && typeof proof.sourceRevisionId === 'string' && proof.sourceRevisionId.length <= 96
+        && typeof proof.recordId === 'string' && proof.recordId.length <= 196
+        && typeof proof.packetHash === 'string' && proof.packetHash.length <= 96),
       identity: {
         schema: 'hayaku.scope_identity.v1',
         scopeKey: empty.scopeKey,
@@ -41362,7 +40550,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return { ledger, changed: false, reason: 'native_copy_source_storage_unavailable', records: 0, sourceRecoveryRecords: 0, sourceScopeKey };
     }
 
-    // v2.4.13: a RE:TRACE incremental-recovery capsule can be durable even when
     // its packet records have not yet been materialized into the source ledger.
     // Hydrate it into a detached in-memory ledger only. Never persist this source
     // copy from the target chat: native-copy synchronization must remain source-read-only.
@@ -43531,6 +42718,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       },
       updatedAt: now(),
       chatTopologyHash: compact(ledger.chatTopologyHash || '', 96),
+      analysisFailureProofs: ensureArray(ledger.analysisFailureProofs)
+        .filter(proof => survivingRecordIds.has(proof.recordId)).slice(-200),
       migration: ledger.migration || emptyStorageLedger(scope).migration,
       coldStart: ledger.coldStart || emptyStorageLedger(scope).coldStart,
       incrementalRecovery: ledger.incrementalRecovery || emptyStorageLedger(scope).incrementalRecovery,
@@ -44422,6 +43611,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const verification = alreadyImported
         ? verifyBridgeColdStartLedgerAdoption(ledger, scope, capsule)
         : { verified: false, reason: imported.reason, records: 0, expectedRecords: 0 };
+      if (verification.verified === true) await resolveAnalysisFailuresForCapsule(scope, capsule, ledger);
       return {
         ok: verification.verified === true,
         adopted: false,
@@ -44436,10 +43626,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         sourceHash: compact(verification.sourceHash || ledger?.coldStart?.sourceHash || '', 96)
       };
     }
-    const commit = await writeStorageLedgerDirect(scope, imported.ledger, 'bridge_cold_start_api');
+    const prepared = await attachAnalysisFailureProofs(scope, ledger, imported.ledger);
+    const commit = await writeStorageLedgerDirect(scope, prepared, 'bridge_cold_start_api');
     const verification = verifyBridgeColdStartLedgerAdoption(commit.ledger, scope, capsule);
     const verified = commit.durable === true && verification.verified === true;
-    if (verified) invalidateExternalLedgerCaches(scope.key);
+    if (verified) {
+      invalidateExternalLedgerCaches(scope.key);
+      await resolveAnalysisFailuresForCapsule(scope, capsule, commit.ledger);
+    }
     return {
       ok: verified,
       adopted: verified,
@@ -44570,6 +43764,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         : { verified: false, reason: imported.reason, records: 0, expectedRecords: 0 };
       if (verification.verified === true) {
         await dischargeVerifiedRecoveryCapsuleTargetsDirect(scope.key, capsule);
+        await resolveAnalysisFailuresForCapsule(scope, capsule, candidateLedger);
       }
       return {
         ok: verification.verified === true,
@@ -44591,12 +43786,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const preflightVerification = verifyBridgeIncrementalRecoveryLedgerAdoption(candidateLedger, scope, capsule);
     if (preflightVerification.verified !== true) return { ok:false, adopted:false, durable:false, verified:false, reason:preflightVerification.reason || 'replacement_preflight_failed', diagnostics:preflightVerification };
     await options.sourceEditValidate?.();
+    candidateLedger = await attachAnalysisFailureProofs(scope, ledger, candidateLedger);
     const commit = await writeStorageLedgerDirect(scope, candidateLedger, 'bridge_incremental_recovery_api', {sourceEditValidate:options.sourceEditValidate});
     const verification = verifyBridgeIncrementalRecoveryLedgerAdoption(commit.ledger, scope, capsule);
     const verified = commit.durable === true && verification.verified === true;
     if (verified) {
       invalidateExternalLedgerCaches(scope.key);
       await dischargeVerifiedRecoveryCapsuleTargetsDirect(scope.key, capsule);
+      await resolveAnalysisFailuresForCapsule(scope, capsule, commit.ledger);
     }
     return {
       ok: verified,
@@ -44815,6 +44012,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (normalized === 'failed_analysis_manual_resolution') return '실패 복구 사용자 수정';
     if (normalized === 'cold_start' || normalized === 'cold_start_batch') return 'Cold Start 분석';
     if (normalized === 'native_repair_request_budget') return 'Recovery Journal 요청 예산 점검';
+    if (normalized === 'incremental_recovery') return '누락 복구';
+    if (normalized === 'after_request_recovery') return '응답 직후 복구';
+    if (normalized === 'targeted_regeneration' || /reanaly/i.test(normalized)) return '직접 원문 재분석';
     return normalized || 'HAYAKU 분석';
   };
   const failedAnalysisReasonExplanation = (failure = {}, payload = {}) => {
@@ -44824,6 +44024,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const signal = `${code} ${message} ${validation.reason || ''} ${ensureArray(validation.errors).map(row => row?.reason || row?.code || row).join(' ')}`;
     const defs = [
       ['PARTIAL_SAVED', /partial_memory_saved/, '정상 기억 저장', '사용 가능한 항목을 저장했습니다. 완전한 패킷 여부는 별도입니다.', '제외된 항목과 이유는 진단에 남아 있습니다.'],
+      ['RESPONSE_FORMAT', /JSON_INVALID|JSON_TOO_LARGE|RESPONSE_EMPTY|envelope_top_level|packet_top_level|incomplete_json/i, 'AI 응답 형식 오류', 'AI 응답이 올바른 JSON이 아니어서 내용을 읽지 못했습니다.', '다시 시도해 주세요. 반복되면 보조 모델을 바꿔 보세요.'],
       ['NO_STORABLE_MEMORY', /no_storable_memory/, '저장 가능한 기억 없음', '이번 응답에서 근거와 형식을 확인할 수 있는 기억 항목을 찾지 못했습니다.', '원응답과 항목별 진단은 보존됩니다.'],
       ['MODEL_DECLINED', /refus|content_filter|safety|prohibited/i, '모델 응답 거절', '모델이 요청 처리를 거절했습니다. 거절 응답은 기억으로 채택하지 않습니다.', '요청 내용과 모델 안내를 확인해 주세요.'],
       ['SOURCE_AUTO_PENDING', /source_edit.*(?:consent|auto_pending)|consent_required/i, '원문 수정 · 명시적 재분석 대기', '원문이 수정되었습니다. 구간 점검에서 대상을 선택해 직접 재분석하세요.', '직접 선택한 원문 구간과 저장 결과를 확인해 주세요.'],
@@ -45218,6 +44419,244 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return localRecallRank(candidates,[query]).slice(0,8).map((row,index)=>({id:row.id,text:row.publicText,pairIndex:row.turn,path:row.path,score:1/(61+index),stateAuthority:false,completeTurn:false}));
   };
 
+  // Codes and counts only: a validation message can quote the answer, so its text never enters this log.
+  const analysisFailureCause = failure => {
+    const validation = objectish(failure?.validation) ? failure.validation : {}, tally = new Map();
+    const add = value => { const code = compact(text(value || '').split(':')[0], 64); if (code && !/^(?:no_storable_memory|independent_record_salvage|original_validation)$/.test(code)) tally.set(code, (tally.get(code) || 0) + 1); };
+    const read = row => {
+      if (!objectish(row)) return;
+      add(row.kind === 'native_json_format' ? row.code : row.reason);
+      ensureArray(row.errors).forEach(add);
+      ensureArray(row.ambiguous).forEach(item => add(item?.reason));
+    };
+    read(validation);
+    read(ensureArray(validation.normalized).find(row => row?.reason === 'original_validation')?.detail);
+    ensureArray(validation.rejected).forEach(row => { if (objectish(row?.detail)) read(row.detail); else add(row?.reason); });
+    return [...tally].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([code, count]) => ({ code, count }));
+  };
+  const analysisFailureLogKey = scopeKey => HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX + scopeKey;
+  const readAnalysisFailureLog = async scopeKey => {
+    const raw = await readFailedAnalysisStored(analysisFailureLogKey(scopeKey));
+    const parsed = typeof raw === 'string' ? safeJsonParse(raw, null) : raw;
+    return parsed?.schema === 'hayaku.analysis_failure_log.v1' && parsed.scopeKey === scopeKey ? ensureArray(parsed.entries) : [];
+  };
+  const analysisFailureIdentity = row => row.failureKey || [row.turn, row.flow, row.diagnosisCode, row.sourceRevisionId || '', row.operationId || ''].join('|');
+  const analysisFailureResolutionKey = (scopeKey, row) => `${scopeKey}::${analysisFailureIdentity(row)}`;
+  const attachAnalysisFailureProofs = async (scope, before, next) => {
+    try {
+      const previous = new Set(ensureArray(before.records).map(record => `${record.recordId}:${record.hash}`));
+      const additions = ensureArray(next.records).filter(record => !previous.has(`${record.recordId}:${record.hash}`)
+        && ['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource));
+      if (!additions.length) return next;
+      const failures = (await readAnalysisFailureLog(scope.key)).filter(row => !row.resolution && row.failureKey && row.sourceRevisionId);
+      if (!failures.length) return next;
+      const turns = new Set(failures.map(row => Number(row.turn))), prefixes = new Map();
+      const proofs = [...ensureArray(next.analysisFailureProofs)];
+      for (const record of additions) {
+        const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
+        if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
+        if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
+        const prefix = prefixes.get(turn);
+        for (const row of failures) if (Number(row.turn) === turn && row.sourceRevisionId === prefix) {
+          proofs.push({ failureKey: row.failureKey, failureAt: Number(row.at), failureCount: Number(row.count || 1),
+            sourceRevisionId: prefix, recordId: record.recordId, packetHash: record.hash });
+        }
+      }
+      // A failure observed before this new record's commit is an ordering proof, not a time guess.
+      return { ...next, analysisFailureProofs: proofs.slice(-200) };
+    } catch (error) {
+      pushOperationLog('analysis:failure_proof_unavailable', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
+      return next;
+    }
+  };
+  const appendAnalysisFailureLog = summary => enqueueFailedAnalysisMutation(async () => {
+    const entries = await readAnalysisFailureLog(summary.scopeKey);
+    const same = entries.find(row => !row.resolution && row.turn === summary.turn && row.flow === summary.flow && row.diagnosisCode === summary.diagnosisCode
+      && row.sourceRevisionId === summary.sourceRevisionId && row.operationId === summary.operationId);
+    if (same) summary.failureKey = same.failureKey;
+    if (same) Object.assign(same, summary, { count: Number(same.count || 1) + 1 }); else entries.push({ ...summary, count: 1 });
+    entries.sort((a, b) => Number(a.at || 0) - Number(b.at || 0));
+    return await writeFailedAnalysisJsonExact(analysisFailureLogKey(summary.scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey: summary.scopeKey, entries: entries.slice(-40) }, 'analysis_failure_log_write_failed');
+  });
+  // Only a verified, durable adoption of this source revision closes its failed work.
+  // Keep the failure history and link it to the actual records, independently of turn coverage.
+  const persistAnalysisFailureResolutions = async (scopeKey, entries, force = false) => {
+    const pending = [...Memory.analysisFailurePendingResolutions].filter(([, row]) => row.scopeKey === scopeKey && (force || row.nextRetryAt <= now()));
+    if (!pending.length) return;
+    const applied = [];
+    for (const [key, item] of pending) {
+      const row = entries.find(entry => analysisFailureIdentity(entry) === item.failureKey && entry.sourceRevisionId === item.resolution.sourceRevisionId);
+      if (!row || row.resolution) { Memory.analysisFailurePendingResolutions.delete(key); continue; }
+      row.resolution = item.resolution;
+      applied.push([key, item]);
+    }
+    if (!applied.length) return;
+    try {
+      const write = await writeFailedAnalysisJsonExact(analysisFailureLogKey(scopeKey), { schema: 'hayaku.analysis_failure_log.v1', scopeKey, entries }, 'analysis_failure_resolution_write_failed');
+      if (!write.durable) throw new Error(write.reason);
+    } catch (error) {
+      for (const [, item] of applied) item.nextRetryAt = now() + 5000;
+      throw error;
+    }
+    for (const [key, item] of applied) {
+      Memory.analysisFailurePendingResolutions.delete(key);
+      for (const row of ensureArray(Memory.analysisFailureSummaries)) if (row.scopeKey === scopeKey && analysisFailureIdentity(row) === item.failureKey) row.resolution = item.resolution;
+    }
+  };
+  const resolveAnalysisFailuresForCapsule = async (scope, capsule, ledger) => {
+    try {
+      await enqueueFailedAnalysisMutation(async () => {
+        const entries = await readAnalysisFailureLog(scope.key);
+        const unresolved = entries.filter(row => !row.resolution && row.sourceRevisionId && Number(capsule.createdAt || 0) >= Number(row.at || 0));
+        if (!unresolved.length) return;
+        const turns = new Set(unresolved.map(row => row.turn));
+        const units = capsule.nativeColdStart === true ? new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit])) : null;
+        const resolutions = new Map();
+        for (const packet of ensureArray(capsule.packets)) {
+          const turn = Number(packet.targetPairIndex ?? packet.startTurn ?? 0);
+          if (turn < 1 || !turns.has(turn)) continue;
+          const prefix = hayakuSourcePrefixDigest(scope, turn);
+          if (!prefix) continue;
+          if (capsule.nativeColdStart === true) {
+            const unit = units.get(turn);
+            if (!unit || unit.chunkHash !== packet.chunkHash) continue;
+          } else if (packet.repairTarget?.sourcePrefixDigest !== prefix) continue;
+          const records = ensureArray(ledger.records).filter(record => record.hash === packet.packetHash && (
+            capsule.nativeColdStart === true
+              ? record.coldStartEpochId === capsule.epochId && record.recordState === 'historical'
+              : record.incrementalRecoveryRunId === capsule.recoveryId && Number(record.targetPairIndex) === turn && record.recordState === 'active'));
+          if (!records.length) continue;
+          for (const row of unresolved) if (!row.resolution && row.turn === turn && row.sourceRevisionId === prefix) {
+            const resolution = { sourceRevisionId: prefix, operationId: compact(capsule.runId || capsule.transferId || capsule.recoveryId || '', 128),
+              recordIds: records.map(record => record.recordId), packetHash: packet.packetHash, resolvedAt: now() };
+            row.resolution = resolution;
+            resolutions.set(analysisFailureIdentity(row), resolution);
+          }
+        }
+        if (!resolutions.size) return;
+        for (const [failureKey, resolution] of resolutions) {
+          Memory.analysisFailurePendingResolutions.set(`${scope.key}::${failureKey}`, { scopeKey: scope.key, failureKey, resolution, nextRetryAt: 0 });
+        }
+        while (Memory.analysisFailurePendingResolutions.size > 200) Memory.analysisFailurePendingResolutions.delete(Memory.analysisFailurePendingResolutions.keys().next().value);
+        // The buffer owns the resolution until the diagnostic write is readback-verified.
+        for (const row of entries) if (resolutions.has(analysisFailureIdentity(row))) delete row.resolution;
+        await persistAnalysisFailureResolutions(scope.key, entries, true);
+      });
+    } catch (error) {
+      pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey: scope.key, reason: compact(error?.message || error, 160) }, 'warn');
+    }
+  };
+  // Rebuild a lost retry buffer from durable native recovery records, never from coverage alone.
+  // Read the physical ledger: an older packet or an uncommitted in-memory candidate proves no retry.
+  const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => {
+    const hydrated = await hydrateCapturedLedgerRaw(storedRaw, scope);
+    const stored = typeof hydrated === 'string' ? safeJsonParse(hydrated, null) : hydrated;
+    if (!stored || stored.scopeKey !== scopeKey) throw new Error('hayaku_storage_ledger_unreadable');
+    const ledger = normalizeStorageLedger(stored, scope);
+    // Lifecycle reconciliation may bind an old candidate now. Only its already-persisted
+    // active adoption time can establish that a recovery happened after the failure.
+    const adoptedAtById = new Map(ensureArray(ledger.records).filter(record => record.recordState === 'active'
+      && record.captureSource === 'bridge_incremental_recovery' && Number(record.boundAt) > 0).map(record => [record.recordId, Number(record.boundAt)]));
+    const snapshot = authoritativeChatSnapshot(scope.chatMessages, scope);
+    const worldline = reconcileTurnWorldline(ledger.worldline, snapshot, scope);
+    const activeIds = new Set(bindStorageLedgerToSnapshot(ledger, snapshot, worldline).activeRecords.map(record => record.recordId));
+    const turns = new Set(unresolved.map(row => Number(row.turn)));
+    const prefixes = new Map(), units = new Map(collectNativeColdStartEvidence(scope).units.map(unit => [Number(unit.turn), unit]));
+    let reconstructed = false;
+    for (const record of ensureArray(ledger.records)) {
+      if (!['bridge_incremental_recovery', 'bridge_cold_start'].includes(record.captureSource)
+        || record.captureSource === 'bridge_incremental_recovery' && !turns.has(Number(record.targetPairIndex))) continue;
+      if (!record.hash || stableHash64(text(record.raw).trim()) !== record.hash) continue;
+      const packet = safeJsonParse(record.raw, null), meta = packet?.meta;
+      if (meta?.analysis_status !== 'native_otherax_verified' || meta.native_recovery_worker !== HAYAKU_NATIVE_RECOVERY_SCHEMA
+        || meta.generative_llm_calls !== true || validateBridgeAnalysisPacket(packet, record.captureSource).ok !== true) continue;
+      const range = storageRecordTurnRange(record), turn = Number(range.turnStart);
+      if (turn < 1 || Number(range.turnEnd) !== turn || !turns.has(turn)) continue;
+      if (!prefixes.has(turn)) prefixes.set(turn, hayakuSourcePrefixDigest(scope, turn));
+      const prefix = prefixes.get(turn);
+      if (!prefix) continue;
+      let operationId = '', adoptedAt = 0;
+      if (record.captureSource === 'bridge_incremental_recovery' && record.recordState === 'active' && activeIds.has(record.recordId)
+        && record.sourceRevisionBasis === prefix && meta.repair_target?.sourcePrefixDigest === prefix
+        && record.recoveryTargetEvidenceHash === meta.source_evidence_hash) {
+        operationId = record.incrementalRecoveryRunId;
+        adoptedAt = adoptedAtById.get(record.recordId) || 0;
+      } else if (record.captureSource === 'bridge_cold_start' && record.recordState === 'historical'
+        && record.coldStartEpochId === ledger.coldStart?.activeEpochId && record.inheritedFromScopeKey === `cold_start:${scopeKey}`
+        && meta.source_evidence_hash === units.get(turn)?.chunkHash) {
+        operationId = record.coldStartTransferId;
+        adoptedAt = Number(record.inheritedAt || 0);
+      }
+      if (!operationId || !adoptedAt) continue;
+      for (const row of unresolved) if (Number(row.turn) === turn && row.sourceRevisionId === prefix && (adoptedAt > Number(row.at)
+        || ledger.analysisFailureProofs.some(proof => proof.failureKey === row.failureKey && proof.failureAt === Number(row.at)
+          && proof.failureCount === Number(row.count || 1) && proof.sourceRevisionId === prefix
+          && proof.recordId === record.recordId && proof.packetHash === record.hash))) {
+        const key = analysisFailureResolutionKey(scopeKey, row), prior = Memory.analysisFailurePendingResolutions.get(key);
+        if (prior && Number(prior.resolution.resolvedAt) >= adoptedAt) continue;
+        const resolution = { sourceRevisionId: prefix, operationId, recordIds: [record.recordId], packetHash: record.hash, resolvedAt: adoptedAt };
+        Memory.analysisFailurePendingResolutions.set(key, { scopeKey, failureKey: analysisFailureIdentity(row), resolution, nextRetryAt: 0 });
+        reconstructed = true;
+      }
+    }
+    if (!reconstructed) return false;
+    while (Memory.analysisFailurePendingResolutions.size > 200) Memory.analysisFailurePendingResolutions.delete(Memory.analysisFailurePendingResolutions.keys().next().value);
+    try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
+    catch (error) { pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
+    return true;
+  };
+  const reconstructAnalysisFailureResolutions = async (scopeKey, rows) => {
+    const unresolved = rows.filter(row => !row.resolution && row.failureKey && row.sourceRevisionId && Number(row.turn) > 0
+      && Number(row.at) > 0 && !Memory.analysisFailurePendingResolutions.has(analysisFailureResolutionKey(scopeKey, row)));
+    if (!unresolved.length) return false;
+    const scope = await RisuCompat.currentChatScope();
+    if (!scope?.confident || scope.key !== scopeKey || scope.chatMessagesAvailable !== true) return false;
+    const outcome = await RisuCompat.getStorageItemOutcome(storageLedgerStorageKey(scope), HAYAKU_STORAGE_IO_TIMEOUT_MS);
+    if (outcome.state !== 'fulfilled' || !outcome.value) return false;
+    // Cache the completed check, never its memory result. Any physical ledger, transcript,
+    // or failed-attempt change requires fresh verification; concurrent viewers share the work.
+    const signature = [stableHash64(typeof outcome.value === 'string' ? outcome.value : JSON.stringify(outcome.value)),
+      stableHash64(JSON.stringify(scope.chatMessages)), stableHash64(JSON.stringify(unresolved))].join(':');
+    const checks = Memory.analysisFailureReconstructionChecks, prior = checks.get(scopeKey);
+    if (prior?.signature === signature) return await prior.promise;
+    const check = { signature, promise: reconstructAnalysisFailureResolutionsFromStored(scopeKey, unresolved, scope, outcome.value) };
+    checks.set(scopeKey, check);
+    while (checks.size > 16) checks.delete(checks.keys().next().value);
+    try { return await check.promise; }
+    catch (error) { if (checks.get(scopeKey) === check) checks.delete(scopeKey); throw error; }
+  };
+  const analysisFailureReport = async (scopeKey, { coveredTurns = [], coldRun = null } = {}) => {
+    if ([...Memory.analysisFailurePendingResolutions.values()].some(row => row.scopeKey === scopeKey && row.nextRetryAt <= now())) {
+      try { await enqueueFailedAnalysisMutation(async () => await persistAnalysisFailureResolutions(scopeKey, await readAnalysisFailureLog(scopeKey))); }
+      catch (error) { pushOperationLog('analysis:failure_resolution_not_saved', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
+    }
+    let rows = [], logAvailable = true;
+    try { rows = await readAnalysisFailureLog(scopeKey); } catch (_) { logAvailable = false; }
+    const identity = analysisFailureIdentity;
+    const known = new Set(rows.map(identity));
+    for (const row of analysisFailureSummaries(scopeKey)) if (!known.has(identity(row))) { known.add(identity(row)); rows.push({ ...row, count: 1 }); }
+    for (const chunk of ensureArray(coldRun?.chunks).filter(row => row?.status === 'failed')) {
+      const turn = Number(chunk.targetPairIndex ?? chunk.startTurn ?? 0);
+      if (rows.some(row => row.turn === turn && /cold_start/.test(row.flow || ''))) continue;
+      const explained = failedAnalysisReasonExplanation({ message: chunk.error }, { flow: 'cold_start' });
+      rows.push({ scopeKey, turn, at: Number(chunk.lastAttemptAt || coldRun.updatedAt || 0), flow: 'cold_start', code: '', reason: compact(chunk.error || '', 160), cause: [], physicalCalls: Number(chunk.attempts || 0), count: 1, diagnosisCode: explained.diagnosisCode, title: explained.title, detail: explained.detail, nextStep: explained.nextStep });
+    }
+    if (logAvailable) try {
+      if (await reconstructAnalysisFailureResolutions(scopeKey, rows)) {
+        const saved = new Map((await readAnalysisFailureLog(scopeKey)).map(row => [identity(row), row]));
+        rows = rows.map(row => saved.get(identity(row)) || row);
+      }
+    } catch (error) { pushOperationLog('analysis:failure_resolution_recheck_unavailable', { scopeKey, reason: compact(error?.message || error, 160) }, 'warn'); }
+    const covered = new Set(ensureArray(coveredTurns).map(Number));
+    return { logAvailable, rows: rows.map(row => {
+      const resolutionDurable = Boolean(row.sourceRevisionId && row.resolution?.sourceRevisionId === row.sourceRevisionId && ensureArray(row.resolution?.recordIds).length);
+      const pending = Memory.analysisFailurePendingResolutions.get(analysisFailureResolutionKey(scopeKey, row));
+      const resolutionPending = !resolutionDurable && Boolean(row.sourceRevisionId && pending?.resolution.sourceRevisionId === row.sourceRevisionId && ensureArray(pending?.resolution.recordIds).length);
+      const resolved = resolutionDurable || resolutionPending;
+      return { ...row, ...(resolutionPending ? { resolution: clone(pending.resolution, {}) } : {}), flowLabel: failedAnalysisFlowLabel(row.flow), resolved, resolutionDurable, resolutionPending,
+        keptOld: !resolved && row.flow === 'targeted_regeneration' && covered.has(Number(row.turn)) };
+    }).sort((a, b) => Number(b.at || 0) - Number(a.at || 0)) };
+  };
   const analysisFailureSummaries = scopeKey => clone(ensureArray(Memory.analysisFailureSummaries).filter(row => row.scopeKey === scopeKey), []);
   const saveFailedAnalysisArtifact = async input => {
     const scopeKey = compact(input?.scopeKey || input?.context?.scopeKey || '', 196);
@@ -45228,11 +44667,25 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const summary = {
       scopeKey, at: now(), turn: Math.max(0, Number(input?.chunk?.targetPairIndex || input?.chunk?.turn || input?.chunk?.startTurn || 0)),
       kind: compact(input?.kind || 'unknown', 48), flow: compact(input?.flow || input?.context?.failureFlow || '', 64),
-      code: compact(input?.failure?.code || 'HAYAKU_ANALYSIS_FAILED', 96), reason: compact(input?.failure?.message || 'analysis_failed', 240),
+      code: compact(input?.failure?.code || 'HAYAKU_ANALYSIS_FAILED', 96),
+      reason: input?.failure?.validation?.kind === 'native_json_format' ? compact(input.failure.validation.code || 'json_invalid', 96) : compact(input?.failure?.message || 'analysis_failed', 240),
+      cause: analysisFailureCause(input?.failure),
       physicalCalls: ensureArray(input?.attempts).length, partialSaved: partialMemory.saved === true && partialMemory.durable === true,
       outcome: partialMemory.saved === true && partialMemory.durable === true ? 'partial_memory_saved' : 'analysis_failed'
     };
+    summary.sourceRevisionId = compact(input?.context?.repairTarget?.sourcePrefixDigest || '', 96);
+    if (!summary.sourceRevisionId) try {
+      const scope = await RisuCompat.currentChatScope();
+      if (scope?.key === scopeKey) summary.sourceRevisionId = compact(partialMemorySource(scope, input?.chunk)?.prefixDigest || '', 96);
+    } catch (_) {}
+    summary.operationId = compact(input?.context?.runId || input?.context?.batchHash || input?.chunk?.chunkHash || '', 128);
+    const explained = failedAnalysisReasonExplanation({ code: summary.code, message: summary.cause.map(row => row.code).join(' ') || summary.reason }, { flow: summary.flow });
+    Object.assign(summary, { diagnosisCode: explained.diagnosisCode, title: explained.title, detail: explained.detail, nextStep: explained.nextStep });
+    summary.failureKey = stableHash64([scopeKey, summary.turn, summary.flow, summary.diagnosisCode, summary.sourceRevisionId, summary.operationId, summary.at].join('\u0001'));
     Memory.analysisFailureSummaries.push(summary);
+    // The summary holds no source text, so it is kept even when detailed diagnostics are off.
+    try { await appendAnalysisFailureLog(summary); }
+    catch (error) { pushOperationLog('analysis:failure_log_not_saved', { scopeKey, turn: summary.turn, reason: compact(error?.message || error, 160) }, 'warn'); }
     if (Memory.analysisFailureSummaries.length > 50) Memory.analysisFailureSummaries.splice(0, Memory.analysisFailureSummaries.length - 50);
     pushOperationLog('analysis:failure_summary', summary, summary.partialSaved ? 'info' : 'warn');
     pushOperationLog(partialMemory.saved ? 'partial_memory:saved' : 'partial_memory:not_saved', partialMemory, partialMemory.saved ? 'info' : 'warn');
@@ -46478,6 +45931,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
 
     if(!objectish(envelope)||envelope.schema!==HAYAKU_NATIVE_REPAIR_OUTPUT_SCHEMA||!objectish(envelope.packet)||!Array.isArray(envelope.grounding))return envelope;
+    // Measured on a real model: a brace closed early leaves entity..importance beside packet, or
+    // speaker_boundaries beside meta. Ignoring them would store an empty packet, so they are moved back
+    // unchanged; a name already present inside keeps the inside value and the outside one stays stray.
+    const outsideAxes=NATIVE_REPAIR_PACKET_TOP_LEVEL_KEYS.filter(key=>key!=='meta'&&objectish(envelope[key])&&!Object.prototype.hasOwnProperty.call(envelope.packet,key));
+    const metaOutside=objectish(envelope.packet.meta)?['speaker_boundaries','overpromotion_risks','turn_anchor','confidence','summary_memory','packet_type','packet_schema_rev','lineage'].filter(key=>Object.prototype.hasOwnProperty.call(envelope.packet,key)&&!Object.prototype.hasOwnProperty.call(envelope.packet.meta,key)):[];
+    if(outsideAxes.length||metaOutside.length){
+      const packet=clone(envelope.packet,{}),next={...envelope,packet};
+      for(const key of outsideAxes){packet[key]=clone(envelope[key],{});delete next[key];}
+      for(const key of metaOutside){packet.meta[key]=packet[key];delete packet[key];}
+      packet.meta.response_admission={schema:'hayaku.response_admission.v1',reason:'misplaced_fields_restored',restoredFields:[...outsideAxes,...metaOutside]};
+      envelope=next;
+    }
     const extra=Object.keys(envelope).filter(key=>!['schema','packet','grounding'].includes(key));
     // An axis the model left out entirely holds no records, exactly like an empty {} axis. Measured
     // (deepseek-v4.1-flash, Cold Start batch): a turn with no world facts came back without "world",
@@ -46619,8 +46084,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return spans;
   };
+  // Measured on a real model: {"schema":..,"packet":{..}},"grounding":[..]} closes the envelope one
+  // brace early, so everything after it falls outside. Only that one brace is removed, and the result
+  // must parse as exactly one object and then pass every normal check; nothing is admitted by this alone.
+  const nativeRejoinEarlyClosedEnvelope = content => {
+    const raw = stripNativeModelMetadata(content).trim().replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '');
+    let joined = raw;
+    for (let round = 0; round < 4; round++) {
+      const span = nativeTopLevelObjectSpans(joined)[0];
+      if (!span || joined.slice(0, span.start).trim()) return null;
+      const rest = joined.slice(span.end);
+      if (!/^\s*,\s*"/.test(rest)) return null;
+      joined = joined.slice(0, span.end - 1) + rest;
+      try { return parseNativeJsonObject(joined); } catch (_) { /* another early close may follow */ }
+    }
+    return null;
+  };
   const parseNativeResponseForAdmission = content => {
     try { return parseNativeJsonObject(content); } catch(original) {
+      const rejoined = nativeRejoinEarlyClosedEnvelope(content);
+      if (rejoined) {
+        pushOperationLog('analysis:response_brace_repaired', { rawChars: text(content).length }, 'info');
+        return markParserIssued(rejoined, { kind: 'native_repair_candidates', closedFragment: false, earlyCloseRepaired: true });
+      }
       // R3: a CLOSED root that the strict parser refused for an exact-duplicate key is the same
       // packaging defect as the unclosed case below, and gets the same single-answer repair. Only a
       // duplicate-key refusal enters here; every other strict failure keeps its own message and path.
@@ -47340,7 +46826,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // batches retry): one batch's worth of turns, or one per batch for long chats.
   const coldStartAutomaticRetryBudget = (targetTurns, batchTurnsInput) => {
     const turns = Math.max(0, Number(targetTurns || 0) || 0), batchTurns = normalizeColdStartBatchTurns(batchTurnsInput);
-    return batchTurns > 1 && turns > 1 ? Math.max(batchTurns, Math.ceil(turns / batchTurns)) : 0;
+    return turns > 0 ? Math.max(batchTurns, Math.ceil(turns / batchTurns)) : 0;
   };
   const normalizeColdStartBatchTurns = value => {
     const numeric = Math.max(1, Math.floor(Number(value || 1) || 1));
@@ -49158,13 +48644,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         batchResult.results.forEach(markVerified);
         batchResult.failures.forEach(markFailed);
         await persist();
-        // Automatic in-run retry: a turn the batch answer could not admit is re-analyzed ONCE on its
-        // own (a one-unit request, the same path as batch size 1), so a single rejected turn does not
+        // Automatic in-run retry: a turn the answer could not admit is re-analyzed ONCE on its
+        // own (a one-unit request, at any batch size), so a single rejected turn does not
         // leave the run partial until the user presses resume. Every retry answer passes the same
         // admission/grounding/coverage checks; a retry that also fails keeps the turn failed and the
         // run partial exactly as before. Transport/scope failures are not retried, the total is
         // bounded (coldStartAutomaticRetryBudget), and two consecutive failed retries stop the pass.
-        if (batchResult.failures.length && targetUnits.length > 1 && options.automaticRetry !== false) {
+        if (batchResult.failures.length && options.automaticRetry !== false) {
           for (const failure of batchResult.failures) {
             if (automaticRetry.attempted >= automaticRetry.budget || automaticRetry.consecutiveFailures >= 2) break;
             if (state.coldStartCancelRequested || Memory.unloaded || !ownsRuntime()) break;
@@ -49325,6 +48811,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         completed: failedChunksForReview.length===0,
         awaitingUserReview:false,
         completedChunks:packets.length,failedChunks:failedChunksForReview.length,checkpointsPreserved:true,
+        failedTurns:failedChunksForReview.map(entry=>({turn:Number(entry.targetPairIndex??entry.startTurn??0),reason:compact(entry.error||'',160)})),
         reason: failedChunksForReview.length?'cold_start_partial_adopted':adoption.reason || 'cold_start_completed',
         runId,
         scopeKey: scope.key,
@@ -50366,13 +49853,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
+      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
+      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
+      else if (action === 'select') {
+        // Server storage is read through the server, but only the owner decides what is relevant.
+        if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
+        const value = await options.boundary();
+        if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+      }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
         await assertRecord(record); result = { current: true, evidenceRevision: record.revision };
@@ -50380,6 +49878,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (receipts.has(id) || receipts.size >= 16) fail('LIB_READ_BUSY');
         if (!validScope(message.scope) || !budget(message.maxCorpusBytes) || typeof message.queryText !== 'string'
           || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
+        if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const p = message.proposal;
         if (p !== undefined && (!p || p.schema !== 'gradia.input-writer-proposal.v1' || p.purpose !== 'input_writer_proposal'
           || p.factAdopted !== false || typeof p.operationId !== 'string' || !p.operationId || p.operationId.length > 160
@@ -50489,6 +49988,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };
+  // Product rules: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
+  // What the response request looks like, so an owner searches as if it had received that request itself.
+  // Numbers only: a request must stay small, and the owner holds the chat itself.
+  const runHints = owner => options.runHints?.(owner) || {};
+  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
+  const select = async (owner, scope, queryText, signal) => {
+    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
+    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+  };
+  // Fire and forget: an owner that is not running simply does not hear it.
+  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -50505,18 +50018,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!budget(input.maxCorpusBytes) || !same(scope, scopes[requestedOwners[0]])) fail('LIB_READ_REQUEST_INVALID');
         // Availability is checked before expensive capture. Missing optional
         // owners do not impose the capture timeout or suppress healthy peers.
-        const available = await describe(scope, requestedOwners);
+        // A route that turned an owner off is not asked at all.
+        const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
+        const routeOwners = input.proposal ? null : connStatus?.draftReadOwners;
+        const allowedOwners = Array.isArray(routeOwners) ? requestedOwners.filter(owner => routeOwners.includes(owner)) : [];
+        // An empty route means the user turned these owners off, never "ask everyone".
+        if (Array.isArray(routeOwners) && !allowedOwners.length) fail('LIB_READ_OWNERS_DISABLED');
+        const available = await describe(scope, allowedOwners.length ? allowedOwners : requestedOwners);
         assertCurrentSync();
         const owners = Object.keys(available.scopes);
         for (const owner of owners) if (!same(available.scopes[owner], scopes[owner])) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         let corpusBytes = 0;
-        const items = [];
+        const items = [], unavailableOwners = { ...available.unavailable };
+        let firstRefusal = null;
         for (const owner of owners) {
           assertCurrentSync();
           const remaining = input.maxCorpusBytes - corpusBytes;
           if (remaining < 1) fail('LIB_READ_BUDGET_EXCEEDED');
-          const result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '',
-            maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          let result;
+          try {
+            result = await rpc(owner, 'capture', { scope: scopes[owner], queryText: input.queryText || '', ...runHints(owner),
+              maxCorpusBytes: remaining, ...(input.proposal ? { proposal: input.proposal } : {}) }, input.signal);
+          } catch (error) {
+            // One owner's refusal must not take its peers' memory with it. Cancellation and
+            // changed sources still stop the whole read.
+            if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
+            unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
+            firstRefusal ||= error;
+            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
+            continue;
+          }
           // Retain the receipt before validating the response or cancellation.
           if (typeof result?.receipt === 'string') captured.push({ ...result, owner });
           assertCurrentSync();
@@ -50531,13 +50062,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (actual !== result.corpusBytes || actual > remaining || items.length > 4096) fail('LIB_READ_BUDGET_EXCEEDED');
           corpusBytes += actual;
         }
+        if (!captured.length && firstRefusal) throw firstRefusal;
+        const answeringOwners = captured.map(value => value.owner);
         const evidenceRevision = fingerprint(JSON.stringify(captured.map(value => [value.owner, value.evidenceRevision])));
         const assertCurrent = async () => {
           try {
             assertCurrentSync();
-            const found = await describe(scope, owners);
+            const found = await describe(scope, answeringOwners);
             assertCurrentSync();
-            for (const owner of owners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
+            for (const owner of answeringOwners) if (!same(found.scopes[owner], scopes[owner])) fail('LIB_READ_OWNER_UNAVAILABLE');
             for (const value of captured) {
               const now = await rpc(value.owner, 'current', { receipt: value.receipt }, input.signal);
               if (now?.current !== true || now.evidenceRevision !== value.evidenceRevision) fail('LIB_READ_STALE');
@@ -50550,9 +50083,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])) },
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
+          ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
-            owners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
+            owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
           assertCurrent, assertCurrentSync, close });
       } catch (error) { close(); throw error; }
     }
@@ -50567,373 +50101,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, createClient, dispose });
+  return Object.freeze({ start, describe, select, notify, createClient, dispose });
 });
-const createGradiaPluginSnapshot = (function createPluginSnapshot(options) {
-  const { fingerprint, byteLength } = options.primitives;
-  const instance = 'plugin-local:' + Date.now() + ':' + Math.random();
-  const fail = code => { throw Object.assign(new Error(code), { code }); };
-  return async (request, authority = {}) => {
-    let reading = true, closed = false;
-    const cache = new Map();
-    let loadedBytes = 0;
-    const rawLimit = 7 * request.maxCorpusBytes + 2097152;
-    const get = async key => {
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      if (reading && cache.has(key)) return cache.get(key);
-      const value = await options.read(key);
-      authority.check?.();
-      if (closed) fail('LIB_READ_STALE');
-      const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
-      loadedBytes += size;
-      if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-      const row = { value: value ?? null, exists: value != null, tombstone: false,
-        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
-      if (reading) cache.set(key, row);
-      return row;
-    };
-    const repository = { database: { exec() {} }, getMetadata: async (_space, key) => await get(key),
-      get: async (_space, key, limits) => {
-        const row = await get(key);
-        if (row.valueBytes > limits.maxValueBytes) fail('LIB_READ_BUDGET_EXCEEDED');
-        return row;
-      } };
-    const session = options.createReadSession({ getRepository: () => repository, dataInstanceId: instance,
-      epochs: () => ({}), canRead: () => !closed });
-    const snapshot = await session.capture({ scope: request.scope, maxCorpusBytes: request.maxCorpusBytes });
-    reading = false; cache.clear();
-    let currentTail = Promise.resolve();
-    return { items: snapshot.items,
-      async assertCurrent() {
-        const task = currentTail.then(async () => {
-          loadedBytes = 0;
-          if (closed) fail('LIB_READ_STALE');
-          return (await session.current(snapshot)).current === true;
-        });
-        currentTail = task.catch(() => {});
-        return await task;
-      },
-      close() { closed = true; cache.clear(); }
-    };
-  };
-});
-function createHayakuPluginReadSession(primitives) {
-'use strict';
-
-// Read only the HAYAKU producer's published ledger, selected packet bodies and
-// explicitly referenced immutable archives. Never enumerate or replay receipts.
-const crypto = { createHash: () => ({ update: value => ({ digest: () => primitives.fingerprint(value) }) }) };
-const Buffer = { byteLength: value => primitives.byteLength(value), from: value => Uint8Array.from(atob(value), c => c.charCodeAt(0)) };
-  const gunzip = async (compressed, options) => {
-    if (typeof DecompressionStream !== 'function') throw Error('LIB_READ_GZIP_UNAVAILABLE');
-    const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
-    const chunks = []; let size = 0;
-    try { while (true) { const next = await stream.read(); if (next.done) break;
-      size += next.value.byteLength;
-      if (size > options.maxOutputLength) throw Object.assign(Error('decode budget'), { code: 'ERR_BUFFER_TOO_LARGE' });
-      chunks.push(next.value);
-    } } finally { await stream.cancel().catch(() => {}); stream.releaseLock(); }
-    const bytes = new Uint8Array(size); let at = 0; for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return { toString: () => text };
-  };
-const PLUGIN_ID = 'serial_gradation_agents_for_rp';
-const CAPTURE_ROUTE = '/v1/hayaku/read-session/capture';
-const CURRENT_ROUTE = '/v1/hayaku/read-session/current';
-const MiB = 1024 ** 2;
-const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
-  maxRefs: 4096, currentRequestBytes: 4 * MiB });
-const DELTA_PREFIX = 'hayaku.v2.storage_reconciliation_journal.capture_delta::';
-const ARCHIVE_PREFIX = 'hayaku.v2.shared_archive.';
-const META_PREFIX = 'hayaku.v2.shared_archive_meta.';
-const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
-const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
-const hash = value => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-const bytes = value => Buffer.byteLength(JSON.stringify(value), 'utf8');
-const text = (value, max = 512) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\0\r\n]/.test(value);
-const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
-const int = value => Number.isSafeInteger(value) && value >= 0;
-function stableHash64(value) {
-  // Exact producer FNV-1a/64 over UTF-16 code units, including surrogate pairs.
-  let high = 0xcbf29ce4, low = 0x84222325;
-  for (let i = 0; i < value.length; i++) {
-    low = (low ^ value.charCodeAt(i)) >>> 0;
-    high = (Math.imul(high, 435) + (low << 8) + Math.floor(low * 435 / 0x100000000)) >>> 0;
-    low = Math.imul(low, 435) >>> 0;
-  }
-  return 'h64' + ((BigInt(high) << 32n) | BigInt(low)).toString(36);
-}
-function scopeOf(value) {
-  if (!object(value) || !['scopeKey', 'characterId', 'chatId'].every(key => text(value[key]))) fail('gradia_read_scope_invalid', 400);
-  const scope = { scopeKey: value.scopeKey, characterId: value.characterId, chatId: value.chatId };
-  if (scope.scopeKey !== 'chat_' + stableHash64(scope.characterId + '\n' + scope.chatId)) fail('gradia_read_scope_invalid', 400);
-  return scope;
-}
-const ledgerKeyFor = scope => 'hayaku.v2.ledger.' + scope.scopeKey;
-function corpusLimit(value) {
-  if (value === undefined) return LIMITS.defaultCorpusBytes;
-  if (!Number.isSafeInteger(value) || value < 1 || value > LIMITS.maxCorpusBytes) fail('gradia_read_corpus_limit_invalid', 400);
-  return value;
-}
-function decode(value) {
-  if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { fail('gradia_read_stored_json_invalid'); } }
-  if (!object(value)) fail('gradia_read_stored_object_invalid');
-  return value;
-}
-function deepFreeze(value) {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) { for (const child of Object.values(value)) deepFreeze(child); Object.freeze(value); }
-  return value;
-}
-async function metadataOf(repository, key) {
-  const value = await repository.getMetadata('plugin', key);
-  return { namespace: 'hayaku', space: 'plugin', key, exists: value.exists, tombstone: value.tombstone,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-function allowedKey(key, scope, index) {
-  if (!text(key, 1200)) return false;
-  if (index === 0) return key === ledgerKeyFor(scope);
-  return key.startsWith(DELTA_PREFIX + scope.scopeKey + '::')
-    || /^hayaku\.v2\.shared_archive(?:_meta)?\.[A-Za-z0-9_-]{1,128}$/.test(key);
-}
-function validMetadata(value, scope, index) {
-  if (!object(value) || value.namespace !== 'hayaku' || value.space !== 'plugin' || !allowedKey(value.key, scope, index)) fail('gradia_read_dependencies_invalid', 400);
-  if (index === 0 && value.exists === false) {
-    const absent = value.tombstone === false && value.revision === 0 && value.digest === ''
-      && value.updatedAt === 0 && value.valueBytes === 0;
-    const deleted = value.tombstone === true && Number.isSafeInteger(value.revision) && value.revision > 0
-      && /^[a-f0-9]{64}$/.test(value.digest || '') && Number.isSafeInteger(value.updatedAt) && value.updatedAt >= 0
-      && Number.isSafeInteger(value.valueBytes) && value.valueBytes >= 0;
-    if (!absent && !deleted) fail('gradia_read_dependencies_invalid', 400);
-    return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: false, tombstone: value.tombstone,
-      revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-  }
-  if (value.exists !== true || value.tombstone !== false || !int(value.revision) || value.revision < 1
-    || !/^[a-f0-9]{64}$/.test(value.digest || '') || !int(value.updatedAt) || !int(value.valueBytes)) fail('gradia_read_dependencies_invalid', 400);
-  return { namespace: 'hayaku', space: 'plugin', key: value.key, exists: true, tombstone: false,
-    revision: value.revision, digest: value.digest, updatedAt: value.updatedAt, valueBytes: value.valueBytes };
-}
-function slotId(record) {
-  const type = record.packetType || 'current_snapshot';
-  if (record.inheritedSessionHistory === true || record.memoryClass === 'historical') return record.permanentHistoryId
-    ? ['historical_permanent', record.permanentHistoryId, type].join('\x01')
-    : ['historical', record.coldStartEpochId || record.inheritedFromScopeKey || 'session', number(record.historicalOrdinal), type].join('\x01');
-  if (record.incrementalRecoveryId) return ['incremental_recovery', record.ownerTurnNodeId || record.ownerNodeId || `pair:${Math.max(1, number(record.targetPairIndex) || 1)}`, record.incrementalRecoveryId, type].join('\x01');
-  if (record.ownerTurnNodeId || record.ownerNodeId) return ['node', record.ownerTurnNodeId || record.ownerNodeId, type].join('\x01');
-  if (record.requestNonce) return ['pending', record.requestNonce, type].join('\x01');
-  return ['pair', Math.max(1, number(record.targetPairIndex) || 1), record.userHash || record.userMessageIdHash || '', type].join('\x01');
-}
-const archiveIdFor = record => record.permanentHistoryId || record.archiveCanonicalId
-  || stableHash64([record.inheritedFromScopeKey || '', slotId(record), record.hash || '', record.packetType || ''].join('\x01'));
-function selectedRecords(ledger) {
-  const records = ledger.records, heads = ledger.slotHeads || [], tombstones = ledger.tombstones || [];
-  if (!Array.isArray(records) || !Array.isArray(heads) || !Array.isArray(tombstones)) fail('gradia_read_ledger_schema_invalid');
-  if (records.length > LIMITS.maxRefs || heads.length > LIMITS.maxRefs || tombstones.length > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-  if (records.some(record => !object(record) || !text(record.recordId, 196) || !text(record.hash, 96))) fail('gradia_read_memory_identity_mismatch');
-  const byId = new Map(records.map(record => [record.recordId, record])), byHash = new Map(records.map(record => [record.hash, record]));
-  if (byId.size !== records.length) fail('gradia_read_duplicate_memory_pointer');
-  const eligible = heads.length ? heads.filter(head => ['active', 'historical'].includes(head?.state))
-    .map(head => byId.get(head.selectedRecordId) || byHash.get(head.selectedVariantHash)).filter(Boolean)
-    : records.filter(record => ['active', 'historical'].includes(record.recordState));
-  const tombstonesBySlot = new Map(tombstones.filter(t => object(t) && t.active !== false && !number(t.restoredAt)).map(t => [t.slotId, t]));
-  return [...new Map(eligible.filter(record => {
-    if (record.permanentSessionHistory === true || record.deletionProtected === true || record.historicalProtection === 'permanent_session_history') return true;
-    const tombstone = tombstonesBySlot.get(slotId(record));
-    return !tombstone || (Boolean(tombstone.recordId || tombstone.variantHash) && tombstone.recordId !== record.recordId && tombstone.variantHash !== record.hash);
-  }).map(record => [record.recordId, record])).values()];
-}
-function archivePointer(value) {
-  if (!object(value) || value.schema !== 'hayaku.shared_archive_ref.v1' || !text(value.archiveId, 128)
-    || !/^[A-Za-z0-9_-]+$/.test(value.archiveId) || value.storageKey !== ARCHIVE_PREFIX + value.archiveId
-    || value.metaKey !== META_PREFIX + value.archiveId || !int(value.recordCount) || !int(value.deltaCount)
-    || !int(value.generation) || value.generation < 1 || !int(value.depth) || value.depth < 1 || value.depth > 256
-    || !text(value.digest, 96)) fail('gradia_read_archive_pointer_invalid');
-  return value;
-}
-// A composed reader can only tighten this owner's existing raw-read ceiling.
-function rawLimitOf(value, maxCorpusBytes) {
-  const maximum = 7 * maxCorpusBytes + 2 * LIMITS.totalMetadataBytes;
-  if (value === undefined) return maximum;
-  if (!Number.isSafeInteger(value) || value < 0 || value > maximum) fail('gradia_read_storage_limit_invalid', 400);
-  return value;
-}
-function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
-  const identity = scope => ({ scope: { ...scope }, dataInstanceId, resetEpoch: Number(epochs().hayaku || 0) });
-  async function readUnit(body) {
-    if (!canRead()) fail('gradia_read_maintenance', 503);
-    const repository = getRepository(), epoch = Number(epochs().hayaku || 0);
-    repository.database.exec('BEGIN');
-    try {
-      const result = await body(repository);
-      if (!canRead() || Number(epochs().hayaku || 0) !== epoch) fail('gradia_read_maintenance', 503);
-      return deepFreeze(result);
-    } finally { repository.database.exec('ROLLBACK'); }
-  }
-  function capture(body) {
-    const scope = scopeOf(body?.scope), maxCorpusBytes = corpusLimit(body?.maxCorpusBytes);
-    const rawLimit = rawLimitOf(body?.maxRawBytes, maxCorpusBytes);
-    return readUnit(async repository => {
-      const readIdentity = identity(scope), dependencies = [], cache = new Map();
-      const rootKey = ledgerKeyFor(scope);
-      const rootMetadata = metadataOf(repository, rootKey);
-      if (!rootMetadata.exists || rootMetadata.tombstone) {
-        const rootDeps = [rootMetadata];
-        return { schema: 'memory-suite.hayaku-read-session.v1', readOnly: true, complete: true, scope, items: [], dependencies: rootDeps,
-          evidenceRevision: hash(rootDeps), corpusBytes: 0, maxCorpusBytes, maxRawBytes: rawLimit, metadataBytes: 0, rawBytes: rootMetadata.valueBytes || 0, dataInstanceId, resetEpoch: readIdentity.resetEpoch, readIdentity };
-      }
-      let rawBytes = 0, decodedBytes = 0, metadataBytes = 0, corpusBytes = 0, recordCount = 0, packetRefs = 0;
-      const chargedReceipts = new Set();
-      // Inline packets live inside the ledger itself. Its body limit must be a
-      // corpus limit plus metadata, rather than treating the corpus as metadata.
-      const chargeMetadata = (value, perItem = false) => {
-        const size = bytes(value); metadataBytes += size;
-        if ((perItem && size > LIMITS.itemMetadataBytes) || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
-      };
-      const read = async key => {
-        if (cache.has(key)) return cache.get(key);
-        if (dependencies.length > LIMITS.maxRefs || !allowedKey(key, scope, dependencies.length)) fail('gradia_read_memory_pointer_invalid');
-        const metadata = await metadataOf(repository, key);
-        if (!metadata.exists || metadata.tombstone) fail('gradia_read_dependency_unavailable');
-        if (!int(metadata.valueBytes) || metadata.valueBytes > rawLimit - rawBytes - decodedBytes) fail('gradia_read_storage_budget_exceeded', 413);
-        let row;
-        try { row = await repository.get('plugin', key, { maxValueBytes: rawLimit - rawBytes - decodedBytes }); }
-        catch (error) { fail(error?.statusCode === 413 ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_dependency_decode_failed', error?.statusCode === 413 ? 413 : 409); }
-        if (!row?.exists || row.tombstone || row.revision !== metadata.revision || row.digest !== metadata.digest) fail('gradia_read_dependency_changed');
-        if (bytes(row.value) !== metadata.valueBytes || hash(row.value) !== metadata.digest) fail('gradia_read_dependency_digest_mismatch');
-        rawBytes += metadata.valueBytes;
-        const result = { parsed: decode(row.value), raw: typeof row.value === 'string' ? row.value : JSON.stringify(row.value), metadata };
-        dependencies.push(metadata); cache.set(key, result); return result;
-      };
-      const head = await read(ledgerKeyFor(scope)), ledger = head.parsed;
-      if (!['hayaku_storage_ledger_v1', 'hayaku_storage_ledger_v2'].includes(ledger.version) || ledger.scopeKey !== scope.scopeKey
-        || ledger.identity?.schema !== 'hayaku.scope_identity.v1' || !['scopeKey', 'characterId', 'chatId'].every(key => ledger.identity[key] === scope[key])) fail('gradia_read_manifest_scope_mismatch');
-      chargeMetadata({ ...ledger, records: [] });
-      const validateRecords = records => {
-        if (!Array.isArray(records) || (recordCount += records.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-        for (const record of records) { if (!object(record)) fail('gradia_read_memory_schema_invalid'); chargeMetadata({ ...record, raw: '' }, true); }
-      };
-      validateRecords(ledger.records);
-      const packetOf = async (record, ownerScope, archive = false) => {
-        let raw = record.raw;
-        if (!archive && record.captureRawRef != null) {
-          const ref = record.captureRawRef;
-          if (!object(ref) || ref.schema !== 'hayaku.capture_raw_delta.v1' || ref.scopeKey !== ownerScope
-            || !text(ref.binding, 512) || !text(ref.digest, 96) || !text(ref.rawDigest, 96) || !int(ref.packetIndex)
-            || ref.storageKey !== DELTA_PREFIX + ownerScope + '::' + ref.binding + '::' + ref.digest) fail('gradia_read_memory_pointer_invalid');
-          const receipt = await read(ref.storageKey);
-          if (stableHash64(receipt.raw) !== ref.digest || receipt.parsed.schema !== ref.schema
-            || receipt.parsed.scopeKey !== ownerScope || receipt.parsed.binding !== ref.binding) fail('gradia_read_memory_identity_mismatch');
-          if (!chargedReceipts.has(ref.storageKey)) {
-            const packets = receipt.parsed.packets;
-            if (!Array.isArray(packets) || (packetRefs += packets.length) > LIMITS.maxRefs) fail('gradia_read_reference_limit_exceeded', 413);
-            chargeMetadata({ ...receipt.parsed, packets: [] });
-            for (const packet of packets) {
-              if (!object(packet) || typeof packet.raw !== 'string') fail('gradia_read_memory_schema_invalid');
-              chargeMetadata({ ...packet, raw: '' }, true);
-            }
-            chargedReceipts.add(ref.storageKey);
-          }
-          const packet = receipt.parsed.packets?.[ref.packetIndex];
-          if (typeof packet?.raw !== 'string' || stableHash64(packet.raw) !== ref.rawDigest
-            || (raw !== undefined && raw !== packet.raw)) fail('gradia_read_memory_identity_mismatch');
-          raw = packet.raw;
-        }
-        if (typeof raw !== 'string' || !raw || raw.trim().length > 96000 || stableHash64(raw.trim()) !== record.hash) fail('gradia_read_memory_identity_mismatch');
-        const parsed = decode(raw);
-        if (parsed.meta?.schema !== 'hayaku_packet_v1' || Number(parsed.meta.packet_schema_rev) !== 2
-          || !['meta', 'entity', 'world', 'narrative', 'planner', 'importance'].every(key => object(parsed[key]))) fail('gradia_read_memory_schema_invalid');
-        const packetType = parsed.meta.packet_type || parsed.meta.packetType || 'current_snapshot';
-        if (record.packetType && record.packetType !== packetType) fail('gradia_read_memory_identity_mismatch');
-        return raw;
-      };
-      const rows = new Map();
-      const append = async (record, key, inherited, ownerScope) => {
-        if (!text(record.recordId, 196) || !text(record.hash, 96)) fail('gradia_read_memory_identity_mismatch');
-        const content = await packetOf(record, ownerScope, key.startsWith(ARCHIVE_PREFIX)), id = archiveIdFor(record), previous = rows.get(id);
-        if (!previous || number(record.capturedAt || record.inheritedAt) >= number(previous.record.capturedAt || previous.record.inheritedAt)) {
-          corpusBytes += Buffer.byteLength(content, 'utf8') - (previous ? Buffer.byteLength(previous.content, 'utf8') : 0);
-          rows.set(id, {record,key,inherited,ownerScope,content});
-        }
-      };
-      if (ledger.archiveRef != null && ledger.archiveRef !== false && ledger.archiveRef !== '') {
-        const first = archivePointer(ledger.archiveRef), seen = new Set(), layers = [];
-        let cursor = first;
-        while (cursor) {
-          if (seen.has(cursor.storageKey) || layers.length >= 256) fail('gradia_read_archive_cycle');
-          seen.add(cursor.storageKey);
-          const stored = await read(cursor.storageKey), meta = (await read(cursor.metaKey)).parsed;
-          let archive = stored.parsed;
-          if (archive.schema === 'hayaku.shared_archive.gzip.v1') {
-            if (archive.encoding !== 'gzip+base64' || archive.archiveSchema !== 'hayaku.shared_archive.v1' || archive.archiveId !== cursor.archiveId
-              || !int(archive.rawChars) || typeof archive.data !== 'string' || !int(archive.compressedBytes)
-              || archive.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(archive.data)) fail('gradia_read_archive_schema_invalid');
-            const remaining = rawLimit - rawBytes - decodedBytes;
-            if (archive.rawChars > remaining || remaining < 1) fail('gradia_read_storage_budget_exceeded', 413);
-            const compressed = Buffer.from(archive.data, 'base64');
-            if (compressed.length !== archive.compressedBytes) fail('gradia_read_archive_identity_mismatch');
-            let raw;
-            try { raw = (await gunzip(compressed, { maxOutputLength: remaining })).toString('utf8'); }
-            catch (error) { fail(error?.code === 'ERR_BUFFER_TOO_LARGE' ? 'gradia_read_storage_budget_exceeded' : 'gradia_read_archive_decode_failed', error?.code === 'ERR_BUFFER_TOO_LARGE' ? 413 : 409); }
-            if (raw.length !== archive.rawChars || stableHash64(raw) !== archive.rawHash) fail('gradia_read_archive_identity_mismatch');
-            decodedBytes += Buffer.byteLength(raw, 'utf8');
-            archive = decode(raw);
-          }
-          if (archive.schema !== 'hayaku.shared_archive.v1' || meta.schema !== 'hayaku.shared_archive_meta.v1'
-            || archive.archiveId !== cursor.archiveId || meta.archiveId !== cursor.archiveId
-            || ['generation','depth','deltaCount','recordCount','digest'].some(key => archive[key] !== cursor[key] || meta[key] !== cursor[key])) fail('gradia_read_archive_identity_mismatch');
-          validateRecords(archive.records); chargeMetadata({ ...archive, records: [] }); chargeMetadata(meta);
-          const ids = archive.records.map(archiveIdFor).sort(), digest = stableHash64(ids.join('\x01'));
-          if (new Set(ids).size !== ids.length || ids.length !== cursor.deltaCount || archive.deltaDigest !== digest
-            || meta.deltaDigest !== digest || !same([...meta.deltaMemberIds || []].sort(), ids)) fail('gradia_read_archive_identity_mismatch');
-          const parents = [cursor.parentRef, archive.parentRef || archive.parentArchiveRef, meta.parentRef || meta.parentArchiveRef].filter(Boolean).map(archivePointer);
-          if (parents.some(parent => !['archiveId','storageKey','metaKey','generation','depth','deltaCount','recordCount','digest'].every(key => parent[key] === parents[0][key]))) fail('gradia_read_archive_parent_mismatch');
-          const parent = parents[0] || null;
-          if (parent ? parent.depth + 1 !== cursor.depth || parent.generation + 1 !== cursor.generation || parent.recordCount + cursor.deltaCount !== cursor.recordCount
-            : cursor.depth !== 1 || cursor.generation !== 1 || cursor.recordCount !== cursor.deltaCount) fail('gradia_read_archive_parent_mismatch');
-          layers.push({archive,key:cursor.storageKey}); cursor = parent;
-        }
-        const archiveIds = new Set();
-        for (const {archive,key} of layers.reverse()) for (const record of archive.records) {
-          const id = archiveIdFor(record); if (archiveIds.has(id)) fail('gradia_read_duplicate_memory_pointer'); archiveIds.add(id);
-          await append(record,key,true,record.inheritedFromScopeKey || scope.scopeKey);
-        }
-        if (archiveIds.size !== first.recordCount || stableHash64([...archiveIds].sort().join('\x01')) !== first.digest) fail('gradia_read_archive_identity_mismatch');
-      }
-      for (const record of selectedRecords(ledger)) await append(record,head.metadata.key,record.inheritedSessionHistory === true || record.memoryClass === 'historical',scope.scopeKey);
-      if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
-      const items = [...rows.values()].map(({record,key,inherited,ownerScope,content}) => {
-        const start = number(record.recoveryTurnStart || record.targetPairIndex), end = number(record.recoveryTurnEnd || record.targetPairIndex);
-        return { id: record.recordId, key, content, source: {namespace:'hayaku',space:'plugin',scopeKey:ownerScope,
-          memoryId:record.recordId,revision:cache.get(key).metadata.revision,sourceDigest:record.hash,
-          turnRange:{start,end},sessionEpoch:0,inherited,archiveShared:key.startsWith(ARCHIVE_PREFIX)} };
-      });
-      return {schema:'memory-suite.hayaku-read-session.v1',readOnly:true,complete:true,scope,items,dependencies,
-        evidenceRevision:hash(dependencies),corpusBytes,maxCorpusBytes,maxRawBytes:rawLimit,metadataBytes,rawBytes:rawBytes+decodedBytes,dataInstanceId,resetEpoch:readIdentity.resetEpoch,readIdentity};
-    });
-  }
-  function current(body) {
-    const scope = scopeOf(body?.scope);
-    if (!object(body.readIdentity) || !same(scopeOf(body.readIdentity.scope), scope)) fail('gradia_read_scope_changed', 400);
-    if (!Array.isArray(body.dependencies) || body.dependencies.length < 1 || body.dependencies.length > LIMITS.maxRefs + 1) fail('gradia_read_dependencies_invalid', 400);
-    const dependencies = body.dependencies.map((value,index) => validMetadata(value,scope,index));
-    if (new Set(dependencies.map(value=>value.key)).size !== dependencies.length || body.evidenceRevision !== hash(dependencies)) fail('gradia_read_evidence_revision_invalid',400);
-    return readUnit(async repository => {
-      const expected = identity(scope);
-      const matches = body.dataInstanceId === dataInstanceId && body.resetEpoch === expected.resetEpoch
-        && body.readIdentity.dataInstanceId === dataInstanceId && body.readIdentity.resetEpoch === expected.resetEpoch;
-      let allCurrent = true; for (const value of dependencies) if (!same(value, await metadataOf(repository,value.key))) allCurrent = false;
-      return {schema:'memory-suite.hayaku-read-session-current.v1',current:matches && allCurrent,
-        scope,evidenceRevision:body.evidenceRevision,dataInstanceId,resetEpoch:expected.resetEpoch};
-    });
-  }
-  return Object.freeze({capture,current});
-}
-return createReadSession;
-}
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
+  // The request this hook would have received: the turns the response request carries, then the input.
+  const hayakuRecallRequestFor = async (queryText, recentChatTurns = 0) => {
+    const native = await RisuCompat.currentChatScope();
+    const rows = ensureArray(native?.chatMessages).map(row => ({ role: /^(?:user|human)$/i.test(text(row?.role)) ? 'user' : 'assistant', content: text(row?.data ?? row?.content ?? ''), chatId: row?.chatId }));
+    const stored = rows.at(-1)?.role === 'user' && text(rows.at(-1).content).trim() === text(queryText).trim() ? rows.slice(0, -1) : rows;
+    let start = stored.length;
+    for (let shown = 0; start > 0 && shown < recentChatTurns; start -= 1) if (stored[start - 1].role === 'assistant') shown += 1;
+    return [...stored.slice(start), { role: 'user', content: queryText }];
+  };
   const getGradiaPluginReadOwner = () => {
     if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
     const primitives = createGradiaReadPrimitives();
@@ -50946,8 +50126,25 @@ return createReadSession;
           const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
-      capture: createGradiaPluginSnapshot({ primitives, createReadSession: createHayakuPluginReadSession(primitives),
-        read: key => MemorySuiteStorageBridge.ownerLegacyRead('plugin', key) })
+      onAttach: noteHayakuGradiaAttach, onDelivery: noteHayakuGradiaDelivery,
+      select: async (queryText, check, hints = {}) => {
+        const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0 });
+        check?.();
+        return { content: text(selected?.recallPrompt || '').trim(), finalDelivery: Memory.settings?.gradiaFinalDelivery !== false };
+      },
+      capture: async (request, authority) => {
+        // The snapshot only proves currentness; what GRADIA reads is HAYAKU's own selection.
+        // What was selected is held as selected, as in this plugin's own hook.
+        const read = { assertCurrent: async () => true, close() {} };
+        try {
+          const selected = await handleBeforeRequest(await hayakuRecallRequestFor(request.queryText || '', request.recentChatTurns), 'model', { recallOnly: true, requestChars: request.requestChars || 0 });
+          authority?.check?.();
+          const content = text(selected?.recallPrompt || '').trim();
+          return { ...read, engine: { source: 'owner_selection' },
+            items: content ? [{ id: 'hayaku.recall:' + primitives.fingerprint(content), key: 'hayaku.recall', content,
+              source: { namespace: 'hayaku', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery: Memory.settings?.gradiaFinalDelivery !== false } }] : [] };
+        } catch (error) { read.close?.(); throw error; }
+      }
     });
     return gradiaPluginReadOwner;
   };
@@ -55872,6 +55069,79 @@ function mountMemorySuiteReanalysisReview(container,config) {
     return {allowed:true,owner:'hayaku',scopeKey:inventory.scopeKey,topology:inventory.topology,units,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{}),extraCalls,model:true,
       warning:`Other Ax 기본 ${units.length}회(턴당 1회), 구조 복구 추가 허용은 턴당 최대 ${extraCalls}회로 전체 최대 ${units.length*(1+extraCalls)}회입니다. Provider 비용이 발생할 수 있습니다. 검증과 저장 확인에 성공하면 선택한 턴의 기존 기억을 새 기억으로 자동 교체합니다. 채팅 원문은 변경하지 않습니다.`};
   };
+  // Rebuild every turn from the source without deleting anything first. Each turn (or a packet that
+  // spans several) is analyzed and swapped on its own, so a failed turn keeps its old memory and the
+  // turns already replaced stay replaced. Turns with no record at all are filled afterwards.
+  let hayakuRebuildRun=null;
+  const hayakuRebuildGroups=inventory=>{
+    const groups=[],seen=new Set();
+    for(const range of [...inventory.ranges].sort((a,b)=>Number(a.start)-Number(b.start))){
+      if(seen.has(range.key))continue;
+      const keys=expandHayakuReanalysisKeys(inventory,[range.key]);
+      keys.forEach(key=>seen.add(key));groups.push([...keys]);
+    }
+    return groups;
+  };
+  const previewHayakuRebuild=async()=>{
+    const inventory=await listHayakuReanalysisRanges(),status=await nativeRecoveryStatus({includeDebts:true,refreshDebts:true});
+    const missingTurns=ensureArray(status?.debt?.coverage?.missingTurns).map(Number);
+    const calls=hayakuRebuildGroups(inventory).length+missingTurns.length;
+    return {scopeKey:inventory.scopeKey,topology:inventory.topology,storedTurns:inventory.ranges.length,missingTurns,calls,
+      running:!!hayakuRebuildRun,warning:`Other Ax 기본 ${calls}회, 실패한 턴은 1회 재시도하므로 최대 ${calls*2}회입니다. Provider 비용이 발생할 수 있습니다.`};
+  };
+  const runHayakuRebuild=(options={})=>{
+    if(hayakuRebuildRun)return Promise.resolve({ok:false,reason:'rebuild_already_running'});
+    const run={cancelled:false,promise:null};hayakuRebuildRun=run;
+    run.promise=(async()=>{
+      const preview=await previewHayakuRebuild(),replaced=[],filled=[],failed=[];
+      if(options.scopeKey&&options.scopeKey!==preview.scopeKey)return {ok:false,reason:'selected_source_changed_refresh_required'};
+      if(options.topology&&options.topology!==preview.topology)return {ok:false,reason:'selected_source_changed_refresh_required'};
+      let retried=0,done=0,stopped='',consecutive=0;
+      const total=preview.calls,report=()=>{try{options.onProgress?.({done,total,replaced:replaced.length,filled:filled.length,failed:failed.length});}catch(_){}};
+      const permanent=reason=>/SOURCE_EDIT|SOURCE_REANALYSIS|selected_source|owner_disabled|maintenance_in_progress/.test(reason)||nativeRepairTransportFailure(new Error(reason));
+      const attempt=async turns=>{
+        for(let wait=0;;wait++){
+          const inventory=await listHayakuReanalysisRanges();
+          const ranges=inventory.ranges.filter(range=>turns.includes(range.key));
+          if(ranges.length!==turns.length)return {ok:false,reason:'SOURCE_EDIT_SELECTION_INVALID'};
+          const result=await runHayakuSelectedReanalysis({...inventory,ranges});
+          if(result.reason!=='reanalysis_busy'||wait>=20)return result;
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
+      };
+      report();
+      for(const turns of hayakuRebuildGroups(await listHayakuReanalysisRanges())){
+        if(run.cancelled){stopped='cancelled_by_user';break;}
+        let result=await attempt(turns);
+        if(result.ok!==true&&!permanent(text(result.reason))&&!run.cancelled){retried+=1;result=await attempt(turns);}
+        done+=1;
+        if(result.ok===true){replaced.push(...turns.map(Number));consecutive=0;}
+        else{
+          failed.push(...turns.map(turn=>({turn:Number(turn),reason:compact(result.reason||'',160),kept:true})));consecutive+=1;
+          if(permanent(text(result.reason))){stopped=compact(result.reason||'',160);report();break;}
+          if(consecutive>=3){stopped='three_turns_failed_in_a_row';report();break;}
+        }
+        report();
+      }
+      for(const turn of stopped?[]:preview.missingTurns){
+        if(run.cancelled){stopped='cancelled_by_user';break;}
+        const repair=()=>runNativeMissingTurnBatch({scopeKey:preview.scopeKey,targetTurns:[turn]});
+        let result=await repair();
+        if(result.ok!==true&&!nativeRepairTransportFailure(new Error(text(result.reason||result.error)))&&!run.cancelled){retried+=1;result=await repair();}
+        done+=1;
+        if(result.ok===true){filled.push(turn);consecutive=0;}
+        else{failed.push({turn,reason:compact(result.reason||result.error||'',160),kept:false});consecutive+=1;if(consecutive>=3){stopped='three_turns_failed_in_a_row';report();break;}}
+        report();
+      }
+      const result={ok:!failed.length&&!stopped,completed:!failed.length&&!stopped,reason:stopped||(failed.length?'rebuild_some_turns_failed':'rebuild_completed'),scopeKey:preview.scopeKey,
+        total,replaced,filled,failed,retried,notAttempted:Math.max(0,total-done),stopped};
+      pushOperationLog('reanalysis:rebuild_finished',{...result,failed:failed.length},result.ok?'success':'warn');
+      return result;
+    })().catch(error=>({ok:false,completed:false,reason:compact(error?.message||error,160),replaced:[],filled:[],failed:[]}))
+      .finally(()=>{if(hayakuRebuildRun===run)hayakuRebuildRun=null;});
+    return run.promise;
+  };
+  const cancelHayakuRebuild=()=>{if(!hayakuRebuildRun)return false;hayakuRebuildRun.cancelled=true;return true;};
   const runHayakuSelectedReanalysis=selection=>{
     if (hayakuMaintenanceOperation) return Promise.resolve({ok: false, reason: 'maintenance_in_progress'});
     if(hayakuReanalysisRunning?.selection===selection)return hayakuReanalysisRunning.promise;
@@ -57009,12 +56279,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     result.privacy.analysisResponses='included_for_debugging';
     return debugSanitizeForExport(result);
   };
-  const buildHayakuOperationDebugExportCached = () => {
-    const scope = Memory.ledgerViewer.scope;
-    const ledger = Memory.ledgerViewer.ledger;
-    if (!objectish(scope) || !objectish(ledger)) return null;
-    return composeHayakuOperationDebugExport(scope, ledger);
-  };
   const viewerClipboardEnvironment = () => {
     let doc = null;
     let href = '';
@@ -57276,63 +56540,29 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
   };
   // Render only changing text on the existing header indicator; never block chat.
-  const openHayakuStatusLog = () => {
+  const viewerSetStatusView = view => {
     const root = Memory.ledgerViewer.root;
     if (!root) return;
-    const doc = root.ownerDocument || document;
-    let overlay = root.querySelector?.('#hayakuStatusLogOverlay');
-    if (!overlay) {
-      overlay = doc.createElement('div');
-      overlay.className = 'overlay';
-      overlay.id = 'hayakuStatusLogOverlay';
-      overlay.setAttribute('aria-hidden', 'true');
-      overlay.hidden = true;
-      overlay.innerHTML = `<div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="hayakuStatusLogTitle" style="max-height:88vh;display:flex;flex-direction:column;gap:14px;padding:22px 26px">
-        <div class="split" style="flex-wrap:wrap;align-items:flex-start;margin-bottom:2px">
-          <div>
-            <div class="eyebrow" style="color:var(--accent,#3b82f6)">System Diagnostics</div>
-            <h2 id="hayakuStatusLogTitle" style="margin:2px 0 0;font:800 20px/1.3 var(--font-display)">HAYAKU 상태 및 진단 로그</h2>
-          </div>
-          <div class="cluster" style="gap:8px">
-            <button class="btn btn--sm" type="button" data-status-log-copy><span>로그 복사</span></button>
-            <button class="btn btn--sm btn--icon" type="button" data-status-log-close aria-label="닫기">✕</button>
-          </div>
-        </div>
-        <div class="banner banner--ok" data-status-log-banner style="margin:0">
-          <div>
-            <strong data-status-log-summary></strong>
-            <p class="muted" style="margin:2px 0 0;font-size:12px" data-status-log-subsummary></p>
-          </div>
-        </div>
-        <div data-status-log-list style="flex:1;min-height:0;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px"></div>
-        <div class="dialog__actions" style="margin-top:6px">
-          <button class="btn btn--primary" type="button" data-status-log-close>확인 및 닫기</button>
-        </div>
-      </div>`;
-      root.appendChild(overlay);
-      const closeOverlay = () => {
-        overlay.classList.remove('is-open');
-        overlay.hidden = true;
-        overlay.setAttribute('aria-hidden', 'true');
-      };
-      overlay.querySelectorAll('[data-status-log-close]').forEach(btn => { btn.onclick = closeOverlay; });
-      overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
-      overlay.addEventListener('keydown', e => { if (e.key === 'Escape') closeOverlay(); });
-      const copyBtn = overlay.querySelector('[data-status-log-copy]');
-      if (copyBtn) {
-        copyBtn.onclick = async () => {
-          const text = overlay.dataset.fullLogText || '';
-          try {
-            await navigator.clipboard.writeText(text);
-            const orig = copyBtn.innerHTML;
-            copyBtn.innerHTML = '<span>복사 완료!</span>';
-            setTimeout(() => { copyBtn.innerHTML = orig; }, 1800);
-          } catch (_) {
-            prompt('상태 로그 전체:', text);
-          }
-        };
-      }
+    root.querySelectorAll?.('[data-status-view]').forEach(button => { const on = button.dataset.statusView === view; button.classList.toggle('is-active', on); button.setAttribute('aria-selected', String(on)); button.tabIndex = on ? 0 : -1; });
+    root.querySelectorAll?.('[data-status-panel]').forEach(panel => { panel.hidden = panel.dataset.statusPanel !== view; });
+  };
+  const viewerOpenStatusPage = (view = 'status') => {
+    viewerSetTab('logs');
+    viewerSetStatusView(view);
+    void viewerRenderStatusPanel();
+  };
+  const viewerRenderStatusPanel = async () => {
+    const root = Memory.ledgerViewer.root;
+    if (!root) return;
+    let failureReport = { logAvailable: true, rows: [] };
+    const failureInput = Memory.ledgerViewer.failureLogInput, failureScope = text(Memory.ledgerViewer.scope?.key || failureInput?.scopeKey || '');
+    if (failureScope) {
+      try { failureReport = await analysisFailureReport(failureScope, { coveredTurns: failureInput?.coverage?.coveredTurns ?? (Memory.ledgerViewer.recoveryCoverage || Memory.ledgerViewer.continuitySnapshot?.coverage)?.coveredTurns, coldRun: failureInput?.coldRun }); }
+      catch (_) { failureReport = { logAvailable: false, rows: [] }; }
     }
+    if (root !== Memory.ledgerViewer.root) return;
+    const overlay = root.querySelector?.('#hayakuViewerPanelLogs');
+    if (!overlay) return;
 
     const scope = Memory.ledgerViewer.scope;
     const ledger = Memory.ledgerViewer.ledger;
@@ -57370,6 +56600,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         summary.textContent = '정상 작동 · 모든 연속성 제어 및 원장 정상';
         subsummary.textContent = '현재 활성 채팅의 패킷 원장과 세계선이 안정적으로 연결되어 있습니다.';
       }
+      const openFailures = failureReport.rows.filter(row => !row.resolved || row.keptOld).length;
+      if (openFailures) subsummary.textContent += ` 아직 해결되지 않은 분석 실패 ${openFailures}건은 아래에 있습니다.`;
     }
 
     const entries = [];
@@ -57415,6 +56647,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       detail: `상태: ${probe.inFlight ? '테스트 실행 중' : probe.available ? '호출 가능' : '호출 미검증 (보조 복구용)'}\n안내: Provider와 키는 RisuAI 소유이며, 비용 동의 후 테스트를 통해 복구에 활용됩니다.`
     });
 
+    // Why a turn failed: codes and counts only, never the source or the answer.
+    if (!failureReport.logAvailable) entries.push({ owner: '분석 실패', badge: 'badge--warn', badgeText: '확인 불가', title: '저장된 실패 기록을 읽지 못했습니다', detail: '이번 실행에서 생긴 실패만 다음에 표시될 수 있습니다.' });
+    for (const row of failureReport.rows) {
+      const cause = ensureArray(row.cause).map(item => item.code + (Number(item.count) > 1 ? ' ×' + Number(item.count) : '')).join(', ');
+      entries.push({
+        owner: '분석 실패', failureTurn: Number(row.turn || 0),
+        badge: row.resolutionPending || row.keptOld ? 'badge--warn' : row.resolved ? 'badge--ok' : 'badge--danger',
+        badgeText: row.resolutionPending ? '복구됨 · 기록 저장 대기' : row.keptOld ? '기존 기억 유지' : row.resolved ? '이후 복구됨' : '미복구',
+        title: `T${Number(row.turn || 0)} · ${row.title || '분석 확인 필요'}`,
+        detail: [`작업: ${row.flowLabel}${Number(row.count) > 1 ? ` · ${Number(row.count)}회` : ''}${row.at ? ` · ${viewerFormatDate(row.at)}` : ''}`, row.detail || '',
+          row.resolutionPending ? '기억 복구는 완료됐지만 진단 기록을 아직 저장하지 못했습니다. 저장소가 응답하면 다시 저장합니다.' : '',
+          row.resolved && !row.keptOld ? '' : row.nextStep ? `다음: ${row.nextStep}` : '', `원인 코드: ${cause || row.reason || row.code || '-'}`].filter(Boolean).join('\n')
+      });
+    }
+
     const recentLogs = ensureArray(Memory.activityLog).slice(-10).reverse();
     const errorLogs = recentLogs.filter(log => log?.level === 'error' || log?.level === 'warn');
     if (errorLogs.length) {
@@ -57432,7 +56679,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const listNode = overlay.querySelector('[data-status-log-list]');
     if (listNode) {
       listNode.innerHTML = entries.map(row => {
-        return `<div class="card card--tight" style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
+        return `<div class="card card--tight"${row.failureTurn != null ? ` data-failure-row="${row.failureTurn}"` : ''} style="border-left:3px solid var(--accent,#3b82f6);background:var(--surface)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">
             <div style="display:flex;align-items:center;gap:6px">
               <span class="badge ${row.badge}">${viewerEscapeHtml(row.badgeText)}</span>
@@ -57446,10 +56693,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }
 
     overlay.dataset.fullLogText = `[HAYAKU 상태 및 진단 로그]\n생성 시각: ${new Date().toLocaleString()}\n진단 상태: ${health.label}\n\n` + entries.map(row => `[${row.owner} / ${row.badgeText}] ${row.title}\n${row.detail}`).join('\n\n');
-    overlay.hidden = false;
-    overlay.setAttribute('aria-hidden', 'false');
-    overlay.classList.add('is-open');
-    overlay.querySelector('[data-status-log-close]')?.focus();
   };
 
   const viewerRenderHeaderHealth = () => {
@@ -57474,18 +56717,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
     host.setAttribute('aria-haspopup','dialog');
     if (!host.dataset.statusLogBound) {
       host.dataset.statusLogBound = '1';
-      host.addEventListener('click', () => openHayakuStatusLog());
+      host.addEventListener('click', () => viewerOpenStatusPage());
       host.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          openHayakuStatusLog();
+          viewerOpenStatusPage();
         }
       });
     }
     const textNode=host.querySelector?.('[data-health-text]');
     if(textNode) textNode.textContent=ledgerUnavailable ? '원장 확인 필요' : visibleJob
       ? (error?'복구 실패':terminal?'복구 완료':'복구 진행 중')
-      : text(health.label||'정상 작동');
+      : text(health.label||'정상 작동') + (Number(Memory.ledgerViewer.openFailureCount||0) ? ' · 실패 ' + Number(Memory.ledgerViewer.openFailureCount) : '');
     host.title=ledgerUnavailable ? '원장을 읽지 못했습니다 · 누르면 상태 및 진단 로그 보기' : visibleJob
       ? `${viewerNativeJobKindLabel(visibleJob.kind)} · ${viewerNativeJobStateLabel(visibleJob.state)}`
       : text(health.label||'정상 작동') + ' · 누르면 상태 및 진단 로그 보기';
@@ -57841,7 +57084,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'viewer.list.filter', _e); } catch (__) {} }
   };
 
-  const viewerApplyAllListFilters = () => { for (const spec of VIEWER_LIST_FILTERS) viewerApplyListFilter(spec); };
 
   // Every viewer list is redrawn by replacing innerHTML, which resets the container's
   // scroll offset and closes every <details>. Snapshot both, run the render, put them back.
@@ -58071,71 +57313,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     });
     return true;
   };
-  const setNativeAutoRepairSetting = async enabled => {
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_background_auto_repair', enabled ? 'true' : 'false');
-    await loadSettings(true);
-    if (Memory.settings.backgroundAutoRepair !== enabled) throw new Error('background_auto_repair_setting_readback_mismatch');
-    if (!enabled && Memory.nativeRecovery.repairTimer != null) {
-      try { clearTimeout(Memory.nativeRecovery.repairTimer); } catch (_) {}
-      Memory.nativeRecovery.repairTimer = null;
-      Memory.nativeRecovery.repairTimerDueAt = 0;
-    }
-    return enabled;
-  };
-  const setAfterRequestAutoRepairSetting = async enabled => {
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_after_request_auto_repair', enabled ? 'true' : 'false');
-    await loadSettings(true);
-    if (Memory.settings.afterRequestAutoRepair !== enabled) throw new Error('after_request_auto_repair_setting_readback_mismatch');
-    return enabled;
-  };
-  const setColdStartBatchTurnsSetting = async value => {
-    const batchTurns = normalizeColdStartBatchTurns(value);
-    const api = apiCandidates().find(candidate => typeof candidate?.setArgument === 'function' || typeof candidate?.setArg === 'function') || null;
-    const setter = typeof api?.setArgument === 'function' ? api.setArgument.bind(api) : (typeof api?.setArg === 'function' ? api.setArg.bind(api) : null);
-    if (!setter) throw new Error('risuai_setArgument_unavailable');
-    await setter('hayaku_cold_start_batch_turns', String(batchTurns));
-    await loadSettings(true);
-    if (Number(Memory.settings.coldStartBatchTurns) !== batchTurns) throw new Error('cold_start_batch_turns_setting_readback_mismatch');
-    return batchTurns;
-  };
-  const viewerSetArgumentValue = async (argument, value) => {
-    let lastError = null;
-    for (const api of apiCandidates()) {
-      const setter = typeof api?.setArgument === 'function'
-        ? api.setArgument
-        : (typeof api?.setArg === 'function' ? api.setArg : null);
-      if (!setter) continue;
-      try {
-        const result = await setter.call(api, argument, value);
-        if (result === false) throw new Error('argument_write_rejected');
-        return true;
-      } catch (error) { lastError = error; }
-    }
-    const error = new Error(`risuai_setArgument_unavailable:${compact(lastError?.message || lastError || argument, 180)}`);
-    error.code = 'RISUAI_SET_ARGUMENT_UNAVAILABLE';
-    throw error;
-  };
+  const viewerSetArgumentValue = async (argument, value) => await writeHayakuSavedSetting(argument, value);
   const viewerReadRawArgumentValue = async argument => {
-    let lastError = null;
-    for (const api of apiCandidates()) {
-      const getter = typeof api?.getArgument === 'function'
-        ? api.getArgument
-        : (typeof api?.getArg === 'function' ? api.getArg : null);
-      if (!getter) continue;
-      try {
-        const value = await getter.call(api, argument);
-        return value == null ? '' : String(value);
-      } catch (error) { lastError = error; }
-    }
-    const error = new Error(`risuai_getArgument_unavailable:${compact(lastError?.message || lastError || argument, 180)}`);
-    error.code = 'RISUAI_GET_ARGUMENT_UNAVAILABLE';
-    throw error;
+    const saved = await readHayakuSavedSettings();
+    return Object.prototype.hasOwnProperty.call(saved, argument) ? String(saved[argument]) : '';
   };
   // Literal settings page from the finalized mockup; product data/actions are attached through ARG hooks below.
   const HAYAKU_MOCKUP_SETTINGS_PAGE = String.raw`<section class="page" id="hayakuViewerPanelSettings" data-hayaku-viewer-panel="settings" data-page="settings" role="tabpanel" aria-labelledby="hayakuViewerTabSettings">
@@ -58146,7 +57327,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
         <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
-        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc">누락된 기억 패킷을 복구할 수 있게 합니다. 자동 복구 실행은 아래 afterRequest 설정을 따릅니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">GRADIA 사용 시 최종 응답 모델에도 기억 전달</div><div class="setting__desc">끄면 HAYAKU 회상은 GRADIA 초안 단계에서만 쓰입니다. 패킷 작성 지시는 이 설정과 관계없이 항상 전달됩니다.</div><span class="argtag">hayaku_gradia_final_delivery</span></div><label class="switch"><input type="checkbox" id="st-gradia-final" checked><span class="switch__track"></span><span class="sr-only">GRADIA 사용 시 최종 응답 모델에도 기억 전달</span></label></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc">누락된 기억 패킷을 복구할 수 있게 합니다. 자동 복구 실행은 아래 afterRequest 설정을 따릅니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
     </div>
@@ -58165,6 +57346,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     { argument: 'hayaku_memory_language', type: 'enum', values: ['ko', 'en', 'ja', 'zh', 'source'] },
     { argument: 'hayaku_debug', type: 'boolean' },
     { argument: 'hayaku_packet_recovery', type: 'boolean' },
+    { argument: 'hayaku_gradia_final_delivery', type: 'boolean' },
     { argument: 'hayaku_after_request_auto_repair', type: 'boolean' },
     { argument: 'hayaku_background_auto_repair', type: 'boolean', retired: true },
     { argument: 'hayaku_recovery_extra_calls', type: 'enum', values:['0','1'] },
@@ -58270,6 +57452,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     hayaku_memory_language: normalizeMemoryLanguage(settings?.memoryLanguage || DEFAULT_SETTINGS.memoryLanguage),
     hayaku_debug: settings?.debug === true ? 'true' : 'false',
     hayaku_packet_recovery: settings?.packetRecovery === false ? 'false' : 'true',
+    hayaku_gradia_final_delivery: settings?.gradiaFinalDelivery === false ? 'false' : 'true',
     hayaku_after_request_auto_repair: settings?.afterRequestAutoRepair === false ? 'false' : 'true',
     hayaku_background_auto_repair: settings?.backgroundAutoRepair === false ? 'false' : 'true',
     hayaku_recovery_extra_calls: settings?.recoveryExtraCalls===1?'1':'0',
@@ -58513,7 +57696,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   // every control stays in the DOM, so save/readback/defaults still cover all settings.
   const HAYAKU_SETTINGS_ESSENTIAL_ARGUMENTS = Object.freeze([
     'hayaku_enabled', 'hayaku_mode', 'hayaku_memory_language', 'hayaku_packet_output_slot',
-    'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_after_request_auto_repair',
+    'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_gradia_final_delivery', 'hayaku_after_request_auto_repair',
     'hayaku_cold_start_batch_turns'
   ]);
   const HAYAKU_SETTINGS_VALUE_LABELS = Object.freeze({
@@ -58707,7 +57890,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const ticket = viewerSettingsLifetime();
     Memory.ledgerViewer.settingsLoadSerial = Number(Memory.ledgerViewer.settingsLoadSerial || 0) + 1;
     Memory.ledgerViewer.settingsApplying = true;
-    viewerUpdateSettingsDraftState(); viewerSetSettingsMessage('설정을 저장하고 전체 argument readback을 확인합니다.');
+    viewerUpdateSettingsDraftState(); viewerSetSettingsMessage('설정을 저장하고 저장값을 다시 읽어 확인합니다.');
     try {
       const draft = viewerCollectSettingsDraft();
       const result = await viewerApplySettingsTransaction(draft);
@@ -58724,7 +57907,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (viewerSettingsLifetimeCurrent(ticket)) { try { await viewerRenderNativeRecovery(); } catch (_) {} }
       return result;
     } catch (error) {
-      // Transaction rolls the ARG store back. Never discard the user's unsaved draft.
+      // Transaction rolls the saved settings back. Never discard the user's unsaved draft.
       if (viewerSettingsLifetimeCurrent(ticket)) viewerSetSettingsMessage(error?.rollbackVerified === true
         ? `적용 실패 · 이전 저장값 복원 확인. 편집값은 유지했습니다. ${compact(error?.message || error, 260)}`
         : `설정 적용 실패 · rollback 상태를 확인하세요. 편집값은 유지했습니다. ${compact(error?.message || error, 260)}`, true);
@@ -58984,7 +58167,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       setText('#hayakuNativeColdStartState', coldInFlight ? '실행 중' : compact(coldRun?.state || '대기', 48));
       setText('#hayakuColdStartSavedValue', `${normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1)}턴`);
       setText('#hayakuNativeColdStartProgress', coldRun
-        ? `${verifiedChunks} / ${ensureArray(coldRun.chunks).length} 완료${failedChunks ? ` · 실패 ${failedChunks}` : ''}`
+        ? `${verifiedChunks} / ${ensureArray(coldRun.chunks).length} 완료${failedChunks ? ` · 실패 ${failedChunks}` : ''}${Number(Memory.nativeRecovery.lastColdStartResult?.automaticRetry?.attempted || 0) ? ` · 자동 재시도 ${Memory.nativeRecovery.lastColdStartResult.automaticRetry.attempted}회(복구 ${Memory.nativeRecovery.lastColdStartResult.automaticRetry.recovered})` : ''}`
         : '-');
       const toggle = root.querySelector?.('#hayakuNativeAutoRepairToggle');
       if (toggle) {
@@ -59003,6 +58186,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         batchSelect.value = String(normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns));
         batchSelect.disabled = repairInFlight || coldInFlight;
       }
+      await viewerRefreshFailureCount(root,status.scopeKey||debt.scopeKey||renderScopeKey,coverage,coldRun).catch(error=>pushOperationLog('viewer:failure_log_render_failed',{reason:compact(error?.message||error,160)},'warn'));
       viewerRenderMissingTurnSelection(coverage,status.scopeKey||debt.scopeKey||renderScopeKey,repairInFlight||coldInFlight||status.available!==true||!status.runLLMModelAvailable,status.available===true?'':text(status.reason||'현재 채팅 범위 미확인'));
       if (jsonNode) jsonNode.textContent = viewerPrettyJson(status);
       viewerRenderAuxiliaryProbe();
@@ -59058,7 +58242,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     note.className = 'note';
     note.className = 'note note--warn';
     note.textContent = hasExistingPackets
-      ? '기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가됩니다. Provider 비용이 발생할 수 있습니다.'
+      ? '기존 활성 패킷과 검증된 체크포인트는 유지되며 Cold Start 결과는 과거 기록으로 추가되어 같은 턴의 기록이 둘이 됩니다. 기존 기억을 다시 만들려면 직접 원문 재분석의 전체 턴 재구성을 쓰세요. Provider 비용이 발생할 수 있습니다.'
       : '검증된 체크포인트는 재사용되고, 실패한 청크만 재시도할 수 있습니다. Provider 비용이 발생할 수 있습니다.';
     const actions = doc.createElement('div');
     actions.className = 'dialog__actions';
@@ -59088,6 +58272,43 @@ function mountMemorySuiteReanalysisReview(container,config) {
     host.append(overlay);
     teardownDialog = viewerBindConfirmDialogKeys(overlay, dialog, () => finish(false));
   });
+  const viewerRefreshFailureCount = async (root, scopeKey, coverage, coldRun) => {
+    if (!scopeKey) return;
+    const report = await analysisFailureReport(scopeKey, { coveredTurns: coverage?.coveredTurns, coldRun });
+    if (root !== Memory.ledgerViewer.root) return;
+    Memory.ledgerViewer.failureLogInput = { scopeKey, coverage, coldRun };
+    Memory.ledgerViewer.openFailureCount = report.rows.filter(row => !row.resolved || row.keptOld).length;
+    viewerRenderHeaderHealth();
+  };
+  const viewerRunHayakuRebuild = async () => {
+    const root = Memory.ledgerViewer.root, status = root?.querySelector?.('#hayakuRebuildStatus');
+    const run = root?.querySelector?.('#runHayakuRebuild'), cancel = root?.querySelector?.('#cancelHayakuRebuild');
+    const say = message => { if (status) status.textContent = message; };
+    if (!run || run.disabled) return { ok: false, reason: 'rebuild_unavailable' };
+    run.disabled = true;
+    try {
+      const preview = await previewHayakuRebuild();
+      if (!preview.calls) { say('재구성할 턴이 없습니다.'); return { ok: false, reason: 'rebuild_nothing_to_do' }; }
+      const confirmed = await viewerConfirmSourceReanalysis({ warning: preview.warning, dialog: {
+        title: '이 채팅의 모든 턴을 다시 만들까요?',
+        summary: '기존 기억을 먼저 지우지 않습니다. 턴마다 분석에 성공하면 교체하고, 실패한 턴은 기존 기억을 그대로 둡니다. 교체된 이전 기록은 삭제 표시로 남습니다.',
+        rows: [['기록이 있는 턴', preview.storedTurns + '턴 · 다시 분석해 교체'], ['기록이 없는 턴', preview.missingTurns.length + '턴 · 새로 채움'], ['예상 기본 호출', 'Other Ax ' + preview.calls + '회']],
+        apply: '전체 재구성 시작' } });
+      if (!confirmed) { say('재구성을 취소했습니다. 기존 기억을 유지합니다.'); return { ok: false, reason: 'cancelled_by_user' }; }
+      if (cancel) cancel.hidden = false;
+      say('재구성을 시작합니다.');
+      const result = await runHayakuRebuild({ scopeKey: preview.scopeKey, topology: preview.topology,
+        onProgress: row => say('진행 ' + row.done + ' / ' + row.total + '회 · 교체 ' + row.replaced + '턴 · 채움 ' + row.filled + '턴 · 실패 ' + row.failed + '턴') });
+      const failedTurns = ensureArray(result.failed).map(row => 'T' + row.turn).join(', ');
+      say((result.ok ? '재구성 완료' : result.stopped === 'cancelled_by_user' ? '재구성 중단' : result.stopped ? '재구성 중단 · ' + result.stopped : '재구성 일부 실패')
+        + ' · 교체 ' + ensureArray(result.replaced).length + '턴 · 채움 ' + ensureArray(result.filled).length + '턴'
+        + (failedTurns ? ' · 실패 ' + failedTurns + ' (이유는 상단 상태 버튼에서 확인)' : '')
+        + (result.notAttempted ? ' · 미실행 ' + result.notAttempted + '회' : ''));
+      await refreshLedgerViewer(); await viewerRenderNativeRecovery();
+      return result;
+    } catch (error) { say('재구성 실패 · ' + compact(error?.message || error, 180)); return { ok: false, reason: text(error?.message || error) };
+    } finally { if (cancel) cancel.hidden = true; run.disabled = false; }
+  };
   const viewerRenderNativeRepairOutcome = () => {
     const viewer=Memory.ledgerViewer, node=viewer.root?.querySelector?.('#hayakuNativeRepairOutcome');
     if(!node)return;
@@ -59530,16 +58751,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const dialog=doc.createElement('section');dialog.className='dialog';
     dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');
     dialog.setAttribute('aria-labelledby','hayakuSourceReanalysisConfirmTitle');
-    const title=doc.createElement('h2');title.id='hayakuSourceReanalysisConfirmTitle';title.textContent='선택한 턴의 기억을 재분석하고 교체할까요?';
-    const summary=doc.createElement('p');summary.textContent='실행 시점의 현재 채팅 원문을 분석합니다. 여러 턴은 모두 검증된 뒤 한 번에 교체합니다.';
+    const title=doc.createElement('h2');title.id='hayakuSourceReanalysisConfirmTitle';title.textContent=ticket.dialog?.title||'선택한 턴의 기억을 재분석하고 교체할까요?';
+    const summary=doc.createElement('p');summary.textContent=ticket.dialog?.summary||'실행 시점의 현재 채팅 원문을 분석합니다. 여러 턴은 모두 검증된 뒤 한 번에 교체합니다.';
     const cost=doc.createElement('dl');cost.className='cost-table';
-    for(const [label,value] of [['선택한 턴',ticket.units.map(unit=>unit.label).join(', ')],['대상 수',`${ticket.units.length}턴`],['예상 기본 호출',`Other Ax ${ticket.units.length}회 (턴당 1회)`]]){
+    for(const [label,value] of ticket.dialog?.rows||[['선택한 턴',ticket.units.map(unit=>unit.label).join(', ')],['대상 수',`${ticket.units.length}턴`],['예상 기본 호출',`Other Ax ${ticket.units.length}회 (턴당 1회)`]]){
       const dt=doc.createElement('dt'),dd=doc.createElement('dd');dt.textContent=label;dd.textContent=value;cost.append(dt,dd);
     }
     const note=doc.createElement('div');note.className='note note--warn';note.textContent=ticket.warning;
     const actions=doc.createElement('div');actions.className='dialog__actions';
     const cancel=doc.createElement('button');cancel.type='button';cancel.className='btn';cancel.dataset.reanalysisConfirm='cancel';cancel.textContent='취소';
-    const confirm=doc.createElement('button');confirm.type='button';confirm.className='btn btn--primary';confirm.dataset.reanalysisConfirm='apply';confirm.textContent='재분석 후 기억 교체';
+    const confirm=doc.createElement('button');confirm.type='button';confirm.className='btn btn--primary';confirm.dataset.reanalysisConfirm='apply';confirm.textContent=ticket.dialog?.apply||'재분석 후 기억 교체';
     let settled=false,teardownDialog=()=>{};
     const dismiss=()=>finish(false);
     const finish=value=>{
@@ -59824,10 +59045,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         :`<p>${viewerEscapeHtml(full)}</p>`;
       return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`;
     };
-    if(recallBody) recallBody.innerHTML=recallRows.length
+    const gradiaLabels={selected:'GRADIA에 전달 대기',final_delivered:'GRADIA에 전달됨 · 최종 응답에도 전달',draft_only:'GRADIA에 전달됨 · 최종 응답에는 미전달',failed:'GRADIA 전달 실패',empty:'GRADIA에 전달된 기억 없음'};
+    const gradiaNote=recall?.gradia?`<p class="hint" data-gradia-delivery="${viewerEscapeHtml(recall.gradia.status)}">${viewerEscapeHtml(gradiaLabels[recall.gradia.status]||recall.gradia.status)}${recall.gradia.code?' · '+viewerEscapeHtml(recall.gradia.code):''}</p>`:'';
+    if(recallBody) recallBody.innerHTML=gradiaNote+(recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
         +(recallRows.length>3?`<details class="rec-all"><summary>나머지 ${(recallRows.length-3).toLocaleString()}개 모두 보기</summary><div class="rec-all__list">${recallRows.slice(3).map(recallRowHtml).join('')}</div></details>`:'')
-      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>';
+      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>');
     const activityBody=root.querySelector?.('#hayakuOverviewActivity');
     if(activityBody){
       const entries=operationLogSnapshot().slice(-3).reverse();
@@ -59909,6 +59132,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       viewerRenderOperationLog();
       viewerRenderDebugExportText();
       void viewerRenderNativeRecovery();
+      void viewerRenderStatusPanel();
     } else if (active === 'scopes') {
       const host=Memory.ledgerViewer.root?.querySelector('#hayakuScopeDataManagementPanel');
       if(host&&!host.querySelector('[data-scope-manager]'))void MemorySuiteStorageBridge.mountScopeManagementPanel(host).catch(error=>{host.textContent='스코프 목록 확인 실패: '+(error.code||error.message);});
@@ -61042,11 +60266,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       healthNode.setAttribute('role', 'button');
       healthNode.setAttribute('tabindex', '0');
       healthNode.setAttribute('aria-haspopup', 'dialog');
-      healthNode.addEventListener('click', () => openHayakuStatusLog());
+      healthNode.addEventListener('click', () => viewerOpenStatusPage());
       healthNode.addEventListener('keydown', event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
-          openHayakuStatusLog();
+          viewerOpenStatusPage();
         }
       });
     }
@@ -61091,6 +60315,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       finally { safeHealthBusy = false; }
     });
     root.querySelector?.('#runHayakuNativeRepair')?.addEventListener('click', () => viewerRunNativeRepair());
+    root.querySelector?.('#runHayakuRebuild')?.addEventListener('click', () => void viewerRunHayakuRebuild());
+    root.querySelector?.('#cancelHayakuRebuild')?.addEventListener('click', () => { if (cancelHayakuRebuild()) { const node = root.querySelector('#hayakuRebuildStatus'); if (node) node.textContent = '지금 분석 중인 턴까지 마치고 중단합니다.'; } });
     for (const button of root.querySelectorAll?.('[data-hayaku-auxiliary-test],#testHayakuAuxiliaryModel,#ax-test') || []) {
       button.addEventListener('click', event => { void viewerRunAuxiliaryProbe(event.currentTarget).catch(error => {
         viewerRecoveryMessage(`Other Ax 연결 테스트 오류 · ${compact(error?.message || error, 180)}`, true);
@@ -61103,7 +60329,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       void viewerRenderNativeRecovery();
     });
     root.querySelector?.('#hayakuNativeJobChip')?.addEventListener('click', event => {
-      if (!Memory.nativeRecovery.job) { viewerSetTab('logs'); return; }
+      if (!Memory.nativeRecovery.job) { viewerOpenStatusPage('log'); return; }
       Memory.ledgerViewer.jobDialogReturnFocus = event?.currentTarget || root.querySelector?.('#hayakuNativeJobChip') || null;
       Memory.ledgerViewer.jobMinimized = false;
       viewerRenderNativeJob();
@@ -61250,6 +60476,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
     root.querySelector?.('#resetHayakuSwallowedDiag')?.addEventListener('click', () => {
       try { globalThis.__librarianDiag?.reset?.(); } catch (_e) {}
       viewerRenderSwallowedDiag();
+    });
+    root.querySelectorAll?.('[data-status-view]').forEach(button => button.addEventListener('click', () => { viewerSetStatusView(button.dataset.statusView); if (button.dataset.statusView === 'status') void viewerRenderStatusPanel(); }));
+    root.querySelector?.('[data-status-log-copy]')?.addEventListener('click', async event => {
+      await viewerRenderStatusPanel();
+      const button = event.currentTarget || root.querySelector('[data-status-log-copy]'), body = root.querySelector('#hayakuViewerPanelLogs')?.dataset.fullLogText || '', label = button.textContent;
+      try { await navigator.clipboard.writeText(body); button.textContent = '복사 완료!'; setTimeout(() => { button.textContent = label; }, 1800); }
+      catch (_) { prompt('상태 로그 전체:', body); }
     });
     root.querySelector?.('#copyHayakuDebug')?.addEventListener('click', () => copyHayakuOperationDebugJson());
     root.querySelector?.('#exportHayakuDebug')?.addEventListener('click', () => downloadHayakuOperationDebugJson());
@@ -61477,8 +60710,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details></div></section>
-        <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div class="card" id="hayakuRebuildCard"><h2 class="card__title">전체 턴 재구성</h2><p class="card__desc">이 채팅의 모든 턴을 현재 원문으로 다시 분석합니다. 기존 기억을 먼저 지우지 않고, 턴마다 분석에 성공한 경우에만 교체합니다. 실패한 턴은 기존 기억이 남고, 이유는 상단 상태 버튼에서 볼 수 있습니다.</p><div class="cluster" style="margin-top:12px"><button id="runHayakuRebuild" class="btn btn--primary" type="button">전체 턴 재구성…</button><button id="cancelHayakuRebuild" class="btn" type="button" hidden>중단</button></div><p id="hayakuRebuildStatus" class="hint" role="status" aria-live="polite" style="margin-top:8px"></p></div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details></div></section>
+        <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한 · 실패한 턴은 1회 자동 재시도</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <section class="card" aria-labelledby="hayakuMaintenanceHeading"><h2 id="hayakuMaintenanceHeading" class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">로컬·서버 모드에서 완료된 턴의 패킷과 원장 결속을 검사합니다. 기존 패킷으로 결속을 복구하고, 기록이 없는 채팅은 콜드스타트, 사용 중 빠진 턴은 누락 복구로 연결합니다.</p><div class="cluster"><button id="hayakuMaintenanceRun" class="btn btn--primary" type="button">상태 점검 및 자동 복구</button><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button></div><p id="hayakuSafeHealthStatus" role="status">점검과 결속 복구는 모델 호출 없이 진행됩니다. 기억 생성이 필요하면 대상 턴과 호출 한도를 보여준 뒤 Other Ax 분석을 시작합니다. 사용자 제외 턴과 기존 기억은 보존합니다.</p><details class="fold"><summary>고급 도구 · 메시지 캐시</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthPreview" class="btn" type="button">캐시 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuDerivedCacheStatus" role="status">로컬 메시지 리비전 캐시 전용입니다. 원문·패킷·원장은 변경하지 않습니다.</p></div></details></section>
       </div></section>`;
@@ -61486,14 +60719,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const serverPage = `<section class="page" id="hayakuViewerPanelServer" data-hayaku-viewer-panel="server" data-page="server" role="tabpanel" aria-labelledby="hayakuViewerTabServer" hidden><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">서버 연결</h1><p class="page-desc">전체 대화의 저장 위치, 서버 주소와 이전 상태를 확인합니다. 저장 자료 정리는 스코프 데이터 관리에서 진행합니다.</p></div></div><div id="hayakuMemorySuiteServerConnectionPanel"></div></section>`;
     const settingsPage = HAYAKU_MOCKUP_SETTINGS_PAGE;
     const logsPage = `<section class="page" id="hayakuViewerPanelLogs" data-hayaku-viewer-panel="logs" data-page="logs" role="tabpanel" aria-labelledby="hayakuViewerTabLogs" hidden>
-      <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">작동 기록</h1><p class="page-desc">현재 실행의 요청·회상·패킷·복구 기록입니다. 민감한 값은 제거됩니다.</p></div><div class="page-actions"><button id="copyHayakuDebug" class="btn" type="button">디버그 JSON 복사</button><button id="exportHayakuDebug" class="btn" type="button">파일로 저장</button></div></div>
-      <div class="stack"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
+      <div class="page-head"><div class="page-head__copy"><div class="eyebrow">System diagnostics</div><h1 class="page-title">상태 · 작동 기록</h1><p class="page-desc">현재 상태, 분석 실패 원인, 요청·회상·패킷·복구 기록을 한곳에서 봅니다. 원문과 AI 응답은 내보내기에서 직접 선택한 경우에만 포함됩니다.</p></div><div class="page-actions"><button class="btn" type="button" data-status-log-copy>상태 로그 복사</button><button id="copyHayakuDebug" class="btn" type="button">디버그 JSON 복사</button><button id="exportHayakuDebug" class="btn" type="button">파일로 저장</button></div></div>
+      <div class="tabs" role="tablist" aria-label="상태 · 작동 기록"><button class="tab is-active" type="button" role="tab" aria-selected="true" data-status-view="status">상태</button><button class="tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-status-view="log">작동 기록</button></div>
+      <div class="stack" data-status-panel="status" style="margin-top:14px"><div class="banner banner--ok" data-status-log-banner style="margin:0"><div><strong data-status-log-summary></strong><p class="muted" style="margin:2px 0 0;font-size:12px" data-status-log-subsummary></p></div></div><div data-status-log-list class="stack"></div></div>
+      <div class="stack" data-status-panel="log" hidden style="margin-top:14px"><div class="search">${hayakuMockupIcon('search')}<input id="hayakuLogFilter" class="input" type="search" placeholder="로그 내용으로 찾기" aria-label="로그 검색"></div><div class="cluster"><span>로그 <b id="hayakuViewerLogCount">0</b></span><button id="refreshHayakuLog" class="btn btn--sm" type="button">새로고침</button><button id="showHayakuDebug" class="btn btn--sm" type="button">JSON 보기</button><span id="hayakuLogFilterCount" class="hint"></span></div><div id="hayakuViewerOperationLog" class="list"></div>
         <details class="fold"><summary>진단 · 내보내기 자료</summary><div class="stack"><div class="note">기본 기록에는 실패 턴·원인·호출 수만 남깁니다. 상세 분석 보관은 설정의 디버그를 켠 이후 적용됩니다.</div><label class="pk-check"><input id="hayakuIncludeAnalysisDetails" type="checkbox">내보내기에 보관된 상세 분석 포함 (원문·모델 응답)</label><details class="fold"><summary>보관된 상세 분석</summary><div class="fold__body"><button id="loadHayakuArchivedFailures" class="btn btn--sm" type="button">최근 상세 진단 읽기</button><pre id="hayakuArchivedFailures" class="json"></pre></div></details><div class="card"><div class="card__head"><div><h2 class="card__title">내부 오류 진단</h2><p class="card__desc">현재 실행에서 기록된 오류를 확인합니다.</p></div><div class="cluster"><button id="refreshHayakuSwallowedDiag" class="btn btn--sm" type="button">새로고침</button><button id="resetHayakuSwallowedDiag" class="btn btn--sm" type="button">진단 초기화</button><b id="hayakuViewerSwallowedDiagCount">0</b></div></div><div class="search">${hayakuMockupIcon('search')}<input id="hayakuSwallowedDiagFilter" class="input" type="search" placeholder="오류 검색" aria-label="오류 검색"></div><span id="hayakuSwallowedDiagFilterCount" class="hint"></span><div id="hayakuViewerSwallowedDiag" class="list"></div></div><details class="fold"><summary>복구 진단 JSON</summary><div class="fold__body"><p>현재 채팅의 복구 자격·Debt 상태를 확인하는 읽기 자료입니다.</p><dl class="kv"><dt>현재 상태</dt><dd id="hayakuNativeRecoveryState">-</dd><dt>coverage</dt><dd id="hayakuNativeCoverageSummary">-</dd><dt>Debt</dt><dd id="hayakuNativeDebtCount">-</dd><dt>복구 가능</dt><dd id="hayakuNativeRepairableCount">-</dd><dt>현재 작업</dt><dd id="hayakuNativeRepairCurrent">-</dd><dt>다음 재시도</dt><dd id="hayakuNativeNextRetry">-</dd><dt>복구 가능 턴</dt><dd id="hayakuNativeRepairableTurns">-</dd><dt>재시도 대기</dt><dd id="hayakuNativeBackoffTurns">-</dd><dt>횟수 초과</dt><dd id="hayakuNativeExhaustedTurns">-</dd><dt>다른 작업 점유</dt><dd id="hayakuNativeLeasedTurns">-</dd><dt>사용자 제외</dt><dd id="hayakuNativeSuppressedTurns">-</dd></dl><pre id="hayakuNativeRecoveryJson" class="json"></pre></div></details><section id="hayakuViewerDebugExportPanel" class="card"><div class="card__head"><div><h2 class="card__title">디버그 JSON</h2><p class="card__desc">민감한 값을 제거한 현재 실행 자료입니다.</p></div><button id="clearHayakuDebugText" class="btn btn--sm" type="button">JSON 표시 닫기</button></div><pre id="hayakuViewerDebugExportText"></pre></section></div></details>
       </div></section>`;
     root.innerHTML = `<style>${HAYAKU_GUI_SUITE_CSS}\n${HAYAKU_GUI_THEME_CSS}\n${HAYAKU_GUI_COMPONENT_CSS}\n${HAYAKU_SETTINGS_EASY_CSS}\n${HAYAKU_SERVER_CONNECTION_CSS}\n#${LEDGER_VIEWER_ROOT_ID}{position:fixed;inset:0;width:100%;height:100dvh;z-index:2147483000;background:transparent;font:var(--fs-body)/1.65 var(--font-sans);color:var(--text)}#${LEDGER_VIEWER_ROOT_ID} .stage{width:100%;height:100%;padding:16px;overflow:hidden;align-items:center}#${LEDGER_VIEWER_ROOT_ID} .frame{height:min(830px,100%);min-height:0}#${LEDGER_VIEWER_ROOT_ID} #hayakuOverviewAuxiliaryStatus{display:block;margin-top:4px;color:var(--text2)}#${LEDGER_VIEWER_ROOT_ID} [data-setting-state="packet-recovery"]{margin-top:6px}#${LEDGER_VIEWER_ROOT_ID} .hayaku-job-button[hidden]{display:none!important}#${LEDGER_VIEWER_ROOT_ID} .mapping-incomplete{display:grid;gap:8px}
 /* Preserve the reference single-column mobile layout while allowing intrinsic content to shrink inside its panel. */
 #${LEDGER_VIEWER_ROOT_ID} .pk-layout{min-width:0}
 @container app (max-width:900px){#${LEDGER_VIEWER_ROOT_ID} .pk-layout{grid-template-columns:minmax(0,1fr)}}
+@container app (max-width:620px){#${LEDGER_VIEWER_ROOT_ID} .brand__ver{display:none}}
 #${LEDGER_VIEWER_ROOT_ID} .rec{min-width:0;grid-template-columns:auto minmax(0,1fr) auto}
 #${LEDGER_VIEWER_ROOT_ID} .rec>div{min-width:0}
 #${LEDGER_VIEWER_ROOT_ID} .rec time{min-width:0;overflow-wrap:anywhere}
@@ -61569,7 +60805,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       <div class="stage"><div class="frame"><div class="app" data-hayaku-mockup="1">
         <header class="topbar"><div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v${PLUGIN_VERSION}</div></div></div><div class="scope"><b id="hayakuViewerScopeTop">현재 채팅</b><span>›</span><span id="hayakuViewerScopeMeta">현재 채팅의 원장 상태를 읽습니다.</span></div><div class="grow"></div><span id="hayakuViewerHealth" class="health health--ok" role="button" tabindex="0" aria-haspopup="dialog" style="cursor:pointer" title="누르면 상태 및 진단 로그 보기"><i></i><span data-health-text>정상 작동</span></span><button id="hayakuNativeJobChip" class="btn btn--sm hayaku-job-button" type="button" data-idle-go="logs" aria-controls="hayakuNativeJobOverlay" aria-expanded="false" title="진행 중이거나 끝난 작업을 다시 엽니다">${hayakuMockupIcon('clock')}<span data-tray-text>작업 없음</span></button><div class="menu"><button class="btn btn--icon" data-menu aria-label="더 보기">${hayakuMockupIcon('more')}</button><div class="menu__panel"><button id="hayakuOverviewRefresh" type="button">${hayakuMockupIcon('refresh')}다시 대조</button><button id="hayakuOverviewExport" type="button">${hayakuMockupIcon('download')}디버그 JSON 내보내기</button></div></div><button id="closeHayakuViewer" class="btn btn--icon" type="button" title="닫기" aria-label="HAYAKU 닫기">${hayakuMockupIcon('x')}</button></header>
         <div id="hayakuNativeJobOverlay" class="overlay" aria-hidden="true" hidden><div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="hayakuNativeJobTitle"><div class="split"><div><div class="eyebrow" id="hayakuNativeJobEyebrow">Other Ax</div><h2 id="hayakuNativeJobTitle">복구 작업</h2><p><span id="hayakuNativeJobState">대기</span> · 경과 <span id="hayakuNativeJobElapsed">0초</span></p></div><span class="badge badge--info"><span id="hayakuNativeJobStateCompact">대기</span> · <span id="hayakuNativeJobElapsedCompact">0초</span></span></div><div class="progress" style="margin:14px 0"><i id="hayakuNativeJobProgressBar" style="width:0%"></i></div><div class="cluster"><span>대상 <b id="hayakuNativeJobTurns">-</b></span><span>현재 <b id="hayakuNativeJobCurrent">-</b></span><span id="hayakuNativeJobProgressText" class="hint">대상 확인</span></div><p id="hayakuNativeJobMessage" class="muted">작업 상태를 확인합니다.</p><div class="steps" style="margin-top:12px"><div class="step is-active"><span class="step__no">1</span><b data-job-step="1">대조</b></div><div class="step"><span class="step__no">2</span><b data-job-step="2">분석</b></div><div class="step"><span class="step__no">3</span><b data-job-step="3">검증</b></div><div class="step"><span class="step__no">4</span><b data-job-step="4">기록</b></div></div><div class="card" data-hayaku-job-body="maintenance" hidden style="margin-top:12px"><p id="hayakuMaintenanceJobCoverage" role="status">현재 채팅을 확인합니다.</p><p id="hayakuMaintenanceJobPlan"></p><div class="res-row"><b>실제 모델 호출</b><span id="hayakuMaintenanceJobCalls">0회</span></div><div id="hayakuMaintenanceAnalysisChoices" class="dialog__actions" hidden><p style="flex-basis:100%">Other Ax 분석에는 Provider 비용이 발생할 수 있습니다. 검증된 기억은 유지하고 누락된 대상만 생성합니다.</p><button class="btn" type="button" data-maintenance-analysis="no">분석 없이 종료</button><button class="btn btn--primary" type="button" data-maintenance-analysis="yes">계속 · 기억 분석</button></div></div><div class="list" data-hayaku-job-body="repair" hidden style="margin-top:12px"><div class="res-row"><b>대상</b><span id="hayakuNativeJobResultTarget">-</span></div><div class="res-row"><b>기억 저장</b><span id="hayakuNativeJobResultMemory">0/0턴</span></div><div class="res-row"><b>완전 패킷</b><span id="hayakuNativeJobResultPackets">0개</span></div><div class="res-row"><b>부분 저장</b><span id="hayakuNativeJobResultPartial">0개</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultCalls">0회</span></div></div><div class="list" data-hayaku-job-body="cold" hidden style="margin-top:12px"><div class="res-row"><b>대상 묶음</b><span id="hayakuNativeJobColdBundles">-</span></div><div class="res-row"><b>저장된 패킷</b><span id="hayakuNativeJobResultColdSaved">0개</span></div><div class="res-row"><b>실패한 묶음</b><span id="hayakuNativeJobResultColdHeld">0묶음</span></div><div class="res-row"><b>실제 호출 수</b><span id="hayakuNativeJobResultColdCalls">0회</span></div></div><div class="card" data-hayaku-job-body="regen" hidden style="margin-top:12px"><p id="hayakuNativeJobResultRegeneration" class="muted">후보 준비 상태를 확인합니다.</p><section id="hayakuNativeJobComparison" class="cmp" hidden aria-label="기존 패킷과 재생성 후보 비교"></section><div id="hayakuNativeJobChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-regeneration-choice="later">나중에 결정</button><button type="button" class="btn" data-hayaku-regeneration-choice="keep_original">기존 패킷 유지</button><button type="button" class="btn btn--primary" data-hayaku-regeneration-choice="adopt_regenerated">재생성 후보 채택</button></div></div><div class="card" data-hayaku-job-body="background" hidden style="margin-top:12px"><p>복구 저널을 유지하거나 실행 전에 확인한 대상으로 복구를 요청합니다.</p><div class="list"><div class="res-row"><b>확인된 대상</b><span id="hayakuNativeJobConfirmationTarget">-</span></div></div><div id="hayakuRecoveryConfirmationChoices" class="dialog__actions" hidden><button type="button" class="btn" data-hayaku-recovery-confirmation="no">아니요 · 저널에 유지</button><button type="button" class="btn btn--primary" data-hayaku-recovery-confirmation="yes">예 · 자동 복구 시작</button></div></div><div class="dialog__actions"><button id="minimizeHayakuNativeJob" class="btn">최소화</button><button id="cancelHayakuNativeJob" class="btn btn--danger">작업 중단</button><button id="closeHayakuNativeJob" class="btn btn--primary" hidden>닫기</button></div></div></div>
-        <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
+        <nav class="sidebar" aria-label="HAYAKU 메뉴"><div class="nav-label">상태</div>${nav('Overview','연속성 관제','관제','grid')}<div class="nav-label">기억</div>${nav('Packets','패킷 · 세계선','패킷','layers', '<span id="hayakuOverviewPacketCount" class="count" hidden>0</span>')}${nav('Scopes','스코프 데이터 관리','스코프','layers')}<div class="nav-label">복구</div>${nav('Recovery','구간 점검 · 복구','복구','wrench', '<span id="hayakuOverviewRecoveryCount" class="count count--alert" hidden>0</span>')}<div class="nav-label">연결 · 설정</div>${nav('Server','서버 연결','연결','server')}${nav('Settings','설정','설정','sliders')}${nav('Logs','상태 · 작동 기록','기록','log')}<div class="side-foot"><b id="hayakuSidebarAux">Other Ax · 호출 미검증</b><span>Provider와 키는 RisuAI 소유 — HAYAKU에는 저장하지 않습니다.</span></div></nav>
         <main class="main"><div class="page-body">
           <section class="page is-active" id="hayakuViewerPanelOverview" data-hayaku-viewer-panel="overview" data-page="overview" role="tabpanel" aria-labelledby="hayakuViewerTabOverview">
             <div class="page-head"><div class="page-head__copy"><div class="eyebrow">Continuity status</div><h1 class="page-title">연속성 관제</h1><p class="page-desc">완료된 턴마다 기억 패킷이 이어져 있는지 확인합니다. Other Ax 연결 테스트는 비용 동의 후 별도로 실행합니다.</p></div><div class="page-actions"><button class="btn" id="hayakuOverviewMaintenance" type="button">${hayakuMockupIcon('wrench')}상태 점검 및 자동 복구</button><button id="hayakuOverviewReconcile" class="btn btn--primary" type="button">${hayakuMockupIcon('refresh')}다시 대조</button></div></div>
@@ -61583,7 +60819,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           </section>${packetPage}${scopePage}${recoveryPage}${serverPage}${settingsPage}${logsPage}
         </div><footer class="savebar" id="hayakuSettingsSavebar" hidden><div class="savebar__copy"><b id="hayakuSettingsSaveTitle" data-save-title>모든 변경이 저장되어 있습니다</b><span id="hayakuSettingsSaveDetail" data-save-desc>설정을 바꾸면 이곳에서 한 번에 저장합니다.</span><span id="hayakuSettingsMessage" role="status" aria-live="polite"></span></div><div class="cluster"><button id="cancelHayakuSettings" class="btn" data-revert type="button" disabled>변경 취소</button><button id="applyHayakuSettings" class="btn btn--primary" data-save type="button" disabled>저장</button></div></footer></main>
         <nav class="tabbar" aria-label="HAYAKU 하단 메뉴"><button type="button" data-hayaku-viewer-goto="overview" data-go="overview" aria-current="page">${hayakuMockupIcon('grid')}관제</button><button type="button" data-hayaku-viewer-goto="packets" data-go="packets">${hayakuMockupIcon('layers')}패킷</button><button type="button" data-hayaku-viewer-goto="recovery" data-go="recovery">${hayakuMockupIcon('wrench')}복구</button><button type="button" data-hayaku-viewer-goto="server" data-go="server">${hayakuMockupIcon('server')}연결</button><button type="button" data-hayaku-more="1" aria-haspopup="dialog">${hayakuMockupIcon('more')}더보기</button></nav>
-        <div id="hayakuManualRecaptureOverlay" class="overlay" role="presentation" hidden></div><div class="overlay overlay--bottom" id="hayakuMoreSheet" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list><button class="row" type="button" data-hayaku-viewer-goto="scopes"><span class="row__icon">${hayakuMockupIcon('layers')}</span><span><span class="row__title">스코프 데이터 관리</span></span></button><button class="row" type="button" data-hayaku-viewer-goto="settings"><span class="row__icon">${hayakuMockupIcon('sliders')}</span><span><span class="row__title">설정</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button><button class="row" type="button" data-hayaku-viewer-goto="logs"><span class="row__icon">${hayakuMockupIcon('log')}</span><span><span class="row__title">작동 기록</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button></div></div></div>
+        <div id="hayakuManualRecaptureOverlay" class="overlay" role="presentation" hidden></div><div class="overlay overlay--bottom" id="hayakuMoreSheet" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list><button class="row" type="button" data-hayaku-viewer-goto="scopes"><span class="row__icon">${hayakuMockupIcon('layers')}</span><span><span class="row__title">스코프 데이터 관리</span></span></button><button class="row" type="button" data-hayaku-viewer-goto="settings"><span class="row__icon">${hayakuMockupIcon('sliders')}</span><span><span class="row__title">설정</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button><button class="row" type="button" data-hayaku-viewer-goto="logs"><span class="row__icon">${hayakuMockupIcon('log')}</span><span><span class="row__title">상태 · 작동 기록</span></span>${hayakuMockupIcon('arrow').replace('class="ic"','class="ic ic--sm faint"')}</button></div></div></div>
       </div></div>`;
     root.dataset.hayakuViewerMounted = '1';
     const settingsWiring = viewerWireSettingsMarkup(root);
@@ -62298,6 +61534,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     getReanalysisStatus:()=>({...hayakuReanalysisStatus}),
     listReanalysisRanges:listHayakuReanalysisRanges,
     reanalyzeSelectedRanges:runHayakuSelectedReanalysis,
+    previewRebuild:previewHayakuRebuild,
+    rebuildAllTurns:runHayakuRebuild,
+    cancelRebuild:cancelHayakuRebuild,
     openSourceReanalysis:openHayakuSourceReanalysis,
       setSourceEditIgnoredTags: tags => getHayakuSourceInput().setIgnoredTags(tags),
       getSourceEditIgnoredTags: () => getHayakuSourceInput().ignoredTags(),
@@ -62385,6 +61624,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         cancelColdStart: () => cancelNativeColdStart(),
         failedAnalysis: {
           summaries: async () => { const scope = await RisuCompat.currentChatScope(); return analysisFailureSummaries(scope?.key || ''); },
+          report: async () => {
+            const scope = await RisuCompat.currentChatScope();
+            if (!scope?.confident) return { logAvailable: false, reason: scope?.reason || 'scope_unavailable', rows: [] };
+            const status = await nativeRecoveryStatus({ includeDebts: true });
+            return clone(await analysisFailureReport(scope.key, { coveredTurns: status?.debt?.coverage?.coveredTurns, coldRun: status?.coldStartRun?.run }), { rows: [] });
+          },
           list: async () => {
             const scope = await RisuCompat.currentChatScope();
             return scope?.confident ? clone(await listFailedAnalysisArtifacts(scope.key), {}) : { available: false, reason: scope?.reason || 'scope_unavailable', entries: [] };
@@ -62658,7 +61903,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         deriveEmotionProfile,
         deriveWorldProfile,
         deriveStoryProfile,
-        handleBeforeRequest,
+        handleBeforeRequest,noteHayakuGradiaAttach,
         prepareHayakuRecallRows,prepareHayakuEvidenceUnits,selectHayakuEvidencePlan,renderHayakuEvidencePlan,
         buildHayakuSelectionPolicy,buildHayakuEvidenceRequirements,publishHayakuRecallDelivery,beginHayakuRecallRequest,hayakuRequestCurrent,
         hayakuSourceEditSnapshot, getHayakuSourceEvidence, hayakuReviewUnit, hayakuReviewRows, memorySuiteHayakuResolveKeyScope, memorySuiteHayakuValidateRestore,
@@ -63553,21 +62798,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         } catch (_) {}
       }
       return null;
-    };
-    const callFirst = async (owner, names, args = []) => {
-      for (const name of names) {
-        if (typeof owner?.[name] !== 'function') continue;
-        return await owner[name](...args);
-      }
-      return undefined;
-    };
-    const safeCall = async (owner, names, args = [], fallback = undefined) => {
-      try {
-        const value = await callFirst(owner, names, args);
-        return value === undefined ? fallback : value;
-      } catch (_) {
-        return fallback;
-      }
     };
     const storageAdapter = () => {
       const bridge = bridgeValue();

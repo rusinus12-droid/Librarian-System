@@ -75,6 +75,28 @@ test('streaming draft is not captured until the authoritative completed output c
     assert.equal(memory.record.claims[0].evidence.messageId,raw.assistant.chatId);
   }finally{await fx.cleanup();}
 });
+
+for(const changedUser of [false,true])test(`legacy output binds post-hook response bytes with ${changedUser?'edited':'unchanged'} request source`,async()=>{
+ const fx=await serverFixture({mode:'plugin_only'});
+ try{
+  const f=fx.f,core=f.r.core;
+  f.chat.message=f.chat.message.slice(0,2);f.chat.messages=f.chat.message;
+  f.control.onCall=async args=>microResult(args);
+  const settings=await f.r.api.getLibraMemorySettings();await f.r.api.saveLibraMemorySettings({...settings,autoAnalyze:true});
+  f.chat.message.push({role:'user',chatId:'legacy-u2',data:'Store the brass key.'});
+  await core.beforeRequest([{role:'user',content:'Store the brass key.'}],'model');
+  await core.afterRequest('Intermediate response before later hooks.','model');
+  const expectedScope={...core.state.lastRequestScope.scope};
+  if(changedUser)f.chat.message.at(-1).data='Discard the key instead.';
+  const final='Mara stored the brass key in the locked cabinet.';
+  f.chat.message.push({role:'assistant',chatId:'legacy-a2',data:final});
+  core.scheduleLegacyOutputBoundaryScan({expectedScope,completedResponse:final,settleDelay:40});
+  await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===2,15000);
+  const active=await f.r.api.debugReadActiveMicroMemory(2);
+  if(changedUser){assert.notEqual(active.status,'verified');assert.equal(f.control.calls.length,0);}
+  else{assert.equal(active.status,'verified');assert.equal(active.record.claims[0].evidence.exactQuote,final);assert.equal(f.control.calls.length,1);}
+ }finally{await fx.cleanup();}
+});
 test('reroll callback retires held source work and publishes only the new exact variant',async()=>{
   const {fx,listener,event}=await fixture('mirror'),entered=deferred(),release=deferred();
   try{

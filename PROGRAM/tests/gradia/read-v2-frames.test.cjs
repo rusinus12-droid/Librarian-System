@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since GRADIA 0.28.22 / LIBRA 2.6.28: the MiB-v2 ranked evidence design was retired; each owner searches through its own hook.'); process.exit(0);
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto');
 const sha256=bytes=>crypto.createHash('sha256').update(bytes).digest('hex'),MiB=1048576;
 function factories(hashFn=sha256){const c=vm.createContext({TextEncoder});for(const name of ['GradiaReadV2Protocol','GradiaReadV2Frames']){const p=path.join(__dirname,'../../sdk/gradia/'+name+'.source.js');assert.ok(fs.existsSync(p),name+' factory must exist');vm.runInContext(fs.readFileSync(p,'utf8'),c);}const {createRealmAdapter,adaptRealmApi}=require('./fixtures/gradia-projection-reference.cjs');const normalize=createRealmAdapter(c),protocol=c.createGradiaReadV2Protocol({sha256:hashFn});return {context:c,protocol:adaptRealmApi(protocol,normalize),frames:adaptRealmApi(c.createGradiaReadV2Frames({protocol,sha256:hashFn}),normalize)};}

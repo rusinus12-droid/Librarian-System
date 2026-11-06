@@ -226,7 +226,7 @@ test('profile changes during the last storage read invalidate the completed quer
     const provider = h.host.nativeFetch;
     h.host.nativeFetch = async (...args) => { const reply = await provider(...args); queryFinished = true; return reply; };
     const original = h.pluginStorage.getItem.bind(h.pluginStorage);
-    h.api._test.invalidateRecallShardCache(scope.scopeKey);
+    h.api._test.invalidateRecallCache(scope.scopeKey);
     h.pluginStorage.getItem = async key => {
       const value = await original(key);
       if (queryFinished && !changed && String(key).includes(':shard:')) {
@@ -385,7 +385,7 @@ test('missing physical shard with unchanged model remains a storage diagnostic',
     const keys=[...h.pluginStorage.values.keys()].filter(key=>key.includes(':records:')&&key.includes(':shard:'));
     assert(keys.length>0,'fixture reaches a real physical shard');
     for(const key of keys)h.pluginStorage.values.delete(key);
-    h.api._test.invalidateRecallShardCache(scope.scopeKey);
+    h.api._test.invalidateRecallCache(scope.scopeKey);
     const result=await h.api.recallRecords(QUERY,cfg,scope,{currentPairIndex:10});
     assert.equal(result.records.length,0);
     assert.notEqual(result.modelReadiness?.status,'changed');

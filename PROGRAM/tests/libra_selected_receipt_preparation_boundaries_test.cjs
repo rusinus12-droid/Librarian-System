@@ -7,8 +7,8 @@ const expose = source => {
   for (const [anchor, replacement] of [
     ['    const transcript = batch => batch.map(pair => [',
       '    globalThis.__receiptPreparation = { prepareSelectedCompletedTurnReceipts, resolveContext, buildPairs, state, receiptRecoveryIdentity, digest, captureReceiptRecoveryBoundary };\n    const transcript = batch => batch.map(pair => ['],
-    ['    const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {',
-      '    const reconcileCompletedTurnReceipts = async (context, pairs, options = {}) => {\n      globalThis.__beforeReceiptReconcile?.(context, pairs, options);'],
+    ['    const reconcileCompletedTurnReceiptsImpl = async (context, pairs, options = {}) => {',
+      '    const reconcileCompletedTurnReceiptsImpl = async (context, pairs, options = {}) => {\n      globalThis.__beforeReceiptReconcile?.(context, pairs, options);'],
     ['    const runReceiptRecoveryJob = async ({jobId,signal,suppressMicroResume=false}={}) => {',
       '    const runReceiptRecoveryJob = async ({jobId,signal,suppressMicroResume=false}={}) => {\n      globalThis.__onReceiptRecoveryDispatch?.(jobId);'],
     ['\n  const publicApi = Object.freeze({',

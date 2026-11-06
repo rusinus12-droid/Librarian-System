@@ -23,7 +23,6 @@ for(const persistent of [false,true])test(`final binding change ${persistent?'is
     assert.ok(stored.records.some(row=>row.vector?.length===3),'fixture must publish a real validated vector');
     f.context.__remainingBindingChanges=persistent?100:1;
     const out=await f.api._selectionTest.beforeRequest([
-      {role:'user',chatId:'u1',content:user},{role:'assistant',chatId:'a1',content:reply},
       {role:'user',chatId:'u-next',content:'I step into the corridor.'},{role:'assistant',chatId:'a-next',content:'The corridor is quiet.'},
       {role:'user',chatId:'u2',content:'What did the gauge show, and where is the spare valve?'}
     ],'model');

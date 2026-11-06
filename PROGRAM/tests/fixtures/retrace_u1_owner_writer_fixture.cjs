@@ -60,21 +60,12 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
   }`,
     `  for (const file of PLUGIN_FILES) {
     let pluginSource = fs.readFileSync(path.join(root, 'plugins', file), 'utf8');
-    if (file === 'LIA_Persona_Linker.js') {
-      const marker = '      getLiveSyncCaptureState:';
-      if (!pluginSource.includes(marker)) throw new Error('LIA fixture reader seam changed');
-      pluginSource = pluginSource.replace(marker, \`      debugAuditConfigure: async choice => configureLivePersonaSync(await getLiveRuntimeContext(), choice),
-      debugAuditReadCurrentBinding: async () => readLivePersonaBindingByScopeKey(livePersonaScopeKey(await getLiveRuntimeContext()), true),
-      getLiveSyncCaptureState:\`);
-    }
     vm.runInContext(pluginSource, context, { filename: file });
   }`, 'plugin loading');
   source = replaceOnce(source,
     '  return { hayaku: hayakuReconcile };\n};',
-    `  const liaRuntime = context.__lia_persona_linker_runtime_v1__;
-  assert.ok(liaRuntime?.debugAuditConfigure, 'LIA owner writer is exposed only to this fixture');
-  const liaSeed = await liaRuntime.debugAuditConfigure('id:source-persona');
-  assert.ok(liaSeed?.livePersonaId, 'LIA owner writer creates source Live Persona');
+    `  // The chat is bound to a persona; the next session must arrive bound to the same one.
+  host.chats[0].bindedPersona = 'source-persona';
   const flashback = context.__FlashbackMemory;
   const flashbackScope = await flashback.resolveCurrentScope(false);
   const records = Array.from({ length: 8 }, (_, index) => ({ id: 'u1-fb-' + (index + 1), hash: 'u1-fb-' + (index + 1), type: 'response', sourceType: 'response', text: 'U1 Flashback record ' + (index + 1), dim: 4, vector: [1,0,0,0], turnIndex: index + 1, sourceTurn: index + 1, lifecycleStatus: 'active' }));
@@ -91,14 +82,13 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
   })).sort((left, right) => (left.id + left.hash).localeCompare(right.id + right.hash));
   const sourceHayaku = await context.HAYAKU.ledger.inspect({ includeRecords: true });
   const sourceLibra = await libra.getCanonicalMemories();
-  const sourceLia = await liaRuntime.debugAuditReadCurrentBinding();
   const sourceOwnerReads = {
     flashback: { scopeKey: flashbackScope.scopeKey, records: records.length, rows: stableRows((await flashback._test.loadScopeRecords(flashbackScope.scopeKey)).records) },
     hayaku: { scopeKey: sourceHayaku.scopeKey, records: sourceHayaku.recordCount, rows: stableRows(sourceHayaku.records) },
     libra: { records: sourceLibra.length, rows: stableRows(sourceLibra) },
-    lia: { scopeKey: sourceLia?.scopeKey || '', livePersonaId: sourceLia?.livePersonaId || '', transferId: sourceLia?.handoffTransferId || '' }
+    lia: { personaId: String(host.chats[0].bindedPersona || '') }
   };
-  return { hayaku: hayakuReconcile, flashback: 8, libra: 1, liaSeed, sourceOwnerReads };
+  return { hayaku: hayakuReconcile, flashback: 8, libra: 1, sourceOwnerReads };
 };`, 'owner writers');
   source = source.replace('const seedOwners = async (context, host, turns = 3) => {', 'const seedOwners = async (context, host, turns = 5) => {');
   source = replaceOnce(source, '  const messages = [];\n  for (let turn = 1; turn <= turns; turn += 1) {', "  const messages = [];\n  const unifiedRows = require('./fixtures/unified_vertical_source.json').sourceRows;\n  for (let turn = 1; turn <= turns; turn += 1) {", 'source rows');
@@ -111,64 +101,22 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
         const fbRecords = await fb._test.loadScopeRecords(fbScope.scopeKey);
         const hy = await current.HAYAKU.ledger.inspect({ includeRecords: true });
         const li = await current.__LIBRA__.getCanonicalMemories();
-        const lb = await current.__lia_persona_linker_runtime_v1__.debugAuditReadCurrentBinding();
-        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount }, libra: { records: li.length }, lia: { scopeKey: lb?.scopeKey || '', livePersonaId: lb?.livePersonaId || '', transferId: lb?.handoffTransferId || '' } };
+        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount }, libra: { records: li.length }, lia: { personaId: String(host.chats[0].bindedPersona || '') } };
       };
       const ownerReads = await targetOwnerReads(booted.context);
       assert.equal(ownerReads.flashback.records, 8, 'target Flashback own reader sees inherited archive');
       assert.equal(ownerReads.hayaku.records, 5, 'target HAYAKU own reader sees inherited ledger');
       assert.equal(ownerReads.libra.records, 1, 'target LIBRA own reader sees inherited canonical memory');
-      assert.equal(ownerReads.lia.livePersonaId, result.targetLivePersonaId, 'target LIA own reader sees forked Live Persona');
-      assert.equal(ownerReads.lia.transferId, result.transferId, 'target LIA own reader binds transfer');
+      assert.equal(ownerReads.lia.personaId, 'source-persona', 'the next session is bound to the same persona');
       const liveTarget = host.chats.find(chat => String(chat?.id || '') === String(result.targetChatId));
-      const forged = { verified: true, durable: true, sourceChatId: result.sourceChatId, targetChatId: result.targetChatId, transferId: result.transferId, characterId: 'retrace-character', sourceScopeKey: 'forged-source', targetScopeKey: 'forged-target', sourceLivePersonaId: result.sourceLivePersonaId, targetLivePersonaId: 'other-native-persona' };
-      const originalGet = host.pluginStorage.values.get;
-      let driftArmed = false, drifted = false;
-      const armDrift = message => { if (message.action === 'verify_chat_handoff' && message.ok === true) driftArmed = true; };
-      host.listeners.get('lia_persona_handoff_response_v1').add(armDrift);
-      host.pluginStorage.values.get = key => {
-        const value = originalGet.call(host.pluginStorage.values, key);
-        if (driftArmed && !drifted && /manifest/i.test(String(key))) { drifted = true; liveTarget.bindedPersona = 'other-native-persona'; }
-        return value;
-      };
-      const driftResult = await booted.retrace.adoptFlashbackSessionHandoff({ targetChatId: result.targetChatId, transferId: result.transferId, sourceScopeKey: result.flashbackAdoption.sourceScopeKey, expectedRecords: 8, targetLivePersonaId: result.targetLivePersonaId, attempts: 1 });
-      host.pluginStorage.values.get = originalGet;
-      host.listeners.get('lia_persona_handoff_response_v1').delete(armDrift);
-      assert.equal(drifted, true, 'binding-drift seam executes after fresh LIA verification');
-      assert.equal(driftResult.ok, false, 'receipt reuse after target binding drift is rejected');
-      liveTarget.bindedPersona = result.targetLivePersonaId;
-      const wrongTransfer = await booted.retrace.adoptFlashbackSessionHandoff({ targetChatId: result.targetChatId, transferId: result.transferId + '-forged', sourceScopeKey: result.flashbackAdoption.sourceScopeKey, expectedRecords: 8, targetLivePersonaId: result.targetLivePersonaId, attempts: 1 });
-      liveTarget.bindedPersona = 'other-native-persona';
-      const forgedResult = await booted.retrace.adoptFlashbackSessionHandoff({ targetChatId: result.targetChatId, transferId: result.transferId, sourceScopeKey: result.flashbackAdoption.sourceScopeKey, expectedRecords: 8, targetLivePersonaId: result.targetLivePersonaId, liaContinuity: forged, attempts: 1 });
-      assert.equal(forgedResult.ok, false, 'forged public liaContinuity cannot authorize Flashback');
+      const wrongTransfer = await booted.retrace.adoptFlashbackSessionHandoff({ targetChatId: result.targetChatId, transferId: result.transferId + '-forged', sourceScopeKey: result.flashbackAdoption.sourceScopeKey, expectedRecords: 8, attempts: 1 });
       assert.equal(wrongTransfer.ok, false, 'wrong transfer cannot reuse Flashback receipt');
-      liveTarget.bindedPersona = result.targetLivePersonaId;
-      const values = host.pluginStorage.values;
-      const indexKey = 'liaPersonaLinkerLivePersonaIndexV2';
-      const originalIndexRaw = values.get(indexKey);
-      const index = typeof originalIndexRaw === 'string' ? JSON.parse(originalIndexRaw) : originalIndexRaw;
-      const targetOwnerScope = result.liaAdoption.targetScopeKey;
-      const originalMeta = index.entries[targetOwnerScope];
-      const originalBindingRaw = values.get(originalMeta.storageKey);
-      const originalBinding = typeof originalBindingRaw === 'string' ? JSON.parse(originalBindingRaw) : originalBindingRaw;
-      const wrongScope = 'char:unrelated-character|chat:unrelated-chat';
-      const hash = value => { const body = String(value); let valueHash = 2166136261; for (let i = 0; i < body.length; i += 1) { valueHash ^= body.charCodeAt(i); valueHash = Math.imul(valueHash, 16777619); } return (valueHash >>> 0).toString(36) + '-' + body.length; };
-      const wrongBindingRaw = JSON.stringify({ ...originalBinding, scopeKey: wrongScope });
-      const wrongKey = 'liaPersonaLinkerLivePersonaScopeV2::' + hash(wrongScope).slice(0, 24);
-      const wrongMeta = { ...originalMeta, storageKey: wrongKey, digest: hash(wrongBindingRaw) };
-      const aliasIndex = { ...index, entries: { ...index.entries, [wrongScope]: wrongMeta, [targetOwnerScope]: wrongMeta } };
-      values.set(wrongKey, wrongBindingRaw);
-      values.set(indexKey, JSON.stringify(aliasIndex));
-      const wrongScopeResult = await booted.retrace.adoptFlashbackSessionHandoff({ targetChatId: result.targetChatId, transferId: result.transferId, sourceScopeKey: result.flashbackAdoption.sourceScopeKey, expectedRecords: 8, targetLivePersonaId: result.targetLivePersonaId, attempts: 1 });
-      values.set(indexKey, originalIndexRaw);
-      values.delete(wrongKey);
-      assert.equal(wrongScopeResult.ok, false, 'target LIA index cannot alias an unrelated owner scope');
       await booted.shutdown();
       const reboot = await boot(createHost({ mode: 'plugin_only', faults: {}, pluginStorage: host.pluginStorage, safeLocalStorage: host.safeLocalStorage, chats: host.chats, character: host.character }));
       let rebootReads;
       try { rebootReads = await targetOwnerReads(reboot.context); } finally { await reboot.shutdown(); }
       assert.deepEqual(rebootReads, ownerReads, 'rebooted owners reread the same target evidence');
-      const auditSummary = { scenario: ${JSON.stringify(scenario)}, publicResultOk: result?.ok === true, journalState: target?.memorySessionBridge?.handoffJournal?.state || null, sourcePreserved: host.chats.some(chat => String(chat?.id || '') === 'retrace-src-chat'), transferId: result.transferId, targetChatId: result.targetChatId, flashback: { records: result.flashbackRecords, verified: result.flashbackVerified, sourceFingerprintBefore: result.flashbackAdoption?.sourceStorageFingerprintBefore || '', sourceFingerprintAfter: result.flashbackAdoption?.sourceStorageFingerprintAfter || '' }, hayaku: { records: result.hayakuRecords, verified: result.hayakuVerified }, libra: { records: result.libraRecords, verified: result.libraVerified }, lia: { durableReadbackVerified: result.liaAdoption?.durableReadbackVerified === true, sourceLivePersonaId: result.liaAdoption?.sourceLivePersonaId || '', livePersonaId: result.liaAdoption?.livePersonaId || '' }, ownerReads, rebootReads, forged: { ok: forgedResult.ok, reason: forgedResult.reason || '' }, wrongTransfer: { ok: wrongTransfer.ok, reason: wrongTransfer.reason || '' }, wrongOwnerScope: { ok: wrongScopeResult.ok, reason: wrongScopeResult.reason || '' }, bindingDrift: { drifted, ok: driftResult.ok, reason: driftResult.reason || '', receiptReused: driftResult.receiptReused === true } };
+      const auditSummary = { scenario: ${JSON.stringify(scenario)}, publicResultOk: result?.ok === true, journalState: target?.memorySessionBridge?.handoffJournal?.state || null, sourcePreserved: host.chats.some(chat => String(chat?.id || '') === 'retrace-src-chat'), transferId: result.transferId, targetChatId: result.targetChatId, flashback: { records: result.flashbackRecords, verified: result.flashbackVerified, sourceFingerprintBefore: result.flashbackAdoption?.sourceStorageFingerprintBefore || '', sourceFingerprintAfter: result.flashbackAdoption?.sourceStorageFingerprintAfter || '' }, hayaku: { records: result.hayakuRecords, verified: result.hayakuVerified }, libra: { records: result.libraRecords, verified: result.libraVerified }, ownerReads, rebootReads, wrongTransfer: { ok: wrongTransfer.ok, reason: wrongTransfer.reason || '' } };
       console.log('U1_OWNER_WRITER_SUMMARY ' + JSON.stringify(auditSummary));
       return;
       for (const owner of ['flashback', 'hayaku', 'libra', 'lia']) {`, 'target owner readbacks');
@@ -180,11 +128,11 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
         })).sort((left, right) => (left.id + left.hash).localeCompare(right.id + right.hash));
 `, 'owner reader row projection');
   source = replaceOnce(source,
-    "        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount }, libra: { records: li.length }, lia: { scopeKey: lb?.scopeKey || '', livePersonaId: lb?.livePersonaId || '', transferId: lb?.handoffTransferId || '' } };",
-    "        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length, rows: stableRows(fbRecords.records) }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount, rows: stableRows(hy.records) }, libra: { records: li.length, rows: stableRows(li) }, lia: { scopeKey: lb?.scopeKey || '', livePersonaId: lb?.livePersonaId || '', transferId: lb?.handoffTransferId || '' } };", 'owner reader result');
+    "        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount }, libra: { records: li.length }, lia: { personaId: String(host.chats[0].bindedPersona || '') } };",
+    "        return { flashback: { scopeKey: fbScope.scopeKey, records: fbRecords.records.length, rows: stableRows(fbRecords.records) }, hayaku: { scopeKey: hy.scopeKey, records: hy.recordCount, rows: stableRows(hy.records) }, libra: { records: li.length, rows: stableRows(li) }, lia: { personaId: String(host.chats[0].bindedPersona || '') } };", 'owner reader result');
   source = replaceOnce(source,
-    "      assert.equal(ownerReads.lia.transferId, result.transferId, 'target LIA own reader binds transfer');\n      const liveTarget",
-    `      assert.equal(ownerReads.lia.transferId, result.transferId, 'target LIA own reader binds transfer');
+    "      assert.equal(ownerReads.lia.personaId, 'source-persona', 'the next session is bound to the same persona');\n      const liveTarget",
+    `      assert.equal(ownerReads.lia.personaId, 'source-persona', 'the next session is bound to the same persona');
       assert.deepEqual(ownerReads.flashback.rows, seeded.sourceOwnerReads.flashback.rows, 'target Flashback reader preserves inherited ids, hashes, and text');
       assert.deepEqual(ownerReads.hayaku.rows, seeded.sourceOwnerReads.hayaku.rows, 'target HAYAKU reader preserves inherited identities and packet text');
       assert.deepEqual(ownerReads.libra.rows, seeded.sourceOwnerReads.libra.rows, 'target LIBRA reader preserves inherited canonical ids, digests, and text');
@@ -192,7 +140,7 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
       const activate = chat => { const index = host.chats.indexOf(chat); assert.ok(index >= 0, 'chat remains selectable'); host.chats.splice(index, 1); host.chats.unshift(chat); host.character.chats = host.chats; };
       activate(sourceChat);
       const sourceReadsAfter = await targetOwnerReads(booted.context);
-      assert.deepEqual(sourceReadsAfter, seeded.sourceOwnerReads, 'source owner readers preserve ids, hashes, text, and LIA binding after handoff');
+      assert.deepEqual(sourceReadsAfter, seeded.sourceOwnerReads, 'source owner readers preserve ids, hashes, text, and the persona binding after handoff');
       activate(host.chats.find(chat => String(chat?.id || '') === String(result.targetChatId)));
       const liveTarget`, 'content and source preservation');
   source = replaceOnce(source, '  hostRef = host;\n  return host;', '  host.database = db;\n  hostRef = host;\n  return host;', 'host database persistence');
@@ -211,15 +159,14 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
         assert.equal(rebootJournal.pending, false, 'reboot reader sees no pending completed handoff');
         assert.equal(rebootJournal.state, 'completed', 'reboot reader sees durable completed journal');
         assert.equal(rebootJournal.transferId, result.transferId, 'reboot reader sees the same transfer');
-        assert.ok(reboot.host.database.personas.some(persona => String(persona?.id || '') === String(result.targetLivePersonaId)), 'reboot preserves target Live Persona in host database');
       } finally { await reboot.shutdown(); }
       assert.deepEqual(rebootReads, ownerReads, 'rebooted owners reread the same target evidence');`, 'reboot durable consumers');
   source = replaceOnce(source,
     "sourcePreserved: host.chats.some(chat => String(chat?.id || '') === 'retrace-src-chat'), transferId: result.transferId",
     "sourcePreserved: true, sourceReaders: { before: seeded.sourceOwnerReads, after: sourceReadsAfter }, transferId: result.transferId", 'source preservation evidence');
   source = replaceOnce(source,
-    "ownerReads, rebootReads, forged:",
-    "ownerReads, rebootReads, rebootJournal, forged:", 'reboot journal evidence');
+    "ownerReads, rebootReads, wrongTransfer:",
+    "ownerReads, rebootReads, rebootJournal, wrongTransfer:", 'reboot journal evidence');
   source = replaceOnce(source,
     "      assert.deepEqual(ownerReads.flashback.rows, seeded.sourceOwnerReads.flashback.rows, 'target Flashback reader preserves inherited ids, hashes, and text');",
     "      assert.ok(ownerReads.flashback.rows.every(row => row.id && row.hash && row.text), 'target Flashback reader returns non-empty archive ids, hashes, and text');\n      assert.deepEqual(ownerReads.flashback.rows.map(row => ({ hash: row.hash, text: row.text })).sort((a, b) => a.hash.localeCompare(b.hash)), seeded.sourceOwnerReads.flashback.rows.map(row => ({ hash: row.hash, text: row.text })).sort((a, b) => a.hash.localeCompare(b.hash)), 'target Flashback reader preserves inherited hashes and text');", 'Flashback content comparison');
@@ -281,11 +228,11 @@ const run = ({ scenario = 'different', gui = false, transformHarness = source =>
         assert.equal(result?.ok, true, 'GUI button completes existing public handoff');
         assert.ok(job.querySelector('[data-job-msg]').textContent.includes('다음 세션 생성 및 owner별 결과 확인 완료'), 'canonical job reports actual completed handoff');
         assert.equal(job.querySelectorAll('[data-job-steps] .step').length,4,'canonical next-session steps retained');
-        assert.equal(job.querySelectorAll('[data-job-result] .res').length,4,'actual four-owner result rows mounted');
+        assert.equal(job.querySelectorAll('[data-job-result] .res').length,3,'actual three-owner result rows mounted');
         await job.querySelector('[data-job-hide]').emit('click');
         await completion;
         assert.equal(create.disabled, false, 'completed handoff releases busy state');
-        guiEvidence = { entryId, tab: 'session', confirmations: 1, completedJobs: 1, jobReopened: true, jobSteps: 4, ownerResultRows: 4, providerStubCallsForSeed: providerCallsBefore, providerCallsDuringHandoff: host.providerStubCalls - providerCallsBefore };
+        guiEvidence = { entryId, tab: 'session', confirmations: 1, completedJobs: 1, jobReopened: true, jobSteps: 4, ownerResultRows: 3, providerStubCallsForSeed: providerCallsBefore, providerCallsDuringHandoff: host.providerStubCalls - providerCallsBefore };
         assert.equal(guiEvidence.providerCallsDuringHandoff, 0, 'GUI handoff invokes no provider');
       } catch (error) { thrown = error; }`, 'registered GUI public handoff path');
     source = replaceOnce(source,

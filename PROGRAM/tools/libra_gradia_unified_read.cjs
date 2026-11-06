@@ -104,7 +104,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
@@ -128,7 +128,10 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       if (metadata.sender !== readerId || message.kind !== 'request') return;
       let reply;
       try { reply = { ok: true, result: await serve(message.action, message.payload) }; }
-      catch (error) { reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) }; }
+      catch (error) {
+        const code = error?.code || error?.message || '';
+        reply = { ok: false, errorCode: /^LIB_READ_[A-Z_]+$/.test(code) ? code : 'LIB_READ_UNIFIED_UNAVAILABLE', reason: error?.readDiagnostic?.dispatchReason || error?.message || '', ...(error?.readDiagnostic ? { diagnostic: error.readDiagnostic } : {}) };
+      }
       if (!disposed) await api().postPluginChannelMessage(readerId, responseChannel, { schema, kind: 'response', requestId: message.requestId, ...reply });
     } else {
       if (metadata.sender !== ownerId || message.kind !== 'response') return;

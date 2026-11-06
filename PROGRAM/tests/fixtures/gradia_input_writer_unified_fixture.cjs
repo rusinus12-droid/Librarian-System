@@ -67,7 +67,7 @@ async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvai
  const document=dom.window.document;
  const button=label=>[...document.querySelectorAll('button')].find(n=>n.textContent.trim()===label);
  const start=async(input='은빛 열쇠를 찾는 다음 장면을 제안해 줘.',beforeProceed=null)=>{const pending=host.plugin.continueSceneWithInputAssist();const selector='textarea[placeholder^="비워 두면 직전 상황 이어가기"]';await wait(()=>document.querySelector(selector),'composer');const editor=document.querySelector(selector);editor.value=input;await beforeProceed?.();button('진행').click();return {pending};};
- return {host,bus,controls,dom,document,button,start,wait,prompts,sent,copied,permissions,chat,character,scope,values,local,nativeHost,queries:()=>native?bus.messages.filter(m=>m.body.action==='capture').length:queries,
+ return {unloads,host,bus,controls,dom,document,button,start,wait,prompts,sent,copied,permissions,chat,character,scope,values,local,nativeHost,queries:()=>native?bus.messages.filter(m=>m.body.action==='capture').length:queries,
   async choices(){await wait(()=>{const status=host.plugin.getInputAssistSendStatus();if(status?.phase==='error'||status?.phase==='cancelled')throw Error('WRITER_FAILED: '+JSON.stringify(status));return document.querySelector('[data-input-choice-card]');},'choice picker',native?120000:15000);return [...document.querySelectorAll('[data-input-choice-card]')];},
   async select(index=0){const cards=await this.choices();cards[index].querySelector('.btn--primary').click();await wait(()=>button('복사 후 직접 전송'),'delivery picker');},
   async done(pending,action='복사 후 직접 전송'){button(action).click();return await pending;}};

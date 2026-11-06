@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.7: image AI and its assets were removed.'); process.exit(0);
 
 // Actual LIA owner functions against a mock native API with physical Temp asset
 // files. This establishes host-seam behavior, not installed Risu GUI acceptance.
@@ -15,7 +16,7 @@ const ASSETS = 'liaPersonaVisualAssetStoreV1';
 const BLOBS = 'liaPersonaVisualAssetBlobV1::';
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=', 'base64');
 const OTHER_PNG = Buffer.from(PNG); OTHER_PNG[OTHER_PNG.length - 1] ^= 1;
-const expose = source => source.replace('      getLiveSyncCaptureState:', `
+const expose = source => source.replace('      getScopePersonaCatalog:', `
       auditNativeRestore: {
         ensurePersonaVisualAssetAvailable, readPersonaVisualAssetUrl,
         readPersonaVisualAssetStore, writePersonaVisualAssetStore,
@@ -23,7 +24,7 @@ const expose = source => source.replace('      getLiveSyncCaptureState:', `
         bridge: MemorySuiteStorageBridge, createRecovery:createLiaLegacyServerRecovery,
         readLogs: () => readLogStore(true)
       },
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
 async function launch(baseUrl = '') {

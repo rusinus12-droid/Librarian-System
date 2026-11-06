@@ -105,3 +105,14 @@ test('writer reads refuse a provider without proposal capability before querying
   proposal:{schema:'gradia.input-writer-proposal.v1'}}),e=>e.code==='LIB_READ_UNIFIED_UNAVAILABLE');
  assert.equal(provider.counts().captures,0);
 });
+
+for(const staleOwner of [false,true])test(`authorization advancing during capture revalidates the issued owner receipt (${staleOwner?'stale':'current'})`,async t=>{
+ const provider=unifiedProvider(),capture=provider.capture;let f;
+ provider.capture=async input=>{const result=await capture(input);f.changed.add('libra');return result;};
+ if(staleOwner)provider.current=async({proof})=>({...proof,current:false});
+ f=fixture({provider,onCapture:(owner,changed)=>changed.delete(owner)});t.after(()=>f.bridge.dispose());
+ const open=()=>f.bridge.createLibraReadOnlyClient().openReadSession(scopes.libra,{source:'unified_engine',queryText:'current question'});
+ if(staleOwner){await assert.rejects(open,e=>e.code==='LIB_READ_STALE');assert.equal(provider.counts().releases,1);}
+ else{const read=await open();assert.equal(read.snapshot.items[0].content,'UNIFIED_ONLY');assert.ok(provider.counts().checks>=1);read.close();}
+ assert.equal(f.requests.filter(r=>r.action==='capture').length,2);assert.equal(f.counts().writes,0);
+});

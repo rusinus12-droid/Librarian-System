@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (split Live Persona binding store transactions).'); process.exit(0);
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

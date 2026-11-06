@@ -59,7 +59,7 @@ function provider() {
       await api.saveLibraMemorySettings({ unifiedMemoryEngineMode: 'unified' });
       const messages = [{ role: 'user', content: query }], out = await host.f.control.hooks.beforeRequest(messages, 'model');
       assert.equal(out.length, 2);
-      assert.ok(out.some(message => message.content.includes('[canonical:canonical_assertion]')));
+      assert.ok(out.some(message => message.content.includes('[canonical]')));
       assert.equal(api.getRuntime().lastMemoryInjectionMeta.finalVerification.status, 'verified');
       assert.equal(api.getLastMemoryRecall().unifiedExecution.additionalEmbeddingCalls, 0, 'hook reuses the owned query cache');
       assert.equal(host.f.control.calls.length, calls, 'recall invokes no analysis or response helper');

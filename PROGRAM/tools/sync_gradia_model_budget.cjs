@@ -9,10 +9,7 @@ const block=begin+'\n// Source: '+modulePath+' sha256='+digest+'\n'+source+'\n'+
 let plugin=fs.readFileSync(file,'utf8');
 const start=plugin.indexOf(begin),finish=plugin.indexOf(end),write=process.argv.includes('--write');
 if(start<0){
- if(!write)throw Error('GRADIA_MODEL_BUDGET_EMBED_MISSING');
- const marker='function createGradiaEvidenceBudget({ digest }) {';
- if(plugin.split(marker).length!==2)throw Error('GRADIA_MODEL_BUDGET_MARKER_AMBIGUOUS');
- plugin=plugin.replace(marker,block+'\n\n'+marker);
+ throw Error('GRADIA_MODEL_BUDGET_EMBED_MISSING');
 }else{
  if(finish<start||plugin.indexOf(begin,start+begin.length)>=0)throw Error('GRADIA_MODEL_BUDGET_EMBED_AMBIGUOUS');
  if(!write&&plugin.slice(start,finish+end.length)!==block)throw Error('GRADIA_MODEL_BUDGET_EMBED_DRIFT');

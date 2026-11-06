@@ -68,7 +68,7 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
         return decisions(rows).length === 3;
       }, 15000);
       assert.deepEqual(JSON.parse(JSON.stringify(f.r.api.getCaptureBackendState().lastMicroPublication?.stateAdmission)),
-        {admitted: 1, pending: 2, pendingReconciliation: 0},
+        {admitted: 2, pending: 1, pendingReconciliation: 0},
         `${mode}: durable Micro publication automatically evaluates its State claims`);
       assert.equal(typeof f.r.api.debugReadCurrentMicroStateAdmission, 'function');
       const readOnly = await f.r.api.debugReadCurrentMicroStateAdmission(6, 0);
@@ -79,7 +79,7 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       const projected = await f.r.api.debugLoadContinuityStateForResponse();
       const reader = await f.r.api.readMicroStateAdmissionForTurn(6);
       assert.equal(reader.status, 'verified', `${mode}: the viewer verifies the final State projection`);
-      assert.deepEqual(Array.from(reader.decisions, row => row.status), ['admitted', 'pending', 'pending']);
+      assert.deepEqual(Array.from(reader.decisions, row => row.status), ['admitted', 'pending', 'admitted']);
       const libraryState = projected.head?.world?.find(row => row.name === '도서관')?.state;
       assert.equal(libraryState?.doorStatus, '열렸다', `${mode}: response State includes admitted T6 Micro change`);
       assert.equal(Object.hasOwn(libraryState || {}, 'ownership'), false,
@@ -97,9 +97,8 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.equal(admitted.status, 'admitted', `${mode}: source-backed low-risk change is admitted: ${admitted.reason}`);
       assert.equal(admitted.decision?.patch?.set?.doorStatus, '열렸다');
       assert.equal(guarded.status, 'pending');
-      assert.equal(guarded.reason, 'independent_verifier_required');
-      assert.equal(unknown.status, 'pending');
-      assert.equal(unknown.reason, 'registry_target_unresolved');
+      assert.equal(guarded.reason, 'registry_reference_unresolved');
+      assert.equal(unknown.status, 'admitted', `${mode}: someone the source names but no record holds yet is new`);
       const rows = mode === 'server_only' ? fixture.storedRows() : localRows(fixture.local);
       assert.equal(decisions(rows).length, 3, `${mode}: all decisions survive physical readback`);
       if (mode === 'mirror') {

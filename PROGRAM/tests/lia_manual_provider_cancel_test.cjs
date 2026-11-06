@@ -1,9 +1,9 @@
 'use strict';
 const assert = require('node:assert/strict');
 const {createFixture} = require('./fixtures/lia_native_runtime_fixture.cjs');
-const transformSource = source => source.replace('      getLiveSyncCaptureState:', `
+const transformSource = source => source.replace('      getScopePersonaCatalog:', `
       cancelProvider: (config, options) => callIndependentProvider('System', 'User', config, options),
-      getLiveSyncCaptureState:`);
+      getScopePersonaCatalog:`);
 (async () => {
   const f = await createFixture('official', {transformSource});
   try {

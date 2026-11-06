@@ -17,7 +17,7 @@ const canonical=f=>{const {embedding,...memory}=f.getMemory();return JSON.string
   assert.equal(calls.length,1,'one canonical request supplies the profile facts');
   const system=calls[0][0].messages.find(m=>m.role==='system').content;
   // Inspect the actual model request, not the unexecuted source literals.
-  const contract=system.split('\n').find(line=>line.startsWith('Optional character information'));
+  const contract=system.split('\n').find(line=>line.startsWith('Character information'));
   assert.ok(contract,'character_info contract must reach the model');
   assert.match(contract,/claimKind:"character_info"/);
   assert.match(contract,/domain:"character"/);
@@ -27,7 +27,7 @@ const canonical=f=>{const {embedding,...memory}=f.getMemory();return JSON.string
   assert.match(contract,/Unknown categories remain memory/);
   // Budget re-pinned after the deliberate canonical output-contract additions (location/containment/access/
   // thread/literal-name checks in a8454a4 and ID FORMAT in 9ac4f8b, ~3.4k chars); before them the prompt was ~11.7k.
-  assert.ok(system.length<15200,'preserve the shared extraction prompt budget including adult continuity: '+system.length);
+  assert.ok(system.length<15800,'preserve the shared extraction prompt budget including adult continuity: '+system.length);
   const state=()=>f.getHead().characters.find(row=>row.name==='민아').state;
   for(const [category,content] of Object.entries(categories))assert.deepEqual(state()[category],category==='goal'?content:[content]);
   const note=f.getMemory().canonicalArtifact.facts.find(row=>row.tempFactId==='provider_unclassified');

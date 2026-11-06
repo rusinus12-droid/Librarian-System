@@ -75,12 +75,12 @@ flowchart TB
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
 | **Librarian System Server** | `0.5.0` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
-| **LIBRA** | `2.6.15` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
-| **Flashback Memory** | `1.3.16` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
-| **HAYAKU Locator Continuity** | `3.3.11` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
-| **LIA Persona Linker** | `0.29.4` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
-| **RE:TRACE** | `1.12.7` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
-| **GRADIA** | `0.28.13` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
+| **LIBRA** | `2.6.36` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
+| **Flashback Memory** | `1.3.24` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
+| **HAYAKU Locator Continuity** | `3.3.26` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
+| **LIA Persona Linker** | `0.29.8` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
+| **RE:TRACE** | `1.12.10` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
+| **GRADIA** | `0.28.27` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
 
 > **호환 SDK**: Storage SDK `1.8.35` · Compute SDK `0.3.8`
 
@@ -149,20 +149,16 @@ flowchart TB
 ### 4) 리아 (Ria, `lia_persona_linker`)
 
 - **역할/문제**
-  - Live Persona 상태를 채팅 스코프와 연결해 페르소나 연속성을 유지하고, 로어 재순위화(BM25F 스타일)·상태 동기화를 담당합니다.
+  - 채팅별로 Persona를 연결·관리하고, Persona와 세계관 초안을 만들며, 로어 재순위화(BM25F 스타일)를 담당합니다.
 - **연결 이벤트·API·파일**
   - 플러그인 파일: `PROGRAM/plugins/LIA_Persona_Linker.js`
-  - 주요 IPC/스키마: `lia_persona_handoff_request_v1`, `lia.live_persona_handoff.receipt.v1`, `retrace.peer_compatibility.v1`
-  - 저장 정책: `local_only` · Persona와 갱신 자료를 이 기기에 보관
-- **핵심 메커니즘/흐름**
-  1. 현재 채팅의 Live Persona binding/scope를 확인
-  2. 핸드오프 시 `adopt_chat_handoff` → 대상 chat binding 생성/검증
-  3. `verify_chat_handoff`에서 durable readback 및 lineage 일치 여부 재검증
+  - 주요 IPC: `lia_persona_handoff_request_v1` (저장 상태 조회)
+  - 저장 정책: `local_only` · Persona와 작업 자료를 이 기기에 보관
 - **사용자 기능**
-  - Live Persona 분기/상속, 페르소나 상태 추적, 세계관 로어 정렬 보조
+  - 채팅별 Persona 연결, 전체 대화 변화 검토, 세계관 로어 정렬 보조
 - **설정/제약**
-  - 핸드오프 계약: `lia.live_persona_handoff_immutable_source.v1`
-  - 자동 분석·갱신 없이 완결된 U+A 5쌍이 쌓이면 갱신 동의를 요청하고, 동의하거나 수동 갱신을 눌렀을 때 분석
+  - RE:TRACE가 다음 세션을 만들 때 새 채팅은 원본 채팅의 Persona 연결을 그대로 이어받습니다.
+  - 대화 출력을 감시하지 않으며, 검토는 사용자가 실행할 때만 동작합니다.
   - 일부 연산은 현재 캐릭터/채팅 인덱스 API 가용성에 의존하며 불일치 시 fail-closed
 
 ### 5) 그라디아 (Gradia, `serial_gradation_agents_for_rp`)

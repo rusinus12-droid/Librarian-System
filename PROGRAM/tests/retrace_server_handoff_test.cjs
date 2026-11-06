@@ -77,7 +77,7 @@ function staticContracts() {
   ]) assert.ok(compactRetrace.includes(marker.replace(/\s+/g, '')), `RE:TRACE missing ${marker}`);
 
   // RE:TRACE must require Librarian System synchronization proof from every owner when server data exists.
-  for (const ns of ['flashback', 'hayaku', 'libra', 'lia']) {
+  for (const ns of ['flashback', 'hayaku', 'libra']) {
     assert.ok(retrace.includes(`memorySuiteStorageReceiptMatches(receipt, '${ns}')`)
       || retrace.includes(`memorySuiteStorageReceiptMatches(last, '${ns}')`), `${ns} server sync receipt validation`);
   }
@@ -86,7 +86,6 @@ function staticContracts() {
     'Flashback_Memory.js': ['flashback_before_adopt', 'flashback_after_adopt'],
     'HAYAKU_Locator_Continuity.js': ['hayaku_before_adopt', 'hayaku_after_adopt'],
     'LIBRA.js': ['libra_before_', 'libra_after_'],
-    'LIA_Persona_Linker.js': ['lia_before_adopt_chat_handoff', 'lia_after_adopt_chat_handoff']
   };
   for (const [name, markers] of Object.entries(owners)) {
     const text = readPlugin(name);

@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since GRADIA 0.28.22 / LIBRA 2.6.28: the MiB-v2 ranked evidence design was retired; each owner searches through its own hook.'); process.exit(0);
 // Component mechanics with a fake size-admitting owner. Not end-to-end authority,
 // real native-host admission, production qualification or a widened search test.
 const {test}=require('node:test'),assert=require('node:assert/strict');

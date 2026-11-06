@@ -108,6 +108,10 @@ function buildRichLibraGraph() {
     winningWitness: { sourceDependencies: [nodes.find(n => n.id === u.nodeId).sourceId], edgeChain: [], basisIds: [] }
   }));
 
+  units.push({ nodeId: 'u_recorded_first', family: 'canonical', kind: 'canonical_fact', semanticRole: 'canonical_assertion', turn: 3, provenanceStatus: 'verified', certainty: 'confirmed', fact: { claimKind: 'event' }, text: '같은 턴에 먼저 일어난 사건.' });
+  nodes.push({ id: 'u_recorded_first', layer: 'unit', family: 'canonical', sourceId: 'src_can_1', bindingId: 'b_u15' });
+  candidates.push({ nodeId: 'u_recorded_first', sourceId: 'src_can_1', family: 'canonical', kind: 'canonical_fact', semanticRole: 'canonical_assertion', availability: 'set', provenanceStatus: 'verified', turn: 3, text: '같은 턴에 먼저 일어난 사건.', score: 0.1, mandatoryInclusion: false, evidenceFamilyId: 'ef_u_recorded_first', winningWitness: { sourceDependencies: ['src_can_1'], edgeChain: [], basisIds: [] } });
+
   const graph = {
     schema: 'libra.memory_graph_projection.v1',
     scopeKey,
@@ -178,21 +182,20 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, unresolve
   }
 
   // Scenario 1: Character State ownership separation
-  assert.match(text, /\[CHARACTER: 민아 \| id=char_mina\]/);
-  assert.match(text, /\[CHARACTER: 지호 \| id=char_jiho\]/);
-  assert.match(text, /owner=민아\(char_mina\) \| target=지호\(char_jiho\) \| visibility=subject_state\(민아\); other_characters_awareness=unconfirmed/);
+  assert.match(text, /\[CHARACTER: 민아\]/);
+  assert.match(text, /\[CHARACTER: 지호\]/);
+  assert.match(text, /^  attrib: target=지호$/m);
 
   // Scenario 2: Relationship direction preservation
   assert.match(text, /\[RELATIONSHIP: 민아 → 지호\]/);
-  assert.match(text, /visibility=directional\(민아 → 지호\); reverse_direction=not_implied/);
+  assert.doesNotMatch(text, /visibility=(?:directional|known_by|subject_state|verified_evidence)|certainty=confirmed|provenance=T\d/, 'section meaning and defaults are stated once in the header');
 
   // Scenario 3: Object owner vs current holder separation
-  assert.match(text, /\[WORLD \/ OBJECT STATE: 은빛 열쇠 \| id=item_silver_key\]/);
-  assert.match(text, /object_state: owner=민아\(char_mina\) \| holder=지호\(char_jiho\) \| note=owner_and_current_holder_differ/);
+  assert.match(text, /\[WORLD \/ OBJECT STATE: 은빛 열쇠\]/);
+  assert.match(text, /object_state: owner=민아 \| holder=지호 \| note=owner_and_current_holder_differ/);
 
   // Scenario 4 & 5: Knowledge boundary & unconfirmed awareness of other characters
-  assert.match(text, /\[KNOWLEDGE HOLDER: 민아 \| id=char_mina\]/);
-  assert.match(text, /visibility=known_by\(민아\); other_characters=unconfirmed_do_not_assume_shared/);
+  assert.match(text, /\[KNOWLEDGE HOLDER: 민아\]/);
 
   // [P1] Unresolved entityId ('old_mina') + character name in text ('민아') must NOT be promoted to a verified owner
   assert.doesNotMatch(text, /id=old_mina/, 'stale/unregistered entityId must never be rendered in a character header');
@@ -202,7 +205,7 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, unresolve
   assert.equal(staleOwnerItem.attribution.ownerName, null, 'unverified entityId must not reconstruct ownerName from text');
   assert.equal(staleOwnerItem.attribution.ownerResolution, 'unresolved');
   assert.equal(staleOwnerItem.subHeader, '', 'unverified entityId must not emit a [CHARACTER: ...] subheader');
-  assert.match(staleOwnerItem.attributionLine, /^owner=unresolved \| visibility=subject_state; other_characters_awareness=unconfirmed/);
+  assert.match(staleOwnerItem.attributionLine, /^owner=unresolved/);
 
   // [P1/P2] Recorded state with certainty='unknown' must preserve certainty=unknown and never promote to confirmed
   const recordedUnknownItem = modelSel.bundle.items.find(i => i.nodeId === 'u_recorded_unknown_certainty');
@@ -231,8 +234,8 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, unresolve
   assert.equal(verified.status, 'verified');
   assert.equal(verified.modelDispatchEligible, true);
 
-  // GRADIA, Planner, SGA contracts remain untouched
-  for (const consumer of ['planner', 'sga', 'gui', 'gradia']) {
+  // GRADIA, GUI and Input Writer contracts remain untouched
+  for (const consumer of ['input_writer', 'gui', 'gradia']) {
     const sel = compiler.select(queryResult, graph, {
       consumer,
       maxCharacters: 4096,
@@ -241,6 +244,59 @@ test('LIBRA: Model-Oriented Memory Document sections, State ownership, unresolve
     const pkt = compiler.render(sel);
     assert.equal(pkt.consumerVerification.ok, true, `${consumer} packet verification must pass`);
   }
+});
+
+test('LIBRA: an internal id appears only when a name alone could mean two entities', () => {
+  const compiler = createCompiler({ fingerprint: sha256 });
+  const { graph, queryResult } = buildRichLibraGraph();
+  graph.nodes.push({ id: 'ent_mina_2', layer: 'entity', family: 'entity', bindingId: 'b_ent_mina_2', identity: { entityKey: 'char_mina_2', name: '민아', kind: 'character' } });
+  const { renderedText } = compiler.render(compiler.select(queryResult, graph, { consumer: 'classic', presentation: 'model_document', maxCharacters: 4096, maxUnits: 20 }));
+  assert.match(renderedText, /\[CHARACTER: 민아 \| id=char_mina\]/);
+  assert.match(renderedText, /\[CHARACTER: 지호\]/);
+  assert.match(renderedText, /object_state: owner=민아\(char_mina\) \| holder=지호 \|/);
+});
+
+test('LIBRA: recalled evidence carries a recorded timeline without inventing story time', () => {
+  const compiler = createCompiler({ fingerprint: sha256 });
+  const { graph, queryResult } = buildRichLibraGraph();
+  const unit = id => graph.units.find(row => row.nodeId === id);
+  const candidate = id => queryResult.candidates.find(row => row.nodeId === id);
+  const setTurn = (id, turn, fields = {}) => { Object.assign(unit(id), { turn, ...fields }); candidate(id).turn = turn; };
+  // Relevance ranks the newer fact first; a recollection recorded late must not read as a current event.
+  setTurn('u_can_hist', 90, { temporalRole: 'flashback', sessionEpoch: 0 });
+  setTurn('u_no_owner', 25, { temporalRole: 'current_sequence', sessionEpoch: 0, factIndex: 1, storyClock: '2026-05-14 (목) 09:12 PM' });
+  // Same turn, earlier in the source artifact, but ranked lower: fact order decides.
+  setTurn('u_recorded_first', 25, { temporalRole: 'current_sequence', sessionEpoch: 0, factIndex: 0 });
+
+  const selected = compiler.select(queryResult, graph, { consumer: 'classic', presentation: 'model_document', maxCharacters: 4096, maxUnits: 20 });
+  const packet = compiler.render(selected);
+  assert.equal(packet.consumerVerification.ok, true);
+  const text = packet.renderedText;
+  assert.ok(text.indexOf(unit('u_no_owner').text) < text.indexOf(unit('u_can_hist').text), 'history reads oldest to newest despite score order');
+  const history = selected.bundle.items.filter(item => item.semanticSection === 'RELEVANT HISTORY').map(item => item.nodeId);
+  assert.deepEqual(history, ['u_recorded_first', 'u_no_owner', 'u_can_hist'], 'recorded turn, then fact order inside a turn');
+  const attribOf = id => selected.bundle.items.find(item => item.nodeId === id).attributionLine;
+  assert.equal(attribOf('u_can_hist'), 'temporal=flashback');
+  const timeOf = id => selected.bundle.items.find(item => item.nodeId === id).timeLine;
+  assert.equal(timeOf('u_no_owner'), 'T25 | 2026-05-14 (목) 09:12 PM');
+  assert.equal(timeOf('u_can_hist'), 'T90', 'a recollection never takes the clock of the turn that recorded it');
+  assert.doesNotMatch(attribOf('u_no_owner'), /temporal=/, 'the current sequence stays unmarked');
+  assert.equal(timeOf('u_lore_rule'), '', 'timeless lore gains no invented time');
+
+  // Reordering is presentation only: the same units are admitted with the same budget.
+  const baseline = buildRichLibraGraph();
+  const baselineSelected = compiler.select(baseline.queryResult, baseline.graph, { consumer: 'classic', presentation: 'model_document', maxCharacters: 4096, maxUnits: 20 });
+  assert.deepEqual(selected.bundle.items.map(item => item.nodeId).sort(), baselineSelected.bundle.items.map(item => item.nodeId).sort());
+
+  // GRADIA has no attrib lines, so its evidence lines carry the same time facts inline.
+  const gradiaPacket = compiler.render(compiler.select(queryResult, graph, {
+    consumer: 'gradia', maxCharacters: 4096, maxUnits: 20,
+    gradiaSelectionReceipt: { ownerCorpusDigest: 'd1', selectionReceiptId: 'r1' }
+  }));
+  assert.equal(gradiaPacket.consumerVerification.ok, true);
+  assert.match(gradiaPacket.renderedText, /\[canonical:canonical_assertion@recorded_T90\/flashback\] /);
+  assert.match(gradiaPacket.renderedText, /\[canonical:canonical_assertion@recorded_T25\/clock=2026-05-14 \(목\) 09:12 PM\] /);
+  assert.match(gradiaPacket.renderedText, /\[lore:background_setting\] /, 'timeless lore gains no invented time');
 });
 
 test('HAYAKU: Semantic Evidence Lanes, Knowledge Boundaries (known by / denied to / unconfirmed), Active Scene Head ownership, and fallback safety', async () => {

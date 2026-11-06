@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (Live sync output capture revisions).'); process.exit(0);
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

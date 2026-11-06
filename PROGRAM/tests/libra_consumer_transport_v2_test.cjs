@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIBRA 2.6.27: input translation moved out of LIBRA; the Input Writer is GRADIA.'); process.exit(0);
 // Input Writer retired; shared transport is exercised by the retained translator.
 const {assert,createLibraVmHarness,expose:instrument,hostData}=require('./fixtures/libra_retained_contract_probe.cjs');
 const checks=[];function pass(name){checks.push(name);console.log('PASS '+name);}

@@ -1,4 +1,5 @@
 'use strict';
+console.log('SKIP: not applicable since LIA 0.29.5: Live Persona was removed (Live delta analysis contract).'); process.exit(0);
 
 // Exercise the real non-strict Ollama transport, admission, commit and GUI.
 // Only host HTTP is intercepted; no provider or validation function is replaced.
@@ -24,7 +25,7 @@ async function waitFor(test, label) {
 (async () => {
   let response = valid, openUI, requests = 0, storageKey;
   const expose = source => {
-    const anchor = '      getLiveSyncCaptureState:';
+    const anchor = '      getScopePersonaCatalog:';
     assert.ok(source.includes(anchor));
     const instrumented = source.replace(anchor, '      runDeltaContractManual: () => runManualLivePersonaAnalysis(),\n' + anchor);
     return process.env.LIA_DELTA_MIN === '1'

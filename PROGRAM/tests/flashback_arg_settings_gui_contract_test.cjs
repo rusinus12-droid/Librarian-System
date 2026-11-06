@@ -9,9 +9,7 @@ const source = fs.readFileSync(pluginPath, 'utf8');
 
 assert.equal(source.match(/const PLUGIN_VERSION = '([^']+)'/)?.[1], source.match(/^\/\/@version (\d+\.\d+\.\d+)\s*$/m)?.[1], 'ARG settings runtime and install versions agree');
 
-const declaredArgs = Array.from(source.matchAll(/^\/\/@arg\s+([a-z0-9_]+)\s+/gm), match => match[1]);
-assert.ok(declaredArgs.length > 0, 'declared ARG inventory is not empty');
-assert.equal(new Set(declaredArgs).size, declaredArgs.length, 'declared Flashback ARG names remain unique');
+assert.equal(/^\/\/@arg\s+(?:memory_suite_server_url|embedding_key|top_k)\b/m.test(source), false, 'Flashback keeps no setting in plugin arguments: RisuAI clears them on update');
 
 const block = (name, endMarker) => {
   const start = source.indexOf(name);
@@ -43,8 +41,6 @@ const fieldBlock = block('const FLASHBACK_ARGUMENT_SETTING_FIELDS', 'const FLASH
 const newFieldArgs = quotedNames(fieldBlock);
 assert.ok(newFieldArgs.length > 0, 'active ARGs have grouped GUI fields');
 assert.equal(new Set(newFieldArgs).size, newFieldArgs.length, 'new ARG-backed fields remain unique');
-assert.deepEqual([...settingArgs, ...specialArgs].sort(), [...declaredArgs].sort(),
-  'every declared ARG belongs to exactly one normal or special policy');
 assert.ok(newFieldArgs.every(name => settingArgs.includes(name)), 'editable fields reference declared normal settings');
 assert.ok(newFieldArgs.every(name => !readOnlyArgs.includes(name)), 'read-only settings cannot also have editable fields');
 

@@ -1,14 +1,8 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),path=require('path');
 const dir=process.env.HEALTH_REVIEW_TESTS||__dirname;
-let source=fs.readFileSync(path.join(dir,'health_lia_retrace_wiring_test.cjs'),'utf8');source=source.slice(0,source.indexOf("for(const owner of ['LIA','RETRACE'])"))+'\nmodule.exports=fixture;';const sandbox={require,__dirname:dir,module:{exports:{}},structuredClone};vm.runInNewContext(source,sandbox);const fixture=sandbox.module.exports;
-const cases={LIA:{
- store:f=>{f.context.cachedLivePersonaStore=structuredClone(f.cache)},
- container:f=>{f.cache.bindings={...f.cache.bindings}},
- equal_entry:f=>{f.cache.bindings[f.scopeKey]=structuredClone(f.cache.bindings[f.scopeKey])},
- in_place_entry:f=>{f.cache.bindings[f.scopeKey].liveState.push({review:'new cached data'})},
- completeness:f=>{f.context.cachedLivePersonaStoreComplete=false}
-},RETRACE:{
+let source=fs.readFileSync(path.join(dir,'health_lia_retrace_wiring_test.cjs'),'utf8');source=source.slice(0,source.indexOf("for(const owner of ['RETRACE'])"))+'\nmodule.exports=fixture;';const sandbox={require,__dirname:dir,module:{exports:{}},structuredClone};vm.runInNewContext(source,sandbox);const fixture=sandbox.module.exports;
+const cases={RETRACE:{
  equal_preview:f=>{f.Runtime.lastPreview=structuredClone(f.Runtime.lastPreview)},
  equal_suite:f=>{f.Runtime.compatibilitySuite=structuredClone(f.Runtime.compatibilitySuite)},
  in_place_preview:f=>{f.Runtime.lastPreview.review='new preview content'},

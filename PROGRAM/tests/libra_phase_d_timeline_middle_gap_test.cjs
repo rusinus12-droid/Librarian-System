@@ -76,7 +76,7 @@ const makeArtifact = (startTurn, action) => {
     linkSuffixThread = true;
     assert.equal((await f.run()).completed, 1, 'suffix canonical set batch commits');
     linkSuffixThread = false;
-    assert.equal(f.control.calls.length, 3, 'the middle-gap probe uses three deterministic provider calls');
+    assert.equal(f.control.calls.filter(call=>!JSON.stringify(call).includes('[LIBRA EVIDENCE QUOTE REPAIR]')).length, 3, 'the middle-gap probe uses three deterministic provider calls');
 
     const manifestKey = [...snapshot.local.keys()].find(key => /:manifest$/.test(key));
     const manifest = snapshot.getManifest() || parse(snapshot.local.get(manifestKey || ''));

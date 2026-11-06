@@ -158,7 +158,7 @@ const readDurableFailure = async (runtime, failureId) => {
     llmResponder: async () => ({ type: 'success', result: 'cold-start-invalid-json' })
   });
   try {
-    const result = await coldRuntime.hayaku.recovery.coldStart({ resume: true });
+    const result = await coldRuntime.hayaku.recovery.coldStart({ resume: true, automaticRetry: false });
     assert.equal(result.ok, false);
     assert.equal(result.completed, false);
     assert.equal(result.awaitingUserReview, false, 'Cold Start failure must return review state instead of throwing');

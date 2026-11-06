@@ -29,10 +29,6 @@ test('a future SDK comment version preserves GUI contracts', () => run(computeTe
 function runCovered(transform = source => source) {
   return run(argTest, (file, source) => file.endsWith('Flashback_Memory.js') ? transform(coveredFixture(source)) : source);
 }
-test('duplicate ARG declarations still fail', () => {
-  runCovered();
-  assert.throws(() => runCovered(source => source + '\n//@arg mode string Duplicate\n'), /unique/);
-});
 test('removing an editable setting control still fails', () => {
   runCovered();
   assert.throws(() => runCovered(source => {
@@ -41,9 +37,5 @@ test('removing an editable setting control still fails', () => {
     return changed;
   }), error => /every normal setting ARG/.test(error.message)
     && JSON.stringify(error.actual) === JSON.stringify(['lexical_weight']));
-});
-test('undeclared normal settings still fail', () => {
-  runCovered();
-  assert.throws(() => runCovered(source => source.replace(/^\/\/@arg lexical_weight .*\n/m, '')), /declared ARG/);
 });
 test('loss of authoritative settings hydration remains a failure', () => assert.throws(() => run(computeTest, (file, s) => file.endsWith('MemorySuiteStorageClient.libra.source.js') ? s.replaceAll('await scopedGetConnectionSettings({ force:true })', 'cachedSettings') : s), /authoritative|hydration/));

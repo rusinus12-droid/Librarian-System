@@ -19,7 +19,6 @@ const plugins = [
   ['Flashback_Memory.js', ['data-go="${go}"', "['connect','link','임베딩 · 서버','연결']", "subtab('c','srv','서버'"], 'flashbackMemorySuiteServerConnectionPanel'],
   ['HAYAKU_Locator_Continuity.js', ['data-hayaku-viewer-goto="server"'], 'hayakuMemorySuiteServerConnectionPanel'],
   ['LIBRA.js', ['data-go="server"'], 'libraMemorySuiteServerConnectionPanel'],
-  ['LIA_Persona_Linker.js', ['data-go="recover"'], 'liaMemorySuiteServerConnectionPanel'],
   ['RETRACE.js', ['data-tab="serverdata"', 'data-server-page="connection"'], 'retraceMemorySuiteServerConnectionPanel']
 ];
 
@@ -52,9 +51,6 @@ for (const [file, navMarkers, hostMarker] of plugins) {
     assert.ok(text.includes('refreshMemorySuiteOwnerStorageDashboard'), `${file} owner storage dashboard`);
     assert.ok(text.includes('RE:TRACE는 저장 모드를 소유하거나 변경하지 않습니다.'), `${file} read-only control-plane contract`);
     assert.ok(!text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} must not expose its own storage-mode panel in RE:TRACE 1.9.77`);
-  } else if (file === 'LIA_Persona_Linker.js') {
-    assert.ok(text.includes('mountLiaServerConnectionPanel'), `${file} local recovery panel mount`);
-    assert.ok(!text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} local owner has no mode-changing panel`);
   } else {
     assert.ok(text.includes('MemorySuiteStorageBridge.mountConnectionPanel'), `${file} panel mount`);
   }
@@ -74,62 +70,8 @@ function memoryStore(entries = {}) {
   };
 }
 
-async function verifyLiaRecoveryPanel() {
-  const text = fs.readFileSync(path.join(pluginDir, 'LIA_Persona_Linker.js'), 'utf8');
-  const start = text.indexOf('function hydrateLiaRecoverySteps(');
-  const end = text.indexOf('function activateTab(', start);
-  assert(start >= 0 && end > start, 'LIA recovery panel extraction');
-  // Mount the original recovery page and actual step renderer; the former
-  // selector-only fake omitted the presentation dependency added by adoption.
-  const { JSDOM } = require('jsdom');
-  const dom = new JSDOM(fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'docs/gui-redesign/lia.html'), 'utf8'));
-  const document = dom.window.document;
-  document.querySelector('.app').id = 'dpg-preview-root';
-  const root = document.createElement('div'); root.id = 'liaMemorySuiteServerConnectionPanel';
-  document.querySelector('[data-page="recover"] .stack').appendChild(root);
-  const originalAdd = dom.window.Element.prototype.addEventListener;
-  dom.window.Element.prototype.addEventListener = function(name, handler, ...rest) {
-    this.handlers ||= {}; this.handlers[name] = handler;
-    return originalAdd.call(this, name, handler, ...rest);
-  };
-  let preview, publish, status;
-  const steps = () => [...document.querySelectorAll('#dpg-preview-root [data-page="recover"] > .steps > .step')];
-  let previews = 0, publishes = 0, clears = 0;
-  let receipt = { records: 2, imageChunks: 1, conflicts: ['different-local-value'], unsupportedServerRecords: [], retainedServerTombstones: 1, unindexedShards: 1 };
-  const recovery = {
-    clear() { clears++; },
-    async preview() { previews++; return receipt; },
-    async publish(selected) { assert.equal(selected, receipt); publishes++; return { restored: 2 }; }
-  };
-  const mount = new Function('document', 'LiaLegacyServerRecovery', 'pluginUnloaded', `${text.slice(start, end)}; return mountLiaServerConnectionPanel;`)(
-    document, recovery, false
-  );
-  assert.equal(mount(), true);
-  preview=root.querySelector('[data-lia-recovery-preview]');publish=root.querySelector('[data-lia-recovery-publish]');status=root.querySelector('[data-lia-recovery-status]');
-  assert.equal(steps().length,4,'original four recovery steps retained');
-  assert(steps().every(step=>step.dataset.state==='pending'),'opening does not imply inspection');
-  assert.equal(clears, 1);
-  assert.equal(previews, 0, 'opening LIA storage performs no automatic server read');
-  assert.equal(publishes, 0, 'opening LIA storage performs no automatic import');
-  assert(root.innerHTML.includes('LIA 로컬 저장'));
-  await preview.handlers.click();
-  assert.equal(publish.disabled, true, 'conflicting local data blocks publication');
-  assert.match(steps()[2].textContent,/가져오기 차단/,'conflict is shown in actual step UI');
-  await publish.handlers.click();
-  assert.equal(publishes, 0);
-  receipt = { ...receipt, conflicts: [] };
-  await preview.handlers.click();
-  assert.equal(publish.disabled, false, 'verified conflict-free preview enables explicit publication');
-  await publish.handlers.click();
-  assert.equal(publishes, 1);
-  assert.equal(publish.disabled, true, 'publication consumes the preview');
-  assert(status.textContent.includes('서버 자료는 그대로 유지됩니다'));
-  assert(steps().every(step=>step.dataset.state==='done'),'publication/readback completion reaches the actual steps');
-  dom.window.close();
-}
 
 async function main() {
-  await verifyLiaRecoveryPanel();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-suite-connection-gui-'));
   const app = createMemorySuiteServer({ host: '127.0.0.1', port: 0, dataDir, autoBackup: false });
   const address = await app.listen();
@@ -154,6 +96,7 @@ async function main() {
       currentScopeProvider: async () => ({ scopeId: 'gui-scope-a', scopeKey: 'gui-scope-a', label: 'GUI Scope A' })
     });
     bridge.createPluginStorageProxy(legacy);
+    const savedServerUrl = async () => await legacy.getItem('__memory_suite_internal_server_url_v1__:hayaku');
 
     assert.equal(await bridge.getMode(), 'plugin_only', 'plugin-only remains default');
     const test = await bridge.testConnection(baseUrl);
@@ -166,7 +109,7 @@ async function main() {
     assert.equal(configured.to.mode, 'server_only');
     assert.equal(configured.to.url, baseUrl);
     assert.equal(args.memory_suite_server_mode, '', 'scope mode must leave the untouched global ARG unchanged');
-    assert.equal(args.memory_suite_server_url, baseUrl);
+    assert.equal(await savedServerUrl(), baseUrl);
 
     await assert.rejects(
       () => bridge.configureConnection({ mode: 'server_only', url: 'http://127.0.0.1:65530' }),
@@ -205,7 +148,7 @@ async function main() {
       () => bridge.configureConnection({ mode:'server_only', url:conflictingUrl }),
       error => error?.code === 'MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE'
     );
-    assert.equal(args.memory_suite_server_url, baseUrl, 'failed mode transition rolls the plugin-global URL back');
+    assert.equal(await savedServerUrl(), baseUrl, 'failed mode transition rolls the plugin-global URL back');
     assert.equal(await bridge.getMode(), 'plugin_only', 'failed mode transition does not commit mirror mode');
 
     process.stdout.write('server_connection_gui_contract_test: PASS\n');

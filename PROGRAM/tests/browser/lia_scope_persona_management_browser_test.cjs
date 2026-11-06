@@ -32,7 +32,6 @@ const {chromium}=require('playwright');
   await page.waitForFunction(()=>document.querySelector('[data-lia-scope-status]')?.textContent.includes('전체 31개'));
   assert.equal(await panel.locator('[data-lia-scope-row]').count(),24);
   assert.equal(await panel.locator('[data-lia-scope-row] img').count(),0,'host names are escaped');
-  assert.equal(await panel.locator('option').filter({hasText:'다른 채팅 Live'}).count(),0);
   await panel.locator('[data-lia-scope-next]').click();assert.equal(await panel.locator('[data-lia-scope-row]').count(),7);
   await panel.locator('[data-lia-scope-prev]').click();
   await panel.locator('[data-lia-scope-query]').fill('여정 1');

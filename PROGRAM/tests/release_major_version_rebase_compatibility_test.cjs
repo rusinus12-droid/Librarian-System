@@ -34,8 +34,7 @@ for (const [name, source, pluginId, handoff, retraceRequired] of [
   // RE:TRACE 1.9.90, "Complete immutable lens handoff"); RE:TRACE requires it in lockstep below.
   ['LIBRA', libra, "const PLUGIN_NAME = 'libra';", "libra.handoff_immutable_source_lenses.v2", 'LIBRA_REQUIRED_HANDOFF_CONTRACT'],
   ['HAYAKU', hayaku, "const HAYAKU_PLUGIN_ID = 'hayaku_locator_continuity';", "hayaku.handoff_immutable_source.v1", 'HAYAKU_REQUIRED_HANDOFF_CONTRACT'],
-  ['FLASHBACK', flashback, "const PLUGIN_SLUG = 'flashback_memory';", "flashback_memory.handoff_immutable_source.v2", 'FLASHBACK_REQUIRED_HANDOFF_CONTRACT'],
-  ['LIA', lia, "pluginId:'lia_persona_linker'", 'lia.live_persona_handoff_immutable_source.v1', 'LIA_REQUIRED_HANDOFF_CONTRACT']
+  ['FLASHBACK', flashback, "const PLUGIN_SLUG = 'flashback_memory';", "flashback_memory.handoff_immutable_source.v2", 'FLASHBACK_REQUIRED_HANDOFF_CONTRACT']
 ]) {
   assert.ok(source.includes('retrace.peer_compatibility.v1'), `${name} peer schema unchanged`);
   assert.ok(source.includes('RETRACE_PEER_PROTOCOL_MAJOR = 1'), `${name} peer protocol major unchanged`);

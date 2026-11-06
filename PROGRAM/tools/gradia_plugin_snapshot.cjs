@@ -21,8 +21,10 @@ module.exports = function createPluginSnapshot(options) {
       const serialized = JSON.stringify(value ?? null), size = byteLength(serialized);
       loadedBytes += size;
       if (loadedBytes > rawLimit) fail('LIB_READ_BUDGET_EXCEEDED');
-      const row = { value: value ?? null, exists: value != null, tombstone: false,
-        revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
+      // An absent key has the same metadata the server reports, so an owner with no records reads as empty.
+      const row = value == null
+        ? { value: null, exists: false, tombstone: false, revision: 0, updatedAt: 0, digest: '', valueBytes: 0 }
+        : { value, exists: true, tombstone: false, revision: 1, updatedAt: 0, digest: fingerprint(serialized), valueBytes: size };
       if (reading) cache.set(key, row);
       return row;
     };

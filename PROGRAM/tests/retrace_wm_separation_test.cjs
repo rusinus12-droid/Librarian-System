@@ -51,7 +51,7 @@ test('RETRACE excludes standalone WM integration surfaces', () => {
   assert.deepEqual(markers.filter(marker => retrace.includes(marker)), []);
 });
 test('RETRACE keeps four memory peers and all five server namespaces', () => {
-  assert.ok(retrace.includes("ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra', 'lia'])"));
+  assert.ok(retrace.includes("ACTIVE_RETRACE_PEER_KEYS = Object.freeze(['flashback', 'hayaku', 'libra'])"));
   assert.ok(retrace.includes("MEMORY_SUITE_OWNER_STATUS_ORDER = Object.freeze(['flashback', 'hayaku', 'libra', 'lia'])"));
   // The approved GUI embeds one literal shell. Parse it instead of matching
   // unescaped markup in JavaScript source; all five selectable namespaces remain.
@@ -63,13 +63,11 @@ test('RETRACE keeps four memory peers and all five server namespaces', () => {
     assert.ok(document.querySelector('[data-server-control="' + action + '"]'), action);
   }
 });
-test('LIBRA internal World Manager refresh and ordinary LIA handoffs remain', () => {
+test('LIBRA internal World Manager refresh remains and LIA has no handoff of its own', () => {
   assert.ok(retrace.includes('libraApi?.rebuildWorldManagerState'));
   assert.ok(retrace.includes("await libraApi.rebuildWorldManagerState({ reason: 'retrace_handoff_completed', persist: true })"));
-  assert.ok(lia.includes('async function adoptLivePersonaHandoff('));
-  assert.ok(lia.includes('async function verifyChatHandoff('));
-  assert.ok(lia.includes('action === "adopt_chat_handoff"'));
-  assert.ok(lia.includes('action === "verify_chat_handoff"'));
+  assert.equal(lia.includes('action === "adopt_chat_handoff"'), false);
+  assert.equal(lia.includes('action === "verify_chat_handoff"'), false);
 });
 test('LIA excludes its WM-only persona preactivation bridge', () => {
   for (const marker of ['prepareLivePersonaHandoff', 'targetPersonaPreactivation', 'prepare_chat_handoff', 'includeWm', 'wmHandoff']) {

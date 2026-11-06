@@ -12,7 +12,7 @@ async function test(name,fn){const f=await fixture();try{await fn(f);results.pus
   const block=out.find(x=>x.content?.includes('[LIBRA CLASSIC RECALL'));assert.ok(block);assert.ok(block.content.includes('지호가 열쇠를 민아에게 반환했다.'));assert.ok(block.content.includes('은빛 열쇠의 소유자는 민아다.'));
   // The graph engine (N02+) delivers unit-level evidence instead of section excerpts; world/scene
   // context still reaches Classic as current world State next to the queried canonical facts.
-  assert.match(block.content,/\[LIBRA_EVIDENCE consumer=classic scope=\S+ units=\d+ sources=\d+\]/);assert.match(block.content,/\[state:state_current\] (?:도서관 · )?world\.rule = 도서관은 정숙 구역/);assert.equal(f.control.calls.length,1);
+  assert.match(block.content,/\[LIBRA_EVIDENCE consumer=classic scope=\S+ units=\d+ sources=\d+\]/);assert.match(block.content,/\[state\] (?:도서관 · )?world\.rule = 도서관은 정숙 구역/);assert.equal(f.control.calls.length,1);
   const recall=await f.r.api.previewUnifiedMemoryRecall(q);assert.ok(recall.memories.length);
   // Excerpts are bounded by the recall character budget and typed by the known evidence families.
   assert.ok(recall.excerptChars<=recall.effectiveRecallMaxChars,`excerpt ${recall.excerptChars} within ${recall.effectiveRecallMaxChars}`);
