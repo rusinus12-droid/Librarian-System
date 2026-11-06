@@ -15,9 +15,10 @@ const context = vm.createContext({
   MICRO_STRING_COLLECTION_FIELDS: new Set(['appearance', 'background', 'personality', 'speech', 'habits', 'abilities', 'knowledge'])
 });
 vm.runInContext([
+  part('const microStateFieldAdmissionReason =', 'const microStateItemIdentity ='),
   part('const microStateItemIdentity =', 'const microStateValueForField ='),
   part('const microStateValueForField =', 'const statePipelineDomainOpenForMicro ='),
-  'Object.assign(globalThis,{microStateItemIdentity,microStateMergeCollection,microStateValueForField});'
+  'Object.assign(globalThis,{microStateItemIdentity,microStateMergeCollection,microStateValueForField,microStateFieldAdmissionReason});'
 ].join('\n'), context);
 const plain = x => JSON.parse(JSON.stringify(x));
 const quote = '폐공장은 천장이 높다. 경찰에 신고하면 세아가 죽는다고 했다.';
@@ -38,8 +39,30 @@ assert.equal(typed('narrative', 'locks', { title: '신고 금지', summary: '경
 const released = typed('narrative', 'locks', { title: '신고 금지', summary: '경찰에 신고하면 세아가 죽는다고 했다', status: 'released' }).value;
 assert.deepEqual(plain(context.microStateMergeCollection('locks', '', [lock.value], [released])).map(r => r.status), ['released'], 'the same title releases the lock instead of adding a second one');
 
+const ruleQuote = '도서관은 정숙 구역이다. 공연실은 허가된 공연 중 소음을 허용한다.';
+const places = { 도서관: { id: 'library', kind: 'location' }, 공연실: { id: 'hall', kind: 'location' } };
+const rule = value => plain(context.microStateValueForField({ domain: 'world', field: 'rule', value,
+  quote: ruleQuote, subjectId: 'library', resolve: name => places[name] || null }));
+assert.deepEqual(rule({ text: '정숙 구역', scopeName: '도서관', exceptions: [{ locationName: '공연실', condition: '허가된 공연 중', effect: '소음을 허용한다' }] }),
+  { ok: true, value: { text: '정숙 구역', scopeRef: 'library', exceptions: [{ locationRef: 'hall', condition: '허가된 공연 중', effect: '소음을 허용한다' }] }, additive: false },
+  'a Micro rule keeps its scope and exception instead of flattening them');
+assert.equal(rule({ text: '정숙 구역', scopeName: '존재하지 않는 장소' }).reason, 'state_value_not_source_bound');
+assert.equal(rule({ text: '정숙 구역', exceptions: [{ locationName: '공연실', condition: '허가된 공연 중', effect: '무조건 허용' }] }).reason, 'state_value_not_source_bound');
+assert.equal(rule({ text: '정숙 구역', scopeRef: 'untrusted-id' }).reason, 'state_value_shape_invalid');
+assert.equal(rule({ text: '정숙 구역', exceptions: {} }).reason, 'state_value_shape_invalid');
+assert.deepEqual(rule('정숙 구역').value, { text: '정숙 구역', scopeRef: 'library', exceptions: [] }, 'legacy scalar rules stay readable');
+const scoped = value => context.microStateValueForField({domain: 'character', field: 'boundaries', value,
+  quote: '민아는 지호에게 내 일기를 읽지 마라고 말했다.', subjectId: 'mina', resolve: name => ({id: name, type: 'person'})});
+assert.equal(scoped({content: '내 일기를 읽지 마', topic: '일기', kind: 'boundary', scope: {targetName: '라온'}}).reason, 'state_value_not_source_bound', 'a known but uncited boundary target is still unbound');
+assert.equal(scoped({content: '내 일기를 읽지 마', topic: '일기', kind: 'boundary', scope: {targetName: '지호', when: '영원히'}}).reason, 'state_value_not_source_bound', 'boundary scope must not invent a time axis');
+assert.equal(context.microStateValueForField({domain: 'world', field: 'ownerRef', value: '도서관', quote: '도서관', subjectId: 'key',
+  resolve: () => ({id: 'library', type: 'world', kind: 'location'})}).reason, 'registry_reference_unresolved', 'a location cannot become an owner organization');
+
 // Admission keeps cross-turn narrative structure Canonical-only.
-const admission = part("if (domain === 'narrative' && field === 'threads') return pending('narrative_thread_canonical_only');", "const clearing = intent.operation === 'clear';");
-assert.match(admission, /if \(domain === 'narrative' && !\['momentum', 'locks'\]\.includes\(field\)\) return pending\('narrative_field_canonical_only'\);/);
-assert.match(admission, /!\(domain === 'narrative' && field === 'locks'\) && MICRO_STATE_RECORD_FIELDS/);
+vm.runInContext('globalThis.MICRO_STATE_RECORD_FIELDS = new Set(["primaryarcid", "locks"]);', context);
+const admit = context.microStateFieldAdmissionReason;
+for (const field of ['momentum', 'locks', 'summary']) assert.equal(admit('narrative', field), '', field + ' retains its Micro route');
+for (const field of ['arcs', 'resolvedArcs', 'turningPoints', 'motifs', 'closedThreads', 'events']) assert.equal(admit('narrative', field), 'narrative_field_canonical_only', field + ' requires cross-turn evidence');
+assert.equal(admit('narrative', 'threads'), 'narrative_thread_canonical_only');
+assert.equal(admit('narrative', 'primaryArcId'), 'state_field_names_record');
 console.log('PASS Micro adds place description, momentum and continuity locks; other narrative fields stay Canonical');

@@ -212,7 +212,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       unifiedAssert(effect!=='remove' || contract.collection===true,'UNIFIED_REMOVE_KIND_INVALID');
       const profileItemKind=['character_preference','character_boundary'].includes(f.claimKind);
       const validateProfileCollection=()=>{
-        unifiedAssert(Array.isArray(v) && v.length<=32 && (effect==='clear' || v.length>0),'UNIFIED_CHARACTER_PROFILE_INVALID');
+        unifiedAssert(Array.isArray(v) && (effect==='clear' || v.length>0),'UNIFIED_CHARACTER_PROFILE_INVALID');
         for(const item of v){
           if(typeof item==='string' && allowLegacyProfileStrings===true){unifiedAssert(unifiedText(item),'UNIFIED_PROFILE_LEGACY_ITEM_INVALID');continue;}
           unifiedKeys(item,f.claimKind==='character_preference'?['content','topic','kind']:['content','topic','kind','scope'],'profile_item');
@@ -231,7 +231,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       if(effect==='clear' && contract.collection===true && contract.profile===true
         && profileItemKind){
         unifiedAssert(v!==null||allowLegacyProfileStrings===true,'UNIFIED_PROFILE_SELECTOR_REQUIRED');
-        unifiedAssert(v===null || (Array.isArray(v) && v.length>0 && v.length<=32),'UNIFIED_PROFILE_SELECTOR_REQUIRED');
+        unifiedAssert(v===null || (Array.isArray(v) && v.length>0),'UNIFIED_PROFILE_SELECTOR_REQUIRED');
         if(Array.isArray(v))validateProfileCollection();
       } else if(effect==='clear')unifiedAssert(v===null,'UNIFIED_CLEAR_REQUIRES_NULL');
       else if (contract.value.endsWith('Ref')) {
@@ -244,7 +244,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
         if (f.claimKind==='management') unifiedAssert(target.type==='person' || target.kind==='organization','UNIFIED_MANAGER_KIND_INVALID');
       } else if (f.claimKind === 'rule') {
         unifiedKeys(v, ['text','scopeTempRef','exceptions'], 'rule');
-        unifiedAssert(unifiedText(v.text) && entities.get(v.scopeTempRef)?.type === 'world' && Array.isArray(v.exceptions) && v.exceptions.length <= 12, 'UNIFIED_RULE_INVALID');
+        unifiedAssert(unifiedText(v.text) && entities.get(v.scopeTempRef)?.type === 'world' && Array.isArray(v.exceptions), 'UNIFIED_RULE_INVALID');
         for (const ex of v.exceptions) {
           unifiedKeys(ex, ['locationTempRef','condition','effect'], 'exception');
           unifiedAssert(entities.get(ex.locationTempRef)?.type === 'world' && unifiedText(ex.condition) && unifiedText(ex.effect), 'UNIFIED_RULE_EXCEPTION_INVALID');
@@ -344,7 +344,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
         validateProfileCollection();
       } else if (contract.collection === true) {
         if (f.claimKind === 'world_description') unifiedAssert(['location','organization','object','environment','other'].includes(subject.kind), 'UNIFIED_DESCRIPTION_SUBJECT_INVALID');
-        unifiedAssert(Array.isArray(v) && v.length <= 32 && (!contract.profile || v.length > 0) && v.every(x => unifiedText(x)), f.claimKind==='knowledge'?'UNIFIED_KNOWLEDGE_INVALID':'UNIFIED_CHARACTER_PROFILE_INVALID');
+        unifiedAssert(Array.isArray(v) && (!contract.profile || v.length > 0) && v.every(x => unifiedText(x)), f.claimKind==='knowledge'?'UNIFIED_KNOWLEDGE_INVALID':'UNIFIED_CHARACTER_PROFILE_INVALID');
       } else unifiedAssert(unifiedText(v), 'UNIFIED_VALUE_INVALID');
       if (f.domain === 'relationship') unifiedAssert(entities.get(f.targetTempRef)?.type === 'person' && f.targetTempRef !== f.subjectTempRef && CONTINUITY_STATE_RELATION_DIMENSIONS.includes(f.dimension), 'UNIFIED_RELATION_INVALID');
       else unifiedAssert(f.targetTempRef === undefined && f.dimension === undefined, 'UNIFIED_UNEXPECTED_RELATION');
@@ -377,6 +377,8 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       return admission?.schema==='libra.record_admission.v1' && !!expected && expected===digest(admission)
         && memory.recordAdmissionDigest===expected;
     };
+    // 2026-11-06: 심한 State 누락의 원인 중 하나로 상위/건수 선별이 의심되어 제거함.
+    // 플러그인과 동일하게 모든 사실을 검증하며, 개수만으로 잘라 버리지 않는다.
     const validateUnifiedArtifact = (artifact, batch, options = {}) => {
       try {
         unifiedKeys(artifact, ['schema','entities','facts','stateBindings'], 'artifact');
@@ -384,9 +386,9 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
         unifiedAssert(asArray(batch).length === BATCH_SIZE, 'UNIFIED_FIVE_PAIRS_REQUIRED');
         const sources = canonicalEvidenceSources(batch);
         unifiedAssert(sources.size === 10, 'UNIFIED_SOURCE_ROLES_INVALID');
-        unifiedAssert(Array.isArray(artifact.entities) && artifact.entities.length <= 100, 'UNIFIED_ENTITIES_INVALID');
-        unifiedAssert(Array.isArray(artifact.facts) && artifact.facts.length > 0 && artifact.facts.length <= 120, 'UNIFIED_FACTS_INVALID');
-        unifiedAssert(Array.isArray(artifact.stateBindings) && artifact.stateBindings.length <= 120, 'UNIFIED_BINDINGS_INVALID');
+        unifiedAssert(Array.isArray(artifact.entities), 'UNIFIED_ENTITIES_INVALID');
+        unifiedAssert(Array.isArray(artifact.facts) && artifact.facts.length > 0, 'UNIFIED_FACTS_INVALID');
+        unifiedAssert(Array.isArray(artifact.stateBindings), 'UNIFIED_BINDINGS_INVALID');
         unifiedAssert(JSON.stringify(artifact).length <= 120000, 'UNIFIED_ARTIFACT_TOO_LARGE');
         const entities = new Map(), facts = new Map();
         for (const e of artifact.entities) {

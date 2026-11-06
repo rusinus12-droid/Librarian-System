@@ -55,7 +55,7 @@ async function run() {
         calls.profile++;
         const user = args[0].messages.find(m => m.role === 'user').content;
         assert.ok(user.includes('읽지 마'), 'cue window is sent');
-        assert.ok(!user.includes('정숙 구역'), 'only cue windows are sent, not the whole batch');
+        assert.ok(user.includes('바닷가 마을'), 'the audit also receives background coverage windows');
         return { type: 'success', result: JSON.stringify({ items: [
           { personRef: 'mina', category: 'boundary', content: '지호에게 자신의 일기를 다시는 읽지 말라고 했다', ref: 't4-a', quote: '다시는 내 일기를 읽지 마.', speakerQuote: '민아는 지호에게' },
           // The name appears only as the recipient: not attributable to 지호.

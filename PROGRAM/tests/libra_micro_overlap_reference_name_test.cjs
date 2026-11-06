@@ -42,6 +42,12 @@ const standing = { entities: [...registry.entities, { id: 'ce_world_old', name: 
 const view = context.microRegistryViewWithPatch(standing, patch);
 assert.equal(view.entities.filter(row => row.name === '거실').length, 1);
 assert.equal(context.microEffectiveEntityId(standing, patch, created.id), 'ce_world_old');
+const nested = {text: created.id, scopeRef: created.id, exceptions: [{locationRef: created.id, condition: '조건', effect: '효과'}]};
+const remapped = context.microEffectiveEntityId(standing, patch, nested);
+assert.equal(remapped.scopeRef, 'ce_world_old');
+assert.equal(remapped.exceptions[0].locationRef, 'ce_world_old');
+assert.equal(remapped.text, created.id, 'identity remapping must not rewrite prose');
+assert.equal(context.microEffectiveEntityId(standing, patch, [{organizationRef: created.id}])[0].organizationRef, 'ce_world_old');
 // The registry itself is never modified by building the view.
 assert.equal(registry.entities.length, 1);
 console.log('PASS overlap Micro reference keeps the approved patch name; standing records win; registry untouched');

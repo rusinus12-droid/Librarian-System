@@ -108,12 +108,12 @@ async function test(name, fn) { const f=await fixture(); try {await fn(f);result
     assert.equal(person(f).state.personality,undefined);assert.equal(person(f).state.background,undefined);
     assert.equal(f.getMemory().canonicalArtifact.facts.length,15);
   });
-  await test('opposite effects on one item stay pending without colliding with another axis', async f=>{
+  await test('a later revocation wins and keeps the earlier value pending without touching another axis', async f=>{
     add(f,'character_habit','habits',['여행 일지를 씀']);
     add(f,'character_habit','habits',['여행 일지를 씀'],{effect:'remove',text:'민아는 여행 일지를 쓰는 습관을 버렸다.'});
     add(f,'character_ability','abilities',['항로 계산']);
-    await complete(f);assert.equal(person(f).state.habits,undefined);
-    assert.ok(f.getHead().unifiedApplied.pending.some(row=>row.field==='habits'&&row.reason==='same_source_order_conflict'));
+    await complete(f);assert.deepEqual(person(f).state.habits,[]);
+    assert.ok(f.getHead().supersededState.some(row=>row.field==='habits'&&row.status==='pending'&&row.value==='여행 일지를 씀'));
     assert.deepEqual(person(f).state.abilities,['항로 계산']);
   });
   await test('omitted bindings still preserve item-specific revocation in recall', async f=>{

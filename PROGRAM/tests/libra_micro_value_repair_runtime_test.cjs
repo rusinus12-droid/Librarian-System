@@ -38,6 +38,21 @@ const run = async (body, claims, check, before = null) => {
 const nameOf = (head, id) => head.world.find(row => row.id === id)?.name;
 
 (async () => {
+  const featureQuote='민아는 검은 머리카락과 붉은 눈동자를 지녔다.';
+  await run(featureQuote,[{...location(featureQuote,''),actor:'민아',stateChangeType:'none',stateIntent:undefined}],async({head})=>{
+    const mina=head.characters.find(row=>row.name==='민아');
+    assert.ok(mina.state.appearance.includes('검은 머리카락'));
+    assert.ok(mina.state.appearance.includes('붉은 눈동자'),'distinct features in one observation are both projected');
+  });
+  const habit='민아는 평소처럼 주방에서 아침 식사를 준비했다.',goal='그녀는 가족을 지켜야 했다.';
+  await run(habit+' 민아는 가족을 바라보았다. '+goal,[location(habit,'주방'),
+    {...location(goal,''),stateChangeType:'none',stateIntent:undefined}],async({head,record})=>{
+    const mina=head.characters.find(row=>row.name==='민아');
+    assert.equal(nameOf(head,mina.state.locationRef),'주방');
+    assert.ok(mina.state.habits.includes(habit),'one observed sentence can establish both location and habit');
+    assert.equal(mina.state.goal,goal,'an explicit protection goal keeps its source-bound antecedent');
+    assert.equal(record.claims.length,4,'original observations stay alongside completed State intents');
+  });
   // Written out of order on purpose: the source decides what came last, not the claim list.
   await run('민아는 부두에 도착했다. 민아는 창고 안으로 들어갔다.', [
     location('민아는 창고 안으로 들어갔다.', '창고'),
@@ -84,7 +99,7 @@ const nameOf = (head, id) => head.world.find(row => row.id === id)?.name;
   const many = Array.from({ length: 18 }, (_, i) => ({ ...location('비가 내렸다.', ''), stateChangeType: 'none', stateIntent: undefined, text: `사건 ${i}` }));
   await run('비가 내렸다. 민아는 다락방으로 올라갔다.', [...many, location('민아는 다락방으로 올라갔다.', '다락방')], async ({ head, record, publication }) => {
     assert.equal(publication.analysisStatus, 'verified', 'too many claims no longer lose the whole turn');
-    assert.equal(record.claims.length, 16);
+    assert.equal(record.claims.length, 19);
     assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '다락방', 'and the change is what stays');
   });
   const independent = Array.from({ length: 16 }, (_, i) => {
@@ -95,21 +110,21 @@ const nameOf = (head, id) => head.world.find(row => row.id === id)?.name;
   for (const ordered of [[...independent, lastMove], [lastMove, ...independent.slice().reverse()]]) {
     await run([...independent, lastMove].map(claim => claim.text).join(' '), ordered, async ({ head, record, publication }) => {
       assert.equal(publication.analysisStatus, 'verified');
-      assert.equal(record.claims.length, 16);
+      assert.equal(record.claims.length, 17);
       assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '다락방', 'source recency wins even with more than sixteen State changes');
-      assert.equal(record.claims.some(claim => claim.stateIntent?.target?.entityName === '검증인물01'), false);
-      assert.deepEqual(record.rejected, [{ index: ordered.indexOf(independent[0]), reason: 'claim_limit_exceeded' }], 'omission remains diagnostic');
+      assert.equal(record.claims.some(claim => claim.stateIntent?.target?.entityName === '검증인물01'), true);
+      assert.deepEqual(record.rejected, [], 'independent State facts are not dropped');
     });
   }
   const moves = Array.from({ length: 17 }, (_, i) => location(`민아는 검증방${i + 1}에 도착했다.`, `검증방${i + 1}`));
   await run(moves.map(claim => claim.text).join(' '), [...moves].reverse(), async ({ head, record }) => {
-    assert.equal(record.claims.length, 16);
+    assert.equal(record.claims.length, 17);
     assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '검증방17', 'same-field reduction still precedes the count limit');
   });
-  for (const length of [65, 1000]) await run('비가 내렸다. 민아는 다락방으로 올라갔다.', Array.from({ length }, () => location('민아는 다락방으로 올라갔다.', '다락방')), async ({ head, record, publication }) => {
-    assert.equal(publication.analysisStatus, 'minimum_source_bound', 'an oversized response retains only source-bound fallback memory');
-    assert.equal(record.claims.length, 0);
-    assert.equal(nameOf(head, head.characters.find(row => row.name === '민아').state.locationRef), '서재', 'oversized input changes no State');
+  await run('비가 내렸다. 민아는 다락방으로 올라갔다.', Array.from({length:65}, () => location('민아는 다락방으로 올라갔다.', '다락방')), async ({head, record, publication}) => {
+    assert.equal(publication.analysisStatus,'verified');
+    assert.equal(record.claims.length,65);
+    assert.equal(nameOf(head,head.characters.find(row=>row.name==='민아').state.locationRef),'다락방');
   });
   await run('민아는 다락방으로 올라갔다.', [{ ...location('민아는 다락방으로 올라갔다.', '다락방'), stateIntent: { domain: 'character', target: { entityName: '민아' }, field: 'locationRef', operation: 'set', value: '다락방' } }], async ({ head }) => {
     const before = head.characters.length;
