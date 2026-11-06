@@ -65,4 +65,9 @@ for (const field of ['momentum', 'locks', 'summary']) assert.equal(admit('narrat
 for (const field of ['arcs', 'resolvedArcs', 'turningPoints', 'motifs', 'closedThreads', 'events']) assert.equal(admit('narrative', field), 'narrative_field_canonical_only', field + ' requires cross-turn evidence');
 assert.equal(admit('narrative', 'threads'), 'narrative_thread_canonical_only');
 assert.equal(admit('narrative', 'primaryArcId'), 'state_field_names_record');
+// A short past-tense predicate is a moment, not a trait; a named trait still passes.
+const speechQuote = '그의 목소리가 차가워졌다. 세희는 조용하지만 단단한 목소리로 말한다.';
+const speech = value => plain(context.microStateValueForField({ domain: 'character', field: 'speech', value, quote: speechQuote, subjectId: 'ce_person_x', resolve: () => null }));
+assert.equal(speech('차가워졌다').reason, 'state_value_momentary_fragment');
+assert.equal(speech('조용하지만 단단한 목소리로 말한다').ok, true);
 console.log('PASS Micro adds place description, momentum and continuity locks; other narrative fields stay Canonical');

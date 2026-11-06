@@ -29,7 +29,9 @@ const canonical=f=>{const {embedding,...memory}=f.getMemory();return JSON.string
   // thread/literal-name checks in a8454a4 and ID FORMAT in 9ac4f8b, ~3.4k chars); before them the prompt was ~11.7k.
   // Re-pinned 2026-11-06 (+~1.4k from 15.5k): place description, per-person profile coverage, thread closure and
   // names-from-State guidance. Story structure moved to its own small pass instead of this prompt.
-  assert.ok(system.length<17200,'preserve the shared extraction prompt budget including adult continuity: '+system.length);
+  // 2026-11-06 user decision: extraction clarity outranks a fixed prompt size. This is only a
+  // runaway guard against accidental duplication, not a budget to trim instructions to.
+  assert.ok(system.length<24000,'preserve the shared extraction prompt budget including adult continuity: '+system.length);
   const state=()=>f.getHead().characters.find(row=>row.name==='민아').state;
   for(const [category,content] of Object.entries(categories))assert.deepEqual(state()[category],category==='goal'?content:[content]);
   const note=f.getMemory().canonicalArtifact.facts.find(row=>row.tempFactId==='provider_unclassified');

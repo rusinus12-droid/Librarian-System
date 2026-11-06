@@ -467,7 +467,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
           ||!lifecycleId||!['new','accepted'].includes(value.linkStatus)||value.link==='associate')continue;
         const participantIds=asArray(value.participantIds).map(row=>({role:string(row?.role||''),personId:string(row?.personId||'')})).sort((a,b)=>a.role.localeCompare(b.role));
         const participants=asArray(value.participants).map(row=>({role:string(row?.role||''),name:string(names.get(row?.personTempRef)||'')})).filter(row=>row.name).sort((a,b)=>a.role.localeCompare(b.role));
-        if(!participantIds.length||participants.length!==participantIds.length)continue;
+        if(participants.length!==participantIds.length)continue;
         index.byLifecycle.set(lifecycleId,{lifecycleId,ref,memory,cursor,originKey:cursor.canonicalOriginKey,position,
           factId:string(fact.tempFactId),value:clone(value),participantIds,participants,
           lineageDigest:digest(index.lineage.slice(0,position+1))});

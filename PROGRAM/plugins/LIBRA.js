@@ -34251,8 +34251,39 @@ function createLibraReadonlySourceContext(owner) {
       : field === 'affiliations' ? JSON.stringify([item?.organizationRef])
       : ['preferences', 'boundaries'].includes(field) ? unifiedProfileItemIdentity(field, subjectId, item) || JSON.stringify(item)
       : JSON.stringify(item);
+    // Text profile items that say the same thing are one item. Words are compared without
+    // the leading subject (세희는), punctuation and sentence endings; when every word of the
+    // shorter item appears in the longer one (a trailing Korean particle allowed, never a
+    // trailing digit), the fuller wording is kept. Structured items keep exact identity.
+    const profileTextWords = value => string(value).normalize('NFKC').toLowerCase()
+      .replace(/^\s*[가-힣]{1,5}(?:은|는|이|가)\s+/u, '')
+      .split(/[\s.,!?·"'“”‘’…~()\[\]-]+/u)
+      .map(word => word.replace(/(?:하고있었다|하고있다|하였다|했었다|했다|한다|하다|함|이었다|였다|이다|입니다|있었다|있다|었다|았다|다)$/u, ''))
+      .filter(Boolean);
+    const profileTextSame = (left, right) => {
+      const a = profileTextWords(left), b = profileTextWords(right);
+      if (!a.length || !b.length) return string(left).trim() === string(right).trim();
+      const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+      if (short.join('').length < 3) return short.join(' ') === long.join(' ');
+      // A longer stem may take any short ending; a one-syllable noun (눈, 키) only a particle.
+      const particleTail = (whole, stem) => whole.startsWith(stem) && (stem.length >= 2
+        ? /^[가-힣]{1,4}$/u.test(whole.slice(stem.length)) : /^(?:은|는|이|가|을|를|의|에|와|과|도|로|으로|에서)$/u.test(whole.slice(stem.length)));
+      return short.every(word => long.some(other => other === word || particleTail(other, word) || particleTail(word, other)));
+    };
+    const mergeProfileTextItems = (beforeItems, items) => {
+      const out = [...beforeItems];
+      for (const item of items) {
+        if (typeof item !== 'string') { if (!out.some(row => JSON.stringify(row) === JSON.stringify(item))) out.push(item); continue; }
+        const at = out.findIndex(row => typeof row === 'string' && profileTextSame(row, item));
+        if (at < 0) out.push(item);
+        else if (profileTextWords(out[at]).join('').length < profileTextWords(item).join('').length) out[at] = item;
+      }
+      return out;
+    };
     const microStateMergeCollection = (field, subjectId, beforeValue, items) => {
       const merged = Array.isArray(beforeValue) ? clone(beforeValue) : beforeValue == null || beforeValue === '' ? [] : [clone(beforeValue)];
+      if ((MICRO_STRING_COLLECTION_FIELDS.has(field) || field === 'description') && asArray(items).every(item => typeof item === 'string'))
+        return mergeProfileTextItems(merged, asArray(items));
       for (const item of asArray(items)) {
         const identity = microStateItemIdentity(field, subjectId, item);
         const index = merged.findIndex(row => microStateItemIdentity(field, subjectId, row) === identity);
@@ -34340,6 +34371,18 @@ function createLibraReadonlySourceContext(owner) {
         return !referenced || referenced.id === subjectId || !validKind ? fail('registry_reference_unresolved') : done(referenced.id);
       }
       if (domain === 'world' && field === 'rule') return done({ text: value, scopeRef: subjectId, exceptions: [] });
+      // A short past-tense predicate (차가워졌다, 부드러웠다) tells what happened in the moment,
+      // and a clause cut off at a connective (어렸지만) states nothing whole. Neither names a
+      // lasting trait. Past tense is the ㅆ final consonant before 다; 있다/지녔다 describe.
+      if (domain === 'character' && ['appearance', 'background', 'personality', 'speech', 'habits', 'abilities'].includes(field) && typeof value === 'string') {
+        const trimmed = value.trim().replace(/[.!…]+$/u, '');
+        const before = trimmed.endsWith('다') ? trimmed.slice(-2, -1) : '';
+        const code = before ? before.charCodeAt(0) - 0xAC00 : -1;
+        const pastPredicate = code >= 0 && code < 11172 && code % 28 === 20 && !['있', '녔'].includes(before);
+        if ((field !== 'background' && trimmed.length <= 14 && pastPredicate)
+          || /(?:지만|는데|은데|면서|으며|며|아서|어서|니까|는지|도록)$/u.test(trimmed))
+          return fail('state_value_momentary_fragment');
+      }
       // A place's lasting description is a list like a character profile; one quote adds one item.
       return done(value, (domain === 'character' && MICRO_STRING_COLLECTION_FIELDS.has(field)) || (domain === 'world' && field === 'description'));
     };
@@ -58911,7 +58954,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'Each claim has changeKind (event, person, relation, world, thread or correction), text, actor, target, temporalRole (current, historical, hypothetical or uncertain), certainty (confirmed or uncertain), epistemicStatus (observed, reported or uncertain), stateChangeType (none, set or clear), and evidence with role, messageId, startOffset, endOffset and exactQuote.',
         'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. Copy an evidenceCandidates object unchanged when it supports the claim. claims is an array; each claim.evidence is an object.',
         'For every observed current set/clear change, include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
-        'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world sceneTime takes a value copied from the quote. world rule takes either a quoted rule string, or {"text":copied from the quote,"scopeName":cited place name or "","exceptions":[{"locationName":cited place,"condition":copied from the quote,"effect":copied from the quote}]}; use the object when the source states a scope or exception. Never omit a stated exception or invent permission from a rule. world description takes one lasting purpose or feature of the place copied from the quote (never a passing condition). For domain narrative (target {scope:"current_narrative"}) summary takes one quoted sentence describing the established current situation, never a recap invented from prior State; momentum takes one quoted sentence of the central pressure now established; locks take value {"title":"short title","summary":copied from the quote,"status":"active|released"} for a condition later scenes must keep while it holds (a threat in force, a captivity, a standing deal), released with the same title when the turn ends it. For narrative threads/arcs/resolvedArcs/turningPoints/motifs/closedThreads/events you may propose a source-bound candidate as stateIntent, with value {title,summary,status} or a quoted string. This proposal is retained as Micro data for the next Canonical synthesis; it NEVER authorizes directly writing those State fields. Use only what this turn supports: a possible turning point, recurrence, task fulfillment or closure is a candidate, not a confirmed cross-turn conclusion. Different candidates must remain separate claims. Canonical reads the original turns together with ALL verified Micro claims and decides what to confirm, revise or reject. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
+        'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. Use appearance, background, personality, speech, habits or abilities only for a lasting trait the turn states as characteristic, and copy a complete phrase that names it (e.g. 흰 머리를 단발로 땋아 내린), never a bare predicate such as 차가워졌다; a momentary look, tone or single action is condition or emotion. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world sceneTime takes a value copied from the quote. world rule takes either a quoted rule string, or {"text":copied from the quote,"scopeName":cited place name or "","exceptions":[{"locationName":cited place,"condition":copied from the quote,"effect":copied from the quote}]}; use the object when the source states a scope or exception. Never omit a stated exception or invent permission from a rule. world description takes one lasting purpose or feature of the place copied from the quote (never a passing condition). For domain narrative (target {scope:"current_narrative"}) summary takes one quoted sentence describing the established current situation, never a recap invented from prior State; momentum takes one quoted sentence of the central pressure now established; locks take value {"title":"short title","summary":copied from the quote,"status":"active|released"} for a condition later scenes must keep while it holds (a threat in force, a captivity, a standing deal), released with the same title when the turn ends it. For narrative threads/arcs/resolvedArcs/turningPoints/motifs/closedThreads/events you may propose a source-bound candidate as stateIntent, with value {title,summary,status} or a quoted string. This proposal is retained as Micro data for the next Canonical synthesis; it NEVER authorizes directly writing those State fields. Use only what this turn supports: a possible turning point, recurrence, task fulfillment or closure is a candidate, not a confirmed cross-turn conclusion. Different candidates must remain separate claims. Canonical reads the original turns together with ALL verified Micro claims and decides what to confirm, revise or reject. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
         'LOCATION VALUE: copy only the destination or current place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
         'UNIQUENESS: finish valid JSON. Do not loop, paraphrase one observation repeatedly, or invent text unrelated to its quote. Each claim must add a distinct source fact or State field. A quote may support different fields, never endless restatements.',
         'COVERAGE: preserve EVERY distinct supported observation and its State intent; never choose a top-N or drop less prominent facts. Audit each named person for appearance (hair/eyes), background, personality, speech, habitual behavior, abilities, goals, emotions, knowledge, preferences, boundaries and affiliations. Observed lasting traits and stated current goals require State intents, not only event summaries. Keep each item separate; do not stop after sixteen.',
@@ -60403,7 +60446,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         } else {
           const known = domain === 'world' ? resolveEntity(target.entityName, 'world') : null;
           if (known && target.entityKind && known.kind !== 'other' && known.kind !== target.entityKind) return pending('registry_entity_kind_conflict');
-          entity = resolveOrNew(target.entityName, domain === 'character' ? 'person' : 'world', target.entityKind || 'other');
+          // Something a person holds, or that sits inside something, is an object even when the producer omits its kind.
+          // A scene time belongs to a place; a date or clock reading is the value, never the place's name.
+          if (domain === 'world' && field === 'sceneTime' && /(?:\d{1,4}\s*[-:./년월일시분]|\b(?:AM|PM)\b|^\s*(?:오전|오후)\b)/iu.test(string(target.entityName)))
+            return pending('scene_time_target_not_place');
+          const fieldKind = domain === 'world' && ['holderRef', 'containerRef'].includes(field) ? 'object' : domain === 'world' && field === 'sceneTime' ? 'location' : '';
+          entity = resolveOrNew(target.entityName, domain === 'character' ? 'person' : 'world', target.entityKind || fieldKind || 'other');
         }
         if (!entity) return pending('registry_target_unresolved');
       } else if (domain === 'relationship') {
@@ -62267,6 +62315,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const clean=pick(span,['ref','quote'],path+'.evidenceSpans['+i+']');
           if(isPlainObject(clean)){
             if(canonicalEvidenceSpanBinding(clean,sources.get(clean.ref)))return [clean];
+            // A quotation mark at the very edge of a quote is often the dialogue's opening
+            // mark copied from further back. Dropping only edge marks changes no wording.
+            if(typeof clean.quote==='string'){
+              const trimmed=clean.quote.replace(/^[\s"“”'‘’「」『』]+|[\s"“”'‘’「」『』]+$/g,'');
+              if(trimmed!==clean.quote&&canonicalEvidenceComparable(trimmed).length>=2){
+                const retry={...clean,quote:trimmed};
+                if(canonicalEvidenceSpanBinding(retry,sources.get(retry.ref))){
+                  admission.normalizedFields.push({path:path+'.evidenceSpans['+i+']',field:'quote',reason:'edge_quotation_marks_trimmed'});
+                  return [retry];
+                }
+              }
+            }
             if(canonicalEvidenceComparable(clean.quote).length>=4){
               for(const src of sources.values()){
                 if(canonicalEvidenceSpanBinding(clean,src)){clean.ref=src.ref;return [clean];}
@@ -62367,6 +62427,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
             admission.normalizedFields.push({index:i,field:'claimKind',reason:'character_info_to_storage',claimKind:f.claimKind});
             }
+          // An appearance may only use words the chat itself contains somewhere in this
+          // batch. Words found nowhere in it (a lore-only "윤기")
+          // means the wording came from outside the chat; the statement stays in memory as
+          // a character note and does not become a profile field.
+          if(f?.claimKind==='character_appearance'
+            &&isPlainObject(f.values)&&(f.effect||'set')==='set'){
+            const field=UNIFIED_CLAIMS[f.claimKind].value,items=asArray(f.values[field]).filter(item=>typeof item==='string');
+            const chat=canonicalEvidenceComparable([...sources.values()].map(src=>string(src?.raw||'')).join('\n'));
+            const names=new Set([...entities.values()].map(entity=>canonicalEvidenceComparable(entity.name)));
+            const unsupported=items.flatMap(item=>string(item).split(/[^\p{L}\p{N}]+/u)
+              .map(word=>canonicalEvidenceComparable(word)).filter(word=>word.length>=2&&/[가-힣]/u.test(word)&&!names.has(word)
+                &&![...names].some(name=>name&&word.startsWith(name))&&!chat.includes(word.slice(0,2))));
+            // Appearance is where lore detail leaks; two outside words, not one inflection, mark it.
+            if(items.length&&new Set(unsupported).size>=2){
+              const note=items.join(' · ');
+              f.claimKind='character_note';f.domain='character';f.values={detail:note};f.text=unifiedText(f.text)?f.text:note;
+              admission.normalizedFields.push({index:i,field:'claimKind',reason:'profile_wording_not_in_source_memory_only',words:[...new Set(unsupported)].slice(0,6)});
+            }
+          }
           const c=UNIFIED_CLAIMS[f?.claimKind];
           if(c){f.values=pick(f.values,[c.value],'facts['+i+'].values');const v=f.values?.[c.value];
             const nested={rule:['text','scopeTempRef','exceptions'],thread:['summary','status','kind','interpretation','link','resolution','participants','linkCandidateAlias'],affiliation:['organizationTempRef','role','status'],access:['personTempRef','permission','status'],
@@ -62641,7 +62720,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ||!lifecycleId||!['new','accepted'].includes(value.linkStatus)||value.link==='associate')continue;
         const participantIds=asArray(value.participantIds).map(row=>({role:string(row?.role||''),personId:string(row?.personId||'')})).sort((a,b)=>a.role.localeCompare(b.role));
         const participants=asArray(value.participants).map(row=>({role:string(row?.role||''),name:string(names.get(row?.personTempRef)||'')})).filter(row=>row.name).sort((a,b)=>a.role.localeCompare(b.role));
-        if(!participantIds.length||participants.length!==participantIds.length)continue;
+        if(participants.length!==participantIds.length)continue;
         index.byLifecycle.set(lifecycleId,{lifecycleId,ref,memory,cursor,originKey:cursor.canonicalOriginKey,position,
           factId:string(fact.tempFactId),value:clone(value),participantIds,participants,
           lineageDigest:digest(index.lineage.slice(0,position+1))});
@@ -63521,7 +63600,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(!lifecycleId||!['new','accepted'].includes(value.linkStatus)||value.link==='associate')continue;
           const participantIds=asArray(value.participantIds).map(row=>({role:string(row?.role||''),personId:string(row?.personId||'')})).sort((a,b)=>a.role.localeCompare(b.role));
           const participants=asArray(value.participants).map(row=>({role:string(row?.role||''),name:string(entityNames.get(row?.personTempRef)||'')})).filter(row=>row.name).sort((a,b)=>a.role.localeCompare(b.role));
-          if(!participantIds.length||participants.length!==participantIds.length)continue;
+          // A thread whose people were not named is still a story that can continue or close;
+          // it is offered with no participants, and only a fact that also names none can link to it.
+          if(participants.length!==participantIds.length)continue;
           const prior=lifecycles.get(lifecycleId);
           if(prior&&Number(prior.index)>index)continue;
           lifecycles.set(lifecycleId,{lifecycleId,ref,index,factId:string(fact.tempFactId),value:clone(value),participantIds,participants,
@@ -63642,7 +63723,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             participantIds=clone(target.participantIds);inheritedParticipants=true;
           }
         }
-        const independentlyIdentified=inheritedParticipants||(participantIds.length===asArray(value.participants).length&&participantIds.length>0);
+        const bothUnnamed=!!target&&!asArray(value.participants).length&&!asArray(target.participantIds).length;
+        const independentlyIdentified=inheritedParticipants||bothUnnamed||(participantIds.length===asArray(value.participants).length&&participantIds.length>0);
         // A first-batch reaffirmation with no prior history cannot name an old
         // lifecycle. Retain its independently evidenced promise as a new thread.
         // A missing/partial candidate read is not proof that history is empty.
@@ -63651,7 +63733,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           &&Number(basis.previousTurn||0)===0
           &&!asArray(basis.head?.narrative?.threads).length&&!asArray(basis.head?.narrative?.closedThreads).length){
           delete value.link;delete value.linkCandidateAlias;
-          value.lifecycleId=newLifecycleId;value.linkStatus='new';value.participantIds=participantIds;continue;
+          value.lifecycleId=newLifecycleId;value.linkStatus='new';(participantIds.length?value.participantIds=participantIds:delete value.participantIds);continue;
         }
         const anchorRanks=target?candidateContext.candidates.filter(candidate=>candidate.allowedLinks.includes(kind)
           &&digest(candidate.participantIds)===digest(participantIds)&&string(candidate.value.kind||'other')===string(value.kind||'other'))
@@ -63659,7 +63741,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           .sort((a,b)=>b.score-a.score):[];
         const anchorGap=anchorRanks.length>1?anchorRanks[0].score-anchorRanks[1].score:Infinity;
         if(!kind){value.lifecycleId=newLifecycleId;value.linkStatus='new';
-          if(independentlyIdentified)value.participantIds=participantIds;
+          if(independentlyIdentified)(participantIds.length?value.participantIds=participantIds:delete value.participantIds);
           delete value.linkCandidateAlias;continue;
         }
         let reason='';
@@ -63680,7 +63762,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             &&sameBatchThreadEvidenceForward(prior,fact)
             &&UNIFIED_THREAD_ACTIVE_STATUS.includes(priorValue.status)
             &&UNIFIED_THREAD_CLOSED_STATUS.includes(value.status)&&!!value.resolution){
-            value.lifecycleId=priorValue.lifecycleId;value.linkStatus='accepted';value.participantIds=participantIds;
+            value.lifecycleId=priorValue.lifecycleId;value.linkStatus='accepted';(participantIds.length?value.participantIds=participantIds:delete value.participantIds);
             value.linkTarget={schema:'libra.same_batch_thread_target.v1',scopeKey:basis.scopeKey,
               worldlineId:string(basis.worldlineId||'main'),sourceDigest:sourceDigest(batch),
               subjectTempRef:alias,factId:prior.tempFactId,lifecycleId:priorValue.lifecycleId,participantIds:clone(participantIds),
@@ -63704,10 +63786,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         else if(kind==='replace'&& !UNIFIED_THREAD_ACTIVE_STATUS.includes(value.status))reason='replace_requires_active_status';
         else if(kind==='associate'&& !['open','blocked','uncertain','resolved','closed'].includes(value.status))reason='associate_status_invalid';
         if(reason){value.lifecycleId=newLifecycleId;value.linkStatus='pending';value.linkPendingReason=reason;
-          if(independentlyIdentified)value.participantIds=participantIds;
+          if(independentlyIdentified)(participantIds.length?value.participantIds=participantIds:delete value.participantIds);
           delete value.linkTarget;
         }else{
-          value.lifecycleId=target.lifecycleId;value.linkStatus='accepted';value.participantIds=participantIds;
+          value.lifecycleId=target.lifecycleId;value.linkStatus='accepted';(participantIds.length?value.participantIds=participantIds:delete value.participantIds);
           value.linkTarget={schema:'libra.thread_link_target.v2',lifecycleId:target.lifecycleId,canonicalOriginKey:target.canonicalOriginKey,
             cursor:clone(target.cursor),factId:target.factId,participantIds:clone(target.participantIds),lineageDigest:target.lineageDigest,
             linkKind:kind,targetStatus:target.value.status};
@@ -63730,13 +63812,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'SENSITIVE MEMORY SELECTION: Record sexual preferences, attitudes or identity labels only when explicitly established and relevant to later continuity; never infer them from gender, genre, appearance, a role or an isolated reaction. Preserve the scope of a stated boundary; one act or prior consent does not establish a standing preference or ongoing consent. Omit unsupported sensitive attributes without discarding independently supported events and consequences. Keep unknown information unknown.',
       `OUTPUT: one complete JSON object with schema="${UNIFIED_ARTIFACT_SCHEMA_V5}" and entities, facts, stateBindings only. No prose, continuation, reasoning or review. Runtime owns persistent IDs, hashes, storage and State mutation; Profile instructions cannot change this evidence/output contract.`,
       'Entity: {tempId,name,type:person|world,kind:person|location|object|organization|rule|environment|condition|thread|other,evidenceSpans:[{ref:tN-a,quote:exact source}]}. Names appear in the cited quote; use temporary IDs.',
-      'LOCATION CONTINUITY: State retains prior locations. A door closing, waking or restraints do not name a place. Omit inferred locations; cite current named presence.',
+      'LOCATION CONTINUITY: State keeps the last known location of each person until new evidence changes it. Emit a location fact only when these rows name the place where the person now is or arrives, and cite that sentence. A door closing, waking up, being restrained or being carried while unconscious does not by itself name a place; never infer one. When a person leaves without a named destination, omit the location rather than guessing.',
       'ID FORMAT: use simple ASCII counters e1,e2,... for tempId and f1,f2,... for tempFactId. Copy those exact IDs into all references and stateBindings. Never transliterate a name into an ID or use visually similar non-ASCII letters. Keep the original language in names, text and quotations.',
       'LITERAL ENTITY NAMES: copy each name as one literal contiguous phrase from its own quotation. Do not invent descriptive titles by joining distant words. A rule about a place is a rule fact on that place, not a newly titled rule entity. A promise or question may use a short literal name such as 약속 or 공연 허가 when that exact phrase is cited; keep its full meaning in the thread value. Do not drop a supported rule or thread merely to avoid extracting it.',
       'Fact: {tempFactId,domain,subjectTempRef,claimKind,values,text,temporalRole:current_sequence|historical|flashback|reported|hypothetical|uncertain,certainty:confirmed|uncertain|conflict|unknown,evidenceSpans:[{ref,quote}],dependsOn:[]}. Keep text concise; use the shortest exact supporting quotation (2–320 normalized characters) from its row, not a whole passage or unrelated name.',
       'claimKind→domain: event→event; location|character_state|character_emotion|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state|world_description→world; thread→narrative.',
-      'PROFILE COVERAGE: before finishing, check each person across all rows for directly stated appearance, background (name, age, occupation, family role, adoption), characteristic personality or speech, habits, abilities, lasting preferences/dislikes/fears and standing boundaries. Narration describing a person is evidence. One fact per item with its own quote; background may be historical.',
-      'PLACE DESCRIPTION: world_description (domain world, subject a location/organization/object) values {description:["one lasting purpose, background or feature"]}. Emit one for each named place the rows describe: what it is for, who runs it, how it looks. A passing scene condition is world_state, never a description.',
+      'PROFILE COVERAGE: before finishing, check each person across all rows for directly stated appearance, background (name, age, occupation, family role, adoption), characteristic personality or speech, habits, abilities, lasting preferences/dislikes/fears and standing boundaries. Narration describing a person is evidence; write only what the cited rows say. Lore and character cards clarify identity only: never add, translate or embellish a trait from them (no extra adjectives, colors or details the rows do not state). One fact per item with its own quote; background may be historical.',
+      'PLACE DESCRIPTION: world_description (domain world, subject a location/organization/object) values {description:["one lasting purpose, background or feature"]}. Emit one for each named place the rows describe: what it is for, who runs or lives in it, how it is laid out or looks. A passing scene condition is world_state, never a description.',
       'THREAD CLOSURE: when a listed V5 THREAD CANDIDATE is carried out, answered, broken or withdrawn here, emit it with link:"resolve", its exact alias, status resolved, the matching resolution and the outcome row as evidence. Reaffirm only an obligation restated and still unmet; a partly met one stays open.',
       'Character information: claimKind:"character_info", domain:"character", values:{category,content}; category=appearance|background|personality|speech|habits|abilities|goal|emotion|preference|dislike|fear|boundary; habits include hobbies and habitual behavior; boundary is a standing limit protecting the person or theirs (not a one-time protest, a request, or an order imposed on others); content is one concise string naming the topic. Emit a fact for every category the source directly states; leave only what the source does not state unset. Unknown categories remain memory without profile updates.',
       'v5 DURABLE PREFERENCES: character_preference, domain character, values:{preferences:[{content:"directly stated",topic:"exact topic",kind:"preference|dislike|fear"}]}; emit every directly stated preference, dislike or fear. Runtime binds resolved subject Registry identity plus topic; retain separate topics.',
@@ -63745,7 +63827,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'Use only the typed values object, never a claimKind/domain/field wrapper. E.g. character_state:{condition:"recovering"}; location:{locationRef:"ent_room"}. Relationship also needs targetTempRef and dimension: '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'. A→B never proves B→A; use qualitative, not numeric, values.',
       'effect defaults to set. clear uses null for typed scalars or an exact selector; remove is only for knowledge/profile arrays. Clear/remove require direct confirmed evidence; profile operations need a non-empty exact preference/boundary selector with topic and resolved boundary scope. Empty selectors never clear a collection. A finished/abandoned goal uses character_info, effect:clear, values:{category:goal,content:null}. Unknown/omission is not deletion. Keep owner, holder, container, manager, physical parent, membership and access distinct; keep rule scope/conditions and prevent containment cycles.',
       'State bindings are optional {factTempId} entries for confirmed current facts. Bind only an explicitly final same-row value; leave unknown/conflicts unbound.',
-      'NAMES FROM STATE: a place known only from READ-ONLY STATE that these rows never name needs no new fact; its earlier value stays.',
+      'NAMES FROM STATE: an entity needs a quote from these rows that contains its name. A place or object known only from READ-ONLY STATE that these rows never name needs no new fact; its earlier value stays.',
       'FINAL STATE CHECK: emit a typed location fact in domain character for each explicitly established final person location, even when movement was also recorded as an event. location is NEVER domain world; subjectTempRef is the person and locationRef is the place. A containment fact has the contained place as subject and a DIFFERENT containing place as parentRef. Ownership/possession use the object as subject, access uses the affected world place/object as subject, and a thread uses its literal world/thread entity as subject. Also emit a typed fact for each directly stated emotion, goal, appearance, background, personality, speech, habit or hobby, ability, preference, boundary, affiliation, access permission, manager, world condition and rule. When a row prints the in-story date or time, emit a scene_time fact on the current place with that exact text as sceneTime whenever it changes. Include {factTempId} bindings for all of these supported final values and for locations, conditions, ownership, possession, knowledge, relationships and threads; event-only facts do not establish those State fields.',
       'CONTAINMENT EXAMPLE (shape only): for source 본관 안에 작업실과 휴게실이 있다, emit TWO containment facts: subjectTempRef=작업실 entity with values {parentRef:본관 entity}, and subjectTempRef=휴게실 entity with values {parentRef:본관 entity}. NEVER use 본관 as both subjectTempRef and parentRef. One fact represents one child-parent edge, not a sentence listing several rooms.',
       'REFERENCE TYPE CHECK: containment requires BOTH subject and parentRef to be world entities with kind location. A box/object in a room is placement with values {containerRef:roomTempId}, NOT containment; keep the box/object kind object. An organization managing a building is management with values {managerRef:organizationTempId}, not containment. RELATIONSHIP SHAPE: {tempFactId,domain:"relationship",subjectTempRef:personA,targetTempRef:personB,dimension:"trust",claimKind:"relationship",values:{value:"source-supported qualitative statement"},text,temporalRole,certainty,evidenceSpans}. targetTempRef and dimension are TOP-LEVEL fact fields, NEVER inside values.',
@@ -64426,6 +64508,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const explicit=group.filter(f=>seen.has(f.tempFactId));
         // Do not let an older explicit binding suppress a newer source fact.
         // All verified facts get bindings; the State reducer chooses the newest value.
+        // An unbound fact citing exactly the evidence of the one explicitly bound fact is the
+        // same position: the provider's explicit choice stands and the duplicate is set aside.
+        if(group.length>1&&explicit.length===1)for(const f of group)if(!seen.has(f.tempFactId)
+          &&digest(asArray(f.evidenceSpans).map(span=>[span.ref,span.quote]))===digest(asArray(explicit[0].evidenceSpans).map(span=>[span.ref,span.quote])))supersededFacts.push(f.tempFactId);
       }
       for(const f of current){
         if(invalidSelectorIds.has(f.tempFactId))continue;
@@ -64567,6 +64653,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const evidence=continuityEvidence(memory), facts=new Map(artifact.facts.map(f=>[f.tempFactId,f]));
       const candidates=new Map(), domainPending=new Set(), blockedFacts=new Set(bindingPlan.supersededFacts), goalActions=new Set();
+      // Bindings the provider itself declared (before runtime derives the rest) and the facts
+      // an explicit same-position choice set aside.
+      const providerBoundFacts=new Set(asArray(memory.canonicalArtifact?.stateBindings).map(b=>b?.factTempId)), sameOrderSuperseded=[];
       const admissionBlocks=asArray(memory.artifactValidation?.admission?.stateBlocks);
       // A rejected fact has no stored value to apply. It stays listed, and holds back nothing.
       for(const b of admissionBlocks)pending.push({fact:b.fact,domain:b.domain,reason:'memory_record_quarantined'});
@@ -64625,7 +64714,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
           :c.collection?`:${f.tempFactId}`:'';
         const slot=`${f.domain}:${recordId}:${c.field}${discriminator}`,candidate={f,c,subject,target,recordId,value,order:orderFor(f),slotFactIds:[f.tempFactId]};
         const old=candidates.get(slot);
-        if (!old || candidate.order >= old.order) {
+        // Same source position, different values: nothing in the source says which came
+        // later, and JSON order is not evidence. The value the provider explicitly bound
+        // wins; with no single explicit choice, the field waits for review.
+        if (old && candidate.order === old.order && !statePipelineSemanticEqual(c.field,old.value,value)) {
+          const newBound=providerBoundFacts.has(f.tempFactId), oldBound=old.slotFactIds.some(id=>providerBoundFacts.has(id))&&!old.conflict;
+          if (newBound && !oldBound) { for (const id of old.slotFactIds) { blockedFacts.add(id); sameOrderSuperseded.push(id); } candidates.set(slot,candidate); }
+          else if (oldBound && !newBound) { blockedFacts.add(f.tempFactId); sameOrderSuperseded.push(f.tempFactId); }
+          else candidates.set(slot,{...old,slotFactIds:[...old.slotFactIds,f.tempFactId],conflict:true});
+          continue;
+        }
+        if (old && candidate.order === old.order) { candidates.set(slot,{...old,slotFactIds:[...old.slotFactIds,f.tempFactId]}); continue; }
+        if (!old || candidate.order > old.order) {
           if (old && !statePipelineSemanticEqual(c.field,old.value,value)) {
             blockedFacts.add(old.f.tempFactId);
             retainSupersededStateValue(head,f.domain,recordId,c.field,old.value,
@@ -64838,7 +64938,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             });
             for(const [identity,item] of replacements)if(!replaced.has(identity))nextValue.push(item);
           } else {
-            nextValue = [...new Set([...before, ...nextItems])];
+            nextValue = mergeProfileTextItems(before, nextItems);
           }
         }
         if(f.claimKind==='access'){const previous=Array.isArray(row.state.access)?row.state.access:row.state.access?[row.state.access]:[];nextValue=[...previous.filter(a=>a.personRef!==value.personRef||a.permission!==value.permission),value];}
@@ -64891,7 +64991,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       head.basis=continuityStateBasis(continuityStateRefs(manifest));head.source=clone(evidence);head.throughTurn=memory.inheritedSessionHistory===true?0:memory.turnRange.end;head.throughSessionEpoch=Number(memory.sessionEpoch||0);
       head.reviewedThroughCanonical=clone(cursor);if(changedDomains.size)head.changedThroughCanonical=clone(cursor);
       head.status=domainPending.size?'partial':'ready';head.updatedAt=nowIso();
-      head.unifiedApplied={engineVersion:UNIFIED_ENGINE_VERSION,memoryId:memory.memoryId,revision:memory.revision,artifactDigest:memory.artifactDigest,pending:clone(pending),supersededFacts:clone(bindingPlan.supersededFacts)};
+      head.unifiedApplied={engineVersion:UNIFIED_ENGINE_VERSION,memoryId:memory.memoryId,revision:memory.revision,artifactDigest:memory.artifactDigest,pending:clone(pending),supersededFacts:clone([...bindingPlan.supersededFacts,...sameOrderSuperseded])};
       for(const p of pending){const fact=facts.get(p.fact);if(!fact)continue;const contract=UNIFIED_CLAIMS[fact.claimKind],subject=resolved.get(fact.subjectTempRef),target=resolved.get(fact.targetTempRef);p.field=contract.field;p.recordId=fact.domain==='relationship'&&subject&&target?`cs_rel_${stableHash(`${subject.id}>${target.id}:${fact.dimension}`)}`:subject?.id||'';p.memoryId=memory.memoryId;p.revision=memory.revision;p.startTurn=memory.turnRange.start;}
       head.unifiedApplied.pending=clone(pending);
       registry.diagnostics=clone(pending.filter(p=>p.entity));
@@ -93599,6 +93699,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     : ({missing: '기록 없음', stale_source: '원문 변경 · 확인 필요',
       pending_reconciliation: '저장 확인 필요', unavailable: '조회 실패'}[row?.status] || '확인 필요');
   const microStatePendingLabel = reason => ({
+    scene_time_target_not_place:'시각이 장소 이름 자리에 들어와 반영하지 않았습니다. 장소가 확인되면 다시 기록됩니다.',
+    state_value_momentary_fragment:'한 순간의 반응을 지속적인 특징으로 기록하지 않았습니다. 현재 상태나 감정 기록을 확인하세요.',
     narrative_field_canonical_only:'여러 턴에 걸친 서사 구조는 한 턴 기록으로 바꾸지 않습니다. 다음 정본 분석에서 반영됩니다.',
     micro_same_turn_field_conflict:'같은 턴에 서로 다른 값이 기록돼 상태 반영을 보류했습니다. 원문과 정본을 확인하세요.',
     state_value_not_source_bound:'변경 값이 인용한 원문과 일치하지 않아 상태 반영을 보류했습니다. 원문과 분석 결과를 확인하세요.',
