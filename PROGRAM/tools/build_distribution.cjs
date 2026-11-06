@@ -206,7 +206,7 @@ function verifySourceFixtureBytes(programRoot) {
   }
   return { files: Object.keys(SOURCE_FIXTURE_PINS).length };
 }
-const PROGRAM_DENY_SEGMENTS = new Set(['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases']);
+const PROGRAM_DENY_SEGMENTS = new Set(['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases', 'evidence', 'checkpoints']);
 const PROGRAM_ALLOWED_TOP_LEVEL_DIRECTORIES = new Set([
   '_runtime', '관리도구', 'build-support', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools'
 ]);
@@ -869,8 +869,13 @@ function snapshotVersionTransactionFiles(root = packageRoot) {
 
 function restoreVersionTransactionFiles(snapshot) {
   for (const row of snapshot) {
-    fs.writeFileSync(row.absolute, row.bytes);
-    try { fs.chmodSync(row.absolute, row.mode); } catch (_) {}
+    // A check build normally leaves these bytes untouched. Rewriting identical
+    // files still truncates them briefly, so a parallel smoke-test archive can
+    // capture an empty server module. Roll back only actual changes.
+    if (!fs.existsSync(row.absolute) || !fs.readFileSync(row.absolute).equals(row.bytes)) {
+      fs.writeFileSync(row.absolute, row.bytes);
+    }
+    try { if (fs.statSync(row.absolute).mode !== row.mode) fs.chmodSync(row.absolute, row.mode); } catch (_) {}
   }
 }
 

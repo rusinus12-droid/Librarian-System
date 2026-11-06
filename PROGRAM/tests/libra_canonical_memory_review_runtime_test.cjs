@@ -3,9 +3,11 @@ const assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
 (async()=>{
  const f=await fixture();try{
-  f.chat.message[1].data+=' 도서관 문이 열렸다. 도서관 문이 닫혔다.';
+  // Both values cite one span, so the source gives no order between them (2026-11-06:
+  // values at different positions are ordered by the source and need no review).
+  f.chat.message[1].data+=' 도서관 문이 열렸다 닫혔다.';
   for(const [i,value] of ['열렸다','닫혔다'].entries()){
-   const id='review-conflict-'+i;f.control.artifact.facts.push({tempFactId:id,domain:'world',subjectTempRef:'library',claimKind:'world_state',values:{condition:value},text:'도서관 문이 '+value,temporalRole:'current_sequence',certainty:'confirmed',evidenceSpans:[{ref:'t1-a',quote:'도서관 문이 '+value}],dependsOn:[]});
+   const id='review-conflict-'+i;f.control.artifact.facts.push({tempFactId:id,domain:'world',subjectTempRef:'library',claimKind:'world_state',values:{condition:value},text:'도서관 문이 '+value,temporalRole:'current_sequence',certainty:'confirmed',evidenceSpans:[{ref:'t1-a',quote:'도서관 문이 열렸다 닫혔다'}],dependsOn:[]});
    f.control.artifact.stateBindings.push({factTempId:id,typedValueField:'condition',stateDomain:'world',stateField:'condition'});
   }
   assert.equal((await f.run()).completed,1);

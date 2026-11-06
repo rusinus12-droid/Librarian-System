@@ -101,11 +101,11 @@ const valid = () => ({
     const overflow = valid();
     overflow.claims = [{ ...changes[0], actor: '근거없는인물' }, ...changes.slice().reverse()];
     const capped = validate(overflow, longReceipt);
-    assert.equal(capped.claims.length, 16);
+    assert.equal(capped.claims.length, 17);
     assert.ok(capped.claims.some(claim => claim.stateIntent.target.entityName === names[16]), 'source order outranks model output order');
-    assert.equal(capped.claims.some(claim => claim.stateIntent.target.entityName === names[0]), false);
+    assert.equal(capped.claims.some(claim => claim.stateIntent.target.entityName === names[0]), true);
     assert.ok(capped.rejected.some(row => row.index === 0 && row.reason === 'participant_unbound'), 'invalid proposals consume no capacity');
-    assert.ok(capped.rejected.some(row => row.index === 17 && row.reason === 'claim_limit_exceeded'), 'omission uses the original response index');
+    assert.equal(capped.rejected.length, 1, 'only the ungrounded proposal is rejected');
 
     const conflictQuote = '공통상자의 표식은 붉음과 푸름으로 적혀 있다.';
     const conflictReceipt = structuredClone(longReceipt);
@@ -114,22 +114,19 @@ const valid = () => ({
     conflict.claims = [stateClaim('공통상자', '붉음', conflictQuote, conflictReceipt.assistant.text), stateClaim('공통상자', '푸름', conflictQuote, conflictReceipt.assistant.text),
       ...names.slice(0, 15).map((name, i) => stateClaim(name, `색상${i + 1}`, sentences[i], conflictReceipt.assistant.text))];
     const keptTogether = validate(conflict, conflictReceipt);
-    assert.equal(keptTogether.claims.length, 15);
-    assert.equal(keptTogether.claims.some(claim => claim.stateIntent.target.entityName === '공통상자'), false, 'the cap cannot make one side of a conflict authoritative');
-    assert.deepEqual(JSON.parse(JSON.stringify(keptTogether.rejected)), [{ index: 0, reason: 'claim_limit_exceeded' }, { index: 1, reason: 'claim_limit_exceeded' }]);
+    assert.equal(keptTogether.claims.length, 17);
+    assert.equal(keptTogether.claims.filter(claim => claim.stateIntent.target.entityName === '공통상자').length, 2, 'both competing claims survive for conflict admission');
+    assert.equal(keptTogether.rejected.length, 0);
     const bounded = valid();
     bounded.claims = Array.from({ length: 64 }, () => structuredClone(valid().claims[0]));
     const boundedResult = validate(bounded, receipt);
-    assert.equal(boundedResult.claims.length, 16, 'the bounded overrun still retains sixteen verified claims');
-    assert.equal(boundedResult.rejected.length, 48);
+    assert.equal(boundedResult.claims.length, 64, 'all source-bound claims are retained');
+    assert.equal(boundedResult.rejected.length, 0);
     for (const length of [65, 1000]) {
-      let visits = 0;
-      const oversized = valid();
-      oversized.claims = Array.from({ length }, () => new Proxy({}, { ownKeys() { visits++; throw Error('oversized_claim_was_inspected'); } }));
-      const refused = validate(oversized, receipt);
-      assert.equal(refused.status, 'rejected');
-      assert.equal(refused.rejected[0].reason, 'claim_input_limit_exceeded');
-      assert.equal(visits, 0, 'oversized input is refused before any claim is inspected');
+      const large = valid(); large.claims = Array.from({length}, () => structuredClone(valid().claims[0]));
+      const retained = validate(large, receipt);
+      assert.equal(retained.claims.length, length, 'no claim-count selection cap');
+      assert.equal(retained.rejected.length, 0);
     }
     assert.equal(fixture.f.control.calls.length, 0, 'contract validation does not call a model');
     console.log('PASS one-turn Micro candidates require exact source and provisional authority');

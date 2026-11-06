@@ -330,7 +330,12 @@ module.exports = function createMemoryGraphReaders({ identity, normalizeName, di
           object(row.clearedFieldEvidence), object(row.fieldCorrectionProvenance), object(row.clearedFieldCorrectionProvenance));
       }
       const narrative = object(head.narrative), fields = Object.fromEntries(Object.entries(narrative)
-        .filter(([name]) => !['fieldEvidence', 'fieldCorrectionProvenance', 'clearedFieldCorrectionProvenance', 'clearedFieldEvidence'].includes(name)));
+        .filter(([name]) => !['fieldEvidence', 'fieldCorrectionProvenance', 'clearedFieldCorrectionProvenance', 'clearedFieldEvidence',
+          // Reader-index history (finished threads/arcs, turning points, motifs) is already in
+          // canonical memory; it is not current State and is not recalled as such.
+          'closedThreads', 'resolvedArcs', 'turningPoints', 'motifs',
+          // A record id, not something a reader can use; the arc itself is recalled.
+          'primaryArcId'].includes(name)));
       projectFields('narrative', { id: 'narrative_current', certainty: 'unknown' }, fields, object(narrative.fieldEvidence),
         object(narrative.clearedFieldEvidence), object(narrative.fieldCorrectionProvenance), object(narrative.clearedFieldCorrectionProvenance));
     }); else note('state', 'state_view_unavailable');

@@ -146,7 +146,7 @@ const computePilots = Object.freeze({
   hayaku: resolveComputePilot('hayaku', 'HAYAKU_SPARSE_RRF_COMPUTE_OPERATION', 'HAYAKU_SPARSE_RRF_COMPUTE_FINGERPRINT', { retired: true })
 });
 
-const MANIFEST_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', 'dist']);
+const MANIFEST_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', 'dist', 'evidence', 'checkpoints', 'backups']);
 // A linked worktree has `.git` as a FILE (a `gitdir:` pointer), not a directory. The tracked-file filter
 // below would normally drop it, but that filter has no opinion when Git is unavailable or when the
 // generator runs somewhere `ls-files` returns nothing — then the pointer was recorded in the manifest.

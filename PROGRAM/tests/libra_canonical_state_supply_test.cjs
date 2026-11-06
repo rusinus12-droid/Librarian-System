@@ -28,6 +28,60 @@ const minaFact = (f, fields) => ({domain: 'character', subjectTempRef: 'mina', t
   certainty: 'confirmed', evidenceSpans: spansOf(f, 'f9'), ...fields});
 
 (async () => {
+  await test('an unnamed continuing scene preserves the prior place without accepting an inferred location', async f => {
+    assert.equal((await f.run()).completed, 1);
+    const original = f.getHead().characters.find(row => row.name === '민아').state.locationRef;
+    for (let turn = 6; turn <= 10; turn++) f.chat.message.push(
+      {role:'user',chatId:`t${turn}-u`,data:'현재 상태를 확인한다.'},
+      {role:'assistant',chatId:`t${turn}-a`,data:'민아의 밧줄은 그대로였다. 문이 닫혔다.'});
+    f.chat.messages = f.chat.message;
+    const span = [{ref:'t10-a',quote:'민아의 밧줄은 그대로였다. 문이 닫혔다.'}];
+    f.control.artifact = {schema:'libra.canonical_artifact.v5',entities:[
+      {tempId:'mina',name:'민아',type:'person',kind:'person',evidenceSpans:span},
+      {tempId:'inferred',name:'서재',type:'world',kind:'location',evidenceSpans:span}],facts:[
+      {tempFactId:'bad_location',domain:'character',subjectTempRef:'mina',claimKind:'location',values:{locationRef:'inferred'},text:'민아는 서재에 있다.',temporalRole:'current_sequence',certainty:'confirmed',evidenceSpans:span},
+      {tempFactId:'condition',domain:'character',subjectTempRef:'mina',claimKind:'character_state',values:{condition:'밧줄은 그대로였다'},text:'민아의 밧줄은 그대로였다.',temporalRole:'current_sequence',certainty:'confirmed',evidenceSpans:span}],stateBindings:[]};
+    respond(f, []);
+    assert.equal((await f.run()).completed, 1);
+    const current = f.getHead().characters.find(row => row.name === '민아');
+    assert.equal(current.state.locationRef, original, 'absence of a new place fact does not erase prior location');
+    assert.equal(current.state.condition, '밧줄은 그대로였다');
+    const memory = f.getMemory(6);
+    assert.ok(memory.artifactValidation.admission.rejected.some(row => row.id === 'inferred' && row.reason === 'UNIFIED_ENTITY_NAME_UNBOUND'));
+    assert.ok(!memory.canonicalArtifact.facts.some(row => row.tempFactId === 'bad_location'));
+  });
+  await test('missing fact fields are repaired from exact source without altering the proposed value', async f => {
+    const quote = '민아는 지호에게 오늘 열쇠를 돌려주겠다고 약속했다.';
+    f.chat.message[9].data += ' ' + quote;
+    f.control.artifact.schema = 'libra.canonical_artifact.v5';
+    f.control.artifact.entities.push({tempId:'first_task',name:'첫 반환 약속',type:'world',kind:'thread',evidenceSpans:[{ref:'t5-a',quote}]});
+    f.control.artifact.facts.push({tempFactId:'missing',domain:'narrative',subjectTempRef:'first_task',claimKind:'thread',
+      values:{thread:{summary:'민아가 지호에게 열쇠 반환을 약속했다',status:'open',kind:'promise',link:'reaffirm',
+        participants:[{role:'owner',personTempRef:'mina'},{role:'target',personTempRef:'jiho'}]}}});
+    respond(f,[{id:'missing',ref:'t5-a',quote,text:quote,temporalRole:'current_sequence',certainty:'confirmed',values:{thread:{summary:'바꿔서는 안 되는 값'}}}]);
+    assert.equal((await f.run()).completed,1);
+    const fact=f.getMemory().canonicalArtifact.facts.find(row=>row.tempFactId==='missing');
+    assert.ok(fact,'a supported thread must not vanish because required fields were omitted');
+    assert.equal(fact.values.thread.summary,'민아가 지호에게 열쇠 반환을 약속했다');
+    assert.equal(fact.values.thread.linkStatus,'new','a first-batch no-target reaffirmation cannot depend on a nonexistent lifecycle');
+    assert.equal(fact.values.thread.link,undefined);
+    assert.equal(f.control.requoteCalls,1);
+  });
+  await test('fact field repair preserves an existing uncertain qualifier', async f => {
+    const good=spansOf(f,'f9')[0];
+    f.control.artifact.facts.push({tempFactId:'uncertain_fields',domain:'character',subjectTempRef:'mina',claimKind:'character_state',values:{condition:'확인되지 않은 상태'},certainty:'uncertain'});
+    respond(f,[{id:'uncertain_fields',ref:good.ref,quote:good.quote,text:'확인되지 않은 상태',temporalRole:'current_sequence',certainty:'confirmed'}]);
+    assert.equal((await f.run()).completed,1);
+    const fact=f.getMemory().canonicalArtifact.facts.find(row=>row.tempFactId==='uncertain_fields');
+    assert.equal(fact.certainty,'uncertain','repair must not promote an already uncertain fact');
+    assert.notEqual(f.getHead().characters.find(row=>row.name==='민아').state.condition,'확인되지 않은 상태');
+  });
+  await test('fact field repair cannot rescue a fabricated source quote', async f => {
+    f.control.artifact.facts.push({tempFactId:'fabricated_fields',domain:'character',subjectTempRef:'mina',claimKind:'knowledge',values:{knowledge:['없는 비밀']}});
+    respond(f,[{id:'fabricated_fields',ref:'t5-a',quote:'원문에 존재하지 않는 내용',text:'없는 비밀',temporalRole:'current_sequence',certainty:'confirmed'}]);
+    assert.equal((await f.run()).completed,1);
+    assert.ok(!f.getMemory().canonicalArtifact.facts.some(row=>row.tempFactId==='fabricated_fields'));
+  });
   await test('a claim kind under an invented domain is repaired, a valid but different domain still is not', async f => {
     const a = f.control.artifact;
     a.facts.push(minaFact(f, {tempFactId: 'fk', domain: 'identity', claimKind: 'knowledge', values: {knowledge: ['식별 도메인으로 적힌 지식']}, text: '식별 도메인으로 적힌 지식'}));
