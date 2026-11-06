@@ -25,11 +25,15 @@ function artifact(){
 async function fixture(options={}){
  const chat=options.snapshot?clone(options.snapshot.chat):{id:'unified-chat',chatId:'unified-chat',name:'Unified synthetic 5 U+A',message:input.sourceRows.map(r=>({role:r.role,chatId:r.ref,data:r.text}))};chat.messages=chat.message;
  const character={id:'unified-char',chaId:'unified-char',name:'민아',chatPage:0,chats:[chat]};
- const control={calls:[],artifact:artifact(),onCall:null,modelFails:false,hooks:{}};
+ const control={calls:[],supplementCalls:[],onSupplementCall:null,artifact:artifact(),onCall:null,modelFails:false,hooks:{}};
  const host={getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>character,getChar:async()=>character,getCharacterFromIndex:async()=>character,getChat:async()=>chat,getCurrentChat:async()=>chat,getChatFromIndex:async()=>chat,
  getDatabase:async fields=>{const db={personas:[],selectedPersona:'',characters:[character],plugins:[]};return Array.isArray(fields)?Object.fromEntries(fields.map(k=>[k,db[k]??null])):db;},
  addRisuReplacer:async(mode,fn)=>{control.hooks[mode]=fn;return true;},
- runLLMModel:async(...args)=>{control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};if(JSON.stringify(args).includes('[LIBRA MICRO SOURCE CONTRACT]'))return require('./libra_reanalysis_kinds_fixture.cjs').microReply(args);return {type:'success',result:JSON.stringify(control.artifact)};}};
+ // Story-structure and preference/boundary passes run inside one canonical batch. They are
+ // recorded apart from control.calls (which pins Canonical/Micro/re-quote calls) and answer
+ // empty unless a test supplies control.onSupplementCall.
+ runLLMModel:async(...args)=>{const text=JSON.stringify(args);if(text.includes('[LIBRA STORY STRUCTURE]')||text.includes('[LIBRA PREFERENCE AND BOUNDARY CHECK]')){control.supplementCalls.push(clone(args));if(control.onSupplementCall)return control.onSupplementCall(args);return {type:'success',result:text.includes('[LIBRA STORY STRUCTURE]')?'{"arcs":[],"turningPoints":[],"motifs":[]}':'{"items":[]}'};}
+ control.calls.push(clone(args));if(control.onCall)return control.onCall(args);if(control.modelFails)return {type:'error',result:'synthetic_provider_failure'};if(JSON.stringify(args).includes('[LIBRA MICRO SOURCE CONTRACT]'))return require('./libra_reanalysis_kinds_fixture.cjs').microReply(args);return {type:'success',result:JSON.stringify(control.artifact)};}};
  Object.assign(host,options.host || {});
  const r=await createLibraVmHarness({enable_character_ito:false,enable_world_ito:false,enable_plot_ito:false,...options.args},host,{initialValues:options.snapshot?.values,transformSource:options.transformSource,contextGlobals:options.contextGlobals});
  const settings=await r.api.getLibraMemorySettings();

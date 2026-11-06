@@ -51,7 +51,8 @@ const input = require('./fixtures/unified_vertical_source.json');
     const click = async selector => { doc.querySelector(selector).click(); await pause(450); };
     await click('.sidebar [data-go="story"]');
     const labels = () => [...doc.querySelectorAll('[data-subtabs="s"] button')].map(node => node.textContent);
-    const expected = ['남은 이야기 1', '사건 연대기 2', '흐름 · 전환 0', '반복 소재 0', '관계 이정표 1', '마무리된 이야기 0'];
+    // The fulfilled promise stays readable as a finished story (2026-11-06); it no longer disappears.
+    const expected = ['남은 이야기 1', '사건 연대기 2', '흐름 · 전환 0', '반복 소재 0', '관계 이정표 1', '마무리된 이야기 1'];
     assert.deepEqual(labels(), expected);
     await click('[data-subtabs="s"] [data-subtab="chron"]');
     assert.deepEqual(labels(), expected, 'other tab badges do not inherit the selected group count');

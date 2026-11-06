@@ -93,6 +93,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       character_habit: { domain: 'character', field: 'habits', value: 'habits', collection: true, profile: true },
       character_ability: { domain: 'character', field: 'abilities', value: 'abilities', collection: true, profile: true },
       character_goal: { domain: 'character', field: 'goal', value: 'goal' },
+      character_emotion: { domain: 'character', field: 'emotion', value: 'emotion' },
       knowledge: { domain: 'character', field: 'knowledge', value: 'knowledge', collection: true },
       affiliation: { domain: 'character', field: 'affiliations', value: 'affiliation' },
       scene_time: { domain: 'world', field: 'sceneTime', value: 'sceneTime' },
@@ -112,13 +113,24 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       // other character-profile arrays use, so they inherit the existing
       // replay/correction path instead of getting a private ledger.
       character_preference: { domain: 'character', field: 'preferences', value: 'preferences', collection: true, profile: true },
-      character_boundary: { domain: 'character', field: 'boundaries', value: 'boundaries', collection: true, profile: true }
+      character_boundary: { domain: 'character', field: 'boundaries', value: 'boundaries', collection: true, profile: true },
+      world_description: { domain: 'world', field: 'description', value: 'description', collection: true, profile: true },
+      story_arc: { domain: 'narrative', field: 'arcs', value: 'arc' },
+      turning_point: { domain: 'narrative', field: 'turningPoints', value: 'turningPoint' },
+      motif: { domain: 'narrative', field: 'motifs', value: 'motif' },
+      // Established conditions later scenes must keep, and the present central pressure.
+      // Both describe what already holds; neither is a plan for future events.
+      continuity_lock: { domain: 'narrative', field: 'locks', value: 'lock' },
+      story_momentum: { domain: 'narrative', field: 'momentum', value: 'momentum' }
     });
+    const UNIFIED_STRUCTURE_CLAIMS = Object.freeze(['story_arc','turning_point','motif','continuity_lock','story_momentum']);
+    const UNIFIED_STRUCTURE_STATUS = Object.freeze({ story_arc: ['active','dormant','resolved'], continuity_lock: ['active','released'] });
+    const UNIFIED_V5_ONLY_CLAIMS = Object.freeze(['character_preference','character_boundary','character_emotion','world_description',...UNIFIED_STRUCTURE_CLAIMS]);
     // D02: v4 predates the World Maker claim kinds. They are valid only under
     // the explicitly dispatched v5 contract; existing v4 records keep the old
     // claim set and thread object shape.
     const UNIFIED_V4_CLAIMS = Object.freeze(Object.fromEntries(
-      Object.entries(UNIFIED_CLAIMS).filter(([kind]) => !['character_preference','character_boundary'].includes(kind))));
+      Object.entries(UNIFIED_CLAIMS).filter(([kind]) => !UNIFIED_V5_ONLY_CLAIMS.includes(kind))));
     const unifiedClaimsForSchema = schema => schema === UNIFIED_ARTIFACT_SCHEMA_V5 ? UNIFIED_CLAIMS : UNIFIED_V4_CLAIMS;
     const UNIFIED_THREAD_LINK_KINDS = Object.freeze(['reaffirm','replace','resolve','reopen','associate']);
     // Why a thread closed. `fulfilled` and `broken` are deliberately different
@@ -176,7 +188,9 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       unifiedEvidence(e.evidenceSpans, sources, e.tempId);
       unifiedAssert(e.evidenceSpans.some(s => e.type === 'person'
         ? canonicalEntityNameBoundToEvidence(e.name, s.quote)
-        : canonicalEvidenceComparable(s.quote).includes(canonicalEvidenceComparable(e.name))), 'UNIFIED_ENTITY_NAME_UNBOUND');
+        : canonicalEvidenceComparable(s.quote).includes(canonicalEvidenceComparable(e.name))
+          // A thread-kind entity is a title for cited content, as in the plugin.
+          || (e.kind === 'thread' && canonicalEvidenceComparable(s.quote).length >= 2)), 'UNIFIED_ENTITY_NAME_UNBOUND');
     };
     const validateUnifiedFactRecord = (f,entities,facts,sources,schema=UNIFIED_ARTIFACT_SCHEMA,allowCandidateAlias=false,allowLegacyProfileStrings=false) => {
       unifiedKeys(f, ['tempFactId','domain','subjectTempRef','targetTempRef','dimension','claimKind','values','text','temporalRole','certainty','evidenceSpans','dependsOn','effect'], 'fact');
@@ -319,9 +333,17 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       } else if (f.claimKind === 'access') {
         unifiedKeys(v, ['personTempRef','permission','status'], 'access');
         unifiedAssert(entities.get(v.personTempRef)?.type === 'person' && unifiedText(v.permission) && ['granted','denied','unknown'].includes(v.status), 'UNIFIED_ACCESS_INVALID');
+      } else if (UNIFIED_STRUCTURE_CLAIMS.includes(f.claimKind)) {
+        unifiedAssert(subject.type === 'world' && subject.kind === 'thread', 'UNIFIED_STRUCTURE_SUBJECT_INVALID');
+        const statuses = UNIFIED_STRUCTURE_STATUS[f.claimKind];
+        unifiedKeys(v, statuses ? ['summary','status','interpretation'] : ['summary','interpretation'], f.claimKind);
+        unifiedAssert(unifiedText(v.summary, 600) && (v.interpretation === undefined || unifiedText(v.interpretation, 600))
+          && (!statuses || statuses.includes(v.status)), 'UNIFIED_STRUCTURE_INVALID');
+        if (f.claimKind === 'motif') unifiedAssert(new Set(f.evidenceSpans.map(span => String(span.ref).replace(/-[ua]$/, ''))).size >= 2, 'UNIFIED_MOTIF_RECURRENCE_REQUIRED');
       } else if (profileItemKind) {
         validateProfileCollection();
       } else if (contract.collection === true) {
+        if (f.claimKind === 'world_description') unifiedAssert(['location','organization','object','environment','other'].includes(subject.kind), 'UNIFIED_DESCRIPTION_SUBJECT_INVALID');
         unifiedAssert(Array.isArray(v) && v.length <= 32 && (!contract.profile || v.length > 0) && v.every(x => unifiedText(x)), f.claimKind==='knowledge'?'UNIFIED_KNOWLEDGE_INVALID':'UNIFIED_CHARACTER_PROFILE_INVALID');
       } else unifiedAssert(unifiedText(v), 'UNIFIED_VALUE_INVALID');
       if (f.domain === 'relationship') unifiedAssert(entities.get(f.targetTempRef)?.type === 'person' && f.targetTempRef !== f.subjectTempRef && CONTINUITY_STATE_RELATION_DIMENSIONS.includes(f.dimension), 'UNIFIED_RELATION_INVALID');
@@ -529,7 +551,7 @@ const canonicalEvidenceSpanBinding=(span,source)=>{const comparable=canonicalEvi
       if(!ranked.some(row=>row.row===match))return {ok:false,reason:'thread_target_anchor_mismatch'};
       if(ranked.length>1&&ranked[0].score-ranked[1].score<0.12)return {ok:false,reason:'thread_target_anchor_ambiguous'};
       if(ranked[0]?.row!==match)return {ok:false,reason:'thread_target_not_best_match'};
-      if(unifiedThreadEvidenceAnchorSimilarity(match.value,currentFact)<0.12)return {ok:false,reason:'thread_anchor_evidence_missing'};
+      if(value.link!=='reaffirm'&&unifiedThreadEvidenceAnchorSimilarity(match.value,currentFact)<0.12)return {ok:false,reason:'thread_anchor_evidence_missing'};
       if(value.link==='resolve'&&(!UNIFIED_THREAD_ACTIVE_STATUS.includes(match.value.status)||!['resolved','closed'].includes(value.status)||!value.resolution))
         return {ok:false,reason:'thread_resolve_transition_invalid'};
       if(value.link==='reopen'&&(!UNIFIED_THREAD_CLOSED_STATUS.includes(match.value.status)||value.status!=='open'))return {ok:false,reason:'thread_reopen_transition_invalid'};

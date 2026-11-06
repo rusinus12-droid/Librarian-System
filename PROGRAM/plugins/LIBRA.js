@@ -34234,6 +34234,7 @@ function createLibraReadonlySourceContext(owner) {
     // These name the record itself, not a fact about it.
     const MICRO_STATE_RECORD_FIELDS = new Set(['name', 'aliases', 'kind', 'lifecycleStatus', 'primaryArcId', 'locks'].map(statePipelineRiskFieldKey));
     const microStateItemIdentity = (field, subjectId, item) => field === 'access' ? JSON.stringify([item?.personRef, item?.permission])
+      : field === 'locks' ? JSON.stringify(['lock', statePipelineIdentityKey(item?.title)])
       : field === 'affiliations' ? JSON.stringify([item?.organizationRef])
       : ['preferences', 'boundaries'].includes(field) ? unifiedProfileItemIdentity(field, subjectId, item) || JSON.stringify(item)
       : JSON.stringify(item);
@@ -34253,6 +34254,13 @@ function createLibraReadonlySourceContext(owner) {
       // A description only has to appear in the quote; a name also has to stand as a whole word.
       const cited = text => typeof text === 'string' && !!text.trim() && string(quote).includes(text.trim());
       const object = asObject(value), done = (result, additive = false) => ({ ok: true, value: result, additive });
+      // A continuity lock is a titled condition; its summary must be quoted and its status explicit.
+      if (domain === 'narrative' && field === 'locks') {
+        const title = string(object.title).trim();
+        if (!title || !cited(object.summary)) return fail('state_value_not_source_bound');
+        if (!['active', 'released'].includes(object.status)) return fail('state_value_shape_invalid');
+        return done({ id: 'lock_' + stableHash(statePipelineIdentityKey(title)), title: compact(title, 120), summary: object.summary, status: object.status }, true);
+      }
       if (domain === 'character' && field === 'preferences') {
         if (!cited(object.content)) return fail('state_value_not_source_bound');
         if (!string(object.topic).trim() || !['preference', 'dislike', 'fear'].includes(object.kind)) return fail('state_value_shape_invalid');
@@ -34292,7 +34300,8 @@ function createLibraReadonlySourceContext(owner) {
         return !referenced || referenced.id === subjectId ? fail('registry_reference_unresolved') : done(referenced.id);
       }
       if (domain === 'world' && field === 'rule') return done({ text: value, scopeRef: subjectId, exceptions: [] });
-      return done(value, domain === 'character' && MICRO_STRING_COLLECTION_FIELDS.has(field));
+      // A place's lasting description is a list like a character profile; one quote adds one item.
+      return done(value, (domain === 'character' && MICRO_STRING_COLLECTION_FIELDS.has(field)) || (domain === 'world' && field === 'description'));
     };
     const statePipelineDomainOpenForMicro = (head, domain) => {
       const statusKey = STATE_PIPELINE_DOMAIN_HEAD_KEYS[domain], status = asObject(head?.domainStatus?.[statusKey]);
@@ -36463,7 +36472,7 @@ function createLibraReadonlySourceContext(owner) {
     };
     const normalizeCurrentNarrativeState = value => {
       const source = asObject(value);
-      const activeStatuses = new Set(['active','open','developing','escalating','paused','blocked']);
+      const activeStatuses = new Set(['active','open','developing','escalating','paused','blocked','dormant']);
       const arcs = asArray(source.arcs).map(row => statePipelineSanitizeRecord(row)).filter(row => row?.id && activeStatuses.has(string(row.status || 'active').toLowerCase())).slice(0, 24);
       const threads = asArray(source.threads).map(row => statePipelineSanitizeRecord(row)).filter(row => row?.id && ['active','open','blocked','uncertain'].includes(string(row.status || 'open').toLowerCase())).slice(0, 48);
       return {
@@ -36474,6 +36483,13 @@ function createLibraReadonlySourceContext(owner) {
         threads,
         ...(Array.isArray(source.events)?{events:source.events.map(row=>statePipelineSanitizeRecord(row)).filter(row=>row?.id && row?.text).slice(-60)}:{}),
         locks: asArray(source.locks).map(row => statePipelineSanitizeRecord(row)).filter(Boolean).slice(0, 24),
+        // Reader-index rows written by the typed narrative claims. Each carries its
+        // own cited evidence; anything without an id and evidence is not kept.
+        ...Object.fromEntries([['turningPoints',64],['motifs',24],['resolvedArcs',24],['closedThreads',48]].flatMap(([field,limit])=>{
+          const rows=asArray(source[field]).map(row=>statePipelineSanitizeRecord(row))
+            .filter(row=>row?.id&&(asArray(row.evidenceSpans).length||row.evidence)).slice(-limit);
+          return rows.length?[[field,rows]]:[];
+        })),
         momentum: statePipelineSanitizeRecord(source.momentum) ?? '',
         fieldEvidence: clone(asObject(source.fieldEvidence)),
         clearedFieldEvidence: clone(asObject(source.clearedFieldEvidence)),
@@ -46767,7 +46783,12 @@ function createLibraReadonlySourceContext(owner) {
           object(row.clearedFieldEvidence), object(row.fieldCorrectionProvenance), object(row.clearedFieldCorrectionProvenance));
       }
       const narrative = object(head.narrative), fields = Object.fromEntries(Object.entries(narrative)
-        .filter(([name]) => !['fieldEvidence', 'fieldCorrectionProvenance', 'clearedFieldCorrectionProvenance', 'clearedFieldEvidence'].includes(name)));
+        .filter(([name]) => !['fieldEvidence', 'fieldCorrectionProvenance', 'clearedFieldCorrectionProvenance', 'clearedFieldEvidence',
+          // Reader-index history (finished threads/arcs, turning points, motifs) is already in
+          // canonical memory; it is not current State and is not recalled as such.
+          'closedThreads', 'resolvedArcs', 'turningPoints', 'motifs',
+          // A record id, not something a reader can use; the arc itself is recalled.
+          'primaryArcId'].includes(name)));
       projectFields('narrative', { id: 'narrative_current', certainty: 'unknown' }, fields, object(narrative.fieldEvidence),
         object(narrative.clearedFieldEvidence), object(narrative.fieldCorrectionProvenance), object(narrative.clearedFieldCorrectionProvenance));
     }); else note('state', 'state_view_unavailable');
@@ -58241,16 +58262,38 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // other character-profile arrays use, so they inherit the existing
       // replay/correction path instead of getting a private ledger.
       character_preference: { domain: 'character', field: 'preferences', value: 'preferences', collection: true, profile: true },
-      character_boundary: { domain: 'character', field: 'boundaries', value: 'boundaries', collection: true, profile: true }
+      character_boundary: { domain: 'character', field: 'boundaries', value: 'boundaries', collection: true, profile: true },
+      // A place's lasting purpose, background and features. Additive like the
+      // character profile: omission keeps an item, `remove` drops exactly one.
+      // A passing scene condition stays world_state; this never replaces it.
+      world_description: { domain: 'world', field: 'description', value: 'description', collection: true, profile: true },
+      // Story structure is interpretation over cited events, kept in the
+      // narrative domain and never applied as a world fact. Its subject is a
+      // thread-kind entity whose name is the entry's title.
+      story_arc: { domain: 'narrative', field: 'arcs', value: 'arc' },
+      turning_point: { domain: 'narrative', field: 'turningPoints', value: 'turningPoint' },
+      motif: { domain: 'narrative', field: 'motifs', value: 'motif' },
+      // Established conditions later scenes must keep, and the present central pressure.
+      // Both describe what already holds; neither is a plan for future events.
+      continuity_lock: { domain: 'narrative', field: 'locks', value: 'lock' },
+      story_momentum: { domain: 'narrative', field: 'momentum', value: 'momentum' }
     });
+    const UNIFIED_STRUCTURE_CLAIMS = Object.freeze(['story_arc','turning_point','motif','continuity_lock','story_momentum']);
+    const UNIFIED_STRUCTURE_STATUS = Object.freeze({ story_arc: ['active','dormant','resolved'], continuity_lock: ['active','released'] });
+    const UNIFIED_V5_ONLY_CLAIMS = Object.freeze(['character_preference','character_boundary','character_emotion','world_description',...UNIFIED_STRUCTURE_CLAIMS]);
+    // A background is about the past by nature. Its fact may say when it
+    // happened (historical/flashback) and still describe who the person is now.
+    // Every other State field still needs a current_sequence fact.
+    const unifiedFactStateEligible = f => f?.certainty === 'confirmed' && (f.temporalRole === 'current_sequence'
+      || (f.claimKind === 'character_background' && ['historical','flashback'].includes(f.temporalRole)));
     // D02: v4 predates the World Maker claim kinds. They are valid only under
     // the explicitly dispatched v5 contract; existing v4 records keep the old
     // claim set and thread object shape.
     const UNIFIED_V4_CLAIMS = Object.freeze(Object.fromEntries(
-      Object.entries(UNIFIED_CLAIMS).filter(([kind]) => !['character_preference','character_boundary','character_emotion'].includes(kind))));
+      Object.entries(UNIFIED_CLAIMS).filter(([kind]) => !UNIFIED_V5_ONLY_CLAIMS.includes(kind))));
     const unifiedClaimsForSchema = schema => schema === UNIFIED_ARTIFACT_SCHEMA_V5 ? UNIFIED_CLAIMS : UNIFIED_V4_CLAIMS;
     const unifiedArtifactUsesV5Extensions = value => asArray(value?.facts).some(f =>
-      ['character_preference','character_boundary','character_emotion'].includes(f?.claimKind)
+      UNIFIED_V5_ONLY_CLAIMS.includes(f?.claimKind)
       || (f?.claimKind === 'character_info' && string(f?.values?.category).trim().toLowerCase() === 'emotion')
       || (f?.claimKind === 'thread' && isPlainObject(f?.values?.thread)
         && (Object.prototype.hasOwnProperty.call(f.values.thread,'link')
@@ -58261,7 +58304,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || Object.prototype.hasOwnProperty.call(f.values.thread,'lifecycleId')
           || Object.prototype.hasOwnProperty.call(f.values.thread,'linkTarget')))
       || (f?.claimKind === 'character_info'
-        && ['preference','preferences','boundary','boundaries'].includes(string(f?.values?.category || '').trim().toLowerCase())));
+        && ['preference','preferences','boundary','boundaries','dislike','dislikes','fear','fears','선호','경계'].includes(string(f?.values?.category || '').trim().toLowerCase())));
     // D04/T05 link kinds (`01` section 7.3). Each one states a DIFFERENT relation,
     // so a re-confirmation can never be mistaken for a replacement, and a
     // resolution can never be mistaken for a re-opening.
@@ -58776,7 +58819,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         'Each claim has changeKind (event, person, relation, world, thread or correction), text, actor, target, temporalRole (current, historical, hypothetical or uncertain), certainty (confirmed or uncertain), epistemicStatus (observed, reported or uncertain), stateChangeType (none, set or clear), and evidence with role, messageId, startOffset, endOffset and exactQuote.',
         'EVIDENCE SHAPE: evidence is exactly ONE object, NEVER an array: {"role":"assistant","messageId":"copy source ID","startOffset":0,"endOffset":1,"exactQuote":"copy exact source span"}. Copy an evidenceCandidates object unchanged when it supports the claim. claims is an array; each claim.evidence is an object.',
         'For every observed current set/clear change, include stateIntent with domain (character, relationship, world or narrative), target, field, operation matching stateChangeType, and value for set only. Character/world target is {entityName}; relationship target is {subjectName,targetName,dimension}; narrative target is {scope:"current_narrative"}. Names must appear in the exact evidence quote. Omit stateIntent when the target, field or value is uncertain; a source quote alone does not approve State.',
-        'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world rule or sceneTime take a value copied from the quote. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
+        'CURRENT OBSERVATIONS & CHANGES: an explicitly completed movement, direct observation of current location/presence, loss/recovery of consciousness, injury/recovery, holding an item, or opening/closing is eligible for State tracking. Preserve both the observed event/presence and its supported current State intent. For a person use domain character; use field locationRef for current or changed location (e.g. "서재에 앉아 있다" -> locationRef: "서재"; value is the exact cited place name, not an invented ID), or condition for current physical condition/state. For an object use domain world with holderRef for the person now holding it, containerRef for what it is now inside or on, or parentRef for the place a location now belongs to, ownerRef for its owner, managerRef for its manager; value is the exact cited name. STATE FIELDS beyond those: character appearance, background, personality, speech, habits (hobbies and habitual behavior), abilities, knowledge, goal or emotion take a value copied from the quote. character preferences take value {"content":copied from the quote,"topic":exact topic,"kind":"preference|dislike|fear"}. character boundaries take value {"content":copied from the quote,"topic":exact topic,"kind":"boundary|medical_or_food_boundary","scope":{"targetName":cited person or "","act":"","when":""}}. character affiliations take value {"organizationName":cited,"role":"","status":"member|former"}. world access takes value {"personName":cited,"permission":"","status":"granted|denied|unknown"}. world rule or sceneTime take a value copied from the quote. world description takes one lasting purpose or feature of the place copied from the quote (never a passing condition). For domain narrative (target {scope:"current_narrative"}) only two fields: momentum takes one quoted sentence of the central pressure now established; locks take value {"title":"short title","summary":copied from the quote,"status":"active|released"} for a condition later scenes must keep while it holds (a threat in force, a captivity, a standing deal), released with the same title when the turn ends it. Arcs, threads and other story structure are not for one turn. A relationship uses domain relationship, target {subjectName,targetName,dimension}, field value and a qualitative value copied from the quote; dimension is one of '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'; A toward B never proves B toward A. When the source says a value ended or no longer holds, use operation clear and stateChangeType clear without value. For world changes use domain world and the precise affected property: a location door opening/closing uses doorStatus on that location, not condition implying that the whole building changed. condition describes the explicitly stated condition of the target itself. Copy the value literally from the quote, not a translation or a label such as open/closed. Registry resolution and State approval belong to runtime; do not invent a target or approve the claim yourself.',
         'LOCATION VALUE: copy only the destination or current place name, without its containing-place phrase: 북관 안의 의무실 -> 의무실. Prefer an exact registeredStateTargets name/alias appearing in the source quote. This list clarifies existing identity only; it proves no event, presence or State change. A separately named door/object is not its building; never merge similarly named targets. Keep the exact affected property when describing an unnamed part of a known location.',
         'LIMIT: at most 16 claims. When a turn holds more, keep every current change and drop the least important of the rest.',
         'QUOTE: exactQuote is the sentence that states the change and holds its value, never only a name.',
@@ -60244,9 +60287,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         relation = { id: `cs_rel_${stableHash(`${subject.id}>${object.id}:${target.dimension}`)}`,
           subjectId: subject.id, targetId: object.id, dimension: target.dimension };
       }
-      if (MICRO_STATE_RECORD_FIELDS.has(statePipelineRiskFieldKey(field))) return pending('state_field_names_record');
       // A thread is a lifecycle with its own identity and link rules, owned by Canonical.
       if (domain === 'narrative' && field === 'threads') return pending('narrative_thread_canonical_only');
+      // One turn can establish the current pressure or a condition to keep. Arcs, turning
+      // points, motifs, closures and the summary read across turns and stay Canonical.
+      if (domain === 'narrative' && !['momentum', 'locks'].includes(field)) return pending('narrative_field_canonical_only');
+      if (!(domain === 'narrative' && field === 'locks') && MICRO_STATE_RECORD_FIELDS.has(statePipelineRiskFieldKey(field))) return pending('state_field_names_record');
       const clearing = intent.operation === 'clear';
       // The producer cites names. Only the verified Registry resolves them to the same
       // typed references Canonical stores; unknown or ambiguous targets stay pending.
@@ -60621,6 +60667,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { id: relationId, subjectId: subject.id, subjectName: subject.name, targetId: target.id, targetName: target.name,
         dimension: patch.dimension, state: {}, fieldEvidence: {}, certainty: 'confirmed' };
     };
+    // Registry as an admitted Micro patch reads it: entities the patch introduced
+    // and that no standing record already names are added, read-only.
+    const microRegistryViewWithPatch = (registry, patch) => {
+      const entities = [...asArray(registry?.entities)];
+      for (const created of asArray(asObject(patch).microNewEntities)) {
+        if (!created?.id || microEffectiveEntityId(registry, patch, created.id) !== created.id) continue;
+        if (!entities.some(row => row?.id === created.id)) entities.push(clone(created));
+      }
+      return { ...asObject(registry), entities };
+    };
     const retainMicroLocationReference = (head, registry, domain, field, value, proof) => {
       const isLocation = domain === 'character' && field === 'locationRef';
       if (!isLocation && !(domain === 'world' && MICRO_WORLD_REFERENCE_FIELDS[field])) return;
@@ -60819,6 +60875,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
             later.turn === item.turn && !statePipelineSemanticEqual(item.field, item.value, later.value)));
           const latest = group[group.length - 1];
           for (const item of group) {
+            // The approved patch names what Micro introduced first. Read it the way
+            // the post-canonical path does, so a reference with no canonical record
+            // yet keeps its verified name instead of reaching the screen as an ID.
+            const itemRegistry = microRegistryViewWithPatch(registry, item.patch);
             const laterMatch = group.some(later => later.turn > item.turn
               && canonicalHasField && statePipelineSemanticEqual(item.field, later.value, canonicalValue));
             const laterCanonicalField = canonicalFieldEpoch === 0
@@ -60838,11 +60898,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (disposition === 'still_current') {
               let targetRow = asArray(item.domain === 'relationship' ? head.relationships : []).find(value => value?.id === item.targetId) || row;
               if (item.domain === 'relationship' && !targetRow) {
-                targetRow = microStateRelationshipRow(registry, item.targetId, item.patch);
+                targetRow = microStateRelationshipRow(itemRegistry, item.targetId, item.patch);
                 if (targetRow) head.relationships = [...asArray(head.relationships), targetRow]; else disposition = 'pending';
               } else if (item.domain !== 'narrative' && !targetRow) {
                 const entity = asObject(registry?.byId?.[item.targetId]
-                  || asArray(registry?.entities).find(value => value?.id === item.targetId));
+                  || asArray(itemRegistry.entities).find(value => value?.id === item.targetId));
                 if (!entity.id || entity.type !== (item.domain === 'character' ? 'person' : 'world')) {
                   disposition = 'pending';
                 } else {
@@ -60866,7 +60926,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   endOffset: item.claim.evidence.endOffset,
                   exactQuote: item.claim.evidence.exactQuote, turn: item.turn,
                   evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
-                retainMicroLocationReference(head, registry, item.domain, item.field, item.value, fieldEvidence);
+                retainMicroLocationReference(head, itemRegistry, item.domain, item.field, item.value, fieldEvidence);
                 target[item.field] = item.additiveItems.length
                   ? microStateMergeCollection(item.field, item.targetId, target[item.field], item.additiveItems) : clone(item.value);
                 targetRow.fieldEvidence = asObject(targetRow.fieldEvidence);
@@ -61627,9 +61687,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       } else if (f.claimKind === 'access') {
         unifiedKeys(v, ['personTempRef','permission','status'], 'access');
         unifiedAssert(entities.get(v.personTempRef)?.type === 'person' && unifiedText(v.permission) && ['granted','denied','unknown'].includes(v.status), 'UNIFIED_ACCESS_INVALID');
+      } else if (UNIFIED_STRUCTURE_CLAIMS.includes(f.claimKind)) {
+        unifiedAssert(subject.type === 'world' && subject.kind === 'thread', 'UNIFIED_STRUCTURE_SUBJECT_INVALID');
+        const statuses = UNIFIED_STRUCTURE_STATUS[f.claimKind];
+        unifiedKeys(v, statuses ? ['summary','status','interpretation'] : ['summary','interpretation'], f.claimKind);
+        unifiedAssert(unifiedText(v.summary, 600) && (v.interpretation === undefined || unifiedText(v.interpretation, 600))
+          && (!statuses || statuses.includes(v.status)), 'UNIFIED_STRUCTURE_INVALID');
+        // A motif is a recurrence: one appearance is never enough.
+        if (f.claimKind === 'motif') unifiedAssert(new Set(f.evidenceSpans.map(span => String(span.ref).replace(/-[ua]$/, ''))).size >= 2, 'UNIFIED_MOTIF_RECURRENCE_REQUIRED');
       } else if (profileItemKind) {
         validateProfileCollection();
       } else if (contract.collection === true) {
+        if (f.claimKind === 'world_description') unifiedAssert(['location','organization','object','environment','other'].includes(subject.kind), 'UNIFIED_DESCRIPTION_SUBJECT_INVALID');
         unifiedAssert(Array.isArray(v) && v.length <= 32 && (!contract.profile || v.length > 0) && v.every(x => unifiedText(x)), f.claimKind==='knowledge'?'UNIFIED_KNOWLEDGE_INVALID':'UNIFIED_CHARACTER_PROFILE_INVALID');
       } else unifiedAssert(unifiedText(v), 'UNIFIED_VALUE_INVALID');
       if (f.domain === 'relationship') unifiedAssert(entities.get(f.targetTempRef)?.type === 'person' && f.targetTempRef !== f.subjectTempRef && CONTINUITY_STATE_RELATION_DIMENSIONS.includes(f.dimension), 'UNIFIED_RELATION_INVALID');
@@ -61659,6 +61728,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       else if(contract.collection===true && Array.isArray(v) && v.length && v.every(x=>unifiedText(x))) derived=(effect==='remove'?(fact.claimKind==='knowledge'?'지식 제거: ':contract.field+' 제거: '):'')+v.join('; ');
       else if(isPlainObject(v)){
         if(fact.claimKind==='thread' && unifiedText(v.summary)) derived=v.summary+' (상태: '+string(v.status||'')+')'+(v.interpretation?' · '+v.interpretation:'');
+        else if(UNIFIED_STRUCTURE_CLAIMS.includes(fact.claimKind) && unifiedText(v.summary)) derived=subject+' · '+v.summary;
         else if(fact.claimKind==='rule' && unifiedText(v.text) && Array.isArray(v.exceptions)) derived=v.text+' (적용 범위: '+name(v.scopeTempRef)+')'+v.exceptions.map(ex=>' · 예외: '+name(ex?.locationTempRef)+' / '+string(ex?.condition||'')+' / '+string(ex?.effect||'')).join('');
         else if(fact.claimKind==='affiliation' && unifiedText(v.role)) derived=name(v.organizationTempRef)+' · '+v.role+' (상태: '+string(v.status||'')+')';
         else if(fact.claimKind==='access' && unifiedText(v.permission)) derived=name(v.personTempRef)+' · '+v.permission+' (상태: '+string(v.status||'')+')';
@@ -61961,6 +62031,32 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if (value !== undefined && value !== null && typeof value !== 'string' && unifiedText(f.text)) { mark({ path: path + '.values.value', field: 'value', from: compact(JSON.stringify(value), 80), to: 'fact_text', reason: 'relationship_value_qualitative' }); f.values.value = f.text; }
         }
         if (f.claimKind === 'thread' && isPlainObject(f.values?.thread)) set(f.values.thread, 'status', path + '.values.thread', null, ['open','blocked','uncertain','resolved','closed'], UNIFIED_VOCABULARY.threadStatus);
+        // An event has exactly one domain; filing it under its actor's domain changes nothing it says.
+        if (f.claimKind === 'event' && f.domain !== 'event' && ['character','world','relationship','narrative'].includes(f.domain)) {
+          mark({ path: path + '.domain', field: 'domain', from: f.domain, to: 'event', reason: 'event_domain_fixed' });
+          f.domain = 'event';
+        }
+        // A boundary scope axis left out is unknown, which the contract writes as ''.
+        if (f.claimKind === 'character_boundary' && Array.isArray(f.values?.boundaries)) {
+          for (const item of f.values.boundaries) {
+            if (!isPlainObject(item?.scope)) continue;
+            for (const axis of ['targetRef','act','when']) if (item.scope[axis] === undefined || item.scope[axis] === null) {
+              mark({ path: path + '.values.boundaries.scope.' + axis, field: axis, from: 'missing', to: '', reason: 'boundary_axis_unknown' });
+              item.scope[axis] = '';
+            }
+            if (item.scope.subjectRef === undefined && f.subjectTempRef) item.scope.subjectRef = f.subjectTempRef;
+          }
+        }
+        // One description written as a plain string is one item, not a different shape.
+        if (f.claimKind === 'world_description' && isPlainObject(f.values) && typeof f.values.description === 'string' && f.values.description.trim()) {
+          mark({ path: path + '.values.description', field: 'description', from: 'string', to: 'array', reason: 'single_item_collection' });
+          f.values.description = [f.values.description];
+        }
+        if (f.claimKind === 'story_arc' && isPlainObject(f.values?.arc) && typeof f.values.arc.status === 'string') {
+          const status = f.values.arc.status.trim().toLowerCase();
+          const mapped = { open: 'active', ongoing: 'active', 'in_progress': 'active', progressing: 'active', closed: 'resolved', completed: 'resolved', ended: 'resolved', paused: 'dormant' }[status];
+          if (mapped) { mark({ path: path + '.values.arc.status', field: 'status', from: status, to: mapped }); f.values.arc.status = mapped; }
+        }
       }
     };
     const unwrapUnifiedProviderArtifact = (value, admission) => {
@@ -62062,11 +62158,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const aliases={'외형':'appearance','배경':'background','성격':'personality','말투':'speech','습관':'habits','능력':'abilities','목표':'goal','감정':'emotion',habit:'habits',ability:'abilities',mood:'emotion'};
               // Compatibility input from older provider prompts is normalized into the
               // same structured v5 item shape as the current producer contract.
-              const preferenceCategories={'preferences':'preferences','preference':'preferences','boundaries':'boundaries','boundary':'boundaries'};
+              const preferenceCategories={'preferences':'preferences','preference':'preferences','boundaries':'boundaries','boundary':'boundaries','dislike':'preferences','dislikes':'preferences','fear':'preferences','fears':'preferences','선호':'preferences','경계':'boundaries'};
               const content=f.values.content, effect=f.effect||'set';
               unifiedAssert(effect==='clear'?content===null:unifiedText(content),'UNIFIED_CHARACTER_INFO_CONTENT_INVALID');
               if(preferenceCategories[aliases[category]||category] && effect!=='clear'){
-                const kindHint=inferPreferenceKind(content);
+                // The stated category decides preference versus boundary; wording only refines it.
+                const declared=preferenceCategories[aliases[category]||category],inferred=inferPreferenceKind(content);
+                const kindHint=declared==='boundaries'?(inferred==='medical_or_food_boundary'?inferred:'boundary')
+                  :['dislike','dislikes'].includes(category)?'dislike':['fear','fears'].includes(category)?'fear':inferred;
                 const boundary=kindHint==='boundary'||kindHint==='medical_or_food_boundary';
                 const mapped=UNIFIED_CLAIMS[boundary?'character_boundary':'character_preference'];
                 const topic=inferPreferenceTopic(content);
@@ -62076,8 +62175,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   const parsed=unifiedBoundaryScope({subject:'',text:content});
                   const targetMatches=parsed.target? [...entities.values()].filter(entity=>entity.type==='person'
                     &&statePipelineIdentityKey(entity.name)===statePipelineIdentityKey(parsed.target)):[];
-                  unifiedAssert(!parsed.target||targetMatches.length===1,'UNIFIED_BOUNDARY_TARGET_TEMP_REF_REQUIRED');
-                  item={...item,scope:{subjectRef:f.subjectTempRef,targetRef:targetMatches[0]?.tempId||'',act:parsed.act,when:parsed.when}};
+                  // A target read from the wording that names no single extracted person
+                  // stays unknown; the content keeps its words, so the scope is not widened.
+                  if(parsed.target&&targetMatches.length!==1)admission.normalizedFields.push({index:i,field:'scope.targetRef',reason:'boundary_target_unresolved_kept_unknown',target:compact(parsed.target,40)});
+                  item={...item,scope:{subjectRef:f.subjectTempRef,targetRef:targetMatches.length===1?targetMatches[0].tempId:'',act:parsed.act,when:parsed.when}};
                 }
                 f.claimKind=boundary?'character_boundary':'character_preference';f.domain='character';
                 f.values={[mapped.value]:[item]};
@@ -62104,7 +62205,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
           const c=UNIFIED_CLAIMS[f?.claimKind];
           if(c){f.values=pick(f.values,[c.value],'facts['+i+'].values');const v=f.values?.[c.value];
-            const nested={rule:['text','scopeTempRef','exceptions'],thread:['summary','status','kind','interpretation','link','resolution','participants','linkCandidateAlias'],affiliation:['organizationTempRef','role','status'],access:['personTempRef','permission','status']}[f.claimKind];
+            const nested={rule:['text','scopeTempRef','exceptions'],thread:['summary','status','kind','interpretation','link','resolution','participants','linkCandidateAlias'],affiliation:['organizationTempRef','role','status'],access:['personTempRef','permission','status'],
+              story_arc:['summary','status','interpretation'],turning_point:['summary','interpretation'],motif:['summary','interpretation'],
+              continuity_lock:['summary','status','interpretation'],story_momentum:['summary','interpretation']}[f.claimKind];
             if(nested&&isPlainObject(v)){f.values[c.value]=pick(v,nested,'facts['+i+'].values.'+c.value);
               if(f.claimKind==='thread'&&Array.isArray(v.participants))f.values[c.value].participants=v.participants.map((participant,n)=>pick(participant,['role','personTempRef'],'facts['+i+'].values.thread.participants['+n+']'));
               if(f.claimKind==='rule'&&Array.isArray(v.exceptions))f.values[c.value].exceptions=v.exceptions.map((ex,n)=>pick(ex,['locationTempRef','condition','effect'],'facts['+i+'].exceptions['+n+']'));
@@ -63344,12 +63447,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const nonce=stableHash(`${basis.scopeKey}:${sourceDigest(batch)}:${Number(batch[0].turn)}`);
       for(const fact of asArray(artifact.facts)){
         if(fact?.claimKind!=='thread'||fact?.domain!=='narrative'||artifact.schema!==UNIFIED_ARTIFACT_SCHEMA_V5)continue;
-        const value=asObject(fact.values?.thread),participantIds=asArray(value.participants).map(participant=>({
+        const value=asObject(fact.values?.thread);
+        let participantIds=asArray(value.participants).map(participant=>({
           role:string(participant?.role||''),personId:string(resolved.get(participant?.personTempRef)||'')
         })).filter(participant=>participant.personId).sort((a,b)=>a.role.localeCompare(b.role));
-        const independentlyIdentified=participantIds.length===asArray(value.participants).length&&participantIds.length>0;
         const newLifecycleId=`tl_${stableHash(`${nonce}:${fact.tempFactId}`)}`;
+        // "Associated with" and no candidate named is only a new thread: associate
+        // never changes a lifecycle, so there is nothing for runtime to hold.
+        if(value.link==='associate'&&!string(value.linkCandidateAlias||''))delete value.link;
         const kind=string(value.link||''),alias=string(value.linkCandidateAlias||''),target=candidateContext.byAlias.get(alias);
+        // Omitted participants on a linked thread are not a mismatch. They come from
+        // the named candidate only when this fact's own words name every one of them.
+        let inheritedParticipants=false;
+        if(kind&&target&&!asArray(value.participants).length&&asArray(target.participants).length
+          &&asArray(target.participants).length===asArray(target.participantIds).length){
+          const words=[value.summary,value.interpretation,fact.text,...asArray(fact.evidenceSpans).map(span=>span?.quote)].map(string).join(' ');
+          if(target.participants.every(participant=>canonicalEntityNameBoundToEvidence(participant.name,words))){
+            participantIds=clone(target.participantIds);inheritedParticipants=true;
+          }
+        }
+        const independentlyIdentified=inheritedParticipants||(participantIds.length===asArray(value.participants).length&&participantIds.length>0);
         const anchorRanks=target?candidateContext.candidates.filter(candidate=>candidate.allowedLinks.includes(kind)
           &&digest(candidate.participantIds)===digest(participantIds)&&string(candidate.value.kind||'other')===string(value.kind||'other'))
           .map(candidate=>({candidate,score:unifiedThreadAnchorSimilarity(candidate.value,value)})).filter(row=>row.score>=0.12)
@@ -63390,7 +63507,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         else if(digest(participantIds)!==digest(target.participantIds))reason='participant_mismatch';
         else if(string(value.kind||'other')!==string(target.value.kind||'other'))reason='thread_kind_mismatch';
         else if(!anchorRanks.some(row=>row.candidate.alias===target.alias))reason='thread_anchor_mismatch';
-        else if(unifiedThreadEvidenceAnchorSimilarity(target.value,fact)<0.12)reason='thread_anchor_evidence_missing';
+        // A reaffirmation changes nothing in the target, so it needs no wording
+        // overlap with the quote; every lifecycle change still does.
+        else if(kind!=='reaffirm'&&unifiedThreadEvidenceAnchorSimilarity(target.value,fact)<0.12)reason='thread_anchor_evidence_missing';
         else if(anchorGap<0.12)reason='ambiguous_candidate_anchor';
         else if(anchorRanks[0]?.candidate.alias!==target.alias)reason='candidate_anchor_not_best_match';
         else if(kind==='resolve'&&(!['resolved','closed'].includes(value.status)||!value.resolution))reason='resolution_reason_required';
@@ -63419,7 +63538,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'OBSERVED CONTINUITY: a name mentioned in conversation, memory, a dream or a plan does not establish physical presence. Preserve departures and scene changes; require new evidence for return. Record only the executed part of a plan as an event; ignored, refused or replaced instructions are not completed acts. Keep intentions and unresolved goals distinct from observed outcomes.',
       'TEMPORARY AND STABLE: separate transient reactions/current conditions from enduring traits, relationship changes or preferences. Do not treat historical background, flashback, reported facts, hypotheticals and uncertain time as current facts. Following a suggested script once does not establish lasting personality development. Keep who changed toward whom and context; do not generalize one pairwise reaction to everyone. Do not blend incompatible alternate-world histories or personalities.',
       'CHARACTER PROFILE: optional character_info stores directly established appearance, background, personality, speech, habits and abilities; one maintainable item per content string. A single action, reaction, quotation or success does not establish an enduring trait, habit, speech pattern or ability. Infer from no stereotypes or gaps. character_state is transient; character_info goal is explicitly held, never an invented plan or completed event.',
-      'PROFILE CONTINUITY: profile facts are additive; omission preserves them. Replace or clear only the exact prior item when current evidence establishes change.',
+      'PROFILE CONTINUITY: profile facts are additive; omission preserves them. Replace or clear only the exact prior item when current evidence establishes change. Never restate a READ-ONLY STATE profile or description item in other words. A momentary look (wet hair, a wound, tears) is character_state, not appearance.',
       'SENSITIVE MATERIAL: summarize sexual/violent events factually and non-graphically. Omit explicit anatomy, sensory or erotic detail. Preserve known or unknown consent, refusal, coercion, harm and consequences; never sanitize coercion as consent. This output limit does not bypass provider restrictions.',
       'ADULT CONTINUITY MEMORY: preserve source-established adult events, participants, relationship changes, stated boundaries and later-relevant aftermath in non-graphic factual summaries. Do not omit a supported event solely because it concerns adult themes. Preset NSFW switches, depiction intensity and writing instructions are not evidence of events, consent or preferences. Distinguish explicit agreement, refusal, withdrawal and uncertainty; keep each scoped to its participants and time. Never add erotic detail, continue an encounter or infer escalation.',
       'SENSITIVE MEMORY SELECTION: Record sexual preferences, attitudes or identity labels only when explicitly established and relevant to later continuity; never infer them from gender, genre, appearance, a role or an isolated reaction. Preserve the scope of a stated boundary; one act or prior consent does not establish a standing preference or ongoing consent. Omit unsupported sensitive attributes without discarding independently supported events and consequences. Keep unknown information unknown.',
@@ -63428,14 +63547,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'ID FORMAT: use simple ASCII counters e1,e2,... for tempId and f1,f2,... for tempFactId. Copy those exact IDs into all references and stateBindings. Never transliterate a name into an ID or use visually similar non-ASCII letters. Keep the original language in names, text and quotations.',
       'LITERAL ENTITY NAMES: copy each name as one literal contiguous phrase from its own quotation. Do not invent descriptive titles by joining distant words. A rule about a place is a rule fact on that place, not a newly titled rule entity. A promise or question may use a short literal name such as 약속 or 공연 허가 when that exact phrase is cited; keep its full meaning in the thread value. Do not drop a supported rule or thread merely to avoid extracting it.',
       'Fact: {tempFactId,domain,subjectTempRef,claimKind,values,text,temporalRole:current_sequence|historical|flashback|reported|hypothetical|uncertain,certainty:confirmed|uncertain|conflict|unknown,evidenceSpans:[{ref,quote}],dependsOn:[]}. Keep text concise; use the shortest exact supporting quotation (2–320 normalized characters) from its row, not a whole passage or unrelated name.',
-      'claimKind→domain: event→event; location|character_state|character_emotion|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state→world; thread→narrative.',
-      'Character information: claimKind:"character_info", domain:"character", values:{category,content}; category=appearance|background|personality|speech|habits|abilities|goal|emotion; habits include hobbies and habitual behavior; content is one concise string. Emit a fact for every category the source directly states; leave only what the source does not state unset. Unknown categories remain memory without profile updates.',
+      'claimKind→domain: event→event; location|character_state|character_emotion|knowledge|affiliation|character_preference|character_boundary→character; relationship→relationship; scene_time|containment|management|ownership|possession|placement|access|rule|world_state|world_description→world; thread→narrative.',
+      'PROFILE COVERAGE: before finishing, check each person across all rows for directly stated appearance, background (name, age, occupation, family role, adoption), characteristic personality or speech, habits, abilities, lasting preferences/dislikes/fears and standing boundaries. Narration describing a person is evidence. One fact per item with its own quote; background may be historical.',
+      'PLACE DESCRIPTION: world_description (domain world, subject a location/organization/object) values {description:["one lasting purpose, background or feature"]}. Emit one for each named place the rows describe: what it is for, who runs it, how it looks. A passing scene condition is world_state, never a description.',
+      'THREAD CLOSURE: when a listed V5 THREAD CANDIDATE is carried out, answered, broken or withdrawn here, emit it with link:"resolve", its exact alias, status resolved, the matching resolution and the outcome row as evidence. Reaffirm only an obligation restated and still unmet; a partly met one stays open.',
+      'Character information: claimKind:"character_info", domain:"character", values:{category,content}; category=appearance|background|personality|speech|habits|abilities|goal|emotion|preference|dislike|fear|boundary; habits include hobbies and habitual behavior; boundary is a standing limit protecting the person or theirs (not a one-time protest, a request, or an order imposed on others); content is one concise string naming the topic. Emit a fact for every category the source directly states; leave only what the source does not state unset. Unknown categories remain memory without profile updates.',
       'v5 DURABLE PREFERENCES: character_preference, domain character, values:{preferences:[{content:"directly stated",topic:"exact topic",kind:"preference|dislike|fear"}]}; emit every directly stated preference, dislike or fear. Runtime binds resolved subject Registry identity plus topic; retain separate topics.',
       'v5 SCOPED BOUNDARIES: character_boundary, domain character, values:{boundaries:[{content,topic,kind:boundary|medical_or_food_boundary,scope:{subjectRef,targetRef,act,when}}]}. Use source-supported entity temp IDs only; Registry resolves them. Never invent persistent IDs or match targets by name alone. An explicit unresolved target is not empty. Empty axes mean unknown, not all targets/times; keep distinct subject/target/act/when combinations.',
-      'Typed values key by claimKind: event.detail; location.locationRef; character_state.condition; character_emotion.emotion; knowledge.knowledge[]; affiliation.affiliation{organizationTempRef,role,status:member|former}; scene_time.sceneTime; relationship.value; containment.parentRef; management.managerRef; ownership.ownerRef; possession.holderRef; placement.containerRef; access.access{personTempRef,permission,status:granted|denied|unknown}; rule.rule{text,scopeTempRef,exceptions:[{locationTempRef,condition,effect}]}; world_state.condition; thread.thread{summary,status:open|blocked|uncertain|resolved|closed,kind:conflict|promise|question|task|other,interpretation,participants:[{role:owner|target|participant,personTempRef}],link:"reaffirm|replace|resolve|reopen|associate",linkCandidateAlias:"exact request-local alias",resolution:"fulfilled|broken|cancelled|superseded|completed|withdrawn"}. For promises/tasks owner acts and target is addressed/benefits; for questions owner asks and target is addressed. Use participant if roles are unknown. Link only with an exact alias, matching listed roles and direct source evidence; otherwise leave pending. Runtime assigns durable IDs. Link/resolution are optional; resolve only when resolved/closed. Broken promises use resolved/broken.',
+      'Typed values key by claimKind: event.detail; location.locationRef; character_state.condition; character_emotion.emotion; knowledge.knowledge[]; affiliation.affiliation{organizationTempRef,role,status:member|former}; scene_time.sceneTime; relationship.value; containment.parentRef; management.managerRef; ownership.ownerRef; possession.holderRef; placement.containerRef; access.access{personTempRef,permission,status:granted|denied|unknown}; rule.rule{text,scopeTempRef,exceptions:[{locationTempRef,condition,effect}]}; world_state.condition; world_description.description[]; thread.thread{summary,status:open|blocked|uncertain|resolved|closed,kind:conflict|promise|question|task|other,interpretation,participants:[{role:owner|target|participant,personTempRef}],link:"reaffirm|replace|resolve|reopen|associate",linkCandidateAlias:"exact request-local alias",resolution:"fulfilled|broken|cancelled|superseded|completed|withdrawn"}. For promises/tasks owner acts and target is addressed/benefits; for questions owner asks and target is addressed. Use participant if roles are unknown. Link only with an exact alias, matching listed roles and direct source evidence; otherwise leave pending. Runtime assigns durable IDs. Link/resolution are optional; resolve only when resolved/closed. Broken promises use resolved/broken.',
       'Use only the typed values object, never a claimKind/domain/field wrapper. E.g. character_state:{condition:"recovering"}; location:{locationRef:"ent_room"}. Relationship also needs targetTempRef and dimension: '+CONTINUITY_STATE_RELATION_DIMENSIONS.join('|')+'. A→B never proves B→A; use qualitative, not numeric, values.',
       'effect defaults to set. clear uses null for typed scalars or an exact selector; remove is only for knowledge/profile arrays. Clear/remove require direct confirmed evidence; profile operations need a non-empty exact preference/boundary selector with topic and resolved boundary scope. Empty selectors never clear a collection. A finished/abandoned goal uses character_info, effect:clear, values:{category:goal,content:null}. Unknown/omission is not deletion. Keep owner, holder, container, manager, physical parent, membership and access distinct; keep rule scope/conditions and prevent containment cycles.',
       'State bindings are optional {factTempId} entries for confirmed current facts. Bind only an explicitly final same-row value; leave unknown/conflicts unbound.',
+      'NAMES FROM STATE: a place known only from READ-ONLY STATE that these rows never name needs no new fact; its earlier value stays.',
       'FINAL STATE CHECK: emit a typed location fact in domain character for each explicitly established final person location, even when movement was also recorded as an event. location is NEVER domain world; subjectTempRef is the person and locationRef is the place. A containment fact has the contained place as subject and a DIFFERENT containing place as parentRef. Ownership/possession use the object as subject, access uses the affected world place/object as subject, and a thread uses its literal world/thread entity as subject. Also emit a typed fact for each directly stated emotion, goal, appearance, background, personality, speech, habit or hobby, ability, preference, boundary, affiliation, access permission, manager, world condition and rule. When a row prints the in-story date or time, emit a scene_time fact on the current place with that exact text as sceneTime whenever it changes. Include {factTempId} bindings for all of these supported final values and for locations, conditions, ownership, possession, knowledge, relationships and threads; event-only facts do not establish those State fields.',
       'CONTAINMENT EXAMPLE (shape only): for source 본관 안에 작업실과 휴게실이 있다, emit TWO containment facts: subjectTempRef=작업실 entity with values {parentRef:본관 entity}, and subjectTempRef=휴게실 entity with values {parentRef:본관 entity}. NEVER use 본관 as both subjectTempRef and parentRef. One fact represents one child-parent edge, not a sentence listing several rooms.',
       'REFERENCE TYPE CHECK: containment requires BOTH subject and parentRef to be world entities with kind location. A box/object in a room is placement with values {containerRef:roomTempId}, NOT containment; keep the box/object kind object. An organization managing a building is management with values {managerRef:organizationTempId}, not containment. RELATIONSHIP SHAPE: {tempFactId,domain:"relationship",subjectTempRef:personA,targetTempRef:personB,dimension:"trust",claimKind:"relationship",values:{value:"source-supported qualitative statement"},text,temporalRole,certainty,evidenceSpans}. targetTempRef and dimension are TOP-LEVEL fact fields, NEVER inside values.',
@@ -63540,6 +63663,227 @@ function mountMemorySuiteReanalysisReview(container,config) {
       out.admission.normalizedFields.push({ field: 'evidenceSpans', reason: 'evidence_quote_requoted', requested: failed.length, returned: applied });
       return out;
     };
+    // Story structure is read over the batch's own admitted events, not the raw
+    // text: the provider names arcs, turning points and motifs by event id, and
+    // each entry carries only the exact evidence those events already passed.
+    // One small call, only when the extraction itself returned no structure.
+    // Failure or an empty answer leaves the artifact exactly as it was.
+    const UNIFIED_STRUCTURE_MAX = Object.freeze({ arcs: 3, turningPoints: 2, motifs: 3, locks: 4 });
+    const composeUnifiedStoryStructure = async (prepared, batch, basis, call) => {
+      const artifact = asObject(prepared?.artifact);
+      if (artifact.schema !== UNIFIED_ARTIFACT_SCHEMA_V5) return null;
+      const facts = asArray(artifact.facts);
+      if (facts.some(f => UNIFIED_STRUCTURE_CLAIMS.includes(f?.claimKind))) return null;
+      const turnOf = f => Math.max(0, ...asArray(f?.evidenceSpans).map(span => Number(/^t(\d+)-/.exec(string(span?.ref))?.[1] || 0)));
+      const events = facts.filter(f => ['event','thread'].includes(f?.claimKind) && f.certainty === 'confirmed' && f.temporalRole === 'current_sequence')
+        .map(f => ({ id: f.tempFactId, turn: turnOf(f), kind: f.claimKind, text: compact(string(f.text), 220) })).filter(row => row.turn > 0);
+      if (events.length < 3) return null;
+      const narrative = asObject(basis?.head?.narrative);
+      const prior = {
+        arcs: asArray(narrative.arcs).map(a => ({ title: string(a.title), summary: compact(string(a.summary), 200), status: string(a.status || 'active') })),
+        motifs: asArray(narrative.motifs).map(m => ({ title: string(m.title), summary: compact(string(m.summary), 160) })),
+        turningPoints: asArray(narrative.turningPoints).slice(-8).map(t => string(t.title)),
+        locks: asArray(narrative.locks).filter(l => string(l.status || 'active') !== 'released').map(l => ({ title: string(l.title), summary: compact(string(l.summary), 160) })),
+        momentum: compact(string(narrative.momentum || ''), 200)
+      };
+      const system = ['[LIBRA STORY STRUCTURE]',
+        'Read the numbered events of one five-turn batch and name the story structure they show. This is interpretation for a reader index; it never adds a fact.',
+        'Return one JSON object: {"arcs":[{"title","summary","status":"active|dormant|resolved","interpretation","eventIds":[]}],"turningPoints":[{"title","summary","interpretation","eventId"}],"motifs":[{"title","summary","interpretation","eventIds":[]}],"locks":[{"title","summary","status":"active|released","eventIds":[]}],"momentum":{"title","summary","eventIds":[]}}.',
+        'arcs: a line of development that two or more of these events advance (a pursuit, a conflict, a relationship change). To continue an earlier arc, copy its exact title from PRIOR. status resolved only when these events end it.',
+        'turningPoints: an event after which the direction of the story clearly changes. Not every important event is one.',
+        'motifs: an object, phrase, image or action that recurs; list events from at least two different turns. One appearance is not a motif.',
+        'locks: a condition these events establish that later scenes must keep consistent while it holds (a threat in force, a secret kept from someone, a captivity, an injury, a standing deal). Copy a PRIOR lock title to release it when these events end it. Not a prediction or a plan.',
+        'momentum: one sentence on the central pressure the story is under at the end of these events, as already established. Omit it when nothing presses.',
+        `Titles are short noun phrases in the events' language; an arc, a turning point and a motif never share a title. Use only listed event ids. At most ${UNIFIED_STRUCTURE_MAX.arcs} arcs, ${UNIFIED_STRUCTURE_MAX.turningPoints} turning points, ${UNIFIED_STRUCTURE_MAX.motifs} motifs; return empty arrays when none is supported. JSON only.`].join('\n');
+      const user = ['[PRIOR — titles already in the reader index]', JSON.stringify(prior), '[EVENTS]', JSON.stringify(events)].join('\n\n');
+      if (call.budget) {
+        call.budget.perStageMax = Number(call.budget.perStageMax || 2) + 1;
+        call.budget.maxPhysicalCalls = Number(call.budget.maxPhysicalCalls || 8) + 1;
+        call.budget.maxCorrectiveAttemptsPerStage = Number(call.budget.maxCorrectiveAttemptsPerStage ?? 1) + 1;
+        const inputAllowance = Math.ceil(estimateContextTokensFromText(`${system}\n${user}`)) + 256;
+        call.budget.maxInputTokens = Number(call.budget.maxInputTokens || 0) + inputAllowance;
+        call.budget.maxOutputTokens = Number(call.budget.maxOutputTokens || 0) + 2048;
+        call.budget.maxTotalTokens = Number(call.budget.maxTotalTokens || 0) + inputAllowance + 2048;
+      }
+      let result;
+      try {
+        result = await callMemoryProvider(LIBRARIAN_STAGE_ID, system, user, { temp: 0, maxTokens: 2048, validateOriginalRaw: call.validateOriginalRaw,
+          forceNonStreaming: true, jsonMode: true, signal: call.signal, providerBudget: call.budget, taskSettingsSnapshot: call.settings,
+          disableCanonicalRecovery: true, attemptType: 'repair' });
+      } catch (error) {
+        if (call.signal?.aborted) throw error;
+        return null;
+      }
+      if (result?.ok !== true || result?.refusalInfo || providerOutputWasTruncated(result)) return null;
+      let answer;
+      try { answer = asObject(parseCanonicalArtifactJson(result.content)); } catch (_) { return null; }
+      const byId = new Map(facts.map(f => [f.tempFactId, f]));
+      const entities = [], structure = [], existingNames = new Map(asArray(artifact.entities)
+        .filter(e => e?.type === 'world' && e.kind === 'thread').map(e => [statePipelineIdentityKey(e.name), e.tempId]));
+      const titleKinds = new Map();
+      const add = (claimKind, row, ids) => {
+        const title = compact(string(row?.title).trim(), 80), summary = compact(string(row?.summary).trim(), 600);
+        const cited = [...new Set(asArray(ids).map(string))].map(id => byId.get(id)).filter(Boolean);
+        if (!title || !summary || !cited.length) return;
+        // One title names one kind of entry.
+        const titleKey = statePipelineIdentityKey(title);
+        if (titleKinds.has(titleKey) && titleKinds.get(titleKey) !== claimKind) return;
+        titleKinds.set(titleKey, claimKind);
+        const spans = cited.flatMap(f => asArray(f.evidenceSpans)).filter((span, i, all) => all.findIndex(x => x.ref === span.ref && x.quote === span.quote) === i).slice(0, 10);
+        let subject = existingNames.get(statePipelineIdentityKey(title));
+        if (!subject) {
+          subject = 'ns' + (entities.length + 1);
+          existingNames.set(statePipelineIdentityKey(title), subject);
+          entities.push({ tempId: subject, name: title, type: 'world', kind: 'thread', evidenceSpans: clone(spans.slice(0, 1)) });
+        }
+        const statuses = UNIFIED_STRUCTURE_STATUS[claimKind];
+        const value = { summary, ...(statuses ? { status: statuses.includes(row.status) ? row.status : statuses[0] } : {}),
+          ...(unifiedText(row?.interpretation, 600) ? { interpretation: string(row.interpretation).trim() } : {}) };
+        structure.push({ tempFactId: 'nsf' + (structure.length + 1), domain: 'narrative', subjectTempRef: subject, claimKind,
+          values: { [UNIFIED_CLAIMS[claimKind].value]: value }, text: title + ' · ' + summary, temporalRole: 'current_sequence', certainty: 'confirmed', evidenceSpans: clone(spans) });
+      };
+      for (const row of asArray(answer.arcs).slice(0, UNIFIED_STRUCTURE_MAX.arcs)) add('story_arc', row, row?.eventIds);
+      for (const row of asArray(answer.turningPoints).slice(0, UNIFIED_STRUCTURE_MAX.turningPoints)) add('turning_point', row, [row?.eventId]);
+      for (const row of asArray(answer.motifs).slice(0, UNIFIED_STRUCTURE_MAX.motifs)) add('motif', row, row?.eventIds);
+      for (const row of asArray(answer.locks).slice(0, UNIFIED_STRUCTURE_MAX.locks)) add('continuity_lock', { ...row, status: row?.status === 'released' ? 'released' : 'active' }, row?.eventIds);
+      if (isPlainObject(answer.momentum)) add('story_momentum', { ...answer.momentum, title: string(answer.momentum.title) || '현재 압력' }, answer.momentum.eventIds);
+      if (!structure.length) return null;
+      // The new rows pass the same admission as any provider record before they join.
+      const checked = prepareUnifiedMemoryArtifact({ schema: artifact.schema, entities: [...asArray(artifact.entities).filter(e => structure.some(f => f.subjectTempRef === e.tempId)), ...entities], facts: structure, stateBindings: [] }, batch);
+      const acceptedFacts = asArray(checked.artifact?.facts), acceptedEntities = asArray(checked.artifact?.entities).filter(e => entities.some(n => n.tempId === e.tempId));
+      if (!acceptedFacts.length) return null;
+      const out = clone(prepared);
+      out.artifact.entities = [...asArray(out.artifact.entities), ...acceptedEntities];
+      out.artifact.facts = [...asArray(out.artifact.facts), ...acceptedFacts];
+      if (out.admission) {
+        out.admission.acceptedEntities = Number(out.admission.acceptedEntities || 0) + acceptedEntities.length;
+        out.admission.acceptedFacts = Number(out.admission.acceptedFacts || 0) + acceptedFacts.length;
+        out.admission.normalizedFields.push({ field: 'narrative', reason: 'story_structure_composed', proposed: structure.length, accepted: acceptedFacts.length,
+          rejected: asArray(checked.admission?.rejected).map(row => row.reason).slice(0, 8) });
+      }
+      return out;
+    };
+    // Preferences and boundaries are stated in a few lines of a long batch, and the
+    // single extraction call keeps missing them. This pass reads only the sentences
+    // around explicit liking, dislike, fear or refusal wording, so its quotes stay
+    // exact source text, and every item still passes the normal admission.
+    const UNIFIED_PROFILE_CUE = /(좋아(?:해|하|한)|싫어|싫다|싫은|무서워(?:해|하)|두려워(?:해|하)|지\s*마|지\s*말|안\s*돼|못\s*하게|못\s*들어|않겠|않을\s*거|않아요|거절|거부|허락(?:하지|할\s*수\s*없)|금지|입이\s*짧|편식|알레르기|못\s*먹|선호|dislike|hate|afraid|refuse|never\s+let|don['’]?t\s+(?:touch|do))/i;
+    const UNIFIED_TASTE_WORDING = /(좋아|싫어|싫다|싫은|무서|두려|입이\s*짧|편식|알레르기|못\s*먹|선호|즐겨|like|love|hate|dislike|afraid|fear|allergic|prefer)/i;
+    const UNIFIED_BOUNDARY_WORDING = /(지\s*마|지\s*말|안\s*돼|못\s*하게|못\s*들어|않겠|않을\s*거|않아요|않는다|거절|거부|허락(?:하지|할\s*수\s*없)|금지|절대|내보내|never|refuse|won['’]?t|not\s+allow|don['’]?t)/i;
+    const unifiedProfileCueWindows = batch => {
+      const windows = [];
+      for (const pair of batch) for (const [role, side] of [['u', pair.user], ['a', pair.assistant]]) {
+        const textValue = string(side?.text || ''), ref = 't' + pair.turn + '-' + role;
+        // Sentence-ish units; dialogue lines are kept whole so the speaker cue stays nearby.
+        const units = textValue.split(/(?<=[.!?…。])\s+|\n+/).map(unit => unit.trim()).filter(Boolean);
+        units.forEach((unit, index) => {
+          if (!UNIFIED_PROFILE_CUE.test(unit)) return;
+          const window = units.slice(Math.max(0, index - 2), index + 2).join(' ');
+          if (!windows.some(row => row.ref === ref && row.text.includes(unit))) windows.push({ ref, text: compact(window, 420) });
+        });
+      }
+      return windows.slice(0, 36);
+    };
+    // The quote must show the person acting or speaking: the name as a subject
+    // (세희가, 세희는) or as the owner of the voice/words (세희의 목소리). A name
+    // as the object or recipient (세아에게, 푸딩의 미소) does not attribute.
+    const unifiedNameAsActor = (name, quote) => {
+      const needle = string(name).trim(), source = string(quote);
+      if (needle.length < 1 || !source) return false;
+      // Without Korean particles there is no case marking to read; the name must still appear.
+      if (!/[가-힣]/.test(source)) return canonicalEntityNameBoundToEvidence(needle, source);
+      for (let at = source.indexOf(needle); at >= 0; at = source.indexOf(needle, at + 1)) {
+        if (at > 0 && /[\p{L}\p{N}_]/u.test(source[at - 1])) continue;
+        const tail = source.slice(at + needle.length);
+        if (/^(?:이|가|은|는|께서|도|만은|만이)(?=$|[^\p{L}\p{N}_])/u.test(tail)
+          || /^의\s*(?:목소리|말|대답|말투|부탁|요구|선언|다짐|목소리가|말이)/u.test(tail)
+          || (/^(?:이에요|예요|입니다|이야|야)(?=$|[^\p{L}\p{N}_])/u.test(tail))) return true;
+      }
+      return false;
+    };
+    const supplementUnifiedProfiles = async (prepared, batch, basis, call) => {
+      const artifact = asObject(prepared?.artifact);
+      if (artifact.schema !== UNIFIED_ARTIFACT_SCHEMA_V5) return null;
+      const persons = asArray(artifact.entities).filter(e => e?.type === 'person');
+      if (!persons.length) return null;
+      const windows = unifiedProfileCueWindows(batch);
+      if (!windows.length) return null;
+      const known = asArray(basis?.head?.characters).flatMap(row => ['preferences','boundaries'].flatMap(field =>
+        asArray(row?.state?.[field]).map(item => ({ person: string(row.name), field, content: compact(string(item?.content || item), 160) }))));
+      const already = asArray(artifact.facts).filter(f => ['character_preference','character_boundary'].includes(f?.claimKind))
+        .map(f => ({ personRef: f.subjectTempRef, text: compact(string(f.text), 160) }));
+      const system = ['[LIBRA PREFERENCE AND BOUNDARY CHECK]',
+        'Read the quoted source windows and list LASTING preferences, dislikes, fears and boundaries of the listed persons. This is memory extraction; never continue the scene.',
+        'Return one JSON object: {"items":[{"personRef":"person id","category":"preference|dislike|fear|boundary","content":"one concise sentence naming the topic","ref":"window ref","quote":"exact span stating the item","speakerQuote":"exact span from the same window that contains the person\'s name and shows it is this person who holds it"}]}.',
+        'LASTING ONLY: a preference, dislike or fear is a general taste or trait ("싫어한다", "입이 짧다"), not a reaction to what is happening at that moment. A boundary is a limit protecting the person or those they protect, set beyond the moment: what others must not do to them or theirs, or a standing refusal. An order, threat or condition someone imposes to control another, and a request or wish, are not boundaries. A one-time "no", "stop" or protest during an event is an event, not a boundary. Fear felt in a scene is an emotion, not a fear preference.',
+        'WHO: personRef is the person who holds the taste or who sets the limit (the one who says or demands it), never the person it is about or protects. speakerQuote must show that person as the speaker or actor (e.g. "세희가 말했다", "세희의 목소리"). A threat or condition someone imposes on another is not a boundary. When the speaker is unclear, skip the item.',
+        'Write content in the language of the source text. Use only the listed person ids. Copy quote and speakerQuote character for character from the window text. Skip anything in ALREADY RECORDED, even when worded differently. Return {"items":[]} when nothing qualifies. JSON only.'].join('\n');
+      const user = ['[PERSONS]', JSON.stringify(persons.map(p => ({ id: p.tempId, name: p.name }))),
+        '[ALREADY RECORDED]', JSON.stringify({ state: known.slice(0, 40), thisBatch: already }),
+        '[WINDOWS]', JSON.stringify(windows)].join('\n\n');
+      if (call.budget) {
+        call.budget.perStageMax = Number(call.budget.perStageMax || 2) + 1;
+        call.budget.maxPhysicalCalls = Number(call.budget.maxPhysicalCalls || 8) + 1;
+        call.budget.maxCorrectiveAttemptsPerStage = Number(call.budget.maxCorrectiveAttemptsPerStage ?? 1) + 1;
+        const inputAllowance = Math.ceil(estimateContextTokensFromText(`${system}\n${user}`)) + 256;
+        call.budget.maxInputTokens = Number(call.budget.maxInputTokens || 0) + inputAllowance;
+        call.budget.maxOutputTokens = Number(call.budget.maxOutputTokens || 0) + 2048;
+        call.budget.maxTotalTokens = Number(call.budget.maxTotalTokens || 0) + inputAllowance + 2048;
+      }
+      let result;
+      try {
+        result = await callMemoryProvider(LIBRARIAN_STAGE_ID, system, user, { temp: 0, maxTokens: 2048, validateOriginalRaw: call.validateOriginalRaw,
+          forceNonStreaming: true, jsonMode: true, signal: call.signal, providerBudget: call.budget, taskSettingsSnapshot: call.settings,
+          disableCanonicalRecovery: true, attemptType: 'repair' });
+      } catch (error) {
+        if (call.signal?.aborted) throw error;
+        return null;
+      }
+      if (result?.ok !== true || result?.refusalInfo || providerOutputWasTruncated(result)) return null;
+      let answer;
+      try { answer = asObject(parseCanonicalArtifactJson(result.content)); } catch (_) { return null; }
+      const ids = new Set(persons.map(p => p.tempId)), facts = [];
+      const comparable = value => canonicalEvidenceComparable(string(value));
+      for (const row of asArray(answer.items).slice(0, 12)) {
+        const category = string(row?.category).trim().toLowerCase(), content = compact(string(row?.content).trim(), 300);
+        const ref = string(row?.ref), quote = string(row?.quote), speakerQuote = string(row?.speakerQuote || '');
+        const person = persons.find(p => p.tempId === string(row?.personRef));
+        const windowTexts = windows.filter(w => w.ref === ref).map(w => comparable(w.text));
+        const inWindow = value => !!comparable(value) && windowTexts.some(textValue => textValue.includes(comparable(value)));
+        // Attribution is checked, not trusted: the same window must name this person.
+        if (!person || !ids.has(person.tempId) || !['preference','dislike','fear','boundary'].includes(category) || !unifiedText(content)
+          || !unifiedText(quote, 320) || !unifiedText(speakerQuote, 320) || !inWindow(quote) || !inWindow(speakerQuote)
+          || ![person.name, ...asArray(person.aliases)].some(name => unifiedNameAsActor(name, speakerQuote))) continue;
+        // The same item already recorded for this person, by wording or by source sentence, is not added twice.
+        const contentKey = comparable(content);
+        if (asArray(artifact.facts).concat(facts).some(f => f.subjectTempRef === person.tempId
+          && asArray(f.values?.preferences || f.values?.boundaries).concat(f.values?.content ? [f.values] : []).some(item => comparable(item?.content) === contentKey))) continue;
+        // The same source sentence already gave this person an item: that is this item again.
+        const quoteKey = comparable(quote);
+        if (asArray(artifact.facts).concat(facts).some(f => f.subjectTempRef === person.tempId
+          && (['character_preference','character_boundary'].includes(f.claimKind) || f.claimKind === 'character_info')
+          && asArray(f.evidenceSpans).some(span => span.ref === ref && (comparable(span.quote).includes(quoteKey) || quoteKey.includes(comparable(span.quote)))))) continue;
+        // The quote must say what the category claims: liking/dislike/fear wording for a
+        // taste, limit wording for a boundary. A described action is neither.
+        if (!(category === 'boundary' ? UNIFIED_BOUNDARY_WORDING : UNIFIED_TASTE_WORDING).test(quote)) continue;
+        const spans = [{ ref, quote }, ...(comparable(speakerQuote) === comparable(quote) ? [] : [{ ref, quote: speakerQuote }])];
+        facts.push({ tempFactId: 'npf' + (facts.length + 1), domain: 'character', subjectTempRef: person.tempId, claimKind: 'character_info',
+          values: { category, content }, text: person.name + ' · ' + content, temporalRole: 'current_sequence', certainty: 'confirmed',
+          evidenceSpans: spans });
+      }
+      if (!facts.length) return null;
+      const checked = prepareUnifiedMemoryArtifact({ schema: artifact.schema, entities: clone(persons), facts, stateBindings: [] }, batch);
+      const accepted = asArray(checked.artifact?.facts);
+      if (!accepted.length) return null;
+      const out = clone(prepared);
+      out.artifact.facts = [...asArray(out.artifact.facts), ...accepted];
+      if (out.admission) {
+        out.admission.acceptedFacts = Number(out.admission.acceptedFacts || 0) + accepted.length;
+        out.admission.normalizedFields.push({ field: 'profile', reason: 'preference_boundary_check', proposed: facts.length, accepted: accepted.length,
+          rejected: asArray(checked.admission?.rejected).map(row => row.reason).slice(0, 8) });
+      }
+      return out;
+    };
     const executeUnifiedStage = async (stageName,batch,previousStage=null,options={}) => {
       let responseDiagnostic=null;
       try {
@@ -63590,8 +63934,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(state.currentRun)state.currentRun.promptBudget={optionalOmitted:omitted,exactSourceChars:exactSource.length,contextWindow:promptWindow||null,estimateOnly:true,requestedOutputTokens:requestedMemoryOutput,effectiveOutputTokens:canonicalProvider(promptPreset.provider)===RISUAI_AUX_PROVIDER?null:outputReserve};
       const generationPolicy=MemorySuiteExecutionContract.normalizeGenerationPolicy(runtimeSettings.generationPolicy);
       const budget=options.providerBudget || createCanonicalProviderBudget([LIBRARIAN_STAGE_ID],{},Date.now(),{generationPolicy});
-      const result=await callMemoryProvider(LIBRARIAN_STAGE_ID,system,user,{temp:0.1,maxTokens:outputReserve,validateOriginalRaw,
-        validateRecoverySource:options.validateRecoverySource,forceNonStreaming:!generationPolicy.streaming,jsonMode:true,structuredTask:true,cacheBatch:batch,signal:options.signal,providerBudget:budget,taskSettingsSnapshot:runtimeSettings,disableCanonicalRecovery:true,attemptType:'initial'});
+      const callCanonical=attemptType=>callMemoryProvider(LIBRARIAN_STAGE_ID,system,user,{temp:0.1,maxTokens:outputReserve,validateOriginalRaw,
+        validateRecoverySource:options.validateRecoverySource,forceNonStreaming:!generationPolicy.streaming,jsonMode:true,structuredTask:true,cacheBatch:batch,signal:options.signal,providerBudget:budget,taskSettingsSnapshot:runtimeSettings,disableCanonicalRecovery:true,attemptType});
+      let result=await callCanonical('initial');
+      // A finished answer whose brackets do not match is malformed, not cut off: the provider
+      // stopped normally and the content is unusable as written. Ask once more with the same
+      // request. Real truncation (length stop, unterminated string) is still never retried.
+      if(result?.ok!==true&&/^provider_output_truncated_unreported:json_mismatched_(?:array|object)_delimiter$/.test(string(result?.reason||''))
+        &&!providerLengthLimitInfo(result?.finishReason)&&!options.signal?.aborted){
+        const firstReason=string(result.reason);
+        budget.perStageMax=Number(budget.perStageMax||2)+1;
+        budget.maxPhysicalCalls=Number(budget.maxPhysicalCalls||8)+1;
+        budget.maxCorrectiveAttemptsPerStage=Number(budget.maxCorrectiveAttemptsPerStage??1)+1;
+        const inputAllowance=Math.ceil(estimateContextTokensFromText(`${system}\n${user}`))+256;
+        budget.maxInputTokens=Number(budget.maxInputTokens||0)+inputAllowance;
+        budget.maxOutputTokens=Number(budget.maxOutputTokens||0)+outputReserve;
+        budget.maxTotalTokens=Number(budget.maxTotalTokens||0)+inputAllowance+outputReserve;
+        result=await callCanonical('retry');
+        if(result&&typeof result==='object')result.malformedRetry={firstReason};
+      }
       await validateOriginalRaw();
       if(typeof options.validateRecoverySource==='function')unifiedAssert(await options.validateRecoverySource()===true,'UNIFIED_THREAD_SOURCE_AUTHORITY_CHANGED');
       else await assertUnifiedBasis(await resolveContext(),options.unifiedBasis,'thread_resolution');
@@ -63632,6 +63993,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const requoteBase=clone(parsedArtifact);
       let prepared=prepareUnifiedMemoryArtifact(parsedArtifact,batch);
       prepared=await requoteUnifiedEvidence(requoteBase,prepared,batch,{validateOriginalRaw,signal:options.signal,budget,settings:runtimeSettings})||prepared;
+      prepared=await composeUnifiedStoryStructure(prepared,batch,options.unifiedBasis,{validateOriginalRaw,signal:options.signal,budget,settings:runtimeSettings})||prepared;
+      prepared=await supplementUnifiedProfiles(prepared,batch,options.unifiedBasis,{validateOriginalRaw,signal:options.signal,budget,settings:runtimeSettings})||prepared;
       await validateOriginalRaw();
       if(prepared.admission&&unwrapAdmission.normalizedFields.length)prepared.admission.normalizedFields.unshift(...unwrapAdmission.normalizedFields);
       if(writeSchema!==string(prepared.artifact?.schema||'') && isPlainObject(prepared.artifact))prepared.artifact.schema=writeSchema;
@@ -63677,7 +64040,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         && f?.effect==='clear' && f?.values?.[UNIFIED_CLAIMS[f.claimKind].value]===null).map(f=>f.tempFactId);
       const invalidSelectorIds=new Set(invalidProfileSelectors);
       const bindings=clone(asArray(artifact.stateBindings).filter(b=>!invalidSelectorIds.has(b?.factTempId))),seen=new Set(bindings.map(b=>b.factTempId));
-      const current=asArray(artifact.facts).filter(f=>UNIFIED_CLAIMS[f.claimKind]?.field && UNIFIED_CLAIMS[f.claimKind].domain===f.domain && f.certainty==='confirmed' && f.temporalRole==='current_sequence');
+      const current=asArray(artifact.facts).filter(f=>UNIFIED_CLAIMS[f.claimKind]?.field && UNIFIED_CLAIMS[f.claimKind].domain===f.domain && unifiedFactStateEligible(f));
       const groups=new Map(),supersededFacts=[];
       for(const f of current){
         if(invalidSelectorIds.has(f.tempFactId))continue;
@@ -63749,7 +64112,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(!ranked.some(row=>row.row===match))return {ok:false,reason:'thread_target_anchor_mismatch'};
       if(ranked.length>1&&ranked[0].score-ranked[1].score<0.12)return {ok:false,reason:'thread_target_anchor_ambiguous'};
       if(ranked[0]?.row!==match)return {ok:false,reason:'thread_target_not_best_match'};
-      if(unifiedThreadEvidenceAnchorSimilarity(match.value,currentFact)<0.12)return {ok:false,reason:'thread_anchor_evidence_missing'};
+      if(value.link!=='reaffirm'&&unifiedThreadEvidenceAnchorSimilarity(match.value,currentFact)<0.12)return {ok:false,reason:'thread_anchor_evidence_missing'};
       if(value.link==='resolve'&&(!UNIFIED_THREAD_ACTIVE_STATUS.includes(match.value.status)||!['resolved','closed'].includes(value.status)||!value.resolution))
         return {ok:false,reason:'thread_resolve_transition_invalid'};
       if(value.link==='reopen'&&(!UNIFIED_THREAD_CLOSED_STATUS.includes(match.value.status)||value.status!=='open'))return {ok:false,reason:'thread_reopen_transition_invalid'};
@@ -63762,7 +64125,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const artifact={...memory.canonicalArtifact,stateBindings:bindingPlan.bindings}, previous=basis.registry || {entities:[]};
       const registry={schema:ENTITY_REGISTRY_SCHEMA,scopeKey:memory.scopeKey,entities:clone(asArray(previous.entities)),diagnostics:[],splitRetiredNames:clone(asArray(previous.splitRetiredNames))};
       const resolved=new Map(), usedIds=new Set(), pending=[];
-      const currentFacts=new Map(artifact.facts.filter(f=>f.certainty==='confirmed' && f.temporalRole==='current_sequence').map(f=>[f.tempFactId,f]));
+      const currentFacts=new Map(artifact.facts.filter(unifiedFactStateEligible).map(f=>[f.tempFactId,f]));
       const currentEntities=new Set();
       for (const f of currentFacts.values()) {
         currentEntities.add(f.subjectTempRef); if(f.targetTempRef)currentEntities.add(f.targetTempRef);
@@ -63798,7 +64161,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           usedIds.add(entity.id);resolved.set(e.tempId,entity);continue;
         }
         if(asArray(registry.splitRetiredNames).some(n=>statePipelineIdentityKey(n)===nameKey)){pending.push({entity:e.tempId,reason:'split_identity_requires_disambiguation'});continue;}
-        let matches=registry.entities.filter(x=>x.type===e.type && [x.name,...asArray(x.aliases),...asArray(x.sourceNames)].some(n=>statePipelineIdentityKey(n)===nameKey));
+        // A story title (thread kind) and a place or object of the same name are different records.
+        let matches=registry.entities.filter(x=>x.type===e.type && ((x.kind==='thread')===(e.kind==='thread')) && [x.name,...asArray(x.aliases),...asArray(x.sourceNames)].some(n=>statePipelineIdentityKey(n)===nameKey));
         let koreanAliasMatch=false;
         if(!matches.length && e.type==='person' && !asArray(registry.splitRetiredNames).some(n=>koreanPersonIdentityMatch(n,e.name))){
           const sameArtifactConflict=artifactPersonNames.some(other=>other!==String(e.name||'').trim() && koreanPersonIdentityMatch(other,e.name) && statePipelineIdentityKey(other)!==nameKey);
@@ -63885,7 +64249,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const hold=admissionBlocks.find(b=>(b.domain==='*'||b.domain===f.domain)&&(b.subjectTempRef==='*'||b.subjectTempRef===f.subjectTempRef)&&(b.field==='*'||b.field===c.field)
           &&(b.domain==='*'||b.subjectTempRef==='*'||b.field==='*'||Number(b.claimedTurn)>factTurn));
         if(hold){const wide=hold.domain==='*'||hold.subjectTempRef==='*'||hold.field==='*';blockedFacts.add(f.tempFactId);pending.push({fact:f.tempFactId,domain:f.domain,reason:wide?'quarantined_identity_hold':'quarantined_field_update'});if(wide)domainPending.add(f.domain);continue;}
-        if(f.certainty!=='confirmed' || f.temporalRole!=='current_sequence'){block('not_direct_current_fact');continue;}
+        if(!unifiedFactStateEligible(f)){block('not_direct_current_fact');continue;}
         const subject=resolved.get(f.subjectTempRef), target=resolved.get(f.targetTempRef);
         if(!subject || (f.domain==='relationship'&&!target)){block('ambiguous_identity');continue;}
         if(asArray(f.dependsOn).some(idValue=>facts.get(idValue)?.certainty!=='confirmed' || facts.get(idValue)?.temporalRole!=='current_sequence')){block('dependency_unconfirmed');continue;}
@@ -63944,6 +64308,42 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const fieldEvidence={schema:'libra.state_field_evidence.v1',canonical:clone(evidence),memoryId:memory.memoryId,revision:memory.revision,
           sourceDigest:memory.sourceDigest,artifactDigest:memory.artifactDigest,assertionIds:[f.tempFactId],evidenceSpans:clone(f.evidenceSpans),
           sourceTurnRange:clone(memory.turnRange),admission:'integrated_evidence_checked',temporalRole:f.temporalRole,certainty:f.certainty};
+        if(UNIFIED_STRUCTURE_CLAIMS.includes(f.claimKind)){
+          // One row per titled entry. A later batch that names the same title
+          // updates its reading and adds its own evidence; nothing is inferred.
+          head.narrative=asObject(head.narrative);
+          // The present central pressure is one sentence, replaced as the story moves on.
+          if(f.claimKind==='story_momentum'){
+            if(string(head.narrative.momentum)===value.summary)continue;
+            head.narrative.momentum=value.summary;
+            head.narrative.fieldEvidence={...asObject(head.narrative.fieldEvidence),momentum:clone(fieldEvidence)};
+            changed=true;changedDomains.add('narrative');continue;
+          }
+          const field=c.field,rows=asArray(head.narrative[field]),limit={arcs:24,turningPoints:64,motifs:24,locks:24}[field];
+          const at=rows.findIndex(r=>r?.id===subject.id),prior=at>=0?rows[at]:null;
+          const spans=[...asArray(prior?.evidenceSpans),...clone(f.evidenceSpans)]
+            .filter((span,i,all)=>all.findIndex(other=>other.ref===span.ref&&other.quote===span.quote)===i).slice(-12);
+          const turns=spans.map(span=>Number(/^t(\d+)-/.exec(string(span.ref))?.[1]||0)).filter(Boolean);
+          const row={id:subject.id,title:subject.name,summary:value.summary,...(UNIFIED_STRUCTURE_STATUS[f.claimKind]?{status:value.status}:{}),
+            interpretation:value.interpretation||'',firstTurn:Number(prior?.firstTurn||Math.min(...turns)),lastTurn:Math.max(...turns),
+            ...(f.claimKind==='turning_point'?{turn:Math.max(...turns)}:{}),evidenceSpans:spans,evidence:clone(evidence),fieldEvidence:{summary:clone(fieldEvidence)}};
+          if(prior&&prior.summary===row.summary&&string(prior.status)===string(row.status)&&string(prior.interpretation)===row.interpretation
+            &&digest(asArray(prior.evidenceSpans))===digest(spans))continue;
+          const next=[...rows];if(at>=0)next[at]=row;else next.push(row);
+          // A finished arc leaves the current list and stays readable as resolved.
+          if(f.claimKind==='story_arc'){
+            const resolved=asArray(head.narrative.resolvedArcs).filter(r=>r?.id!==subject.id);
+            head.narrative.arcs=next.filter(r=>!(r.id===subject.id&&row.status==='resolved')).slice(-limit);
+            const nextResolved=row.status==='resolved'?[...resolved,row].slice(-24):resolved;
+            if(nextResolved.length)head.narrative.resolvedArcs=nextResolved;else delete head.narrative.resolvedArcs;
+            // The main arc is derived, never asked for: the active arc advanced most recently.
+            const primary=asArray(head.narrative.arcs).filter(r=>['active','dormant'].includes(string(r?.status||'active')))
+              .sort((a,b)=>(string(b.status)==='active')-(string(a.status)==='active')||Number(b.lastTurn||0)-Number(a.lastTurn||0)||asArray(b.evidenceSpans).length-asArray(a.evidenceSpans).length)[0];
+            head.narrative.primaryArcId=string(primary?.id||'');
+          }else head.narrative[field]=next.slice(-limit);
+          changed=true;changedDomains.add('narrative');
+          continue;
+        }
         if(f.domain==='narrative'){
           const threads=asArray(head.narrative.threads),threadValue=value;
           const isV5Thread=artifact.schema===UNIFIED_ARTIFACT_SCHEMA_V5;
@@ -63979,11 +64379,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
           // row still moved mem_000001 -> mem_000006. Build the candidate array separately and compare
           // first; a true no-op leaves the Head completely untouched.
           const nextThreads=[...threads];
-          if(['resolved','closed'].includes(value.status)){if(i>=0)nextThreads.splice(i,1);}
+          // A link runtime could not prove is shown as such, never as a confirmed new thread.
+          const linkPending=threadValue.linkStatus==='pending'?{linkPending:{link:string(threadValue.link||''),reason:string(threadValue.linkPendingReason||'')}}:{};
+          const closed=asArray(head.narrative.closedThreads);
+          let nextClosed=closed;
+          if(['resolved','closed'].includes(value.status)){
+            // A closed thread leaves the open list but stays readable as a finished story.
+            const prior=i>=0?threads[i]:null;
+            if(i>=0)nextThreads.splice(i,1);
+            const closedRow={id:stateLifecycleId,lifecycleId:stateLifecycleId,title:string(prior?.title||subject.name),summary:value.summary,status:value.status,
+              ...(value.resolution?{resolution:value.resolution}:{}),kind:value.kind||prior?.kind||'other',interpretation:value.interpretation||'',
+              participants:clone(asArray(value.participantIds)),resolvedTurn:Math.floor(orderFor(f)/2),...linkPending,
+              evidence:clone(evidence),fieldEvidence:{summary:clone(fieldEvidence),status:clone(fieldEvidence)}};
+            // The same finished thread stated again is a no-op: its row and provenance stay.
+            const already=closed.find(t=>string(t.lifecycleId||t.id)===stateLifecycleId);
+            const sameClosed=already&&['summary','status','resolution','kind','interpretation'].every(k=>string(already[k])===string(closedRow[k]))
+              &&digest(already.linkPending||null)===digest(closedRow.linkPending||null);
+            nextClosed=sameClosed?closed:[...closed.filter(t=>string(t.lifecycleId||t.id)!==stateLifecycleId),closedRow].slice(-48);
+          }
           else {const row={id:stateLifecycleId,lifecycleId:stateLifecycleId,title:subject.name,summary:value.summary,status:value.status,kind:value.kind||'other',interpretation:value.interpretation||'',
-            participants:clone(asArray(value.participantIds)),evidence:clone(evidence),fieldEvidence:{summary:clone(fieldEvidence),status:clone(fieldEvidence)}};if(i>=0)nextThreads[i]=row;else nextThreads.push(row);}
-          if(threadSignature(threads)===threadSignature(nextThreads))continue;
+            participants:clone(asArray(value.participantIds)),...linkPending,evidence:clone(evidence),fieldEvidence:{summary:clone(fieldEvidence),status:clone(fieldEvidence)}};if(i>=0)nextThreads[i]=row;else nextThreads.push(row);
+            // A reopened thread is open again, not also finished.
+            nextClosed=closed.filter(t=>string(t.lifecycleId||t.id)!==stateLifecycleId);}
+          if(threadSignature(threads)===threadSignature(nextThreads)&&digest(closed)===digest(nextClosed))continue;
           head.narrative.threads=nextThreads;
+          if(nextClosed.length)head.narrative.closedThreads=nextClosed;else delete head.narrative.closedThreads;
           changed=true;changedDomains.add('narrative');
           head.narrative.summary=nextThreads.map(t=>t.summary || t.title).join(' · ').slice(0,1600);
           head.narrative.fieldEvidence={...asObject(head.narrative.fieldEvidence),threads:fieldEvidence,summary:fieldEvidence};
@@ -64492,6 +64912,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           if(patch.domain==='relationships' && field==='value')unifiedAssert(unifiedText(value),'UNIFIED_RELATION_DEFINITION_REQUIRED');
           if(field==='knowledge')unifiedAssert(Array.isArray(value)&&value.every(x=>unifiedText(x)),'UNIFIED_KNOWLEDGE_INVALID');
+          if(field==='description')unifiedAssert(Array.isArray(value)&&value.length<=32&&value.every(x=>unifiedText(x)),'UNIFIED_DESCRIPTION_INVALID');
           const profileContract=Object.values(UNIFIED_CLAIMS).find(c=>c.profile && c.field===field);
           if(patch.domain==='characters' && profileContract){
             const structuredPreference=item=>isPlainObject(item)&&Object.keys(item).every(k=>['content','topic','kind'].includes(k))
@@ -64813,7 +65234,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         characters:asArray(head.characters).map(r=>({...qualifiers(r),name:r.name,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
         relationships:asArray(head.relationships).map(r=>({...qualifiers(r),subject:r.subjectName || names.get(r.subjectId) || 'unknown',target:r.targetName || names.get(r.targetId) || 'unknown',dimension:r.dimension,definition:typeof r.state==='string'?r.state:r.state?.value||'명시된 관계 정의 없음',state:valueOnly(r.state)})),
         world:asArray(head.world).map(r=>({...qualifiers(r),name:r.name,kind:r.kind,state:valueOnly(r.state),explicitlyCleared:[...new Set([...Object.keys(asObject(r.clearedFieldEvidence)),...Object.keys(asObject(r.clearedFieldCorrectionProvenance))])]})),
-        narrative:{...qualifiers(head.narrative),summary:head.narrative?.summary || '',threads:asArray(head.narrative?.threads).map(t=>({title:t.title,summary:t.summary,status:t.status,kind:t.kind||t.type||'other',interpretation:t.interpretation||''}))}};
+        narrative:{...qualifiers(head.narrative),summary:head.narrative?.summary || '',threads:asArray(head.narrative?.threads).map(t=>({title:t.title,summary:t.summary,status:t.status,kind:t.kind||t.type||'other',interpretation:t.interpretation||''})),
+          // Titles let a later batch continue the same arc or motif instead of starting a near-duplicate.
+          ...(asArray(head.narrative?.arcs).length?{arcs:asArray(head.narrative.arcs).map(a=>({title:a.title,summary:a.summary,status:a.status||'active'}))}:{}),
+          ...(asArray(head.narrative?.motifs).length?{motifs:asArray(head.narrative.motifs).map(m=>({title:m.title,summary:m.summary}))}:{})}};
     };
     const unifiedWorldReadContext = (head,locationName) => {
       const nodes=asArray(head?.world), matches=nodes.filter(n=>n.name===locationName && n.kind==='location');
@@ -90152,11 +90576,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
 
+  // Status reasons are internal codes; the screen says what they mean, or nothing when all is normal.
+  // Pending reasons from the integrated State, in words; the code stays in the tooltip.
+  const unifiedPendingReasonLabel = reason => {
+    const code = text(reason || '');
+    if (/^thread_link_pending/.test(code)) return '이전 이야기와의 연결 확인 필요';
+    return ({ memory_record_quarantined: '원문 근거가 맞지 않아 제외된 기록', not_direct_current_fact: '현재 사실로 확정되지 않은 기록',
+      missing_current_binding: '상태 연결 누락', ambiguous_identity: '같은 이름의 대상이 여러 개', quarantined_field_update: '근거 불일치로 보류된 변경',
+      quarantined_identity_hold: '대상 확인 전 보류', same_source_order_conflict: '같은 위치에서 서로 다른 값', containment_cycle: '장소 포함 관계 순환',
+      dependency_pending: '앞선 기록이 보류되어 함께 보류', character_profile_capacity: '프로필 항목 수 상한 초과', profile_selector_missing: '제거할 항목이 지정되지 않음' })[code]
+      || '확인이 필요한 보류';
+  };
+  const worldManagerDomainReasonLabel = reason => {
+    const code = text(reason || '');
+    if (!code || code === 'integrated_evidence_checked') return '';
+    return ({ unified_bindings_pending: '일부 기록이 연결 확인을 기다리고 있습니다. 나머지 기록은 반영되었습니다.',
+      not_built: '아직 정본 분석 전입니다.', bootstrap: '아직 정본 분석 전입니다.', micro_genesis_unreviewed: '정본 분석 전이라 Micro 기록만 반영되어 있습니다.' })[code]
+      || '일부 상태 반영이 보류되었습니다. 기억 서가나 로그에서 사유를 확인할 수 있습니다.';
+  };
   const worldManagerDomainCopy = (view, domain, label) => {
     const row = guiAsObject(view.domainStatus?.[domain]);
     const status = row.status === 'ready' ? '최신' : row.status === 'not_updated' ? '마지막 확인값' : row.status === 'partial' ? '부분 상태' : '생성 대기';
     const turn = Number(row.throughTurn || view.throughTurn || 0);
-    return { label, status, turn, reason: text(row.reason || ''), ready: row.status === 'ready' };
+    return { label, status, turn, reason: worldManagerDomainReasonLabel(row.reason), code: text(row.reason || ''), ready: row.status === 'ready' };
   };
 
 
@@ -90203,7 +90645,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     if(typeof value==='string' && /(?:Ref|Id)$/.test(field)){
       const match=[...guiAsArray(view?.characters),...guiAsArray(view?.world)].find(r=>text(r?.id)===value);
-      return match?text(match.name||value):value;
+      if(match)return text(match.name||value);
+      // An internal record id is not a name. The stored value is unchanged; the
+      // screen says the reference is kept but its name is not confirmed yet.
+      if(/^(?:ce_(?:world|person)_|cs_rel_)[A-Za-z0-9_]+$/.test(value))
+        return /^(?:locationRef|parentRef|containerRef|scopeRef)$/.test(field)?'이름 확인 필요한 장소':'이름 확인 필요한 대상';
+      return value;
     }
     if(Array.isArray(value))return value.map(item=>worldManagerDisplayReferences(item,view,field,depth+1));
     if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,worldManagerDisplayReferences(v,view,k,depth+1)]));
@@ -90984,7 +91431,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('input',{type:'checkbox',checked:guiAsArray(draft.resolvePendingFacts).some(r=>r.memoryId===p.memoryId&&r.revision===p.revision&&r.fact===p.fact),onChange:event=>{
           draft.resolvePendingFacts=guiAsArray(draft.resolvePendingFacts).filter(r=>!(r.memoryId===p.memoryId&&r.revision===p.revision&&r.fact===p.fact));
           if(event.target.checked)draft.resolvePendingFacts.push({memoryId:p.memoryId,revision:p.revision,fact:p.fact});
-        }}),guiEl('span',{text:` ${worldManagerArticleFieldLabel(p.field)} · ${p.fact} · ${p.reason}`})
+        }}),guiEl('span',{title:text(p.reason||''),text:` ${worldManagerArticleFieldLabel(p.field)} · ${p.fact} · ${unifiedPendingReasonLabel(p.reason)}`})
       ])),guiEl('p',{class:'hint',text:'선택한 항목의 해당 필드를 실제로 교정해야 보류가 해제됩니다. 선택하지 않은 보류는 유지됩니다.'})
     ]));
     return guiEl('section',{class:'card',dataset:{worldCorrectionEditor:domain,draftKey:keyValue}},[
@@ -91044,13 +91491,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     trait: '성향', traits: '성향', personality: '성격', habits: '습관', preferences: '선호', boundaries: '경계', consent: '동의 상태',
     attraction: '끌림', condition: '현재 조건', appearance: '외형', background: '배경', speech: '말투', abilities: '능력', dimension: '관계 차원',
     subjectId: '주체 ID', targetId: '대상 ID', subjectRef:'주체', targetRef:'대상', content:'내용', topic:'주제',
-    act:'행위', when:'시점', certainty: '확실성', phase: '현재 단계',
+    act:'행위', when:'시점', certainty: '확실성', phase: '현재 단계', description: '설명',
     centralPressure: '중심 압력', participants: '참여 인물', worldRefs: '세계 참조', summary: '현재 요약'
   }[String(keyValue || '')] || String(keyValue || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
 
   const worldManagerArticleValue = value => {
     if (value == null || value === '') return '';
     if (Array.isArray(value)) return value.map(item => worldManagerArticleValue(item)).filter(Boolean).join(' · ');
+    // A preference/boundary item reads as its own sentence; kind and scope qualify it.
+    if (typeof value === 'object' && typeof value.content === 'string' && typeof value.kind === 'string' && 'topic' in value) {
+      const kindLabel = { dislike: '싫어함', fear: '두려움', medical_or_food_boundary: '건강·식이 제한' }[value.kind] || '';
+      const scope = value.scope && typeof value.scope === 'object' ? value.scope : {};
+      const scopeText = [scope.targetRef ? `대상 ${text(scope.targetRef)}` : '', scope.when ? `시점 ${text(scope.when)}` : ''].filter(Boolean).join(', ');
+      return [text(value.content).trim(), [kindLabel, scopeText].filter(Boolean).join(' · ')].filter(Boolean).map((part, index) => index ? `(${part})` : part).join(' ');
+    }
     if (typeof value === 'object') {
       const entries = Object.entries(value).filter(([, item]) => item != null && item !== '');
       if (!entries.length) return '';
@@ -92752,6 +93206,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     : ({missing: '기록 없음', stale_source: '원문 변경 · 확인 필요',
       pending_reconciliation: '저장 확인 필요', unavailable: '조회 실패'}[row?.status] || '확인 필요');
   const microStatePendingLabel = reason => ({
+    narrative_field_canonical_only:'여러 턴에 걸친 서사 구조는 한 턴 기록으로 바꾸지 않습니다. 다음 정본 분석에서 반영됩니다.',
     micro_same_turn_field_conflict:'같은 턴에 서로 다른 값이 기록돼 상태 반영을 보류했습니다. 원문과 정본을 확인하세요.',
     state_value_not_source_bound:'변경 값이 인용한 원문과 일치하지 않아 상태 반영을 보류했습니다. 원문과 분석 결과를 확인하세요.',
     state_domain_not_ready:'정본의 상태 근거를 먼저 확인해야 합니다. 열람대에서 부분 저장된 구간을 확인하세요.',
@@ -92992,7 +93447,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   // World-only read model. Never writes State, infers relations from prose, or calls a model.
   const BOOK_WORLD_KINDS = Object.freeze({location:'장소',organization:'세력',faction:'세력',rule:'규칙',object:'사물',environment:'환경',condition:'조건',other:'기타'});
-  const BOOK_WORLD_AUTO_FIELDS = new Set(['sceneTime','parentRef','managerRef','ownerRef','holderRef','containerRef','access','rule','condition']);
+  const BOOK_WORLD_AUTO_FIELDS = new Set(['description','sceneTime','parentRef','managerRef','ownerRef','holderRef','containerRef','access','rule','condition']);
   const bookWorldAtlasModel = view => {
     const nodes=[...guiAsArray(view.world).map((row,index)=>({row,id:bookProjectionIdentity('world',row,index),domain:'world'})),...guiAsArray(view.characters).map((row,index)=>({row,id:bookProjectionIdentity('characters',row,index),domain:'characters'}))];
     // Rules may be stored on a place, not as an independent entity. Expose a
@@ -93028,7 +93483,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return nodes.filter(n=>n.domain==='world').map(node=>{
       const row=node.row,state=guiAsObject(row.state);
       const readable=value=>worldManagerArticleValue(worldManagerDisplayReferences(value,view));
-      const lead='';
+      // A stored description is the entry's lead; an entry with only a name stays without one.
+      const lead=guiAsArray(state.description).map(item=>text(item).trim()).filter(Boolean).join(' · ');
       const admittedFields=new Set(Object.entries(guiAsObject(row.fieldEvidence))
         .filter(([,proof])=>proof?.schema==='libra.micro_state_field_evidence.v1'&&proof.status==='state_admitted').map(([field])=>field));
       const visibleField=field=>BOOK_WORLD_AUTO_FIELDS.has(field)||admittedFields.has(field);
@@ -93099,10 +93555,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     guiAsArray(n.events).forEach((e,i)=>addEvent(e,'event-'+(e.id||i)));
     const add=(row,id,group,kind)=>groups[group].push({id,group,row,title:text(row.title||row.summary||'제목 미기록'),status:bookNarrativeStatus(row.status),kind,turn:bookNarrativeTurn(row),evidence:bookNarrativeEvidence(row),body:text(row.interpretation||row.summary||row.description||row.rule||''),historical:false});
-    guiAsArray(n.threads).forEach((r,i)=>add(r,'thread-'+(r.id||i),['resolved','closed','transformed','superseded'].includes(r.status)?'closed':'threads',bookNarrativeKind(r.kind||r.type)));
+    guiAsArray(n.threads).forEach((r,i)=>{
+      add(r,'thread-'+(r.id||i),['resolved','closed','transformed','superseded'].includes(r.status)?'closed':'threads',bookNarrativeKind(r.kind||r.type));
+      // Runtime could not confirm which earlier story this continues; say so instead of counting it as new.
+      if(r.linkPending){const item=groups.threads.at(-1);if(item?.row===r)item.status='연결 확인 필요';}
+    });
+    const resolutionLabel=reason=>({fulfilled:'이행됨',completed:'완료됨',broken:'지켜지지 않음',cancelled:'취소됨',withdrawn:'철회됨',superseded:'대체됨'}[reason]||'');
+    guiAsArray(n.closedThreads).forEach((r,i)=>{
+      add(r,'closed-'+(r.id||i),'closed',bookNarrativeKind(r.kind||r.type));
+      const item=groups.closed.at(-1);if(!item)return;
+      item.turn=Number(r.resolvedTurn||item.turn||0);
+      item.status=r.linkPending?'연결 확인 필요':resolutionLabel(r.resolution)||bookNarrativeStatus(r.status);
+    });
+    const closedLifecycles=new Set(guiAsArray(n.closedThreads).map(r=>text(r.lifecycleId||r.id)));
     guiAsArray(n.arcs).forEach((r,i)=>add(r,'arc-'+(r.id||i),'arcs','이야기 흐름'));
-    guiAsArray(n.turningPoints).forEach((r,i)=>add(r,'turning-'+(r.id||i),'arcs','전환점'));
-    guiAsArray(n.motifs).forEach((r,i)=>add(r,'motif-'+(r.id||i),'arcs','반복 소재'));
+    guiAsArray(n.resolvedArcs).forEach((r,i)=>add(r,'arc-resolved-'+(r.id||i),'arcs','이야기 흐름'));
+    // Turning points and motifs have no lifecycle; their badge says what they are.
+    const recurrence=r=>new Set(guiAsArray(r.evidenceSpans).map(span=>Number(/^t(\d+)-/.exec(text(span?.ref||''))?.[1]||0)).filter(Boolean)).size;
+    guiAsArray(n.turningPoints).forEach((r,i)=>{add(r,'turning-'+(r.id||i),'arcs','전환점');if(!r.status)groups.arcs.at(-1).status='전환 기록';});
+    guiAsArray(n.motifs).forEach((r,i)=>{add(r,'motif-'+(r.id||i),'arcs','반복 소재');if(!r.status)groups.arcs.at(-1).status=recurrence(r)>1?`${recurrence(r)}개 턴에서 반복`:'반복 기록';});
     // T09: relation milestones. A relationship row is directional (subject -> target)
     // and already carries its own evidence; the almanac entry reuses that row rather
     // than creating a second, parallel fact (`02` T09: "이중 사실을 생성하지 않는다").
@@ -93126,7 +93597,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         historical:false
       });
     });
-    guiAsArray(n.locks).forEach((r,i)=>add(r,'lock-'+(r.id||i),'locks','유지할 사실'));
+    // Conditions the story must keep are part of the flow a reader follows, so they list there too.
+    guiAsArray(n.locks).forEach((r,i)=>{add(r,'lock-'+(r.id||i),'arcs','유지 조건');const item=groups.arcs.at(-1);if(item)item.status=r.status==='released'?'해제됨':'유지 중';});
     for(const chapter of chapters){
       const artifact=guiAsObject(chapter.canonicalArtifact),entities=new Map(guiAsArray(artifact.entities).map(e=>[e.tempId,e]));
       // Read documented legacy fields without rewriting canonical memory or current State.
@@ -93155,6 +93627,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if(fact.claimKind==='thread'&&fact.domain==='narrative'){
           const value=guiAsObject(fact.values?.thread);
           if(!['resolved','closed'].includes(value.status))continue;
+          // Already shown from the current Head; history must not list it twice.
+          if(value.lifecycleId&&closedLifecycles.has(text(value.lifecycleId)))continue;
           groups.closed.push({id,group:'closed',row:{...value,evidence},title:text(value.summary||entities.get(fact.subjectTempRef)?.name||fact.text||'종결 기록'),status:'당시 '+bookNarrativeStatus(value.status),kind:bookNarrativeKind(value.kind),turn,evidence:bookNarrativeEvidence(row),body:text(value.interpretation||fact.text||''),historical:true});
         }
       }
@@ -96507,7 +96981,7 @@ advanced
       guiEl('div',{class:'rail__search'},[guiEl('div',{class:'search'},[guiEl('input',{class:'input',type:'search',placeholder:'인물 검색','aria-label':'인물 검색',value:Gui.bookCharacterQuery||'',onInput:event=>{Gui.bookCharacterQuery=event.target.value;const q=event.target.value.trim().toLocaleLowerCase();let n=0;Gui.app?.querySelectorAll('[data-character-search]').forEach(node=>{node.hidden=!node.dataset.characterSearch.includes(q);if(!node.hidden)n++;});const empty=Gui.app?.querySelector('[data-character-search-empty]');if(empty)empty.hidden=n>0;}})])]),
       guiEl('div',{class:'rail__list'},matching.length?matching.map(({item,id,name:n})=>{
         const factsFor=worldManagerArticleFacts({id:item.id||'',name:n,state:guiAsObject(item.state)},view,Number.MAX_SAFE_INTEGER);
-        const present=factsFor.filter(f=>['locationRef','condition'].includes(f.key)).map(f=>{const limit=stateMeaningLabel(item.fieldEvidence?.[f.key]?.meaning);return limit&&f.value?`${f.value}(${limit})`:f.value;}).filter(Boolean).join(' · ');
+        const present=factsFor.filter(f=>['locationRef','condition'].includes(f.key)).concat(factsFor.some(f=>['locationRef','condition'].includes(f.key))?[]:factsFor.filter(f=>['emotion','goal'].includes(f.key))).map(f=>{const limit=stateMeaningLabel(item.fieldEvidence?.[f.key]?.meaning);return limit&&f.value?`${f.value}(${limit})`:f.value;}).filter(Boolean).join(' · ');
         const aliases=guiAsArray(item.aliases).map(text).filter(Boolean);
         const queryText=[n,...aliases].join(' ').toLocaleLowerCase();
         return guiEl('button',{class:`chapter${id===selectedId?' is-on':''}`,type:'button',dataset:{characterSearch:queryText,selectRow:id},'aria-pressed':String(id===selectedId),onClick:()=>{Gui.bookSelectedCharacterId=id;Gui.worldManagerSelectedCharacterId=id;Gui.bookCharacterDetail=true;queueGuiNavigationRender();}},[
@@ -96530,7 +97004,8 @@ advanced
     };
     if(!row)return guiEl('div',{class:'grid g-side',dataset:{libraProductDetail:'people',productReadback:'people'}},[rail,guiEl('article',{class:'sheet-page detail-pane'},[guiEl('div',{class:'eyebrow',text:'Character Introduction'}),guiEl('h2',{text:'인물 기록 없음'}),guiEl('p',{class:'deck',text:'현재 LIBRA 저장소에서 인물 기록을 읽지 못했습니다.'}),guiEl('div',{class:'empty',text:'표본 인물은 표시하지 않습니다.'})])]);
     const evidence=evidenceSummary([row.identityEvidence||row.evidence,...Object.values(guiAsObject(row.fieldEvidence))]);
-    const groupKeys={intro:['appearance','background','personality','speech','habits','abilities'],pref:['preferences'],bound:['boundaries'],now:['locationRef','condition','goal'],know:['knowledge'],own:['affiliations']};
+    // Emotion is a current, passing state like condition, so it reads under the current situation.
+    const groupKeys={intro:['appearance','background','personality','speech','habits','abilities'],pref:['preferences'],bound:['boundaries'],now:['locationRef','condition','emotion','goal'],know:['knowledge'],own:['affiliations']};
     const groupFactNodes=key=>{
       const keys=groupKeys[key]||[],matched=facts.filter(f=>keys.includes(f.key));
       const factNodes=list=>guiEl('dl',{class:'kv profile'},list.flatMap(f=>{
@@ -96543,13 +97018,13 @@ advanced
       if (charStatus === 'ready') {
         emptyHint = key === 'know' ? '기록된 지식이 없습니다. 이는 모른다는 뜻이 아닙니다.' : '이 분류에는 현재 기록된 항목이 없습니다.';
       } else if (charStatus === 'failed') {
-        emptyHint = `정본 인물 분석이 보류/실패 상태입니다 (${charReason || '분석 오류'}). 열람대나 로그를 확인하세요.`;
+        emptyHint = '정본 인물 분석이 실패해 이 분류를 채우지 못했습니다. 기억 서가나 로그에서 사유를 확인하세요.';
       } else if (charStatus === 'partial' || charStatus === 'not_updated') {
-        emptyHint = `인물 상태 영역이 부분 반영 상태입니다 (${charStatus}${charReason ? `: ${charReason}` : ''}).`;
+        emptyHint = '이 분류에 반영된 항목이 없습니다. ' + (worldManagerDomainReasonLabel(charReason) || '인물 상태가 일부만 반영되었습니다.');
       } else if (!charStatus || charStatus === 'bootstrap' || charStatus === 'pending') {
         emptyHint = '정본의 인물 상태 영역이 아직 준비되지 않았습니다. (초기 5턴 정본 분석 후 반영)';
       } else {
-        emptyHint = `인물 상태 영역 상태: ${charStatus}${charReason ? ` (${charReason})` : ''}.`;
+        emptyHint = '이 분류에 반영된 항목이 없습니다. ' + worldManagerDomainReasonLabel(charReason);
       }
       const orphans=stateOrphanCandidateNodes({fieldCandidates:Object.fromEntries(Object.entries(guiAsObject(row.fieldCandidates)).filter(([field])=>keys.includes(field)))},matched.map(f=>f.key));
       const nodes=matched.length?[factNodes(matched),...orphans]:orphans.length?orphans:[guiEl('p',{class:'muted',text:emptyHint})];
@@ -96570,9 +97045,27 @@ advanced
     })):guiEl('p',{class:'muted',text:'현재 인물과 연결된 관계 기록이 없습니다.'});
     const peerRows=rows.filter(person=>person.id!==row.id&&relRows.some(rel=>rel.subjectId===person.id||rel.targetId===person.id));
     const peerLinks=peerRows.length?guiEl('details',{class:'fold'},[guiEl('summary',{text:'상세 · 연결된 인물'}),guiEl('div',{class:'fold__body cluster'},peerRows.map(person=>guiEl('button',{class:'chip',type:'button',dataset:{characterPeer:person.id},text:bookCharacterName(person),onClick:()=>{Gui.bookSelectedCharacterId=person.id;Gui.worldManagerSelectedCharacterId=person.id;queueGuiNavigationRender();}})))]):null;
-    const worldLinks=bookWorldAtlasModel(view).flatMap(item=>item.links.filter(edge=>edge.target.domain==='characters'&&edge.target.id===selectedId).map(edge=>({item,label:edge.label.replace('현재 소지자','현재 소지').replace('소유 주체','소유').replace('현재 구성원','현재 소속').replace('이전 구성원','이전 소속')})));
-    const linkedWorld=worldLinks.length?guiEl('details',{class:'fold'},[guiEl('summary',{text:'상세 · 연결된 세계 항목'}),guiEl('div',{class:'fold__body cluster'},worldLinks.map(({item,label})=>guiEl('button',{class:'chip',type:'button',dataset:{characterWorldLink:item.id},text:`${label} · ${item.title}`,onClick:()=>{Gui.bookBrowse_world={...(Gui.bookBrowse_world||{}),selected:item.id,query:''};bookNavigate('world');}})))]):null;
-    const panels=tabs.map(([id,label,key])=>guiEl('div',{hidden:key!==active?'':null,dataset:{subpanel:id,group:'people'},class:key===active?'is-active':''},key==='relationships'?[relContent,guiEl('p',{class:'hint',text:'관계는 주체에서 대상으로 향하는 별도 기록입니다.'}),peerLinks].filter(Boolean):[...groupFactNodes(id),...(id==='own'&&linkedWorld?[linkedWorld]:[])]));
+    // Belongings and memberships, read from this person's side. A place the
+    // person is in is the current situation, not something the person has.
+    const personId=text(row.id||''),atlas=bookWorldAtlasModel(view).filter(item=>!item.derived);
+    const worldLinks=atlas.map(item=>{
+      const s=guiAsObject(item.row.state),labels=[];
+      if(text(s.ownerRef)===personId)labels.push('소유');
+      if(text(s.holderRef)===personId)labels.push('소지 중');
+      if(text(s.managerRef)===personId)labels.push('관리');
+      for(const access of guiAsArray(s.access))if(text(access?.personRef)===personId)labels.push('접근 권한 · '+worldManagerArticleValue(worldManagerDisplayReferences(access.status,view,'status')));
+      for(const a of guiAsArray(state.affiliations))if(text(a?.organizationRef)===text(item.row.id)&&['member','former'].includes(a?.status))labels.push((a.status==='former'?'이전 소속':'현재 소속')+' · '+text(a.role||'역할 미기록'));
+      return labels.length?{item,label:[...new Set(labels)].join(' · ')}:null;
+    }).filter(Boolean);
+    const linkedWorld=worldLinks.length?guiEl('div',{class:'cluster',dataset:{characterWorldLinks:'true'}},worldLinks.map(({item,label})=>guiEl('button',{class:'chip',type:'button',dataset:{characterWorldLink:item.id},text:`${label} · ${item.title}`,onClick:()=>{Gui.bookBrowse_world={...(Gui.bookBrowse_world||{}),selected:item.id,query:''};bookNavigate('world');}}))):null;
+    const ownNodes=()=>{
+      const nodes=groupFactNodes('own');
+      if(!linkedWorld)return nodes;
+      // The generic "nothing recorded" line is only for a tab that really shows nothing.
+      const hasFacts=facts.some(f=>groupKeys.own.includes(f.key))||nodes.some(node=>node?.dataset?.stateCandidate);
+      return hasFacts?[...nodes,linkedWorld]:[linkedWorld];
+    };
+    const panels=tabs.map(([id,label,key])=>guiEl('div',{hidden:key!==active?'':null,dataset:{subpanel:id,group:'people'},class:key===active?'is-active':''},key==='relationships'?[relContent,guiEl('p',{class:'hint',text:'관계는 주체에서 대상으로 향하는 별도 기록입니다.'}),peerLinks].filter(Boolean):id==='own'?ownNodes():groupFactNodes(id)));
     const primary=guiEl('article',{class:'sheet-page detail-pane',dataset:{detail:selectedId}},[
       guiEl('div',{class:'eyebrow',dataset:{characterEvidence:'true',evidenceCount:String(evidence.count),evidenceTurn:String(evidence.turn)},text:`Character · 근거 ${evidence.count} · ${evidence.turn?`T${evidence.turn}`:'기준 턴 미상'} 기준`}),
       guiEl('h2',{text:selectedName}),guiAsArray(row.aliases).length?guiEl('p',{class:'deck',text:'별칭 · '+guiAsArray(row.aliases).map(text).join(' · ')}):null,
@@ -96592,7 +97085,8 @@ advanced
     const read = item => {
       const start = Math.max(0, guiAsArray(item.facts).length
         ? Math.max(Number(item.confirmations?.[0]?.turn || 0), Number(item.evidence?.[0]?.turn || 0)) : 0);
-      const body = item.lead || guiAsArray(item.facts).slice(0, 2).map(fact => `${fact.label} · ${fact.value}`).join(' · ') || '저장된 세부 정보가 없습니다.';
+      const body = item.lead || guiAsArray(item.facts).slice(0, 2).map(fact => `${fact.label} · ${fact.value}`).join(' · ')
+        || (guiAsArray(item.links).length ? '이름과 연결만 확인되었고, 설명이나 상태는 아직 기록되지 않았습니다.' : '이름만 확인되었고, 설명이나 상태는 아직 기록되지 않았습니다.');
       return guiEl('article', { class: 'card cardlet', dataset: { worldEntry: item.id } }, [
         guiEl('div', { class: 'split' }, [guiEl('span', { class: 'badge badge--info', text: item.kind }), guiEl('span', { class: 'hint', text: start ? `T${start}` : '기준 턴 미확인' })]),
         guiEl('h3', { class: 'card__title', text: item.title }), guiEl('p', { class: 'muted', text: body }),
@@ -96606,7 +97100,7 @@ advanced
         ]),
         guiEl('details',{class:'fold',dataset:{worldDetail:item.id}},[guiEl('summary',{text:'상세 · 기록과 인용 근거'}),guiEl('div',{class:'fold__body stack'},[
           ...stateOrphanCandidateNodes(item.row,guiAsArray(item.facts).map(fact=>fact.key)),
-          guiAsArray(item.facts).length?guiEl('dl',{class:'kv'},guiAsArray(item.facts).flatMap(fact=>[guiEl('dt',{text:fact.label}),stateFieldValueNode({},fact.value,fact.meaning,fact.candidates)])):guiEl('p',{class:'muted',text:'상태와 연결 정보는 아직 기록되지 않았습니다.'}),
+          guiAsArray(item.facts).length?guiEl('dl',{class:'kv'},guiAsArray(item.facts).flatMap(fact=>[guiEl('dt',{text:fact.label}),stateFieldValueNode({},fact.value,fact.meaning,fact.candidates)])):guiEl('p',{class:'muted',text:guiAsArray(item.links).length?'설명과 상태는 아직 기록되지 않았습니다. 연결은 위에 표시됩니다.':'설명·상태·연결이 아직 기록되지 않았습니다.'}),
           guiAsArray(item.cleared).length?guiEl('p',{class:'hint',text:'명시적으로 해제됨 · '+item.cleared.join(' · ')}):null,
           item.row?.correctionProvenance?guiEl('p',{class:'hint',text:'사용자 교정이 적용된 기록입니다.'}):null,
           ...guiAsArray(item.evidence).map(record=>guiEl('blockquote',{},[guiEl('p',{text:record.quote}),guiEl('small',{class:'hint',text:`${record.ref} · ${record.fields.join(' · ')}`})])),
@@ -96643,7 +97137,7 @@ advanced
       queueGuiNavigationRender();
     };
     const list=rows.length?rows.map(row=>guiEl('button',{class:'row',type:'button',dataset:{narrativeEntry:row.id},'aria-current':String(row===item),onClick:()=>chooseRow(row.id)},[
-      guiEl('span',{class:'row__icon',text:row.turn?String(row.turn):'·'}),guiEl('span',{},[guiEl('span',{class:'row__title',text:row.title}),guiEl('span',{class:'row__meta',text:`${row.kind} · ${row.turn?`T${row.turn}`:'기준 턴 미상'}`})]),guiEl('span',{class:`badge${['미해결','진행 막힘','미확정'].includes(row.status)?' badge--warn':''}`,text:row.status})
+      guiEl('span',{class:'row__icon',text:row.turn?String(row.turn):'·'}),guiEl('span',{},[guiEl('span',{class:'row__title',text:row.title}),guiEl('span',{class:'row__meta',text:`${row.kind} · ${row.turn?`T${row.turn}`:'기준 턴 미상'}`})]),guiEl('span',{class:`badge${['미해결','진행 막힘','미확정','연결 확인 필요','지켜지지 않음'].includes(row.status)?' badge--warn':''}`,text:row.status})
     ])): [guiEl('div',{class:'empty'},[guiEl('b',{text:all.length?'검색 결과가 없습니다':'기록된 서사 항목이 없습니다'}),guiEl('span',{text:'현재 저장된 상태와 기억 이력에서만 표시합니다.'})])];
     const evidence=guiAsArray(item?.evidence||[]);
     const narrativeList=guiEl('div',{class:'list',id:'story-open-list','aria-live':'polite'},list);
@@ -96665,7 +97159,7 @@ advanced
       guiEl('p',{class:`story-structure__lead${narrative.summary?'':' muted'}`,text:text(narrative.summary||'')||'현재 확인된 서사 요약이 없습니다.'}),
       narrative.momentum?guiEl('p',{class:'note',text:'현재 압력 · '+text(narrative.momentum)}):null,
       guiEl('div',{class:'facts'},[
-        structureFact(threads.filter(row=>!row?.status||['open','blocked','uncertain'].includes(row.status)).length,'열린 갈래'),
+        structureFact(threads.filter(row=>!row?.linkPending&&(!row?.status||['open','blocked','uncertain'].includes(row.status))).length,'열린 갈래'),
         structureFact(arcs.filter(row=>!row?.status||row.status==='active').length,'진행 중 흐름'),
         structureFact(locks.filter(row=>row?.status!=='released').length,'유지 조건'),
         structureFact(guiAsArray(groups.events).length,'기록된 사건')
