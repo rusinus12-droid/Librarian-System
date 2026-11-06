@@ -44551,7 +44551,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => {
     const hydrated = await hydrateCapturedLedgerRaw(storedRaw, scope);
     const stored = typeof hydrated === 'string' ? safeJsonParse(hydrated, null) : hydrated;
-    if (!stored || stored.scopeKey !== scopeKey) return false;
+    if (!stored || stored.scopeKey !== scopeKey) throw new Error('hayaku_storage_ledger_unreadable');
     const ledger = normalizeStorageLedger(stored, scope);
     // Lifecycle reconciliation may bind an old candidate now. Only its already-persisted
     // active adoption time can establish that a recovery happened after the failure.

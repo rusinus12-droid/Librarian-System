@@ -209,6 +209,15 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     r.chat.message[1].data = 'A changed source revision with no verified recovery.';
     await r.hayaku.recovery.failedAnalysis.report();
     assert.ok(r.context.reconciliationChecks > checks + 2, 'a changed source invalidates the check');
+    // A transient interpretation failure is not cached as a valid negative check.
+    const validRaw = r.pluginStorage.values.get(ledgerKey);
+    r.pluginStorage.values.set(ledgerKey, 'not-valid-json');
+    const beforeErrorChecks = r.context.reconciliationChecks;
+    await r.hayaku.recovery.failedAnalysis.report();
+    assert.equal(r.context.reconciliationChecks, beforeErrorChecks + 1, 'unreadable ledger triggers a fresh check');
+    r.pluginStorage.values.set(ledgerKey, validRaw);
+    await r.hayaku.recovery.failedAnalysis.report();
+    assert.equal(r.context.reconciliationChecks, beforeErrorChecks + 2, 'restored ledger rescans instead of reusing failed interpretation cache');
   } finally { await r.dispose(); }
 
   // The screen asks first, spends nothing on cancel, and reports what happened.
