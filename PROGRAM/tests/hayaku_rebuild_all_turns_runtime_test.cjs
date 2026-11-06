@@ -186,7 +186,7 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
   // A negative check is reused only for the same physical ledger, transcript, and failure set.
   r = await open({ transformSource: source => source.replace(
     'const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => {',
-    'const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => { globalThis.reconciliationChecks = (globalThis.reconciliationChecks || 0) + 1;') });
+    'const reconstructAnalysisFailureResolutionsFromStored = async (scopeKey, unresolved, scope, storedRaw) => { globalThis.reconciliationChecks = (globalThis.reconciliationChecks || 0) + 1; if (globalThis.simulateTransientInterpretationFailure) { delete globalThis.simulateTransientInterpretationFailure; throw new Error("hayaku_storage_ledger_unreadable"); }') });
   try {
     r.setLlmResponder(async call => turnOf(call) === 2 ? { type: 'success', result: 'not json' } : good(call));
     assert.equal((await r.hayaku.rebuildAllTurns()).ok, false);
@@ -207,17 +207,15 @@ const covered = async r => [...(await r.hayaku.recovery.status({ includeDebts: t
     await r.hayaku.recovery.failedAnalysis.report();
     assert.equal(r.context.reconciliationChecks, checks + 2, 'a new failed attempt invalidates the check');
     r.chat.message[1].data = 'A changed source revision with no verified recovery.';
+    // A transient interpretation failure on identical data is evicted from cache, never reused as negative proof.
+    const beforeTransientChecks = r.context.reconciliationChecks;
+    r.context.simulateTransientInterpretationFailure = true;
     await r.hayaku.recovery.failedAnalysis.report();
-    assert.ok(r.context.reconciliationChecks > checks + 2, 'a changed source invalidates the check');
-    // A transient interpretation failure is not cached as a valid negative check.
-    const validRaw = r.pluginStorage.values.get(ledgerKey);
-    r.pluginStorage.values.set(ledgerKey, 'not-valid-json');
-    const beforeErrorChecks = r.context.reconciliationChecks;
+    assert.equal(r.context.reconciliationChecks, beforeTransientChecks + 1, 'first call attempted check on changed source and failed transiently');
     await r.hayaku.recovery.failedAnalysis.report();
-    assert.equal(r.context.reconciliationChecks, beforeErrorChecks + 1, 'unreadable ledger triggers a fresh check');
-    r.pluginStorage.values.set(ledgerKey, validRaw);
+    assert.equal(r.context.reconciliationChecks, beforeTransientChecks + 2, 'second call on identical data rescans because failure was evicted from cache');
     await r.hayaku.recovery.failedAnalysis.report();
-    assert.equal(r.context.reconciliationChecks, beforeErrorChecks + 2, 'restored ledger rescans instead of reusing failed interpretation cache');
+    assert.equal(r.context.reconciliationChecks, beforeTransientChecks + 2, 'subsequent call reuses completed negative check without redundant rescan');
   } finally { await r.dispose(); }
 
   // The screen asks first, spends nothing on cancel, and reports what happened.

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-06T00:50:13.652Z",
+  "generatedAt": "2026-11-06T00:56:52.567Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -7351,8 +7351,8 @@
       "bytes": 11499
     },
     "tests/hayaku_rebuild_all_turns_runtime_test.cjs": {
-      "sha256": "1b0da6164d83964738c1fe11f9bfbb8a20c785c991d610920ec69c3e75622683",
-      "bytes": 18906
+      "sha256": "9162712fdf4d36340f19cb08f650c23b220ce85c020a431ffa628bd0216cc875",
+      "bytes": 19091
     },
     "tests/hayaku_recall_only_selection_test.cjs": {
       "sha256": "e80c3c4588c4241cd6fc18eb89371e556ec7a7e4838676b488c730fc29e22c4b",
