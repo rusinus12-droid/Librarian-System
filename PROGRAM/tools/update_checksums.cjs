@@ -13,6 +13,7 @@ const files = [];
 const forbiddenDistributionData = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // `.claude` holds local agent sessions and their git worktrees, never release content.
 const CHECKSUM_EXCLUDED_DIRECTORIES = new Set(['.git', 'node_modules', '__pycache__', '.development', '.claude']);
+const CHECKSUM_GENERATED_DIRECTORIES = new Set(['evidence', 'checkpoints', 'backups']);
 // A linked worktree has `.git` as a FILE (a `gitdir:` pointer), not a directory, so the directory rule
 // above does not cover it: the pointer was recorded as a checksum row whose bytes depend on where the
 // checkout lives, making the artifact differ per machine. Exclude the name in both shapes.
@@ -32,7 +33,10 @@ const walk = directory => {
     if (!distributionMode && (relative === 'DATA' || relative.startsWith('DATA/'))) continue;
     if (entry.isSymbolicLink()) throw new Error(`checksum_symbolic_link_is_not_allowed:${relative}`);
     if (entry.isDirectory()) {
-      if (!CHECKSUM_EXCLUDED_DIRECTORIES.has(entry.name)) walk(absolute);
+      // Inspect all distributed DATA even in generated subdirectories: dirty
+      // backup databases must still fail, never disappear through an exclusion.
+      if (!CHECKSUM_EXCLUDED_DIRECTORIES.has(entry.name)
+        && (!CHECKSUM_GENERATED_DIRECTORIES.has(entry.name) || (distributionMode && relative.startsWith('DATA/')))) walk(absolute);
     } else if (entry.isFile() && !CHECKSUM_EXCLUDED_FILES.has(entry.name) && !isChecksumEphemeralFile(entry.name)) {
       if (distributionMode && relative.startsWith('DATA/') && forbiddenDistributionData.test(relative.slice('DATA/'.length))) {
         throw new Error(`distribution_checksum_private_data_rejected:${relative}`);

@@ -12,6 +12,7 @@ const {
   parseArgs,
   restoreVersionTransactionFiles,
   shouldCopyProgram,
+  shouldCopySourceProgram,
   snapshotVersionTransactionFiles,
   verifyChecksumFile
 } = require('../tools/build_distribution.cjs');
@@ -28,6 +29,20 @@ function runPrepare(dataDir, ...extra) {
   return spawnSync(process.execPath, [prepareData, '--program-dir', programDir, '--data-dir', dataDir, ...extra], {
     encoding: 'utf8'
   });
+}
+
+function copyProgramFixture(source, target, base = source) {
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    if (['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases'].includes(entry.name)) continue;
+    const from = path.join(source, entry.name);
+    const relative = path.relative(base, from);
+    if (entry.isDirectory()) copyProgramFixture(from, target, base);
+    else if (entry.isFile() && shouldCopySourceProgram(relative)) {
+      const to = path.join(target, relative);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+    }
+  }
 }
 
 function main() {
@@ -66,6 +81,8 @@ function main() {
     assert.equal(shouldCopyProgram('_runtime/node.exe'), false);
     assert.equal(shouldCopyProgram('server/server.cjs'), true);
     assert.equal(shouldCopyProgram('logs/server.log'), false);
+    assert.equal(shouldCopySourceProgram('docs/evidence/private.json'), false, 'generated observations must not enter Source archives');
+    assert.equal(shouldCopySourceProgram('checkpoints/private.json'), false, 'generated checkpoints must not enter Source archives');
     assert.equal(shouldCopyProgram('tools/private.pem'), false);
     assert.equal(shouldCopyProgram('tools/.env.production'), false);
     assert.equal(shouldCopyProgram('unexpected-top-level.txt'), false);
@@ -74,12 +91,36 @@ function main() {
     assert.throws(() => parseArgs(['--output-dir', '--skip-tests']), /distribution_output_dir_value_required/);
     assert.equal(parseArgs(['--check']).check, true);
 
-    const packageRoot = path.resolve(programDir, '..');
+    // Release smoke runs this file beside readers of the real source tree.
+    // Mutation/rollback controls must use a complete isolated repository, not
+    // truncate live server/plugin/manifest files while another test copies them.
+    const sourceRoot = path.resolve(programDir, '..');
+    const packageRoot = path.join(tempRoot, 'isolated-repository');
+    copyProgramFixture(programDir, path.join(packageRoot, 'PROGRAM'));
+    for (const row of snapshotVersionTransactionFiles(sourceRoot)) {
+      if (row.relative.startsWith('PROGRAM/')) continue;
+      const to = path.join(packageRoot, row.relative);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(row.absolute, to);
+    }
+    const isolatedBuilder = require(path.join(packageRoot, 'PROGRAM/tools/build_distribution.cjs'));
     const beforeCheckSnapshot = snapshotVersionTransactionFiles(packageRoot);
     assert.ok(beforeCheckSnapshot.length >= 10, 'snapshotVersionTransactionFiles captures all release metadata files');
     const manifestSnapshot = beforeCheckSnapshot.find(f => f.relative === 'PROGRAM/program-manifest.json');
     assert.ok(manifestSnapshot, 'program-manifest.json is captured in version transaction files');
     const originalManifestBytes = fs.readFileSync(manifestSnapshot.absolute);
+
+    // A no-op rollback must perform no writes or chmods: writeFileSync first
+    // truncates, allowing a concurrent ZIP reader to capture an empty CJS module.
+    const originalWrite = fs.writeFileSync, originalChmod = fs.chmodSync;
+    const protectedPaths = new Set(beforeCheckSnapshot.map(row => row.absolute));
+    const touched = [];
+    try {
+      fs.writeFileSync = function(file, ...args) { if (protectedPaths.has(String(file))) touched.push(String(file)); return originalWrite.call(this, file, ...args); };
+      fs.chmodSync = function(file, ...args) { if (protectedPaths.has(String(file))) touched.push(String(file)); return originalChmod.call(this, file, ...args); };
+      restoreVersionTransactionFiles(beforeCheckSnapshot);
+    } finally { fs.writeFileSync = originalWrite; fs.chmodSync = originalChmod; }
+    assert.deepEqual(touched, [], 'unchanged rollback must not expose transient empty source bytes to parallel archive readers');
 
     try {
       fs.writeFileSync(manifestSnapshot.absolute, JSON.stringify({ ...JSON.parse(originalManifestBytes.toString('utf8')), generatedAt: 'simulated-mutation' }));
@@ -93,8 +134,8 @@ function main() {
     const blockingOutputDir = path.join(tempRoot, 'blocking-output-file');
     fs.writeFileSync(blockingOutputDir, 'block');
     assert.throws(() => {
-      buildRelease({ check: true, outputDir: blockingOutputDir });
-    });
+      isolatedBuilder.buildRelease({ check: true, outputDir: blockingOutputDir });
+    }, error => error.code === 'EEXIST' || error.code === 'ENOTDIR', 'the real builder reaches the deliberately blocked output path');
     assert.deepEqual(fs.readFileSync(manifestSnapshot.absolute), originalManifestBytes, 'buildRelease error path restores snapshot when check: true');
 
     const checksumRoot = path.join(tempRoot, 'checksum root');

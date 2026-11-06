@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const builder=require('../tools/build_distribution.cjs');
 const zip=require('../tools/zip_writer.cjs');
+const sha=bytes=>require('node:crypto').createHash('sha256').update(bytes).digest('hex');
 const root=path.resolve(__dirname,'../..'),temp=fs.mkdtempSync(path.join(os.tmpdir(),'librarian-runtime-closure-'));
 function copy(source,target,predicate,base=source){
  for(const entry of fs.readdirSync(source,{withFileTypes:true})){
@@ -12,12 +13,14 @@ function copy(source,target,predicate,base=source){
 }
 try{
  const staged=path.join(temp,'stage'),unpacked=path.join(temp,'unpacked'),archive=path.join(temp,'runtime.zip');
+ const sourceServerSha=sha(fs.readFileSync(path.join(root,'PROGRAM/server/server.cjs')));
  copy(path.join(root,'PROGRAM'),path.join(staged,'PROGRAM'),rel=>!rel.startsWith('plugins/')&&builder.shouldCopyRuntimeProgram(rel));
  copy(path.join(root,'UPDATER'),path.join(staged,'UPDATER'),builder.shouldCopyUpdater);
  zip.createZipFromDirectory(staged,archive);
  for(const entry of zip.readZipEntries(archive)){const file=path.join(unpacked,...entry.name.split('/'));fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,entry.bytes);}
  // Require actual ZIP bytes, never the source-tree server or a source SDK fallback.
  const serverPath=path.join(unpacked,'PROGRAM/server/server.cjs');
+ assert.equal(sha(fs.readFileSync(serverPath)),sourceServerSha,'ZIP server bytes must match the captured source, including under parallel release smoke');
  const server=require(serverPath);
  assert.equal(typeof server.createMemorySuiteServer,'function');
  assert.equal(typeof require(path.join(unpacked,'PROGRAM/tools/portable_export_stopped.cjs')).exportStopped,'function');

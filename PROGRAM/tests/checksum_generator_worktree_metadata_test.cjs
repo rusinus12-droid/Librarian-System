@@ -37,6 +37,10 @@ const buildSandbox = () => {
   fs.copyFileSync(GENERATOR, path.join(packageRoot, 'PROGRAM', 'tools', 'update_checksums.cjs'));
   fs.writeFileSync(path.join(packageRoot, 'PROGRAM', 'plugins', 'keep.cjs'), 'module.exports = 1;\n');
   fs.writeFileSync(path.join(packageRoot, 'PROGRAM', 'tools', 'keep_tool.cjs'), 'module.exports = 2;\n');
+  for (const generated of ['evidence', 'checkpoints', 'backups']) {
+    fs.mkdirSync(path.join(packageRoot, 'PROGRAM', 'docs', generated), { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, 'PROGRAM', 'docs', generated, 'private.json'), '{"private":"fixture"}\n');
+  }
   // The linked-worktree shape: `.git` is a file, not a directory.
   fs.writeFileSync(path.join(packageRoot, '.git'), `gitdir: ${path.join(temp, 'worktrees', 'bundle')}\n`);
   return { temp, packageRoot };
@@ -60,6 +64,7 @@ try {
   assert.ok(fs.statSync(path.join(packageRoot, '.git')).isFile(), 'the sandbox must carry a `.git` FILE');
 
   const rows = generate(packageRoot);
+  assert.ok(!rows.some(row => /\/(?:evidence|checkpoints|backups)\//.test(row)), 'gitignored generated observations must not be recorded in checksum inventories');
   const pluginPresent = rows.includes('./PROGRAM/plugins/keep.cjs');
   const toolPresent = rows.includes('./PROGRAM/tools/keep_tool.cjs');
   const checkoutMetadataPresent = rows.some(row => row === './.git' || row.endsWith('/.git'));
@@ -73,6 +78,11 @@ try {
   fs.writeFileSync(generatorPath, source.replace(site, ''));
   const withoutFix = generate(packageRoot);
   const selfTestDetected = withoutFix.some(row => row === './.git');
+  fs.mkdirSync(path.join(packageRoot, 'DATA', 'backups'), { recursive: true });
+  fs.writeFileSync(path.join(packageRoot, 'DATA', 'backups', 'private.sqlite'), 'fixture database bytes');
+  const dirtyDistribution = spawnSync(process.execPath, [generatorPath, '--distribution'], { cwd: packageRoot, encoding: 'utf8' });
+  assert.notStrictEqual(dirtyDistribution.status, 0, 'distribution DATA checks must still inspect excluded source-evidence/backup directories');
+  assert.match(dirtyDistribution.stderr, /distribution_checksum_private_data_rejected/);
 
   result = {
     withFix: { rows: rows.length, pluginPresent, toolPresent, checkoutMetadataPresent },
