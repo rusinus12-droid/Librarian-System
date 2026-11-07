@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-07T11:39:36.253Z",
+  "generatedAt": "2026-11-07T12:51:24.141Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "3a2d4615d579be8becb07b06dc09521e6cd47a492f5fad4477b2d2470f90f600",
+      "sha256": "0fa2fc2d0480aed28d1d9ef8a3700b94308fa3b473d4e06b6a4a31e22a587be8",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4315,8 +4315,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "fc0ce34b1bce00af59a51d103a81cf4509cd91dd44aaea97528a2322dd514087",
-      "bytes": 7091419
+      "sha256": "5b4b2acf276bb6d705d8d48aaeaf5dab9de9c00c430fb9065fbaa318067c2fbd",
+      "bytes": 7091324
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -6622,6 +6622,10 @@
       "sha256": "495a2454910a6963a49c6ea43877f5d7222261da1773accdc89e0a04a6ef8d06",
       "bytes": 23237
     },
+    "tests/gradia_four_plugin_chain_order_test.cjs": {
+      "sha256": "6dcae0c649fbb6ff6481ff514009728fe63c319036dd7838f96b632735801a15",
+      "bytes": 11048
+    },
     "tests/gradia_free_contract_test.cjs": {
       "sha256": "54b0bd6d84d45eb23a4c5338dc68aa364d649f4ca13e0fd33812ae32f0f044fe",
       "bytes": 4589
@@ -7930,6 +7934,10 @@
       "sha256": "94ab5754ecafc11314106aea7e515c2670d29ebf10a3da36a5d3f7710aae0dc3",
       "bytes": 10545
     },
+    "tests/libra_100turn_reanalysis_and_oom_stress_test.cjs": {
+      "sha256": "1239a577d354f8cf84215ea18b745c79c1bf7400807d6715d8d99246054fb47c",
+      "bytes": 7849
+    },
     "tests/libra_231_release_transform.cjs": {
       "sha256": "549e60c324224c0e252a097944c1bd46ab2794b3df518a58eb5dacb185410623",
       "bytes": 1543
@@ -9145,6 +9153,10 @@
     "tests/libra_micro_new_fact_runtime_test.cjs": {
       "sha256": "9c25510c75bbb94bee643fbd1ed7608ef21eba9cf2bf908e374c3675d56213ad",
       "bytes": 4736
+    },
+    "tests/libra_micro_only_concurrency_race_test.cjs": {
+      "sha256": "f2a100bc50912f2a415c1dc90db40900669d7dbbf6c902e9ac61b64844084fa9",
+      "bytes": 5915
     },
     "tests/libra_micro_overlap_reference_name_test.cjs": {
       "sha256": "2918398544344da10d99943ae08aadaba356bbda81bb9086b08c90f216804b8f",

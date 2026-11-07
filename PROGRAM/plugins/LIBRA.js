@@ -60528,11 +60528,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // typed references Canonical stores; unknown or ambiguous targets stay pending.
       const typed = clearing ? { ok: true, value: undefined, additive: false } : microStateValueForField({ domain, field, value: intent.value,
         quote: claim.evidence.exactQuote, subjectId: entity?.id || '',
-        resolve: (name, type) => (domain === 'character' && field === 'locationRef')
-          ? resolveEntity(name, type)
-          : resolveOrNew(name, type,
-              ['parentRef', 'rule'].includes(field) ? 'location'
-                : ['affiliations', 'ownerRef', 'managerRef'].includes(field) ? 'organization' : 'object') });
+        resolve: (name, type) => resolveOrNew(name, type,
+          ['locationRef', 'parentRef', 'rule'].includes(field) ? 'location'
+            : ['affiliations', 'ownerRef', 'managerRef'].includes(field) ? 'organization' : 'object') });
       if (!typed.ok) return pending(typed.reason);
       const additive = typed.additive === true;
       const targetIds = entity ? [entity.id] : relation ? [relation.id] : [];

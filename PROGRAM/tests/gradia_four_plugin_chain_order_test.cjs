@@ -11,6 +11,12 @@ const h64 = value => {
   return 'h64' + h.toString(36);
 };
 
+// Unique proof sentences that DO NOT exist in the current user prompt or static prompt templates:
+// User prompt: '은빛 열쇠의 행방과 서재 상황을 알려줘.'
+const LIBRA_PROOF_FACT = '민아가 은빛 열쇠를 준호에게 잠시 건넸다';
+const HAYAKU_PROOF_FACT = 'HAYAKU_PROOF_FACT: 기록실 지하 보관함에 민아의 은빛 인장이 보관되었다.';
+const FLASHBACK_PROOF_FACT = 'FLASHBACK_PROOF_FACT: 서재 서랍 속에 오래된 비밀 지도가 숨겨져 있었다.';
+
 test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Order B (GRADIA -> Memory plugins)', { timeout: 180000 }, async t => {
   const bus = createBus();
   const libra = await require('./fixtures/libra_memory_graph_reader_fixture.cjs').fixture({ mode: 'plugin_only', hostOverrides: bus.api('libra') });
@@ -34,7 +40,7 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
   };
 
   const hstore = createStore(), hscope = 'chat_' + h64(characterId + '\n' + chatId);
-  const packet = JSON.stringify(createValidPacket({ summary: 'HAYAKU_CHAIN_MEMORY: 열쇠는 민아가 보관 중이다.' }));
+  const packet = JSON.stringify(createValidPacket({ summary: HAYAKU_PROOF_FACT }));
   await hstore.setItem('hayaku.v2.settings.source-tracking.v1', JSON.stringify({ mode: 'off', epoch: 0 }));
   await hstore.setItem('hayaku.v2.ledger.' + hscope, JSON.stringify({
     version: 'hayaku_storage_ledger_v2',
@@ -46,12 +52,11 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
     slotHeads: [], tombstones: [], archiveRef: null
   }));
 
-  const hayakuSummary = 'HAYAKU_CHAIN_MEMORY: 은빛 열쇠는 민아가 보관 중이다.';
   const hayakuChat = {
     ...chat,
     message: chat.message.map(row => row.role === 'user' ? { ...row } : {
       ...row,
-      data: hiddenPacketMessage(row.data, createValidPacket({ summary: hayakuSummary, subject: '민아' }))
+      data: hiddenPacketMessage(row.data, createValidPacket({ summary: HAYAKU_PROOF_FACT, subject: '민아' }))
     })
   };
   hayakuChat.messages = hayakuChat.message;
@@ -78,15 +83,31 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
   });
   t.after(() => flashback.cleanup());
   await writer.wait(() => flashback.audit.Runtime.lastWorldlineReconciliation?.at, 'Flashback startup maintenance', 12000);
-  const cfg = flashback.api._test.normalizeSettings({ embeddingEnabled: false, embeddingAutoProcess: false, autoEpisodeIndex: false });
+
+  const cfg = flashback.api._test.normalizeSettings({ embeddingEnabled: true, embeddingProvider: 'openai', autoEpisodeIndex: false });
+  flashback.host.nativeFetch = async () => ({
+    ok: true, status: 200,
+    async json() { return { data: [{ index: 0, embedding: [1, 0, 0] }] }; }
+  });
   await flashback.api.saveSettings(cfg);
   const nativeScope = await flashback.api.resolveCurrentScope(false);
-  const rows = await flashback.api._test.buildRecordsFromSources([{
+  const rawFb = await flashback.api._test.buildRecordsFromSources([{
     sourceType: 'response', sourceId: 'plugin-chain-test', sourceHash: 'published-chain-source',
     origin: 'live_chat', role: 'turn_pair', turnIndex: 1, pairIndex: 1,
-    text: 'FLASHBACK_CHAIN_MEMORY: 민아는 서재에서 기다렸다.'
+    text: `User:\n서재에 대해 말해줘.\n\n---\n\nAssistant:\n${FLASHBACK_PROOF_FACT}`
   }], cfg, nativeScope, { deferEmbedding: true });
-  await flashback.api._test.saveAllRecords(rows, cfg, nativeScope);
+  const fbRow = rawFb[0];
+  delete fbRow.embeddingWork;
+  fbRow.vector = [1, 0, 0];
+  fbRow.dim = 3;
+  fbRow.embeddingProvider = 'openai';
+  fbRow.embeddingModel = 'text-embedding-3-small';
+  fbRow.embeddingProfileId = 'openai:text-embedding-3-small:3';
+  fbRow.embeddingReceipt = {
+    receiptVersion: 1, provider: 'openai', model: 'text-embedding-3-small',
+    profileId: 'openai:text-embedding-3-small:3', dimensions: 3, sourceHash: fbRow.sourceHash
+  };
+  await flashback.api._test.saveAllRecords([fbRow], cfg, nativeScope);
 
   const f = await writer.fixture(t, { unified: false, bus, chat, character });
   await f.host.plugin.connectLibReadOnly('', 'plugin_ipc');
@@ -126,16 +147,18 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
     const afterFlashbackA = await flashback.api._test.beforeRequest(afterHayakuA, 'model');
     assert.ok(afterFlashbackA.length >= afterHayakuA.length, 'Flashback runs beforeRequest');
 
-    // 4. GRADIA beforeRequest (should seamlessly accept chained input with synthetic memories)
+    // 4. GRADIA beforeRequest (accepts chained input with synthetic memories)
     const finalChainA = await f.host.hooks.beforeRequest(afterFlashbackA, 'model');
     assert.ok(finalChainA && finalChainA.length > 0, 'GRADIA completes successfully after memory plugins');
 
     const combinedTextA = finalChainA.map(m => String(m.content || '')).join('\n');
     assert.ok(combinedTextA.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'GRADIA draft includes evidence anchor in Order A');
     assert.ok(!combinedTextA.includes('<MEMORY_RECALL>'), 'GRADIA does not re-inject <MEMORY_RECALL> in Order A');
-    assert.ok(combinedTextA.includes('은빛 열쇠') || combinedTextA.includes('[LBDATA START]'), 'LIBRA memory is present in Order A');
-    assert.ok(combinedTextA.includes('HAYAKU_CHAIN_MEMORY') || combinedTextA.includes('HAYAKU_STATE_PACKET_START'), 'HAYAKU memory is present in Order A');
-    assert.ok(combinedTextA.includes('PAST EVIDENCE RULES') || combinedTextA.includes('FLASHBACK_CHAIN_MEMORY'), 'Flashback memory/rules is present in Order A');
+
+    // Strictly verify each memory plugin's UNIQUE stored payload is present (not just static template rules or user prompt words)
+    assert.ok(combinedTextA.includes(LIBRA_PROOF_FACT), 'LIBRA unique recalled memory is present in Order A');
+    assert.ok(combinedTextA.includes(HAYAKU_PROOF_FACT), 'HAYAKU unique stored payload is present in Order A');
+    assert.ok(combinedTextA.includes(FLASHBACK_PROOF_FACT), 'Flashback unique recalled evidence is present in Order A');
     console.log('PASS Order A: LIBRA -> HAYAKU -> Flashback -> GRADIA');
   }
 
@@ -165,9 +188,11 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
     const combinedTextB = finalChainB.map(m => String(m.content || '')).join('\n');
     assert.ok(combinedTextB.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'GRADIA draft marker is preserved in downstream hooks');
     assert.ok(!combinedTextB.includes('<MEMORY_RECALL>'), 'No duplicate recall injection in Order B');
-    assert.ok(combinedTextB.includes('은빛 열쇠') || combinedTextB.includes('[LBDATA START]'), 'LIBRA memory is present in Order B');
-    assert.ok(combinedTextB.includes('HAYAKU_CHAIN_MEMORY') || combinedTextB.includes('HAYAKU_STATE_PACKET_START'), 'HAYAKU memory instructions present in Order B');
-    assert.ok(combinedTextB.includes('PAST EVIDENCE RULES') || combinedTextB.includes('FLASHBACK_CHAIN_MEMORY'), 'Flashback memory/rules is present in Order B');
+
+    // Strictly verify each memory plugin's UNIQUE stored payload is present (not just static template rules or user prompt words)
+    assert.ok(combinedTextB.includes(LIBRA_PROOF_FACT), 'LIBRA unique recalled memory is present in Order B');
+    assert.ok(combinedTextB.includes(HAYAKU_PROOF_FACT), 'HAYAKU unique stored payload is present in Order B');
+    assert.ok(combinedTextB.includes(FLASHBACK_PROOF_FACT), 'Flashback unique recalled evidence is present in Order B');
     console.log('PASS Order B: GRADIA -> LIBRA -> HAYAKU -> Flashback');
   }
 });
