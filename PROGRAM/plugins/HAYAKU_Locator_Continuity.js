@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.27
+//@display-name HAYAKU · Locator Continuity v3.3.28
 //@api 3.0
-//@version 3.3.27
+//@version 3.3.28
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.27';
+  const PLUGIN_VERSION = '3.3.28';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -1283,6 +1283,55 @@ const MemorySuiteExecutionContract = (() => {
     balanced: 8500,
     full: 14000
   });
+  const HAYAKU_RECALL_PRESETS = Object.freeze({
+    light: Object.freeze({
+      id: 'light',
+      label: '적게',
+      description: '최소 핵심 기억만 압축 주입 (축당 3개, 최대 16행, 약 1,000~2,500자)',
+      maxItemsPerAxis: 3,
+      totalRowLimit: 16,
+      targetBudgetChars: 3000,
+      rawRecallMaxItems: 3,
+      rawRecallMaxChars: 1800,
+      graphClosureMaxNodes: 6,
+      episodeRouterMaxHits: 2
+    }),
+    balanced: Object.freeze({
+      id: 'balanced',
+      label: '적당히',
+      description: '문맥 유지와 토큰 효율의 균형 (축당 8개, 최대 36행, 약 4,000~8,000자, 권장)',
+      maxItemsPerAxis: 8,
+      totalRowLimit: 36,
+      targetBudgetChars: 7500,
+      rawRecallMaxItems: 6,
+      rawRecallMaxChars: 3600,
+      graphClosureMaxNodes: 14,
+      episodeRouterMaxHits: 4
+    }),
+    heavy: Object.freeze({
+      id: 'heavy',
+      label: '많이',
+      description: '풍부한 과거 사건·관계·상태 총망라 주입 (축당 16개, 최대 64행, 약 10,000~20,000자)',
+      maxItemsPerAxis: 16,
+      totalRowLimit: 64,
+      targetBudgetChars: 16000,
+      rawRecallMaxItems: 12,
+      rawRecallMaxChars: 6000,
+      graphClosureMaxNodes: 24,
+      episodeRouterMaxHits: 8
+    })
+  });
+  const hayakuRecallPresetOf = (settings = {}) => {
+    const raw = String(settings?.recallPreset || settings?.hayaku_recall_preset || '').trim().toLowerCase();
+    if (HAYAKU_RECALL_PRESETS[raw]) return raw;
+    const configured = Number(settings?.maxItemsPerAxis);
+    if (Number.isFinite(configured)) {
+      if (configured <= 3) return 'light';
+      if (configured >= 12) return 'heavy';
+      return 'balanced';
+    }
+    return 'balanced';
+  };
   const HAYAKU_MEMORY_LANGUAGES = Object.freeze(['ko', 'en', 'ja', 'zh', 'source']);
   const normalizeMemoryLanguage = value => {
     const raw = String(value == null ? '' : value).trim().toLowerCase().replace(/_/g, '-');
@@ -1317,7 +1366,8 @@ const MemorySuiteExecutionContract = (() => {
     packetClosingTag: '',
     promptCache: 'structural',
     injectionCaps: MODE_INJECTION_CAPS,
-    maxItemsPerAxis: 3,
+    recallPreset: 'balanced',
+    maxItemsPerAxis: 8,
     bm25Channel: true,
     bm25Weight: 0.08,
     memoryLanguage: 'source',
@@ -1346,14 +1396,14 @@ const MemorySuiteExecutionContract = (() => {
     recallStabilityBoost: 0.025,
     recoveryVaultEnabled: true,
     rawPassageRecallEnabled: true,
-    rawRecallMaxItems: 3,
-    rawRecallMaxChars: 2400,
+    rawRecallMaxItems: 6,
+    rawRecallMaxChars: 3600,
     rawRecallMinScore: 0.16,
     typedMemoryGraphEnabled: true,
     graphClosureRecallEnabled: true,
-    graphClosureMaxNodes: 8,
+    graphClosureMaxNodes: 14,
     hierarchicalEpisodeMemoryEnabled: true,
-    episodeRouterMaxHits: 3
+    episodeRouterMaxHits: 4
   });
   // Performance guard profiles. HAYAKU rebuilds a request-local index from visible
   // chat packets plus a bounded compact ledger; without an ingest cap, long chats can
@@ -19207,6 +19257,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       packetOutputSlotRaw,
       packetClosingTagRaw,
       promptCacheRaw,
+      recallPresetRaw,
       maxItemsPerAxisRaw,
       bm25ChannelRaw,
       bm25WeightRaw,
@@ -19247,6 +19298,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       readArg('hayaku_packet_output_slot', DEFAULT_SETTINGS.packetOutputSlot),
       readArg('hayaku_packet_closing_tag', DEFAULT_SETTINGS.packetClosingTag),
       readArg('hayaku_prompt_cache', DEFAULT_SETTINGS.promptCache),
+      readArg('hayaku_recall_preset', DEFAULT_SETTINGS.recallPreset),
       readArg('hayaku_max_items_per_axis', DEFAULT_SETTINGS.maxItemsPerAxis),
       readArg('hayaku_bm25_channel', String(DEFAULT_SETTINGS.bm25Channel)),
       readArg('hayaku_bm25_weight', String(DEFAULT_SETTINGS.bm25Weight)),
@@ -19281,6 +19333,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       readArg('hayaku_hierarchical_episode_memory', String(DEFAULT_SETTINGS.hierarchicalEpisodeMemoryEnabled)),
       readArg('hayaku_episode_router_max_hits', String(DEFAULT_SETTINGS.episodeRouterMaxHits))
     ]);
+    const recallPreset = ['light', 'balanced', 'heavy'].includes(text(recallPresetRaw).trim().toLowerCase())
+      ? text(recallPresetRaw).trim().toLowerCase()
+      : hayakuRecallPresetOf({ maxItemsPerAxis: Number(maxItemsPerAxisRaw) });
     const maxItemsPerAxis = Number(maxItemsPerAxisRaw);
     const coldStartBatchTurns = Number(coldStartBatchTurnsRaw);
     const bm25Weight = Number(bm25WeightRaw);
@@ -19305,7 +19360,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       packetClosingTag: /^<\/[A-Za-z][A-Za-z0-9_.:-]{0,63}>$/.test(text(packetClosingTagRaw).trim()) ? text(packetClosingTagRaw).trim() : '',
       promptCache: ['off', 'structural', 'native'].includes(text(promptCacheRaw).trim()) ? text(promptCacheRaw).trim() : DEFAULT_SETTINGS.promptCache,
       injectionCaps: MODE_INJECTION_CAPS,
-      maxItemsPerAxis: Math.max(1, Math.min(12, Number.isFinite(maxItemsPerAxis) ? maxItemsPerAxis : DEFAULT_SETTINGS.maxItemsPerAxis)),
+      recallPreset,
+      maxItemsPerAxis: Math.max(1, Math.min(32, Number.isFinite(maxItemsPerAxis) ? maxItemsPerAxis : (HAYAKU_RECALL_PRESETS[recallPreset]?.maxItemsPerAxis || DEFAULT_SETTINGS.maxItemsPerAxis))),
       temporalRecallPolicy,
       bm25Channel: falsySetting(bm25ChannelRaw) ? false : true,
       bm25Weight: clamp(Number.isFinite(bm25Weight) ? bm25Weight : DEFAULT_SETTINGS.bm25Weight, 0, 0.25, DEFAULT_SETTINGS.bm25Weight),
@@ -33654,9 +33710,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
   };
   const buildHayakuSelectionPolicy = (rows, settings = Memory.settings, profile = modeProfile(settings?.effectiveMode || settings?.mode), query = '', store = {}) => {
-    const configured=Number(settings.maxItemsPerAxis||4),bonus=Number(profile.itemBonus||0);
-    const limit=Math.max(1,Math.min(12,configured+Math.max(0,bonus)));
-    const target=Math.max(1,Math.min(12,configured+bonus));
+    const configured=Number(settings.maxItemsPerAxis||(DEFAULT_SETTINGS.maxItemsPerAxis||8)),bonus=Number(profile.itemBonus||0);
+    const limit=Math.max(1,Math.min(32,configured+Math.max(0,bonus)));
+    const target=Math.max(1,Math.min(32,configured+bonus));
+    const presetKey = hayakuRecallPresetOf(settings);
+    const preset = HAYAKU_RECALL_PRESETS[presetKey];
+    const totalRowLimit = Number.isFinite(Number(settings?.totalRowLimit)) && Number(settings.totalRowLimit) > 0
+      ? Number(settings.totalRowLimit)
+      : (preset?.totalRowLimit || Math.max(16, limit * 4));
     const context=buildKnowledgeContext(store,query,settings);
     const candidates=ensureArray(rows).filter(row=>row && ['entity','world','narrative','planner'].includes(row.axis)
       && localRecallBody(row) && !requestKnowledgeUnavailableForRow(row,query,context,settings))
@@ -33665,7 +33726,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     candidates.sort((a,b)=>a.priorityRank-b.priorityRank||b.weight-a.weight||localRecallSourceKey(a.row).localeCompare(localRecallSourceKey(b.row)));
     return {candidates,limits:{entity:limit,world:limit,narrative:limit,planner:limit},
       targetAxisAllotments:{entity:target,world:target,narrative:target,planner:target},graphLimit:limit,
-      viewCharBudget:stateViewCharBudgetForMode(settings.effectivePromptMode||settings.promptMode||'balanced'),totalRowLimit:PACKET_CORE_RECALL_ROW_LIMIT,
+      viewCharBudget:stateViewCharBudgetForMode(settings.effectivePromptMode||settings.promptMode||'balanced'),totalRowLimit,
       canAdd:(row,chosen)=>!chosen.some(previous=>localRecallSourceKey(previous)===localRecallSourceKey(row))};
   };
   const HAYAKU_RRF_SPARSE_SIGNALS = Object.freeze([
@@ -35791,7 +35852,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   // Whole literal admission/publication readset. This is deliberately separate
   // from the accepted-packet inventory: an unselected host row is authority too.
   const HAYAKU_READSET_ARGUMENTS = Object.freeze([
-    'enabled','mode','prompt_mode','packet_output_slot','packet_closing_tag','prompt_cache','max_items_per_axis',
+    'enabled','mode','prompt_mode','packet_output_slot','packet_closing_tag','prompt_cache','recall_preset','max_items_per_axis',
     'bm25_channel','bm25_weight','memory_language','debug','packet_recovery','after_request_auto_repair',
     'background_auto_repair','native_auto_repair','cold_start_batch_turns','packet_coverage_audit',
     'packet_coverage_fallback_recall','display_scrubber','recall_relatedness_weight','recall_recency_weight',
@@ -36118,7 +36179,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const rowIdFor=row=>preparedRowIds.get(row)||hayakuEvidenceRowId(row);
     const validateTrial=(trial,group)=>{
       const structured=trial.filter(u=>!u.raw&&!u.partial),raw=trial.filter(u=>u.raw);
-      if(structured.length>PACKET_CORE_RECALL_ROW_LIMIT)return 'not_selected';
+      if(structured.length>(Number(prepared.policy?.totalRowLimit)||PACKET_CORE_RECALL_ROW_LIMIT))return 'not_selected';
       const counts={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
       const ordinaryCounts={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()},linkedAxes=new Set();
       // Count every actual selected representation on each of its original axes.
@@ -36202,7 +36263,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const plan={units:chosen,language:prepared.language,requirements:states,discarded,capChars:cap,
       temporalQuota:hayakuTemporalQuotaState(chosen,prepared,settings),
       allocation:{policy:'occupancy_weighted_existing_candidates',axisCeilings:prepared.policy.limits,
-        axisTargets:prepared.policy.targetAxisAllotments,globalLimit:PACKET_CORE_RECALL_ROW_LIMIT,candidateLimit:PACKET_CORE_RECALL_CANDIDATE_LIMIT}};
+        axisTargets:prepared.policy.targetAxisAllotments,globalLimit:Number(prepared.policy?.totalRowLimit)||PACKET_CORE_RECALL_ROW_LIMIT,candidateLimit:PACKET_CORE_RECALL_CANDIDATE_LIMIT}};
     return {...rendered,plan,selectedEntries:prepared.units.filter(u=>!u.raw).length,renderedEntries:chosen.filter(u=>!u.raw).length,
       selectedRowKeys,deliveredRowKeys,droppedRowKeys:selectedRowKeys.filter(key=>!delivered.has(key)),
       deliveredSelectionKeys:uniq(deliveredOrigins.map(o=>compositeRecallRowKey(o.row)),128),
@@ -36819,12 +36880,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const broadSecondaryEvidenceHint = policySignals.packetRecoveryActive === true
       || policySignals.timelineIntent === true
       || policySignals.explicitComplexIntent === true;
+    const presetKey = hayakuRecallPresetOf(settings);
+    const preset = HAYAKU_RECALL_PRESETS[presetKey];
+    const targetBudget = Number(preset?.targetBudgetChars) || RECALL_DATA_BUDGETS.standard;
     const tierSequence = recallCapProvided
       ? [{ tier: 'explicit', targetChars: recallBudgetRequestedChars }]
       : [
-          { tier: 'standard', targetChars: RECALL_DATA_BUDGETS.standard },
-          { tier: 'precision', targetChars: RECALL_DATA_BUDGETS.precision },
-          { tier: 'extended', targetChars: RECALL_DATA_BUDGETS.extended }
+          { tier: 'standard', targetChars: Math.max(RECALL_DATA_BUDGETS.standard, Math.floor(targetBudget * 0.45)) },
+          { tier: 'precision', targetChars: Math.max(RECALL_DATA_BUDGETS.precision, Math.floor(targetBudget * 0.75)) },
+          { tier: 'extended', targetChars: Math.max(RECALL_DATA_BUDGETS.extended, targetBudget) }
         ];
     let memoryBudgetChars = 0;
     let memoryContextResult = emptyPacketCoreMemoryResult(selectedRowKeys);
@@ -38350,7 +38414,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const variableChars = sceneBatonChars + memoryBlock.length;
       const variableBudget = memoryBudgetChars;
       const continuityChars = sceneBatonChars + memoryBlock.length;
-      const viewerRecallRows = recallCandidateRows(selectedForModel).slice(0, 48).map(({ axis, row }) => ({
+      const viewerRecallRows = recallCandidateRows(selectedForModel).slice(0, 64).map(({ axis, row }) => ({
         axis,
         category: text(row?.category || ''),
         ref: compact(row?.publicRef || row?.ref || row?.id || '', 160),
@@ -38366,8 +38430,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         graphClosureType: text(row?.scoreBreakdown?.graphClosure?.type || ''),
         graphClosureHop: Number(row?.scoreBreakdown?.graphClosure?.hop || 0),
         graphClosureSignal: Number(Number(row?.scoreBreakdown?.graphClosure?.signal || 0).toFixed(4)),
-        typedAssociationCount: ensureArray(row?.retrieval?.typedAssociations).length
+        typedAssociationCount: ensureArray(row?.retrieval?.typedAssociations).length,
+        injected: deliveredRowKeySet.has(packetCoreRecallDeliveryRowKey(axis, row))
       }));
+      viewerRecallRows.sort((a, b) => (b.injected ? 1 : 0) - (a.injected ? 1 : 0) || Number(b.score || 0) - Number(a.score || 0));
       Memory.lastViewerRecall = {
         at: now(),
         scopeKey: requestScope.key || '',
@@ -49844,7 +49910,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -57302,7 +57367,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       <div class="stack" id="hayakuSettingsForm" aria-live="polite">
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
-        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
+        <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting" style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px"><div><div class="setting__name">리콜 성능 프리셋</div><div class="setting__desc" id="hayakuRecallPresetDesc">기억 주입량 프리셋: 적게 (핵심 3개/축) · 적당히 (균형 8개/축, 권장) · 많이 (총망라 16개/축)</div><span class="argtag">hayaku_recall_preset</span></div><div class="seg" role="group" aria-label="리콜 성능 프리셋" id="hayakuRecallPresetGroup"><button type="button" data-hayaku-recall-preset-value="light" aria-pressed="false">적게</button><button type="button" data-hayaku-recall-preset-value="balanced" aria-pressed="true">적당히</button><button type="button" data-hayaku-recall-preset-value="heavy" aria-pressed="false">많이</button></div></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
         <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc">누락된 기억 패킷을 복구할 수 있게 합니다. 자동 복구 실행은 아래 afterRequest 설정을 따릅니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
@@ -57315,7 +57380,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     { argument: 'hayaku_packet_output_slot', type: 'enum', values: ['auto', 'tail', 'wrapper', 'footer'] },
     { argument: 'hayaku_packet_closing_tag', type: 'closing_tag' },
     { argument: 'hayaku_prompt_cache', type: 'enum', values: ['off', 'structural', 'native'] },
-    { argument: 'hayaku_max_items_per_axis', type: 'integer', min: 1, max: 12 },
+    { argument: 'hayaku_recall_preset', type: 'enum', values: ['light', 'balanced', 'heavy', 'custom'] },
+    { argument: 'hayaku_max_items_per_axis', type: 'integer', min: 1, max: 32 },
     ...HAYAKU_TEMPORAL_ARGUMENTS.map((argument,index)=>({argument,type:'optional_integer',min:0,max:index<2?10000000:PACKET_CORE_RECALL_ROW_LIMIT})),
     { argument: 'hayaku_bm25_channel', type: 'boolean' },
     { argument: 'hayaku_bm25_weight', type: 'number', min: 0, max: 0.25 },
@@ -57378,6 +57444,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
         wired.add(argument);
         continue;
       }
+      if (argument === 'hayaku_recall_preset') {
+        const segment = row.querySelector?.('.seg');
+        if (!segment) continue;
+        let control = segment.querySelector?.('[name="hayaku_recall_preset"]');
+        if (!control) {
+          control = root.ownerDocument.createElement('input');
+          control.type = 'hidden';
+          control.name = argument;
+          segment.appendChild(control);
+        }
+        segment.querySelectorAll?.('button').forEach(button => {
+          const value = text(button.getAttribute('data-hayaku-recall-preset-value') || '').trim().toLowerCase();
+          if (!spec.values.includes(value)) return;
+          button.type = 'button';
+          button.setAttribute('aria-pressed', String(control.value === value));
+        });
+        wired.add(argument);
+        continue;
+      }
       const control = row.querySelector?.('input,select');
       if (!control) continue;
       control.name = argument;
@@ -57420,7 +57505,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     hayaku_packet_output_slot: ['auto', 'tail', 'wrapper', 'footer'].includes(text(settings?.packetOutputSlot)) ? text(settings.packetOutputSlot) : 'auto',
     hayaku_packet_closing_tag: text(settings?.packetClosingTag || ''),
     hayaku_prompt_cache: ['off', 'structural', 'native'].includes(text(settings?.promptCache)) ? text(settings.promptCache) : DEFAULT_SETTINGS.promptCache,
-    hayaku_max_items_per_axis: String(settings?.maxItemsPerAxis ?? DEFAULT_SETTINGS.maxItemsPerAxis),
+    hayaku_recall_preset: hayakuRecallPresetOf(settings),
+    hayaku_max_items_per_axis: String(settings?.maxItemsPerAxis ?? (HAYAKU_RECALL_PRESETS[hayakuRecallPresetOf(settings)]?.maxItemsPerAxis || DEFAULT_SETTINGS.maxItemsPerAxis)),
     ...Object.fromEntries(HAYAKU_TEMPORAL_ARGUMENTS.map(key=>[key,settings?.temporalRecallPolicy?.values?.[key]||''])),
     hayaku_bm25_channel: settings?.bm25Channel === false ? 'false' : 'true',
     hayaku_bm25_weight: String(settings?.bm25Weight ?? DEFAULT_SETTINGS.bm25Weight),
@@ -57609,6 +57695,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     }
     const mode = values.hayaku_mode;
     root.querySelectorAll?.('[data-hayaku-mode-value]')?.forEach(button => button.setAttribute('aria-pressed', String(button.getAttribute('data-hayaku-mode-value') === mode)));
+    const presetVal = values.hayaku_recall_preset || hayakuRecallPresetOf(values);
+    root.querySelectorAll?.('[data-hayaku-recall-preset-value]')?.forEach(button => button.setAttribute('aria-pressed', String(button.getAttribute('data-hayaku-recall-preset-value') === presetVal)));
   };
   // Load defaults for ONE settings section only, so a user experimenting with a single
   // group no longer has to reset all 39 values. Draft-only, like the existing global button.
@@ -57669,12 +57757,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
   // and moves tuning knobs, ARG names and raw enum values out of sight. Presentation only:
   // every control stays in the DOM, so save/readback/defaults still cover all settings.
   const HAYAKU_SETTINGS_ESSENTIAL_ARGUMENTS = Object.freeze([
-    'hayaku_enabled', 'hayaku_mode', 'hayaku_memory_language', 'hayaku_packet_output_slot',
+    'hayaku_enabled', 'hayaku_mode', 'hayaku_recall_preset', 'hayaku_memory_language', 'hayaku_packet_output_slot',
     'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_after_request_auto_repair',
     'hayaku_cold_start_batch_turns'
   ]);
   const HAYAKU_SETTINGS_VALUE_LABELS = Object.freeze({
     hayaku_mode: { auto: '자동', fast: '빠르게', balanced: '균형', deep: '깊게' },
+    hayaku_recall_preset: { light: '적게', balanced: '적당히', heavy: '많이', custom: '직접 설정' },
     hayaku_prompt_mode: { auto: '자동', balanced: '균형 · 핵심 지시', full: '전체 · 상세 지시' },
     hayaku_packet_output_slot: { auto: '자동 (본문 뒤)', tail: '본문 끝', wrapper: '닫는 태그 앞', footer: '꼬리말 영역' },
     hayaku_prompt_cache: { off: '사용 안 함', structural: '구조 캐시', native: '제공자 기본 캐시' },
@@ -59005,10 +59094,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
     setText('#hayakuOverviewRecoveryCount',recoveryValue.toLocaleString());
     if(recoveryCount) recoveryCount.hidden=recoveryValue<=0 || !(coverageSnapshot.warning===true || coverageSnapshot.status==='warn' || coverageSnapshot.status==='warning');
     }
-    setText('#hayakuOverviewRecallCount',recallRows.length.toLocaleString());
-    setText('#hayakuOverviewRecallMeta',recall?.at?`${Number(recall?.recallDataChars||0).toLocaleString()}자 · 주입됨`:'이번 실행 기록 없음');
+    const injectedCount = Number(recall?.injectedRows ?? recall?.injectedPacketCoreRows ?? recallRows.filter(r => r.injected !== false).length);
+    const candidateCount = Number(recall?.selectedRows ?? recallRows.length);
+    setText('#hayakuOverviewRecallCount', injectedCount.toLocaleString());
+    setText('#hayakuOverviewRecallMeta', recall?.at ? `${Number(recall?.recallDataChars||0).toLocaleString()}자 · 주입됨 (후보 ${candidateCount.toLocaleString()}개)` : '이번 실행 기록 없음');
     const recallBadge=root.querySelector?.('#hayakuOverviewRecallBadge');
-    if(recallBadge)recallBadge.textContent=recall?.at?`${recallRows.length.toLocaleString()}개 · ${Number(recall?.recallDataChars||0).toLocaleString()}자`:`${recallRows.length.toLocaleString()}개 · 미주입`;
+    if(recallBadge)recallBadge.textContent=recall?.at
+      ? `${injectedCount.toLocaleString()}개 주입 (후보 ${candidateCount.toLocaleString()}개) · ${Number(recall?.recallDataChars||0).toLocaleString()}자`
+      : `${candidateCount.toLocaleString()}개 · 미주입`;
     const recallBody=root.querySelector?.('#hayakuOverviewRecallRows');
     // Every delivered row is reachable: the top three stay visible, the rest open in place,
     // and a long row shows its full text on demand instead of a fixed 220-char cut.
@@ -59017,7 +59110,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const body=full.length>220
         ?`<details class="rec__more"><summary>${viewerEscapeHtml(compact(full,220))}</summary><p>${viewerEscapeHtml(full)}</p></details>`
         :`<p>${viewerEscapeHtml(full)}</p>`;
-      return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`;
+      const statusBadge = row.injected === true
+        ? '<span class="badge badge--ok">주입됨</span>'
+        : (row.injected === false ? '<span class="badge" style="opacity:0.6">미주입(예산)</span>' : `<span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span>`);
+      return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div>${statusBadge}</div>`;
     };
     if(recallBody) recallBody.innerHTML=recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
@@ -60516,8 +60612,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
       viewerSettingsDraftChanged();
       viewerSetSettingsMessage('성능 모드 변경을 초안에 반영했습니다.');
     }));
+    settingsForm?.querySelectorAll?.('[data-hayaku-recall-preset-value]')?.forEach(button => button.addEventListener('click', () => {
+      const presetValue = button.getAttribute('data-hayaku-recall-preset-value') || '';
+      const preset = HAYAKU_RECALL_PRESETS[presetValue];
+      if (!preset) return;
+      const presetControl = settingsForm.querySelector('[name="hayaku_recall_preset"]');
+      if (presetControl) presetControl.value = presetValue;
+      const axisControl = settingsForm.querySelector('[name="hayaku_max_items_per_axis"]');
+      if (axisControl) axisControl.value = String(preset.maxItemsPerAxis);
+      const graphControl = settingsForm.querySelector('[name="hayaku_graph_closure_max_nodes"]');
+      if (graphControl) graphControl.value = String(preset.graphClosureMaxNodes);
+      const episodeControl = settingsForm.querySelector('[name="hayaku_episode_router_max_hits"]');
+      if (episodeControl) episodeControl.value = String(preset.episodeRouterMaxHits);
+      viewerWriteSettingsControls(viewerCollectSettingsDraft());
+      viewerSettingsDraftChanged();
+      viewerSetSettingsMessage(`리콜 성능 프리셋 '${preset.label}' (${preset.description})을 초안에 반영했습니다.`);
+    }));
     const onSettingsDraftInput = event => {
       const argument = compact(event?.target?.name || '', 96);
+      if (argument === 'hayaku_max_items_per_axis') {
+        const val = Number(event?.target?.value);
+        const presetControl = settingsForm.querySelector('[name="hayaku_recall_preset"]');
+        const matched = val <= 3 ? 'light' : (val >= 12 ? 'heavy' : (val === 8 ? 'balanced' : 'custom'));
+        if (presetControl) presetControl.value = matched;
+        root.querySelectorAll?.('[data-hayaku-recall-preset-value]')?.forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-hayaku-recall-preset-value') === matched)));
+      }
       if (argument) {
         const output = root.querySelector?.(`[data-hayaku-setting-output="${argument}"]`);
         if (output && event?.target?.type !== 'checkbox' && event?.target?.type !== 'radio') output.textContent = text(event.target.value);

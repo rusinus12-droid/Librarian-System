@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.29.0
+//@display-name GRADIA v0.29.1
 //@api 3.0
-//@version 0.29.0
+//@version 0.29.1
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.29.0';
+  const PLUGIN_VERSION = '0.29.1';
   
   
   
@@ -4469,12 +4469,10 @@ Before continuing, verify:
 
   let inputWriterDialogCancel = null;
   const log = (...args) => {
-    if (activeLibEvidenceRun) return;
     if (Runtime.settings?.debugLog) console.log(PUBLIC_LOG_PREFIX, ...args);
   };
 
   const warn = (...args) => {
-    if (activeLibEvidenceRun) return;
     const msg = args.map(x => (x && x.message) ? x.message : String(x)).join(' ');
     Runtime.warnings.push({ at: Date.now(), msg: msg.slice(0, 500) });
     if (Runtime.warnings.length > 60) Runtime.warnings.shift();
@@ -23708,7 +23706,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   };
 
   const recordStageTrace = (entry) => {
-    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -26799,7 +26796,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         beats: result.twoCallAnalysis.beats,
         constraints: result.twoCallAnalysis.analysis?.constraints || []
       });
-      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
     return result;
   };
@@ -28152,7 +28149,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
 
   const injectSystemMessage = (messages, content, settings) => {
-    Runtime.lastInjection = hasLibEvidenceMarker(content) ? '' : text(content);
+    Runtime.lastInjection = text(content);
     const systemMessage = { role: 'system', content };
     const copy = messages.slice();
     if (settings.injectionPosition === 'before_last_user') {
@@ -37649,11 +37646,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
   // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
   const libOwnerAbsentUntil = new Map();
-  const selectLibOwnerRecall = async (owner, scope, queryText, signal) => {
+  const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
     if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
-    try { answer = await libOwnerReader().select(owner, scope, queryText, signal); }
+    try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
     catch (error) {
       if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '') || signal?.aborted) throw error;
       const code = libOwnerFailureCode(error);
@@ -37758,26 +37755,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     });
 
     let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
-    let legacyEvidenceRun = null;
-    if (memoryBlocks.length === 0 && libReadBinding) {
+    if (memoryBlocks.length === 0 && libReadBinding?.client && typeof libReadBinding.client.openReadSession === 'function') {
       try {
-        if (libReadBinding.client && typeof libReadBinding.client.openReadSession === 'function') {
-          const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
-          if (session?.snapshot?.items) {
-            const libraItem = session.snapshot.items.find(it => it.owner === 'libra');
-            if (libraItem?.content) {
-              memoryBlocks = [libraItem.content];
-            }
-          }
+        const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
+        if (session?.snapshot?.items) {
+          const libraItem = session.snapshot.items.find(it => it.owner === 'libra' || it.content?.includes?.('LIBRA_MEMORY_EVIDENCE'));
+          if (libraItem?.content) memoryBlocks = [libraItem.content];
         }
       } catch (_) {}
     }
-
     const finalMemoryBlock = memoryBlocks.join('\n\n');
     const usesLibEvidence = Boolean(finalMemoryBlock);
 
     const runController = new AbortController();
-    const libReadSession = legacyEvidenceRun && legacyEvidenceRun.status === 'ready' ? legacyEvidenceRun : {
+    const libReadSession = {
       status: usesLibEvidence ? 'ready' : 'unavailable',
       reason: usesLibEvidence ? '' : 'no_evidence',
       block: finalMemoryBlock,
@@ -38169,7 +38160,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         runId: shadowEnv.recent?.runLineage?.runId || '',
         currentInputHash: shadowEnv.recent?.runLineage?.currentInputHash || ''
       };
-      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
 
     const aideStageEnabled = (stageName) => {
@@ -41924,6 +41915,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     risuEngine: Runtime.risuEngine,
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
+    lastMemoryRecall: Runtime.lastMemoryRecall || null,
     libReadConnection: LibReadConnection.status(),
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
@@ -43437,22 +43429,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const RESULTS_MEMORY_OWNERS = Object.freeze([['libra', 'LIBRA'], ['hayaku', 'HAYAKU'], ['flashback', 'Flashback']]);
   const resultsMemorySection = () => {
-    const meta = Runtime.finalDraftMeta || {};
-    const selection = libReadSelection;
-    const items = Array.isArray(selection?.items) ? selection.items : [];
-    const status = meta.externalEvidence === true && items.length
-      ? `기억 ${items.length}개 사용`
-      : `미사용 · ${meta.libReadReason || meta.libReadStatus || (LibReadConnection.status().state === 'connected' ? '이번 실행 기록 없음' : '기억 연결 없음')}`;
+    const memoryRecall = Runtime.lastMemoryRecall;
+    const owners = Array.isArray(memoryRecall?.owners) ? memoryRecall.owners : [];
+    const usedOwners = owners.filter(r => r.status === 'ok' && r.chars > 0);
+    const totalChars = usedOwners.reduce((sum, r) => sum + r.chars, 0);
+    const status = usedOwners.length
+      ? `플러그인 IPC 기억 ${usedOwners.length}개 (${totalChars.toLocaleString('ko-KR')}자) 사용`
+      : (Runtime.lastBeforeContext ? '기억 미사용' : '실행 기록 없음');
     const groups = RESULTS_MEMORY_OWNERS.map(([owner, label]) => {
-      const rows = items.filter(item => item.owner === owner);
+      const row = owners.find(r => r.owner === owner);
+      const active = row && row.status === 'ok' && row.chars > 0;
       return guiEl('div', { class: 'gx-owner' }, [
-        guiEl('div', { class: 'gx-owner__head' }, [guiEl('strong', { text: label }), guiEl('span', { class: 'gx-meta', text: rows.length ? `${rows.length}개 · ${rows.reduce((sum, row) => sum + row.chars, 0).toLocaleString('ko-KR')}자` : '사용 안 함' })]),
-        rows.length ? guiEl('ul', { class: 'gx-list' }, rows.map(row => guiEl('li', {}, [
-          guiEl('details', { class: 'gx-mem' }, [
-            guiEl('summary', {}, [row.source ? guiEl('span', { class: 'gx-tag', text: row.source }) : null, guiEl('span', { text: row.preview })]),
-            guiEl('div', { class: 'gx-draft', text: row.text || row.preview })
-          ])
-        ]))) : null
+        guiEl('div', { class: 'gx-owner__head' }, [
+          guiEl('strong', { text: label }),
+          guiEl('span', { class: 'gx-meta', text: active ? `${row.chars.toLocaleString('ko-KR')}자 사용` : (row?.status === 'empty' ? '회상 내용 없음' : '사용 안 함') })
+        ])
       ]);
     });
     return resultsSection('기억 (LIBRA · HAYAKU · Flashback)', status, groups, true);
@@ -43525,10 +43516,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),shadowPanel=results.querySelector('[data-subpanel="s"]');
       if(shadowPanel){
         const info=traceStateInfo(shadow);
+        const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft;
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
             guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')})]),
-            resultsDraftSection(shadow?.parsed?.draft,'작성한 초안',true)
+            resultsDraftSection(draftToShow,'작성한 초안',true)
           ]),
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsMemorySection(),...resultsMaterialsSections(usage)])
         ]));
@@ -44183,7 +44175,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {

@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.37
+//@display-name LIBRA v2.6.38
 //@api 3.0
-//@version 2.6.37
+//@version 2.6.38
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.37';
+  const PLUGIN_VERSION = '2.6.38';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -72554,6 +72554,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
         const content = useLensBlock ? candidateWithLens : baseContent;
         const block = content ? [UNIFIED_CLASSIC_HEADER, content, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+        state.latestRenderedClassicBlock = block;
         const receiptToken = registerConsumedDataReadSet(context.scope, [], queryBundle.receiptReadSet);
         bindConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));
         if (block.length > CLASSIC_MAX_INJECTION_CHARS) throw new Error('LIBRA_GRAPH_CONSUMER_CHARACTER_BUDGET');
@@ -78321,7 +78322,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -78719,6 +78719,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           try {
             const context = await resolveContext();
             if (state.disposed || state.deletingScopes.has(context.scope.scopeKey)) return { content: '' };
+            if (state.latestRenderedClassicBlock && typeof state.latestRenderedClassicBlock === 'string') {
+              return { content: state.latestRenderedClassicBlock };
+            }
             const settings = await loadMemorySettings();
             const pairs = buildPairs(context.chat, context.scope.scopeKey);
             const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);
@@ -78750,11 +78753,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
               const innerContent = useLensBlock ? candidateWithLens : baseContent;
               const block = innerContent ? [UNIFIED_CLASSIC_HEADER, innerContent, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+              state.latestRenderedClassicBlock = block;
               return { content: block };
             } finally {
               if (graph) releaseMemoryGraphUnifiedQuery(graph);
             }
-          } catch (_) {
+          } catch (err) {
+            warn('LIBRA select recall error', err);
             return { content: '' };
           }
         },
