@@ -43487,7 +43487,7 @@ function createLibraReadonlySourceContext(owner) {
             inheritedMicroIntact = archiveChecks.every(Boolean);
           }
           if (inheritedMicroIntact) {
-            return { ok: true, skipped: true, reason: 'native_copy_already_complete', nativeChatCopy: clone(existingReceipt) };
+            return { ok: true, skipped: true, verified: true, durable: true, reason: 'native_copy_already_complete', nativeChatCopy: clone(existingReceipt) };
           }
           // A once-verified receipt cannot certify a body that has since disappeared.
           // Fall through to source-based repair; an unavailable source stays unresolved.
@@ -60528,9 +60528,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // typed references Canonical stores; unknown or ambiguous targets stay pending.
       const typed = clearing ? { ok: true, value: undefined, additive: false } : microStateValueForField({ domain, field, value: intent.value,
         quote: claim.evidence.exactQuote, subjectId: entity?.id || '',
-        resolve: (name, type) => resolveOrNew(name, type,
-          ['locationRef', 'parentRef', 'rule'].includes(field) ? 'location'
-            : ['affiliations', 'ownerRef', 'managerRef'].includes(field) ? 'organization' : 'object') });
+        resolve: (name, type) => (domain === 'character' && field === 'locationRef')
+          ? resolveEntity(name, type)
+          : resolveOrNew(name, type,
+              ['parentRef', 'rule'].includes(field) ? 'location'
+                : ['affiliations', 'ownerRef', 'managerRef'].includes(field) ? 'organization' : 'object') });
       if (!typed.ok) return pending(typed.reason);
       const additive = typed.additive === true;
       const targetIds = entity ? [entity.id] : relation ? [relation.id] : [];
@@ -67574,6 +67576,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const totals = { admitted: 0, pending: 0, pendingReconciliation: 0 };
         const worldlineId = hostWorldlineIdForScope(scope);
         for (let turn = start; turn <= end && !state.disposed; turn += 1) {
+          if (turn > start && turn % 10 === 0) await new Promise(resolve => setTimeout(resolve, 0));
           const summary = await admitPublishedMicroStateClaims(scope, worldlineId, 0, turn);
           for (const field of Object.keys(totals)) totals[field] += Number(summary[field] || 0);
         }
