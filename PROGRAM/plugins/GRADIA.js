@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.29.1
+//@display-name GRADIA v0.29.2
 //@api 3.0
-//@version 0.29.1
+//@version 0.29.2
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.29.1';
+  const PLUGIN_VERSION = '0.29.2';
   
   
   
@@ -4011,7 +4011,7 @@ Before continuing, verify:
       } finally { clearTimeout(timer); }
     };
     const host = await readHost();
-    const narrative = message => sanitizeMessageContentForHistory(currentTurnRole(message),contentToText(message?.data ?? message?.content ?? ''));
+    const narrative = message => sanitizeMessageContentForHistory(currentTurnRole(message),contentToText(message?.data ?? message?.content ?? '').replace(/\r\n/g, '\n')).trim();
     const cleanSquash = value => text(value)
       .normalize('NFKC')
       .replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -4021,10 +4021,33 @@ Before continuing, verify:
       .replace(/\s+/g, '')
       .trim();
     const stripFormatting = value => cleanSquash(value).replace(/[*_~`#"'\[\]()<>|+:\uFF1A-]/g, '');
+    const sameInput = (rowValue, promptValue) => {
+      const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
+      if (!x || !y) return false;
+      if (x === y) return true;
+      const fx = stripFormatting(rowValue), fy = stripFormatting(promptValue);
+      if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
+      if ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x)) return true;
+      if (matchesNativeTemplateInput(rowValue, promptValue, stripFormatting)) return true;
+      if (y.endsWith('...[truncated]') && y.length >= 1000) {
+        const prefix = y.slice(0, -'...[truncated]'.length);
+        if (prefix && x.startsWith(prefix)) return true;
+      }
+      const minLen = Math.min(x.length, y.length);
+      const maxLen = Math.max(x.length, y.length);
+      const diffLen = maxLen - minLen;
+      if (minLen >= 16 && diffLen <= Math.min(15, Math.floor(maxLen * 0.25))) {
+        let p = 0; while (p < minLen && x[p] === y[p]) p++;
+        let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
+        if (p >= 4 && s >= 4 && p + s >= minLen - 5) return true;
+      }
+      return false;
+    };
     const pendingFrom = host.messages.findLastIndex(message => currentTurnRole(message) === 'assistant') + 1;
     const completedHostMessages = host.messages.slice(0, pendingFrom);
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const initialResolved = resolveSgaCurrentTurn(messages);
+    const hostScope = host.scope || (scope ? JSON.stringify([scope.characterId, scope.chatId]) : '');
     const mapped = messages.map((message, index) => {
       if (!['user','assistant'].includes(currentTurnRole(message)) || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
       if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
@@ -4035,7 +4058,7 @@ Before continuing, verify:
         if (!nativeTurnMessageId(row)) return false;
         if (existingId && nativeTurnMessageId(row) !== existingId) return false;
         const rowRole = currentTurnRole(row);
-        const rawText = contentToText(row.data ?? row.content ?? '');
+        const rawText = contentToText(row.data ?? row.content ?? '').replace(/\r\n/g, '\n');
         if (turnBlockReason({ ...row, role: rowRole, content: rawText }) || rowRole !== currentTurnRole(message)) return false;
         const rowNarrative = narrative({ ...row, role: rowRole, content: rawText });
         if (rowNarrative === targetNarrative) return true;
@@ -4044,13 +4067,14 @@ Before continuing, verify:
           role: rowRole,
           content: applyBasicRisuPlaceholdersForRag(rawText, host.characterName, host.userName)
         });
-        return expandedNarrative === targetNarrative || matchesNativeTemplateInput(rowNarrative, targetNarrative, stripFormatting);
+        if (expandedNarrative === targetNarrative) return true;
+        if (sameInput(rowNarrative, targetNarrative) || sameInput(expandedNarrative, targetNarrative)) return true;
+        return matchesNativeTemplateInput(rowNarrative, targetNarrative, stripFormatting);
       });
       if (candidates.length !== 1 || host.messages.filter(row => nativeTurnMessageId(row) === nativeTurnMessageId(candidates[0])).length !== 1) return { ...message };
       const row = candidates[0];
-      const rawRowText = contentToText(row.data ?? row.content ?? '');
-      const ref = nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText });
-      const hostScope = host.scope || (scope ? JSON.stringify([scope.characterId, scope.chatId]) : '');
+      const rawRowText = contentToText(row.data ?? row.content ?? '').replace(/\r\n/g, '\n');
+      const ref = { ...nativeTurnRef({ ...row, role: currentTurnRole(row), content: rawRowText }), scope: hostScope || null };
       const isVerified = receiptMatches(hostScope, ref);
       return {
         ...message,
@@ -4075,28 +4099,6 @@ Before continuing, verify:
     if (resolved.requestIndex >= 0 && (!nativeTurnMessageId(mapped[resolved.requestIndex]) || typeof mapped[resolved.requestIndex]?.turnMeta?.nativeContent !== 'string')) {
       const comparableInput = value => narrative({ role: 'user', content: stripCodeFence(value) });
       const wanted = comparableInput(resolved.text);
-      const sameInput = (rowValue, promptValue) => {
-        const x = cleanSquash(rowValue), y = cleanSquash(promptValue);
-        if (!x || !y) return false;
-        if (x === y) return true;
-        const fx = stripFormatting(rowValue), fy = stripFormatting(promptValue);
-        if (fx && fy && (fx === fy || ((fx.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(fx) && fx.length >= 2) && fy.includes(fx)))) return true;
-        if ((x.length >= 4 || /[가-힣\u3040-\u30ff\u4e00-\u9faf]/.test(x) && x.length >= 2) && y.includes(x)) return true;
-        if (matchesNativeTemplateInput(rowValue, promptValue, stripFormatting)) return true;
-        if (y.endsWith('...[truncated]') && y.length >= 1000) {
-          const prefix = y.slice(0, -'...[truncated]'.length);
-          if (prefix && x.startsWith(prefix)) return true;
-        }
-        const minLen = Math.min(x.length, y.length);
-        const maxLen = Math.max(x.length, y.length);
-        const diffLen = maxLen - minLen;
-        if (minLen >= 16 && diffLen <= Math.min(15, Math.floor(maxLen * 0.25))) {
-          let p = 0; while (p < minLen && x[p] === y[p]) p++;
-          let s = 0; while (s < minLen - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
-          if (p >= 4 && s >= 4 && p + s >= minLen - 5) return true;
-        }
-        return false;
-      };
       if (!wanted) throw nativeIdUnavailable('input_wanted_missing');
       const pendingUsers = host.messages.slice(pendingFrom).filter(message => currentTurnRole(message) === 'user');
       if (!pendingUsers.length) throw nativeIdUnavailable('input_row_missing');
@@ -4105,7 +4107,7 @@ Before continuing, verify:
       }
       if (pendingUsers.length !== 1) throw nativeIdUnavailable('input_pending_ambiguous', { candidates: pendingUsers.length });
       const row = pendingUsers[0];
-      const rowText = contentToText(row.data ?? row.content ?? '');
+      const rowText = contentToText(row.data ?? row.content ?? '').replace(/\r\n/g, '\n');
       if (!nativeTurnMessageId(row)) throw nativeIdUnavailable('input_row_missing');
       if (turnBlockReason({ ...row, role: 'user', content: rowText })) throw nativeIdUnavailable('input_row_blocked');
       if (host.messages.filter(message => nativeTurnMessageId(message) === nativeTurnMessageId(row)).length !== 1) throw nativeIdUnavailable('input_row_id_duplicate');
@@ -4177,7 +4179,7 @@ Before continuing, verify:
           currentInputProven: true,
           nativeContent: rowText,
           stageContent: expandedRowText,
-          ref: nativeTurnRef(hostInput)
+          ref: { ...nativeTurnRef(hostInput), scope: hostScope || null }
         }
       };
     }
@@ -4254,8 +4256,10 @@ Before continuing, verify:
         // Native reconstruction may add only the already-verified scope to the
         // same message refs. IDs, hashes, generations and prompt text must still
         // match exactly; foreign scopes are never removed by this comparison.
-        const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
-          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
+        const boundScope = (session.contract === 'existing-server-logical-read.v1' && session.nativeScope
+          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
+          || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
+            ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
@@ -8286,7 +8290,7 @@ ${text(paired.leadingAssistant.content || '')}
         return entityName + resolveKoreanJosaForRag(entityName, josa);
       });
     };
-    let res = text(value || '');
+    let res = text(value || '').replace(/\r\n/g, '\n');
     res = replaceEntity(res, '(?:\\{\\{char\\}\\}|<\\s*char\\s*>)', characterName);
     res = replaceEntity(res, '(?:\\{\\{user\\}\\}|<\\s*user\\s*>)', userName || 'User');
     return res;
@@ -8298,7 +8302,7 @@ ${text(paired.leadingAssistant.content || '')}
     const role = rawRole === 'user' ? 'user'
       : ['assistant', 'char', 'character', 'bot', 'ai', 'model'].includes(rawRole) ? 'assistant' : '';
     if (!role) return null;
-    const rawText = contentToText(item.data ?? item.content ?? '');
+    const rawText = contentToText(item.data ?? item.content ?? '').replace(/\r\n/g, '\n');
     const inspectBody = stripPostprocessForPrivateRecentReading(rawText);
     const filteredBlocked = !nativeContext.blocked && nativeTurnMessageId(item)
       && (isSgaInjectionText(rawText) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))

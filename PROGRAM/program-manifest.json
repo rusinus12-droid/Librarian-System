@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-07T20:48:39.049Z",
+  "generatedAt": "2026-11-07T21:42:42.826Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -1311,7 +1311,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "0.29.1",
+      "pluginVersion": "0.29.2",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1427,7 +1427,7 @@
     "libra": "2.6.38",
     "lia": "0.29.8",
     "retrace": "1.12.10",
-    "gradia": "0.29.1"
+    "gradia": "0.29.2"
   },
   "files": {
     "_common.cmd": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "6577ca90f53df1a340c3b8136c7ec3d56142d3178f7999654e238498a5545f4e",
+      "sha256": "35a30afcf1197717e937561d642b6978c047981950c56e73df12648a78183caa",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4303,8 +4303,8 @@
       "bytes": 3671940
     },
     "plugins/GRADIA.js": {
-      "sha256": "5e5ee32147076915803ae59dab7cde0b76e0177602c746893c38da0fe968d358",
-      "bytes": 3035366
+      "sha256": "8cef5969abf8fc52a720fc194c2ce570a16a6fdf21903c1921579470c55a2001",
+      "bytes": 3035856
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "745bc97997162ec37b02ccf5c9a3c85ae410899ae0b973d49179431e04f42934",
@@ -4567,8 +4567,8 @@
       "bytes": 23272
     },
     "server/core/gradia-libra-read-session.cjs": {
-      "sha256": "9324f2a5236dc7a5c2c36278ff4c7b61ac5d81311c473882030ddf706b0cae45",
-      "bytes": 13562
+      "sha256": "f609a523dc6f07b8778b5d5b767968d3d5da4fbc613a43064b34ecf5a13329ff",
+      "bytes": 13572
     },
     "server/core/host-lineage-metadata.cjs": {
       "sha256": "b1468afe627bc64bc992e63b6dbf055ca793f9fb7e31de96f91cbecb0c1ec8b6",

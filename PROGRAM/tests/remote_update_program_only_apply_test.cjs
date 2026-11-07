@@ -17,7 +17,7 @@ function setup(versionOld='0.3.51', versionNew='0.3.52') {
   fs.writeFileSync(path.join(root,'.update','PROGRAM.next','VERSION.txt'),versionNew+'\n');
   fs.writeFileSync(path.join(root,'.update','PROGRAM.next','new.txt'),'new-program');
   fs.writeFileSync(path.join(root,'DATA','runtime-token.txt'),'x'.repeat(64));
-  fs.writeFileSync(path.join(root,'DATA','config','server-config.json'),JSON.stringify({schema:'memory-suite.server-config.v1',host:'127.0.0.1',port:47630}));
+  fs.writeFileSync(path.join(root,'DATA','config','server-config.json'),JSON.stringify({schema:'memory-suite.server-config.v1',host:'127.0.0.1',port:1}));
   fs.writeFileSync(path.join(root,'DATA','user-memory.bin'),Buffer.from('KEEP-ME'));
   return root;
 }
