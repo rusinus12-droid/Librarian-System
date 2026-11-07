@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.36
+//@display-name LIBRA v2.6.37
 //@api 3.0
-//@version 2.6.36
+//@version 2.6.37
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.36';
+  const PLUGIN_VERSION = '2.6.37';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -78283,7 +78283,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -78706,6 +78706,49 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return { scope: Object.fromEntries(['scopeKey','characterId','chatId'].map(key => [key, string(context.scope[key])])),
             mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation,
             serial: state.memoryGraphStoreSerial, restoreEpoch: Number(state.microRestoreGeneration || 0) };
+        },
+        select: async (queryText, check, hints = {}) => {
+          try {
+            const context = await resolveContext();
+            if (state.disposed || state.deletingScopes.has(context.scope.scopeKey)) return { content: '' };
+            const settings = await loadMemorySettings();
+            const pairs = buildPairs(context.chat, context.scope.scopeKey);
+            const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);
+            const envelopeOverhead = UNIFIED_CLASSIC_HEADER.length + UNIFIED_CLASSIC_FOOTER.length + 2;
+            const configuredCap = Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS);
+            const ownRecallChars = Math.min(configuredCap > envelopeOverhead + 64 ? configuredCap - envelopeOverhead : configuredCap, CLASSIC_MAX_INJECTION_CHARS - envelopeOverhead);
+            const maxChars = hints?.requestChars ? Math.min(Number(hints.requestChars), ownRecallChars) : ownRecallChars;
+            const maxUnits = Number(settings.unifiedMaxUnits || 12);
+            let graph = null;
+            try {
+              graph = await executeMemoryGraphUnifiedQuery({
+                expectedScopeKey: context.scope.scopeKey,
+                mode: 'unified',
+                requestId: 'gradia_select_' + Date.now().toString(36),
+                queryInput: {
+                  queryText: sanitizeRecallCurrentInput(queryText || '') || '현재 기억',
+                  viewerId: 'gradia_select',
+                  ...(worldlineView.cutoffTurn != null ? { asOfTurn: Number(worldlineView.cutoffTurn) } : {})
+                },
+                resourceBudget: { maxReads: GRADIA_OWNER_SESSION_MAX_READS, maxSourceBytes: GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES },
+                consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits }
+              }, null, null);
+              if (!graph || !graph.packet) return { content: '' };
+              const baseContent = string(graph.packet.renderedText || '');
+              const lens = await recallLensMemories(context, { currentText: sanitizeRecallCurrentInput(queryText || '') }, Number(graph.packet.characterBudget || maxChars), { readOnly: true, refreshVectors: false, deliveredText: baseContent }).catch(() => null);
+              const lensRenderedBlock = string(lens?.renderedBlock || '');
+              const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
+              const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+              const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
+              const innerContent = useLensBlock ? candidateWithLens : baseContent;
+              const block = innerContent ? [UNIFIED_CLASSIC_HEADER, innerContent, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+              return { content: block };
+            } finally {
+              if (graph) releaseMemoryGraphUnifiedQuery(graph);
+            }
+          } catch (_) {
+            return { content: '' };
+          }
         },
         capture: async request => {
           let receipt = null, execution = null, closed = false;

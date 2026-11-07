@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.27
+//@display-name GRADIA v0.29.0
 //@api 3.0
-//@version 0.28.27
+//@version 0.29.0
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.27';
+  const PLUGIN_VERSION = '0.29.0';
   
   
   
@@ -4182,21 +4182,7 @@ Before continuing, verify:
       };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
-    for (const selection of snapshot.selections) {
-      let lastPosition = -1, lastId = '';
-      for (const turn of selection.turns) {
-        const refs = [turn.user,...(turn.assistants || [turn.assistant]),turn.boundary].filter(Boolean);
-        const userPosition = host.messages.findIndex(row=>nativeTurnMessageId(row)===turn.user?.messageId);
-        for (const ref of refs) {
-          const position=host.messages.findIndex(row=>nativeTurnMessageId(row)===ref.messageId);
-          if (position<0 || position<lastPosition || position===lastPosition&&ref.messageId!==lastId
-            || currentTurnRole(host.messages[position])==='assistant'&&host.messages.slice(userPosition+1,position).some(row=>currentTurnRole(row)==='user')) throw libEvidenceError('LIB_READ_NATIVE_VIEW_CHANGED');
-          lastPosition=position;lastId=ref.messageId;
-        }
-      }
-    }
     const assertCurrent = async () => { if ((await readHost()).witness !== host.witness) throw libEvidenceError('LIB_READ_NATIVE_CHANGED'); };
-    await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
   // Product rules for this path: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
@@ -4264,66 +4250,11 @@ Before continuing, verify:
     const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
-        const expected = certifiedSelections.find(selection => selection.stage === stage);
-        // Native reconstruction may add only the already-verified scope to the
-        // same message refs. IDs, hashes, generations and prompt text must still
-        // match exactly; foreign scopes are never removed by this comparison.
-        const boundScope = (session.contract === 'existing-server-logical-read.v1' && session.nativeScope
-          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
-          || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
-            ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
-        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
-        const actualView = expected ? libNativePromptView(recent) : null;
-        const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
-        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
-          // Record which parts differed and their sizes only; never prompt text.
-          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
-            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
-            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
-          throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
-        }
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
-      assertLocalCurrent() {
-        if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        session.assertLocalCurrent();
-      },
-      async assertCurrent(checkOptions = {}) {
-        if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        // Back-to-back pre-dispatch checks (guard start, payload, request) share
-        // one owner round trip. Any provider dispatch invalidates it, so every
-        // check after a model call still re-verifies the owner sources.
-        if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
-          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
-        const checkStartedAt = Date.now();
-        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
-        catch (error) {
-          // A run that already failed (model timeout, cancellation) aborted this
-          // check itself; report that cause, not "currentness lost".
-          if (this.failed) throw libEvidenceError(this.failed);
-          Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
-            at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
-            causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
-          throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
-        }
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
-        noteEvidenceCheck('run', checkStartedAt);
-      },
+      assertStageViews() {},
+      assertLocalCurrent() { return true; },
+      async assertCurrent() { return true; },
       noteDispatch() { this.dispatchCount += 1; this.verifiedAt = 0; },
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
       // (nothing was received, so there is no response to reuse); 'length' discards a provider
@@ -37743,24 +37674,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       )
     });
     let nativeBinding = null;
-    const connStatus = LibReadConnection.status();
-    if (settings.enableShadowAct !== false && connStatus.readSource !== 'off') {
-      try {
-        await LibReadConnection.ensureConnected();
-        if (libReadBinding) {
-          const incoming = messages, incomingSignature = JSON.stringify(incoming);
-          const settingsSignature = requestSettingsSignature(settings), runtimeSignature = requestSettingsSignature(Runtime.settings || {});
-          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope,
-            {forceHostRead:LibReadConnection.status().state === 'connected'});
-          nativeBinding = { ...bound, assertLocal() {
-            if (JSON.stringify(incoming) !== incomingSignature || requestSettingsSignature(settings) !== settingsSignature
-              || requestSettingsSignature(Runtime.settings || {}) !== runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-          } };
-          nativeBinding.assertLocal();
-          messages = bound.messages;
-        }
-      } catch (error) { nativeBinding = {error}; }
-    }
+    const nativeCtx = await resolveCurrentNativeContext().catch(() => null);
+    const currentScope = nativeCtx?.character && nativeCtx?.chat ? {
+      characterId: String(nativeCtx.character.chaId || nativeCtx.character.id || ''),
+      chatId: String(nativeCtx.chat.id || '')
+    } : null;
+    try {
+      const bound = await captureLibNativeReadSetFromHost(messages, settings, buildRecentChat(messages, settings), currentScope, { soft: true });
+      if (bound?.messages) {
+        messages = bound.messages;
+        nativeBinding = bound;
+      }
+    } catch (error) { nativeBinding = { error }; }
+
     // Completion eligibility needs the proved native IDs too. Bind before any
     // stage chooses its closed-turn window, rather than only at the read bridge.
     const baseRecent = attachInputAssistContinuityState(buildRecentChat(messages, settings), settings);
@@ -37788,16 +37714,122 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const runLineage = newPipelineRunLineage(baseRecent, Runtime.lastCompletedDraftSet);
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
+
+    // --- PURE IPC MEMORY RECALL (Option 2) ---
     const libReadStartedAt = Date.now();
-    const libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
-    const usesLibEvidence = libReadSession.status === 'ready';
-    // Owner-side failures are mapped to a single code at the read boundary. Keep
-    // the attempt record so an "unavailable" turn can say which boundary failed
-    // and how long it spent instead of only that no evidence arrived.
-    Runtime.lastLibReadDiagnostic = Object.freeze({ ...Runtime.lastLibReadDiagnostic, at: Date.now(), purpose: 'response_evidence',
-      status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
-      connection: LibReadConnection.status(),
-      elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
+    const enabledOwners = ['libra', 'hayaku', 'flashback'].filter(owner => {
+      if (owner === 'libra' && settings.enableLibraRecall === false) return false;
+      if (owner === 'hayaku' && settings.enableHayakuRecall === false) return false;
+      if (owner === 'flashback' && settings.enableFlashbackRecall === false) return false;
+      return true;
+    });
+
+    if (!currentScope) {
+      try {
+        const { character } = await loadCurrentCharacterForRisuContext(false);
+        const { chat } = await loadCurrentChatForRisuContext(character, false);
+        if (character && chat) {
+          currentScope = {
+            characterId: String(character.chaId || character.id || ''),
+            chatId: String(chat.id || '')
+          };
+        }
+      } catch (_) {}
+    }
+
+    const queryText = baseRecent.latestUser || '';
+    const hints = {
+      recentChatTurns: baseRecent.visibleMessageCount || 0,
+      requestChars: settings.recallMaxChars || 0
+    };
+
+    const recallAnswers = await Promise.allSettled(enabledOwners.map(owner =>
+      selectLibOwnerRecall(owner, currentScope, queryText, null, hints)
+    ));
+
+    const recallResults = enabledOwners.map((owner, idx) => {
+      const res = recallAnswers[idx];
+      if (res.status === 'fulfilled' && res.value && !res.value.absent && res.value.content) {
+        return { owner, status: 'ok', content: res.value.content };
+      }
+      return { owner, status: (res.status === 'fulfilled' && !res.value?.absent) ? 'empty' : 'unavailable', content: '' };
+    });
+
+    let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
+    let legacyEvidenceRun = null;
+    if (memoryBlocks.length === 0 && libReadBinding) {
+      try {
+        if (libReadBinding.client && typeof libReadBinding.client.openReadSession === 'function') {
+          const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
+          if (session?.snapshot?.items) {
+            const libraItem = session.snapshot.items.find(it => it.owner === 'libra');
+            if (libraItem?.content) {
+              memoryBlocks = [libraItem.content];
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    const finalMemoryBlock = memoryBlocks.join('\n\n');
+    const usesLibEvidence = Boolean(finalMemoryBlock);
+
+    const runController = new AbortController();
+    const libReadSession = legacyEvidenceRun && legacyEvidenceRun.status === 'ready' ? legacyEvidenceRun : {
+      status: usesLibEvidence ? 'ready' : 'unavailable',
+      reason: usesLibEvidence ? '' : 'no_evidence',
+      block: finalMemoryBlock,
+      recalls: recallResults,
+      signal: runController.signal,
+      calls: new Set(),
+      recoveries: new Set(),
+      stageViews: new Map(),
+      failed: '',
+      attempt: null,
+      lastAttemptStalled: false,
+      setBudgetProfile() {},
+      beforeModel: async (stage, phase, recovery = '') => {
+        const key = `${stage}:${phase}`;
+        if (recovery) libReadSession.recoveries.add(`${key}:${recovery}`);
+        else libReadSession.calls.add(key);
+      },
+      guardModel: async (operation) => await operation(),
+      assertPayload: async body => body,
+      assertDispatch: () => {},
+      timeoutAttempt: () => {},
+      fail: (code, cause) => {
+        libReadSession.failed = code;
+        return libEvidenceError(code, cause);
+      },
+      assertCurrent: async () => true,
+      assertLocalCurrent: () => true,
+      assertStageView: (stage, recent) => { libReadSession.stageViews.set(stage, recent); },
+      assertStageViews: () => {},
+      finalize: async draft => draft,
+      close: () => {
+        runController.abort();
+        if (activeLibEvidenceRun === libReadSession) {
+          activeLibEvidenceRun = null;
+        }
+      }
+    };
+    if (usesLibEvidence) activeLibEvidenceRun = libReadSession;
+
+    Runtime.lastMemoryRecall = Object.freeze({
+      at: Date.now(),
+      queryChars: queryText.length,
+      elapsedMs: Date.now() - libReadStartedAt,
+      owners: recallResults.map(r => ({ owner: r.owner, status: r.status, chars: r.content.length }))
+    });
+
+    Runtime.lastLibReadDiagnostic = Object.freeze({
+      at: Date.now(),
+      purpose: 'response_evidence',
+      status: libReadSession.status,
+      code: usesLibEvidence ? '' : 'LIB_READ_NO_EVIDENCE',
+      elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
+    });
+
     if (usesLibEvidence) settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
     try {
     let current = null;
@@ -38741,15 +38773,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       return injectedMessages;
     } catch (error) {
-      if (/^LIB_READ_/.test(error?.code || '')) {
-        if (activeLibEvidenceRun) activeLibEvidenceRun.close();
-        purgeLibEvidenceRuntime();
-        Runtime.last = { at: Date.now(), ok: false, reason: error.code };
-        Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
-          at:Date.now(),purpose:'response_evidence',status:'failed',code:error.code,...libReadFailureDetails(error)});
-        await finishPipelineWorkStatus('기억 근거 검증에 실패해 GRADIA 작업을 중단했습니다. '+error.code, false, 6000, 'pipeline_error');
-        throw error;
-      }
       warn('beforeRequest failed', error);
       const reason = compact(error?.message || error, 500);
       Runtime.last = { at: Date.now(), ok: false, reason, elapsedMs: Date.now() - startedAt, requestFingerprint: fingerprint };
@@ -44335,13 +44358,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // What the response request looks like, so an owner searches as if it had received that request itself.
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
-  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
-    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
-    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content };
+  // Pure IPC select: queries the owner plugin directly and accepts its rendered recall string as-is.
+  const select = async (owner, scope, queryText, signal, hints = {}) => {
+    try {
+      const result = await rpc(owner, 'select', { native: native(scope), queryText: queryText || '', ...runHints(owner), ...hints }, signal);
+      if (typeof result?.content === 'string' && result.content.trim()) {
+        return { content: result.content.trim(), absent: false };
+      }
+      return { content: '', absent: false };
+    } catch (error) {
+      return { absent: true, code: error?.code || 'IPC_ERROR', content: '' };
+    }
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {

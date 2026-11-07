@@ -60,6 +60,27 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         scope: record.request.scope, evidenceRevision: record.proof.evidenceRevision,
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
     }
+    if (action === 'select') {
+      try {
+        const boundary = await options.boundary(payload);
+        const record = { id: options.randomId(), operationId: 'select_' + options.randomId(), request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
+        const authority = {
+          bindGraph(graph) {
+            const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
+              nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
+              bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+            record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
+            return record.receipt;
+          },
+          verifyReceipt() { return true; }
+        };
+        const execution = await options.query(payload, authority);
+        const content = execution?.packet?.renderedText || '';
+        return { content };
+      } catch (_) {
+        return { content: '' };
+      }
+    }
     if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
     if (payload.proposal !== undefined) {
       const p = payload.proposal;

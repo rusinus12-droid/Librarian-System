@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v3.3.26
+//@display-name HAYAKU · Locator Continuity v3.3.27
 //@api 3.0
-//@version 3.3.26
+//@version 3.3.27
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '3.3.26';
+  const PLUGIN_VERSION = '3.3.27';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -49812,7 +49812,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
