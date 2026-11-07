@@ -35689,6 +35689,8 @@ function createLibraReadonlySourceContext(owner) {
       // record is never projected; dropping the index for it sent every recall
       // after a new turn back to a full cold build. Source proofs still decide.
       if (/:pending-live-boundaries:v1$/.test(String(storageKey))) return;
+      if (/:(?:evidence-link-index|lore-link-index|state-replay-cache|state-replay-errors|recall-catalog):v1$/.test(String(storageKey))) return;
+      if (/:(?:predecessor-)?vector:[^:]+:r\d+:[^:]+$/.test(String(storageKey))) return;
       volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
       volatileState.consecutiveSourceChangeRetries = 0;
       if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
@@ -38815,10 +38817,12 @@ function createLibraReadonlySourceContext(owner) {
       const identity = messageIdentity(raw, index);
       const keyValue = pairRevisionEntryKey(raw, index, role, identity);
       const rawComparable = pairRevisionRawComparable(pairRevisionRawPayload(raw));
-      state.memoryNetworkIO.rawBodyBytesValidated += new TextEncoder().encode(String(rawComparable.value ?? '')).length;
       const metaKey = pairRevisionMetaKey(raw, role, identity) + sourceTagKey;
       let entry = cache.entries.get(keyValue);
       if (entry && entry.rawType === rawComparable.type && entry.rawValue === rawComparable.value && entry.metaKey === metaKey) {
+        state.memoryNetworkIO.rawBodyBytesValidated += Number.isSafeInteger(entry.rawBodyBytes)
+          ? entry.rawBodyBytes
+          : (entry.rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length);
         cache.entries.delete(keyValue);
         cache.entries.set(keyValue, entry);
         entry.index = index;
@@ -38826,6 +38830,8 @@ function createLibraReadonlySourceContext(owner) {
         state.pairRevisionCacheStats.hits += 1;
         return entry;
       }
+      const rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length;
+      state.memoryNetworkIO.rawBodyBytesValidated += rawBodyBytes;
       state.pairRevisionCacheStats.misses += 1;
       // Standalone source-evidence readers share these entries too. An entry
       // refresh invalidates the paired snapshot even if its hashes collide.
@@ -38844,7 +38850,7 @@ function createLibraReadonlySourceContext(owner) {
       const signature = branchContentHash([role, identity.source, identity.id, body].join('\u0000'));
       entry = {
         key: keyValue, index, role, identity, body,
-        rawType: rawComparable.type, rawValue: rawComparable.value, metaKey,
+        rawType: rawComparable.type, rawValue: rawComparable.value, rawBodyBytes, metaKey,
         rawPayloadDigest: digest({ type: rawComparable.type, value: rawComparable.value }),
         sanitizedTextDigest: digest({ role, body }),
         sanitizationTransformed: rawComparable.type !== 'string' || rawComparable.value !== body,
@@ -60195,7 +60201,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const microPending=asArray(view?.head?.microProjection?.pendingClaims);
       const reviewTurns=new Set([...microPending.map(p=>Number(p.turn)),...Object.values(policy.decisions).filter(d=>d.row?.kind==='micro').map(d=>Number(d.row.turn))]);
       for(const pair of pairs.filter(p=>reviewTurns.has(p.turn))){
-        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn);}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
+        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
         if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
@@ -60218,7 +60224,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
       const context=await resolveContext();if(context.scope.scopeKey!==scope.scopeKey)return view;
-      const catalog=options.reviewCatalog||await collectMemoryReviews(context,manifest,view),head=view.head?clone(view.head):null;
+      const catalog=options.reviewCatalog||await collectMemoryReviews({...context,scope},manifest,view),head=view.head?clone(view.head):null;
       if(!head)return {...view,memoryReview:{rows:catalog.rows,unavailable:catalog.unavailable}};
       const proofs=asArray(consumedMicroProofsByState.get(view.authority||view.head)).slice();
       const proofKeys=new Set(proofs.flatMap(p=>[p.recordKey,p.headKey,p.receiptKey]).filter(Boolean));
@@ -60751,19 +60757,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return totals;
     };
     const admitMicroStateClaim = async (scope, worldlineId, sessionEpoch, turn, claimIndex, options = {}) => {
-      const active = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn);
+      const readOnly = options.readOnly === true;
+      const context = readOnly && options.context ? options.context : await resolveContext();
+      if (context.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed' };
+      const currentSourcePairs = readOnly && Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, scope.scopeKey);
+      const active = readOnly && options.active ? options.active : await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
       if (active.status !== 'verified') return { status: active.status, reason: active.reason || '' };
-      const source = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
+      const source = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
       if (source.status !== 'verified' || source.receiptKey !== active.record.receiptKey) {
         return { status: 'stale_source', reason: 'micro_receipt_changed' };
       }
       if (!asArray(active.record.claims)[claimIndex]) return { status: 'pending', reason: 'claim_missing' };
-      const context = await resolveContext();
-      if (context.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed' };
-      const currentSourcePairs = buildPairs(context.chat, scope.scopeKey);
-      const manifest = await loadManifest(scope, currentSourcePairs.length);
+      const manifest = readOnly && options.manifest ? options.manifest : await loadManifest(scope, currentSourcePairs.length);
       const hostWorldlineMeta = normalizeHostWorldlineMeta(manifest.worldlineMeta, scope, manifest.createdAt);
-      const stateWorldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
+      const stateWorldlineMeta = readOnly && options.stateWorldlineMeta ? options.stateWorldlineMeta : await loadStateWorldlineMeta(scope, { strict: true });
       const logicalWorldlineId = string(stateWorldlineMeta.activeWorldlineId || '');
       const activeStateWorldline = asObject(stateWorldlineMeta.worldlines?.[logicalWorldlineId]);
       const cutoff = activeStateWorldline.cutoffTurn;
@@ -60985,7 +60992,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }).filter(turn => turn > 0 && turn <= canonicalThroughTurn))].sort((a, b) => a - b) : [];
         for (const turn of overlapTurns) {
           let active;
-          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn); }
+          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
@@ -61036,7 +61043,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
               let sourceVerified = false;
               try {
-                const source = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, turn);
+                const source = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, turn, { context, pairs });
                 sourceVerified = source.status === 'verified'
                   && source.receiptKey === active.record.receiptKey
                   && validateMicroCandidate({ schema: 'libra.micro_memory.v1',
@@ -61200,7 +61207,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         let active;
-        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn); }
+        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
         catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
         if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
           pendingClaims.push({ turn, reason: active.reason || active.status });
@@ -61217,7 +61224,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           stateProofs.push(activeMicroConsumptionProof(active));
           let read;
-          try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true }); }
+          try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active }); }
           catch (_) { read = { status: 'pending_reconciliation', reason: 'admission_read_failed' }; }
           if (read.decisionKey && read.decision) stateProofs.push(stateDecisionConsumptionProof(read.decisionKey, read.decision));
           if (read.status === 'superseded' && read.decision?.reason === 'explicit_user_correction') {
@@ -76282,7 +76289,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // A background writer (embedding status, micro memory, state) can publish while a
     // projection is being read. The final readback then rejects the torn snapshot;
     // re-read a fresh one a bounded number of times instead of failing the recall.
-    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED', 'OWNER_PUBLICATION_CHANGED']);
+    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED', 'OWNER_PUBLICATION_CHANGED', 'READ_CONTEXT_EXPIRED', 'READ_ROUTE_EXPIRED']);
     const readMemoryGraphProjection = async (options = {}, collect = null, resources = null) => {
       for (let attempt = 0; ; attempt++) {
         try { return await readMemoryGraphProjectionOnce(options, collect, resources); }
@@ -76296,15 +76303,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     };
     const readMemoryGraphProjectionOnce = async (options = {}, collect = null, resources = null) => {
+      const microOnly = options?.microOnly === true && !collect && Boolean(resources);
       const allowedOptionNames = collect
         ? ['expectedScopeKey','canonicalCursor','microCursor','canonicalOffset','microOffset','limit','nodeLimit']
-        : ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'];
+        : microOnly
+          ? ['expectedScopeKey','microOffset','limit','nodeLimit','microOnly']
+          : ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'];
       for (const name of Object.keys(asObject(options))) if (!allowedOptionNames.includes(name)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const limit = Math.max(1, Math.min(50, Number(options.limit || 20)));
       const nodeLimit = Math.max(1, Math.min(8192, Number(options.nodeLimit || 2048)));
       if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(nodeLimit)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const requestId = id('graph_reader');
-      const sourceContext = collect ? ownerReadonlySourceContext : readonlySourceContext;
+      const sourceContext = collect || microOnly ? ownerReadonlySourceContext : readonlySourceContext;
       let captured = null, graphIdentity = null, readFrame = null;
       try {
         captured = await sourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
@@ -76322,11 +76332,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const pageIdentity = { scopeKey: scope.scopeKey, worldlineId: resolved.worldlineId, epoch,
           publicationGeneration: captured.summary.publicationGeneration,
           refs: refs.map(canonicalReaderRefIdentity), turns: active.pairs.map(pair => Number(pair.turn)) };
-        const canonicalOffset = collect && Number.isSafeInteger(options.canonicalOffset) && options.canonicalOffset >= 0
-          ? Math.min(options.canonicalOffset, refs.length)
-          : worldManagerDecodeCursor('mgc1', options.canonicalCursor || '', pageIdentity, refs.length, 'LIBRA_GRAPH_CANONICAL_CURSOR_INVALID');
+        const canonicalOffset = microOnly
+          ? refs.length
+          : collect && Number.isSafeInteger(options.canonicalOffset) && options.canonicalOffset >= 0
+            ? Math.min(options.canonicalOffset, refs.length)
+            : worldManagerDecodeCursor('mgc1', options.canonicalCursor || '', pageIdentity, refs.length, 'LIBRA_GRAPH_CANONICAL_CURSOR_INVALID');
         const turns = active.pairs.map(pair => Number(pair.turn));
-        const microOffset = collect && Number.isSafeInteger(options.microOffset) && options.microOffset >= 0
+        const microOffset = (collect || microOnly) && Number.isSafeInteger(options.microOffset) && options.microOffset >= 0
           ? Math.min(options.microOffset, turns.length)
           : worldManagerDecodeCursor('mgm1', options.microCursor || '', pageIdentity, turns.length, 'LIBRA_GRAPH_MICRO_CURSOR_INVALID');
         const readbacks = [], pending = { canonical: [], micro: [], state: [], lore: [] };
@@ -76411,8 +76423,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
           }
         }
-        const storedState = await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
-        const stateView = await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
+        const storedState = microOnly ? null : await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
+        const stateView = microOnly ? null : await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
         const stateDecisionKeys = new Set();
         for (const rows of [stateView?.head?.characters, stateView?.head?.relationships, stateView?.head?.world, [stateView?.head?.narrative]]) {
           for (const row of asArray(rows)) for (const evidence of Object.values(asObject(row?.fieldEvidence))) {
@@ -76422,16 +76434,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
           }
         }
-        const stateWorldline = await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
-        const correctionStore = await read(key.stateCorrections(scope), () => storage.getVerifiedJson(key.stateCorrections(scope), scope, null));
-        const correctionJournal = await read('state-correction-journal', async () => {
+        const stateWorldline = microOnly ? null : await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
+        const correctionStore = microOnly ? null : await read(key.stateCorrections(scope), () => storage.getVerifiedJson(key.stateCorrections(scope), scope, null));
+        const correctionJournal = microOnly ? null : await read('state-correction-journal', async () => {
           const journal = await loadStateCorrectionJournal(scope, { strict: true });
           // The empty legacy reader synthesizes a root updatedAt on each read.
           // Compare exact selected records; the stored root is separately re-read.
           return { schema: journal.schema, scopeKey: journal.scopeKey, revision: journal.revision, records: journal.records };
         });
-        const settings = await loadSettings();
-        const loreSnapshot = await loadRisuContextSnapshot(settings, [], null);
         const loreEntries = snapshot => loreLinkAllowedEntries(snapshot).map(entry => ({ identity: entry.identity,
           entry: clone(entry.lore), rendered: entry.rendered,
           activation: { alwaysActive: entry.lore.alwaysActive === true || entry.lore.always_active === true || entry.lore.constant === true,
@@ -76444,10 +76454,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
             useRegex: entry.lore.useRegex === true, selective: entry.lore.selective === true,
             activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
           passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
-        const allowedLore = loreEntries(loreSnapshot);
-        const hostDeliveredLore = hostDeliveredLoreIdentities(loreSnapshot, scope?.scopeKey);
-        const storedLoreMapping = await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
-        const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
+        const loreSnapshot = microOnly ? null : await loadRisuContextSnapshot(await loadSettings(), [], null);
+        const allowedLore = microOnly ? [] : loreEntries(loreSnapshot);
+        const hostDeliveredLore = microOnly ? new Set() : hostDeliveredLoreIdentities(loreSnapshot, scope?.scopeKey);
+        const storedLoreMapping = microOnly ? null : await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
+        const loreIndex = microOnly ? { entries: [], links: [], basis: null, status: { partial: false, reasons: [] } } : await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
         if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
         const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
         graphIdentity = createLibraMemoryGraphIdentity({ fingerprint: primitive.fingerprint });
@@ -76479,9 +76490,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           })();
           sourceBodyDigests[storageKey] = memoryGraphSourceFingerprint(stableReferenceJson(value));
         }
-        for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
-        const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
-        if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+        if (!microOnly) {
+          for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+          const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
+          if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+        }
         if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
         await readFrame.assertCurrent();
         const currentness = await sourceContext.assertCurrent(request);
@@ -77408,14 +77421,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
             volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
           }
         }).then(result => {
-          if (state.disposed || result?.status !== 'published') return;
-          if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
+          if (state.disposed || result?.status !== 'published') { store.clear(); return; }
+          if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
+          store.clear();
           if (state.disposed || volatileState.yieldRequested) return;
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
@@ -77512,7 +77526,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       for (let page = 0; ; page++) {
         resources.check();
         const graph = await readMemoryGraphProjection({ expectedScopeKey: scopeKey, limit: MICRO_WARM_PAGE_TURNS,
-          microOffset: page * MICRO_WARM_PAGE_TURNS }, () => {}, resources);
+          microOffset: page * MICRO_WARM_PAGE_TURNS, microOnly: true }, null, resources);
         const micro = asArray(graph.units).filter(unit => string(unit?.family) === 'micro');
         const sourceIds = new Set(micro.map(unit => graph.nodes.find(node => node.id === unit.nodeId)?.sourceId));
         const selectedNodes = asArray(graph.nodes).filter(node => sourceIds.has(node.id) || micro.some(unit => unit.nodeId === node.id));

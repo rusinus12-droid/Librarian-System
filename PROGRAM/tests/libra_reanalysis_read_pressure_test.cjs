@@ -9,13 +9,18 @@ const transformSource=s=>s.replace('    const memoryGraphSourceFingerprint =',`
       schedule:scheduleCurrentStateSnapshotRefresh,
       refreshAdmissions:refreshMicroStateAdmissionsAfterCanonical,
       scheduleCorpus:delay=>scheduleVolatileMemoryGraphCorpus(delay),
+      noteWrite:key=>noteMemoryGraphSourceWrite(key),
+      volatileState:()=>volatileMemoryGraphCorpus(),
+      readMicroGraph:(scopeKey,resources)=>readMicroRepresentationGraph(scopeKey,resources),
       warm:()=>warmMicroRepresentationVectors(),
       auxiliary:value=>{auxiliaryReanalysisRunning=value;}};
     const memoryGraphSourceFingerprint =`).replace(
   'const refreshSnapshot = async (suppliedContext, options = {}) => {',
   'const refreshSnapshot = async (suppliedContext, options = {}) => { if(globalThis.__snapshotProbe)return globalThis.__snapshotProbe(suppliedContext,options);').replace(
   'const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => {',
-  'const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => { if(globalThis.__corpusProbe)return globalThis.__corpusProbe();');
+  'const buildMemoryGraphCorpusInto = async (options, volatile, yieldCheck = null) => { if(globalThis.__corpusProbe)return globalThis.__corpusProbe();').replace(
+  'const readMemoryGraphProjectionOnce = async (options = {}, collect = null, resources = null) => {',
+  'const readMemoryGraphProjectionOnce = async (options = {}, collect = null, resources = null) => { if(globalThis.__projectionProbe)globalThis.__projectionProbe(options,collect);');
 
 test('unpaid preparation retries with a new frame; persistent mutation and paid tasks still fail closed',async t=>{
  const f=await fixture({transformSource});t.after(()=>f.r.cleanup());
@@ -91,4 +96,31 @@ test('optional whole-corpus work waits until Micro selection and canonical work 
  c.auxiliary(false);core.state.currentRun={runId:'held-writer'};await pause(40);assert.equal(calls,0);
  core.state.currentRun=null;await waitFor(()=>calls===1);
  await pause(30);assert.equal(calls,1);
+});
+
+test('Micro representation reader uses microOnly projection, retries transient READ_CONTEXT_EXPIRED, and derived caches do not drop volatile corpus',async t=>{
+ const f=await fixture({transformSource});t.after(()=>f.r.cleanup());
+ await f.run();
+ const c=f.r.context.__pressure;
+ let expiredOnce=false;
+ const observedOptions=[];
+ f.r.context.__projectionProbe=(options,collect)=>{
+  observedOptions.push({microOnly:options?.microOnly===true,hasCollect:Boolean(collect)});
+  if(!expiredOnce){expiredOnce=true;throw Object.assign(new Error('READ_CONTEXT_EXPIRED'),{code:'READ_CONTEXT_EXPIRED'});}
+ };
+ const overview=await f.r.api.getRecentWorkOverview();
+ const microJob=overview.jobs.find(job=>job.id==='micro');
+ assert.equal(expiredOnce,true);
+ assert.notEqual(microJob.error,'READ_CONTEXT_EXPIRED');
+ assert.ok(observedOptions.length>=2 && observedOptions.every(row=>row.microOnly===true && row.hasCollect===false));
+
+ const scopeKey=(await f.r.api.listReanalysisRanges({kind:'micro'})).scopeKey;
+ const vState=c.volatileState();
+ const writesBefore=vState.sourceWrites||0;
+ for(const suffix of ['evidence-link-index:v1','lore-link-index:v1','state-replay-cache:v1','state-replay-errors:v1','recall-catalog:v1','vector:m1:r1:p1']){
+  c.noteWrite(`libra:v1:scope:${scopeKey}:${suffix}`);
+ }
+ assert.equal(vState.sourceWrites||0,writesBefore,'derived cache and vector writes do not invalidate volatile corpus');
+ c.noteWrite(`libra:v1:scope:${scopeKey}:manifest`);
+ assert.equal(vState.sourceWrites,writesBefore+1,'real source writes still invalidate volatile corpus');
 });
