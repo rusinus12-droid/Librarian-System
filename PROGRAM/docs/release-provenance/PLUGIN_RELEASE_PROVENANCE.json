@@ -290,8 +290,8 @@
       },
       "hayaku": {
         "version": "3.3.26",
-        "sha256": "ff6ebb698b8ed099be18a58f7ef90101a2069069e1d9d22f8fc61231693a0ba2",
-        "bytes": 4151289
+        "sha256": "9b0d26f6efaf36c278afa52031d51f0d3a609a7809440ae660316da1cd10c9ca",
+        "bytes": 4150920
       },
       "libra": {
         "version": "2.6.36",

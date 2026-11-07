@@ -35693,12 +35693,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const packetCoreRecallEntryFromRow = (axis,row,query='',viewContext={},options={}) => {
     const body=localRecallBody(row);if(!body)return null;
     const language=modelMemoryViewLanguage(row,body),sourceKey=packetCoreRecallSourceKey(row);
-    const ordinal=packetSourcePairIndex(row.locator||{});
-    const boundary=row.visibility||{};
-    const metadata={source:row.id||row.publicRef||sourceKey,at:ordinal,messageIndex:row.locator?.messageIndex??null,status:row.lifecycle?.status||'unspecified',
-      ...(Object.keys(boundary).length?{visibility:boundary}:{})};
     const boundaryLine=formatHayakuVisibilityBoundaryLine(row,language);
-    const memory='- '+body+(boundaryLine?'\n'+boundaryLine:'')+'\n  [record '+JSON.stringify(metadata)+']';
+    const memory='- '+body+(boundaryLine?'\n'+boundaryLine:'');
     const overrideLane=text(options?.laneOverride||'').trim();
     const semanticLane=continuityEvidenceLaneFor(axis,row,options);
     return {axis,row,memory,language,localSourceEntry:true,

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-07T13:42:28.010Z",
+  "generatedAt": "2026-11-07T13:48:03.637Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "a06d918d4db9945fb9700965856c82316c985063723445a87a8a7a2dc7d273df",
+      "sha256": "e9dc29d7bbe1f1d989e3f0691e07a77e878b5c7b8a50fb6e4fd3c59e7483384b",
       "bytes": 11836
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4307,8 +4307,8 @@
       "bytes": 3035230
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "ff6ebb698b8ed099be18a58f7ef90101a2069069e1d9d22f8fc61231693a0ba2",
-      "bytes": 4151289
+      "sha256": "9b0d26f6efaf36c278afa52031d51f0d3a609a7809440ae660316da1cd10c9ca",
+      "bytes": 4150920
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645",
