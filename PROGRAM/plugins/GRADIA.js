@@ -3855,7 +3855,10 @@ Before continuing, verify:
       let cursor = 0;
       let matchedAll = true;
       for (const piece of pieces) {
-        const found = target.indexOf(piece, cursor);
+        let found = target.indexOf(piece, cursor);
+        if (found < 0 && piece.length >= 2 && /^[은는이가을를과와아야로서]/.test(piece[0])) {
+          found = target.indexOf(piece.slice(1), cursor);
+        }
         if (found < 0) { matchedAll = false; break; }
         cursor = found + piece.length;
       }
@@ -6924,6 +6927,7 @@ Before continuing, verify:
 
   const extractSceneAnchorFromAssistant = (content) => {
     const src = deriveNarrativeContinuityCopy(content)
+      .replace(/^Visible ending excerpt:\s*/i, '')
       .replace(/<\/?(?:Last output|Past conversations|information)>/gi, ' ')
       .trim();
     const formats = [
@@ -8262,6 +8266,48 @@ ${text(paired.leadingAssistant.content || '')}
     };
   };
 
+  const resolveKoreanJosaForRag = (name, josa) => {
+    const str = String(name || '').trim();
+    let hasJong = false;
+    let isRieul = false;
+    for (let i = str.length - 1; i >= 0; i--) {
+      const code = str.charCodeAt(i) - 0xAC00;
+      if (code >= 0 && code <= 11171) {
+        hasJong = (code % 28) !== 0;
+        isRieul = (code % 28) === 8;
+        break;
+      }
+    }
+    if (josa === '은' || josa === '는' || josa === '(은)는' || josa === '(는)은') return hasJong ? '은' : '는';
+    if (josa === '이' || josa === '가' || josa === '(이)가' || josa === '(가)이') return hasJong ? '이' : '가';
+    if (josa === '을' || josa === '를' || josa === '(을)를' || josa === '(를)을') return hasJong ? '을' : '를';
+    if (josa === '과' || josa === '와' || josa === '(과)와' || josa === '(와)과') return hasJong ? '과' : '와';
+    if (josa === '아' || josa === '야' || josa === '(아)야' || josa === '(야)아') return hasJong ? '아' : '야';
+    if (josa === '이어' || josa === '여') return hasJong ? '이어' : '여';
+    if (josa === '이었' || josa === '였') return hasJong ? '이었' : '였';
+    if (josa === '으로' || josa === '로' || josa === '(으)로') return (hasJong && !isRieul) ? '으로' : '로';
+    return josa;
+  };
+
+  const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => {
+    const replaceEntity = (val, entityPattern, name) => {
+      const entityName = text(name || '');
+      const re = new RegExp(
+        entityPattern + '(?:(\\((?:은|는|이|가|을|를|과|와|아|야|으|로)\\)[가-힣]+)|(은|는|이|가|을|를|과|와|아|야|으로|로|이어|여|이었|였))?',
+        'gi'
+      );
+      return val.replace(re, (_, parenJosa, simpleJosa) => {
+        const josa = parenJosa || simpleJosa;
+        if (!josa) return entityName;
+        return entityName + resolveKoreanJosaForRag(entityName, josa);
+      });
+    };
+    let res = text(value || '');
+    res = replaceEntity(res, '(?:\\{\\{char\\}\\}|<\\s*char\\s*>)', characterName);
+    res = replaceEntity(res, '(?:\\{\\{user\\}\\}|<\\s*user\\s*>)', userName || 'User');
+    return res;
+  };
+
   const normalizeStoredRagMessage = (item, nativeContext = {}) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
     const rawRole = text(item.role || '').trim().toLowerCase().replace(/[_\s-]+/g, '');
@@ -8274,10 +8320,11 @@ ${text(paired.leadingAssistant.content || '')}
       && (isSgaInjectionText(rawText) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))
       ? 'filtered_conversation_record'
       : '';
-    const content = filteredBlocked ? '' : sanitizeMessageContentForHistory(role, rawText).trim();
+    const stageContent = applyBasicRisuPlaceholdersForRag(rawText, nativeContext.characterName, nativeContext.userName);
+    const content = filteredBlocked ? '' : sanitizeMessageContentForHistory(role, stageContent).trim();
     if (!content && nativeContext.nativeSelected !== true) return null;
     const ref = { ...nativeTurnRef(item), scope: nativeContext.scope || null };
-    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || filteredBlocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
+    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeContent: rawText, stageContent, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || filteredBlocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
   };
 
   const sameRagChatContent = (left, right) => normalizeForLoreMatch(left) === normalizeForLoreMatch(right);
@@ -8291,10 +8338,6 @@ ${text(paired.leadingAssistant.content || '')}
     if (index >= 0 && firstFilled(alternates[index])) return { message: text(alternates[index]).trim(), source: `alternateGreetings[${index}]`, index };
     return { message: firstMessage, source: index >= 0 ? `alternateGreetings[${index}]->firstMessage` : 'firstMessage', index };
   };
-
-  const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => text(value || '')
-    .replace(/\{\{char\}\}|<\s*char\s*>/gi, characterName || '')
-    .replace(/\{\{user\}\}|<\s*user\s*>/gi, userName || 'User');
 
   const resolveRequestFirstMessageForRag = (character, requestMessages, currentTurnResolution, persona, storedMessages = []) => {
     const fallback = {
@@ -8391,8 +8434,11 @@ ${text(paired.leadingAssistant.content || '')}
     const scope = nativeTurnScope(character, chat);
     const disabledThrough = rawMessages.reduce((last, message, index) => message?.disabled === 'allBefore' ? index : last, -1);
     const streamIndex = chat?.isStreaming === true ? rawMessages.map(message => currentTurnRole(message)).lastIndexOf('assistant') : -1;
+    const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
+    const userName = firstFilled(persona?.name, 'User');
     const normalized = rawMessages.map((message, index) => normalizeStoredRagMessage(message, {
-      scope, nativeSelected: true, blocked: index <= disabledThrough ? 'disabled_all_before' : index === streamIndex ? 'active_stream' : ''
+      scope, nativeSelected: true, blocked: index <= disabledThrough ? 'disabled_all_before' : index === streamIndex ? 'active_stream' : '',
+      characterName, userName
     })).filter(Boolean);
     const requestGreeting = resolveRequestFirstMessageForRag(
       character,
@@ -8436,13 +8482,11 @@ ${text(paired.leadingAssistant.content || '')}
     } else if (currentUserIndex >= 0) {
       messages[currentUserIndex] = { ...messages[currentUserIndex], turnMeta: { ...messages[currentUserIndex].turnMeta, currentInput: true, currentInputProven: true } };
     }
-    const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
-    const userName = firstFilled(persona?.name, 'User');
     messages = messages.map(message => ({
       ...message,
       content: sanitizeMessageContentForHistory(
         message.role,
-        applyBasicRisuPlaceholdersForRag(message.content, characterName, userName)
+        applyBasicRisuPlaceholdersForRag(message.turnMeta?.stageContent || message.content, characterName, userName)
       ).trim()
     }));
     return {
@@ -8483,45 +8527,30 @@ ${text(paired.leadingAssistant.content || '')}
     const requestLatestUser = text(recent.latestUser || '');
     const storedCurrentUser = messages.find(item => item.turnMeta?.currentInput === true)?.content || '';
     const latestUser = requestLatestUser || storedCurrentUser || '';
-    const turnWindow = buildCompleteRecentTurnWindow(messages, settings?.turnWindow || DEFAULT_RECENT_TURNS, storedCurrentUser || latestUser);
-    const latestAssistant = turnWindow.previousTurnAssistant || '';
-    const selectedMessages = turnWindow.selectedMessages;
-    recent.latestUser = text(latestUser || '');
-    recent.latestAssistantRaw = text(latestAssistant || '');
-    recent.latestAssistant = deriveNarrativeContinuityCopy(latestAssistant);
-    recent.terminalVisibleScene = extractInputAssistTerminalTail(
-      latestAssistant,
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
-    );
-    recent.previousTurnUser = turnWindow.previousTurnUser;
-    recent.previousTurnAssistant = deriveNarrativeContinuityCopy(turnWindow.previousTurnAssistant);
-    recent.previousTurnText = deriveNarrativeContinuityCopy(turnWindow.previousTurnText);
-    recent.earlierTurnsText = deriveNarrativeContinuityCopy(turnWindow.earlierTurnsText);
-    recent.completeTurnsText = deriveNarrativeContinuityCopy(turnWindow.completeTurnsText);
-    recent.recentTurnCount = turnWindow.recentTurnCount;
-    recent.turnEligibility = turnWindow.turnEligibility;
-    recent.sceneAnchor = extractSceneAnchorFromAssistant(latestAssistant);
-    recent.previousResponseEvidence = compactMiddle(recent.latestAssistant, 9000);
-    recent.text = recent.completeTurnsText;
-    recent.visibleText = recent.completeTurnsText;
-    recent.visibleMessages = selectedMessages.map((message, idx) => ({
-      role: message.role,
-      name: '',
-      index: idx,
-      source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
-      content: message.role === 'assistant'
-        ? deriveNarrativeContinuityCopy(message.content || '')
-        : stripPostprocessForPrivateRecentReading(message.content || '').trim()
-    }));
-    recent.loreSearchMessages = recent.visibleMessages.map((message, idx) => ({
-      source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
-      role: message.role,
-      prompt: `\x01{{${message.role}}}:${message.content}\x01`,
-      data: message.content
-    }));
-    recent.messageCount = messages.length;
-    recent.filteredMessageCount = messages.length;
-    recent.visibleMessageCount = recent.visibleMessages.length;
+    const projected = buildRecentChat(messages, {
+      ...(settings || {}),
+      currentTurnResolution: { text: latestUser, source: 'actual_chat_context' }
+    });
+    recent.latestUser = text(latestUser || projected.latestUser || '');
+    recent.latestAssistantRaw = projected.latestAssistantRaw;
+    recent.latestAssistant = projected.latestAssistant;
+    recent.terminalVisibleScene = projected.terminalVisibleScene;
+    recent.previousTurnUser = projected.previousTurnUser;
+    recent.previousTurnAssistant = projected.previousTurnAssistant;
+    recent.previousTurnText = projected.previousTurnText;
+    recent.earlierTurnsText = projected.earlierTurnsText;
+    recent.completeTurnsText = projected.completeTurnsText;
+    recent.recentTurnCount = projected.recentTurnCount;
+    recent.turnEligibility = projected.turnEligibility;
+    recent.sceneAnchor = projected.sceneAnchor;
+    recent.previousResponseEvidence = projected.previousResponseEvidence;
+    recent.text = projected.text;
+    recent.visibleText = projected.visibleText;
+    recent.visibleMessages = projected.visibleMessages;
+    recent.loreSearchMessages = projected.loreSearchMessages;
+    recent.messageCount = projected.messageCount;
+    recent.filteredMessageCount = projected.filteredMessageCount;
+    recent.visibleMessageCount = projected.visibleMessageCount;
     recent.actualChatContextSource = chatContext.source || '';
     return recent;
   };

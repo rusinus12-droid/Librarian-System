@@ -695,5 +695,82 @@ test('independent memory plugin beforeRequest injections (HAYAKU, LIBRA, Flashba
 
 
 
+test('8-turn RP history with Korean placeholders and RP formatting maintains stage view identity across reprojection', async () => {
+  const persona = { name: '푸딩', personaPrompt: '사용자' };
+  const f = await fixture((chat, character, input) => {
+    character.name = '⚔⚔ 세연세아';
+    chat.message.length = 0;
+    input.length = 0;
+    for (let turn = 1; turn <= 8; turn++) {
+      const rawUser = `{{user}}가 ${turn}번째 질문을 한다.`;
+      const reqUser = `푸딩이 ${turn}번째 질문을 한다.`;
+      const rawAss = [
+        '<Thoughts>추론 블록</Thoughts>',
+        '# 응답',
+        `## 볼륨 ${turn}`,
+        `#### Chatindex: ${turn}`,
+        '',
+        `{{char}}가 ${turn}번째 대답을 속삭였다.`,
+        '<img cmd="blush.png">',
+        `"어서 와, ${turn}번째야."`,
+        '---',
+        `[LBDATA START]{"v":${turn}}[LBDATA END]`
+      ].join('\n');
+      const reqAss = [
+        '# 응답',
+        `## 볼륨 ${turn}`,
+        `#### Chatindex: ${turn}`,
+        '',
+        `⚔⚔ 세연세아가 ${turn}번째 대답을 속삭였다.`,
+        '<img cmd="blush.png">',
+        `"어서 와, ${turn}번째야."`,
+        '---'
+      ].join('\n');
+      chat.message.push({ role: 'user', chatId: `native-u-${turn}`, data: rawUser });
+      chat.message.push({ role: 'assistant', chatId: `native-a-${turn}`, data: rawAss });
+      input.push({ role: 'user', chatId: `native-u-${turn}`, content: reqUser });
+      input.push({ role: 'assistant', chatId: `native-a-${turn}`, content: reqAss });
+    }
+    chat.message.push({ role: 'user', chatId: 'native-u-9', data: '{{user}}가 마지막 말을 건넨다.' });
+    input.push({ role: 'user', content: '<Current Input>\n푸딩이 마지막 말을 건넨다.\n</Current Input>' });
+  }, {
+    getDatabase: async () => ({ personas: [persona], selectedPersona: 0 })
+  });
+  const b = await f.bind();
+  const shadowSelection = b.selections.find(item => item.stage === 'shadow_act');
+  assert.ok(shadowSelection);
+  assert.equal(shadowSelection.turns.length, 8);
+  const stageSettings = f.api.scopedSettingsForStage(f.settings, 'shadow_act');
+  const stageRecent = f.api.buildRecentChat(b.messages, stageSettings);
+  const currentTurn = f.api.resolveSgaCurrentTurn(b.messages);
+  const actualChat = await f.api.loadActualChatContextForRag(f.character, { chat: f.chat, source: 'getChatFromIndex' }, b.messages, currentTurn, persona, false);
+  const effectiveRecent = f.api.attachInputAssistContinuityState(
+    f.api.applyActualChatContextToRecent(stageRecent, actualChat, stageSettings),
+    f.settings
+  );
+  assert.deepEqual(f.api.libNativePromptView(effectiveRecent), shadowSelection.view);
+});
+
+test('extractSceneAnchorFromAssistant is idempotent on repeated application', async () => {
+  const host = await load({
+    captureInternals: true,
+    transformSource: source => source.replace(
+      'clearStructuredSettings, fullDraftStagePrompt, Runtime };',
+      'clearStructuredSettings, fullDraftStagePrompt, Runtime, extractSceneAnchorFromAssistant };'
+    )
+  });
+  const { extractSceneAnchorFromAssistant } = host.internals;
+  const initial = '어시스턴트의 긴 본문입니다.\n\n장면 묘사와 대사가 이어집니다.';
+  const first = extractSceneAnchorFromAssistant(initial);
+  const second = extractSceneAnchorFromAssistant(first);
+  const third = extractSceneAnchorFromAssistant(second);
+  assert.equal(first, second);
+  assert.equal(second, third);
+});
+
+
+
+
+
 
 
