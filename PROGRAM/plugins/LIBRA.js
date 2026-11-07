@@ -35921,12 +35921,21 @@ function createLibraReadonlySourceContext(owner) {
       verifiedReadStats.sessions++;
       return frame;
     };
-    const withBackgroundReadJob = async (scope,task) => {
+    const withBackgroundReadJob = async (scope,task,options={}) => {
       const existing=memoryGraphReadFrames.get(scope);
       if(existing&&!existing.disabled || memoryGraphSourceBudgets.has(scope))return task(scope);
-      const jobScope={...scope},frame=await openBackgroundReadFrame(jobScope);
-      try{const result=await task(jobScope);if(!frame.writeBoundaryClosed)await frame.assertCurrent();return result;}
-      finally{frame.close();}
+      for(let attempt=0;;attempt++){
+        const jobScope={...scope},frame=await openBackgroundReadFrame(jobScope);
+        try{const result=await task(jobScope);if(!frame.writeBoundaryClosed)await frame.assertCurrent();return result;}
+        catch(error){
+          // Only explicitly opted-in, unpaid source preparation can restart.
+          // A concurrent inventory/receipt publication invalidates its witness;
+          // discard the entire frame and re-read, never waive the closing fence.
+          if(!options.retryTornRead||attempt>=2||state.disposed
+            ||String(error?.code||error?.message)!=='LIBRA_GRAPH_READER_BODY_CHANGED')throw error;
+        }finally{frame.close();}
+        await new Promise(resolve=>setTimeout(resolve,40*(attempt+1)));
+      }
     };
     const closeBackgroundReadFramesForWrite = async (storageKey='',actorScope=null) => {
       const actor=actorScope&&memoryGraphReadFrames.get(actorScope);
@@ -40333,7 +40342,7 @@ function createLibraReadonlySourceContext(owner) {
       return result;
     };
     const reconcileCompletedTurnReceipts = (context,pairs,options={}) => withBackgroundReadJob(context.scope,
-      scope=>reconcileCompletedTurnReceiptsImpl({...context,scope},pairs,options));
+      scope=>reconcileCompletedTurnReceiptsImpl({...context,scope},pairs,options),{retryTornRead:true});
     // The normal scan prepares only a bounded tail. An admitted older batch
     // needs its own five original receipts before the read-only canonical gate.
     const prepareSelectedCompletedTurnReceipts = async (context, pairs, startTurn, options = {}) => {
@@ -41049,7 +41058,19 @@ function createLibraReadonlySourceContext(owner) {
       }
       return clone(readback);
     };
-    const stateTrackingResultComplete = result => result?.continuityRequired === false
+    // 2026-11-07: 이 재생 경로를 OOM의 추정 원인으로 보고 패치했다.
+    // 제외 사실만 남은 완료 재생을 pending으로 유지하면 재시작/복구마다
+    // 전체 정본을 다시 복제·재생한다. 힙 기록이 없어 실제 OOM의 직접 원인 확정은 아니다.
+    // 제외 사실은 보존하고, 봉인된 Head/Registry와 모든 도메인이 확인된 작업만 종료한다.
+    const stateTrackingReplaySettled = result => result?.ok === true && result.localReplay === true
+      && !result.pendingBoundary && result.receipt?.schema === STATE_PIPELINE_RECEIPT_SCHEMA
+      && result.receipt.replay === true && result.receipt.status === 'partial'
+      && result.receipt.receiptDigest === statePipelineReceiptDigest(result.receipt)
+      && result.receipt.headDigest === digest(result.head) && result.receipt.registryDigest === digest(result.registry)
+      && Number(result.head?.unifiedCoverage?.legacyCount || 0) === 0
+      && RESPONSE_STATE_DOMAINS.every(domain => result.head?.domainStatus?.[domain]?.status === 'ready')
+      && asArray(result.head?.unifiedApplied?.pending).every(p => !unifiedPendingHoldsDomain(p));
+    const stateTrackingResultComplete = result => stateTrackingReplaySettled(result) || result?.continuityRequired === false
       || result?.reason === 'state_tracking_disabled'
       || result?.reason === 'already_reviewed'
       || ['complete', 'not_required'].includes(string(result?.receipt?.status || ''));
@@ -61720,7 +61741,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { status: 'verified', reason: '', inventory, inventoryKey: head.inventoryKey, headKey };
     };
     const readPersonSpanInventory=(scope,worldlineId,sessionEpoch,turn,expectedRegistryDigest='')=>withBackgroundReadJob(scope,
-      observed=>readPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn,expectedRegistryDigest));
+      observed=>readPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn,expectedRegistryDigest),{retryTornRead:true});
     const verifiedPersonCandidatePromptBlock = async (batch, registryValue, scopeKey) => {
       const context = await resolveContext();
       if (string(context?.scope?.scopeKey || '') !== string(scopeKey || '')) return '';
@@ -61766,7 +61787,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         + JSON.stringify({ schema: 'libra.person_span_prompt.v1', spans: candidates.slice(0, 64),
           relations: relations.slice(0, 32), omitted: Math.max(0, candidates.length - 64),
           relationsOmitted: Math.max(0, relations.length - 32) });
-      });
+      },{retryTornRead:true});
     };
     // A generic place mention needs a single verified prior place of the same
     // named person. Never merge on the noun alone or across a movement cue.
@@ -64106,7 +64127,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           && digest(sourcePairs([current]))===digest(sourcePairs([pair]));}),
         'CANONICAL_COMPLETED_RECEIPT_SOURCE_CHANGED');
       return {batch,refs};
-      });
+      },{retryTornRead:true});
     };
     // Canonical synthesizes the original five turns together with their verified
     // Micro observations. Micro proposals include provisional State intents;
@@ -66985,7 +67006,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           warn('LIBRA post-commit state tracking failed open', continuityStateError);
         }
-        if (continuityStateUpdate?.ok === true && continuityStateUpdate.head?.status === 'ready') {
+        // A partial narrative must not prevent fresh admission in ready domains.
+        // Each claim still goes through its own domain/evidence checks.
+        if (continuityStateUpdate?.ok === true && continuityStateUpdate.head) {
           refreshMicroStateAdmissionsAfterCanonical(context.scope, startTurn,
             buildPairs(context.chat, context.scope.scopeKey).length);
         }
@@ -67502,38 +67525,65 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return summary;
     };
+    let currentStateSnapshotRefreshRunning=false,currentStateSnapshotRefreshPending=null;
     const scheduleCurrentStateSnapshotRefresh = scope => {
       if (state.disposed) return;
+      currentStateSnapshotRefreshPending={...scope};
       const timerKey = 'current_state_snapshot';
       clearTimeout(state.timers.get(timerKey));
+      // A 100 ms debounce alone permits overlapping multi-second projections.
+      // Retain one scope request, not another full chat/State snapshot per turn.
+      if(currentStateSnapshotRefreshRunning||auxiliaryReanalysisRunning)return;
       const timer = setTimeout(async () => {
         state.timers.delete(timerKey);
         if (state.disposed) return;
+        if(auxiliaryReanalysisRunning)return; // A selection may start after the timer was armed.
+        const requested=currentStateSnapshotRefreshPending;
+        currentStateSnapshotRefreshPending=null;
+        currentStateSnapshotRefreshRunning=true;
         try {
           const context = await resolveContext();
-          if (!sameSnapshotScope(context.scope, scope)) return;
+          if (!sameSnapshotScope(context.scope, requested)) return;
           await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
         } catch (_) { /* A later explicit refresh still revalidates all State evidence. */ }
+        finally{
+          currentStateSnapshotRefreshRunning=false;
+          if(currentStateSnapshotRefreshPending&&!state.disposed)scheduleCurrentStateSnapshotRefresh(currentStateSnapshotRefreshPending);
+        }
       }, 100);
       state.timers.set(timerKey, timer);
     };
+    const microStateAdmissionRefreshes=new Map();
     const refreshMicroStateAdmissionsAfterCanonical = (scope, startTurn, throughTurn) => {
-      void (async () => {
+      const prior=microStateAdmissionRefreshes.get(scope.scopeKey);
+      if(prior){prior.start=Math.min(prior.start,Number(startTurn));prior.end=Math.max(prior.end,Number(throughTurn));prior.pending=true;return prior.promise;}
+      const job={start:Number(startTurn),end:Number(throughTurn),pending:true,promise:null};
+      microStateAdmissionRefreshes.set(scope.scopeKey,job);
+      job.promise=Promise.resolve().then(async () => {
+        while(job.pending&&!state.disposed){
+        // Finish the canonical writer's whole batch selection before publishing
+        // derived decisions. Otherwise T1's refresh races T6's source preparation.
+        const writer=state.queues.get(scope.scopeKey);
+        if(writer)await writer.catch(()=>null);
+        if(state.disposed)return;
+        const start=job.start,end=job.end;
+        job.start=Infinity;job.end=0;job.pending=false;
         const totals = { admitted: 0, pending: 0, pendingReconciliation: 0 };
         const worldlineId = hostWorldlineIdForScope(scope);
-        const end = Math.min(Number(throughTurn || 0), Number(startTurn || 0) + BATCH_SIZE * 2 - 1);
-        for (let turn = Number(startTurn || 0); turn <= end && !state.disposed; turn += 1) {
+        for (let turn = start; turn <= end && !state.disposed; turn += 1) {
           const summary = await admitPublishedMicroStateClaims(scope, worldlineId, 0, turn);
           for (const field of Object.keys(totals)) totals[field] += Number(summary[field] || 0);
         }
         const inherited = await admitInheritedMicroStateClaims(scope);
-        state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
+        state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn:start,
           throughTurn: end, ...totals, inherited };
         scheduleCurrentStateSnapshotRefresh(scope);
-      })().catch(error => {
+        }
+      }).catch(error => {
         state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
           status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
-      });
+      }).finally(()=>{if(microStateAdmissionRefreshes.get(scope.scopeKey)===job)microStateAdmissionRefreshes.delete(scope.scopeKey);});
+      return job.promise;
     };
     // Explicit replacement keeps the published work/head readable while the provider runs.
     // Only a validated successful result replaces them; failed publication restores both.
@@ -67625,7 +67675,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         .then(async result => {
           // Raw/Micro are already durable. Give optional vector warming a short
           // grace period rather than blocking every following analysis behind it.
-          if (result?.status === 'verified' && !state.disposed) {
+          if (result?.status === 'verified' && !state.disposed && !auxiliaryReanalysisRunning) {
             let timer = null;
             await Promise.race([warmMicroRepresentationVectors(), new Promise(resolve => { timer = setTimeout(resolve, MICRO_WARM_PUBLICATION_WAIT_MS); })]);
             clearTimeout(timer);
@@ -72730,7 +72780,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
       && string(left.characterId || '') === string(right.characterId || '')
       && string(left.chatId || '') === string(right.chatId || '');
 
+    let snapshotRefreshTail=Promise.resolve();
+    const queuedSnapshotRefreshes=new Map();
     const refreshSnapshot = async (suppliedContext, options = {}) => {
+      // 2026-11-07: 인물 카드 열람/상태 추적 후 OOM의 추정 원인 경로로 보고 패치했다.
+      // 이전 자동 갱신 debounce 밖의 GUI 직접 갱신도 전체 State를 동시에 만들 수 있었다.
+      // 모든 snapshot 생성은 직렬화하고, 대기 중 같은 요청은 합쳐 일시적 복제를 줄인다.
+      // 실제 호스트 OOM 해소는 별도 실측이 필요하며 검증/사실 선별 조건은 바꾸지 않는다.
+      const scope=asObject(suppliedContext?.scope);
+      const requestKey=typeof options.onProvisional==='function'?Symbol('provisional_snapshot'):
+        JSON.stringify([scope.scopeKey||'',scope.characterId||'',scope.chatId||'',{...options,cloneResult:undefined}]);
+      let job=queuedSnapshotRefreshes.get(requestKey);
+      if(job)job.context=suppliedContext;
+      else{
+        job={context:suppliedContext,options:{...options,cloneResult:false},promise:null};
+        queuedSnapshotRefreshes.set(requestKey,job);
+        job.promise=snapshotRefreshTail.catch(()=>null).then(()=>{
+          if(queuedSnapshotRefreshes.get(requestKey)===job)queuedSnapshotRefreshes.delete(requestKey);
+          return refreshSnapshotImpl(job.context,job.options);
+        });
+        snapshotRefreshTail=job.promise.then(()=>undefined,()=>undefined);
+      }
+      const result=await job.promise;
+      return options.cloneResult===false?result:clone(result);
+    };
+    const refreshSnapshotImpl = async (suppliedContext, options = {}) => {
       const refreshSerial = ++state.snapshotRefreshSerial;
       let context = suppliedContext || null;
       let backgroundFrame = null;
@@ -74660,6 +74734,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return {ok:false,processed:results.filter(result=>result.ok).length,results,reason:String(error?.message||error)};
       }finally{
         auxiliaryReanalysisRunning=false;
+        if(currentStateSnapshotRefreshPending)scheduleCurrentStateSnapshotRefresh(currentStateSnapshotRefreshPending);
+        // Rebuild optional graph/vector projections once after the selection,
+        // while every turn's durable Micro and State admission remain immediate.
+        if(isMicro&&results.some(result=>result.ok)&&!state.disposed)void warmMicroRepresentationVectors();
       }
     };
 
@@ -77315,7 +77393,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       volatileState.timer = setTimeout(() => {
         volatileState.timer = null;
         if (state.disposed) return;
-        if (volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
+        if (auxiliaryReanalysisRunning || libraMemoryWorkActive() || state.currentRun
+          || volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
@@ -77324,7 +77403,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
-          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
+          if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
+            || volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
             volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
           }
         }).then(result => {
@@ -77446,7 +77526,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { scopeKey, nodes: [...nodes.values()], units };
     };
     const warmMicroRepresentationVectors = () => {
-      if (state.disposed) return null;
+      if (state.disposed || auxiliaryReanalysisRunning) return null;
       if (microVectorWarm) return microVectorWarmQueued ||= microVectorWarm.then(() => { microVectorWarmQueued = null; return warmMicroRepresentationVectors(); });
       microVectorWarm = (async () => {
         const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
@@ -90755,6 +90835,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReaderAppliedQuery = preserveQuery ? text(Gui.canonicalReaderQuery || '') : '';
     if (!preserveQuery) Gui.canonicalReaderQuery = '';
     Gui.canonicalReaderSelected = null; Gui.canonicalReaderDetail = null;
+    Gui.canonicalReaderDetailRequest = null;
     Gui.canonicalReaderDetailLoading = false; Gui.canonicalReaderDetailError = '';
     Gui.canonicalReaderEvidence = null; Gui.canonicalReaderEvidenceLoading = false; Gui.canonicalReaderEvidenceError = '';
     Gui.bookTurnEvidence = null; Gui.canonicalReaderMicroPublicationKey = '';
@@ -90799,12 +90880,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       Number(LibraMemoryCore.state.lastMicroStateAdmissionRefresh?.at || 0)
     ]);
   };
-  const loadMicroReaderDetail = async (turnValue, reader = microReaderState()) => {
+  const loadMicroReaderDetail = (turnValue, reader = microReaderState()) => {
     const turn = Number(turnValue);
     if (!microReaderCurrent(reader) || !Number.isInteger(turn) || turn < 1) return;
+    const publicationKey=microReaderPublicationKey(reader),previous=reader.detailRequest;
+    if(previous?.turn===turn&&previous.publicationKey===publicationKey&&previous.serial===reader.detailSerial)return previous.promise;
     const serial = ++reader.detailSerial;
+    const request={turn,publicationKey,serial,promise:null};
+    reader.detailRequest=request;
     reader.selectedTurn = turn; reader.detail = null; reader.detailError = ''; reader.detailLoading = true;
     queueGuiNavigationRender();
+    request.promise=(async()=>{
     try {
       const api = globalThis.__LIBRA__;
       if (!api?.readActiveMicroMemoryForTurn) throw new Error('Micro 읽기 API가 준비되지 않았습니다.');
@@ -90817,7 +90903,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       reader.detail = {status: text(active?.status || 'unavailable'), reason: text(active?.reason || ''),
         record: active?.status === 'verified' ? active.record : null};
+      // Stored-memory verification is complete. State admission checks the whole
+      // current projection and must not keep the already verified body hidden.
+      // 2026-11-07: 이 패치로 State 판정을 기다리느라 Micro 본문 화면이
+      // 느리게 뜨던 표시 순서 문제를 해결했다. 실제 호스트의 전체 조회 시간과는 별개다.
+      reader.detailLoading=false;
+      if(active?.status==='verified'&&active.record?.analysisStatus==='verified')reader.detail.admission={status:'loading'};
+      queueGuiNavigationRender();
       if (active?.status === 'verified' && active.record?.analysisStatus === 'verified') {
+        // Let the queued body render run before starting the heavier projection.
+        await new Promise(resolve=>setTimeout(resolve,0));
+        if(!microReaderCurrent(reader)||reader.detailSerial!==serial)return;
         let admission;
         try { admission = await api.readMicroStateAdmissionForTurn(turn, reader.scopeKey, active.record.analysisRevisionId); }
         catch (_) { admission = {status:'unavailable'}; }
@@ -90827,10 +90923,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     } catch (error) {
       if (microReaderCurrent(reader) && reader.detailSerial === serial) reader.detailError = text(error?.message || error);
     } finally {
+      if(reader.detailRequest===request)reader.detailRequest=null;
       if (microReaderCurrent(reader) && reader.detailSerial === serial) {
         reader.detailLoading = false; queueGuiNavigationRender();
       }
     }
+    })();
+    return request.promise;
   };
   const loadMicroReaderPage = async (append = false) => {
     const reader = microReaderState();
@@ -90940,21 +91039,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Reads the durable Micro rows for the turns a Canonical chapter covers, so the Book can present the
   // synthesis and the per-turn evidence in one flow. Read-only: a missing or unreadable row is reported
   // as pending, never reconstructed from raw chat.
-  const loadBookTurnEvidence = async (turnRangeValue, scopeKeyValue = '') => {
+  const loadBookTurnEvidence = async (turnRangeValue, scopeKeyValue = '', isCurrent = () => true) => {
     const start = Math.max(1, Number(turnRangeValue?.start || 0) || 1);
     const end = Math.max(start, Number(turnRangeValue?.end || 0) || start);
     const api = globalThis.__LIBRA__;
     const turns = [];
     const pending = [];
     for (let turn = start; turn <= end; turn += 1) {
+      if(!isCurrent())return null;
       let active = null;
       try {
         active = typeof api?.readActiveMicroMemoryForTurn === 'function'
           ? await api.readActiveMicroMemoryForTurn(turn, scopeKeyValue)
           : null;
       } catch (error) {
+        if(!isCurrent())return null;
         pending.push({ turn, reason: String(error?.message || error) }); continue;
       }
+      if(!isCurrent())return null;
       if (active?.status !== 'verified' || !active?.record) { pending.push({ turn, reason: text(active?.reason || active?.status || 'micro_absent') }); continue; }
       const record = active.record;
       const analysisStatus = text(record.analysisStatus || '');
@@ -90977,13 +91079,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { schema: 'libra.micro_turn_evidence.v1', start, end, turns, pending };
   };
 
-  const loadCanonicalReaderDetail = async identityValue => {
+  const loadCanonicalReaderDetail = identityValue => {
     const binding = ensureCanonicalReaderLifetime();
     if (!canonicalReaderViewActive() || !binding.scopeKey) return;
     const identity = { memoryId: text(identityValue?.memoryId || ''), revision: Number(identityValue?.revision || 0), worldlineId: text(identityValue?.worldlineId || binding.worldlineId) };
     if (!identity.memoryId || !identity.revision || identityValue?.scopeKey && identityValue.scopeKey !== binding.scopeKey) return;
-    const ticket = canonicalReaderRequest('detail');
     const identityKey = canonicalReaderIdentityKey(identity);
+    const bindingKey=canonicalReaderBindingKey(binding);
+    const publication=LibraMemoryCore.getCaptureBackendState().lastMicroPublication;
+    const publicationKey=JSON.stringify(publication?.scopeKey===binding.scopeKey?[publication.turn,publication.revisionId,publication.at,publication.analysisStatus]:null);
+    const previous=Gui.canonicalReaderDetailRequest;
+    if(previous?.identityKey===identityKey&&previous.bindingKey===bindingKey&&previous.publicationKey===publicationKey&&previous.ticket.valid())return previous.promise;
+    const ticket = canonicalReaderRequest('detail');
+    const request={identityKey,bindingKey,publicationKey,ticket,promise:null};
+    Gui.canonicalReaderDetailRequest=request;
     Gui.canonicalReaderSelected = { ...identity, scopeKey: binding.scopeKey };
     Gui.canonicalReaderDetail = null; Gui.canonicalReaderDetailError = '';
     Gui.bookTurnEvidence = null;
@@ -90992,6 +91101,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1;
     Gui.canonicalReaderDetailLoading = true;
     queueGuiNavigationRender();
+    request.promise=(async()=>{
     try {
       const api = globalThis.__LIBRA__;
       if (!api?.getCanonicalReaderChapter) throw new Error('Canonical Reader API가 준비되지 않았습니다.');
@@ -90999,24 +91109,32 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!ticket.valid() || canonicalReaderSelectedKey() !== identityKey) return;
       if (detail?.scopeKey !== ticket.scopeKey || canonicalReaderIdentityKey(detail) !== identityKey || detail?.detailLoaded !== true) throw new Error('Chapter scope/identity readback이 일치하지 않습니다.');
       Gui.canonicalReaderDetail = detail;
-      // The per-turn Micro evidence of the covered turns: loaded with the chapter so the synthesis and
-      // its evidence are always shown from the same scope, and the section disappears as soon as the
-      // reader selects a chapter without evidence.
+      // Like the Micro reader, publish verified text before the slower evidence
+      // lookup. The same ticket/identity fences still bind the later evidence.
+      Gui.canonicalReaderDetailLoading=false;
+      Gui.bookTurnEvidence={schema:'libra.micro_turn_evidence.v1',status:'loading',turns:[]};
+      queueGuiNavigationRender();
+      await new Promise(resolve=>setTimeout(resolve,0));
+      if(!ticket.valid()||canonicalReaderSelectedKey()!==identityKey)return;
       try {
-        const evidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey);
+        const evidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey,
+          ()=>ticket.valid()&&canonicalReaderSelectedKey()===identityKey);
         if (!ticket.valid() || canonicalReaderSelectedKey() !== identityKey) return;
         Gui.bookTurnEvidence = evidence;
       } catch (error) {
         if (ticket.valid() && canonicalReaderSelectedKey() === identityKey) {
-          Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', turns: [],
+          Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', status:'unavailable', turns: [],
             pending: [{ reason: String(error?.message || error) }] };
         }
       }
     } catch (error) {
       if (ticket.valid()) Gui.canonicalReaderDetailError = String(error?.message || error);
     } finally {
+      if(Gui.canonicalReaderDetailRequest===request)Gui.canonicalReaderDetailRequest=null;
       if (ticket.valid()) { Gui.canonicalReaderDetailLoading = false; queueGuiNavigationRender(); }
     }
+    })();
+    return request.promise;
   };
   const loadCanonicalReaderPage = async (append = false) => {
     const binding = ensureCanonicalReaderLifetime();
@@ -93848,6 +93966,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const detail = guiAsObject(detailValue);
     const evidence = guiAsObject(evidenceValue);
     const turns = guiAsArray(evidence.turns);
+    if(evidence.status==='loading')return guiEl('section',{class:'note',role:'status','aria-live':'polite',dataset:{bookTurnEvidenceLoading:'true'}},[
+      guiEl('h3',{text:'턴별 근거 · 확인 중'}),guiEl('p',{text:'정본 본문은 확인했습니다. 해당 구간의 턴별 근거를 읽고 있습니다.'})]);
+    if(evidence.status==='unavailable')return guiEl('section',{class:'note note--warn',dataset:{bookTurnEvidenceError:'true'}},[
+      guiEl('p',{text:'정본 본문은 확인했지만 턴별 근거를 읽지 못했습니다.'}),
+      guiEl('button',{class:'btn btn--sm',type:'button',text:'턴별 근거 다시 확인',onClick:()=>void loadCanonicalReaderDetail(Gui.canonicalReaderSelected)})]);
     if (!turns.length) return null;
     // A turn is source-bound only when its durable analysis status says so; the flag is derived here
     // rather than trusted from the caller, so the label cannot drift from the stored record.
@@ -93967,6 +94090,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   }[reason] || '현재 근거로 상태 승인을 확인하지 못했습니다. 정본과 원문을 확인한 뒤 다시 적용하세요.');
   const buildMicroStateAdmissionPanel = (current, turn) => {
     const admission=current?.admission;
+    if(admission?.status==='loading')return guiEl('section',{class:'note',role:'status','aria-live':'polite',dataset:{microStateAdmission:'loading'}},[
+      guiEl('h3',{text:'현재 상태 · 반영 확인 중'}),
+      guiEl('p',{text:'저장된 Micro 본문은 확인했습니다. 현재 State 반영 여부를 확인하고 있습니다.'})]);
     if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
       guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
     const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded','rejected'].includes(row.status));

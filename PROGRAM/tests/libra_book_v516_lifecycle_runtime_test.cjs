@@ -2,11 +2,12 @@
 // Production function extraction; only DOM/storage boundaries are substituted. No host/LLM simulation.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');const approved=require('./helpers/libra_approved_gui_contract.cjs');
+const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 const results=[]; const arr=x=>Array.isArray(x)?x:[], obj=x=>x&&typeof x==='object'&&!Array.isArray(x)?x:{}, tick=()=>new Promise(r=>setImmediate(r));
 function part(a,b){let i=source.indexOf(a),j=source.indexOf(b,i+a.length);assert(i>=0&&j>i,`${a}/${b}`);return source.slice(i,j);}
 function el(tag,attrs={},children=[]){const n={tag,...attrs,dataset:attrs.dataset||{},children:arr(children).flat(Infinity).filter(Boolean),textContent:attrs.text||'',appendChild(x){x.parent=this;this.children.push(x);return x;},replaceChildren(...xs){this.children=xs;xs.forEach(x=>x.parent=this);},remove(){this.removed=true;if(this.parent)this.parent.children=this.parent.children.filter(x=>x!==this);},querySelectorAll(selector){const key=selector.match(/^\[data-([\w-]+)\]$/)?.[1]?.replace(/-([a-z])/g,(_,x)=>x.toUpperCase());return flat(this).slice(1).filter(x=>key?Object.hasOwn(x.dataset||{},key):false);},querySelector(s){return this.querySelectorAll(s)[0]||null;}};n.children.forEach(x=>{if(typeof x==='object')x.parent=n;});return n;}
 function flat(n){return n&&typeof n==='object'?[n,...arr(n.children).flatMap(flat)]:[];}
-function ctx(extra={}){return vm.createContext({Gui:{visible:true,bookPage:'memory',openSerial:1,state:{runtime:{},agents:{}}},guiEl:el,guiAsArray:arr,guiAsObject:obj,libraGuiArray:arr,text:x=>String(x??''),console,Promise,Set,Map,JSON,Number,String,Object,Date,queueMicrotask,...require('./fixtures/librarian_production_bindings.cjs')(source,['isReadableUnifiedEngineVersion']),...extra});}
+function ctx(extra={}){return vm.createContext({Gui:{visible:true,bookPage:'memory',openSerial:1,state:{runtime:{},agents:{}}},guiEl:el,guiAsArray:arr,guiAsObject:obj,libraGuiArray:arr,text:x=>String(x??''),console,Promise,Set,Map,JSON,Number,String,Object,Date,queueMicrotask,setTimeout,clearTimeout,...require('./fixtures/librarian_production_bindings.cjs')(source,['isReadableUnifiedEngineVersion']),...extra});}
 function run(c,s,names){vm.runInContext(s+'\nObject.assign(globalThis,{'+names.join(',')+'});',c);return c;}
 async function test(name,fn){try{await fn();results.push({name,ok:true});}catch(e){results.push({name,ok:false,error:String(e.stack||e)});}}
 function reader(api={}){let snap={scope:{scopeKey:'A'},continuityState:{worldlineId:'main'}};let renders=0;let status=[];const c=ctx({LibraMemoryCore:{peekSnapshot:()=>snap,getCaptureBackendState:()=>({}),state:{},...api},__LIBRA__:api,queueGuiNavigationRender:()=>renders++,guiSetStatus:(...s)=>status.push(s),bookSelectMemorySection:section=>{c.Gui.memoryHubSection=section;}});
@@ -38,8 +39,8 @@ await test('late Micro evidence cannot replace another chapter',async()=>{
  const releases={};
  const {c}=reader({getCanonicalReaderChapter:async opt=>({...detail(opt.memoryId),turnRange:{start:opt.memoryId==='one'?1:2,end:opt.memoryId==='one'?1:2}}),
   readActiveMicroMemoryForTurn:turn=>new Promise(resolve=>{releases[turn]=resolve;})});
- const first=c.loadCanonicalReaderDetail(identity('one'));await tick();
- const second=c.loadCanonicalReaderDetail(identity('two'));await tick();
+ const first=c.loadCanonicalReaderDetail(identity('one'));await waitFor(()=>typeof releases[1]==='function');
+ const second=c.loadCanonicalReaderDetail(identity('two'));await waitFor(()=>typeof releases[2]==='function');
  const evidence=turn=>({status:'verified',record:{analysisStatus:'verified',claims:[{text:'T'+turn,evidence:{role:'assistant',messageId:'m'+turn,exactQuote:'quote'+turn}}]}});
  releases[2](evidence(2));await second;releases[1](evidence(1));await first;
  assert.equal(c.Gui.canonicalReaderDetail.memoryId,'two');

@@ -42,7 +42,7 @@ async function openMicro(f,turn){
  }
  await until(()=>f.doc.querySelector(`[data-micro-reader-turn="${turn}"]`),'Micro list');
  f.doc.querySelector(`[data-micro-reader-turn="${turn}"]`).click();
- await until(()=>f.doc.querySelector(`[data-micro-reader-detail="${turn}"] [data-micro-state-admission]`),'final State panel',10000);
+ await until(()=>f.doc.querySelector(`[data-micro-reader-detail="${turn}"] [data-micro-state-admission]:not([data-micro-state-admission="loading"])`),'final State panel',10000);
  return f.doc.querySelector(`[data-micro-reader-detail="${turn}"] [data-micro-state-admission]`);
 }
 
