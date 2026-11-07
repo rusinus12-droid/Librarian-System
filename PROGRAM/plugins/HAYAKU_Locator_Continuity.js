@@ -19231,7 +19231,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallStabilityRaw,
       recallStabilityBoostRaw,
       recoveryVaultRaw,
-      gradiaFinalDeliveryRaw,
       rawPassageRecallRaw,
       rawRecallMaxItemsRaw,
       rawRecallMaxCharsRaw,
@@ -19272,7 +19271,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       readArg('hayaku_recall_stability', String(DEFAULT_SETTINGS.recallStabilityEnabled)),
       readArg('hayaku_recall_stability_boost', String(DEFAULT_SETTINGS.recallStabilityBoost)),
       readArg('hayaku_recovery_vault', String(DEFAULT_SETTINGS.recoveryVaultEnabled)),
-      readArg('hayaku_gradia_final_delivery', 'true'),
       readArg('hayaku_raw_passage_recall', String(DEFAULT_SETTINGS.rawPassageRecallEnabled)),
       readArg('hayaku_raw_recall_max_items', String(DEFAULT_SETTINGS.rawRecallMaxItems)),
       readArg('hayaku_raw_recall_max_chars', String(DEFAULT_SETTINGS.rawRecallMaxChars)),
@@ -19340,7 +19338,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       contradictionBundleEnabled: falsySetting(contradictionBundleRaw) ? false : true,
       multiResolutionRecallEnabled: falsySetting(multiResolutionRecallRaw) ? false : true,
       recallStabilityEnabled: falsySetting(recallStabilityRaw) ? false : true,
-      gradiaFinalDelivery: falsySetting(gradiaFinalDeliveryRaw) ? false : true,
       recallStabilityBoost: clamp(Number.isFinite(recallStabilityBoost) ? recallStabilityBoost : DEFAULT_SETTINGS.recallStabilityBoost, 0, 0.08, DEFAULT_SETTINGS.recallStabilityBoost),
       // A missing packet must never make its exact visible U+A evidence
       // discardable. Keep the legacy argument readable for migration, but the
@@ -35797,7 +35794,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Whole literal admission/publication readset. This is deliberately separate
   // from the accepted-packet inventory: an unselected host row is authority too.
-  const HAYAKU_READSET_ARGUMENTS = Object.freeze(['gradia_final_delivery',
+  const HAYAKU_READSET_ARGUMENTS = Object.freeze([
     'enabled','mode','prompt_mode','packet_output_slot','packet_closing_tag','prompt_cache','max_items_per_axis',
     'bm25_channel','bm25_weight','memory_language','debug','packet_recovery','after_request_auto_repair',
     'background_auto_repair','native_auto_repair','cold_start_batch_turns','packet_coverage_audit',
@@ -37206,11 +37203,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return Memory.captureBackendRegistered;
   };
 
-  // While GRADIA reads HAYAKU, GRADIA makes the one search of the turn and delivers it; the hook only keeps
-  // capture and the packet instructions. Its announcement expires, so removing GRADIA restores normal recall.
-  let hayakuGradiaAttachedUntil = 0;
-  const noteHayakuGradiaAttach = ({ active, ttlMs }) => { hayakuGradiaAttachedUntil = active ? now() + Math.min(Math.max(0, ttlMs), 300000) : 0; };
-  const noteHayakuGradiaDelivery = ({ status, code }) => { if (Memory.lastViewerRecall?.gradia) Memory.lastViewerRecall.gradia = { ...Memory.lastViewerRecall.gradia, status, code, reportedAt: now() }; };
   // recallOnly runs the same selection without writing storage or arming capture, and returns the
   // recall prompt instead of an outgoing request. Another reader asks for this; nothing is sent.
   const handleBeforeRequest = async (messages = [], requestType = 'model', mode = null) => {
@@ -37443,7 +37435,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       initialPacketScanScope = syncPacketScanCacheScope(requestScope);
       let store = emptyStore();
       const query = stage('latestUserText', () => latestUserText(messages));
-      const gradiaCompat = !recallOnly && now() < hayakuGradiaAttachedUntil;
       const currentUserMessage=ensureArray(messages).slice().reverse().find(message=>roleOf(message)==='user' && hayakuRecentContextMessageText(message)===query.trim());
       const currentId=String(currentUserMessage?.chatId||currentUserMessage?.id||currentUserMessage?.messageId||'');
       settings.recallCurrentInputBoundary=currentId?{id:currentId}:null;
@@ -38022,7 +38013,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (readsetFrame) recallToken.readsetFrame=readsetFrame;
       settings.retrievalScopeKey=recallToken.scopeKey;
       const [searched, packetHealth, rawRecoveryRecall, partialMemoryRecall] = await stageAsync('parallelRecallProcessing', () => Promise.all([
-        stageAsync('search', () => gradiaCompat ? prepareHayakuRecallRows([],retrievalQuery,settings,store,[],[]) : searchIndexCompositeRecall(
+        stageAsync('search', () => searchIndexCompositeRecall(
           store,
           retrievalQuery,
           searchBudgetGuard
@@ -38035,7 +38026,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           }
         )),
         stageAsync('packetHealth', async () => computePacketHealth(packetResults, store)),
-        stageAsync('rawRecoveryRecall', () => gradiaCompat ? null : searchRecoveryVaultRawPassages(
+        stageAsync('rawRecoveryRecall', () => searchRecoveryVaultRawPassages(
           chatScope,
           retrievalQuery,
           authoritativeChatAvailable ? authoritativeChatMessages : messages,
@@ -38043,7 +38034,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           authoritativeSnapshot,
           authoritativeLedger.worldline
         )),
-        stageAsync('partialMemoryRecall', () => gradiaCompat ? [] : searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
+        stageAsync('partialMemoryRecall', () => searchAcceptedPartialMemory({...chatScope,chatMessages:authoritativeChatAvailable?authoritativeChatMessages:[]},retrievalQuery).catch(error=>{pushOperationLog('partial_memory:read_failed',{reason:text(error?.message||error)},'warn');return [];}))
       ]));
       if(!hayakuRequestCurrent(recallToken)) return hayakuRecallPassthrough(messages);
       const packetCoverageFallbackRecall = stage('packetCoverageFallbackRecall', () => selectPacketCoverageFallbackRows(store, searched, query, settings));
@@ -38250,20 +38241,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
       let memoryContextResult = packetBudgetPlan.memoryContextResult || emptyPacketCoreMemoryResult();
       let memoryBlock = text(packetBudgetPlan.memoryBlock || '');
-      // GRADIA delivers the recall in compatibility mode; the packet-writing instructions stay here.
-      const block = gradiaCompat
-        ? packetCoreJoinParts(promptCacheModeOf(promptSettings) === 'off'
-          ? [staticWrite, healthRepairHint, runtimeSkeletonInstruction]
-          : [healthRepairHint, runtimeSkeletonInstruction])
-        : packetBudgetPlan.block || '';
+      const block = packetBudgetPlan.block || '';
       if (recallOnly) {
         // Only recalled continuity. Packet-writing instructions belong to the response model alone.
         const recallPrompt = packetCoreJoinParts([sceneBatonText, memoryBlock]);
-        const selectedRows = recallCandidateRows(selectedForModel).slice(0, 48).map(({ axis, row }) => ({ axis, category: text(row?.category || ''),
-          ref: compact(row?.publicRef || row?.ref || row?.id || '', 160), state: compact(row?.publicText || row?.text || '', 700),
-          score: Number.isFinite(Number(row?.score)) ? Number(Number(row.score).toFixed(4)) : 0 }));
-        Memory.lastViewerRecall = { at: now(), scopeKey: requestScope.key || '', input: compact(query, 2400), retrievalQuery: compact(retrievalQuery, 3200),
-          selectedRows: selectedRows.length, recallDataChars: recallPrompt.length, rows: selectedRows, gradia: { status: 'selected', chars: recallPrompt.length, finalDelivery: settings.gradiaFinalDelivery !== false } };
         Memory.store = emptyStore();
         return { recallPrompt, scopeKey: chatScope?.key || '', selectedRows: ensureArray(memoryContextResult?.deliveredRowKeys).length };
       }
@@ -38390,7 +38371,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         graphClosureSignal: Number(Number(row?.scoreBreakdown?.graphClosure?.signal || 0).toFixed(4)),
         typedAssociationCount: ensureArray(row?.retrieval?.typedAssociations).length
       }));
-      if (!gradiaCompat) Memory.lastViewerRecall = {
+      Memory.lastViewerRecall = {
         at: now(),
         scopeKey: requestScope.key || '',
         input: compact(query, 2400),
@@ -38478,7 +38459,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         variableStateViewChars: variableChars,
         maxVariableStateViewChars: variableBudget,
         injectionCapMode: promptMode,
-        gradiaCompat,
         // Legacy names retained for compatibility: these now describe the
         // optional/variable HAYAKU budget, not the mandatory packet core.
         maxInjectedCharsModeCap: optionalInjectionBudgetChars,
@@ -49853,15 +49833,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
-      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
-      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
@@ -49998,10 +49976,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
     const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+    return { content: result.content };
   };
-  // Fire and forget: an owner that is not running simply does not hear it.
-  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -50045,7 +50021,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
-            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -50101,7 +50076,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, select, notify, createClient, dispose });
+  return Object.freeze({ start, describe, select, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
@@ -50126,11 +50101,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
-      onAttach: noteHayakuGradiaAttach, onDelivery: noteHayakuGradiaDelivery,
       select: async (queryText, check, hints = {}) => {
         const selected = await handleBeforeRequest(await hayakuRecallRequestFor(queryText, hints.recentChatTurns), 'model', { recallOnly: true, requestChars: hints.requestChars || 0 });
         check?.();
-        return { content: text(selected?.recallPrompt || '').trim(), finalDelivery: Memory.settings?.gradiaFinalDelivery !== false };
+        return { content: text(selected?.recallPrompt || '').trim() };
       },
       capture: async (request, authority) => {
         // The snapshot only proves currentness; what GRADIA reads is HAYAKU's own selection.
@@ -50142,7 +50116,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const content = text(selected?.recallPrompt || '').trim();
           return { ...read, engine: { source: 'owner_selection' },
             items: content ? [{ id: 'hayaku.recall:' + primitives.fingerprint(content), key: 'hayaku.recall', content,
-              source: { namespace: 'hayaku', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery: Memory.settings?.gradiaFinalDelivery !== false } }] : [] };
+              source: { namespace: 'hayaku', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey } }] : [] };
         } catch (error) { read.close?.(); throw error; }
       }
     });
@@ -57327,7 +57301,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         <div class="search"><i data-i="search" data-size="sm"></i><input id="hayakuSettingsFilter" class="input" placeholder="설정 이름, 설명, 인자 이름으로 찾기" aria-label="설정 검색" data-no-track></div>
         <div class="card is-active" data-subpanel="basic" data-group="st" data-hayaku-settings-section="basic"><div class="split" style="margin-bottom:6px"><span class="hint">기본 동작 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">HAYAKU 사용</div><div class="setting__desc">끄면 패킷 작성 지시와 회상이 모두 중지됩니다.</div><span class="argtag">hayaku_enabled</span></div><label class="switch"><input type="checkbox" id="st-enabled" checked><span class="switch__track"></span><span class="sr-only">HAYAKU 사용</span></label></div><div class="setting"><div><div class="setting__name">성능 모드</div><div class="setting__desc">현재 실제 적용: Balanced (최근 요청 기준)</div><span class="argtag">hayaku_mode</span></div><div class="seg" data-dirty role="group" aria-label="성능 모드"><button aria-pressed="false">Auto</button><button aria-pressed="false">Fast</button><button aria-pressed="true">Balanced</button><button aria-pressed="false">Deep</button></div></div><div class="setting"><div><div class="setting__name">프롬프트 방식</div><div class="setting__desc">작성 지시의 상세 수준</div><span class="argtag">hayaku_prompt_mode</span></div><select class="select" style="width:210px" aria-label="프롬프트 방식"><option>auto</option><option>balanced</option><option>full</option></select></div><div class="setting"><div><div class="setting__name">패킷 출력 위치</div><div class="setting__desc">자동이면 응답 본문 뒤에 붙입니다.</div><span class="argtag">hayaku_packet_output_slot</span></div><select class="select" style="width:210px" aria-label="패킷 출력 위치"><option>auto</option><option>tail</option><option>wrapper</option><option>footer</option></select></div><div class="setting"><div><div class="setting__name">닫는 태그</div><div class="setting__desc">선택. 예: </Story> — 출력 위치가 ‘닫는 태그 앞’일 때 그 앞에 둡니다.</div><span class="argtag">hayaku_packet_closing_tag</span></div><input class="input" value="" placeholder="</Story>" style="width:210px" aria-label="닫는 태그"></div><div class="setting"><div><div class="setting__name">프롬프트 캐시</div><div class="setting__desc">캐시 사용 방식</div><span class="argtag">hayaku_prompt_cache</span></div><select class="select" style="width:210px" aria-label="프롬프트 캐시"><option>off</option><option>structural</option><option>native</option></select></div><div class="setting"><div><div class="setting__name">기억 언어</div><div class="setting__desc">대화 원문 언어를 고르면 완료된 대화의 언어를 따릅니다.</div><span class="argtag">hayaku_memory_language</span></div><select class="select" style="width:210px" aria-label="기억 언어"><option>source</option><option>ko</option><option>en</option><option>ja</option><option>zh</option></select></div></div>
         <div class="card" data-subpanel="pick" data-group="st" data-hayaku-settings-section="pick"><div class="split" style="margin-bottom:6px"><span class="hint">기억 선택 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">축당 최대 항목</div><div class="setting__desc">기억 축 하나에서 가져올 최대 항목 수</div><span class="argtag">hayaku_max_items_per_axis</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="축당 최대 항목"></div><div class="setting"><div><div class="setting__name">관련성 비중</div><div class="setting__desc">0–100. 비우면 70</div><span class="argtag">hayaku_recall_relatedness_weight</span></div><input class="input" type="number" value="70" style="width:90px" aria-label="관련성 비중"></div><div class="setting"><div><div class="setting__name">최신성 비중</div><div class="setting__desc">0–100. 비우면 30</div><span class="argtag">hayaku_recall_recency_weight</span></div><input class="input" type="number" value="30" style="width:90px" aria-label="최신성 비중"></div><div class="setting"><div><div class="setting__name">문맥 메시지 수</div><div class="setting__desc">현재 입력 앞의 고정 최근 메시지 창. 비우면 5</div><span class="argtag">hayaku_recall_context_messages</span></div><input class="input" type="number" value="5" style="width:90px" aria-label="문맥 메시지 수"></div><div class="setting"><div><div class="setting__name">적응형 문맥 창</div><div class="setting__desc"></div><span class="argtag">hayaku_adaptive_context_window</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">적응형 문맥 창</span></label></div><div class="setting"><div><div class="setting__name">다중 주제 회상</div><div class="setting__desc">한 입력에서 여러 주제를 따로 찾습니다.</div><span class="argtag">hayaku_multi_query_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 주제 회상</span></label></div><div class="setting"><div><div class="setting__name">모순 묶음</div><div class="setting__desc"></div><span class="argtag">hayaku_contradiction_bundle</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">모순 묶음</span></label></div><div class="setting"><div><div class="setting__name">다중 해상도 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_multi_resolution_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">다중 해상도 회상</span></label></div><div class="setting"><div><div class="setting__name">회상 안정성</div><div class="setting__desc"></div><span class="argtag">hayaku_recall_stability</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">회상 안정성</span></label></div><div class="setting"><div><div class="setting__name">안정성 가산</div><div class="setting__desc">0.0–0.08. 비우면 0.025</div><span class="argtag">hayaku_recall_stability_boost</span></div><input class="input" type="number" value="0.025" style="width:100px" aria-label="안정성 가산"></div><details class="fold" style="margin-top:12px"><summary>시간대별 회상 <span class="hint">선택 · 5개 값을 모두 입력해야 적용</span></summary><div class="fold__body"><div class="setting"><div><div class="setting__name">단기 최대 경과 턴</div><div class="setting__desc">선택</div><span class="argtag">hayaku_recall_short_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="단기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">중기 최대 경과 턴</div><div class="setting__desc">단기보다 커야 함</div><span class="argtag">hayaku_recall_medium_max_age</span></div><input class="input" type="number" value="" style="width:110px" aria-label="중기 최대 경과 턴"></div><div class="setting"><div><div class="setting__name">단기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_short_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="단기 턴 할당"></div><div class="setting"><div><div class="setting__name">중기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_medium_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="중기 턴 할당"></div><div class="setting"><div><div class="setting__name">장기 턴 할당</div><div class="setting__desc">0–24</div><span class="argtag">hayaku_recall_long_turn_quota</span></div><input class="input" type="number" value="" style="width:90px" aria-label="장기 턴 할당"></div></div></details></div>
-        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">GRADIA 사용 시 최종 응답 모델에도 기억 전달</div><div class="setting__desc">끄면 HAYAKU 회상은 GRADIA 초안 단계에서만 쓰입니다. 패킷 작성 지시는 이 설정과 관계없이 항상 전달됩니다.</div><span class="argtag">hayaku_gradia_final_delivery</span></div><label class="switch"><input type="checkbox" id="st-gradia-final" checked><span class="switch__track"></span><span class="sr-only">GRADIA 사용 시 최종 응답 모델에도 기억 전달</span></label></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc">누락된 기억 패킷을 복구할 수 있게 합니다. 자동 복구 실행은 아래 afterRequest 설정을 따릅니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
+        <div class="card" data-subpanel="safe" data-group="st" data-hayaku-settings-section="safe"><div class="note note--warn" style="margin-bottom:6px"><b>비용 안내</b> · 자동 복구는 Other Ax를 호출해 Provider 비용이 발생할 수 있습니다.</div><div class="split" style="margin-bottom:6px"><span class="hint">복구 · 안전 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">패킷 복구 사용</div><div class="setting__desc">누락된 기억 패킷을 복구할 수 있게 합니다. 자동 복구 실행은 아래 afterRequest 설정을 따릅니다.</div><span class="badge" data-setting-state="packet-recovery" aria-live="polite">사용 · 저장됨</span><span class="argtag">hayaku_packet_recovery</span></div><label class="switch"><input type="checkbox" id="st-packet-recovery" checked><span class="switch__track"></span><span class="sr-only">패킷 복구 사용</span></label></div><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">유일한 자동 복구입니다. 누락 패킷당 Other Ax 1회, 실패하면 수동 복구로 남깁니다.</div><span class="argtag">hayaku_after_request_auto_repair</span></div><label class="switch"><input type="checkbox" id="st-after" checked><span class="switch__track"></span><span class="sr-only">afterRequest 자동 복구</span></label></div><div class="setting"><div><div class="setting__name">추가 복구 허용량</div><div class="setting__desc">작업당 구조 복구 추가 호출. 기본 0</div><span class="argtag">hayaku_recovery_extra_calls</span></div><select class="select" id="st-extra" style="width:110px" aria-label="추가 복구 허용량"><option>0</option><option>1</option></select></div><div class="setting"><div><div class="setting__name">Cold Start 묶음</div><div class="setting__desc">호출당 최대 완료 U+A 턴</div><span class="argtag">hayaku_cold_start_batch_turns</span></div><select class="select" style="width:110px" aria-label="Cold Start 묶음" id="st-cold"><option>1</option><option selected>5</option><option>10</option></select></div><div class="setting"><div><div class="setting__name">패킷 커버리지 점검</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_audit</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">패킷 커버리지 점검</span></label></div><div class="setting"><div><div class="setting__name">커버리지 대체 회상</div><div class="setting__desc"></div><span class="argtag">hayaku_packet_coverage_fallback_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">커버리지 대체 회상</span></label></div><div class="setting"><div><div class="setting__name">표시 스크러버</div><div class="setting__desc"></div><span class="argtag">hayaku_display_scrubber</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">표시 스크러버</span></label></div><div class="setting"><div><div class="setting__name">플러그인 보조 모델 허용</div><div class="setting__desc">RisuAI 보조 모델에 플러그인 제공 모델을 쓸 수 있게 합니다.</div><span class="argtag">risuai_aux_allow_plugins</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">플러그인 보조 모델 허용</span></label></div><div class="setting"><div><div class="setting__name">디버그</div><div class="setting__desc">상세 분석 원문·모델 응답을 보관합니다. 채팅별 최근 10건·총 100만 자, 건별 20만 자 이내입니다.</div><span class="argtag">hayaku_debug</span></div><label class="switch"><input type="checkbox"><span class="switch__track"></span><span class="sr-only">디버그</span></label></div></div>
         <div class="card" data-subpanel="adv" data-group="st" data-hayaku-settings-section="adv"><div class="split" style="margin-bottom:6px"><span class="hint">고급 검색 섹션의 값만 되돌립니다.</span><button class="btn btn--sm" data-load-defaults="[data-subpanel]" type="button">이 섹션 기본값</button></div><div class="setting"><div><div class="setting__name">BM25 채널 <span class="lvl">고급</span></div><div class="setting__desc">키워드 기반 검색을 함께 사용합니다.</div><span class="argtag">hayaku_bm25_channel</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">BM25 채널 <span class="lvl">고급</span></span></label></div><div class="setting"><div><div class="setting__name">BM25 가중치</div><div class="setting__desc">비우면 0.08</div><span class="argtag">hayaku_bm25_weight</span></div><input class="input" type="number" value="0.08" style="width:100px" aria-label="BM25 가중치"></div><div class="setting"><div><div class="setting__name">원문 구절 회상</div><div class="setting__desc">Recovery Journal 증거를 정확/BM25/trigram/근접도로 검색</div><span class="argtag">hayaku_raw_passage_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">원문 구절 회상</span></label></div><div class="setting"><div><div class="setting__name">원문 증거 최대 글자</div><div class="setting__desc">비우면 2400</div><span class="argtag">hayaku_raw_recall_max_chars</span></div><input class="input" type="number" value="2400" style="width:110px" aria-label="원문 증거 최대 글자"></div><div class="setting"><div><div class="setting__name">타입 기억 그래프</div><div class="setting__desc">패킷 기억 행 사이의 관계를 결정적으로 도출</div><span class="argtag">hayaku_typed_memory_graph</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">타입 기억 그래프</span></label></div><div class="setting"><div><div class="setting__name">그래프 이웃 회상</div><div class="setting__desc">일반 검색 게이트 이후 제한된 이웃 근거 허용</div><span class="argtag">hayaku_graph_closure_recall</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">그래프 이웃 회상</span></label></div><div class="setting"><div><div class="setting__name">그래프 최대 노드</div><div class="setting__desc">요청당. 비우면 8</div><span class="argtag">hayaku_graph_closure_max_nodes</span></div><input class="input" type="number" value="8" style="width:90px" aria-label="그래프 최대 노드"></div><div class="setting"><div><div class="setting__name">계층 에피소드 기억</div><div class="setting__desc">장면/턴 라우터 전용 계층</div><span class="argtag">hayaku_hierarchical_episode_memory</span></div><label class="switch"><input type="checkbox" checked><span class="switch__track"></span><span class="sr-only">계층 에피소드 기억</span></label></div><div class="setting"><div><div class="setting__name">에피소드 라우터 최대 수</div><div class="setting__desc">요청당. 비우면 3</div><span class="argtag">hayaku_episode_router_max_hits</span></div><input class="input" type="number" value="3" style="width:90px" aria-label="에피소드 라우터 최대 수"></div><div class="setting"><div><div class="setting__name">RisuAI 보조 모델 호출 테스트</div><div class="setting__desc">API · 모델 · 지연 시간을 확인합니다 (1회 호출).</div></div><button class="btn btn--sm" id="ax-test" type="button">테스트</button></div></div>
       </div>
     </div>
@@ -57346,7 +57320,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     { argument: 'hayaku_memory_language', type: 'enum', values: ['ko', 'en', 'ja', 'zh', 'source'] },
     { argument: 'hayaku_debug', type: 'boolean' },
     { argument: 'hayaku_packet_recovery', type: 'boolean' },
-    { argument: 'hayaku_gradia_final_delivery', type: 'boolean' },
     { argument: 'hayaku_after_request_auto_repair', type: 'boolean' },
     { argument: 'hayaku_background_auto_repair', type: 'boolean', retired: true },
     { argument: 'hayaku_recovery_extra_calls', type: 'enum', values:['0','1'] },
@@ -57452,7 +57425,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
     hayaku_memory_language: normalizeMemoryLanguage(settings?.memoryLanguage || DEFAULT_SETTINGS.memoryLanguage),
     hayaku_debug: settings?.debug === true ? 'true' : 'false',
     hayaku_packet_recovery: settings?.packetRecovery === false ? 'false' : 'true',
-    hayaku_gradia_final_delivery: settings?.gradiaFinalDelivery === false ? 'false' : 'true',
     hayaku_after_request_auto_repair: settings?.afterRequestAutoRepair === false ? 'false' : 'true',
     hayaku_background_auto_repair: settings?.backgroundAutoRepair === false ? 'false' : 'true',
     hayaku_recovery_extra_calls: settings?.recoveryExtraCalls===1?'1':'0',
@@ -57696,7 +57668,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   // every control stays in the DOM, so save/readback/defaults still cover all settings.
   const HAYAKU_SETTINGS_ESSENTIAL_ARGUMENTS = Object.freeze([
     'hayaku_enabled', 'hayaku_mode', 'hayaku_memory_language', 'hayaku_packet_output_slot',
-    'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_gradia_final_delivery', 'hayaku_after_request_auto_repair',
+    'hayaku_recall_context_messages', 'hayaku_packet_recovery', 'hayaku_after_request_auto_repair',
     'hayaku_cold_start_batch_turns'
   ]);
   const HAYAKU_SETTINGS_VALUE_LABELS = Object.freeze({
@@ -59045,12 +59017,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         :`<p>${viewerEscapeHtml(full)}</p>`;
       return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div><span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span></div>`;
     };
-    const gradiaLabels={selected:'GRADIA에 전달 대기',final_delivered:'GRADIA에 전달됨 · 최종 응답에도 전달',draft_only:'GRADIA에 전달됨 · 최종 응답에는 미전달',failed:'GRADIA 전달 실패',empty:'GRADIA에 전달된 기억 없음'};
-    const gradiaNote=recall?.gradia?`<p class="hint" data-gradia-delivery="${viewerEscapeHtml(recall.gradia.status)}">${viewerEscapeHtml(gradiaLabels[recall.gradia.status]||recall.gradia.status)}${recall.gradia.code?' · '+viewerEscapeHtml(recall.gradia.code):''}</p>`:'';
-    if(recallBody) recallBody.innerHTML=gradiaNote+(recallRows.length
+    if(recallBody) recallBody.innerHTML=recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
         +(recallRows.length>3?`<details class="rec-all"><summary>나머지 ${(recallRows.length-3).toLocaleString()}개 모두 보기</summary><div class="rec-all__list">${recallRows.slice(3).map(recallRowHtml).join('')}</div></details>`:'')
-      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>');
+      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>';
     const activityBody=root.querySelector?.('#hayakuOverviewActivity');
     if(activityBody){
       const entries=operationLogSnapshot().slice(-3).reverse();
@@ -61903,7 +61873,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         deriveEmotionProfile,
         deriveWorldProfile,
         deriveStoryProfile,
-        handleBeforeRequest,noteHayakuGradiaAttach,
+        handleBeforeRequest,
         prepareHayakuRecallRows,prepareHayakuEvidenceUnits,selectHayakuEvidencePlan,renderHayakuEvidencePlan,
         buildHayakuSelectionPolicy,buildHayakuEvidenceRequirements,publishHayakuRecallDelivery,beginHayakuRecallRequest,hayakuRequestCurrent,
         hayakuSourceEditSnapshot, getHayakuSourceEvidence, hayakuReviewUnit, hayakuReviewRows, memorySuiteHayakuResolveKeyScope, memorySuiteHayakuValidateRestore,

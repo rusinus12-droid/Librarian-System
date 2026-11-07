@@ -47,21 +47,25 @@ async function fixture(t,{request=messages,hostMessages=messages,ownersRunning=t
  return {host,settings,requests,prompts,values,local,snapshot,mutate,mutateNative:kind=>{if(kind==='scope')contextCharacter={...character,id:'foreign',chaId:'foreign'};if(kind==='id')chat.message[1].messageId='different-assistant';if(kind==='text')chat.message[1].content='A different persisted variant.';if(kind==='turn')chat.message.unshift({role:'user',messageId:'older-u',content:'Another completed turn.'},{role:'assistant',messageId:'older-a',content:'Another historical answer.'});},setOnRead:f=>onRead=f,setOnQuery:f=>onQuery=f,setOnVerify:f=>onVerify=f,setOnModel:f=>onModel=f,recordOutput:async(idx=1)=>onOutput?.({char:character,chat,characterIndex:0,chatIndex:0,messageIndex:idx}),run:()=>host.pipeline(request(),'model',settings)};
 }
 test('actual committed producer bytes reach one unchanged G2 model payload with owner provenance and no owner writes',{timeout:30000},async t=>{const f=await fixture(t),before=f.snapshot(),r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,1);const body=JSON.stringify(f.prompts[0]);for(const marker of ['LIBRA_MEMORY_SENTINEL','HAYAKU_MEMORY_SENTINEL','FLASHBACK_MEMORY_SENTINEL_1','FLASHBACK_MEMORY_SENTINEL_2'])assert(body.includes(marker),marker);for(const owner of owners)assert(body.includes('\\"owner\\":\\"'+owner+'\\"'),owner);assert(!body.includes('archiveShared'),'storage metadata stays out of the model payload');assert.equal(f.snapshot(),before);assert(f.requests.every(r=>r==='/bootstrap'||/^\/v1\/(libra|hayaku|flashback)\/read-session\/(capture|current)$/.test(r)));assert(!JSON.stringify([...f.local,...f.values]).includes('HAYAKU_MEMORY_SENTINEL'));await r.finalizeHandoff();r.closeEvidence();});
-test('memory GRADIA used also reaches the final response unless that owner turned it off',{timeout:30000},async t=>{
- const on=await (await fixture(t)).run();
- assert.match(on.finalRecallBlock,/recalled by HAYAKU/);assert.match(on.finalRecallBlock,/recalled by Flashback/);assert.match(on.finalRecallBlock,/LIBRA_MEMORY_SENTINEL/);
- const f=await fixture(t,{hayakuFinalDelivery:false}),off=await f.run();
- assert(JSON.stringify(f.prompts[0]).includes('recalled by HAYAKU'),'GRADIA still drafts from it');
- assert.doesNotMatch(off.finalRecallBlock,/recalled by HAYAKU/);assert.match(off.finalRecallBlock,/recalled by Flashback/);
+test('GRADIA uses owner memory for drafting only and never re-injects <MEMORY_RECALL> into the final response',{timeout:30000},async t=>{
+ const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});
+ const output=await f.host.hooks.beforeRequest(messages(),'model');
+ const draftPrompt=JSON.stringify(f.prompts[0]);
+ assert(draftPrompt.includes('recalled by HAYAKU'),'GRADIA drafts with HAYAKU memory');
+ assert(draftPrompt.includes('recalled by Flashback'),'GRADIA drafts with Flashback memory');
+ assert(draftPrompt.includes('LIBRA_MEMORY_SENTINEL'),'GRADIA drafts with LIBRA memory');
+ const finalText=output.map(row=>String(row.content||'')).join('\n');
+ assert.match(finalText,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'GRADIA delivers its draft');
+ assert.doesNotMatch(finalText,/<MEMORY_RECALL>/,'GRADIA does not re-deliver memory to the final model');
 });
 test('a plugin that is not running contributes no memory, and its server records are not read for the model',{timeout:30000},async t=>{const f=await fixture(t,{ownersRunning:false}),started=Date.now(),r=await f.run();assert.equal(r.ok,true);const body=JSON.stringify(f.prompts[0]);assert(body.includes('LIBRA_MEMORY_SENTINEL'));assert(!body.includes('\\"owner\\":\\"hayaku'));assert(!body.includes('\\"owner\\":\\"flashback'));assert(Date.now()-started<15000,'an absent plugin costs one short wait');});
 const ownerMarkers={libra:'LIBRA_MEMORY_SENTINEL',hayaku:'recalled by HAYAKU',flashback:'recalled by Flashback'};
 const assertOnlyOwnerLost=(body,lost)=>{for(const owner of owners)assert.equal(body.includes(ownerMarkers[owner]),owner!==lost,owner+' when '+lost+' fails');};
 for(const owner of owners)test(`${owner} changing during capture costs only ${owner}'s memory`,{timeout:30000},async t=>{const f=await fixture(t);let changed=false;// LIBRA evidence is issued by the unified owner channel (the server route only authorizes the read), so a LIBRA change
 // lands while its owner query is in flight; HAYAKU and Flashback are still captured through their server routes.
-if(owner==='libra')f.setOnQuery(()=>{if(!changed){changed=true;f.mutate(owner);}});else f.setOnRead(route=>{if(!changed&&route===`/v1/${owner}/read-session/capture`){changed=true;f.mutate(owner);}});const r=await f.run();assert(changed);assert.equal(r.ok,true);assert.equal(f.prompts.length,1);assert.equal(r.externalEvidence,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),owner);assertOnlyOwnerLost(r.finalRecallBlockNow(),owner);r.closeEvidence();});
-test('a store changing after selection keeps the draft and the memory, as an owner hook would',{timeout:30000},async t=>{const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});f.setOnModel(()=>f.mutate('flashback'));const output=await f.host.hooks.beforeRequest(messages(),'model');const text=output.map(row=>String(row.content||'')).join('\n');assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays');assert.match(text,/recalled by Flashback/);assert.match(text,/recalled by HAYAKU/);});
-test('an owner over budget is left out whole, and the others stay',{timeout:30000},async t=>{const f=await fixture(t,{memoryBudgetChars:60000,hayakuContent:'HAYAKU_LONG_MEMORY\n'+('기억 한 줄\n'.repeat(12000))+'HAYAKU_TAIL'}),r=await f.run();assert.equal(r.ok,true);assert.match(r.finalRecallBlockNow(),/recalled by Flashback/);assert.doesNotMatch(r.finalRecallBlockNow(),/HAYAKU_LONG_MEMORY/,'no fragment of it is delivered');r.closeEvidence();});
+if(owner==='libra')f.setOnQuery(()=>{if(!changed){changed=true;f.mutate(owner);}});else f.setOnRead(route=>{if(!changed&&route===`/v1/${owner}/read-session/capture`){changed=true;f.mutate(owner);}});const r=await f.run();assert(changed);assert.equal(r.ok,true);assert.equal(f.prompts.length,1);assert.equal(r.externalEvidence,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),owner);r.closeEvidence();});
+test('a store changing after selection keeps the draft, as an owner hook would',{timeout:30000},async t=>{const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});f.setOnModel(()=>f.mutate('flashback'));const output=await f.host.hooks.beforeRequest(messages(),'model');const text=output.map(row=>String(row.content||'')).join('\n');assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays');assert.doesNotMatch(text,/<MEMORY_RECALL>/);});
+test('an owner over budget is left out whole, and the others stay',{timeout:30000},async t=>{const f=await fixture(t,{memoryBudgetChars:60000,hayakuContent:'HAYAKU_LONG_MEMORY\n'+('기억 한 줄\n'.repeat(12000))+'HAYAKU_TAIL'}),r=await f.run();assert.equal(r.ok,true);const body=JSON.stringify(f.prompts[0]);assert.match(body,/recalled by Flashback/);assert.doesNotMatch(body,/HAYAKU_LONG_MEMORY/,'no fragment of it is delivered');r.closeEvidence();});
 test('an owner refusing its selection costs only that owner',{timeout:30000},async t=>{const f=await fixture(t,{hayakuSelectError:'LIB_READ_OWNER_UNAVAILABLE'}),r=await f.run();assert.equal(r.ok,true);assertOnlyOwnerLost(JSON.stringify(f.prompts[0]),'hayaku');r.closeEvidence();});
 
 for(const kind of ['scope','id','text','turn'])test(`native ${kind} mismatch still fails closed after bound-scope enrichment fix`,{timeout:30000},async t=>{const f=await fixture(t);f.mutateNative(kind);await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);});
@@ -93,11 +97,50 @@ test('host-bound RP transcript with prior CompletionReceipt keeps the certified 
  r.closeEvidence();
 });
 
+test('consecutive draft runs on unchanged RP transcript with independent LIBRA/HAYAKU/Flashback beforeRequest injections keep the certified stage view',{timeout:60000},async t=>{
+ const rpAssistant='<Thoughts>장면 점검</Thoughts>\n# 응답\n## 볼륨 1\n#### Chatindex: 1\n\n[LBDATA START]{"ui":"card"}[LBDATA END]\n세아가 고개를 들었다.\n\n<img cmd="aa school terrified.png">\n\n"......하지 마......"\n\n§쿵, 쿵.§\n\n---\n\n<GT-CTRL/>\n\n---\n<lb-lazy id="tail"/>';
+ const rpUser1='[LBDATA START]{"turn":1}[LBDATA END]\n세아는 천천히 정신이 들었다.';
+ const rpUser2='그녀의 턱 아래로 손을 올렸다.';
+ const f=await fixture(t,{
+  request:()=>[
+   {role:'system',content:'[HAYAKU_CACHE_STATIC_START v1]\nStatic cache\n[HAYAKU_CACHE_STATIC_END]',memo:'hayaku-cache-static-v1'},
+   {role:'system',content:'[FLASHBACK EVIDENCE CONTRACT]\nContract\n[/FLASHBACK EVIDENCE CONTRACT]',flashbackStatic:true},
+   {role:'system',content:'[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]\n<LIBRA_CLASSIC_RECALL>\nLIBRA direct injection\n</LIBRA_CLASSIC_RECALL>'},
+   {role:'user',content:'세아는 천천히 정신이 들었다.'},
+   {role:'assistant',content:rpAssistant},
+   {role:'system',content:'[FLASHBACK EVIDENCE]\nFlashback direct injection\n[/FLASHBACK EVIDENCE]',flashbackDynamic:true},
+   {role:'user',content:'[HAYAKU PACKET MEMORY — turn 2]\nHAYAKU direct injection\n[/HAYAKU PACKET MEMORY]',memo:'hayaku-runtime-context-v3'},
+   {role:'user',content:rpUser2},
+   {role:'system',content:'[HAYAKU SIDE-WRITE FINAL REMINDER]\nPacket reminder',memo:'hayaku-runtime-context-v3'}
+  ],
+  hostMessages:()=>[
+   {role:'user',chatId:'u1',data:rpUser1},
+   {role:'char',chatId:'a1',data:rpAssistant},
+   {role:'user',chatId:'u2',data:rpUser2}
+  ]
+ });
+ await f.recordOutput(1);
+ const r1=await f.run();
+ assert.equal(r1.ok,true,JSON.stringify(f.host.plugin.getRuntime().lastStageViewMismatch||null));
+ assert.equal(r1.externalEvidence,true);
+ await r1.finalizeHandoff();
+ r1.closeEvidence();
+
+ const r2=await f.run();
+ assert.equal(r2.ok,true,JSON.stringify(f.host.plugin.getRuntime().lastStageViewMismatch||null));
+ assert.equal(r2.externalEvidence,true);
+ assert.equal(f.prompts.length,2);
+ await r2.finalizeHandoff();
+ r2.closeEvidence();
+});
+
 test('LIBRA failing while it is being read leaves HAYAKU and Flashback running on a valid draft',async t=>{
  const f=await fixture(t);await f.host.plugin.saveProviderPreset('offline',f.settings.presets.offline);await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false,failure_mode:'hard',lore_activation_mode:'off',memory_budget_chars:240000});f.setOnVerify(n=>{if(n>=1)throw Object.assign(Error('LIB_READ_UNIFIED_UNAVAILABLE'),{code:'LIB_READ_UNIFIED_UNAVAILABLE',readDiagnostic:{stage:'graph_delivery_admission',dispatchReason:'LIBRA_GRAPH_CORPUS_SOURCE_CHANGED',modelDispatchEligible:false}});});
  const text=(await f.host.hooks.beforeRequest(messages(),'model')).map(row=>String(row.content||'')).join('\n');
  assert.ok(f.prompts.length>=1);assert.equal(f.host.plugin.getRuntime().last.draftDiscarded,undefined);
- assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays: it never saw LIBRA');assert.match(text,/recalled by HAYAKU/);assert.match(text,/recalled by Flashback/);assert.doesNotMatch(text,/LIBRA_MEMORY_SENTINEL/);
+ const draftPrompt=JSON.stringify(f.prompts[0]);
+ assert.match(draftPrompt,/recalled by HAYAKU/);assert.match(draftPrompt,/recalled by Flashback/);assert.doesNotMatch(draftPrompt,/LIBRA_MEMORY_SENTINEL/);
+ assert.match(text,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'the draft stays: it never saw LIBRA');assert.doesNotMatch(text,/<MEMORY_RECALL>/);
 });
 test('the chat itself changing still stops the whole run',async t=>{
  const f=await fixture(t);let captures=0;

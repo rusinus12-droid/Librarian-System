@@ -652,6 +652,48 @@ test('CBS macro rejects request when choice matches but static prefix/suffix do 
   assert.equal(f.runtime.lastNativeBindFailure?.step, 'input_text_mismatch');
 });
 
+test('independent memory plugin beforeRequest injections (HAYAKU, LIBRA, Flashback) running before GRADIA do not pollute native turn binding or stage view', async () => {
+  const persona = { name: '철수', personaPrompt: '신중한 조사관' };
+  const f = await fixture((chat, character, input) => {
+    character.name = '아키비스트';
+    chat.message[0].data = '[LBDATA START]{"version":1}[LBDATA END]\n{{user}}가 캐비닛을 연다.\n<lb-lazy id="1"/>';
+    chat.message[1].data = '<Thoughts>내부 추론</Thoughts>\n# 응답\n## 볼륨 1\n#### Chatindex: 1\n\n{{char}}가 위쪽 선반의 푸른 장부를 가리켰다.\n\n<img cmd="shelf.png">\n\n---\n\n[LBDATA START]{"state":"ok"}[LBDATA END]';
+    chat.message[2].data = '{{user}}는 장부를 꺼내 든다.';
+    input.length = 0;
+    input.push(
+      { role: 'system', content: '[HAYAKU_CACHE_STATIC_START v1]\nStatic prefix\n[HAYAKU_CACHE_STATIC_END]', memo: 'hayaku-cache-static-v1' },
+      { role: 'system', content: '[FLASHBACK EVIDENCE CONTRACT]\nContract\n[/FLASHBACK EVIDENCE CONTRACT]', flashbackStatic: true },
+      { role: 'system', content: '[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]\n<LIBRA_CLASSIC_RECALL>\nLIBRA recalled fact\n</LIBRA_CLASSIC_RECALL>' },
+      { role: 'user', content: '철수가 캐비닛을 연다.' },
+      { role: 'assistant', content: '# 응답\n## 볼륨 1\n#### Chatindex: 1\n\n아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.\n\n<img cmd="shelf.png">\n\n---' },
+      { role: 'system', content: '[FLASHBACK EVIDENCE]\nFlashback dynamic evidence\n[/FLASHBACK EVIDENCE]', flashbackDynamic: true },
+      { role: 'user', content: '[HAYAKU PACKET MEMORY — turn 2]\nHAYAKU recalled continuity\n[/HAYAKU PACKET MEMORY]\n\n[HAYAKU PACKET WRITE]\nPacket contract\n[/HAYAKU PACKET WRITE]', memo: 'hayaku-runtime-context-v3' },
+      { role: 'user', content: '철수는 장부를 꺼내 든다.' },
+      { role: 'system', content: '[HAYAKU SIDE-WRITE FINAL REMINDER]\nEmit packet at end.', memo: 'hayaku-runtime-context-v3' }
+    );
+  }, {
+    getDatabase: async () => ({ personas: [persona], selectedPersona: 0 })
+  });
+  const b = await f.bind();
+  assert.equal(b.snapshot.currentInputRef.messageId, 'native-2');
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'native-0'));
+  assert.ok(b.snapshot.turns.some(row => row.ref.messageId === 'native-1'));
+  assert.ok(!b.snapshot.turns.some(row => row.ref.messageId === 'hayaku-runtime-context-v3'));
+  const shadowSelection = b.selections.find(item => item.stage === 'shadow_act');
+  assert.equal(shadowSelection.turns.length, 1);
+  assert.equal(shadowSelection.turns[0].boundary.messageId, 'native-2');
+  const stageSettings = f.api.scopedSettingsForStage(f.settings, 'shadow_act');
+  const stageRecent = f.api.buildRecentChat(b.messages, stageSettings);
+  const currentTurn = f.api.resolveSgaCurrentTurn(b.messages);
+  const actualChat = await f.api.loadActualChatContextForRag(f.character, { chat: f.chat, source: 'getChatFromIndex' }, b.messages, currentTurn, persona, false);
+  const effectiveRecent = f.api.attachInputAssistContinuityState(
+    f.api.applyActualChatContextToRecent(stageRecent, actualChat, stageSettings.turnWindow),
+    f.settings
+  );
+  assert.deepEqual(f.api.libNativePromptView(effectiveRecent), shadowSelection.view);
+});
+
+
 
 
 

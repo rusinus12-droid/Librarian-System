@@ -4023,7 +4023,7 @@ Before continuing, verify:
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const initialResolved = resolveSgaCurrentTurn(messages);
     const mapped = messages.map((message, index) => {
-      if (!['user','assistant'].includes(currentTurnRole(message)) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
+      if (!['user','assistant'].includes(currentTurnRole(message)) || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
       if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
       const pool = pendingFrom > 0 ? completedHostMessages : host.messages;
       const targetNarrative = narrative(message);
@@ -4234,6 +4234,10 @@ Before continuing, verify:
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: capability => {
           if (capability?.contract === 'existing-server-logical-read.v1') {
+            if (nativeHostBinding?.snapshot && Array.isArray(nativeHostBinding.selections)) {
+              certifiedSelections = nativeHostBinding.selections;
+              return nativeHostBinding.snapshot;
+            }
             return captureLibNativeReadSetFromHost(requestMessages,settings,baseRecent,capability.scope).then(binding => {
               if (!nativeHostBinding) nativeHostBinding = binding;
               certifiedSelections = binding.selections; return binding.snapshot;
@@ -4261,8 +4265,10 @@ Before continuing, verify:
         // Native reconstruction may add only the already-verified scope to the
         // same message refs. IDs, hashes, generations and prompt text must still
         // match exactly; foreign scopes are never removed by this comparison.
-        const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
-          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
+        const boundScope = (session.contract === 'existing-server-logical-read.v1' && session.nativeScope
+          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
+          || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
+            ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
@@ -6492,7 +6498,7 @@ Before continuing, verify:
   const isLikelyMetaUserMessage = (value) => {
     const body = text(value).trim();
     if (!body) return true;
-    if (isSgaInjectionText(body)) return true;
+    if (isSgaInjectionText(body) || SGA_EXTERNAL_MEMORY_INJECTION_RE.test(body)) return true;
     if (/^(---|<\/?(?:Lore|Others Info|Last output|Past conversations|Image Commands|information)>|#\s*(?:Final Check|Tags|Expansion|Annotation Feature)|###\s*Status Interface)/i.test(body)) return true;
     if (/^system\s*:/i.test(body)) return true;
     if (/^Take my current input as inspiration/i.test(body)) return true;
@@ -6515,10 +6521,28 @@ Before continuing, verify:
     { name: 'current_message', source: 'current_message' }
   ]);
 
+  const SGA_SYNTHETIC_MEMO_SET = new Set([
+    'NewChat',
+    'supaMemory',
+    'hypaMemory',
+    'hayaku-runtime-context-v3',
+    'hayaku-cache-static-v1'
+  ]);
+  const isSyntheticPluginMemo = value => SGA_SYNTHETIC_MEMO_SET.has(text(value || '').trim());
+  const isExternalMemoryInjectionMessage = message => {
+    if (!message || typeof message !== 'object') return false;
+    if (message.flashbackStatic === true || message.flashbackDynamic === true) return true;
+    const memo = text(message.memo || '').trim();
+    if (memo && memo !== 'NewChat' && SGA_SYNTHETIC_MEMO_SET.has(memo)) return true;
+    return false;
+  };
+
   const hasSgaChatProvenance = (message) => {
     if (!message || typeof message !== 'object') return false;
+    if (isExternalMemoryInjectionMessage(message)) return false;
+    const memo = text(message.memo || '').trim();
     const direct = [
-      message.memo,
+      isSyntheticPluginMemo(memo) ? '' : memo,
       message.chatId,
       message.chat_id,
       message.messageId,
@@ -6645,7 +6669,7 @@ Before continuing, verify:
     return '';
   };
 
-  const SGA_EXTERNAL_MEMORY_INJECTION_RE = /\[VECTOR RAG MEMORY\]|\[[A-Z0-9_-]+\s+[^\]\n]{1,100}\s+Injection\]/i;
+  const SGA_EXTERNAL_MEMORY_INJECTION_RE = /\[(?:VECTOR RAG MEMORY|FLASHBACK EVIDENCE(?: CONTRACT)?|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES|HAYAKU (?:PACKET MEMORY(?: — [^\]]+)?|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|SIDE-WRITE FINAL REMINDER|RECALL KERNEL|RAW SOURCE (?:ATTACHMENT|TIMELINE))|HAYAKU_CACHE_STATIC_(?:START|END)[^\]]*|LIBRA (?:CLASSIC RECALL|TURN PLANNER|SGA DRAFT|장기기억|기억)[^\]]*)\]|<\s*\/?\s*LIBRA_CLASSIC_RECALL\s*>|<<<\s*HAYAKU_STATE_PACKET_(?:START|END)\s*>>>|\[[A-Z0-9_-]+\s+[^\]\n]{1,100}\s+Injection\]/i;
 
   const findJsonObjectEnd = (source, start) => {
     let depth = 0;
@@ -6816,6 +6840,7 @@ Before continuing, verify:
     const legacyCandidates = [];
     for (let i = legacyLimit; i >= 0; i -= 1) {
       const message = source[i];
+      if (isExternalMemoryInjectionMessage(message)) continue;
       const role = currentTurnRole(message);
       if (role && !/user|human/i.test(role)) continue;
       const rawBody = rawCurrentTurnBody(message);
@@ -6949,7 +6974,11 @@ Before continuing, verify:
 
   const CompletionReceipts = new Map(); // bounded metadata only, never transcript text
   const COMPLETION_RECEIPT_LIMIT = 256;
-  const nativeTurnMessageId = message => text(message?.chatId || message?.messageId || message?.message_id || message?.m_id || (message?.memo === 'NewChat' ? '' : message?.memo) || '').trim();
+  const nativeTurnMessageId = message => {
+    if (isExternalMemoryInjectionMessage(message)) return '';
+    const memo = text(message?.memo || '').trim();
+    return text(message?.chatId || message?.messageId || message?.message_id || message?.m_id || (isSyntheticPluginMemo(memo) ? '' : memo) || '').trim();
+  };
   const nativeTurnScope = (character, chat) => {
     const characterId = text(character?.chaId || character?.id || '').trim();
     const chatId = text(chat?.id || '').trim();
@@ -7144,8 +7173,9 @@ ${text(paired.leadingAssistant.content || '')}
       .map(m => {
         // Content filtering must not erase a selected native identity: retain a
         // blocking tombstone so an older variant/group member cannot revive it.
+        const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
         if (['user', 'assistant'].includes(m.role) && nativeTurnMessageId(m) && m.turnMeta?.currentInput !== true
-          && (isSgaInjectionText(m.content) || isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content))) {
+          && (isSgaInjectionText(m.content) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))) {
           return { ...m, content: '', turnMeta: { ...m.turnMeta, blocked: 'filtered_conversation_record' } };
         }
         return m;
@@ -7154,19 +7184,23 @@ ${text(paired.leadingAssistant.content || '')}
       .filter(m => ['user', 'assistant'].includes(m.role) || text(m.content || '').trim())
       .filter(m => !isSgaInjectionText(m.content));
     const systemContextMessages = allowed
-      .filter(m => ['system', 'developer'].includes(m.role) && !['supaMemory', 'hypaMemory'].includes(m.memo))
+      .filter(m => ['system', 'developer'].includes(m.role) && !isExternalMemoryInjectionMessage(m) && !isExternalMemoryInjectionPayload(m.content))
       .map(m => ({ ...m, content: m.content.replace(/<Past Events Summary>[\s\S]*?<\/Past Events Summary>/gi, '').trim() }));
     const otherInfoMessages = allowed.filter(m => {
       if (['system', 'developer'].includes(m.role) || m.turnMeta?.currentInput === true) return false;
-      return isOthersInfoMessage(m.content) || (m.role === 'user' && isLikelyMetaUserMessage(m.content));
+      if (isExternalMemoryInjectionMessage(m) || isExternalMemoryInjectionPayload(m.content)) return false;
+      const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
+      return isOthersInfoMessage(inspectBody) || (m.role === 'user' && isLikelyMetaUserMessage(inspectBody));
     });
     const visibleChatMessages = allowed.filter(m => {
       if (!['user', 'assistant'].includes(m.role)) return false;
       if (m.turnMeta?.supersededPendingDuplicate === true) return false;
+      if (isExternalMemoryInjectionMessage(m) || isExternalMemoryInjectionPayload(m.content)) return false;
       if (m.turnMeta?.currentInput === true) return true;
       // Keep empty native/request records through eligibility and variant selection.
       if (!text(m.content || '').trim()) return true;
-      if (isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content)) return false;
+      const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
+      if (isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody)) return false;
       return true;
     });
     const sanitizeWindowMessage = message => message ? {
@@ -7178,7 +7212,7 @@ ${text(paired.leadingAssistant.content || '')}
           : typeof message.turnMeta?.nativeContent === 'string'
             ? message.turnMeta.nativeContent
             : message.content
-      )
+      ).trim()
     } : null;
     const systemSliced = systemContextMessages.slice(-6).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
     const otherSliced = otherInfoMessages.slice(-8).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
@@ -7242,7 +7276,7 @@ ${text(paired.leadingAssistant.content || '')}
       source: `complete recent turn message ${idx + 1} by ${m.role}`,
       content: m.role === 'assistant'
         ? deriveNarrativeContinuityCopy(m.content || '')
-        : stripPostprocessForPrivateRecentReading(m.content || '')
+        : stripPostprocessForPrivateRecentReading(m.content || '').trim()
     }));
     return {
       latestUser,
@@ -8234,10 +8268,16 @@ ${text(paired.leadingAssistant.content || '')}
     const role = rawRole === 'user' ? 'user'
       : ['assistant', 'char', 'character', 'bot', 'ai', 'model'].includes(rawRole) ? 'assistant' : '';
     if (!role) return null;
-    const content = sanitizeMessageContentForHistory(role, contentToText(item.data ?? item.content ?? '')).trim();
+    const rawText = contentToText(item.data ?? item.content ?? '');
+    const inspectBody = stripPostprocessForPrivateRecentReading(rawText);
+    const filteredBlocked = !nativeContext.blocked && nativeTurnMessageId(item)
+      && (isSgaInjectionText(rawText) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))
+      ? 'filtered_conversation_record'
+      : '';
+    const content = filteredBlocked ? '' : sanitizeMessageContentForHistory(role, rawText).trim();
     if (!content && nativeContext.nativeSelected !== true) return null;
     const ref = { ...nativeTurnRef(item), scope: nativeContext.scope || null };
-    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
+    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || filteredBlocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
   };
 
   const sameRagChatContent = (left, right) => normalizeForLoreMatch(left) === normalizeForLoreMatch(right);
@@ -8371,7 +8411,13 @@ ${text(paired.leadingAssistant.content || '')}
       firstMessageIncluded = true;
     }
     const currentText = text(currentTurnResolution?.text || extractLatestUserInput(requestMessages) || '');
-    const currentId = nativeTurnMessageId(currentTurnResolution?.message || resolveSgaCurrentTurn(requestMessages)?.message || {});
+    const resolvedCurrentMessage = (Number.isInteger(currentTurnResolution?.requestIndex)
+      && currentTurnResolution.requestIndex >= 0
+      && requestMessages?.[currentTurnResolution.requestIndex])
+      || currentTurnResolution?.message
+      || resolveSgaCurrentTurn(requestMessages)?.message
+      || {};
+    const currentId = nativeTurnMessageId(resolvedCurrentMessage);
     let currentUserIndex = -1;
     if (currentId) for (let i = messages.length - 1; i >= 0; i -= 1) { if (messages[i].role === 'user' && nativeTurnMessageId(messages[i]) === currentId) { currentUserIndex = i; break; } }
     // Text can bind only the already-terminal stored user, never an older same-text turn.
@@ -8392,7 +8438,13 @@ ${text(paired.leadingAssistant.content || '')}
     }
     const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
     const userName = firstFilled(persona?.name, 'User');
-    messages = messages.map(message => ({ ...message, content: applyBasicRisuPlaceholdersForRag(message.content, characterName, userName) }));
+    messages = messages.map(message => ({
+      ...message,
+      content: sanitizeMessageContentForHistory(
+        message.role,
+        applyBasicRisuPlaceholdersForRag(message.content, characterName, userName)
+      ).trim()
+    }));
     return {
       available: true,
       messages,
@@ -8449,6 +8501,7 @@ ${text(paired.leadingAssistant.content || '')}
     recent.recentTurnCount = turnWindow.recentTurnCount;
     recent.turnEligibility = turnWindow.turnEligibility;
     recent.sceneAnchor = extractSceneAnchorFromAssistant(latestAssistant);
+    recent.previousResponseEvidence = compactMiddle(recent.latestAssistant, 9000);
     recent.text = recent.completeTurnsText;
     recent.visibleText = recent.completeTurnsText;
     recent.visibleMessages = selectedMessages.map((message, idx) => ({
@@ -8458,7 +8511,7 @@ ${text(paired.leadingAssistant.content || '')}
       source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
       content: message.role === 'assistant'
         ? deriveNarrativeContinuityCopy(message.content || '')
-        : stripPostprocessForPrivateRecentReading(message.content || '')
+        : stripPostprocessForPrivateRecentReading(message.content || '').trim()
     }));
     recent.loreSearchMessages = recent.visibleMessages.map((message, idx) => ({
       source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
@@ -10308,12 +10361,14 @@ function summarizeAgentCbsTag(rawContent) {
         role: text(message?.role || '').trim().toLowerCase(),
         memo: text(message?.memo || '').trim(),
         removable: message?.removable === true,
+        externalMemory: isExternalMemoryInjectionMessage(message),
         body: contentToText(message?.content)
       }))
       .filter(message => (
         message.body
         && !message.removable
-        && !['supaMemory', 'hypaMemory'].includes(message.memo)
+        && !message.externalMemory
+        && !isExternalMemoryInjectionPayload(message.body)
         && !isSgaTransportInjectionMessage({ role: message.role, content: message.body })
       ))
       .map(message => ({
@@ -22665,7 +22720,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const normalizedRole = text(role || '').trim().toLowerCase();
     const assistantLike = ['assistant', 'char', 'character', 'bot', 'model', 'ai'].includes(normalizedRole);
     const contextLike = assistantLike || normalizedRole === 'system' || normalizedRole === 'developer';
-    const raw = stripPostprocessForPrivateRecentReading(stripOpaquePrivateBlocks(value));
+    const raw = deriveNarrativeContinuityCopy(value);
     if (!raw || !assistantLike) return raw;
     const hadHiddenBlock = /<\s*(?:thoughts?|thinking|reasoning|analysis)\s*>/i.test(raw) || hiddenReasoningStartRe.test(raw);
     if (!hadHiddenBlock) return raw;
@@ -28207,13 +28262,15 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const visible = [];
     for (let index = 0; index < (Array.isArray(messages) ? messages.length : 0); index += 1) {
       const message = messages[index];
+      if (isExternalMemoryInjectionMessage(message)) continue;
       const role = currentTurnRole(message);
       if (!['user', 'assistant'].includes(role)) continue;
       const rawBody = rawCurrentTurnBody(message);
       if (!rawBody.trim() || isExternalMemoryInjectionPayload(rawBody) || isBackstageUserPayload(rawBody)) continue;
-      if (role === 'user' && (isLikelyMetaUserMessage(rawBody) || isOthersInfoMessage(rawBody))) continue;
+      const inspectBody = stripPostprocessForPrivateRecentReading(rawBody);
+      if (role === 'user' && (isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))) continue;
       const content = role === 'user'
-        ? text(currentInputFrom(rawBody) || stripCurrentInputWrapper(rawBody)).trim()
+        ? text(currentInputFrom(rawBody) || stripCurrentInputWrapper(inspectBody)).trim()
         : deriveNarrativeContinuityCopy(rawBody).trim();
       if (!content) continue;
       visible.push({ index, role, content });
@@ -29036,7 +29093,7 @@ function createGradiaModelContextBudget({ digest }) {
             const selected = answers[index];
             if (selected.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
             if (selected.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
-              source: { namespace: owner, kind: 'owner_recall_prompt', finalDelivery: selected.finalDelivery !== false } });
+              source: { namespace: owner, kind: 'owner_recall_prompt' } });
           }
           raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
         }
@@ -37618,43 +37675,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   });
   const libReadRoute = () => LibReadConnection.status().draftReadOwners;
-  // Owners that dropped out of this response run: they no longer reach the final request.
+  // Owners that dropped out of this response run.
   const libOwnersLost = new Set();
   const noteLibOwnerLost = (owner, code) => {
-    libOwnersLost.add(owner); libOwnersAwaitingDelivery.delete(owner); reportLibOwnerDelivery(owner, 'failed', code); warn('lib_owner_read_failed', owner + ':' + code);
+    libOwnersLost.add(owner); warn('lib_owner_read_failed', owner + ':' + code);
   };
   const independentOwnerClient = (scopes, clientForScopes) => Object.keys(scopes).length < 2 ? clientForScopes(scopes)
     : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
-  const reportLibOwnerDelivery = (owner, status, code = '') => { void libOwnerReader().notify(owner, 'delivered', { status, code }); };
-  // Owners stop searching in their own hook while this holds. It expires, so a removed GRADIA cannot silence them.
-  const announceLibReads = async (given = Runtime.settings) => {
-    let settings = given;
-    const connection = LibReadConnection.status();
-    const connected = connection.readSource !== 'off' && connection.state === 'connected';
-    // A save clears the cached settings. Loading them here could put old values back behind that save,
-    // so only the stored mode is read: turning GRADIA off must not wait for the next request.
-    if (!settings && connected) {
-      const stored = await readRuntimeSettings().catch(() => null);
-      if (stored?.mode !== 'off') return;
-      settings = stored;
-    }
-    // GRADIA skips a request it has no provider for, so owners must keep their own recall then.
-    let providerReady = false;
-    try { providerReady = !providerConfigurationIssues(resolvePreset(settings, 'shadow_act').preset).length; } catch (_) { providerReady = false; }
-    const active = providerReady && connected && settings?.mode !== 'off';
-    const routeOwners = connection.draftReadOwners || LIB_READ_OWNERS;
-    // An owner GRADIA holds no session for must keep its own recall, or its memory reaches nobody.
-    const boundOwners = connection.activeOwners || [];
-    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner) && boundOwners.includes(owner), ttlMs: 90000 });
-  };
   // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
   const libOwnerAbsentUntil = new Map();
-  // Owners whose selection this response run holds and has not yet reported an outcome for.
-  const libOwnersAwaitingDelivery = new Set();
-  const failUndeliveredLibOwners = code => { for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'failed', code); libOwnersAwaitingDelivery.clear(); };
   const selectLibOwnerRecall = async (owner, scope, queryText, signal) => {
     if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
     let answer;
@@ -37666,7 +37698,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       noteLibOwnerLost(owner, code);
       return { absent: true, code };
     }
-    if (answer.absent) { libOwnerAbsentUntil.set(owner, Date.now() + 60000); reportLibOwnerDelivery(owner, 'failed', answer.code || 'LIB_READ_IPC_UNAVAILABLE'); } else libOwnerAbsentUntil.delete(owner);
+    if (answer.absent) libOwnerAbsentUntil.set(owner, Date.now() + 60000); else libOwnerAbsentUntil.delete(owner);
     return answer;
   };
   const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
@@ -38265,10 +38297,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(finalBodyIssue === 'refusal' ? { refusalDraftChars: boundFinalDraft.length } : {}) };
     }
     let injection = suppressedReason ? '' : buildFinalOverlay(current, stages, finalRecent, settings);
-    // The memory the draft used also reaches the response model, unless its owner turned that off.
-    const ownerRecallItems = usesLibEvidence ? [...(libReadSession.evidencePacket?.items || [])] : [];
-    const finalRecallBlockNow = () => ownerRecallItems.filter(item => item.source?.finalDelivery !== false && !libOwnersLost.has(item.owner)).map(item => String(item.content || '').trim()).filter(Boolean).join('\n\n');
-    const finalRecallBlock = finalRecallBlockNow();
     if (usesLibEvidence && !suppressedReason) {
       await libReadSession.finalize(boundFinalDraft);
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
@@ -38279,9 +38307,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       reason: suppressedReason,
       injection,
       externalEvidence: usesLibEvidence,
-      finalRecallBlock,
-      finalRecallBlockNow,
-      ownerRecallItems,
       finalizeHandoff: usesLibEvidence ? async () => {
         const final = await libReadSession.finalize(injection);
         await libReadSession.assertCurrent();
@@ -38329,7 +38354,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const beforeRequest = async (messages, type) => {
-    if (isMainNarrativeRequest(type)) await announceLibReads(Runtime.settings || await loadSettings().catch(() => null));
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
@@ -38593,10 +38617,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.lastProviderError = null;
 
     const startedAt = Date.now();
-    libOwnersAwaitingDelivery.clear();
     libOwnersLost.clear();
-    const libRunConnection = LibReadConnection.status();
-    if (libRunConnection.state === 'connected' && libRunConnection.readSource !== 'off') for (const owner of libRunConnection.draftReadOwners || LIB_READ_OWNERS) libOwnersAwaitingDelivery.add(owner);
     try {
       const result = await runPipeline(messages, type, requestSettings);
       const suppressionMeta = Runtime.finalDraftMeta?.suppressed === result.reason ? {
@@ -38618,14 +38639,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();
-          const recallBlock = result.finalRecallBlockNow();
-          const injected = injectSystemMessage(messages, recallBlock ? `${injection}\n\n<MEMORY_RECALL>\n${recallBlock}\n</MEMORY_RECALL>` : injection, requestSettings);
+          const injected = injectSystemMessage(messages, injection, requestSettings);
           if (!verifyOriginalMessagePreservation(messages, injected).preserved) throw libEvidenceError('LIB_READ_TRANSPORT_CHANGED');
           Runtime.last = { at: Date.now(), ok: true, externalEvidence: true, stageCount: result.stages.length };
           result.assertHandoffLocalCurrent();
-          for (const item of result.ownerRecallItems) { if (libOwnersLost.has(item.owner)) continue; reportLibOwnerDelivery(item.owner, item.source?.finalDelivery === false ? 'draft_only' : 'final_delivered'); libOwnersAwaitingDelivery.delete(item.owner); }
-          for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'empty');
-          libOwnersAwaitingDelivery.clear();
           libEvidenceResponseRedactionRequired = true;
           return injected;
         } finally { result.closeEvidence(); }
@@ -38716,7 +38733,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (settings.failureMode === 'hard') throw error;
       return messages;
     } finally {
-      failUndeliveredLibOwners(String(Runtime.last?.reason || 'LIB_READ_DRAFT_UNAVAILABLE'));
       Runtime.inFlight = false;
       finishCallTelemetry(Runtime.last?.ok === false ? 'failed' : 'completed');
       scheduleGuiTraceRefresh();
@@ -43931,7 +43947,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
@@ -44153,15 +44169,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
-      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
-      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
@@ -44298,10 +44312,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
     const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+    return { content: result.content };
   };
-  // Fire and forget: an owner that is not running simply does not hear it.
-  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -44345,7 +44357,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
-            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -44401,7 +44412,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, select, notify, createClient, dispose });
+  return Object.freeze({ start, describe, select, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
@@ -46028,12 +46039,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     
 
-    const libReadAnnouncement = setInterval(() => { void announceLibReads(); }, 10000);
-    libReadAnnouncement.unref?.();
     const unload = async () => {
-      clearInterval(libReadAnnouncement);
-      // Owners take their own recall back now rather than when the announcement expires.
-      await Promise.allSettled(LIB_READ_OWNERS.map(owner => libOwnerReader().notify(owner, 'attach', { active: false, ttlMs: 0 })));
+      await libOwnerSelectionReader?.dispose?.();
+      libOwnerSelectionReader = null;
       await LibReadConnection.dispose();
       LibReadConsumer.invalidate('LIB_READ_CANCELED');
       libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;
