@@ -40708,6 +40708,10 @@ const MemorySuiteHealthRecovery = (() => {
 
   // The dynamic evidence the hook would inject, for another reader. It arms no capture and writes nothing.
   const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatTurns = 0 } = {}) => {
+    const existing = Runtime.lastInjectedPrompt || Runtime.lastRecall?.injectedPrompt || '';
+    if (existing && typeof existing === 'string') {
+      return { content: existing };
+    }
     const settings = await loadSettings(true), bundle = await resolveCurrentScopeIdentityBundle(false), query = text(queryValue || '');
     check();
     const token = beginFlashbackRecallRequest(bundle.scope.scopeKey);

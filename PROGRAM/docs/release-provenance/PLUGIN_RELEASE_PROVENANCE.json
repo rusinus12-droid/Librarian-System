@@ -284,19 +284,19 @@
     "artifact": "Librarian-System-0.5.0-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "1.3.25",
-        "sha256": "6f126e509e6e950c2ba2e37b5682d7aade7db57a33ed2a0a2627724a3cba2874",
-        "bytes": 3671742
+        "version": "1.3.26",
+        "sha256": "33a0c925c9bb59ffc1e9090bdfbdd009185581600220c949a90b692614a83794",
+        "bytes": 3671940
       },
       "hayaku": {
-        "version": "3.3.27",
-        "sha256": "d0f9ac403267cd01a930e6d654181c056f47adf14aaf016391c060698e14b384",
-        "bytes": 4150885
+        "version": "3.3.28",
+        "sha256": "745bc97997162ec37b02ccf5c9a3c85ae410899ae0b973d49179431e04f42934",
+        "bytes": 4159351
       },
       "libra": {
-        "version": "2.6.37",
-        "sha256": "63046fdc16f933fa75663bdf7f39ce262484a45d3ee3aa6a6fbcdb3190b21936",
-        "bytes": 7094529
+        "version": "2.6.38",
+        "sha256": "1c9d6a9d8fdc19e66b4a67da07f7166c65b3cd2503efe9affde10c4de4e0a27e",
+        "bytes": 7095798
       },
       "lia": {
         "version": "0.29.8",
@@ -309,9 +309,9 @@
         "bytes": 1235537
       },
       "gradia": {
-        "version": "0.29.0",
-        "sha256": "c18b9dca504bc5d0d7707eb0f359434ddcb02ef13dcdb6d0f6535b3455a43e9f",
-        "bytes": 3032078
+        "version": "0.29.1",
+        "sha256": "cc8e062abebf86f960551d73e0f0483e9b9f23c44bcde464eb38f0b93a824ef2",
+        "bytes": 3026748
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

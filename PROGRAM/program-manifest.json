@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-07T16:27:16.809Z",
+  "generatedAt": "2026-11-07T17:26:47.234Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "94048b351ef1fb935485f0d2ab2a9a4752e377ed4b73ef5b97b5204ba9eb4ea6",
+      "sha256": "bb63c4ae6c62441deb2f37966a713075bfa756a9e6b6ec1698d0a8f8a3a50787",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4299,12 +4299,12 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "33717cf163c9192d533e1644f629f8120db24dfacf94e96046471a32f64479c0",
-      "bytes": 3671753
+      "sha256": "33a0c925c9bb59ffc1e9090bdfbdd009185581600220c949a90b692614a83794",
+      "bytes": 3671940
     },
     "plugins/GRADIA.js": {
-      "sha256": "2f6f87a33e52393571498b89174a1043f3f07832b0491b05708daae597ec316c",
-      "bytes": 3023361
+      "sha256": "cc8e062abebf86f960551d73e0f0483e9b9f23c44bcde464eb38f0b93a824ef2",
+      "bytes": 3026748
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "745bc97997162ec37b02ccf5c9a3c85ae410899ae0b973d49179431e04f42934",
@@ -4315,8 +4315,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "b89921d2e602290557a6c7bce556c18cd40da9247e73ff2d3dcb2049d0d878f4",
-      "bytes": 7095609
+      "sha256": "1c9d6a9d8fdc19e66b4a67da07f7166c65b3cd2503efe9affde10c4de4e0a27e",
+      "bytes": 7095798
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -10399,8 +10399,8 @@
       "bytes": 4783
     },
     "tests/memory_injection_presentation_v1_test.cjs": {
-      "sha256": "2dd05b63de145337291c6e5152b5948dced8aa7eaaaed248d20d3e55a0587202",
-      "bytes": 38135
+      "sha256": "b643233cfa8959206dc70ab4ad643564fbf3f7bd2c591717dce1c40d2208f5df",
+      "bytes": 38236
     },
     "tests/memory_lane_routing_contract_test.cjs": {
       "sha256": "edf07ff56db4e98c970e04f24572fa17645c57808a1a8b3bb9d4596d0bca1cff",

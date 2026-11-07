@@ -16188,7 +16188,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       schema: LENS_REGISTRY_SCHEMA,
       enabled: src.enabled !== false,
       maxSlots: MAX_LENS_SLOTS,
-      recallBudgetRatio: Math.max(0.1, Math.min(0.75, Number(src.recallBudgetRatio) || 0.5)),
+      recallBudgetRatio: Math.max(0.1, Math.min(0.75, Number(src.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO)),
       recallMaxChars: clampInt(src.recallMaxChars, LENS_RECALL_MIN_CHARS, LENS_RECALL_MAX_CHARS, LENS_RECALL_MAX_CHARS),
       // Meaning-based recall through the canonical embedding settings; on unless switched off.
       recallSemantic: src.recallSemantic !== false,
@@ -33413,6 +33413,15 @@ function createLibraReadonlySourceContext(owner) {
     const UNIFIED_CLASSIC_HEADER = [CLASSIC_INJECTION_MARKER, UNIFIED_RECALL_RULES,
       '<LIBRA_CLASSIC_RECALL>'].join('\n');
     const UNIFIED_CLASSIC_FOOTER = '</LIBRA_CLASSIC_RECALL>';
+    const cleanClassicEvidencePrompt = raw => {
+      if (!raw) return '';
+      return String(raw)
+        .replace(/^\[LIBRA_EVIDENCE\b[^\]]*\]\r?\n?/gm, '')
+        .replace(/^(\(\d+\))\s*\[canonical\]\s*/gm, '$1 ')
+        .replace(/\[state:state_([^\]]+)\]/g, '[$1]')
+        .replace(/\[state:([^\]]+)\]/g, '[$1]')
+        .replace(/\[lens:([^\]]+)\]/g, '[$1]');
+    };
     const unifiedGraphDeliveryAuthority = new WeakMap();
     const LEGACY_RESPONSE_INJECTION_MARKER = '[LIBRA SGA DRAFT — CURRENT TURN ONLY]';
 
@@ -52192,10 +52201,7 @@ function createLibraReadonlySourceContext(owner) {
   const DOCUMENT_DEFAULT_ROLES = Object.freeze({ canonical: 'canonical_assertion', micro: 'micro_candidate', state: 'state_current', lore: 'background_setting' });
   const documentRoleTag = item => {
     const role = item.semanticRole || item.kind;
-    let tag = !role || DOCUMENT_DEFAULT_ROLES[item.family] === role ? item.family : `${item.family}:${role}`;
-    if (tag === 'canonical') return '';
-    tag = tag.replace(/^state:state_/, '').replace(/^state:/, '');
-    return tag;
+    return !role || DOCUMENT_DEFAULT_ROLES[item.family] === role ? item.family : `${item.family}:${role}`;
   };
   const formatHydratedItemLine = (item, idx, consumer, hydrateSourceQuotes, isModelDocument = false) => {
     const quoteSuffix = hydrateSourceQuotes && item.sourceSpan?.exactQuote && !String(item.text || '').includes(item.sourceSpan.exactQuote)
@@ -52204,11 +52210,7 @@ function createLibraReadonlySourceContext(owner) {
     const lifecycleTag = item.lifecycleStatus && item.lifecycleStatus !== 'active'
       ? `/${item.lifecycleStatus}`
       : '';
-    if (isModelDocument) {
-      const tag = documentRoleTag(item);
-      const tagStr = tag ? `[${tag}${lifecycleTag}] ` : (lifecycleTag ? `[${lifecycleTag}] ` : '');
-      return `(${idx + 1}) ${tagStr}${singleLine(item.text)}${singleLine(quoteSuffix)}`;
-    }
+    if (isModelDocument) return `(${idx + 1}) [${documentRoleTag(item)}${lifecycleTag}] ${singleLine(item.text)}${singleLine(quoteSuffix)}`;
     if (consumer === 'gradia') {
       const timeTag = [Number.isSafeInteger(item.turn) ? `recorded_T${item.turn}` : '', offSequenceTemporalRole(item.temporalRole),
         item.storyClock ? `clock=${item.storyClock}` : ''].filter(Boolean).join('/');
@@ -52244,10 +52246,10 @@ function createLibraReadonlySourceContext(owner) {
   // Shared deterministic packet formatter used during both budget admission (select) and packet assembly (render) (D07, M09)
   const formatPacketText = (consumer, scopeKey, items, independentSourceCount, hydrateSourceQuotes = false, presentation = 'default') => {
     if (!Array.isArray(items) || items.length === 0) return '';
-    const header = consumer === 'classic' ? '' : `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
+    const header = `[LIBRA_EVIDENCE consumer=${consumer} scope=${scopeKey} units=${items.length} sources=${independentSourceCount}]`;
     if (presentation !== 'model_document') {
       const lines = items.map((item, idx) => formatHydratedItemLine(item, idx, consumer, hydrateSourceQuotes));
-      return [header, ...lines].filter(Boolean).join('\n');
+      return [header, ...lines].join('\n');
     }
     const grouped = new Map();
     for (const sec of SEMANTIC_SECTION_ORDER) grouped.set(sec, []);
@@ -52255,7 +52257,7 @@ function createLibraReadonlySourceContext(owner) {
       const sec = SEMANTIC_SECTION_ORDER.includes(item.semanticSection) ? item.semanticSection : 'EVIDENCE';
       grouped.get(sec).push({ item, idx });
     });
-    const out = header ? [header] : [];
+    const out = [header];
     let nextItemIndex = 0;
     for (const sec of SEMANTIC_SECTION_ORDER) {
       const entries = grouped.get(sec);
@@ -72547,7 +72549,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           warn('LIBRA lens recall failed open', lensErr);
           lensRecall = null;
         }
-        const baseContent = string(packet.renderedText || '');
+        const baseContent = cleanClassicEvidencePrompt(packet.renderedText || '');
         const lensRenderedBlock = string(lensRecall?.renderedBlock || '');
         const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
         const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
@@ -78745,7 +78747,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits }
               }, null, null);
               if (!graph || !graph.packet) return { content: '' };
-              const baseContent = string(graph.packet.renderedText || '');
+              const baseContent = cleanClassicEvidencePrompt(graph.packet.renderedText || '');
               const lens = await recallLensMemories(context, { currentText: sanitizeRecallCurrentInput(queryText || '') }, Number(graph.packet.characterBudget || maxChars), { readOnly: true, refreshVectors: false, deliveredText: baseContent }).catch(() => null);
               const lensRenderedBlock = string(lens?.renderedBlock || '');
               const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
@@ -83351,11 +83353,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const registry = await readLensRegistry();
       const canonicalBudget = Math.max(0, Number(options.canonicalBudgetChars ?? options.maxChars ?? 4000));
       const deliveredChars = options.deliveredText ? String(options.deliveredText).length : 0;
-      const remainingBudget = Math.max(0, canonicalBudget - deliveredChars);
-      const budgetRatioChars = Math.floor(canonicalBudget * Math.max(0.4, Number(registry.recallBudgetRatio) || 0.4));
+      const remainingBudget = options.deliveredText ? Math.max(0, canonicalBudget - deliveredChars) : 0;
+      const ratio = Number(registry.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO;
+      const budgetRatioChars = Math.floor(canonicalBudget * ratio);
       const budgetChars = Math.min(
-        Math.max(registry.recallMaxChars || 20000, 16000),
-        remainingBudget > 0 ? Math.max(remainingBudget, budgetRatioChars) : budgetRatioChars
+        registry.recallMaxChars || LENS_RECALL_MAX_CHARS,
+        options.deliveredText ? Math.max(remainingBudget, budgetRatioChars) : budgetRatioChars
       );
       const empty = extra => ({ schema: 'libra.lens_recall_delivery.v2', enabled: false, budgetChars, usedChars: 0, renderedBlock: '', injectedItems: [], skippedCandidates: [], perLensBudgets: [], ...extra });
       if (registry.enabled === false) return empty({ emptyReason: 'registry_disabled' });
@@ -83496,7 +83499,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const relevance = Math.max(lexicalRelevance, semanticRelevance);
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
             // '관점유형' 필드명은 생략했지만 최종 출력의 '· 해석', '해석근거:', '원문:' 표시는 근거 유형을 구분한다.
-            const tag = `[${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
+            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 계승':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
             const basisPart = item.basis && (!item.quote || lensSafeText(item.basis, 120) !== lensSafeText(item.quote, 120))
               ? ` (해석근거: "${lensSafeText(item.basis, 120)}")` : '';

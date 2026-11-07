@@ -29041,7 +29041,7 @@ function createGradiaModelContextBudget({ digest }) {
         // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
         // their own memory, and an owner that is not running contributes none.
         let ownerUnavailable = null;
-        if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
+        if (multipleOwners && readSource === 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
           const kept = [];
           ownerUnavailable = {};
           const peers = raw.owners;
@@ -37295,6 +37295,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }, 500);
     };
     const performConnect = async (startup = false, requestedOwners = null, requestedSource = null, config = {}) => {
+      if (typeof startup === 'string') {
+        requestedSource = startup;
+        startup = false;
+      } else if (isPlainObject(startup)) {
+        config = startup;
+        startup = false;
+      }
       if (disposed) return status();
       if (Array.isArray(config.draftReadOwners)) {
         draftReadOwners = config.draftReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
@@ -37319,7 +37326,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         refresh();
         return status();
       }
-      readSource = 'plugin_ipc';
+      readSource = src === 'unified_engine' || src === 'server_logical_read' ? src : 'plugin_ipc';
       invalidate(''); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
@@ -37444,6 +37451,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         url = normalizeLibReadUrl(saved.url);
         if (saved.readSource === 'off') readSource = 'off';
+        else if (['unified_engine', 'server_logical_read'].includes(saved.readSource)) readSource = saved.readSource;
         else readSource = 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
@@ -37459,7 +37467,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], 'plugin_ipc', { draftReadOwners });
+          await connect(true, ['libra'], readSource, { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -37471,7 +37479,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, 'plugin_ipc', { draftReadOwners });
+        await connect(true, readOwners, readSource, { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -37489,8 +37497,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else if (Array.isArray(first)) {
         owners = first.filter(o => LIB_READ_OWNERS.includes(o));
         if (typeof second === 'string') src = second;
+        if (typeof third === 'object' && third) cfg = third;
       } else if (typeof first === 'string') {
         src = first;
+        if (Array.isArray(second)) owners = second.filter(o => LIB_READ_OWNERS.includes(o));
+        if (typeof third === 'object' && third) cfg = third;
+      } else if (first === false) {
+        if (Array.isArray(second)) owners = second.filter(o => LIB_READ_OWNERS.includes(o));
+        if (typeof third === 'string') src = third;
       }
       return connect(false, owners, src, cfg);
     };
@@ -37714,116 +37728,156 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
 
-    // --- PURE IPC MEMORY RECALL (Option 2) ---
     const libReadStartedAt = Date.now();
-    const enabledOwners = ['libra', 'hayaku', 'flashback'].filter(owner => {
-      if (owner === 'libra' && settings.enableLibraRecall === false) return false;
-      if (owner === 'hayaku' && settings.enableHayakuRecall === false) return false;
-      if (owner === 'flashback' && settings.enableFlashbackRecall === false) return false;
-      return true;
-    });
+    let libReadSession = null;
+    let usesLibEvidence = false;
+    const connState = LibReadConnection.status();
 
-    if (!currentScope) {
-      try {
-        const { character } = await loadCurrentCharacterForRisuContext(false);
-        const { chat } = await loadCurrentChatForRisuContext(character, false);
-        if (character && chat) {
-          currentScope = {
-            characterId: String(character.chaId || character.id || ''),
-            chatId: String(chat.id || '')
-          };
+    if (connState.state === 'connected') {
+      libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
+      usesLibEvidence = libReadSession.status === 'ready';
+      Runtime.lastLibReadDiagnostic = Object.freeze({
+        ...Runtime.lastLibReadDiagnostic,
+        at: Date.now(),
+        purpose: 'response_evidence',
+        status: String(libReadSession.status || ''),
+        code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
+        connection: LibReadConnection.status(),
+        elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
+      });
+      if (usesLibEvidence) {
+        settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
+        activeLibEvidenceRun = libReadSession;
+        const ownerMap = {};
+        for (const item of (libReadSession.evidencePacket?.items || libReadSelection?.items || [])) {
+          const o = item.owner || 'libra';
+          const txt = item.content || item.text || '';
+          if (txt) {
+            ownerMap[o] = (ownerMap[o] ? ownerMap[o] + '\n\n' : '') + txt;
+          }
         }
-      } catch (_) {}
+        Runtime.lastMemoryRecall = Object.freeze({
+          at: Date.now(),
+          queryChars: libQueryText(baseRecent.latestUser).length,
+          elapsedMs: Date.now() - libReadStartedAt,
+          owners: LIB_READ_OWNERS.map(owner => ({
+            owner,
+            status: ownerMap[owner] ? 'ok' : ((libReadSelection?.unavailableOwners?.[owner] || connState.unavailable?.[owner]) ? 'unavailable' : 'empty'),
+            chars: (ownerMap[owner] || '').length,
+            content: ownerMap[owner] || ''
+          }))
+        });
+      }
     }
 
-    const queryText = baseRecent.latestUser || '';
-    const hints = {
-      recentChatTurns: baseRecent.visibleMessageCount || 0,
-      requestChars: settings.recallMaxChars || 0
-    };
+    if (!usesLibEvidence && connState.readSource !== 'off') {
+      const enabledOwners = ['libra', 'hayaku', 'flashback'].filter(owner => {
+        if (owner === 'libra' && settings.enableLibraRecall === false) return false;
+        if (owner === 'hayaku' && settings.enableHayakuRecall === false) return false;
+        if (owner === 'flashback' && settings.enableFlashbackRecall === false) return false;
+        return true;
+      });
 
-    const recallAnswers = await Promise.allSettled(enabledOwners.map(owner =>
-      selectLibOwnerRecall(owner, currentScope, queryText, null, hints)
-    ));
-
-    const recallResults = enabledOwners.map((owner, idx) => {
-      const res = recallAnswers[idx];
-      if (res.status === 'fulfilled' && res.value && !res.value.absent && res.value.content) {
-        return { owner, status: 'ok', content: res.value.content };
+      if (!currentScope) {
+        try {
+          const { character } = await loadCurrentCharacterForRisuContext(false);
+          const { chat } = await loadCurrentChatForRisuContext(character, false);
+          if (character && chat) {
+            currentScope = {
+              characterId: String(character.chaId || character.id || ''),
+              chatId: String(chat.id || '')
+            };
+          }
+        } catch (_) {}
       }
-      return { owner, status: (res.status === 'fulfilled' && !res.value?.absent) ? 'empty' : 'unavailable', content: '' };
-    });
 
-    let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
-    if (memoryBlocks.length === 0 && libReadBinding?.client && typeof libReadBinding.client.openReadSession === 'function') {
-      try {
-        const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
-        if (session?.snapshot?.items) {
-          const libraItem = session.snapshot.items.find(it => it.owner === 'libra' || it.content?.includes?.('LIBRA_MEMORY_EVIDENCE'));
-          if (libraItem?.content) memoryBlocks = [libraItem.content];
+      const queryText = baseRecent.latestUser || '';
+      const hints = {
+        recentChatTurns: baseRecent.visibleMessageCount || 0,
+        requestChars: settings.recallMaxChars || 0
+      };
+
+      const recallAnswers = await Promise.allSettled(enabledOwners.map(owner =>
+        selectLibOwnerRecall(owner, currentScope, queryText, null, hints)
+      ));
+
+      const recallResults = enabledOwners.map((owner, idx) => {
+        const res = recallAnswers[idx];
+        if (res.status === 'fulfilled' && res.value && !res.value.absent && res.value.content) {
+          return { owner, status: 'ok', content: res.value.content };
         }
-      } catch (_) {}
+        return { owner, status: (res.status === 'fulfilled' && !res.value?.absent) ? 'empty' : 'unavailable', content: '' };
+      });
+
+      let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
+      if (memoryBlocks.length === 0 && libReadBinding?.client && typeof libReadBinding.client.openReadSession === 'function') {
+        try {
+          const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
+          if (session?.snapshot?.items) {
+            const libraItem = session.snapshot.items.find(it => it.owner === 'libra' || it.content?.includes?.('LIBRA_MEMORY_EVIDENCE'));
+            if (libraItem?.content) memoryBlocks = [libraItem.content];
+          }
+        } catch (_) {}
+      }
+      const finalMemoryBlock = memoryBlocks.join('\n\n');
+      if (finalMemoryBlock) {
+        usesLibEvidence = true;
+        const runController = new AbortController();
+        libReadSession = {
+          status: 'ready',
+          reason: '',
+          block: finalMemoryBlock,
+          recalls: recallResults,
+          signal: runController.signal,
+          calls: new Set(),
+          recoveries: new Set(),
+          stageViews: new Map(),
+          failed: '',
+          attempt: null,
+          lastAttemptStalled: false,
+          setBudgetProfile() {},
+          beforeModel: async (stage, phase, recovery = '') => {
+            const key = `${stage}:${phase}`;
+            if (recovery) libReadSession.recoveries.add(`${key}:${recovery}`);
+            else libReadSession.calls.add(key);
+          },
+          guardModel: async (operation) => await operation(),
+          assertPayload: async body => body,
+          assertDispatch: () => {},
+          timeoutAttempt: () => {},
+          fail: (code, cause) => {
+            libReadSession.failed = code;
+            return libEvidenceError(code, cause);
+          },
+          assertCurrent: async () => true,
+          assertLocalCurrent: () => true,
+          assertStageView: (stage, recent) => { libReadSession.stageViews.set(stage, recent); },
+          assertStageViews: () => {},
+          finalize: async draft => draft,
+          close: () => {
+            runController.abort();
+            if (activeLibEvidenceRun === libReadSession) {
+              activeLibEvidenceRun = null;
+            }
+          }
+        };
+        activeLibEvidenceRun = libReadSession;
+        Runtime.lastMemoryRecall = Object.freeze({
+          at: Date.now(),
+          queryChars: queryText.length,
+          elapsedMs: Date.now() - libReadStartedAt,
+          owners: recallResults.map(r => ({ owner: r.owner, status: r.status, chars: r.content.length, content: r.content }))
+        });
+        Runtime.lastLibReadDiagnostic = Object.freeze({
+          at: Date.now(),
+          purpose: 'response_evidence',
+          status: 'ready',
+          code: '',
+          elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
+        });
+        settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
+      }
     }
-    const finalMemoryBlock = memoryBlocks.join('\n\n');
-    const usesLibEvidence = Boolean(finalMemoryBlock);
-
-    const runController = new AbortController();
-    const libReadSession = {
-      status: usesLibEvidence ? 'ready' : 'unavailable',
-      reason: usesLibEvidence ? '' : 'no_evidence',
-      block: finalMemoryBlock,
-      recalls: recallResults,
-      signal: runController.signal,
-      calls: new Set(),
-      recoveries: new Set(),
-      stageViews: new Map(),
-      failed: '',
-      attempt: null,
-      lastAttemptStalled: false,
-      setBudgetProfile() {},
-      beforeModel: async (stage, phase, recovery = '') => {
-        const key = `${stage}:${phase}`;
-        if (recovery) libReadSession.recoveries.add(`${key}:${recovery}`);
-        else libReadSession.calls.add(key);
-      },
-      guardModel: async (operation) => await operation(),
-      assertPayload: async body => body,
-      assertDispatch: () => {},
-      timeoutAttempt: () => {},
-      fail: (code, cause) => {
-        libReadSession.failed = code;
-        return libEvidenceError(code, cause);
-      },
-      assertCurrent: async () => true,
-      assertLocalCurrent: () => true,
-      assertStageView: (stage, recent) => { libReadSession.stageViews.set(stage, recent); },
-      assertStageViews: () => {},
-      finalize: async draft => draft,
-      close: () => {
-        runController.abort();
-        if (activeLibEvidenceRun === libReadSession) {
-          activeLibEvidenceRun = null;
-        }
-      }
-    };
-    if (usesLibEvidence) activeLibEvidenceRun = libReadSession;
-
-    Runtime.lastMemoryRecall = Object.freeze({
-      at: Date.now(),
-      queryChars: queryText.length,
-      elapsedMs: Date.now() - libReadStartedAt,
-      owners: recallResults.map(r => ({ owner: r.owner, status: r.status, chars: r.content.length }))
-    });
-
-    Runtime.lastLibReadDiagnostic = Object.freeze({
-      at: Date.now(),
-      purpose: 'response_evidence',
-      status: libReadSession.status,
-      code: usesLibEvidence ? '' : 'LIB_READ_NO_EVIDENCE',
-      elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
-    });
-
-    if (usesLibEvidence) settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
     try {
     let current = null;
     let risuSnapshot = null;
@@ -43439,10 +43493,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const groups = RESULTS_MEMORY_OWNERS.map(([owner, label]) => {
       const row = owners.find(r => r.owner === owner);
       const active = row && row.status === 'ok' && row.chars > 0;
-      return guiEl('div', { class: 'gx-owner' }, [
-        guiEl('div', { class: 'gx-owner__head' }, [
-          guiEl('strong', { text: label }),
-          guiEl('span', { class: 'gx-meta', text: active ? `${row.chars.toLocaleString('ko-KR')}자 사용` : (row?.status === 'empty' ? '회상 내용 없음' : '사용 안 함') })
+      const head = guiEl('div', { class: 'gx-owner__head' }, [
+        guiEl('strong', { text: label }),
+        guiEl('span', { class: 'gx-meta', text: active ? `${row.chars.toLocaleString('ko-KR')}자 사용` : (row?.status === 'empty' ? '회상 내용 없음' : '사용 안 함') })
+      ]);
+      if (!active || !row.content) {
+        return guiEl('div', { class: 'gx-owner' }, [head]);
+      }
+      return guiEl('details', { class: 'gx-owner', style: 'margin-bottom:8px;' }, [
+        guiEl('summary', { style: 'cursor:pointer;' }, [head]),
+        guiEl('div', { style: 'padding:8px 0 4px;' }, [
+          guiEl('pre', {
+            style: 'margin:0;white-space:pre-wrap;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.35);padding:10px;border-radius:6px;font-size:12px;line-height:1.5;color:var(--text, #e0e0e0);font-family:var(--font-mono, monospace);',
+            text: row.content
+          })
         ])
       ]);
     });
@@ -44413,7 +44477,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
-    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(source);},
+    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(false, null, source);},
     async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
     getLibReadOnlyStatus: () => Object.freeze({ modelSelection:activeLibEvidenceRun?.modelSelection||null, connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {
