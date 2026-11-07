@@ -131,9 +131,11 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
     assert.ok(finalChainA && finalChainA.length > 0, 'GRADIA completes successfully after memory plugins');
 
     const combinedTextA = finalChainA.map(m => String(m.content || '')).join('\n');
-    assert.ok(combinedTextA.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'GRADIA draft includes evidence anchor');
-    assert.ok(!combinedTextA.includes('<MEMORY_RECALL>'), 'GRADIA does not re-inject <MEMORY_RECALL>');
-    assert.ok(combinedTextA.includes('은빛 열쇠') || combinedTextA.includes('민아'), 'Recalled context is present in chain');
+    assert.ok(combinedTextA.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'GRADIA draft includes evidence anchor in Order A');
+    assert.ok(!combinedTextA.includes('<MEMORY_RECALL>'), 'GRADIA does not re-inject <MEMORY_RECALL> in Order A');
+    assert.ok(combinedTextA.includes('은빛 열쇠') || combinedTextA.includes('[LBDATA START]'), 'LIBRA memory is present in Order A');
+    assert.ok(combinedTextA.includes('HAYAKU_CHAIN_MEMORY') || combinedTextA.includes('HAYAKU_STATE_PACKET_START'), 'HAYAKU memory is present in Order A');
+    assert.ok(combinedTextA.includes('PAST EVIDENCE RULES') || combinedTextA.includes('FLASHBACK_CHAIN_MEMORY'), 'Flashback memory/rules is present in Order A');
     console.log('PASS Order A: LIBRA -> HAYAKU -> Flashback -> GRADIA');
   }
 
@@ -162,8 +164,10 @@ test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Orde
 
     const combinedTextB = finalChainB.map(m => String(m.content || '')).join('\n');
     assert.ok(combinedTextB.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'), 'GRADIA draft marker is preserved in downstream hooks');
-    assert.ok(combinedTextB.includes('HAYAKU_CHAIN_MEMORY') || combinedTextB.includes('HAYAKU_STATE_PACKET_START'), 'HAYAKU memory instructions present');
-    assert.ok(!combinedTextB.includes('<MEMORY_RECALL>'), 'No duplicate recall injection');
+    assert.ok(!combinedTextB.includes('<MEMORY_RECALL>'), 'No duplicate recall injection in Order B');
+    assert.ok(combinedTextB.includes('은빛 열쇠') || combinedTextB.includes('[LBDATA START]'), 'LIBRA memory is present in Order B');
+    assert.ok(combinedTextB.includes('HAYAKU_CHAIN_MEMORY') || combinedTextB.includes('HAYAKU_STATE_PACKET_START'), 'HAYAKU memory instructions present in Order B');
+    assert.ok(combinedTextB.includes('PAST EVIDENCE RULES') || combinedTextB.includes('FLASHBACK_CHAIN_MEMORY'), 'Flashback memory/rules is present in Order B');
     console.log('PASS Order B: GRADIA -> LIBRA -> HAYAKU -> Flashback');
   }
 });
