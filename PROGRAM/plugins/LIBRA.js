@@ -13484,7 +13484,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!registry.legacyGlobalModeImported && !stored && !global) {
       if (!globalModeEnabled) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
       for (const value of [pluginRaw, deviceRaw]) if (value != null && value !== '') {
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        let parsed; try { parsed = typeof value === 'string' ? JSON.parse(value) : value; } catch (_) { throw new Error('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed.namespace !== namespace || parsed.legacyGlobalModeImported !== undefined
             && typeof parsed.legacyGlobalModeImported !== 'boolean') throw new Error('HEALTH_ROUTE_UNVERIFIED');
       }
@@ -14445,7 +14445,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   scopeDataSummary:({scope,records})=>{
     const row=records.find(row=>row.logicalKey===`libra:v1:scope:${scope.scopeId}:manifest`&&(scope.sourceMode==='server_only'?row.location==='server':row.location!=='server'));
     if(!row)return '정본 기억 목록 없음';
-    const raw=row.logicalValue??row.value,value=typeof raw==='string'?JSON.parse(raw):raw;
+    let value; try { const raw=row.logicalValue??row.value; value=typeof raw==='string'?JSON.parse(raw):raw; } catch(_) { value=null; }
+    if (!value) return '정본 기억 데이터 손상';
     const micro=new Set(records.filter(row=>row.scopeId===scope.scopeId&&row.logicalKey.startsWith(`libra:v1:scope:${scope.scopeId}:micro-memory:`)).map(row=>row.logicalKey)).size;
     return {label:`정본 기억 ${Object.keys(value.memories||{}).length}개 · 승계 참조 ${(value.inheritedMemories||[]).length}개 · Micro ${micro}개`,primary:Object.keys(value.memories||{}).length,secondary:micro,updatedAt:value.updatedAt};
   },

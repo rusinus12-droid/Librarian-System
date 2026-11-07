@@ -29044,10 +29044,10 @@ function createGradiaModelContextBudget({ digest }) {
         // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
         // their own memory, and an owner that is not running contributes none.
         let ownerUnavailable = null;
-        if (multipleOwners && readSource === 'unified_engine' && typeof dependencies.selectOwnerRecall === 'function') {
-          const kept = raw.items.filter(item => item?.owner === 'libra');
+        if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
+          const kept = [];
           ownerUnavailable = {};
-          const peers = raw.owners.filter(value => value !== 'libra');
+          const peers = raw.owners;
           const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
           for (const [index, owner] of peers.entries()) {
             const selected = answers[index];
@@ -37322,7 +37322,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         refresh();
         return status();
       }
-      readSource = String(src) === 'server_logical_read' ? 'unified_engine' : String(src);
+      readSource = 'plugin_ipc';
       invalidate(''); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
@@ -37446,7 +37446,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         url = normalizeLibReadUrl(saved.url);
-        if (saved.readSource) readSource = saved.readSource;
+        if (saved.readSource === 'off') readSource = 'off';
+        else readSource = 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;
@@ -37461,7 +37462,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners });
+          await connect(true, ['libra'], 'plugin_ipc', { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -37473,7 +37474,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners });
+        await connect(true, readOwners, 'plugin_ipc', { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -38275,8 +38276,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     finalRecent.authoritativeCommitmentGuard = finalCommitmentValidation;
     await libReadSession.assertCurrent();
     const boundFinalDraft = compact(stageDraft(safeStage) || stageDraft(current) || '', 80000);
-    Runtime.lastSafeStage = usesLibEvidence ? null : publicStageView(safeStage);
-    Runtime.finalDraft = usesLibEvidence ? '' : boundFinalDraft;
+    Runtime.lastSafeStage = publicStageView(safeStage);
+    Runtime.finalDraft = boundFinalDraft;
     const completedDrafts = [];
     const completedHashes = new Set();
     for (const item of stages) {
@@ -38287,7 +38288,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       completedDrafts.push({ stage: item.stage || '', hash, draft });
       if (completedDrafts.length >= 16) break;
     }
-    Runtime.lastCompletedDraftSet = usesLibEvidence ? null : { schema: 'serial_gradation_agents_for_rp_completed_drafts_v1', runId: runLineage.runId, currentInputHash: runLineage.currentInputHash, completedAt: Date.now(), stages: completedDrafts };
+    Runtime.lastCompletedDraftSet = { schema: 'serial_gradation_agents_for_rp_completed_drafts_v1', runId: runLineage.runId, currentInputHash: runLineage.currentInputHash, completedAt: Date.now(), stages: completedDrafts };
     Runtime.activeLineage = { ...runLineage, completedAt: Date.now() };
     delete Runtime.activeLineage._priorRunDrafts;
     Runtime.finalDraftMeta = {
@@ -44290,7 +44291,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         const result = await rpc(owner, 'describe', { native: native(scope) });
         if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
-          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+          || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
         scopes[owner] = result.scope;
       } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
     }));
