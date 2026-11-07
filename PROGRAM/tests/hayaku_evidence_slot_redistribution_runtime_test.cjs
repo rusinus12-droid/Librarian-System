@@ -7,7 +7,7 @@ test('existing candidate slots preserve distinct facts, axis ceilings, character
  try{
   const t=h.hayaku._test;
   for(const c of corpus.cases){
-   const settings={...h.hayaku.settings(),mode:'auto',effectiveMode:'fast',maxItemsPerAxis:c.maxItemsPerAxis,...(c.temporal?{temporalRecallPolicy:c.temporal}:{})};
+   const settings={...h.hayaku.settings(),mode:'auto',effectiveMode:'fast',totalRowLimit:16,maxItemsPerAxis:c.maxItemsPerAxis,...(c.temporal?{temporalRecallPolicy:c.temporal}:{})};
    const selected=t.prepareHayakuRecallRows(c.rows,corpus.query,settings,{worldlineHeadOrdinal:corpus.worldlineHeadOrdinal},[],[]);
    const result=t.selectHayakuEvidencePlan(selected,corpus.query,settings,c.capChars);
    assert(result.renderedEntries<=16,c.id);assert(result.text.length<=c.capChars,c.id);assert.equal(result.plan.temporalQuota.allowed,true,c.id);

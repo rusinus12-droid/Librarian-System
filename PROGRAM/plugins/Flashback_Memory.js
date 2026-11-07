@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v1.3.24
+//@display-name ⚡ FLASHBACK Memory v1.3.26
 //@api 3.0
-//@version 1.3.24
+//@version 1.3.26
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
@@ -1338,7 +1338,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '1.3.24';
+const PLUGIN_VERSION = '1.3.26';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -1710,7 +1710,6 @@ const PLUGIN_VERSION = '1.3.24';
     recallRecencyWeight: 30,
     recallContextMessages: 5,
     contextualRecall: true,
-    gradiaFinalDelivery: true,
     adaptiveContextWindow: true,
     multiQueryRecall: true,
     contradictionBundleEnabled: true,
@@ -15666,7 +15665,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     embeddingQueryTask: 'embeddingQueryTask', embeddingDocumentTask: 'embeddingDocumentTask', embeddingQueryPrefix: 'embeddingQueryPrefix', embeddingDocumentPrefix: 'embeddingDocumentPrefix',
     embeddingNormalize: 'embeddingNormalize', captureAfterRequest: 'captureAfterRequest', operationLogEnabled: 'operationLogEnabled',
     promptCacheMode: 'promptCacheMode', evidenceGate: 'evidenceGate', currentSceneTailEnabled: 'currentSceneTailEnabled', entityFocusedRecallEnabled: 'entityFocusedRecallEnabled',
-    contextualRecall: 'contextualRecall', gradiaFinalDelivery: 'gradiaFinalDelivery', episodeIndexEnabled: 'episodeIndexEnabled', adaptiveContextWindow: 'adaptiveContextWindow', multiQueryRecall: 'multiQueryRecall', contradictionBundleEnabled: 'contradictionBundleEnabled',
+    contextualRecall: 'contextualRecall', episodeIndexEnabled: 'episodeIndexEnabled', adaptiveContextWindow: 'adaptiveContextWindow', multiQueryRecall: 'multiQueryRecall', contradictionBundleEnabled: 'contradictionBundleEnabled',
     multiResolutionRecallEnabled: 'multiResolutionRecallEnabled', recallStabilityEnabled: 'recallStabilityEnabled', recallRelatednessWeight: 'recallRelatednessWeight', recallRecencyWeight: 'recallRecencyWeight',
     recallContextMessages: 'recallContextMessages', recallStabilityBoost: 'recallStabilityBoost', topK: 'topK', minScore: 'minScore', candidateLimit: 'candidateLimit', gateHighCosine: 'gateHighCosine',
     maxInjectionChars: 'maxInjectionChars', hookRecallTimeoutMs: 'hookRecallTimeoutMs'
@@ -15813,7 +15812,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallRecencyWeight: clampNumber(raw.recallRecencyWeight ?? raw.recall_recency_weight, 0, 100, DEFAULTS.recallRecencyWeight),
       recallContextMessages: clampInt(raw.recallContextMessages ?? raw.recall_context_messages, 0, 20, DEFAULTS.recallContextMessages),
       contextualRecall: asBool(raw.contextualRecall, DEFAULTS.contextualRecall),
-      gradiaFinalDelivery: asBool(raw.gradiaFinalDelivery, true),
       adaptiveContextWindow: asBool(raw.adaptiveContextWindow ?? raw.adaptive_context_window, DEFAULTS.adaptiveContextWindow),
       multiQueryRecall: asBool(raw.multiQueryRecall ?? raw.multi_query_recall, DEFAULTS.multiQueryRecall),
       contradictionBundleEnabled: asBool(raw.contradictionBundleEnabled ?? raw.contradiction_bundle_enabled, DEFAULTS.contradictionBundleEnabled),
@@ -40708,13 +40706,12 @@ const MemorySuiteHealthRecovery = (() => {
     return true;
   };
 
-  // While GRADIA reads Flashback, GRADIA makes the one search of the turn and delivers it; the hook keeps
-  // capture. Its announcement expires, so removing GRADIA restores normal recall.
-  let flashbackGradiaAttachedUntil = 0;
-  const noteFlashbackGradiaAttach = ({ active, ttlMs }) => { flashbackGradiaAttachedUntil = active ? Date.now() + Math.min(Math.max(0, ttlMs), 300000) : 0; };
-  const noteFlashbackGradiaDelivery = ({ status, code }) => { if (Runtime.lastRecall?.gradia) { Runtime.lastRecall.gradia = { ...Runtime.lastRecall.gradia, status, code, reportedAt: Date.now() }; refreshLastRecallPanel(); } };
   // The dynamic evidence the hook would inject, for another reader. It arms no capture and writes nothing.
   const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatTurns = 0 } = {}) => {
+    const existing = Runtime.lastInjectedPrompt || Runtime.lastRecall?.injectedPrompt || '';
+    if (existing && typeof existing === 'string') {
+      return { content: existing };
+    }
     const settings = await loadSettings(true), bundle = await resolveCurrentScopeIdentityBundle(false), query = text(queryValue || '');
     check();
     const token = beginFlashbackRecallRequest(bundle.scope.scopeKey);
@@ -40735,10 +40732,9 @@ const MemorySuiteHealthRecovery = (() => {
       check();
       const plan = settings.maxInjectionChars >= 800 ? planFlashbackEvidenceBudget(recall, settings, settings.maxInjectionChars) : { text: '' };
       const content = text(plan.text || '').trim();
-      const finalDelivery = settings.gradiaFinalDelivery !== false;
-      Runtime.lastRecall = { ...recall, at: Date.now(), scopeKey: bundle.scope.scopeKey, latestUser: compact(query, 600), evidenceBudgetPlan: { actualChars: content.length }, gradia: { status: 'selected', chars: content.length, finalDelivery } };
-      refreshLastRecallPanel();
-      return { content, finalDelivery };
+      Runtime.lastInjectedPrompt = content;
+      if (Runtime.lastRecall) Runtime.lastRecall.injectedPrompt = content;
+      return { content };
     } finally { closeFlashbackRecallReadSet(token); }
   };
   const beforeRequest = async (messages, type = 'model') => {
@@ -41041,7 +41037,6 @@ const MemorySuiteHealthRecovery = (() => {
       await waitForBackgroundFlashbackWrites(scope.scopeKey, Math.min(FLASHBACK_BACKGROUND_WRITE_WAIT_MAX_MS, Math.max(0, hookTimeoutMs / 4)));
       recallToken = beginFlashbackRecallRequest(scope.scopeKey,recallRequestId);
       recallToken.settingsHash = stableHash(JSON.stringify(Runtime.settings || {}));
-      if (Date.now() < flashbackGradiaAttachedUntil) return injectStableFlashbackPrefix(messages, { liveMessages: liveChat.normalized || [], currentUserResolution: pendingCapture.currentUserResolution });
       const recallCallStartedAt = Date.now();
       const preRecallMs = Math.max(0, recallCallStartedAt - hookStartedAt);
       hookDeadlinePhase = 'recall';
@@ -41410,6 +41405,8 @@ const MemorySuiteHealthRecovery = (() => {
         blockChars: dynamicBlock.length,
         injectionPosition: settings.injectionPosition
       }, 'success');
+      Runtime.lastInjectedPrompt = dynamicBlock;
+      if (Runtime.lastRecall) Runtime.lastRecall.injectedPrompt = dynamicBlock;
       if (!flashbackRequestCurrent(recallToken,recallBranch)) return injectStableFlashbackPrefix(messages);
       publishFlashbackRecallDelivery(recall,evidenceBudgetPlan.selectionPlan,recallToken,recallBranch,settings,{returnedMessages:injectedMessages,dynamicBlock});
       return injectedMessages;
@@ -47483,15 +47480,13 @@ ${cleanedText}`, 80),
 
   const renderLastRecallPanel = (recall = Runtime.lastRecall, currentScopeKey = Runtime.currentScope?.scopeKey || '') => {
     if (!recall || (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey)) {
-      return '<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">아직 이번 세션에서 떠오른 기억이 없습니다.</p><div class="lab__meta">실제 리콜 결과가 생기면 프레임과 근거를 확인할 수 있습니다.</div><div class="lab__chips"><span class="badge">리콜 기록 없음</span></div></div><div class="frames"><div class="empty"><b>표시할 기억 프레임이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">이번 세션의 리콜 기록이 없습니다.</pre></div></details>';
+      return '<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">아직 이번 세션에서 떠오른 기억이 없습니다.</p><div class="lab__meta">실제 리콜 결과가 생기면 프레임과 근거를 확인할 수 있습니다.</div><div class="lab__chips"><span class="badge">리콜 기록 없음</span></div></div><div class="frames"><div class="empty"><b>표시할 기억 프레임이 없습니다.</b></div></div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">이번 세션에서 주입된 프롬프트가 없습니다.</pre></div></details>';
     }
     const queryFailure = recall.modelReadiness?.status === 'query_failed'
       ? `<div class="note note--warn"><b>쿼리 임베딩 실패 · 리콜 미전달</b><span> 원문은 보관됩니다. 모델 연결과 실제 오류를 확인한 뒤 다시 요청하세요.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
     const keywordFallback = recall.modelReadiness?.status === 'lexical_fallback'
       ? `<div class="note note--warn"><b>키워드 검색으로 대체</b><span> ${recall.modelReadiness.reason === 'query_timeout' ? '임베딩 응답이 늦어' : recall.modelReadiness.reason === 'query_cooldown' ? '최근 임베딩 실패 후 1분 동안' : '쿼리 임베딩이 실패해'} 이번 요청은 BM25·정확 일치로 기억을 찾았습니다.${recall.modelReadiness.error ? ` ${escapeHtml(recall.modelReadiness.error)}` : ''}</span></div>` : '';
-    if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><nav class="film" aria-label="최근 선택 기억 프레임"></nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({reason:recall.reason,normalizedType:recall.normalizedType},'{}'))}</pre></div></details>`;
-    const gradiaLabels = { selected: 'GRADIA에 전달 대기', final_delivered: 'GRADIA에 전달됨 · 최종 응답에도 전달', draft_only: 'GRADIA에 전달됨 · 최종 응답에는 미전달', failed: 'GRADIA 전달 실패', empty: 'GRADIA에 전달된 기억 없음' };
-    const gradiaNote = recall.gradia ? `<div class="note" data-gradia-delivery="${escapeHtml(recall.gradia.status)}"><b>${escapeHtml(gradiaLabels[recall.gradia.status] || recall.gradia.status)}</b>${recall.gradia.code ? `<span> ${escapeHtml(recall.gradia.code)}</span>` : ''}</div>` : '';
+    if (recall.skipped) return queryFailure + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">최근 요청은 리콜을 건너뛰었습니다.</p><div class="lab__meta">${escapeHtml(recall.reason || recall.normalizedType || 'skipped')}</div><div class="lab__chips"><span class="badge">리콜 건너뜀</span></div></div><div class="frames"><div class="empty"><b>이 요청에서 선택된 기억이 없습니다.</b></div></div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">이번 세션에서 주입된 프롬프트가 없습니다.</pre></div></details>`;
     const selected = Array.isArray(recall.selected) ? recall.selected.slice(0, 8) : [];
     const delivery = recall.delivery || {}, pipeline = delivery.pipeline || {};
     const returned = delivery.stage === 'returned_to_hook';
@@ -47508,7 +47503,7 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return gradiaNote + queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><nav class="film" aria-label="최근 선택 기억 프레임">${selected.map((_, i) => `<a href="#fb-recall-frame-${i}" data-frame="fb-recall-frame-${i}">FRAME ${String(i + 1).padStart(2, '0')}</a>`).join('')}</nav><details class="fold"><summary>검색 과정 · 고급 진단</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">${escapeHtml(safeStringify({ queryType: recall.queryType, candidateArms: recall.candidateArms, laneDiagnostics: recall.laneDiagnostics, elapsed: recall.stageElapsed, gateRejected: recall.gateRejected, alignment: recall.recallAlignment }, '{}'))}</pre></div></details>`;
+    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || '이번 세션에서 주입된 프롬프트가 없습니다.')}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
@@ -48152,7 +48147,6 @@ ${cleanedText}`, 80),
     return `<div class="stack">
       <section class="card"><div class="card__head"><div><h2 class="card__title">임베딩 프로바이더</h2><p class="card__desc">원문은 모델 없이도 보관됩니다. 검색에는 설정한 모델의 준비된 벡터만 사용하며, 실패한 요청은 로컬 벡터로 대체하지 않습니다.</p></div><span class="badge" id="embeddingProviderBadge">${escapeHtml(providerLabels[settings.embeddingProvider] || settings.embeddingProvider || '모델 미설정')}</span></div>
         <label class="setting"><span><b class="setting__name">임베딩 사용</b><span class="setting__desc" id="embeddingEnabled-description">끄면 새 벡터를 만들지 않습니다. 원문 보관은 계속됩니다.</span></span><span class="switch"><input id="embeddingEnabled" aria-describedby="embeddingEnabled-description" type="checkbox" ${settings.embeddingEnabled?'checked':''}><span class="switch__track"></span></span></label>
-        <label class="setting"><span><b class="setting__name">GRADIA 사용 시 최종 응답 모델에도 기억 전달</b><span class="setting__desc" id="gradiaFinalDelivery-description">끄면 Flashback 회상은 GRADIA 초안 단계에서만 쓰입니다.</span></span><span class="switch"><input id="gradiaFinalDelivery" aria-describedby="gradiaFinalDelivery-description" type="checkbox" ${settings.gradiaFinalDelivery!==false?'checked':''}><span class="switch__track"></span></span></label>
         <label class="setting"><span><b class="setting__name">새 임베딩 작업 자동 시작</b><span class="setting__desc" id="embeddingAutoProcess-description">저장된 새 기억의 임베딩을 자동으로 시작합니다.</span></span><span class="switch"><input id="embeddingAutoProcess" aria-describedby="embeddingAutoProcess-description" type="checkbox" ${settings.embeddingAutoProcess!==false?'checked':''}><span class="switch__track"></span></span></label>
         <div class="grid g2"><div class="field"><label for="embeddingProvider">Provider</label><select class="select" id="embeddingProvider">${providerOptions}</select></div><div class="field"><label for="embeddingModel">모델</label><input class="input" id="embeddingModel" list="embeddingModelSuggestions" value="${escapeHtml(settings.embeddingModel)}"><datalist id="embeddingModelSuggestions">${recommendedModels}</datalist></div>
           ${field('embeddingUrl','Base URL / 서버 주소',settings.embeddingUrl,'placeholder="비워두면 기본값"')}
@@ -49487,7 +49481,6 @@ ${cleanedText}`, 80),
       embeddingProvider: value('embeddingProvider', base.embeddingProvider),
       embeddingEnabled: checkbox('embeddingEnabled', base.embeddingEnabled),
       embeddingAutoProcess: checkbox('embeddingAutoProcess', base.embeddingAutoProcess),
-      gradiaFinalDelivery: checkbox('gradiaFinalDelivery', base.gradiaFinalDelivery),
       embeddingUrl: value('embeddingUrl', base.embeddingUrl),
       embeddingEndpoint: value('embeddingEndpoint', base.embeddingEndpoint),
       embeddingModel: value('embeddingModel', base.embeddingModel),
@@ -53070,7 +53063,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -53087,22 +53080,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
-      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
-      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -53232,10 +53222,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
     const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+    return { content: result.content };
   };
-  // Fire and forget: an owner that is not running simply does not hear it.
-  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -53279,7 +53267,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
-            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -53335,7 +53322,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, select, notify, createClient, dispose });
+  return Object.freeze({ start, describe, select, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   let gradiaPluginReadOwner = null;
@@ -53353,17 +53340,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
           return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
       },
-      onAttach: noteFlashbackGradiaAttach, onDelivery: noteFlashbackGradiaDelivery,
       select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
       capture: async (request, authority) => {
         // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
         // What was selected is held as selected, as in this plugin's own hook.
         const read = { assertCurrent: async () => true, close() {} };
         try {
-          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
+          const { content } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
           return { ...read, engine: { source: 'owner_selection' },
             items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
-              source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
+              source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey } }] : [] };
         } catch (error) { read.close?.(); throw error; }
       }
     });
@@ -53429,7 +53415,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     rebuildCurrentChatMemory,
     recallRecords,
     _selectionTest: {
-      selectRecallPrompt: selectFlashbackRecallPrompt, noteGradiaAttach: noteFlashbackGradiaAttach,queryCatalogForManifest,selectFusedRecallCandidates,beforeRequest,afterRequest,resolveFlashbackCaptureLineage,capturePendingTurnForMessages, RecallKeywordFeatures, extractRecallAnchors, lexicalTokens, sparseTokenArray, recallEntitiesForRecord,prepareFlashbackRecall,selectFlashbackEvidencePlan,prepareFlashbackEvidenceUnits,renderFlashbackEvidencePlan,reciprocalRankFusion,
+      selectRecallPrompt: selectFlashbackRecallPrompt, queryCatalogForManifest,selectFusedRecallCandidates,beforeRequest,afterRequest,resolveFlashbackCaptureLineage,capturePendingTurnForMessages, RecallKeywordFeatures, extractRecallAnchors, lexicalTokens, sparseTokenArray, recallEntitiesForRecord,prepareFlashbackRecall,selectFlashbackEvidencePlan,prepareFlashbackEvidenceUnits,renderFlashbackEvidencePlan,reciprocalRankFusion,
       buildFlashbackEvidenceRequirements,beginFlashbackRecallRequest,flashbackRequestCurrent,publishFlashbackRecallDelivery},
     rebuildEpisodeIndex: (scopeOverride = null) => (async () => {
       const settings = await loadSettings(true);
@@ -56140,37 +56126,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       });
       runtime.observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
     };
-    let gradiaPluginReadOwner = null;
-  const getGradiaPluginReadOwner = () => {
-    if (gradiaPluginReadOwner) return gradiaPluginReadOwner;
-    const primitives = createGradiaReadPrimitives();
-    gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'flashback', primitives,
-      api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
-      boundary: async () => {
-          if (Runtime.unloaded) throw Error('LIB_READ_CANCELED');
-          // Identity only: resolveCurrentScope() also performs adoption/repair.
-          const native = resolveScopeFromSnapshot(await loadRisuSnapshot(false));
-          const scope = { scopeKey: native.scopeKey, characterId: native.canonicalCharacterId || native.characterId,
-            chatId: native.canonicalChatId || native.chatId };
-          const route = await MemorySuiteStorageBridge.getScopeMode({ ...scope, scopeId: scope.scopeKey });
-          return { scope, mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation };
-      },
-      onAttach: noteFlashbackGradiaAttach, onDelivery: noteFlashbackGradiaDelivery,
-      select: (queryText, check, extra) => selectFlashbackRecallPrompt(queryText, check, extra),
-      capture: async (request, authority) => {
-        // The snapshot only proves currentness; what GRADIA reads is Flashback's own selection.
-        // What was selected is held as selected, as in this plugin's own hook.
-        const read = { assertCurrent: async () => true, close() {} };
-        try {
-          const { content, finalDelivery } = await selectFlashbackRecallPrompt(request.queryText, () => authority?.check?.(), { recentChatTurns: request.recentChatTurns || 0 });
-          return { ...read, engine: { source: 'owner_selection' },
-            items: content ? [{ id: 'flashback.recall:' + primitives.fingerprint(content), key: 'flashback.recall', content,
-              source: { namespace: 'flashback', kind: 'owner_recall_prompt', scopeKey: request.scope.scopeKey, finalDelivery } }] : [] };
-        } catch (error) { read.close?.(); throw error; }
-      }
-    });
-    return gradiaPluginReadOwner;
-  };
   const publicApi = Object.freeze({
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
       pluginId: config.pluginId,

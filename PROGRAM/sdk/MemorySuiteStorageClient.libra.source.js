@@ -9618,7 +9618,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!registry.legacyGlobalModeImported && !stored && !global) {
       if (!globalModeEnabled) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
       for (const value of [pluginRaw, deviceRaw]) if (value != null && value !== '') {
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        let parsed; try { parsed = typeof value === 'string' ? JSON.parse(value) : value; } catch (_) { throw new Error('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed.namespace !== namespace || parsed.legacyGlobalModeImported !== undefined
             && typeof parsed.legacyGlobalModeImported !== 'boolean') throw new Error('HEALTH_ROUTE_UNVERIFIED');
       }

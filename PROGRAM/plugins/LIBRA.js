@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.36
+//@display-name LIBRA v2.6.38
 //@api 3.0
-//@version 2.6.36
+//@version 2.6.38
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1299,7 +1299,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.36';
+  const PLUGIN_VERSION = '2.6.38';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -13484,7 +13484,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!registry.legacyGlobalModeImported && !stored && !global) {
       if (!globalModeEnabled) throw new Error('HEALTH_ROUTE_UNINITIALIZED');
       for (const value of [pluginRaw, deviceRaw]) if (value != null && value !== '') {
-        const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+        let parsed; try { parsed = typeof value === 'string' ? JSON.parse(value) : value; } catch (_) { throw new Error('HEALTH_ROUTE_UNVERIFIED'); }
         if (parsed.namespace !== namespace || parsed.legacyGlobalModeImported !== undefined
             && typeof parsed.legacyGlobalModeImported !== 'boolean') throw new Error('HEALTH_ROUTE_UNVERIFIED');
       }
@@ -14445,7 +14445,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   scopeDataSummary:({scope,records})=>{
     const row=records.find(row=>row.logicalKey===`libra:v1:scope:${scope.scopeId}:manifest`&&(scope.sourceMode==='server_only'?row.location==='server':row.location!=='server'));
     if(!row)return '정본 기억 목록 없음';
-    const raw=row.logicalValue??row.value,value=typeof raw==='string'?JSON.parse(raw):raw;
+    let value; try { const raw=row.logicalValue??row.value; value=typeof raw==='string'?JSON.parse(raw):raw; } catch(_) { value=null; }
+    if (!value) return '정본 기억 데이터 손상';
     const micro=new Set(records.filter(row=>row.scopeId===scope.scopeId&&row.logicalKey.startsWith(`libra:v1:scope:${scope.scopeId}:micro-memory:`)).map(row=>row.logicalKey)).size;
     return {label:`정본 기억 ${Object.keys(value.memories||{}).length}개 · 승계 참조 ${(value.inheritedMemories||[]).length}개 · Micro ${micro}개`,primary:Object.keys(value.memories||{}).length,secondary:micro,updatedAt:value.updatedAt};
   },
@@ -15092,7 +15093,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const aliases = {
       turnWindow: 'turn_window', maxRecentChars: 'max_recent_chars', maxPreviousStageChars: 'max_previous_stage_chars',
       maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode', injectionMode: 'injection_mode',
-      memoryStateAutoApply: 'memory_state_auto_apply', finalDeliveryForGradia: 'final_delivery_for_gradia', responseFamily: 'response_family', libraResponseMode: 'libra_response_mode', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
+      memoryStateAutoApply: 'memory_state_auto_apply', responseFamily: 'response_family', libraResponseMode: 'libra_response_mode', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
       bootstrapReferencesEnabled: 'bootstrap_references_enabled', bootstrapReferenceMaxChars: 'bootstrap_reference_max_chars', classicLiveTailEnabled: 'classic_live_tail_enabled',
       responseLoreEnabled: 'response_lore_enabled', responseLoreStartCount: 'response_lore_start_count', responseLoreMaxItems: 'response_lore_max_items', responseLoreMaxChars: 'response_lore_max_chars',
       risuAuxAllowPlugins: 'risuai_aux_allow_plugins',
@@ -16187,7 +16188,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       schema: LENS_REGISTRY_SCHEMA,
       enabled: src.enabled !== false,
       maxSlots: MAX_LENS_SLOTS,
-      recallBudgetRatio: Math.max(0.1, Math.min(0.25, Number(src.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO)),
+      recallBudgetRatio: Math.max(0.1, Math.min(0.75, Number(src.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO)),
       recallMaxChars: clampInt(src.recallMaxChars, LENS_RECALL_MIN_CHARS, LENS_RECALL_MAX_CHARS, LENS_RECALL_MAX_CHARS),
       // Meaning-based recall through the canonical embedding settings; on unless switched off.
       recallSemantic: src.recallSemantic !== false,
@@ -17472,7 +17473,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const libraResponseMode = normalizeLibraResponseMode(await runtimeCfg('libra_response_mode', ''), legacyInjectionMode);
     const liveContextEnabled = false; // Retired: completed-turn evidence comes from Micro memory.
     const memoryStateAutoApply = asBool(await runtimeCfg('memory_state_auto_apply', 'true'), true);
-    const finalDeliveryForGradia = asBool(await runtimeCfg('final_delivery_for_gradia', 'true'), true);
     const liveTailMaxTurns = clampInt(await runtimeCfg('live_tail_max_turns', DEFAULT_LIVE_TAIL_MAX_TURNS), 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS);
     const liveTailMaxChars = clampInt(await runtimeCfg('live_tail_max_chars', DEFAULT_LIVE_TAIL_MAX_CHARS), LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS);
     const bootstrapReferencesEnabled = asBool(await runtimeCfg('bootstrap_references_enabled', 'true'), true);
@@ -17580,7 +17580,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       injectionMode,
       liveContextEnabled,
       memoryStateAutoApply,
-      finalDeliveryForGradia,
       liveTailMaxTurns,
       liveTailMaxChars,
       bootstrapReferencesEnabled,
@@ -33414,6 +33413,15 @@ function createLibraReadonlySourceContext(owner) {
     const UNIFIED_CLASSIC_HEADER = [CLASSIC_INJECTION_MARKER, UNIFIED_RECALL_RULES,
       '<LIBRA_CLASSIC_RECALL>'].join('\n');
     const UNIFIED_CLASSIC_FOOTER = '</LIBRA_CLASSIC_RECALL>';
+    const cleanClassicEvidencePrompt = raw => {
+      if (!raw) return '';
+      return String(raw)
+        .replace(/^\[LIBRA_EVIDENCE\b[^\]]*\]\r?\n?/gm, '')
+        .replace(/^(\(\d+\))\s*\[canonical\]\s*/gm, '$1 ')
+        .replace(/\[state:state_([^\]]+)\]/g, '[$1]')
+        .replace(/\[state:([^\]]+)\]/g, '[$1]')
+        .replace(/\[lens:([^\]]+)\]/g, '[$1]');
+    };
     const unifiedGraphDeliveryAuthority = new WeakMap();
     const LEGACY_RESPONSE_INJECTION_MARKER = '[LIBRA SGA DRAFT — CURRENT TURN ONLY]';
 
@@ -33812,8 +33820,6 @@ function createLibraReadonlySourceContext(owner) {
       receiptRecoveryLedgerTails: new Map(),
       receiptRecoveryCompletions: new Set(),
       lastMicroPublication: null,
-      gradiaAttachedUntil: 0,
-      lastGradiaSelection: null,
       embeddingWork: [],
       lastRecallSemantic: null,
       lastMicroPlanRefusal: null,
@@ -35689,6 +35695,8 @@ function createLibraReadonlySourceContext(owner) {
       // record is never projected; dropping the index for it sent every recall
       // after a new turn back to a full cold build. Source proofs still decide.
       if (/:pending-live-boundaries:v1$/.test(String(storageKey))) return;
+      if (/:(?:evidence-link-index|lore-link-index|state-replay-cache|state-replay-errors|recall-catalog):v1$/.test(String(storageKey))) return;
+      if (/:(?:predecessor-)?vector:[^:]+:r\d+:[^:]+$/.test(String(storageKey))) return;
       volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
       volatileState.consecutiveSourceChangeRetries = 0;
       if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
@@ -35921,12 +35929,21 @@ function createLibraReadonlySourceContext(owner) {
       verifiedReadStats.sessions++;
       return frame;
     };
-    const withBackgroundReadJob = async (scope,task) => {
+    const withBackgroundReadJob = async (scope,task,options={}) => {
       const existing=memoryGraphReadFrames.get(scope);
       if(existing&&!existing.disabled || memoryGraphSourceBudgets.has(scope))return task(scope);
-      const jobScope={...scope},frame=await openBackgroundReadFrame(jobScope);
-      try{const result=await task(jobScope);if(!frame.writeBoundaryClosed)await frame.assertCurrent();return result;}
-      finally{frame.close();}
+      for(let attempt=0;;attempt++){
+        const jobScope={...scope},frame=await openBackgroundReadFrame(jobScope);
+        try{const result=await task(jobScope);if(!frame.writeBoundaryClosed)await frame.assertCurrent();return result;}
+        catch(error){
+          // Only explicitly opted-in, unpaid source preparation can restart.
+          // A concurrent inventory/receipt publication invalidates its witness;
+          // discard the entire frame and re-read, never waive the closing fence.
+          if(!options.retryTornRead||attempt>=2||state.disposed
+            ||String(error?.code||error?.message)!=='LIBRA_GRAPH_READER_BODY_CHANGED')throw error;
+        }finally{frame.close();}
+        await new Promise(resolve=>setTimeout(resolve,40*(attempt+1)));
+      }
     };
     const closeBackgroundReadFramesForWrite = async (storageKey='',actorScope=null) => {
       const actor=actorScope&&memoryGraphReadFrames.get(actorScope);
@@ -38806,10 +38823,12 @@ function createLibraReadonlySourceContext(owner) {
       const identity = messageIdentity(raw, index);
       const keyValue = pairRevisionEntryKey(raw, index, role, identity);
       const rawComparable = pairRevisionRawComparable(pairRevisionRawPayload(raw));
-      state.memoryNetworkIO.rawBodyBytesValidated += new TextEncoder().encode(String(rawComparable.value ?? '')).length;
       const metaKey = pairRevisionMetaKey(raw, role, identity) + sourceTagKey;
       let entry = cache.entries.get(keyValue);
       if (entry && entry.rawType === rawComparable.type && entry.rawValue === rawComparable.value && entry.metaKey === metaKey) {
+        state.memoryNetworkIO.rawBodyBytesValidated += Number.isSafeInteger(entry.rawBodyBytes)
+          ? entry.rawBodyBytes
+          : (entry.rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length);
         cache.entries.delete(keyValue);
         cache.entries.set(keyValue, entry);
         entry.index = index;
@@ -38817,6 +38836,8 @@ function createLibraReadonlySourceContext(owner) {
         state.pairRevisionCacheStats.hits += 1;
         return entry;
       }
+      const rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length;
+      state.memoryNetworkIO.rawBodyBytesValidated += rawBodyBytes;
       state.pairRevisionCacheStats.misses += 1;
       // Standalone source-evidence readers share these entries too. An entry
       // refresh invalidates the paired snapshot even if its hashes collide.
@@ -38835,7 +38856,7 @@ function createLibraReadonlySourceContext(owner) {
       const signature = branchContentHash([role, identity.source, identity.id, body].join('\u0000'));
       entry = {
         key: keyValue, index, role, identity, body,
-        rawType: rawComparable.type, rawValue: rawComparable.value, metaKey,
+        rawType: rawComparable.type, rawValue: rawComparable.value, rawBodyBytes, metaKey,
         rawPayloadDigest: digest({ type: rawComparable.type, value: rawComparable.value }),
         sanitizedTextDigest: digest({ role, body }),
         sanitizationTransformed: rawComparable.type !== 'string' || rawComparable.value !== body,
@@ -40333,7 +40354,7 @@ function createLibraReadonlySourceContext(owner) {
       return result;
     };
     const reconcileCompletedTurnReceipts = (context,pairs,options={}) => withBackgroundReadJob(context.scope,
-      scope=>reconcileCompletedTurnReceiptsImpl({...context,scope},pairs,options));
+      scope=>reconcileCompletedTurnReceiptsImpl({...context,scope},pairs,options),{retryTornRead:true});
     // The normal scan prepares only a bounded tail. An admitted older batch
     // needs its own five original receipts before the read-only canonical gate.
     const prepareSelectedCompletedTurnReceipts = async (context, pairs, startTurn, options = {}) => {
@@ -41049,7 +41070,19 @@ function createLibraReadonlySourceContext(owner) {
       }
       return clone(readback);
     };
-    const stateTrackingResultComplete = result => result?.continuityRequired === false
+    // 2026-11-07: 이 재생 경로를 OOM의 추정 원인으로 보고 패치했다.
+    // 제외 사실만 남은 완료 재생을 pending으로 유지하면 재시작/복구마다
+    // 전체 정본을 다시 복제·재생한다. 힙 기록이 없어 실제 OOM의 직접 원인 확정은 아니다.
+    // 제외 사실은 보존하고, 봉인된 Head/Registry와 모든 도메인이 확인된 작업만 종료한다.
+    const stateTrackingReplaySettled = result => result?.ok === true && result.localReplay === true
+      && !result.pendingBoundary && result.receipt?.schema === STATE_PIPELINE_RECEIPT_SCHEMA
+      && result.receipt.replay === true && result.receipt.status === 'partial'
+      && result.receipt.receiptDigest === statePipelineReceiptDigest(result.receipt)
+      && result.receipt.headDigest === digest(result.head) && result.receipt.registryDigest === digest(result.registry)
+      && Number(result.head?.unifiedCoverage?.legacyCount || 0) === 0
+      && RESPONSE_STATE_DOMAINS.every(domain => result.head?.domainStatus?.[domain]?.status === 'ready')
+      && asArray(result.head?.unifiedApplied?.pending).every(p => !unifiedPendingHoldsDomain(p));
+    const stateTrackingResultComplete = result => stateTrackingReplaySettled(result) || result?.continuityRequired === false
       || result?.reason === 'state_tracking_disabled'
       || result?.reason === 'already_reviewed'
       || ['complete', 'not_required'].includes(string(result?.receipt?.status || ''));
@@ -43464,7 +43497,7 @@ function createLibraReadonlySourceContext(owner) {
             inheritedMicroIntact = archiveChecks.every(Boolean);
           }
           if (inheritedMicroIntact) {
-            return { ok: true, skipped: true, reason: 'native_copy_already_complete', nativeChatCopy: clone(existingReceipt) };
+            return { ok: true, skipped: true, verified: true, durable: true, reason: 'native_copy_already_complete', nativeChatCopy: clone(existingReceipt) };
           }
           // A once-verified receipt cannot certify a body that has since disappeared.
           // Fall through to source-based repair; an unavailable source stays unresolved.
@@ -60174,7 +60207,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const microPending=asArray(view?.head?.microProjection?.pendingClaims);
       const reviewTurns=new Set([...microPending.map(p=>Number(p.turn)),...Object.values(policy.decisions).filter(d=>d.row?.kind==='micro').map(d=>Number(d.row.turn))]);
       for(const pair of pairs.filter(p=>reviewTurns.has(p.turn))){
-        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn);}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
+        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
         if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
@@ -60197,7 +60230,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
       const context=await resolveContext();if(context.scope.scopeKey!==scope.scopeKey)return view;
-      const catalog=options.reviewCatalog||await collectMemoryReviews(context,manifest,view),head=view.head?clone(view.head):null;
+      const catalog=options.reviewCatalog||await collectMemoryReviews({...context,scope},manifest,view),head=view.head?clone(view.head):null;
       if(!head)return {...view,memoryReview:{rows:catalog.rows,unavailable:catalog.unavailable}};
       const proofs=asArray(consumedMicroProofsByState.get(view.authority||view.head)).slice();
       const proofKeys=new Set(proofs.flatMap(p=>[p.recordKey,p.headKey,p.receiptKey]).filter(Boolean));
@@ -60730,19 +60763,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return totals;
     };
     const admitMicroStateClaim = async (scope, worldlineId, sessionEpoch, turn, claimIndex, options = {}) => {
-      const active = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn);
+      const readOnly = options.readOnly === true;
+      const context = readOnly && options.context ? options.context : await resolveContext();
+      if (context.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed' };
+      const currentSourcePairs = readOnly && Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, scope.scopeKey);
+      const active = readOnly && options.active ? options.active : await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
       if (active.status !== 'verified') return { status: active.status, reason: active.reason || '' };
-      const source = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
+      const source = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
       if (source.status !== 'verified' || source.receiptKey !== active.record.receiptKey) {
         return { status: 'stale_source', reason: 'micro_receipt_changed' };
       }
       if (!asArray(active.record.claims)[claimIndex]) return { status: 'pending', reason: 'claim_missing' };
-      const context = await resolveContext();
-      if (context.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed' };
-      const currentSourcePairs = buildPairs(context.chat, scope.scopeKey);
-      const manifest = await loadManifest(scope, currentSourcePairs.length);
+      const manifest = readOnly && options.manifest ? options.manifest : await loadManifest(scope, currentSourcePairs.length);
       const hostWorldlineMeta = normalizeHostWorldlineMeta(manifest.worldlineMeta, scope, manifest.createdAt);
-      const stateWorldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
+      const stateWorldlineMeta = readOnly && options.stateWorldlineMeta ? options.stateWorldlineMeta : await loadStateWorldlineMeta(scope, { strict: true });
       const logicalWorldlineId = string(stateWorldlineMeta.activeWorldlineId || '');
       const activeStateWorldline = asObject(stateWorldlineMeta.worldlines?.[logicalWorldlineId]);
       const cutoff = activeStateWorldline.cutoffTurn;
@@ -60964,7 +60998,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }).filter(turn => turn > 0 && turn <= canonicalThroughTurn))].sort((a, b) => a - b) : [];
         for (const turn of overlapTurns) {
           let active;
-          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn); }
+          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
@@ -61015,7 +61049,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
               let sourceVerified = false;
               try {
-                const source = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, turn);
+                const source = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, turn, { context, pairs });
                 sourceVerified = source.status === 'verified'
                   && source.receiptKey === active.record.receiptKey
                   && validateMicroCandidate({ schema: 'libra.micro_memory.v1',
@@ -61179,7 +61213,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         let active;
-        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn); }
+        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
         catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
         if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
           pendingClaims.push({ turn, reason: active.reason || active.status });
@@ -61196,7 +61230,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           stateProofs.push(activeMicroConsumptionProof(active));
           let read;
-          try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true }); }
+          try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active }); }
           catch (_) { read = { status: 'pending_reconciliation', reason: 'admission_read_failed' }; }
           if (read.decisionKey && read.decision) stateProofs.push(stateDecisionConsumptionProof(read.decisionKey, read.decision));
           if (read.status === 'superseded' && read.decision?.reason === 'explicit_user_correction') {
@@ -61720,7 +61754,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { status: 'verified', reason: '', inventory, inventoryKey: head.inventoryKey, headKey };
     };
     const readPersonSpanInventory=(scope,worldlineId,sessionEpoch,turn,expectedRegistryDigest='')=>withBackgroundReadJob(scope,
-      observed=>readPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn,expectedRegistryDigest));
+      observed=>readPersonSpanInventoryImpl(observed,worldlineId,sessionEpoch,turn,expectedRegistryDigest),{retryTornRead:true});
     const verifiedPersonCandidatePromptBlock = async (batch, registryValue, scopeKey) => {
       const context = await resolveContext();
       if (string(context?.scope?.scopeKey || '') !== string(scopeKey || '')) return '';
@@ -61766,7 +61800,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         + JSON.stringify({ schema: 'libra.person_span_prompt.v1', spans: candidates.slice(0, 64),
           relations: relations.slice(0, 32), omitted: Math.max(0, candidates.length - 64),
           relationsOmitted: Math.max(0, relations.length - 32) });
-      });
+      },{retryTornRead:true});
     };
     // A generic place mention needs a single verified prior place of the same
     // named person. Never merge on the noun alone or across a movement cue.
@@ -64106,7 +64140,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           && digest(sourcePairs([current]))===digest(sourcePairs([pair]));}),
         'CANONICAL_COMPLETED_RECEIPT_SOURCE_CHANGED');
       return {batch,refs};
-      });
+      },{retryTornRead:true});
     };
     // Canonical synthesizes the original five turns together with their verified
     // Micro observations. Micro proposals include provisional State intents;
@@ -66985,7 +67019,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           warn('LIBRA post-commit state tracking failed open', continuityStateError);
         }
-        if (continuityStateUpdate?.ok === true && continuityStateUpdate.head?.status === 'ready') {
+        // A partial narrative must not prevent fresh admission in ready domains.
+        // Each claim still goes through its own domain/evidence checks.
+        if (continuityStateUpdate?.ok === true && continuityStateUpdate.head) {
           refreshMicroStateAdmissionsAfterCanonical(context.scope, startTurn,
             buildPairs(context.chat, context.scope.scopeKey).length);
         }
@@ -67502,38 +67538,66 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return summary;
     };
+    let currentStateSnapshotRefreshRunning=false,currentStateSnapshotRefreshPending=null;
     const scheduleCurrentStateSnapshotRefresh = scope => {
       if (state.disposed) return;
+      currentStateSnapshotRefreshPending={...scope};
       const timerKey = 'current_state_snapshot';
       clearTimeout(state.timers.get(timerKey));
+      // A 100 ms debounce alone permits overlapping multi-second projections.
+      // Retain one scope request, not another full chat/State snapshot per turn.
+      if(currentStateSnapshotRefreshRunning||auxiliaryReanalysisRunning)return;
       const timer = setTimeout(async () => {
         state.timers.delete(timerKey);
         if (state.disposed) return;
+        if(auxiliaryReanalysisRunning)return; // A selection may start after the timer was armed.
+        const requested=currentStateSnapshotRefreshPending;
+        currentStateSnapshotRefreshPending=null;
+        currentStateSnapshotRefreshRunning=true;
         try {
           const context = await resolveContext();
-          if (!sameSnapshotScope(context.scope, scope)) return;
+          if (!sameSnapshotScope(context.scope, requested)) return;
           await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
         } catch (_) { /* A later explicit refresh still revalidates all State evidence. */ }
+        finally{
+          currentStateSnapshotRefreshRunning=false;
+          if(currentStateSnapshotRefreshPending&&!state.disposed)scheduleCurrentStateSnapshotRefresh(currentStateSnapshotRefreshPending);
+        }
       }, 100);
       state.timers.set(timerKey, timer);
     };
+    const microStateAdmissionRefreshes=new Map();
     const refreshMicroStateAdmissionsAfterCanonical = (scope, startTurn, throughTurn) => {
-      void (async () => {
+      const prior=microStateAdmissionRefreshes.get(scope.scopeKey);
+      if(prior){prior.start=Math.min(prior.start,Number(startTurn));prior.end=Math.max(prior.end,Number(throughTurn));prior.pending=true;return prior.promise;}
+      const job={start:Number(startTurn),end:Number(throughTurn),pending:true,promise:null};
+      microStateAdmissionRefreshes.set(scope.scopeKey,job);
+      job.promise=Promise.resolve().then(async () => {
+        while(job.pending&&!state.disposed){
+        // Finish the canonical writer's whole batch selection before publishing
+        // derived decisions. Otherwise T1's refresh races T6's source preparation.
+        const writer=state.queues.get(scope.scopeKey);
+        if(writer)await writer.catch(()=>null);
+        if(state.disposed)return;
+        const start=job.start,end=job.end;
+        job.start=Infinity;job.end=0;job.pending=false;
         const totals = { admitted: 0, pending: 0, pendingReconciliation: 0 };
         const worldlineId = hostWorldlineIdForScope(scope);
-        const end = Math.min(Number(throughTurn || 0), Number(startTurn || 0) + BATCH_SIZE * 2 - 1);
-        for (let turn = Number(startTurn || 0); turn <= end && !state.disposed; turn += 1) {
+        for (let turn = start; turn <= end && !state.disposed; turn += 1) {
+          if (turn > start && turn % 10 === 0) await new Promise(resolve => setTimeout(resolve, 0));
           const summary = await admitPublishedMicroStateClaims(scope, worldlineId, 0, turn);
           for (const field of Object.keys(totals)) totals[field] += Number(summary[field] || 0);
         }
         const inherited = await admitInheritedMicroStateClaims(scope);
-        state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
+        state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn:start,
           throughTurn: end, ...totals, inherited };
         scheduleCurrentStateSnapshotRefresh(scope);
-      })().catch(error => {
+        }
+      }).catch(error => {
         state.lastMicroStateAdmissionRefresh = { at: Date.now(), startTurn,
           status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
-      });
+      }).finally(()=>{if(microStateAdmissionRefreshes.get(scope.scopeKey)===job)microStateAdmissionRefreshes.delete(scope.scopeKey);});
+      return job.promise;
     };
     // Explicit replacement keeps the published work/head readable while the provider runs.
     // Only a validated successful result replaces them; failed publication restores both.
@@ -67625,7 +67689,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         .then(async result => {
           // Raw/Micro are already durable. Give optional vector warming a short
           // grace period rather than blocking every following analysis behind it.
-          if (result?.status === 'verified' && !state.disposed) {
+          if (result?.status === 'verified' && !state.disposed && !auxiliaryReanalysisRunning) {
             let timer = null;
             await Promise.race([warmMicroRepresentationVectors(), new Promise(resolve => { timer = setTimeout(resolve, MICRO_WARM_PUBLICATION_WAIT_MS); })]);
             clearTimeout(timer);
@@ -72444,13 +72508,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
         // Recent dialogue can inform retrieval queries; only memory evidence is injected.
         queryBundle.unifiedEnvelopeReserve = 0;
-        // While GRADIA reads LIBRA, GRADIA makes the one search of the turn and delivers it. Its announcement
-        // expires, so removing GRADIA restores normal recall.
-        if (Date.now() < Number(state.gradiaAttachedUntil || 0)) {
-          Runtime.lastInjectionMode = injectionMode;
-          Runtime.lastMemoryInjectionMeta = { at: Date.now(), requestType: normalizeRequestType(type), injected: false, gradiaCompat: true };
-          return messages;
-        }
         // The lens query embedding runs alongside canonical recall; lens recall reuses it.
         void prewarmLensQuery(context, queryBundle.currentText);
         // Scan/vector publication already uses this scope's writer queue. Keep
@@ -72492,13 +72549,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
           warn('LIBRA lens recall failed open', lensErr);
           lensRecall = null;
         }
-        const baseContent = string(packet.renderedText || '');
+        const baseContent = cleanClassicEvidencePrompt(packet.renderedText || '');
         const lensRenderedBlock = string(lensRecall?.renderedBlock || '');
         const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
         const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
         const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
         const content = useLensBlock ? candidateWithLens : baseContent;
         const block = content ? [UNIFIED_CLASSIC_HEADER, content, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+        state.latestRenderedClassicBlock = block;
         const receiptToken = registerConsumedDataReadSet(context.scope, [], queryBundle.receiptReadSet);
         bindConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));
         if (block.length > CLASSIC_MAX_INJECTION_CHARS) throw new Error('LIBRA_GRAPH_CONSUMER_CHARACTER_BUDGET');
@@ -72730,7 +72788,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
       && string(left.characterId || '') === string(right.characterId || '')
       && string(left.chatId || '') === string(right.chatId || '');
 
+    let snapshotRefreshTail=Promise.resolve();
+    const queuedSnapshotRefreshes=new Map();
     const refreshSnapshot = async (suppliedContext, options = {}) => {
+      // 2026-11-07: 인물 카드 열람/상태 추적 후 OOM의 추정 원인 경로로 보고 패치했다.
+      // 이전 자동 갱신 debounce 밖의 GUI 직접 갱신도 전체 State를 동시에 만들 수 있었다.
+      // 모든 snapshot 생성은 직렬화하고, 대기 중 같은 요청은 합쳐 일시적 복제를 줄인다.
+      // 실제 호스트 OOM 해소는 별도 실측이 필요하며 검증/사실 선별 조건은 바꾸지 않는다.
+      const scope=asObject(suppliedContext?.scope);
+      const requestKey=typeof options.onProvisional==='function'?Symbol('provisional_snapshot'):
+        JSON.stringify([scope.scopeKey||'',scope.characterId||'',scope.chatId||'',{...options,cloneResult:undefined}]);
+      let job=queuedSnapshotRefreshes.get(requestKey);
+      if(job)job.context=suppliedContext;
+      else{
+        job={context:suppliedContext,options:{...options,cloneResult:false},promise:null};
+        queuedSnapshotRefreshes.set(requestKey,job);
+        job.promise=snapshotRefreshTail.catch(()=>null).then(()=>{
+          if(queuedSnapshotRefreshes.get(requestKey)===job)queuedSnapshotRefreshes.delete(requestKey);
+          return refreshSnapshotImpl(job.context,job.options);
+        });
+        snapshotRefreshTail=job.promise.then(()=>undefined,()=>undefined);
+      }
+      const result=await job.promise;
+      return options.cloneResult===false?result:clone(result);
+    };
+    const refreshSnapshotImpl = async (suppliedContext, options = {}) => {
       const refreshSerial = ++state.snapshotRefreshSerial;
       let context = suppliedContext || null;
       let backgroundFrame = null;
@@ -74660,6 +74742,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return {ok:false,processed:results.filter(result=>result.ok).length,results,reason:String(error?.message||error)};
       }finally{
         auxiliaryReanalysisRunning=false;
+        if(currentStateSnapshotRefreshPending)scheduleCurrentStateSnapshotRefresh(currentStateSnapshotRefreshPending);
+        // Rebuild optional graph/vector projections once after the selection,
+        // while every turn's durable Micro and State admission remain immediate.
+        if(isMicro&&results.some(result=>result.ok)&&!state.disposed)void warmMicroRepresentationVectors();
       }
     };
 
@@ -76204,7 +76290,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // A background writer (embedding status, micro memory, state) can publish while a
     // projection is being read. The final readback then rejects the torn snapshot;
     // re-read a fresh one a bounded number of times instead of failing the recall.
-    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED', 'OWNER_PUBLICATION_CHANGED']);
+    const MEMORY_GRAPH_TORN_READ_CODES = new Set(['LIBRA_GRAPH_READER_BODY_CHANGED', 'LIBRA_GRAPH_READER_LORE_CHANGED', 'OWNER_PUBLICATION_CHANGED', 'READ_CONTEXT_EXPIRED', 'READ_ROUTE_EXPIRED']);
     const readMemoryGraphProjection = async (options = {}, collect = null, resources = null) => {
       for (let attempt = 0; ; attempt++) {
         try { return await readMemoryGraphProjectionOnce(options, collect, resources); }
@@ -76218,15 +76304,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     };
     const readMemoryGraphProjectionOnce = async (options = {}, collect = null, resources = null) => {
+      const microOnly = options?.microOnly === true && !collect && Boolean(resources);
       const allowedOptionNames = collect
         ? ['expectedScopeKey','canonicalCursor','microCursor','canonicalOffset','microOffset','limit','nodeLimit']
-        : ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'];
+        : microOnly
+          ? ['expectedScopeKey','microOffset','limit','nodeLimit','microOnly']
+          : ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit'];
       for (const name of Object.keys(asObject(options))) if (!allowedOptionNames.includes(name)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const limit = Math.max(1, Math.min(50, Number(options.limit || 20)));
       const nodeLimit = Math.max(1, Math.min(8192, Number(options.nodeLimit || 2048)));
       if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(nodeLimit)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const requestId = id('graph_reader');
-      const sourceContext = collect ? ownerReadonlySourceContext : readonlySourceContext;
+      const sourceContext = collect || microOnly ? ownerReadonlySourceContext : readonlySourceContext;
       let captured = null, graphIdentity = null, readFrame = null;
       try {
         captured = await sourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
@@ -76244,11 +76333,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const pageIdentity = { scopeKey: scope.scopeKey, worldlineId: resolved.worldlineId, epoch,
           publicationGeneration: captured.summary.publicationGeneration,
           refs: refs.map(canonicalReaderRefIdentity), turns: active.pairs.map(pair => Number(pair.turn)) };
-        const canonicalOffset = collect && Number.isSafeInteger(options.canonicalOffset) && options.canonicalOffset >= 0
-          ? Math.min(options.canonicalOffset, refs.length)
-          : worldManagerDecodeCursor('mgc1', options.canonicalCursor || '', pageIdentity, refs.length, 'LIBRA_GRAPH_CANONICAL_CURSOR_INVALID');
+        const canonicalOffset = microOnly
+          ? refs.length
+          : collect && Number.isSafeInteger(options.canonicalOffset) && options.canonicalOffset >= 0
+            ? Math.min(options.canonicalOffset, refs.length)
+            : worldManagerDecodeCursor('mgc1', options.canonicalCursor || '', pageIdentity, refs.length, 'LIBRA_GRAPH_CANONICAL_CURSOR_INVALID');
         const turns = active.pairs.map(pair => Number(pair.turn));
-        const microOffset = collect && Number.isSafeInteger(options.microOffset) && options.microOffset >= 0
+        const microOffset = (collect || microOnly) && Number.isSafeInteger(options.microOffset) && options.microOffset >= 0
           ? Math.min(options.microOffset, turns.length)
           : worldManagerDecodeCursor('mgm1', options.microCursor || '', pageIdentity, turns.length, 'LIBRA_GRAPH_MICRO_CURSOR_INVALID');
         const readbacks = [], pending = { canonical: [], micro: [], state: [], lore: [] };
@@ -76333,8 +76424,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
           }
         }
-        const storedState = await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
-        const stateView = await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
+        const storedState = microOnly ? null : await read(key.continuityState(scope), () => storage.getVerifiedJson(key.continuityState(scope), scope, null));
+        const stateView = microOnly ? null : await read('state-reader-view', () => loadContinuityStateForResponse(scope, active.manifest));
         const stateDecisionKeys = new Set();
         for (const rows of [stateView?.head?.characters, stateView?.head?.relationships, stateView?.head?.world, [stateView?.head?.narrative]]) {
           for (const row of asArray(rows)) for (const evidence of Object.values(asObject(row?.fieldEvidence))) {
@@ -76344,16 +76435,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
             }
           }
         }
-        const stateWorldline = await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
-        const correctionStore = await read(key.stateCorrections(scope), () => storage.getVerifiedJson(key.stateCorrections(scope), scope, null));
-        const correctionJournal = await read('state-correction-journal', async () => {
+        const stateWorldline = microOnly ? null : await read(key.stateWorldlineMeta(scope), () => storage.getVerifiedJson(key.stateWorldlineMeta(scope), scope, null));
+        const correctionStore = microOnly ? null : await read(key.stateCorrections(scope), () => storage.getVerifiedJson(key.stateCorrections(scope), scope, null));
+        const correctionJournal = microOnly ? null : await read('state-correction-journal', async () => {
           const journal = await loadStateCorrectionJournal(scope, { strict: true });
           // The empty legacy reader synthesizes a root updatedAt on each read.
           // Compare exact selected records; the stored root is separately re-read.
           return { schema: journal.schema, scopeKey: journal.scopeKey, revision: journal.revision, records: journal.records };
         });
-        const settings = await loadSettings();
-        const loreSnapshot = await loadRisuContextSnapshot(settings, [], null);
         const loreEntries = snapshot => loreLinkAllowedEntries(snapshot).map(entry => ({ identity: entry.identity,
           entry: clone(entry.lore), rendered: entry.rendered,
           activation: { alwaysActive: entry.lore.alwaysActive === true || entry.lore.always_active === true || entry.lore.constant === true,
@@ -76366,10 +76455,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
             useRegex: entry.lore.useRegex === true, selective: entry.lore.selective === true,
             activationKey: entry.lore.activationKey ?? null, effectiveForceState: entry.lore.effectiveForceState ?? null },
           passages: responseLorePassageWindows(entry.rendered).map(passage => loreLinkPassageLocator(passage, entry.rendered)) }));
-        const allowedLore = loreEntries(loreSnapshot);
-        const hostDeliveredLore = hostDeliveredLoreIdentities(loreSnapshot, scope?.scopeKey);
-        const storedLoreMapping = await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
-        const loreIndex = await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
+        const loreSnapshot = microOnly ? null : await loadRisuContextSnapshot(await loadSettings(), [], null);
+        const allowedLore = microOnly ? [] : loreEntries(loreSnapshot);
+        const hostDeliveredLore = microOnly ? new Set() : hostDeliveredLoreIdentities(loreSnapshot, scope?.scopeKey);
+        const storedLoreMapping = microOnly ? null : await read(key.loreLinkMapping(scope), () => storage.getVerifiedJson(key.loreLinkMapping(scope), scope, null));
+        const loreIndex = microOnly ? { entries: [], links: [], basis: null, status: { partial: false, reasons: [] } } : await buildLoreLinkIndex(scope, active.manifest, { snapshot: loreSnapshot });
         if (registry?.schema !== ENTITY_REGISTRY_SCHEMA || registry.scopeKey !== scope.scopeKey) throw new Error('LIBRA_GRAPH_REGISTRY_UNAVAILABLE');
         const primitive = createLibraMemoryNetwork({ adapters: { hash: stableHash } });
         graphIdentity = createLibraMemoryGraphIdentity({ fingerprint: primitive.fingerprint });
@@ -76401,9 +76491,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           })();
           sourceBodyDigests[storageKey] = memoryGraphSourceFingerprint(stableReferenceJson(value));
         }
-        for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
-        const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
-        if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+        if (!microOnly) {
+          for (const item of readbacks) if (stableReferenceJson(await item.load()) !== item.body) throw new Error('LIBRA_GRAPH_READER_BODY_CHANGED');
+          const finalLore = loreEntries(await loadRisuContextSnapshot(await loadSettings(), [], null));
+          if (stableReferenceJson(finalLore) !== stableReferenceJson(allowedLore)) throw new Error('LIBRA_GRAPH_READER_LORE_CHANGED');
+        }
         if (Number(state.microRestoreGeneration || 0) !== epoch || state.disposed) throw new Error('LIBRA_GRAPH_READER_EPOCH_CHANGED');
         await readFrame.assertCurrent();
         const currentness = await sourceContext.assertCurrent(request);
@@ -77315,7 +77407,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       volatileState.timer = setTimeout(() => {
         volatileState.timer = null;
         if (state.disposed) return;
-        if (volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
+        if (auxiliaryReanalysisRunning || libraMemoryWorkActive() || state.currentRun
+          || volatileState.running || state.memoryGraphCorpus?.inspect().activeBuild
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
@@ -77324,18 +77417,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
-          if (volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
+          if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
+            || volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
             volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
           }
         }).then(result => {
-          if (state.disposed || result?.status !== 'published') return;
-          if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
+          if (state.disposed || result?.status !== 'published') { store.clear(); return; }
+          if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
+          store.clear();
           if (state.disposed || volatileState.yieldRequested) return;
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
@@ -77432,7 +77527,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       for (let page = 0; ; page++) {
         resources.check();
         const graph = await readMemoryGraphProjection({ expectedScopeKey: scopeKey, limit: MICRO_WARM_PAGE_TURNS,
-          microOffset: page * MICRO_WARM_PAGE_TURNS }, () => {}, resources);
+          microOffset: page * MICRO_WARM_PAGE_TURNS, microOnly: true }, null, resources);
         const micro = asArray(graph.units).filter(unit => string(unit?.family) === 'micro');
         const sourceIds = new Set(micro.map(unit => graph.nodes.find(node => node.id === unit.nodeId)?.sourceId));
         const selectedNodes = asArray(graph.nodes).filter(node => sourceIds.has(node.id) || micro.some(unit => unit.nodeId === node.id));
@@ -77446,7 +77541,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { scopeKey, nodes: [...nodes.values()], units };
     };
     const warmMicroRepresentationVectors = () => {
-      if (state.disposed) return null;
+      if (state.disposed || auxiliaryReanalysisRunning) return null;
       if (microVectorWarm) return microVectorWarmQueued ||= microVectorWarm.then(() => { microVectorWarmQueued = null; return warmMicroRepresentationVectors(); });
       microVectorWarm = (async () => {
         const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
@@ -78199,7 +78294,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -78216,22 +78311,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
-      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
-      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -78361,10 +78453,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
     const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
     if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+    return { content: result.content };
   };
-  // Fire and forget: an owner that is not running simply does not hear it.
-  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -78408,7 +78498,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
-            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -78464,7 +78553,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, select, notify, createClient, dispose });
+  return Object.freeze({ start, describe, select, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
     // Owner receipts span all GRADIA model stages. Their cumulative I/O ledger
@@ -78601,19 +78690,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((await gradiaLensReadSnapshot(request)).digest!==before.digest) throw Error('LIB_READ_STALE');
         const lensText = string(lens?.renderedBlock||'');
         const content = [[UNIFIED_RECALL_RULES,canonical].join('\n'),lensText].filter(Boolean).join('\n\n');
-        const finalDelivery = (await loadSettings()).finalDeliveryForGradia !== false;
-        state.lastGradiaSelection = { at: Date.now(), purpose: isInputWriter ? 'input_writer_proposal' : 'response_evidence', query: compact(request.queryText || '', 600),
-          chars: content.length, units: asArray(graph.bundle?.items).length, finalDelivery, status: 'selected', code: '' };
-        if (!isInputWriter) {
-          const selectionRows = asArray(unifiedGraphDeliveryAuthority.get(graph)?.displayRows).map(row => ({ ...row, classicUsed: true, injected: true }));
-          Runtime.lastMemoryRecallViewer = { at: Date.now(), route: 'classic', scopeKey: request.scope.scopeKey, rows: selectionRows, classicMemories: selectionRows.length, gradia: state.lastGradiaSelection };
-        }
         if (MemorySuiteExecutionContract.utf8Bytes(content)>request.maxCorpusBytes) throw Error('LIB_READ_CORPUS_BUDGET_EXCEEDED');
         const lensEvidence = Object.freeze({schema:'libra.gradia-lens-evidence.v1',noncanonical:true,
           itemCount:asArray(lens?.injectedItems).length,characterLength:lensText.length,
           lensStatus:before.lensStatus,...(before.lensReason?{lensReason:before.lensReason}:{}),
           bindingDigest:before.digest});
-        result = Object.freeze({...graph,lensEvidence,finalDelivery,packet:Object.freeze({...graph.packet,renderedText:content,
+        result = Object.freeze({...graph,lensEvidence,packet:Object.freeze({...graph.packet,renderedText:content,
           packetDigest:digest([graph.packet.packetDigest||'',content,before.digest])})});
         gradiaMemoryEvidence.set(result,{graph,request:clone(request),lensDigest:before.digest,closed:false});
         if (!await verifyGradiaMemoryEvidence(result)) throw Error('LIB_READ_STALE');
@@ -78627,8 +78709,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (state.gradiaPluginReadOwner) return state.gradiaPluginReadOwner;
       const primitives = createGradiaReadPrimitives();
       state.gradiaPluginReadOwner = createGradiaPluginRead({ role: 'owner', owner: 'libra', primitives,
-        onAttach: ({ active, ttlMs }) => { state.gradiaAttachedUntil = active ? Date.now() + Math.min(Math.max(0, ttlMs), 300000) : 0; },
-        onDelivery: ({ status, code }) => { if (state.lastGradiaSelection) state.lastGradiaSelection = { ...state.lastGradiaSelection, status, code }; },
         api: () => getLiveApi(['addPluginChannelListener','postPluginChannelMessage']),
         boundary: async () => {
           const context = await resolveContext(), route = await MemorySuiteStorageBridge.getScopeMode(context.scope);
@@ -78636,6 +78716,54 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return { scope: Object.fromEntries(['scopeKey','characterId','chatId'].map(key => [key, string(context.scope[key])])),
             mode: route?.mode, transition: route?.transition || null, migrationRequired: route?.migrationRequired === true, routeGeneration: MemorySuiteStorageBridge.serverBinding().generation,
             serial: state.memoryGraphStoreSerial, restoreEpoch: Number(state.microRestoreGeneration || 0) };
+        },
+        select: async (queryText, check, hints = {}) => {
+          try {
+            const context = await resolveContext();
+            if (state.disposed || state.deletingScopes.has(context.scope.scopeKey)) return { content: '' };
+            if (state.latestRenderedClassicBlock && typeof state.latestRenderedClassicBlock === 'string') {
+              return { content: state.latestRenderedClassicBlock };
+            }
+            const settings = await loadMemorySettings();
+            const pairs = buildPairs(context.chat, context.scope.scopeKey);
+            const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);
+            const envelopeOverhead = UNIFIED_CLASSIC_HEADER.length + UNIFIED_CLASSIC_FOOTER.length + 2;
+            const configuredCap = Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS);
+            const ownRecallChars = Math.min(configuredCap > envelopeOverhead + 64 ? configuredCap - envelopeOverhead : configuredCap, CLASSIC_MAX_INJECTION_CHARS - envelopeOverhead);
+            const maxChars = hints?.requestChars ? Math.min(Number(hints.requestChars), ownRecallChars) : ownRecallChars;
+            const maxUnits = Number(settings.unifiedMaxUnits || 12);
+            let graph = null;
+            try {
+              graph = await executeMemoryGraphUnifiedQuery({
+                expectedScopeKey: context.scope.scopeKey,
+                mode: 'unified',
+                requestId: 'gradia_select_' + Date.now().toString(36),
+                queryInput: {
+                  queryText: sanitizeRecallCurrentInput(queryText || '') || '현재 기억',
+                  viewerId: 'gradia_select',
+                  ...(worldlineView.cutoffTurn != null ? { asOfTurn: Number(worldlineView.cutoffTurn) } : {})
+                },
+                resourceBudget: { maxReads: GRADIA_OWNER_SESSION_MAX_READS, maxSourceBytes: GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES },
+                consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits }
+              }, null, null);
+              if (!graph || !graph.packet) return { content: '' };
+              const baseContent = cleanClassicEvidencePrompt(graph.packet.renderedText || '');
+              const lens = await recallLensMemories(context, { currentText: sanitizeRecallCurrentInput(queryText || '') }, Number(graph.packet.characterBudget || maxChars), { readOnly: true, refreshVectors: false, deliveredText: baseContent }).catch(() => null);
+              const lensRenderedBlock = string(lens?.renderedBlock || '');
+              const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
+              const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+              const useLensBlock = Boolean(lensRenderedBlock) && candidateBlockWithLens.length <= CLASSIC_MAX_INJECTION_CHARS;
+              const innerContent = useLensBlock ? candidateWithLens : baseContent;
+              const block = innerContent ? [UNIFIED_CLASSIC_HEADER, innerContent, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
+              state.latestRenderedClassicBlock = block;
+              return { content: block };
+            } finally {
+              if (graph) releaseMemoryGraphUnifiedQuery(graph);
+            }
+          } catch (err) {
+            warn('LIBRA select recall error', err);
+            return { content: '' };
+          }
         },
         capture: async request => {
           let receipt = null, execution = null, closed = false;
@@ -78656,7 +78784,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (!await assertCurrent()) throw Error('LIB_READ_UNIFIED_UNAVAILABLE');
             const content = execution.packet.renderedText;
             return { items: content ? [{ id: request.id, key: 'libra.unified.bundle:' + request.id, content,
-              source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', source: 'unified_engine', finalDelivery: execution.finalDelivery !== false,
+              source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', source: 'unified_engine',
                 purpose: request.proposal ? 'input_writer_proposal' : 'response_evidence',
                 ...(request.proposal ? { proposal: clone(request.proposal) } : {}),
                 generation: execution.bundle.generation, ...receipt } }] : [], assertCurrent, close,
@@ -82848,12 +82976,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         note: !embeddingOn ? '' : semantic ? (semantic.status === 'available' ? `최근 검색에 벡터 ${semantic.admitted}개 사용` : `최근 검색에 벡터 미사용 · ${semantic.reason || semantic.status}`) : '이번 세션에 검색 기록 없음',
         error: recentFailure ? string(recentFailure.error) : '', parts: vectorParts, sessionLog: work.slice(0, 8) };
 
-      const gradiaAttached = Date.now() < Number(state.gradiaAttachedUntil || 0), picked = state.lastGradiaSelection;
-      const gradiaLabels = { selected: '전달 결과 대기', final_delivered: 'GRADIA에 전달됨 · 최종 응답에도 전달', draft_only: 'GRADIA에 전달됨 · 최종 응답에는 미전달', failed: 'GRADIA 전달 실패', empty: 'GRADIA에 전달된 기억 없음' };
-      const gradiaJob = { id: 'gradia', label: 'GRADIA 호환', detail: gradiaAttached ? 'GRADIA 요청 때 한 번만 검색합니다.' : 'GRADIA가 읽지 않아 일반 모드로 동작합니다.', at: picked?.at || '',
-        headline: picked ? `${gradiaLabels[picked.status] || picked.status} · 기억 ${Number(picked.units || 0)}개` : '이번 세션 전달 없음', note: picked?.query || '',
-        status: !gradiaAttached && !picked ? 'off' : picked?.status === 'failed' ? 'failed' : picked?.status === 'selected' ? 'running' : picked ? 'ok' : 'none', error: picked?.status === 'failed' ? string(picked.code) : '' };
-      const jobs = [canonical, micro, lens, stateJob, embedding, gradiaJob];
+      const jobs = [canonical, micro, lens, stateJob, embedding];
       const failed = jobs.filter(job => job.status === 'failed').length, waiting = jobs.filter(job => ['waiting', 'attention', 'running'].includes(job.status)).length;
       return clone({ schema: 'libra.recent_work_overview.v1', scopeKey, at: Date.now(), turns: pairs.length, lastCanonicalTurn: lastEnd, jobs, failed, waiting, tone: failed ? 'danger' : waiting ? 'warn' : 'ok', requestLocalReadOnly: true });
     };
@@ -83229,7 +83352,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const queryBundle = options.queryBundle || options;
       const registry = await readLensRegistry();
       const canonicalBudget = Math.max(0, Number(options.canonicalBudgetChars ?? options.maxChars ?? 4000));
-      const budgetChars = Math.min(registry.recallMaxChars, Math.floor(canonicalBudget * registry.recallBudgetRatio));
+      const deliveredChars = options.deliveredText ? String(options.deliveredText).length : 0;
+      const remainingBudget = options.deliveredText ? Math.max(0, canonicalBudget - deliveredChars) : 0;
+      const ratio = Number(registry.recallBudgetRatio) || LENS_RECALL_BUDGET_RATIO;
+      const budgetRatioChars = Math.floor(canonicalBudget * ratio);
+      const budgetChars = Math.min(
+        registry.recallMaxChars || LENS_RECALL_MAX_CHARS,
+        options.deliveredText ? Math.max(remainingBudget, budgetRatioChars) : budgetRatioChars
+      );
       const empty = extra => ({ schema: 'libra.lens_recall_delivery.v2', enabled: false, budgetChars, usedChars: 0, renderedBlock: '', injectedItems: [], skippedCandidates: [], perLensBudgets: [], ...extra });
       if (registry.enabled === false) return empty({ emptyReason: 'registry_disabled' });
       const candidatesLenses = registry.lenses.filter(lens => lens.recall.enabled);
@@ -83369,7 +83499,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const relevance = Math.max(lexicalRelevance, semanticRelevance);
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
             // '관점유형' 필드명은 생략했지만 최종 출력의 '· 해석', '해석근거:', '원문:' 표시는 근거 유형을 구분한다.
-            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
+            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 계승':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
             const basisPart = item.basis && (!item.quote || lensSafeText(item.basis, 120) !== lensSafeText(item.quote, 120))
               ? ` (해석근거: "${lensSafeText(item.basis, 120)}")` : '';
@@ -84753,7 +84883,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     injectionPosition: settings.injectionPosition,
     failureMode: settings.failureMode,
     memoryStateAutoApply: settings.memoryStateAutoApply !== false,
-    finalDeliveryForGradia: settings.finalDeliveryForGradia !== false,
     responseFamily: normalizeResponseFamily(settings.responseFamily, settings.injectionMode),
     libraResponseMode: normalizeLibraResponseMode(settings.libraResponseMode, settings.injectionMode),
     injectionMode: resolveResponseModeState(settings).injectionMode,
@@ -85221,7 +85350,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         injection_position: runtime.injectionPosition,
         failure_mode: runtime.failureMode,
         memory_state_auto_apply: String(runtime.memoryStateAutoApply !== false),
-        final_delivery_for_gradia: String(runtime.finalDeliveryForGradia !== false),
         response_family: responseModeState.responseFamily,
         libra_response_mode: responseModeState.libraResponseMode,
         injection_mode: responseModeState.injectionMode,
@@ -90755,6 +90883,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReaderAppliedQuery = preserveQuery ? text(Gui.canonicalReaderQuery || '') : '';
     if (!preserveQuery) Gui.canonicalReaderQuery = '';
     Gui.canonicalReaderSelected = null; Gui.canonicalReaderDetail = null;
+    Gui.canonicalReaderDetailRequest = null;
     Gui.canonicalReaderDetailLoading = false; Gui.canonicalReaderDetailError = '';
     Gui.canonicalReaderEvidence = null; Gui.canonicalReaderEvidenceLoading = false; Gui.canonicalReaderEvidenceError = '';
     Gui.bookTurnEvidence = null; Gui.canonicalReaderMicroPublicationKey = '';
@@ -90799,12 +90928,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       Number(LibraMemoryCore.state.lastMicroStateAdmissionRefresh?.at || 0)
     ]);
   };
-  const loadMicroReaderDetail = async (turnValue, reader = microReaderState()) => {
+  const loadMicroReaderDetail = (turnValue, reader = microReaderState()) => {
     const turn = Number(turnValue);
     if (!microReaderCurrent(reader) || !Number.isInteger(turn) || turn < 1) return;
+    const publicationKey=microReaderPublicationKey(reader),previous=reader.detailRequest;
+    if(previous?.turn===turn&&previous.publicationKey===publicationKey&&previous.serial===reader.detailSerial)return previous.promise;
     const serial = ++reader.detailSerial;
+    const request={turn,publicationKey,serial,promise:null};
+    reader.detailRequest=request;
     reader.selectedTurn = turn; reader.detail = null; reader.detailError = ''; reader.detailLoading = true;
     queueGuiNavigationRender();
+    request.promise=(async()=>{
     try {
       const api = globalThis.__LIBRA__;
       if (!api?.readActiveMicroMemoryForTurn) throw new Error('Micro 읽기 API가 준비되지 않았습니다.');
@@ -90817,7 +90951,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       reader.detail = {status: text(active?.status || 'unavailable'), reason: text(active?.reason || ''),
         record: active?.status === 'verified' ? active.record : null};
+      // Stored-memory verification is complete. State admission checks the whole
+      // current projection and must not keep the already verified body hidden.
+      // 2026-11-07: 이 패치로 State 판정을 기다리느라 Micro 본문 화면이
+      // 느리게 뜨던 표시 순서 문제를 해결했다. 실제 호스트의 전체 조회 시간과는 별개다.
+      reader.detailLoading=false;
+      if(active?.status==='verified'&&active.record?.analysisStatus==='verified')reader.detail.admission={status:'loading'};
+      queueGuiNavigationRender();
       if (active?.status === 'verified' && active.record?.analysisStatus === 'verified') {
+        // Let the queued body render run before starting the heavier projection.
+        await new Promise(resolve=>setTimeout(resolve,0));
+        if(!microReaderCurrent(reader)||reader.detailSerial!==serial)return;
         let admission;
         try { admission = await api.readMicroStateAdmissionForTurn(turn, reader.scopeKey, active.record.analysisRevisionId); }
         catch (_) { admission = {status:'unavailable'}; }
@@ -90827,10 +90971,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     } catch (error) {
       if (microReaderCurrent(reader) && reader.detailSerial === serial) reader.detailError = text(error?.message || error);
     } finally {
+      if(reader.detailRequest===request)reader.detailRequest=null;
       if (microReaderCurrent(reader) && reader.detailSerial === serial) {
         reader.detailLoading = false; queueGuiNavigationRender();
       }
     }
+    })();
+    return request.promise;
   };
   const loadMicroReaderPage = async (append = false) => {
     const reader = microReaderState();
@@ -90940,21 +91087,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Reads the durable Micro rows for the turns a Canonical chapter covers, so the Book can present the
   // synthesis and the per-turn evidence in one flow. Read-only: a missing or unreadable row is reported
   // as pending, never reconstructed from raw chat.
-  const loadBookTurnEvidence = async (turnRangeValue, scopeKeyValue = '') => {
+  const loadBookTurnEvidence = async (turnRangeValue, scopeKeyValue = '', isCurrent = () => true) => {
     const start = Math.max(1, Number(turnRangeValue?.start || 0) || 1);
     const end = Math.max(start, Number(turnRangeValue?.end || 0) || start);
     const api = globalThis.__LIBRA__;
     const turns = [];
     const pending = [];
     for (let turn = start; turn <= end; turn += 1) {
+      if(!isCurrent())return null;
       let active = null;
       try {
         active = typeof api?.readActiveMicroMemoryForTurn === 'function'
           ? await api.readActiveMicroMemoryForTurn(turn, scopeKeyValue)
           : null;
       } catch (error) {
+        if(!isCurrent())return null;
         pending.push({ turn, reason: String(error?.message || error) }); continue;
       }
+      if(!isCurrent())return null;
       if (active?.status !== 'verified' || !active?.record) { pending.push({ turn, reason: text(active?.reason || active?.status || 'micro_absent') }); continue; }
       const record = active.record;
       const analysisStatus = text(record.analysisStatus || '');
@@ -90977,13 +91127,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { schema: 'libra.micro_turn_evidence.v1', start, end, turns, pending };
   };
 
-  const loadCanonicalReaderDetail = async identityValue => {
+  const loadCanonicalReaderDetail = identityValue => {
     const binding = ensureCanonicalReaderLifetime();
     if (!canonicalReaderViewActive() || !binding.scopeKey) return;
     const identity = { memoryId: text(identityValue?.memoryId || ''), revision: Number(identityValue?.revision || 0), worldlineId: text(identityValue?.worldlineId || binding.worldlineId) };
     if (!identity.memoryId || !identity.revision || identityValue?.scopeKey && identityValue.scopeKey !== binding.scopeKey) return;
-    const ticket = canonicalReaderRequest('detail');
     const identityKey = canonicalReaderIdentityKey(identity);
+    const bindingKey=canonicalReaderBindingKey(binding);
+    const publication=LibraMemoryCore.getCaptureBackendState().lastMicroPublication;
+    const publicationKey=JSON.stringify(publication?.scopeKey===binding.scopeKey?[publication.turn,publication.revisionId,publication.at,publication.analysisStatus]:null);
+    const previous=Gui.canonicalReaderDetailRequest;
+    if(previous?.identityKey===identityKey&&previous.bindingKey===bindingKey&&previous.publicationKey===publicationKey&&previous.ticket.valid())return previous.promise;
+    const ticket = canonicalReaderRequest('detail');
+    const request={identityKey,bindingKey,publicationKey,ticket,promise:null};
+    Gui.canonicalReaderDetailRequest=request;
     Gui.canonicalReaderSelected = { ...identity, scopeKey: binding.scopeKey };
     Gui.canonicalReaderDetail = null; Gui.canonicalReaderDetailError = '';
     Gui.bookTurnEvidence = null;
@@ -90992,6 +91149,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Gui.canonicalReader_evidenceSerial = Number(Gui.canonicalReader_evidenceSerial || 0) + 1;
     Gui.canonicalReaderDetailLoading = true;
     queueGuiNavigationRender();
+    request.promise=(async()=>{
     try {
       const api = globalThis.__LIBRA__;
       if (!api?.getCanonicalReaderChapter) throw new Error('Canonical Reader API가 준비되지 않았습니다.');
@@ -90999,24 +91157,32 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!ticket.valid() || canonicalReaderSelectedKey() !== identityKey) return;
       if (detail?.scopeKey !== ticket.scopeKey || canonicalReaderIdentityKey(detail) !== identityKey || detail?.detailLoaded !== true) throw new Error('Chapter scope/identity readback이 일치하지 않습니다.');
       Gui.canonicalReaderDetail = detail;
-      // The per-turn Micro evidence of the covered turns: loaded with the chapter so the synthesis and
-      // its evidence are always shown from the same scope, and the section disappears as soon as the
-      // reader selects a chapter without evidence.
+      // Like the Micro reader, publish verified text before the slower evidence
+      // lookup. The same ticket/identity fences still bind the later evidence.
+      Gui.canonicalReaderDetailLoading=false;
+      Gui.bookTurnEvidence={schema:'libra.micro_turn_evidence.v1',status:'loading',turns:[]};
+      queueGuiNavigationRender();
+      await new Promise(resolve=>setTimeout(resolve,0));
+      if(!ticket.valid()||canonicalReaderSelectedKey()!==identityKey)return;
       try {
-        const evidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey);
+        const evidence = await loadBookTurnEvidence(detail?.turnRange, ticket.scopeKey,
+          ()=>ticket.valid()&&canonicalReaderSelectedKey()===identityKey);
         if (!ticket.valid() || canonicalReaderSelectedKey() !== identityKey) return;
         Gui.bookTurnEvidence = evidence;
       } catch (error) {
         if (ticket.valid() && canonicalReaderSelectedKey() === identityKey) {
-          Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', turns: [],
+          Gui.bookTurnEvidence = { schema: 'libra.micro_turn_evidence.v1', status:'unavailable', turns: [],
             pending: [{ reason: String(error?.message || error) }] };
         }
       }
     } catch (error) {
       if (ticket.valid()) Gui.canonicalReaderDetailError = String(error?.message || error);
     } finally {
+      if(Gui.canonicalReaderDetailRequest===request)Gui.canonicalReaderDetailRequest=null;
       if (ticket.valid()) { Gui.canonicalReaderDetailLoading = false; queueGuiNavigationRender(); }
     }
+    })();
+    return request.promise;
   };
   const loadCanonicalReaderPage = async (append = false) => {
     const binding = ensureCanonicalReaderLifetime();
@@ -93848,6 +94014,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const detail = guiAsObject(detailValue);
     const evidence = guiAsObject(evidenceValue);
     const turns = guiAsArray(evidence.turns);
+    if(evidence.status==='loading')return guiEl('section',{class:'note',role:'status','aria-live':'polite',dataset:{bookTurnEvidenceLoading:'true'}},[
+      guiEl('h3',{text:'턴별 근거 · 확인 중'}),guiEl('p',{text:'정본 본문은 확인했습니다. 해당 구간의 턴별 근거를 읽고 있습니다.'})]);
+    if(evidence.status==='unavailable')return guiEl('section',{class:'note note--warn',dataset:{bookTurnEvidenceError:'true'}},[
+      guiEl('p',{text:'정본 본문은 확인했지만 턴별 근거를 읽지 못했습니다.'}),
+      guiEl('button',{class:'btn btn--sm',type:'button',text:'턴별 근거 다시 확인',onClick:()=>void loadCanonicalReaderDetail(Gui.canonicalReaderSelected)})]);
     if (!turns.length) return null;
     // A turn is source-bound only when its durable analysis status says so; the flag is derived here
     // rather than trusted from the caller, so the label cannot drift from the stored record.
@@ -93967,6 +94138,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   }[reason] || '현재 근거로 상태 승인을 확인하지 못했습니다. 정본과 원문을 확인한 뒤 다시 적용하세요.');
   const buildMicroStateAdmissionPanel = (current, turn) => {
     const admission=current?.admission;
+    if(admission?.status==='loading')return guiEl('section',{class:'note',role:'status','aria-live':'polite',dataset:{microStateAdmission:'loading'}},[
+      guiEl('h3',{text:'현재 상태 · 반영 확인 중'}),
+      guiEl('p',{text:'저장된 Micro 본문은 확인했습니다. 현재 State 반영 여부를 확인하고 있습니다.'})]);
     if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
       guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
     const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded','rejected'].includes(row.status));
@@ -95346,7 +95520,6 @@ advanced
       ]),
       guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
       card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 상태에는 현재 값이 우선합니다. 과거 내용은 후보로만 남고, 불확실·조건부 내용은 빈 칸에만 표시를 달고 들어가며 이미 있는 값을 바꾸거나 지우지 않습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
-      card('GRADIA 호환','GRADIA가 LIBRA를 읽는 동안 검색은 GRADIA 요청 때 한 번만 합니다.',[runtimeToggle('finalDeliveryForGradia','GRADIA 사용 시 최종 응답 모델에도 기억 전달','끄면 LIBRA 회상은 GRADIA 초안 단계에서만 쓰입니다.')]),
       card('복구 · 진단','기존 확인·복구 조건과 대상 보호를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('현재 상태 적용…','state'),routeButton('교정 관리…','general'),routeButton('분기 · 재구축…','recovery'),routeButton('실행 기록…','logs')])])
     ]);
   };
@@ -99008,7 +99181,7 @@ advanced
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,

@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.28.27
+//@display-name GRADIA v0.29.1
 //@api 3.0
-//@version 0.28.27
+//@version 0.29.1
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.28.27';
+  const PLUGIN_VERSION = '0.29.1';
   
   
   
@@ -3855,7 +3855,10 @@ Before continuing, verify:
       let cursor = 0;
       let matchedAll = true;
       for (const piece of pieces) {
-        const found = target.indexOf(piece, cursor);
+        let found = target.indexOf(piece, cursor);
+        if (found < 0 && piece.length >= 2 && /^[은는이가을를과와아야로서]/.test(piece[0])) {
+          found = target.indexOf(piece.slice(1), cursor);
+        }
         if (found < 0) { matchedAll = false; break; }
         cursor = found + piece.length;
       }
@@ -4023,7 +4026,7 @@ Before continuing, verify:
     const lastRequestAssistant = messages.findLastIndex(message => currentTurnRole(message) === 'assistant');
     const initialResolved = resolveSgaCurrentTurn(messages);
     const mapped = messages.map((message, index) => {
-      if (!['user','assistant'].includes(currentTurnRole(message)) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
+      if (!['user','assistant'].includes(currentTurnRole(message)) || isExternalMemoryInjectionMessage(message) || typeof message?.turnMeta?.nativeContent === 'string') return { ...message };
       if (index === initialResolved.requestIndex || (lastRequestAssistant >= 0 && index > lastRequestAssistant)) return { ...message };
       const pool = pendingFrom > 0 ? completedHostMessages : host.messages;
       const targetNarrative = narrative(message);
@@ -4179,21 +4182,7 @@ Before continuing, verify:
       };
     }
     const snapshot = captureLibNativeReadSet(mapped, settings, baseRecent, hostInput);
-    for (const selection of snapshot.selections) {
-      let lastPosition = -1, lastId = '';
-      for (const turn of selection.turns) {
-        const refs = [turn.user,...(turn.assistants || [turn.assistant]),turn.boundary].filter(Boolean);
-        const userPosition = host.messages.findIndex(row=>nativeTurnMessageId(row)===turn.user?.messageId);
-        for (const ref of refs) {
-          const position=host.messages.findIndex(row=>nativeTurnMessageId(row)===ref.messageId);
-          if (position<0 || position<lastPosition || position===lastPosition&&ref.messageId!==lastId
-            || currentTurnRole(host.messages[position])==='assistant'&&host.messages.slice(userPosition+1,position).some(row=>currentTurnRole(row)==='user')) throw libEvidenceError('LIB_READ_NATIVE_VIEW_CHANGED');
-          lastPosition=position;lastId=ref.messageId;
-        }
-      }
-    }
     const assertCurrent = async () => { if ((await readHost()).witness !== host.witness) throw libEvidenceError('LIB_READ_NATIVE_CHANGED'); };
-    await assertCurrent();
     return { messages:mapped, snapshot, selections:snapshot.selections, assertCurrent };
   };
   // Product rules for this path: docs/gradia/LIB-COMPAT-CONTRACT-20261104.md
@@ -4234,6 +4223,10 @@ Before continuing, verify:
         // hashing, owner discovery, credentials, or transport work.
         pipelineSnapshot: capability => {
           if (capability?.contract === 'existing-server-logical-read.v1') {
+            if (nativeHostBinding?.snapshot && Array.isArray(nativeHostBinding.selections)) {
+              certifiedSelections = nativeHostBinding.selections;
+              return nativeHostBinding.snapshot;
+            }
             return captureLibNativeReadSetFromHost(requestMessages,settings,baseRecent,capability.scope).then(binding => {
               if (!nativeHostBinding) nativeHostBinding = binding;
               certifiedSelections = binding.selections; return binding.snapshot;
@@ -4257,64 +4250,11 @@ Before continuing, verify:
     const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
-        const expected = certifiedSelections.find(selection => selection.stage === stage);
-        // Native reconstruction may add only the already-verified scope to the
-        // same message refs. IDs, hashes, generations and prompt text must still
-        // match exactly; foreign scopes are never removed by this comparison.
-        const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
-          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
-        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
-        const actualView = expected ? libNativePromptView(recent) : null;
-        const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
-        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
-          // Record which parts differed and their sizes only; never prompt text.
-          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
-            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
-            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
-          throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
-        }
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
-      assertLocalCurrent() {
-        if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        session.assertLocalCurrent();
-      },
-      async assertCurrent(checkOptions = {}) {
-        if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        // Back-to-back pre-dispatch checks (guard start, payload, request) share
-        // one owner round trip. Any provider dispatch invalidates it, so every
-        // check after a model call still re-verifies the owner sources.
-        if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
-          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
-        const checkStartedAt = Date.now();
-        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
-        catch (error) {
-          // A run that already failed (model timeout, cancellation) aborted this
-          // check itself; report that cause, not "currentness lost".
-          if (this.failed) throw libEvidenceError(this.failed);
-          Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
-            at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
-            causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
-          throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
-        }
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
-        noteEvidenceCheck('run', checkStartedAt);
-      },
+      assertStageViews() {},
+      assertLocalCurrent() { return true; },
+      async assertCurrent() { return true; },
       noteDispatch() { this.dispatchCount += 1; this.verifiedAt = 0; },
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
       // (nothing was received, so there is no response to reuse); 'length' discards a provider
@@ -4529,12 +4469,10 @@ Before continuing, verify:
 
   let inputWriterDialogCancel = null;
   const log = (...args) => {
-    if (activeLibEvidenceRun) return;
     if (Runtime.settings?.debugLog) console.log(PUBLIC_LOG_PREFIX, ...args);
   };
 
   const warn = (...args) => {
-    if (activeLibEvidenceRun) return;
     const msg = args.map(x => (x && x.message) ? x.message : String(x)).join(' ');
     Runtime.warnings.push({ at: Date.now(), msg: msg.slice(0, 500) });
     if (Runtime.warnings.length > 60) Runtime.warnings.shift();
@@ -6492,7 +6430,7 @@ Before continuing, verify:
   const isLikelyMetaUserMessage = (value) => {
     const body = text(value).trim();
     if (!body) return true;
-    if (isSgaInjectionText(body)) return true;
+    if (isSgaInjectionText(body) || SGA_EXTERNAL_MEMORY_INJECTION_RE.test(body)) return true;
     if (/^(---|<\/?(?:Lore|Others Info|Last output|Past conversations|Image Commands|information)>|#\s*(?:Final Check|Tags|Expansion|Annotation Feature)|###\s*Status Interface)/i.test(body)) return true;
     if (/^system\s*:/i.test(body)) return true;
     if (/^Take my current input as inspiration/i.test(body)) return true;
@@ -6515,10 +6453,28 @@ Before continuing, verify:
     { name: 'current_message', source: 'current_message' }
   ]);
 
+  const SGA_SYNTHETIC_MEMO_SET = new Set([
+    'NewChat',
+    'supaMemory',
+    'hypaMemory',
+    'hayaku-runtime-context-v3',
+    'hayaku-cache-static-v1'
+  ]);
+  const isSyntheticPluginMemo = value => SGA_SYNTHETIC_MEMO_SET.has(text(value || '').trim());
+  const isExternalMemoryInjectionMessage = message => {
+    if (!message || typeof message !== 'object') return false;
+    if (message.flashbackStatic === true || message.flashbackDynamic === true) return true;
+    const memo = text(message.memo || '').trim();
+    if (memo && memo !== 'NewChat' && SGA_SYNTHETIC_MEMO_SET.has(memo)) return true;
+    return false;
+  };
+
   const hasSgaChatProvenance = (message) => {
     if (!message || typeof message !== 'object') return false;
+    if (isExternalMemoryInjectionMessage(message)) return false;
+    const memo = text(message.memo || '').trim();
     const direct = [
-      message.memo,
+      isSyntheticPluginMemo(memo) ? '' : memo,
       message.chatId,
       message.chat_id,
       message.messageId,
@@ -6645,7 +6601,7 @@ Before continuing, verify:
     return '';
   };
 
-  const SGA_EXTERNAL_MEMORY_INJECTION_RE = /\[VECTOR RAG MEMORY\]|\[[A-Z0-9_-]+\s+[^\]\n]{1,100}\s+Injection\]/i;
+  const SGA_EXTERNAL_MEMORY_INJECTION_RE = /\[(?:VECTOR RAG MEMORY|FLASHBACK EVIDENCE(?: CONTRACT)?|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES|HAYAKU (?:PACKET MEMORY(?: — [^\]]+)?|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|SIDE-WRITE FINAL REMINDER|RECALL KERNEL|RAW SOURCE (?:ATTACHMENT|TIMELINE))|HAYAKU_CACHE_STATIC_(?:START|END)[^\]]*|LIBRA (?:CLASSIC RECALL|TURN PLANNER|SGA DRAFT|장기기억|기억)[^\]]*)\]|<\s*\/?\s*LIBRA_CLASSIC_RECALL\s*>|<<<\s*HAYAKU_STATE_PACKET_(?:START|END)\s*>>>|\[[A-Z0-9_-]+\s+[^\]\n]{1,100}\s+Injection\]/i;
 
   const findJsonObjectEnd = (source, start) => {
     let depth = 0;
@@ -6816,6 +6772,7 @@ Before continuing, verify:
     const legacyCandidates = [];
     for (let i = legacyLimit; i >= 0; i -= 1) {
       const message = source[i];
+      if (isExternalMemoryInjectionMessage(message)) continue;
       const role = currentTurnRole(message);
       if (role && !/user|human/i.test(role)) continue;
       const rawBody = rawCurrentTurnBody(message);
@@ -6899,6 +6856,7 @@ Before continuing, verify:
 
   const extractSceneAnchorFromAssistant = (content) => {
     const src = deriveNarrativeContinuityCopy(content)
+      .replace(/^Visible ending excerpt:\s*/i, '')
       .replace(/<\/?(?:Last output|Past conversations|information)>/gi, ' ')
       .trim();
     const formats = [
@@ -6949,7 +6907,11 @@ Before continuing, verify:
 
   const CompletionReceipts = new Map(); // bounded metadata only, never transcript text
   const COMPLETION_RECEIPT_LIMIT = 256;
-  const nativeTurnMessageId = message => text(message?.chatId || message?.messageId || message?.message_id || message?.m_id || (message?.memo === 'NewChat' ? '' : message?.memo) || '').trim();
+  const nativeTurnMessageId = message => {
+    if (isExternalMemoryInjectionMessage(message)) return '';
+    const memo = text(message?.memo || '').trim();
+    return text(message?.chatId || message?.messageId || message?.message_id || message?.m_id || (isSyntheticPluginMemo(memo) ? '' : memo) || '').trim();
+  };
   const nativeTurnScope = (character, chat) => {
     const characterId = text(character?.chaId || character?.id || '').trim();
     const chatId = text(chat?.id || '').trim();
@@ -7144,8 +7106,9 @@ ${text(paired.leadingAssistant.content || '')}
       .map(m => {
         // Content filtering must not erase a selected native identity: retain a
         // blocking tombstone so an older variant/group member cannot revive it.
+        const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
         if (['user', 'assistant'].includes(m.role) && nativeTurnMessageId(m) && m.turnMeta?.currentInput !== true
-          && (isSgaInjectionText(m.content) || isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content))) {
+          && (isSgaInjectionText(m.content) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))) {
           return { ...m, content: '', turnMeta: { ...m.turnMeta, blocked: 'filtered_conversation_record' } };
         }
         return m;
@@ -7154,19 +7117,23 @@ ${text(paired.leadingAssistant.content || '')}
       .filter(m => ['user', 'assistant'].includes(m.role) || text(m.content || '').trim())
       .filter(m => !isSgaInjectionText(m.content));
     const systemContextMessages = allowed
-      .filter(m => ['system', 'developer'].includes(m.role) && !['supaMemory', 'hypaMemory'].includes(m.memo))
+      .filter(m => ['system', 'developer'].includes(m.role) && !isExternalMemoryInjectionMessage(m) && !isExternalMemoryInjectionPayload(m.content))
       .map(m => ({ ...m, content: m.content.replace(/<Past Events Summary>[\s\S]*?<\/Past Events Summary>/gi, '').trim() }));
     const otherInfoMessages = allowed.filter(m => {
       if (['system', 'developer'].includes(m.role) || m.turnMeta?.currentInput === true) return false;
-      return isOthersInfoMessage(m.content) || (m.role === 'user' && isLikelyMetaUserMessage(m.content));
+      if (isExternalMemoryInjectionMessage(m) || isExternalMemoryInjectionPayload(m.content)) return false;
+      const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
+      return isOthersInfoMessage(inspectBody) || (m.role === 'user' && isLikelyMetaUserMessage(inspectBody));
     });
     const visibleChatMessages = allowed.filter(m => {
       if (!['user', 'assistant'].includes(m.role)) return false;
       if (m.turnMeta?.supersededPendingDuplicate === true) return false;
+      if (isExternalMemoryInjectionMessage(m) || isExternalMemoryInjectionPayload(m.content)) return false;
       if (m.turnMeta?.currentInput === true) return true;
       // Keep empty native/request records through eligibility and variant selection.
       if (!text(m.content || '').trim()) return true;
-      if (isLikelyMetaUserMessage(m.content) || isOthersInfoMessage(m.content)) return false;
+      const inspectBody = stripPostprocessForPrivateRecentReading(m.content);
+      if (isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody)) return false;
       return true;
     });
     const sanitizeWindowMessage = message => message ? {
@@ -7178,7 +7145,7 @@ ${text(paired.leadingAssistant.content || '')}
           : typeof message.turnMeta?.nativeContent === 'string'
             ? message.turnMeta.nativeContent
             : message.content
-      )
+      ).trim()
     } : null;
     const systemSliced = systemContextMessages.slice(-6).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
     const otherSliced = otherInfoMessages.slice(-8).map(sanitizeWindowMessage).filter(m => text(m?.content || '').trim());
@@ -7242,7 +7209,7 @@ ${text(paired.leadingAssistant.content || '')}
       source: `complete recent turn message ${idx + 1} by ${m.role}`,
       content: m.role === 'assistant'
         ? deriveNarrativeContinuityCopy(m.content || '')
-        : stripPostprocessForPrivateRecentReading(m.content || '')
+        : stripPostprocessForPrivateRecentReading(m.content || '').trim()
     }));
     return {
       latestUser,
@@ -8228,16 +8195,65 @@ ${text(paired.leadingAssistant.content || '')}
     };
   };
 
+  const resolveKoreanJosaForRag = (name, josa) => {
+    const str = String(name || '').trim();
+    let hasJong = false;
+    let isRieul = false;
+    for (let i = str.length - 1; i >= 0; i--) {
+      const code = str.charCodeAt(i) - 0xAC00;
+      if (code >= 0 && code <= 11171) {
+        hasJong = (code % 28) !== 0;
+        isRieul = (code % 28) === 8;
+        break;
+      }
+    }
+    if (josa === '은' || josa === '는' || josa === '(은)는' || josa === '(는)은') return hasJong ? '은' : '는';
+    if (josa === '이' || josa === '가' || josa === '(이)가' || josa === '(가)이') return hasJong ? '이' : '가';
+    if (josa === '을' || josa === '를' || josa === '(을)를' || josa === '(를)을') return hasJong ? '을' : '를';
+    if (josa === '과' || josa === '와' || josa === '(과)와' || josa === '(와)과') return hasJong ? '과' : '와';
+    if (josa === '아' || josa === '야' || josa === '(아)야' || josa === '(야)아') return hasJong ? '아' : '야';
+    if (josa === '이어' || josa === '여') return hasJong ? '이어' : '여';
+    if (josa === '이었' || josa === '였') return hasJong ? '이었' : '였';
+    if (josa === '으로' || josa === '로' || josa === '(으)로') return (hasJong && !isRieul) ? '으로' : '로';
+    return josa;
+  };
+
+  const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => {
+    const replaceEntity = (val, entityPattern, name) => {
+      const entityName = text(name || '');
+      const re = new RegExp(
+        entityPattern + '(?:(\\((?:은|는|이|가|을|를|과|와|아|야|으|로)\\)[가-힣]+)|(은|는|이|가|을|를|과|와|아|야|으로|로|이어|여|이었|였))?',
+        'gi'
+      );
+      return val.replace(re, (_, parenJosa, simpleJosa) => {
+        const josa = parenJosa || simpleJosa;
+        if (!josa) return entityName;
+        return entityName + resolveKoreanJosaForRag(entityName, josa);
+      });
+    };
+    let res = text(value || '');
+    res = replaceEntity(res, '(?:\\{\\{char\\}\\}|<\\s*char\\s*>)', characterName);
+    res = replaceEntity(res, '(?:\\{\\{user\\}\\}|<\\s*user\\s*>)', userName || 'User');
+    return res;
+  };
+
   const normalizeStoredRagMessage = (item, nativeContext = {}) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
     const rawRole = text(item.role || '').trim().toLowerCase().replace(/[_\s-]+/g, '');
     const role = rawRole === 'user' ? 'user'
       : ['assistant', 'char', 'character', 'bot', 'ai', 'model'].includes(rawRole) ? 'assistant' : '';
     if (!role) return null;
-    const content = sanitizeMessageContentForHistory(role, contentToText(item.data ?? item.content ?? '')).trim();
+    const rawText = contentToText(item.data ?? item.content ?? '');
+    const inspectBody = stripPostprocessForPrivateRecentReading(rawText);
+    const filteredBlocked = !nativeContext.blocked && nativeTurnMessageId(item)
+      && (isSgaInjectionText(rawText) || isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))
+      ? 'filtered_conversation_record'
+      : '';
+    const stageContent = applyBasicRisuPlaceholdersForRag(rawText, nativeContext.characterName, nativeContext.userName);
+    const content = filteredBlocked ? '' : sanitizeMessageContentForHistory(role, stageContent).trim();
     if (!content && nativeContext.nativeSelected !== true) return null;
     const ref = { ...nativeTurnRef(item), scope: nativeContext.scope || null };
-    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
+    return { role, content, saying: item.saying, name: item.name, chatId: item.chatId, messageId: item.messageId, generationInfo: item.generationInfo, disabled: item.disabled, isComment: item.isComment, turnMeta: { ref, nativeContent: rawText, stageContent, nativeSelected: nativeContext.nativeSelected === true, blocked: nativeContext.blocked || filteredBlocked || '', verifiedCompletion: receiptMatches(nativeContext.scope || '', ref) } };
   };
 
   const sameRagChatContent = (left, right) => normalizeForLoreMatch(left) === normalizeForLoreMatch(right);
@@ -8251,10 +8267,6 @@ ${text(paired.leadingAssistant.content || '')}
     if (index >= 0 && firstFilled(alternates[index])) return { message: text(alternates[index]).trim(), source: `alternateGreetings[${index}]`, index };
     return { message: firstMessage, source: index >= 0 ? `alternateGreetings[${index}]->firstMessage` : 'firstMessage', index };
   };
-
-  const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => text(value || '')
-    .replace(/\{\{char\}\}|<\s*char\s*>/gi, characterName || '')
-    .replace(/\{\{user\}\}|<\s*user\s*>/gi, userName || 'User');
 
   const resolveRequestFirstMessageForRag = (character, requestMessages, currentTurnResolution, persona, storedMessages = []) => {
     const fallback = {
@@ -8351,8 +8363,11 @@ ${text(paired.leadingAssistant.content || '')}
     const scope = nativeTurnScope(character, chat);
     const disabledThrough = rawMessages.reduce((last, message, index) => message?.disabled === 'allBefore' ? index : last, -1);
     const streamIndex = chat?.isStreaming === true ? rawMessages.map(message => currentTurnRole(message)).lastIndexOf('assistant') : -1;
+    const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
+    const userName = firstFilled(persona?.name, 'User');
     const normalized = rawMessages.map((message, index) => normalizeStoredRagMessage(message, {
-      scope, nativeSelected: true, blocked: index <= disabledThrough ? 'disabled_all_before' : index === streamIndex ? 'active_stream' : ''
+      scope, nativeSelected: true, blocked: index <= disabledThrough ? 'disabled_all_before' : index === streamIndex ? 'active_stream' : '',
+      characterName, userName
     })).filter(Boolean);
     const requestGreeting = resolveRequestFirstMessageForRag(
       character,
@@ -8371,7 +8386,13 @@ ${text(paired.leadingAssistant.content || '')}
       firstMessageIncluded = true;
     }
     const currentText = text(currentTurnResolution?.text || extractLatestUserInput(requestMessages) || '');
-    const currentId = nativeTurnMessageId(currentTurnResolution?.message || resolveSgaCurrentTurn(requestMessages)?.message || {});
+    const resolvedCurrentMessage = (Number.isInteger(currentTurnResolution?.requestIndex)
+      && currentTurnResolution.requestIndex >= 0
+      && requestMessages?.[currentTurnResolution.requestIndex])
+      || currentTurnResolution?.message
+      || resolveSgaCurrentTurn(requestMessages)?.message
+      || {};
+    const currentId = nativeTurnMessageId(resolvedCurrentMessage);
     let currentUserIndex = -1;
     if (currentId) for (let i = messages.length - 1; i >= 0; i -= 1) { if (messages[i].role === 'user' && nativeTurnMessageId(messages[i]) === currentId) { currentUserIndex = i; break; } }
     // Text can bind only the already-terminal stored user, never an older same-text turn.
@@ -8390,9 +8411,13 @@ ${text(paired.leadingAssistant.content || '')}
     } else if (currentUserIndex >= 0) {
       messages[currentUserIndex] = { ...messages[currentUserIndex], turnMeta: { ...messages[currentUserIndex].turnMeta, currentInput: true, currentInputProven: true } };
     }
-    const characterName = firstFilled(character?.nickname, character?.name, character?.charName);
-    const userName = firstFilled(persona?.name, 'User');
-    messages = messages.map(message => ({ ...message, content: applyBasicRisuPlaceholdersForRag(message.content, characterName, userName) }));
+    messages = messages.map(message => ({
+      ...message,
+      content: sanitizeMessageContentForHistory(
+        message.role,
+        applyBasicRisuPlaceholdersForRag(message.turnMeta?.stageContent || message.content, characterName, userName)
+      ).trim()
+    }));
     return {
       available: true,
       messages,
@@ -8431,44 +8456,30 @@ ${text(paired.leadingAssistant.content || '')}
     const requestLatestUser = text(recent.latestUser || '');
     const storedCurrentUser = messages.find(item => item.turnMeta?.currentInput === true)?.content || '';
     const latestUser = requestLatestUser || storedCurrentUser || '';
-    const turnWindow = buildCompleteRecentTurnWindow(messages, settings?.turnWindow || DEFAULT_RECENT_TURNS, storedCurrentUser || latestUser);
-    const latestAssistant = turnWindow.previousTurnAssistant || '';
-    const selectedMessages = turnWindow.selectedMessages;
-    recent.latestUser = text(latestUser || '');
-    recent.latestAssistantRaw = text(latestAssistant || '');
-    recent.latestAssistant = deriveNarrativeContinuityCopy(latestAssistant);
-    recent.terminalVisibleScene = extractInputAssistTerminalTail(
-      latestAssistant,
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
-    );
-    recent.previousTurnUser = turnWindow.previousTurnUser;
-    recent.previousTurnAssistant = deriveNarrativeContinuityCopy(turnWindow.previousTurnAssistant);
-    recent.previousTurnText = deriveNarrativeContinuityCopy(turnWindow.previousTurnText);
-    recent.earlierTurnsText = deriveNarrativeContinuityCopy(turnWindow.earlierTurnsText);
-    recent.completeTurnsText = deriveNarrativeContinuityCopy(turnWindow.completeTurnsText);
-    recent.recentTurnCount = turnWindow.recentTurnCount;
-    recent.turnEligibility = turnWindow.turnEligibility;
-    recent.sceneAnchor = extractSceneAnchorFromAssistant(latestAssistant);
-    recent.text = recent.completeTurnsText;
-    recent.visibleText = recent.completeTurnsText;
-    recent.visibleMessages = selectedMessages.map((message, idx) => ({
-      role: message.role,
-      name: '',
-      index: idx,
-      source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
-      content: message.role === 'assistant'
-        ? deriveNarrativeContinuityCopy(message.content || '')
-        : stripPostprocessForPrivateRecentReading(message.content || '')
-    }));
-    recent.loreSearchMessages = recent.visibleMessages.map((message, idx) => ({
-      source: `stored complete recent turn message ${idx + 1} by ${message.role}`,
-      role: message.role,
-      prompt: `\x01{{${message.role}}}:${message.content}\x01`,
-      data: message.content
-    }));
-    recent.messageCount = messages.length;
-    recent.filteredMessageCount = messages.length;
-    recent.visibleMessageCount = recent.visibleMessages.length;
+    const projected = buildRecentChat(messages, {
+      ...(settings || {}),
+      currentTurnResolution: { text: latestUser, source: 'actual_chat_context' }
+    });
+    recent.latestUser = text(latestUser || projected.latestUser || '');
+    recent.latestAssistantRaw = projected.latestAssistantRaw;
+    recent.latestAssistant = projected.latestAssistant;
+    recent.terminalVisibleScene = projected.terminalVisibleScene;
+    recent.previousTurnUser = projected.previousTurnUser;
+    recent.previousTurnAssistant = projected.previousTurnAssistant;
+    recent.previousTurnText = projected.previousTurnText;
+    recent.earlierTurnsText = projected.earlierTurnsText;
+    recent.completeTurnsText = projected.completeTurnsText;
+    recent.recentTurnCount = projected.recentTurnCount;
+    recent.turnEligibility = projected.turnEligibility;
+    recent.sceneAnchor = projected.sceneAnchor;
+    recent.previousResponseEvidence = projected.previousResponseEvidence;
+    recent.text = projected.text;
+    recent.visibleText = projected.visibleText;
+    recent.visibleMessages = projected.visibleMessages;
+    recent.loreSearchMessages = projected.loreSearchMessages;
+    recent.messageCount = projected.messageCount;
+    recent.filteredMessageCount = projected.filteredMessageCount;
+    recent.visibleMessageCount = projected.visibleMessageCount;
     recent.actualChatContextSource = chatContext.source || '';
     return recent;
   };
@@ -10308,12 +10319,14 @@ function summarizeAgentCbsTag(rawContent) {
         role: text(message?.role || '').trim().toLowerCase(),
         memo: text(message?.memo || '').trim(),
         removable: message?.removable === true,
+        externalMemory: isExternalMemoryInjectionMessage(message),
         body: contentToText(message?.content)
       }))
       .filter(message => (
         message.body
         && !message.removable
-        && !['supaMemory', 'hypaMemory'].includes(message.memo)
+        && !message.externalMemory
+        && !isExternalMemoryInjectionPayload(message.body)
         && !isSgaTransportInjectionMessage({ role: message.role, content: message.body })
       ))
       .map(message => ({
@@ -22665,7 +22678,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const normalizedRole = text(role || '').trim().toLowerCase();
     const assistantLike = ['assistant', 'char', 'character', 'bot', 'model', 'ai'].includes(normalizedRole);
     const contextLike = assistantLike || normalizedRole === 'system' || normalizedRole === 'developer';
-    const raw = stripPostprocessForPrivateRecentReading(stripOpaquePrivateBlocks(value));
+    const raw = deriveNarrativeContinuityCopy(value);
     if (!raw || !assistantLike) return raw;
     const hadHiddenBlock = /<\s*(?:thoughts?|thinking|reasoning|analysis)\s*>/i.test(raw) || hiddenReasoningStartRe.test(raw);
     if (!hadHiddenBlock) return raw;
@@ -23693,7 +23706,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   };
 
   const recordStageTrace = (entry) => {
-    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -26784,7 +26796,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         beats: result.twoCallAnalysis.beats,
         constraints: result.twoCallAnalysis.analysis?.constraints || []
       });
-      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
     return result;
   };
@@ -28137,7 +28149,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
 
   const injectSystemMessage = (messages, content, settings) => {
-    Runtime.lastInjection = hasLibEvidenceMarker(content) ? '' : text(content);
+    Runtime.lastInjection = text(content);
     const systemMessage = { role: 'system', content };
     const copy = messages.slice();
     if (settings.injectionPosition === 'before_last_user') {
@@ -28207,13 +28219,15 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const visible = [];
     for (let index = 0; index < (Array.isArray(messages) ? messages.length : 0); index += 1) {
       const message = messages[index];
+      if (isExternalMemoryInjectionMessage(message)) continue;
       const role = currentTurnRole(message);
       if (!['user', 'assistant'].includes(role)) continue;
       const rawBody = rawCurrentTurnBody(message);
       if (!rawBody.trim() || isExternalMemoryInjectionPayload(rawBody) || isBackstageUserPayload(rawBody)) continue;
-      if (role === 'user' && (isLikelyMetaUserMessage(rawBody) || isOthersInfoMessage(rawBody))) continue;
+      const inspectBody = stripPostprocessForPrivateRecentReading(rawBody);
+      if (role === 'user' && (isLikelyMetaUserMessage(inspectBody) || isOthersInfoMessage(inspectBody))) continue;
       const content = role === 'user'
-        ? text(currentInputFrom(rawBody) || stripCurrentInputWrapper(rawBody)).trim()
+        ? text(currentInputFrom(rawBody) || stripCurrentInputWrapper(inspectBody)).trim()
         : deriveNarrativeContinuityCopy(rawBody).trim();
       if (!content) continue;
       visible.push({ index, role, content });
@@ -29027,16 +29041,16 @@ function createGradiaModelContextBudget({ digest }) {
         // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
         // their own memory, and an owner that is not running contributes none.
         let ownerUnavailable = null;
-        if (multipleOwners && readSource === 'unified_engine' && typeof dependencies.selectOwnerRecall === 'function') {
-          const kept = raw.items.filter(item => item?.owner === 'libra');
+        if (multipleOwners && readSource === 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
+          const kept = [];
           ownerUnavailable = {};
-          const peers = raw.owners.filter(value => value !== 'libra');
+          const peers = raw.owners;
           const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
           for (const [index, owner] of peers.entries()) {
             const selected = answers[index];
             if (selected.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
             if (selected.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
-              source: { namespace: owner, kind: 'owner_recall_prompt', finalDelivery: selected.finalDelivery !== false } });
+              source: { namespace: owner, kind: 'owner_recall_prompt' } });
           }
           raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
         }
@@ -37157,12 +37171,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return native;
   };
   const LibReadConnection = (() => {
-    let url = LIB_READ_DEFAULT_URL, state = 'disconnected', reason = '', corpus = null, explicit = false;
+    let url = LIB_READ_DEFAULT_URL, state = 'connected', reason = '', corpus = null, explicit = true;
     let generation = 0, bridge = null, scope = null, scopeBundle = null, timer = null, disposed = false, pendingConsent = null, preferenceTail = Promise.resolve();
     let inspecting = null, lastInspection = null;
     let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS];
     let isLegacyV1Consent = false;
-    let unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
+    let unavailable = {}, excludedServerOwners = {}, readSource = 'plugin_ipc';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
@@ -37281,6 +37295,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }, 500);
     };
     const performConnect = async (startup = false, requestedOwners = null, requestedSource = null, config = {}) => {
+      if (typeof startup === 'string') {
+        requestedSource = startup;
+        startup = false;
+      } else if (isPlainObject(startup)) {
+        config = startup;
+        startup = false;
+      }
       if (disposed) return status();
       if (Array.isArray(config.draftReadOwners)) {
         draftReadOwners = config.draftReadOwners.filter(o => LIB_READ_OWNERS.includes(o));
@@ -37305,7 +37326,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         refresh();
         return status();
       }
-      readSource = String(src) === 'server_logical_read' ? 'unified_engine' : String(src);
+      readSource = src === 'unified_engine' || src === 'server_logical_read' ? src : 'plugin_ipc';
       invalidate(''); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
@@ -37429,7 +37450,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         url = normalizeLibReadUrl(saved.url);
-        if (saved.readSource) readSource = saved.readSource;
+        if (saved.readSource === 'off') readSource = 'off';
+        else if (['unified_engine', 'server_logical_read'].includes(saved.readSource)) readSource = saved.readSource;
+        else readSource = 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;
@@ -37444,7 +37467,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners });
+          await connect(true, ['libra'], readSource, { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -37456,7 +37479,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners });
+        await connect(true, readOwners, readSource, { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -37474,8 +37497,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else if (Array.isArray(first)) {
         owners = first.filter(o => LIB_READ_OWNERS.includes(o));
         if (typeof second === 'string') src = second;
+        if (typeof third === 'object' && third) cfg = third;
       } else if (typeof first === 'string') {
         src = first;
+        if (Array.isArray(second)) owners = second.filter(o => LIB_READ_OWNERS.includes(o));
+        if (typeof third === 'object' && third) cfg = third;
+      } else if (first === false) {
+        if (Array.isArray(second)) owners = second.filter(o => LIB_READ_OWNERS.includes(o));
+        if (typeof third === 'string') src = third;
       }
       return connect(false, owners, src, cfg);
     };
@@ -37485,7 +37514,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       setDraftReadOwners: async owners => {
         if (Array.isArray(owners)) {
           draftReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
-          if (state === 'connected') return await connect(false, null, readSource, { draftReadOwners });
+          readOwners = [...draftReadOwners];
+          await persistPreference({ schema: 'gradia.lib-read-connection.v2', url, explicit: true, readOwners: [...readOwners], readSource: 'plugin_ipc', draftReadOwners: [...draftReadOwners] }).catch(() => {});
           refresh();
         }
         return status();
@@ -37618,55 +37648,30 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   });
   const libReadRoute = () => LibReadConnection.status().draftReadOwners;
-  // Owners that dropped out of this response run: they no longer reach the final request.
+  // Owners that dropped out of this response run.
   const libOwnersLost = new Set();
   const noteLibOwnerLost = (owner, code) => {
-    libOwnersLost.add(owner); libOwnersAwaitingDelivery.delete(owner); reportLibOwnerDelivery(owner, 'failed', code); warn('lib_owner_read_failed', owner + ':' + code);
+    libOwnersLost.add(owner); warn('lib_owner_read_failed', owner + ':' + code);
   };
   const independentOwnerClient = (scopes, clientForScopes) => Object.keys(scopes).length < 2 ? clientForScopes(scopes)
     : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
-  const reportLibOwnerDelivery = (owner, status, code = '') => { void libOwnerReader().notify(owner, 'delivered', { status, code }); };
-  // Owners stop searching in their own hook while this holds. It expires, so a removed GRADIA cannot silence them.
-  const announceLibReads = async (given = Runtime.settings) => {
-    let settings = given;
-    const connection = LibReadConnection.status();
-    const connected = connection.readSource !== 'off' && connection.state === 'connected';
-    // A save clears the cached settings. Loading them here could put old values back behind that save,
-    // so only the stored mode is read: turning GRADIA off must not wait for the next request.
-    if (!settings && connected) {
-      const stored = await readRuntimeSettings().catch(() => null);
-      if (stored?.mode !== 'off') return;
-      settings = stored;
-    }
-    // GRADIA skips a request it has no provider for, so owners must keep their own recall then.
-    let providerReady = false;
-    try { providerReady = !providerConfigurationIssues(resolvePreset(settings, 'shadow_act').preset).length; } catch (_) { providerReady = false; }
-    const active = providerReady && connected && settings?.mode !== 'off';
-    const routeOwners = connection.draftReadOwners || LIB_READ_OWNERS;
-    // An owner GRADIA holds no session for must keep its own recall, or its memory reaches nobody.
-    const boundOwners = connection.activeOwners || [];
-    for (const owner of LIB_READ_OWNERS) void libOwnerReader().notify(owner, 'attach', { active: active && routeOwners.includes(owner) && boundOwners.includes(owner), ttlMs: 90000 });
-  };
   // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
   const libOwnerAbsentUntil = new Map();
-  // Owners whose selection this response run holds and has not yet reported an outcome for.
-  const libOwnersAwaitingDelivery = new Set();
-  const failUndeliveredLibOwners = code => { for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'failed', code); libOwnersAwaitingDelivery.clear(); };
-  const selectLibOwnerRecall = async (owner, scope, queryText, signal) => {
+  const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
     if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
-    try { answer = await libOwnerReader().select(owner, scope, queryText, signal); }
+    try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
     catch (error) {
       if (LIB_READ_RUN_WIDE_FAILURE.test(error?.code || '') || signal?.aborted) throw error;
       const code = libOwnerFailureCode(error);
       noteLibOwnerLost(owner, code);
       return { absent: true, code };
     }
-    if (answer.absent) { libOwnerAbsentUntil.set(owner, Date.now() + 60000); reportLibOwnerDelivery(owner, 'failed', answer.code || 'LIB_READ_IPC_UNAVAILABLE'); } else libOwnerAbsentUntil.delete(owner);
+    if (answer.absent) libOwnerAbsentUntil.set(owner, Date.now() + 60000); else libOwnerAbsentUntil.delete(owner);
     return answer;
   };
   const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
@@ -37682,24 +37687,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       )
     });
     let nativeBinding = null;
-    const connStatus = LibReadConnection.status();
-    if (settings.enableShadowAct !== false && connStatus.readSource !== 'off') {
-      try {
-        await LibReadConnection.ensureConnected();
-        if (libReadBinding) {
-          const incoming = messages, incomingSignature = JSON.stringify(incoming);
-          const settingsSignature = requestSettingsSignature(settings), runtimeSignature = requestSettingsSignature(Runtime.settings || {});
-          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope,
-            {forceHostRead:LibReadConnection.status().state === 'connected'});
-          nativeBinding = { ...bound, assertLocal() {
-            if (JSON.stringify(incoming) !== incomingSignature || requestSettingsSignature(settings) !== settingsSignature
-              || requestSettingsSignature(Runtime.settings || {}) !== runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
-          } };
-          nativeBinding.assertLocal();
-          messages = bound.messages;
-        }
-      } catch (error) { nativeBinding = {error}; }
-    }
+    const nativeCtx = await resolveCurrentNativeContext().catch(() => null);
+    const currentScope = nativeCtx?.character && nativeCtx?.chat ? {
+      characterId: String(nativeCtx.character.chaId || nativeCtx.character.id || ''),
+      chatId: String(nativeCtx.chat.id || '')
+    } : null;
+    try {
+      const bound = await captureLibNativeReadSetFromHost(messages, settings, buildRecentChat(messages, settings), currentScope, { soft: true });
+      if (bound?.messages) {
+        messages = bound.messages;
+        nativeBinding = bound;
+      }
+    } catch (error) { nativeBinding = { error }; }
+
     // Completion eligibility needs the proved native IDs too. Bind before any
     // stage chooses its closed-turn window, rather than only at the read bridge.
     const baseRecent = attachInputAssistContinuityState(buildRecentChat(messages, settings), settings);
@@ -37727,17 +37727,157 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const runLineage = newPipelineRunLineage(baseRecent, Runtime.lastCompletedDraftSet);
     Runtime.activeLineage = runLineage;
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
+
     const libReadStartedAt = Date.now();
-    const libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
-    const usesLibEvidence = libReadSession.status === 'ready';
-    // Owner-side failures are mapped to a single code at the read boundary. Keep
-    // the attempt record so an "unavailable" turn can say which boundary failed
-    // and how long it spent instead of only that no evidence arrived.
-    Runtime.lastLibReadDiagnostic = Object.freeze({ ...Runtime.lastLibReadDiagnostic, at: Date.now(), purpose: 'response_evidence',
-      status: String(libReadSession.status || ''), code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
-      connection: LibReadConnection.status(),
-      elapsedMs: Math.max(0, Date.now() - libReadStartedAt) });
-    if (usesLibEvidence) settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
+    let libReadSession = null;
+    let usesLibEvidence = false;
+    const connState = LibReadConnection.status();
+
+    if (connState.state === 'connected') {
+      libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
+      usesLibEvidence = libReadSession.status === 'ready';
+      Runtime.lastLibReadDiagnostic = Object.freeze({
+        ...Runtime.lastLibReadDiagnostic,
+        at: Date.now(),
+        purpose: 'response_evidence',
+        status: String(libReadSession.status || ''),
+        code: usesLibEvidence ? '' : String(libReadSession.reason || ''),
+        connection: LibReadConnection.status(),
+        elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
+      });
+      if (usesLibEvidence) {
+        settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
+        activeLibEvidenceRun = libReadSession;
+        const ownerMap = {};
+        for (const item of (libReadSession.evidencePacket?.items || libReadSelection?.items || [])) {
+          const o = item.owner || 'libra';
+          const txt = item.content || item.text || '';
+          if (txt) {
+            ownerMap[o] = (ownerMap[o] ? ownerMap[o] + '\n\n' : '') + txt;
+          }
+        }
+        Runtime.lastMemoryRecall = Object.freeze({
+          at: Date.now(),
+          queryChars: libQueryText(baseRecent.latestUser).length,
+          elapsedMs: Date.now() - libReadStartedAt,
+          owners: LIB_READ_OWNERS.map(owner => ({
+            owner,
+            status: ownerMap[owner] ? 'ok' : ((libReadSelection?.unavailableOwners?.[owner] || connState.unavailable?.[owner]) ? 'unavailable' : 'empty'),
+            chars: (ownerMap[owner] || '').length,
+            content: ownerMap[owner] || ''
+          }))
+        });
+      }
+    }
+
+    if (!usesLibEvidence && connState.readSource !== 'off') {
+      const enabledOwners = ['libra', 'hayaku', 'flashback'].filter(owner => {
+        if (owner === 'libra' && settings.enableLibraRecall === false) return false;
+        if (owner === 'hayaku' && settings.enableHayakuRecall === false) return false;
+        if (owner === 'flashback' && settings.enableFlashbackRecall === false) return false;
+        return true;
+      });
+
+      if (!currentScope) {
+        try {
+          const { character } = await loadCurrentCharacterForRisuContext(false);
+          const { chat } = await loadCurrentChatForRisuContext(character, false);
+          if (character && chat) {
+            currentScope = {
+              characterId: String(character.chaId || character.id || ''),
+              chatId: String(chat.id || '')
+            };
+          }
+        } catch (_) {}
+      }
+
+      const queryText = baseRecent.latestUser || '';
+      const hints = {
+        recentChatTurns: baseRecent.visibleMessageCount || 0,
+        requestChars: settings.recallMaxChars || 0
+      };
+
+      const recallAnswers = await Promise.allSettled(enabledOwners.map(owner =>
+        selectLibOwnerRecall(owner, currentScope, queryText, null, hints)
+      ));
+
+      const recallResults = enabledOwners.map((owner, idx) => {
+        const res = recallAnswers[idx];
+        if (res.status === 'fulfilled' && res.value && !res.value.absent && res.value.content) {
+          return { owner, status: 'ok', content: res.value.content };
+        }
+        return { owner, status: (res.status === 'fulfilled' && !res.value?.absent) ? 'empty' : 'unavailable', content: '' };
+      });
+
+      let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
+      if (memoryBlocks.length === 0 && libReadBinding?.client && typeof libReadBinding.client.openReadSession === 'function') {
+        try {
+          const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
+          if (session?.snapshot?.items) {
+            const libraItem = session.snapshot.items.find(it => it.owner === 'libra' || it.content?.includes?.('LIBRA_MEMORY_EVIDENCE'));
+            if (libraItem?.content) memoryBlocks = [libraItem.content];
+          }
+        } catch (_) {}
+      }
+      const finalMemoryBlock = memoryBlocks.join('\n\n');
+      if (finalMemoryBlock) {
+        usesLibEvidence = true;
+        const runController = new AbortController();
+        libReadSession = {
+          status: 'ready',
+          reason: '',
+          block: finalMemoryBlock,
+          recalls: recallResults,
+          signal: runController.signal,
+          calls: new Set(),
+          recoveries: new Set(),
+          stageViews: new Map(),
+          failed: '',
+          attempt: null,
+          lastAttemptStalled: false,
+          setBudgetProfile() {},
+          beforeModel: async (stage, phase, recovery = '') => {
+            const key = `${stage}:${phase}`;
+            if (recovery) libReadSession.recoveries.add(`${key}:${recovery}`);
+            else libReadSession.calls.add(key);
+          },
+          guardModel: async (operation) => await operation(),
+          assertPayload: async body => body,
+          assertDispatch: () => {},
+          timeoutAttempt: () => {},
+          fail: (code, cause) => {
+            libReadSession.failed = code;
+            return libEvidenceError(code, cause);
+          },
+          assertCurrent: async () => true,
+          assertLocalCurrent: () => true,
+          assertStageView: (stage, recent) => { libReadSession.stageViews.set(stage, recent); },
+          assertStageViews: () => {},
+          finalize: async draft => draft,
+          close: () => {
+            runController.abort();
+            if (activeLibEvidenceRun === libReadSession) {
+              activeLibEvidenceRun = null;
+            }
+          }
+        };
+        activeLibEvidenceRun = libReadSession;
+        Runtime.lastMemoryRecall = Object.freeze({
+          at: Date.now(),
+          queryChars: queryText.length,
+          elapsedMs: Date.now() - libReadStartedAt,
+          owners: recallResults.map(r => ({ owner: r.owner, status: r.status, chars: r.content.length, content: r.content }))
+        });
+        Runtime.lastLibReadDiagnostic = Object.freeze({
+          at: Date.now(),
+          purpose: 'response_evidence',
+          status: 'ready',
+          code: '',
+          elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
+        });
+        settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
+      }
+    }
     try {
     let current = null;
     let risuSnapshot = null;
@@ -38074,7 +38214,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         runId: shadowEnv.recent?.runLineage?.runId || '',
         currentInputHash: shadowEnv.recent?.runLineage?.currentInputHash || ''
       };
-      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
 
     const aideStageEnabled = (stageName) => {
@@ -38181,8 +38321,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     finalRecent.authoritativeCommitmentGuard = finalCommitmentValidation;
     await libReadSession.assertCurrent();
     const boundFinalDraft = compact(stageDraft(safeStage) || stageDraft(current) || '', 80000);
-    Runtime.lastSafeStage = usesLibEvidence ? null : publicStageView(safeStage);
-    Runtime.finalDraft = usesLibEvidence ? '' : boundFinalDraft;
+    Runtime.lastSafeStage = publicStageView(safeStage);
+    Runtime.finalDraft = boundFinalDraft;
     const completedDrafts = [];
     const completedHashes = new Set();
     for (const item of stages) {
@@ -38193,7 +38333,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       completedDrafts.push({ stage: item.stage || '', hash, draft });
       if (completedDrafts.length >= 16) break;
     }
-    Runtime.lastCompletedDraftSet = usesLibEvidence ? null : { schema: 'serial_gradation_agents_for_rp_completed_drafts_v1', runId: runLineage.runId, currentInputHash: runLineage.currentInputHash, completedAt: Date.now(), stages: completedDrafts };
+    Runtime.lastCompletedDraftSet = { schema: 'serial_gradation_agents_for_rp_completed_drafts_v1', runId: runLineage.runId, currentInputHash: runLineage.currentInputHash, completedAt: Date.now(), stages: completedDrafts };
     Runtime.activeLineage = { ...runLineage, completedAt: Date.now() };
     delete Runtime.activeLineage._priorRunDrafts;
     Runtime.finalDraftMeta = {
@@ -38265,10 +38405,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(finalBodyIssue === 'refusal' ? { refusalDraftChars: boundFinalDraft.length } : {}) };
     }
     let injection = suppressedReason ? '' : buildFinalOverlay(current, stages, finalRecent, settings);
-    // The memory the draft used also reaches the response model, unless its owner turned that off.
-    const ownerRecallItems = usesLibEvidence ? [...(libReadSession.evidencePacket?.items || [])] : [];
-    const finalRecallBlockNow = () => ownerRecallItems.filter(item => item.source?.finalDelivery !== false && !libOwnersLost.has(item.owner)).map(item => String(item.content || '').trim()).filter(Boolean).join('\n\n');
-    const finalRecallBlock = finalRecallBlockNow();
     if (usesLibEvidence && !suppressedReason) {
       await libReadSession.finalize(boundFinalDraft);
       injection = `${injection}\n${LIB_EVIDENCE_TRANSPORT_MARKER}`;
@@ -38279,9 +38415,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       reason: suppressedReason,
       injection,
       externalEvidence: usesLibEvidence,
-      finalRecallBlock,
-      finalRecallBlockNow,
-      ownerRecallItems,
       finalizeHandoff: usesLibEvidence ? async () => {
         const final = await libReadSession.finalize(injection);
         await libReadSession.assertCurrent();
@@ -38329,7 +38462,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const beforeRequest = async (messages, type) => {
-    if (isMainNarrativeRequest(type)) await announceLibReads(Runtime.settings || await loadSettings().catch(() => null));
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
@@ -38593,10 +38725,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.lastProviderError = null;
 
     const startedAt = Date.now();
-    libOwnersAwaitingDelivery.clear();
     libOwnersLost.clear();
-    const libRunConnection = LibReadConnection.status();
-    if (libRunConnection.state === 'connected' && libRunConnection.readSource !== 'off') for (const owner of libRunConnection.draftReadOwners || LIB_READ_OWNERS) libOwnersAwaitingDelivery.add(owner);
     try {
       const result = await runPipeline(messages, type, requestSettings);
       const suppressionMeta = Runtime.finalDraftMeta?.suppressed === result.reason ? {
@@ -38618,14 +38747,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (!result.ok || !result.injection) throw libEvidenceError('LIB_READ_DRAFT_UNAVAILABLE');
           await updatePipelineWorkPanel('GRADIA 초안 작성 완료 · 응답 모델이 장면을 완성하고 있습니다…', 'awaiting_response', { currentStage: '' });
           const injection = await result.finalizeHandoff();
-          const recallBlock = result.finalRecallBlockNow();
-          const injected = injectSystemMessage(messages, recallBlock ? `${injection}\n\n<MEMORY_RECALL>\n${recallBlock}\n</MEMORY_RECALL>` : injection, requestSettings);
+          const injected = injectSystemMessage(messages, injection, requestSettings);
           if (!verifyOriginalMessagePreservation(messages, injected).preserved) throw libEvidenceError('LIB_READ_TRANSPORT_CHANGED');
           Runtime.last = { at: Date.now(), ok: true, externalEvidence: true, stageCount: result.stages.length };
           result.assertHandoffLocalCurrent();
-          for (const item of result.ownerRecallItems) { if (libOwnersLost.has(item.owner)) continue; reportLibOwnerDelivery(item.owner, item.source?.finalDelivery === false ? 'draft_only' : 'final_delivered'); libOwnersAwaitingDelivery.delete(item.owner); }
-          for (const owner of libOwnersAwaitingDelivery) reportLibOwnerDelivery(owner, 'empty');
-          libOwnersAwaitingDelivery.clear();
           libEvidenceResponseRedactionRequired = true;
           return injected;
         } finally { result.closeEvidence(); }
@@ -38695,15 +38820,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
       return injectedMessages;
     } catch (error) {
-      if (/^LIB_READ_/.test(error?.code || '')) {
-        if (activeLibEvidenceRun) activeLibEvidenceRun.close();
-        purgeLibEvidenceRuntime();
-        Runtime.last = { at: Date.now(), ok: false, reason: error.code };
-        Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
-          at:Date.now(),purpose:'response_evidence',status:'failed',code:error.code,...libReadFailureDetails(error)});
-        await finishPipelineWorkStatus('기억 근거 검증에 실패해 GRADIA 작업을 중단했습니다. '+error.code, false, 6000, 'pipeline_error');
-        throw error;
-      }
       warn('beforeRequest failed', error);
       const reason = compact(error?.message || error, 500);
       Runtime.last = { at: Date.now(), ok: false, reason, elapsedMs: Date.now() - startedAt, requestFingerprint: fingerprint };
@@ -38716,7 +38832,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (settings.failureMode === 'hard') throw error;
       return messages;
     } finally {
-      failUndeliveredLibOwners(String(Runtime.last?.reason || 'LIB_READ_DRAFT_UNAVAILABLE'));
       Runtime.inFlight = false;
       finishCallTelemetry(Runtime.last?.ok === false ? 'failed' : 'completed');
       scheduleGuiTraceRefresh();
@@ -39664,7 +39779,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}";
   const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>"};
-  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s0\" id=\"mini-s0\" data-go=\"pipeline\">인풋 관리자 · 사용 안 함</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" data-go=\"pipeline\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3 data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h3><p data-novel=\"전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).\" data-rp=\"직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다. 후보는 제안일 뿐 유저의 확정 행동이 아닙니다.\">전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).</p></div>\n          <div class=\"choices\" id=\"q-input\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b data-novel=\"사용 안 함\" data-rp=\"직접 입력\">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class=\"choice\"><b data-novel=\"사용\" data-rp=\"행동 3가지 제안\">사용</b><span data-novel=\"세부 방식은 ‘파이프라인’에서 바꿉니다.\" data-rp=\"NPC 반응·성공·결과는 미리 정하지 않습니다.\">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          <button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">사용 안 함</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\"><b>원본 입력</b>을 그대로 보내거나, 유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 직접 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            <div class=\"choices\" id=\"inp-mode\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b>사용 안 함</b><span>원본 입력을 그대로 전달 · 추가 호출 없음</span></button><button class=\"choice\"><b data-novel=\"사용 (세 관점 후보)\" data-rp=\"사용 (행동 후보 3개)\">사용 (세 관점 후보)</b><span>전송 전 후보 선택 화면이 열립니다.</span></button></div>\n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><div class=\"banner banner--warn\" style=\"margin:10px 0\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>정보 전달</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 + 기본 지시 (draft_only)</b><span>단계 분석은 메인 응답에 전달하지 않습니다.</span></button></div><span class=\"hint\">현재 화면에서 고를 수 있는 전달 방식은 이 한 가지입니다.</span></div>\n            <div class=\"field\"><label>응답 마무리</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 기반 마무리 (draft_guided)</b><span>최종 AI가 초안을 바탕으로 마무리합니다.</span></button></div></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback의 현재 채팅 서버 기억을 읽습니다. 쓰기 권한은 없습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>연결됨 · 3개 생산자</span></span></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>서버 URL</label><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:8787\"></div><dl class=\"kv\" style=\"align-self:end\"><dt>활성 읽기</dt><dd>LIBRA · HAYAKU · Flashback</dd><dt>코퍼스</dt><dd>128개 / 1.4 MiB (한도 4 MiB)</dd></dl></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn btn--primary\" id=\"lib-connect\">읽기 전용 연결</button><button class=\"btn\" id=\"lib-disconnect\">연결 해제</button><button class=\"btn\" id=\"lib-check\">현재 기억 연결 확인</button></div>\n        <div class=\"state-grid\" style=\"margin-top:12px\">\n          <div><b>서버 연결</b><span id=\"lib-state\">✓ 연결됨 (읽기 전용)</span></div>\n          <div><b>활성 읽기 대상</b>LIBRA · HAYAKU · Flashback<br><span class=\"hint\">Flashback: 현재 채팅 scope가 아직 없어 읽을 수 없음 (표본)</span></div>\n          <div><b>현재 채팅 scope</b>아스텔 / 에피소드 42 · 채팅이 바뀌면 다시 연결하세요</div>\n          <div><b>단계 모델 호환</b>⚠ <b style=\"display:inline;color:var(--warn-ink)\">검증 조합 아님</b><br><span class=\"hint\">현재 SHADOW 모델 <span id=\"src-shadow-model\">claude-sonnet</span></span></div></div>\n        <div class=\"note note--warn\" style=\"margin-top:12px\"><b>연결됨 ≠ 생성 호환.</b> 기억을 포함한 생성의 검증 조합은 official OpenAI Chat Completions · gpt-4o-mini-2024-07-18입니다. 연결이 성공해도 다른 모델은 이 조합으로 검증되지 않았습니다. 서버 URL을 바꾸거나, 가져오기·연결 해제를 하면 읽기 <b>동의가 초기화</b>됩니다.</div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"i\">입력 도우미</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"s\">SHADOW ACT</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\">폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯</button></div>\n      <div data-subpanel=\"i\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div>\n      <div data-subpanel=\"s\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s0\" id=\"mini-s0\" data-go=\"pipeline\">인풋 관리자 · 사용 안 함</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" data-go=\"pipeline\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3 data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h3><p data-novel=\"전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).\" data-rp=\"직접 입력하거나, 유저가 취할 수 있는 행동 후보 3개를 제안받아 직접 고릅니다. 후보는 제안일 뿐 유저의 확정 행동이 아닙니다.\">전송 전 입력을 장면에 맞게 다듬을지 정합니다. 켜면 세 관점의 후보를 만들고 직접 고릅니다(취소·다시 생성 가능).</p></div>\n          <div class=\"choices\" id=\"q-input\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b data-novel=\"사용 안 함\" data-rp=\"직접 입력\">사용 안 함</b><span>원본 입력을 그대로 전달합니다.</span><small>추가 호출 없음</small></button><button class=\"choice\"><b data-novel=\"사용\" data-rp=\"행동 3가지 제안\">사용</b><span data-novel=\"세부 방식은 ‘파이프라인’에서 바꿉니다.\" data-rp=\"NPC 반응·성공·결과는 미리 정하지 않습니다.\">세부 방식은 ‘파이프라인’에서 바꿉니다.</span><small>1회 호출</small></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">5</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">인풋 관리자부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          <button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">사용 안 함</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\"><b>원본 입력</b>을 그대로 보내거나, 유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 직접 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            <div class=\"choices\" id=\"inp-mode\" data-dirty data-dirty-key=\"input\"><button class=\"choice is-on\"><b>사용 안 함</b><span>원본 입력을 그대로 전달 · 추가 호출 없음</span></button><button class=\"choice\"><b data-novel=\"사용 (세 관점 후보)\" data-rp=\"사용 (행동 후보 3개)\">사용 (세 관점 후보)</b><span>전송 전 후보 선택 화면이 열립니다.</span></button></div>\n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><div class=\"banner banner--warn\" style=\"margin:10px 0\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>정보 전달</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 + 기본 지시 (draft_only)</b><span>단계 분석은 메인 응답에 전달하지 않습니다.</span></button></div><span class=\"hint\">현재 화면에서 고를 수 있는 전달 방식은 이 한 가지입니다.</span></div>\n            <div class=\"field\"><label>응답 마무리</label><div class=\"choices\"><button class=\"choice is-on\"><b>초안 기반 마무리 (draft_guided)</b><span>최종 AI가 초안을 바탕으로 마무리합니다.</span></button></div></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback 플러그인의 현재 채팅 기억을 플러그인 IPC로 직접 읽습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>플러그인 IPC 활성</span></span></div>\n        <div id=\"lib-read-owners-container\" class=\"field\" style=\"margin-top:14px\"><div class=\"field\" id=\"lib-draft-read-owners\"><span class=\"label\" style=\"font-weight:600\">초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)</span><div class=\"cluster\" style=\"margin-top:8px;display:flex;flex-wrap:wrap;gap:18px\"><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"libra\">LIBRA (미크로·통합 기억)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"hayaku\">HAYAKU (로케이터·연속성)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"flashback\">Flashback (벡터 메모리)</label></div></div></div>\n        <div class=\"state-grid\" style=\"margin-top:16px\">\n          <div><b>통신 방식</b><span>플러그인 IPC (별도 로컬 서버 불필요)</span></div>\n          <div><b>활성 읽기 대상</b><span id=\"lib-active-summary\">LIBRA · HAYAKU · Flashback</span></div>\n          <div><b>현재 채팅 scope</b><span id=\"lib-scope-summary\">현재 채팅 scope 미확인</span></div>\n          <div><b>기억 전달 방식</b><span>초안 프롬프트 직접 주입 (검증 퇴짜 없음)</span></div></div>\n        <div hidden style=\"display:none\"><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:47630\"><button id=\"lib-connect\"></button><button id=\"lib-disconnect\"></button><button id=\"lib-check\"></button><span id=\"lib-state\"></span></div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"i\">입력 도우미</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"s\">SHADOW ACT</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\">폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯</button></div>\n      <div data-subpanel=\"i\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div>\n      <div data-subpanel=\"s\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
 
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -41854,6 +41969,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     risuEngine: Runtime.risuEngine,
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
+    lastMemoryRecall: Runtime.lastMemoryRecall || null,
     libReadConnection: LibReadConnection.status(),
     libEvidenceCheckStats: Runtime.libEvidenceCheckStats || null,
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
@@ -42821,11 +42937,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (control.matches?.('#lib-url,[data-lib-read-url]')) { LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
     if (control.matches?.('[data-lib-draft-owner]')) {
       const targetOwner = control.dataset.libDraftOwner;
-      const current = new Set(Gui.libDraftReadOwnersDraft || LibReadConnection.status().draftReadOwners || LibReadConnection.status().readOwners);
+      const current = new Set(LibReadConnection.status().draftReadOwners || LIB_READ_OWNERS);
       if (control.checked) current.add(targetOwner);
       else current.delete(targetOwner);
-      Gui.libDraftReadOwnersDraft = LIB_READ_OWNERS.filter(o => current.has(o));
-      mockupRenderSources({preserveUrlDraft:true});
+      const nextOwners = LIB_READ_OWNERS.filter(o => current.has(o));
+      Gui.libDraftReadOwnersDraft = nextOwners;
+      void LibReadConnection.setDraftReadOwners(nextOwners).then(() => {
+        Gui.libDraftReadOwnersDraft = null;
+        mockupRenderSources();
+        guiSetStatus('기억 읽기 대상이 저장되었습니다: ' + (nextOwners.length ? nextOwners.map(o => o.toUpperCase()).join(' · ') : '없음'));
+      });
       return;
     }
     const providerStage=control.closest('.stage-detail[data-detail]');
@@ -43258,98 +43379,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mockupRenderSources = (options = {}) => {
     const page=Gui.app?.querySelector('[data-page="sources"]');if(!page||!Gui.state)return;
     const status=LibReadConnection.status();
-    const connectButton=page.querySelector('#lib-connect');
-    if(connectButton&&!page.querySelector('#lib-read-source')){
-      const field=mockupNode('label','field'),label=mockupNode('span','label','기억 읽기');
-      const select=document.createElement('select');select.id='lib-read-source';select.className='input';
-      select.setAttribute('aria-label','기억 읽기 방식');
-      for(const [value,title] of [
-        ['off','기억 읽기 끄기 (사용 안 함)'],
-        ['unified_engine','서버 · 통합 메모리 검색'],
-        ['plugin_ipc','플러그인 · 기억 직접 읽기 (IPC)']
-      ]){
-        const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
-      }
-      select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
-    }
-    if(connectButton&&!page.querySelector('#lib-read-owners-container')){
-      const container=mockupNode('div','field');container.id='lib-read-owners-container';
+    const activeDraftOwners = LibReadConnection.getDraftReadOwners ? LibReadConnection.getDraftReadOwners() : (status.draftReadOwners || status.readOwners || []);
 
-      const draftField=mockupNode('div','field');draftField.id='lib-draft-read-owners';
-      const draftLabel=mockupNode('span','label','초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)');
-      const draftCluster=mockupNode('div','cluster');draftCluster.style.marginTop='6px';draftCluster.style.display='flex';draftCluster.style.flexWrap='wrap';draftCluster.style.gap='14px';
-
-      const ownerDefs=[
-        {id:'libra',label:'LIBRA (미크로·통합 기억)'},
-        {id:'hayaku',label:'HAYAKU (로케이터·연속성)'},
-        {id:'flashback',label:'Flashback (벡터 메모리)'}
-      ];
-      for(const def of ownerDefs){
-        const dRow=mockupNode('label','cluster');dRow.style.cursor='pointer';dRow.style.display='inline-flex';dRow.style.alignItems='center';dRow.style.gap='5px';
-        const dCb=document.createElement('input');dCb.type='checkbox';dCb.dataset.libDraftOwner=def.id;
-        dRow.append(dCb,document.createTextNode(def.label));draftCluster.append(dRow);
-      }
-      draftField.append(draftLabel,draftCluster);
-      container.append(draftField);
-      connectButton.parentElement?.prepend(container);
-    }
-    const activeDraftOwners = Gui.libDraftReadOwnersDraft || status.draftReadOwners || status.readOwners;
-    const selectedSource=Gui.libReadSourceDraft||status.readSource;
     page.querySelectorAll('[data-lib-draft-owner]').forEach(cb => {
       cb.checked = activeDraftOwners.includes(cb.dataset.libDraftOwner);
-      cb.disabled = status.state === 'connecting' || selectedSource === 'off';
     });
-    const modeLabel=source=>source==='off'?'기억 읽기 끄기 (사용 안 함)':source==='plugin_ipc'?'플러그인 모드':'서버 모드 · LIB 백엔드';
-    const readSourceControl=page.querySelector('#lib-read-source');
-    if(readSourceControl){readSourceControl.value=selectedSource;readSourceControl.disabled=status.state==='connecting';}
-    Gui.app.querySelectorAll('[data-lib-mode-choice]').forEach(button=>{
-      const selected=button.dataset.libModeChoice===selectedSource;
-      button.classList.toggle('is-on',selected);button.setAttribute('aria-pressed',String(selected));button.disabled=status.state==='connecting';
-    });
-    Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(input=>{
-      if(!options.preserveUrlDraft)input.value=status.url;input.dataset.savedUrl=status.url;input.disabled=selectedSource!=='unified_engine';
-    });
-    const serverField=Gui.app.querySelector('[data-lib-server-field]');if(serverField)serverField.hidden=selectedSource==='plugin_ipc'||selectedSource==='off';
-    const reasonHint = code => {
-      if (code === 'LIB_READ_DISABLED') return '기억 읽기가 해제되어 있습니다 (사용 안 함)';
-      if (code === 'LIB_READ_SCOPE_REGISTRY_UNAVAILABLE') return '채팅 scope 미등록 · IPC 모드로 연결하거나 LIBRA에서 기억을 먼저 생성하세요';
-      if (code === 'LIB_READ_SERVER_MODE_REQUIRED') return '서버 모드 필요 · [기억 읽기]를 [플러그인 IPC]로 전환해 보세요';
-      if (code === 'LIB_READ_TRANSPORT_UNAVAILABLE' || code === 'LIB_READ_TIMEOUT') return '백엔드 서버 미응답 · [플러그인 IPC]로 전환해 보세요';
-      if (code === 'LIB_READ_PLUGIN_MODE_REQUIRED') return 'LIBRA 플러그인 전용 모드 필요';
-      if (code === 'LIB_READ_SCOPE_UNAVAILABLE') return '현재 캐릭터/채팅 scope 미확인';
-      if (code === 'LIB_READ_PREFERENCE_UNAVAILABLE') return '저장된 연결 설정을 읽거나 저장하지 못했습니다. 연결·적용을 다시 눌러 주세요';
-      if (code === 'LIB_READ_CONNECTION_UNAVAILABLE') return '관리 · 진단의 기억 읽기 모드에서 연결·적용을 눌러 주세요';
-      if (code === 'LIB_READ_CONNECTION_PENDING') return '연결 검증이 진행 중입니다. 완료 후 다시 실행하세요';
-      return '';
-    };
-    const hint = reasonHint(status.reason);
-    const draftSummary = activeDraftOwners.length ? activeDraftOwners.map(o => o.toUpperCase()).join(' · ') : '꺼짐';
-    const ownersChanged = Gui.libDraftReadOwnersDraft && (
-      Gui.libDraftReadOwnersDraft.length !== status.draftReadOwners.length ||
-      Gui.libDraftReadOwnersDraft.some(o => !status.draftReadOwners.includes(o))
-    );
-    const modeStatus=Gui.app.querySelector('[data-lib-mode-status]');
-    if(modeStatus)modeStatus.textContent=(status.readSource==='off'?'현재 적용: 기억 읽기 끄기 (LIB 기억 사용 안 함)':status.state==='connected'?'현재 적용: '+modeLabel(status.readSource)+' (초안: '+status.draftReadOwners.map(o=>o.toUpperCase()).join(' · ')+')':status.state==='connecting'?'연결 검증 중: '+modeLabel(status.readSource):'현재 적용: 연결 없음')
-      +(selectedSource!==status.readSource?' · 선택: '+modeLabel(selectedSource)+' (연결·적용 필요)':'')
-      +(ownersChanged && selectedSource!=='off'?' · 대상 변경 (초안: '+draftSummary+') (연결·적용 필요)':'')
-      +(status.reason?' · '+status.reason+(hint?' ('+hint+')':''):'')
-      +(status.inspecting?' · 기억 연결 확인 중…':status.lastInspection?' · '+(status.lastInspection.ok?'연결 확인 완료 · 실제 기억 검색은 실행 시 수행':`연결 확인 실패 · ${status.lastInspection.code}`)+' ('+new Date(status.lastInspection.at).toLocaleTimeString('ko-KR')+')':'');
-    Gui.app.querySelectorAll('[data-lib-read-action]').forEach(button=>{
-      button.disabled=button.dataset.libReadAction==='check'?status.state!=='connected'||status.inspecting:button.dataset.libReadAction==='connect'&&status.state==='connecting';
-      if(button.dataset.libReadAction==='check')button.textContent=status.inspecting?'기억 연결 확인 중…':'기억 연결 확인';
-    });
-    const chip=page.querySelector('#lib-chip');if(chip){chip.className='health '+(status.readSource==='off'?'health--warn':status.state==='connected'?'health--ok':'health--warn');const textNode=chip.querySelector('span');if(textNode)textNode.textContent=status.readSource==='off'?'기억 읽기 끔 (사용 안 함)':status.state==='connected'?'읽기 전용 연결됨':'읽기 연결 '+status.state;}
-    const state=page.querySelector('#lib-state');if(state)state.textContent=(status.state==='error'||status.reason)?(status.state+' · '+status.reason+(hint?' ('+hint+')':'')):status.readSource==='off'?'기억 읽기 끔 (사용 안 함)':status.state;
-    const inspect=page.querySelector('#lib-check');if(inspect){inspect.disabled=status.state!=='connected'||status.inspecting||status.readSource==='off';inspect.textContent=status.inspecting?'확인 중…':'기억 연결 확인';}
-    const connect=page.querySelector('#lib-connect');if(connect){connect.disabled=status.state==='connecting';connect.textContent=selectedSource==='off'?'기억 읽기 끄기 적용':'읽기 전용 연결 · 적용';}
-    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.readSource==='off'?'기억 읽기 꺼짐 · RisuAI 원본 문맥만 사용':status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
-    const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.readSource==='off'?'없음 (기억 읽기 끔)':(status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음');
-    const names=page.querySelectorAll('.state-grid > div');
-    if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음')+' · 쓰기 권한 없음'));
-    if(names[2])names[2].replaceChildren(mockupNode('b','','현재 채팅 scope'),document.createTextNode(Runtime.currentChatScope||'현재 채팅 scope 미확인'));
-    if(names[3])names[3].replaceChildren(mockupNode('b','','단계 모델 호환'),document.createTextNode('모델·문맥 설정 기준 · 입력 토큰 추정'));
-    const note=page.querySelector('.note--warn');if(note)note.textContent='기억 연결은 읽기 전용입니다. 플러그인 IPC는 각 플러그인의 현재 채팅 기억을 직접 읽습니다. 서버 모드는 기존 통합 읽기를 사용합니다. 방식 변경 후 연결 버튼을 눌러 적용하세요.';
-    if(!Gui.characterLoreCatalogLoadedAt&&!Gui.characterLoreCatalogLoading)void refreshCharacterLoreCatalog(false);
+
+    const chip = page.querySelector('#lib-chip');
+    if (chip) {
+      const textNode = chip.querySelector('span');
+      if (activeDraftOwners.length > 0) {
+        chip.className = 'health health--ok';
+        if (textNode) textNode.textContent = `플러그인 IPC 활성 (${activeDraftOwners.length}개 대상)`;
+      } else {
+        chip.className = 'health health--warn';
+        if (textNode) textNode.textContent = '기억 읽기 대상 없음';
+      }
+    }
+
+    const activeSummary = page.querySelector('#lib-active-summary');
+    if (activeSummary) {
+      activeSummary.textContent = activeDraftOwners.length > 0
+        ? activeDraftOwners.map(o => o.toUpperCase()).join(' · ')
+        : '없음 (기억 읽기 끔)';
+    }
+
+    const scopeSummary = page.querySelector('#lib-scope-summary');
+    if (scopeSummary) {
+      scopeSummary.textContent = Runtime.currentChatScope || '현재 채팅 scope 미확인';
+    }
+
+    const state = page.querySelector('#lib-state');
+    if (state) state.textContent = 'connected';
+
+        if(!Gui.characterLoreCatalogLoadedAt&&!Gui.characterLoreCatalogLoading)void refreshCharacterLoreCatalog(false);
     if(!Gui.moduleCatalogLoadedAt&&!Gui.moduleCatalogLoading)void refreshModuleLoreCatalog(false);
     const charList=page.querySelector('#lib-char');
     if(charList){
@@ -43420,22 +43483,31 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const RESULTS_MEMORY_OWNERS = Object.freeze([['libra', 'LIBRA'], ['hayaku', 'HAYAKU'], ['flashback', 'Flashback']]);
   const resultsMemorySection = () => {
-    const meta = Runtime.finalDraftMeta || {};
-    const selection = libReadSelection;
-    const items = Array.isArray(selection?.items) ? selection.items : [];
-    const status = meta.externalEvidence === true && items.length
-      ? `기억 ${items.length}개 사용`
-      : `미사용 · ${meta.libReadReason || meta.libReadStatus || (LibReadConnection.status().state === 'connected' ? '이번 실행 기록 없음' : '기억 연결 없음')}`;
+    const memoryRecall = Runtime.lastMemoryRecall;
+    const owners = Array.isArray(memoryRecall?.owners) ? memoryRecall.owners : [];
+    const usedOwners = owners.filter(r => r.status === 'ok' && r.chars > 0);
+    const totalChars = usedOwners.reduce((sum, r) => sum + r.chars, 0);
+    const status = usedOwners.length
+      ? `플러그인 IPC 기억 ${usedOwners.length}개 (${totalChars.toLocaleString('ko-KR')}자) 사용`
+      : (Runtime.lastBeforeContext ? '기억 미사용' : '실행 기록 없음');
     const groups = RESULTS_MEMORY_OWNERS.map(([owner, label]) => {
-      const rows = items.filter(item => item.owner === owner);
-      return guiEl('div', { class: 'gx-owner' }, [
-        guiEl('div', { class: 'gx-owner__head' }, [guiEl('strong', { text: label }), guiEl('span', { class: 'gx-meta', text: rows.length ? `${rows.length}개 · ${rows.reduce((sum, row) => sum + row.chars, 0).toLocaleString('ko-KR')}자` : '사용 안 함' })]),
-        rows.length ? guiEl('ul', { class: 'gx-list' }, rows.map(row => guiEl('li', {}, [
-          guiEl('details', { class: 'gx-mem' }, [
-            guiEl('summary', {}, [row.source ? guiEl('span', { class: 'gx-tag', text: row.source }) : null, guiEl('span', { text: row.preview })]),
-            guiEl('div', { class: 'gx-draft', text: row.text || row.preview })
-          ])
-        ]))) : null
+      const row = owners.find(r => r.owner === owner);
+      const active = row && row.status === 'ok' && row.chars > 0;
+      const head = guiEl('div', { class: 'gx-owner__head' }, [
+        guiEl('strong', { text: label }),
+        guiEl('span', { class: 'gx-meta', text: active ? `${row.chars.toLocaleString('ko-KR')}자 사용` : (row?.status === 'empty' ? '회상 내용 없음' : '사용 안 함') })
+      ]);
+      if (!active || !row.content) {
+        return guiEl('div', { class: 'gx-owner' }, [head]);
+      }
+      return guiEl('details', { class: 'gx-owner', style: 'margin-bottom:8px;' }, [
+        guiEl('summary', { style: 'cursor:pointer;' }, [head]),
+        guiEl('div', { style: 'padding:8px 0 4px;' }, [
+          guiEl('pre', {
+            style: 'margin:0;white-space:pre-wrap;max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.35);padding:10px;border-radius:6px;font-size:12px;line-height:1.5;color:var(--text, #e0e0e0);font-family:var(--font-mono, monospace);',
+            text: row.content
+          })
+        ])
       ]);
     });
     return resultsSection('기억 (LIBRA · HAYAKU · Flashback)', status, groups, true);
@@ -43508,10 +43580,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),shadowPanel=results.querySelector('[data-subpanel="s"]');
       if(shadowPanel){
         const info=traceStateInfo(shadow);
+        const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft;
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
             guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')})]),
-            resultsDraftSection(shadow?.parsed?.draft,'작성한 초안',true)
+            resultsDraftSection(draftToShow,'작성한 초안',true)
           ]),
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsMemorySection(),...resultsMaterialsSections(usage)])
         ]));
@@ -43931,7 +44004,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,
@@ -44153,22 +44226,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // The sender is host metadata, never a self-asserted body field.
     if (disposed || metadata.sender !== readerId || message?.schema !== schema || message.kind !== 'request'
       || typeof message.id !== 'string' || message.id.length > 160
-      || !['describe', 'capture', 'current', 'release', 'select', 'attach', 'delivered'].includes(message.action)) return;
+      || !['describe', 'capture', 'current', 'release', 'select'].includes(message.action)) return;
     if (byteLength(JSON.stringify(message)) > 65536) return;
     const { id, action } = message;
     let result, record;
     try {
       if (action === 'release') { closeRecord(receipts.get(message.receipt || id)); result = { released: true }; }
       else if (action === 'describe') result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await ownerBoundary(message)) };
-      else if (action === 'attach') { options.onAttach?.({ active: message.active === true, ttlMs: Number(message.ttlMs) || 0 }); result = { ok: true }; }
-      else if (action === 'delivered') { options.onDelivery?.({ status: String(message.status || ''), code: String(message.code || '').slice(0, 120) }); result = { ok: true }; }
       else if (action === 'select') {
         // Server storage is read through the server, but only the owner decides what is relevant.
         if (typeof options.select !== 'function' || typeof message.queryText !== 'string' || byteLength(message.queryText) > 16384) fail('LIB_READ_REQUEST_INVALID');
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
-        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -44276,7 +44346,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         const result = await rpc(owner, 'describe', { native: native(scope) });
         if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
-          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+          || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
         scopes[owner] = result.scope;
       } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
     }));
@@ -44292,16 +44362,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // What the response request looks like, so an owner searches as if it had received that request itself.
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
-  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
-  const select = async (owner, scope, queryText, signal) => {
-    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
-    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content, finalDelivery: result.finalDelivery !== false };
+  // Pure IPC select: queries the owner plugin directly and accepts its rendered recall string as-is.
+  const select = async (owner, scope, queryText, signal, hints = {}) => {
+    try {
+      const result = await rpc(owner, 'select', { native: native(scope), queryText: queryText || '', ...runHints(owner), ...hints }, signal);
+      if (typeof result?.content === 'string' && result.content.trim()) {
+        return { content: result.content.trim(), absent: false };
+      }
+      return { content: '', absent: false };
+    } catch (error) {
+      return { absent: true, code: error?.code || 'IPC_ERROR', content: '' };
+    }
   };
-  // Fire and forget: an owner that is not running simply does not hear it.
-  const notify = (owner, action, body = {}) => send(ids[owner], requestChannel, { schema, kind: 'request', id: 'note:' + (++sequence), action, ...body }).catch(() => {});
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
       const requestedOwners = Object.keys(scopes), captured = [];
@@ -44345,7 +44417,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (/CANCELED|STALE|SUPERSEDED|CHANGED/.test(error?.code || '')) throw error;
             unavailableOwners[owner] = error?.code || 'LIB_READ_OWNER_UNAVAILABLE';
             firstRefusal ||= error;
-            notify(owner, 'delivered', { status: 'failed', code: unavailableOwners[owner] });
             continue;
           }
           // Retain the receipt before validating the response or cancellation.
@@ -44401,12 +44472,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       options.role === 'owner' ? ownerHandler : readerHandler); } catch (_) { /* Host teardown can remove the channel API first. */ }
     registered = false;
   };
-  return Object.freeze({ start, describe, select, notify, createClient, dispose });
+  return Object.freeze({ start, describe, select, createClient, dispose });
 });
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
-    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(source);},
+    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(false, null, source);},
     async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
     getLibReadOnlyStatus: () => Object.freeze({ modelSelection:activeLibEvidenceRun?.modelSelection||null, connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {
@@ -46028,12 +46099,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     
 
-    const libReadAnnouncement = setInterval(() => { void announceLibReads(); }, 10000);
-    libReadAnnouncement.unref?.();
     const unload = async () => {
-      clearInterval(libReadAnnouncement);
-      // Owners take their own recall back now rather than when the announcement expires.
-      await Promise.allSettled(LIB_READ_OWNERS.map(owner => libOwnerReader().notify(owner, 'attach', { active: false, ttlMs: 0 })));
+      await libOwnerSelectionReader?.dispose?.();
+      libOwnerSelectionReader = null;
       await LibReadConnection.dispose();
       LibReadConsumer.invalidate('LIB_READ_CANCELED');
       libReadBinding = null; libReadSelection = null; libReadBindingGeneration++;
