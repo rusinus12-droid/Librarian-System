@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-07T14:38:59.545Z",
+  "generatedAt": "2026-11-07T14:51:46.447Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4303,8 +4303,8 @@
       "bytes": 3671742
     },
     "plugins/GRADIA.js": {
-      "sha256": "c18b9dca504bc5d0d7707eb0f359434ddcb02ef13dcdb6d0f6535b3455a43e9f",
-      "bytes": 3032078
+      "sha256": "c0098e3eba3333bffbbfa99df7bd68597f085fbc18c4fd1b137b4b97f6351a7e",
+      "bytes": 3024218
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "d0f9ac403267cd01a930e6d654181c056f47adf14aaf016391c060698e14b384",
