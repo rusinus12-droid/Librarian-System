@@ -83499,7 +83499,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             const relevance = Math.max(lexicalRelevance, semanticRelevance);
             const score = Math.round(((item.evidenceLevel === 'quoted' ? 0.5 : 0.39) + relevance + recency + (record.instructionRevision === lens.instructionRevision ? 0.03 : 0)) * 1000) / 1000;
             // '관점유형' 필드명은 생략했지만 최종 출력의 '· 해석', '해석근거:', '원문:' 표시는 근거 유형을 구분한다.
-            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 계승':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
+            const tag = `[lens:${lensSafeText(lens.name,40)}${record.inherited?' · 이전 대화':''}${item.evidenceLevel==='interpreted'?' · 해석':''}]`;
             const quote = item.quote ? ` (원문: "${lensSafeText(item.quote, 120)}")` : '';
             const basisPart = item.basis && (!item.quote || lensSafeText(item.basis, 120) !== lensSafeText(item.quote, 120))
               ? ` (해석근거: "${lensSafeText(item.basis, 120)}")` : '';

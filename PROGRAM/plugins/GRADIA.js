@@ -4250,11 +4250,64 @@ Before continuing, verify:
     const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
+        const expected = certifiedSelections.find(selection => selection.stage === stage);
+        // Native reconstruction may add only the already-verified scope to the
+        // same message refs. IDs, hashes, generations and prompt text must still
+        // match exactly; foreign scopes are never removed by this comparison.
+        const boundScope = session.contract === 'existing-server-logical-read.v1' && session.nativeScope
+          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null;
+        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
+        const actualView = expected ? libNativePromptView(recent) : null;
+        const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
+        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
+          // Record which parts differed and their sizes only; never prompt text.
+          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
+          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
+            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
+            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
+          throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+        }
         this.stageViews.set(stage, recent);
       },
-      assertStageViews() {},
-      assertLocalCurrent() { return true; },
-      async assertCurrent() { return true; },
+      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
+      assertLocalCurrent() {
+        if (this.failed) throw libEvidenceError(this.failed);
+        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
+        this.assertStageViews();
+        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
+        if (requestSettingsSignature(settings) !== settingsSignature
+          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        session.assertLocalCurrent();
+      },
+      async assertCurrent(checkOptions = {}) {
+        if (this.failed) throw libEvidenceError(this.failed);
+        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
+        this.assertStageViews();
+        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
+        if (requestSettingsSignature(settings) !== settingsSignature
+          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        // Back-to-back pre-dispatch checks (guard start, payload, request) share
+        // one owner round trip. Any provider dispatch invalidates it, so every
+        // check after a model call still re-verifies the owner sources.
+        if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
+          && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
+        const checkStartedAt = Date.now();
+        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
+        catch (error) {
+          // A run that already failed (model timeout, cancellation) aborted this
+          // check itself; report that cause, not "currentness lost".
+          if (this.failed) throw libEvidenceError(this.failed);
+          Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
+            at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
+            causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
+          throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
+        }
+        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
+        if (requestSettingsSignature(settings) !== settingsSignature
+          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
+        noteEvidenceCheck('run', checkStartedAt);
+      },
       noteDispatch() { this.dispatchCount += 1; this.verifiedAt = 0; },
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
       // (nothing was received, so there is no response to reuse); 'length' discards a provider
@@ -4469,10 +4522,12 @@ Before continuing, verify:
 
   let inputWriterDialogCancel = null;
   const log = (...args) => {
+    if (activeLibEvidenceRun) return;
     if (Runtime.settings?.debugLog) console.log(PUBLIC_LOG_PREFIX, ...args);
   };
 
   const warn = (...args) => {
+    if (activeLibEvidenceRun) return;
     const msg = args.map(x => (x && x.message) ? x.message : String(x)).join(' ');
     Runtime.warnings.push({ at: Date.now(), msg: msg.slice(0, 500) });
     if (Runtime.warnings.length > 60) Runtime.warnings.shift();
@@ -23706,6 +23761,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   };
 
   const recordStageTrace = (entry) => {
+    if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
       ...entry,
@@ -26796,7 +26852,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         beats: result.twoCallAnalysis.beats,
         constraints: result.twoCallAnalysis.analysis?.constraints || []
       });
-      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
     return result;
   };
@@ -28149,7 +28205,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
   };
 
   const injectSystemMessage = (messages, content, settings) => {
-    Runtime.lastInjection = text(content);
+    Runtime.lastInjection = hasLibEvidenceMarker(content) ? '' : text(content);
     const systemMessage = { role: 'system', content };
     const copy = messages.slice();
     if (settings.injectionPosition === 'before_last_user') {
@@ -37687,18 +37743,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       )
     });
     let nativeBinding = null;
-    const nativeCtx = await resolveCurrentNativeContext().catch(() => null);
-    const currentScope = nativeCtx?.character && nativeCtx?.chat ? {
-      characterId: String(nativeCtx.character.chaId || nativeCtx.character.id || ''),
-      chatId: String(nativeCtx.chat.id || '')
-    } : null;
-    try {
-      const bound = await captureLibNativeReadSetFromHost(messages, settings, buildRecentChat(messages, settings), currentScope, { soft: true });
-      if (bound?.messages) {
-        messages = bound.messages;
-        nativeBinding = bound;
-      }
-    } catch (error) { nativeBinding = { error }; }
+    const connStatus = LibReadConnection.status();
+    if (settings.enableShadowAct !== false && connStatus.readSource !== 'off') {
+      try {
+        await LibReadConnection.ensureConnected();
+        if (libReadBinding) {
+          const incoming = messages, incomingSignature = JSON.stringify(incoming);
+          const settingsSignature = requestSettingsSignature(settings), runtimeSignature = requestSettingsSignature(Runtime.settings || {});
+          const bound = await captureLibNativeReadSetFromHost(messages,settings,buildRecentChat(messages,settings),libReadBinding.scope,
+            {forceHostRead:LibReadConnection.status().state === 'connected'});
+          nativeBinding = { ...bound, assertLocal() {
+            if (JSON.stringify(incoming) !== incomingSignature || requestSettingsSignature(settings) !== settingsSignature
+              || requestSettingsSignature(Runtime.settings || {}) !== runtimeSignature) throw libEvidenceError('LIB_READ_NATIVE_CHANGED');
+          } };
+          nativeBinding.assertLocal();
+          messages = bound.messages;
+        }
+      } catch (error) { nativeBinding = {error}; }
+    }
 
     // Completion eligibility needs the proved native IDs too. Bind before any
     // stage chooses its closed-turn window, rather than only at the read bridge.
@@ -37731,9 +37793,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const libReadStartedAt = Date.now();
     let libReadSession = null;
     let usesLibEvidence = false;
-    const connState = LibReadConnection.status();
 
-    if (connState.state === 'connected') {
+    if (connStatus.readSource !== 'off') {
       libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
       usesLibEvidence = libReadSession.status === 'ready';
       Runtime.lastLibReadDiagnostic = Object.freeze({
@@ -37748,136 +37809,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (usesLibEvidence) {
         settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
         activeLibEvidenceRun = libReadSession;
-        const ownerMap = {};
-        for (const item of (libReadSession.evidencePacket?.items || libReadSelection?.items || [])) {
-          const o = item.owner || 'libra';
-          const txt = item.content || item.text || '';
-          if (txt) {
-            ownerMap[o] = (ownerMap[o] ? ownerMap[o] + '\n\n' : '') + txt;
-          }
-        }
-        Runtime.lastMemoryRecall = Object.freeze({
-          at: Date.now(),
-          queryChars: libQueryText(baseRecent.latestUser).length,
-          elapsedMs: Date.now() - libReadStartedAt,
-          owners: LIB_READ_OWNERS.map(owner => ({
-            owner,
-            status: ownerMap[owner] ? 'ok' : ((libReadSelection?.unavailableOwners?.[owner] || connState.unavailable?.[owner]) ? 'unavailable' : 'empty'),
-            chars: (ownerMap[owner] || '').length,
-            content: ownerMap[owner] || ''
-          }))
-        });
       }
     }
 
-    if (!usesLibEvidence && connState.readSource !== 'off') {
-      const enabledOwners = ['libra', 'hayaku', 'flashback'].filter(owner => {
-        if (owner === 'libra' && settings.enableLibraRecall === false) return false;
-        if (owner === 'hayaku' && settings.enableHayakuRecall === false) return false;
-        if (owner === 'flashback' && settings.enableFlashbackRecall === false) return false;
-        return true;
-      });
-
-      if (!currentScope) {
-        try {
-          const { character } = await loadCurrentCharacterForRisuContext(false);
-          const { chat } = await loadCurrentChatForRisuContext(character, false);
-          if (character && chat) {
-            currentScope = {
-              characterId: String(character.chaId || character.id || ''),
-              chatId: String(chat.id || '')
-            };
-          }
-        } catch (_) {}
-      }
-
-      const queryText = baseRecent.latestUser || '';
-      const hints = {
-        recentChatTurns: baseRecent.visibleMessageCount || 0,
-        requestChars: settings.recallMaxChars || 0
-      };
-
-      const recallAnswers = await Promise.allSettled(enabledOwners.map(owner =>
-        selectLibOwnerRecall(owner, currentScope, queryText, null, hints)
-      ));
-
-      const recallResults = enabledOwners.map((owner, idx) => {
-        const res = recallAnswers[idx];
-        if (res.status === 'fulfilled' && res.value && !res.value.absent && res.value.content) {
-          return { owner, status: 'ok', content: res.value.content };
-        }
-        return { owner, status: (res.status === 'fulfilled' && !res.value?.absent) ? 'empty' : 'unavailable', content: '' };
-      });
-
-      let memoryBlocks = recallResults.filter(r => r.status === 'ok' && r.content).map(r => r.content);
-      if (memoryBlocks.length === 0 && libReadBinding?.client && typeof libReadBinding.client.openReadSession === 'function') {
-        try {
-          const session = await libReadBinding.client.openReadSession(currentScope || libReadBinding.scope, { maxCorpusBytes: libReadBinding.maxCorpusBytes || 4194304 });
-          if (session?.snapshot?.items) {
-            const libraItem = session.snapshot.items.find(it => it.owner === 'libra' || it.content?.includes?.('LIBRA_MEMORY_EVIDENCE'));
-            if (libraItem?.content) memoryBlocks = [libraItem.content];
-          }
-        } catch (_) {}
-      }
-      const finalMemoryBlock = memoryBlocks.join('\n\n');
-      if (finalMemoryBlock) {
-        usesLibEvidence = true;
-        const runController = new AbortController();
-        libReadSession = {
-          status: 'ready',
-          reason: '',
-          block: finalMemoryBlock,
-          recalls: recallResults,
-          signal: runController.signal,
-          calls: new Set(),
-          recoveries: new Set(),
-          stageViews: new Map(),
-          failed: '',
-          attempt: null,
-          lastAttemptStalled: false,
-          setBudgetProfile() {},
-          beforeModel: async (stage, phase, recovery = '') => {
-            const key = `${stage}:${phase}`;
-            if (recovery) libReadSession.recoveries.add(`${key}:${recovery}`);
-            else libReadSession.calls.add(key);
-          },
-          guardModel: async (operation) => await operation(),
-          assertPayload: async body => body,
-          assertDispatch: () => {},
-          timeoutAttempt: () => {},
-          fail: (code, cause) => {
-            libReadSession.failed = code;
-            return libEvidenceError(code, cause);
-          },
-          assertCurrent: async () => true,
-          assertLocalCurrent: () => true,
-          assertStageView: (stage, recent) => { libReadSession.stageViews.set(stage, recent); },
-          assertStageViews: () => {},
-          finalize: async draft => draft,
-          close: () => {
-            runController.abort();
-            if (activeLibEvidenceRun === libReadSession) {
-              activeLibEvidenceRun = null;
-            }
-          }
+    Runtime.lastMemoryRecall = Object.freeze({
+      at: Date.now(),
+      queryChars: libQueryText(baseRecent.latestUser).length,
+      elapsedMs: Date.now() - libReadStartedAt,
+      owners: LIB_READ_OWNERS.map(owner => {
+        const item = libReadSelection?.items?.find(it => it.owner === owner);
+        return {
+          owner,
+          status: item ? 'ok' : ((libReadSelection?.unavailableOwners?.[owner] || connStatus.unavailable?.[owner]) ? 'unavailable' : 'empty'),
+          chars: item ? item.chars : 0
         };
-        activeLibEvidenceRun = libReadSession;
-        Runtime.lastMemoryRecall = Object.freeze({
-          at: Date.now(),
-          queryChars: queryText.length,
-          elapsedMs: Date.now() - libReadStartedAt,
-          owners: recallResults.map(r => ({ owner: r.owner, status: r.status, chars: r.content.length, content: r.content }))
-        });
-        Runtime.lastLibReadDiagnostic = Object.freeze({
-          at: Date.now(),
-          purpose: 'response_evidence',
-          status: 'ready',
-          code: '',
-          elapsedMs: Math.max(0, Date.now() - libReadStartedAt)
-        });
-        settings = { ...settings, [LIB_EVIDENCE_CONTEXT]: libReadSession };
-      }
-    }
+      })
+    });
     try {
     let current = null;
     let risuSnapshot = null;
@@ -38214,7 +38161,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         runId: shadowEnv.recent?.runLineage?.runId || '',
         currentInputHash: shadowEnv.recent?.runLineage?.currentInputHash || ''
       };
-      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+      if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
 
     const aideStageEnabled = (stageName) => {
