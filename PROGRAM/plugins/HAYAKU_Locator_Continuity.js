@@ -2358,6 +2358,7 @@ const MODE_PROFILES = Object.freeze({
   const Memory = {
     settings: { ...DEFAULT_SETTINGS },
     settingsLoadedAt: 0,
+    hostDatabaseCache: null,
     store: null,
     lastBeforeRequest: null,
     lastViewerRecall: null,
@@ -14165,11 +14166,35 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (typeof current?.getDatabase !== 'function') {
         return { available: false, maxContext: 0, maxResponse: 0, reason: 'database_api_unavailable' };
       }
+      const cached = Memory.hostDatabaseCache;
+      const nowMs = now();
+      if (cached?.value && (nowMs - Number(cached.at || 0) <= 60000)) {
+        const maxContext = Math.max(0, Number(cached.value?.maxContext || 0) || 0);
+        const maxResponse = Math.max(0, Number(cached.value?.maxResponse || 0) || 0);
+        if (maxContext > 0) {
+          return { available: true, maxContext, maxResponse, reason: 'host_database' };
+        }
+      }
       const database = await boundedHostCall(
         'getDatabase:contextBudget',
         () => current.getDatabase(['maxContext', 'maxResponse']),
         null
       );
+      if (database && typeof database === 'object') {
+        Memory.hostDatabaseCache = {
+          at: nowMs,
+          value: { ...(Memory.hostDatabaseCache?.value || {}), ...database }
+        };
+      } else if (cached?.value) {
+        const maxContext = Math.max(0, Number(cached.value?.maxContext || 0) || 0);
+        const maxResponse = Math.max(0, Number(cached.value?.maxResponse || 0) || 0);
+        return {
+          available: maxContext > 0,
+          maxContext,
+          maxResponse,
+          reason: maxContext > 0 ? 'host_database' : 'host_context_unavailable'
+        };
+      }
       const maxContext = Math.max(0, Number(database?.maxContext || 0) || 0);
       const maxResponse = Math.max(0, Number(database?.maxResponse || 0) || 0);
       return {
@@ -15140,7 +15165,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // inputs used by recall, while retaining the complete selected transcript
       // and character below. Storage/settings authority is bound separately.
       const databaseFields=['aiModel','subModel','maxContext','maxResponse','selectedPersona','personas'];
-      const databaseValue = await strict('database',()=>databaseHost.getDatabase(databaseFields));
+      let databaseValue = await boundedHostCall('readset:database', () => databaseHost.getDatabase(databaseFields), missing);
+      if (databaseValue === missing || databaseValue == null) {
+        const cached = Memory.hostDatabaseCache;
+        if (cached?.value && (now() - Number(cached.at || 0) <= 60000)) {
+          databaseValue = cached.value;
+        } else {
+          throw Error('HAYAKU_READSET_HOST_UNAVAILABLE');
+        }
+      } else if (typeof databaseValue === 'object') {
+        Memory.hostDatabaseCache = {
+          at: now(),
+          value: { ...(Memory.hostDatabaseCache?.value || {}), ...databaseValue }
+        };
+      }
       const database = Object.fromEntries(databaseFields.map(key=>[key,databaseValue[key]??null]));
       if (!character?.chaId || !chat?.id || !Array.isArray(chat.message)) throw Error('HAYAKU_READSET_HOST_UNAVAILABLE');
       if(indexed){const verified=await Promise.all([strict('verifyCharacterIndex',()=>indexed.getCurrentCharacterIndex()),strict('verifyChatIndex',()=>indexed.getCurrentChatIndex())]);
@@ -24849,7 +24887,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (recoveryEvidenceUtf8Length(JSON.stringify(serialized)) > 3 * 1024 * 1024) throw Object.assign(new Error('Recovery Vault debt exceeds single-record limit'), { code:'HAYAKU_RECOVERY_DEBT_TOO_LARGE', stage:'recovery_vault_write' });
     const outcome = await RisuCompat.setStorageItemOutcome(key, serialized, RECOVERY_VAULT_STORAGE_TIMEOUT_MS);
     if (outcome.state !== 'fulfilled') throw recoveryVaultFailure(outcome, 'recovery_vault_write', key);
-    if (JSON.stringify(await readRecoveryVaultValue(key)) !== serialized) throw new Error('recovery_vault_readback_mismatch:' + key);
+    let readback = await readRecoveryVaultValue(key);
+    if (JSON.stringify(readback) !== serialized) {
+      // Retry once after brief settle in case host storage flush has asynchronous latency
+      await new Promise(resolve => setTimeout(resolve, 50));
+      readback = await readRecoveryVaultValue(key);
+      if (JSON.stringify(readback) !== serialized) throw new Error('recovery_vault_readback_mismatch:' + key);
+    }
   };
   const loadRecoveryVault = async (scopeOrKey, options = {}) => {
     const scopeKey = compact(objectish(scopeOrKey) ? scopeOrKey.key : scopeOrKey, 196);

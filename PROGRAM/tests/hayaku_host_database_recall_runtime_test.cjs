@@ -40,3 +40,26 @@ test('recall readset survives an API v3 host that returns a new local storage pr
   assert.ok(calls>=1);
  }finally{await runtime.dispose();}
 });
+
+test('recall readset survives host getDatabase timeout by using recent host database cache',async()=>{
+ const runtime=await createHayakuRuntime({messages,autoRepair:false});
+ try{
+  // First run populates the hostDatabaseCache
+  const firstOutput=await runtime.callBeforeRequest([{role:'user',content:'First query about Aurora vault'}],'model');
+  const firstDebug=runtime.hayaku.lastDebug();
+  assert.ok(!firstDebug.lastBeforeRequest?.skipped);
+
+  // Subsequent call simulates host getDatabase hanging/timing out or failing
+  let getDatabaseCalls=0;
+  runtime.host.getDatabase=async()=>{
+   getDatabaseCalls++;
+   throw new Error('Host getDatabase timed out / unavailable');
+  };
+
+  const secondOutput=await runtime.callBeforeRequest([{role:'user',content:'Second query about Aurora vault'}],'model');
+  const secondDebug=runtime.hayaku.lastDebug();
+  assert.ok(!secondDebug.lastBeforeRequest?.skipped, JSON.stringify(secondDebug.lastBeforeRequest));
+  assert.notEqual(secondDebug.lastBeforeRequest?.error,'HAYAKU_READSET_HOST_UNAVAILABLE');
+  assert.ok(secondOutput.some(row=>row.memo==='hayaku-runtime-context-v3'));
+ }finally{await runtime.dispose();}
+});
