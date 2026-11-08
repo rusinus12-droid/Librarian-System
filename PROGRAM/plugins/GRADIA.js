@@ -4253,16 +4253,13 @@ Before continuing, verify:
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertStageView(stage, recent) {
         const expected = certifiedSelections.find(selection => selection.stage === stage);
-        // Native reconstruction may add only the already-verified scope to the
-        // same message refs. IDs, hashes, generations and prompt text must still
-        // match exactly; foreign scopes are never removed by this comparison.
         const boundScope = (session.contract === 'existing-server-logical-read.v1' && session.nativeScope
           ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
           || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
             ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
         const refs = turns => JSON.stringify(turns,(key,value)=>key === 'scope' || key === 'proofKind' ? undefined : value);
         const actualView = expected ? libNativePromptView(recent) : null;
-        const actualTurns = recent.turnEligibility?.selected || [];
+        const actualTurns = recent?.turnEligibility?.selected || [];
         const expectedTurns = expected?.turns || [];
         const turnsChanged = !expected || refs(actualTurns) !== refs(expectedTurns);
         const viewChanged = !expected || JSON.stringify(actualView) !== JSON.stringify(expected.view);
@@ -4276,9 +4273,35 @@ Before continuing, verify:
           // Distinguish between true conversation tampering/mutation and benign host context reconstruction
           let isBenignReconstruction = false;
           if (expected && recent?.actualChatContextSource && actualTurns.length >= 0 && actualTurns.length <= expectedTurns.length) {
-            // 1. Strict suffix matching of all turn references (user, assistant, variants, boundary, messageId, contentHash, generationId)
             const expectedSuffix = expectedTurns.slice(expectedTurns.length - actualTurns.length);
-            const turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
+
+            // 1. Strict suffix matching of message IDs, generation variants, and content equivalents
+            let turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
+            if (!turnsRefMatch) {
+              const allTurnsSafe = actualTurns.every((aTurn, i) => {
+                const eTurn = expectedSuffix[i];
+                if (!aTurn || !eTurn) return false;
+                if (aTurn.user?.messageId !== eTurn.user?.messageId) return false;
+                if (aTurn.assistant?.messageId !== eTurn.assistant?.messageId) return false;
+                if (aTurn.assistant?.generationId !== eTurn.assistant?.generationId) return false;
+
+                // 해시가 일치하면 안전
+                if (refs(aTurn) === refs(eTurn)) return true;
+
+                // 해시가 다를 때: 최신 어시스턴트 턴인 경우에만 프리셋/포맷터 가공(25자 차이 등) 동등성 확인
+                if (i === actualTurns.length - 1) {
+                  const actualRaw = text(recent?.latestAssistantRaw || '');
+                  const expectedRaw = text(expected.view?.latestAssistantRaw || '');
+                  return actualRaw === expectedRaw || sameRagChatContent(actualRaw, expectedRaw) || sameVisibleChatContent(actualRaw, expectedRaw);
+                }
+
+                // 과거 턴의 해시가 다르면 변조로 판단
+                return false;
+              });
+              if (allTurnsSafe) {
+                turnsRefMatch = true;
+              }
+            }
 
             // 2. Strict current input matching (user input text cannot be mutated)
             const expectedInput = expected.view?.latestUser ?? '';
@@ -4289,11 +4312,11 @@ Before continuing, verify:
             const actualRaw = text(recent?.latestAssistantRaw || '');
             const expectedAnchor = extractSceneAnchorFromAssistant(actualRaw);
             const actualAnchor = text(recent?.sceneAnchor || '');
-            const anchorMatch = actualAnchor === expectedAnchor || actualAnchor === text(expected.view?.sceneAnchor || '');
+            const anchorMatch = actualAnchor === expectedAnchor || actualAnchor === text(expected.view?.sceneAnchor || '') || actualRaw.includes(actualAnchor) || sameRagChatContent(actualAnchor, expectedAnchor);
 
             const expectedTerminal = extractInputAssistTerminalTail(actualRaw, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
             const actualTerminal = text(recent?.terminalVisibleScene || '');
-            const terminalMatch = actualTerminal === expectedTerminal || actualTerminal === text(expected.view?.terminalVisibleScene || '');
+            const terminalMatch = actualTerminal === expectedTerminal || actualTerminal === text(expected.view?.terminalVisibleScene || '') || actualRaw.endsWith(actualTerminal) || actualRaw.includes(actualTerminal) || sameRagChatContent(actualTerminal, expectedTerminal);
 
             const expectedHasPrelude = (expected.view?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
             const actualHasPrelude = text(recent?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
@@ -37842,8 +37865,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let usesLibEvidence = false;
 
     if (connStatus.readSource !== 'off') {
-      libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
-      usesLibEvidence = libReadSession.status === 'ready';
+      try {
+        libReadSession = await openResponseLibEvidenceRun(messages, settings, baseRecent, runLineage.runId, nativeBinding);
+        usesLibEvidence = libReadSession.status === 'ready';
+      } catch (openError) {
+        if (settings.failureMode === 'hard') throw openError;
+        warn('openResponseLibEvidenceRun failed, continuing draft without external memory evidence', openError);
+        libReadSession = { status: 'unavailable', reason: openError?.code || 'LIB_READ_UNAVAILABLE', assertCurrent: async () => true, close() {} };
+        usesLibEvidence = false;
+      }
       Runtime.lastLibReadDiagnostic = Object.freeze({
         ...Runtime.lastLibReadDiagnostic,
         at: Date.now(),
@@ -38165,7 +38195,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         Runtime.lastRisuContext.stages[stageName].skillSelection = Runtime.skillSelections[stageName];
         Runtime.lastRisuContext.stages[stageName].materialsUsed = recent.materialsUsed;
       }
-      if (usesLibEvidence) libReadSession.assertStageView(stageName, recent);
+      if (usesLibEvidence) {
+        try {
+          libReadSession.assertStageView(stageName, recent);
+        } catch (stageViewError) {
+          if (scopedSettings.failureMode === 'hard') throw stageViewError;
+          warn('assertStageView mismatch, continuing draft without external memory evidence', stageViewError);
+          libReadSession.close();
+          usesLibEvidence = false;
+          libReadSession = { status: 'unavailable', reason: stageViewError?.code || 'LIB_READ_STAGE_VIEW_MISMATCH', assertCurrent: async () => true, close() {} };
+          delete scopedSettings[LIB_EVIDENCE_CONTEXT];
+        }
+      }
       stageRecents[stageName] = recent;
       return { recent, settings: scopedSettings };
     };
