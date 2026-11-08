@@ -189,6 +189,25 @@ test('a host-added initial assistant scene outside completed refs is not silentl
  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));const chat={id:'chat-evening',message:native},char={id:'character-library',firstMessage:'UNCERTIFIED_PRELUDE a different initial scene.',chats:[chat],chatPage:0};
  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);
 });
+test('benign host prompt reconstruction with sliced turns is accepted without native view changed error',async()=>{
+ const multiTurns = [
+   {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+   {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+   {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+   {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+   {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+ ];
+ const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+ const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+ const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+ f.certifyInput(multiTurns);
+ const r=await f.run(multiTurns);
+ assert.equal(r.externalEvidence,true);
+ assert.equal(f.recalls,1);
+ assert.equal(f.prompts.length,4);
+ r.closeEvidence();
+});
+
 test('native prompt-view text mutation is rejected even when native reference hashes are unchanged',async()=>{
  const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.terminalVisibleScene+="UNCERTIFIED_NATIVE_TEXT",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
  const f=await fixture({transform});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);

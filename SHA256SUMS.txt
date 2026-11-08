@@ -622,7 +622,7 @@ b4eebceaa52ab45ad5ecd06a80131f1b48e87beccf667cdb6a89611e24c4d2a0  ./PROGRAM/docs
 8a1a9c98503ffe4aaa0c0273d5c35a0138f043078cbf40a3302cfc5a2e25bbd3  ./PROGRAM/docs/RELEASE_AUTOMATION.md
 ed79a3387ff7a1361fbfe7ba3a2d888a77e71e5ebf3658fa7a3b9907f1b49fbf  ./PROGRAM/docs/RELEASE_BUILDER_20260912.md
 2feb66d159aa82242c0f300a1878f66eb803c91ba125056f399c16f29fda00ae  ./PROGRAM/docs/RELEASE_BUILDER_GATE_FIX_20261107.md
-51e7d3ee1905a8926d659faf9c3752c3b6d26f01af14dd25ac3ea38eedd8a0a7  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
+336137ec540091ea5267bd824f6ef2f6aa2c52e4d97c9dc6c39b25d05f157517  ./PROGRAM/docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json
 f894890bd82256b3b91289c7640cb4fafa360808e71805096bda3ffe3acf3a68  ./PROGRAM/docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md
 94060ce3298312f997ebacffea393ce0d7236019ace9d5aa7ae40a9d662a1d30  ./PROGRAM/docs/REMAINING_WORK_20261031.md
 0714c53d89a42351651a27b17b28e25c5a35fd291992e4f3dff52262b15ec279  ./PROGRAM/docs/REMOTE_UPDATE_RELEASE_ASSET_CONTRACT_v1.md
@@ -724,12 +724,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f  ./PROGRAM/PACKAGE_CONTENTS.txt
 f2202ab08ae74700516cecbf88741e3ca844593113a433eed6aa35706fdef517  ./PROGRAM/plugins/Flashback_Memory.js
-7884511daf3b50c260911acfda4ae7399361c404c1b74fdf0f49440a012252f7  ./PROGRAM/plugins/GRADIA.js
+9619e932a694a0b5156f013c130ef75825b2ca293e3975235df40ccafccbabad  ./PROGRAM/plugins/GRADIA.js
 69e578d49704b3707f33b789e7b9ef55465ba4ec279a7649b4696394e92b0204  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 6887ea9b1b33a5eb9368c011a8ec8dbd2cc6bf95e0dd8eef790a262efe9029fb  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-992f3abc9689c4510dc577e9788565254c594ac50c6b3104c176e22419e381f1  ./PROGRAM/program-manifest.json
+e592f124825b50311bdf08c142e647f00b1cfb5a4d5bc632b918e5a1ef6f7ee4  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 0f034ba6aee7622a2d2f82a1e3efda8b69db16e4f9467ceca203d1bafcc84f75  ./PROGRAM/run_regression_batch.py
@@ -1346,7 +1346,7 @@ d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523  ./PROGRAM/test
 9ffa129fa1f472eb39dd586aa317a3ddd717cea2e7a9277fc7a14ada7248edae  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
-79b9850efb714329d7c472ca9665ab45f1a4c2b4dbbd8f73aa59c29259df0415  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs
+108639ad513b95acf1ef0f66b99083fe146b14e60866d2f8b6ee8cc470b7cbdd  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs
 82424d94c7aa50130fad8423d09b0819baf96b0e1084ed6a71766ecb742d6fdb  ./PROGRAM/tests/gradia/evidence-budget-builder-v2.test.cjs
 3f80ba952a9d36b05f28783d2a8ac847a8f061d70a521a62a96343e42008e457  ./PROGRAM/tests/gradia/evidence-budget-structured-v2.test.cjs
 16581bb84b41732e7b637e67456e55de326bb397b25db833cdfa81bbc8f211f2  ./PROGRAM/tests/gradia/evidence-budget-v2.test.cjs
@@ -1372,7 +1372,7 @@ d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/test
 8a11d182a681b21a1ae0c9d33bee2c4b94f4b3ea23d4003c4317dba272bdf3b9  ./PROGRAM/tests/gradia/memory-retirement.test.cjs
 4c5621e999208fb9f3b12edccc8ce8c7c12c000b013f87aa1e7e53d72b19199f  ./PROGRAM/tests/gradia/model-context-budget.test.cjs
 c3487b9522bad27ddb3aacbdb80c62d8518d5eb67839ed114ca317d38b5b8372  ./PROGRAM/tests/gradia/model-context-heuristic.test.cjs
-3ab2eb9e485ee41ccb2a7dbe6c16458cdc08a264172ec5521498eaeea89fd445  ./PROGRAM/tests/gradia/native-host-id-binding.test.cjs
+49217b2dae22a70b3b2e227b3f0f45fdbbb438ca1fa969ab47308606d307e50e  ./PROGRAM/tests/gradia/native-host-id-binding.test.cjs
 c4a90523bf5343c2abc01f3be076edb9650fdc6561022ad2acebd330732c2b67  ./PROGRAM/tests/gradia/native-projection-v2.test.cjs
 3dac6421c590268287d0816c38cc7232596e58ba7db664b24d65afd68e46fb24  ./PROGRAM/tests/gradia/owner-read-deadline.test.cjs
 ff1d9371717209aace0f26da44643994ae49d13f2cc2e20a7d70a2220cb13c8f  ./PROGRAM/tests/gradia/producer-owner-migration.test.cjs

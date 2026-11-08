@@ -4262,14 +4262,46 @@ Before continuing, verify:
             ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
-        const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
-        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
+        const actualTurns = recent.turnEligibility?.selected || [];
+        const expectedTurns = expected?.turns || [];
+        const turnsChanged = !expected || refs(actualTurns) !== refs(expectedTurns);
+        const viewChanged = !expected || JSON.stringify(actualView) !== JSON.stringify(expected.view);
+        if (turnsChanged || viewChanged) {
           // Record which parts differed and their sizes only; never prompt text.
           const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
           Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
             sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
-            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
-          throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+            turnCounts: [expectedTurns.length, actualTurns.length] });
+
+          // Distinguish between true conversation tampering/mutation and benign host context reconstruction
+          let isBenignReconstruction = false;
+          if (expected && recent?.actualChatContextSource && actualTurns.length > 0 && actualTurns.length < expectedTurns.length) {
+            const offset = expectedTurns.length - actualTurns.length;
+            let matchesSuffix = true;
+            for (let i = 0; i < actualTurns.length; i++) {
+              const a = actualTurns[i];
+              const e = expectedTurns[offset + i];
+              const aUserMid = a?.user?.messageId;
+              const eUserMid = e?.user?.messageId;
+              const aAsstMid = (a?.assistants?.[0] || a?.assistant)?.messageId;
+              const eAsstMid = (e?.assistants?.[0] || e?.assistant)?.messageId;
+              if (!aUserMid || !eUserMid || aUserMid !== eUserMid) {
+                matchesSuffix = false;
+                break;
+              }
+              if (aAsstMid && eAsstMid && aAsstMid !== eAsstMid) {
+                matchesSuffix = false;
+                break;
+              }
+            }
+            if (matchesSuffix) {
+              isBenignReconstruction = true;
+            }
+          }
+
+          if (!isBenignReconstruction) {
+            throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+          }
         }
         this.stageViews.set(stage, recent);
       },

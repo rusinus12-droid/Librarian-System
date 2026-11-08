@@ -120,7 +120,7 @@ test('wrapped and reformatted Current Input keeps stage view identical to actual
   const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
   const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,null,false);
   const effectiveRecent=f.api.attachInputAssistContinuityState(
-    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings),
     f.settings
   );
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
@@ -150,7 +150,7 @@ test('wrapped input binds when RisuAI replaces {{user}} and {{char}} placeholder
   const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
   const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,persona,false);
   const effectiveRecent=f.api.attachInputAssistContinuityState(
-    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings),
     f.settings
   );
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
@@ -584,7 +584,7 @@ test('<user>/<char> angle-bracket placeholders and short CBS random/pick choice 
   const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
   const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,persona,false);
   const effectiveRecent=f.api.attachInputAssistContinuityState(
-    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings),
     f.settings
   );
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
@@ -619,7 +619,7 @@ for(const withChatSlotIds of [false,true])test(`preset emitting both <chat> pend
   const currentTurn=f.api.resolveSgaCurrentTurn(b.messages);
   const actualChat=await f.api.loadActualChatContextForRag(f.character,{chat:f.chat,source:'getChatFromIndex'},b.messages,currentTurn,persona,false);
   const effectiveRecent=f.api.attachInputAssistContinuityState(
-    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings.turnWindow),
+    f.api.applyActualChatContextToRecent(stageRecent,actualChat,stageSettings),
     f.settings
   );
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent),shadowSelection.view);
@@ -687,7 +687,7 @@ test('independent memory plugin beforeRequest injections (HAYAKU, LIBRA, Flashba
   const currentTurn = f.api.resolveSgaCurrentTurn(b.messages);
   const actualChat = await f.api.loadActualChatContextForRag(f.character, { chat: f.chat, source: 'getChatFromIndex' }, b.messages, currentTurn, persona, false);
   const effectiveRecent = f.api.attachInputAssistContinuityState(
-    f.api.applyActualChatContextToRecent(stageRecent, actualChat, stageSettings.turnWindow),
+    f.api.applyActualChatContextToRecent(stageRecent, actualChat, stageSettings),
     f.settings
   );
   assert.deepEqual(f.api.libNativePromptView(effectiveRecent), shadowSelection.view);
