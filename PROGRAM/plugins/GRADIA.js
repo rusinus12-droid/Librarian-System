@@ -37257,14 +37257,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
     // A user disconnect, URL change, import or disposal clears `explicit` and stops it.
-    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null, ownerRefresh = null;
+    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null, ownerRefresh = null, ownerRefreshError = null;
     const LIB_READ_RECONNECT_TERMINAL = ['LIB_READ_SERVER_URL_CHANGED','LIB_READ_SETTINGS_IMPORTED','LIB_READ_CANCELED','LIB_READ_PREFERENCE_UNAVAILABLE','LIB_READ_SOURCE_UNSUPPORTED','LIB_READ_SERVER_URL_INVALID'];
     const status = () => Object.freeze({state,reason,url,explicit,readSource,
       readOwners:Object.freeze([...readOwners]),
       draftReadOwners:Object.freeze([...draftReadOwners]),
       reconnectAttempts,
       inspecting:!!inspecting,lastInspection,
-      activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),corpus:corpus ? Object.freeze({...corpus}) : null,
+      activeOwners:Object.freeze(Object.keys(scopeBundle?.scopes || {})),unavailable:Object.freeze({...unavailable}),
+      ownerRefreshError:ownerRefreshError ? Object.freeze({...ownerRefreshError}) : null,
+      corpus:corpus ? Object.freeze({...corpus}) : null,
       modelCompatibility:'configured_model_context',tokenAccounting:'unicode-text-estimate-plus-framing'});
     const refresh = () => {
       if (Gui.app && Gui.state) mockupRenderSources({ preserveUrlDraft: true });
@@ -37333,7 +37335,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           const native = await readLibPluginNativeIdentity();
           const resolved = await bridge.describe(native, readOwners);
           scopeBundle = resolved; scope = resolved.scope; unavailable = { ...resolved.unavailable };
-        } catch (_) {}
+          ownerRefreshError = null;
+        } catch (error) {
+          ownerRefreshError = Object.freeze({
+            code: String(error?.code || 'LIB_READ_OWNER_REFRESH_FAILED'),
+            message: String(error?.message || error || 'owner refresh failed').slice(0, 512),
+            at: Date.now()
+          });
+          warn('lib_owner_refresh_failed', ownerRefreshError.code + ':' + ownerRefreshError.message);
+        }
         return status();
       })().finally(() => { ownerRefresh = null; });
       return ownerRefresh;
