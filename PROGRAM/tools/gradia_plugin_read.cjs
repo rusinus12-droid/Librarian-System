@@ -185,11 +185,14 @@ module.exports = function createGradiaPluginRead(options) {
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
-    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
-    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content };
+    try {
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+      return { content: result.content };
+    } catch (error) {
+      if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code };
+      throw error;
+    }
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {

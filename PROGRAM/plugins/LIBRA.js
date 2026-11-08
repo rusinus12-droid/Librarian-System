@@ -78434,7 +78434,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         const result = await rpc(owner, 'describe', { native: native(scope) });
         if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
-          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+          || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
         scopes[owner] = result.scope;
       } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
     }));
@@ -78452,11 +78452,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const runHints = owner => options.runHints?.(owner) || {};
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
-    try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-    catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
-    const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
-    if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-    return { content: result.content };
+    try {
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+      return { content: result.content };
+    } catch (error) {
+      if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code };
+      throw error;
+    }
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
     async openReadSession(scope, input = {}) {
@@ -78722,15 +78725,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         },
         select: async (queryText, check, hints = {}) => {
           try {
+            check?.();
             const context = await resolveContext();
+            check?.();
             if (state.disposed || state.deletingScopes.has(context.scope.scopeKey)) return { content: '' };
             const settings = await loadMemorySettings();
             const pairs = buildPairs(context.chat, context.scope.scopeKey);
             const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);
+            check?.();
             const envelopeOverhead = UNIFIED_CLASSIC_HEADER.length + UNIFIED_CLASSIC_FOOTER.length + 2;
             const configuredCap = Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS);
             const ownRecallChars = Math.min(configuredCap > envelopeOverhead + 64 ? configuredCap - envelopeOverhead : configuredCap, CLASSIC_MAX_INJECTION_CHARS - envelopeOverhead);
-            const maxChars = hints?.requestChars ? Math.min(Number(hints.requestChars), ownRecallChars) : ownRecallChars;
+            const maxChars = hints?.recallBudgetChars ? Math.min(Number(hints.recallBudgetChars), ownRecallChars) : ownRecallChars;
             const maxUnits = Number(settings.unifiedMaxUnits || 12);
             let graph = null;
             try {
@@ -78746,9 +78752,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                 resourceBudget: { maxReads: GRADIA_OWNER_SESSION_MAX_READS, maxSourceBytes: GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES },
                 consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits }
               }, null, null);
+              check?.();
               if (!graph || !graph.packet) return { content: '' };
               const baseContent = cleanClassicEvidencePrompt(graph.packet.renderedText || '');
               const lens = await recallLensMemories(context, { currentText: sanitizeRecallCurrentInput(queryText || '') }, Number(graph.packet.characterBudget || maxChars), { readOnly: true, refreshVectors: false, deliveredText: baseContent }).catch(() => null);
+              check?.();
               const lensRenderedBlock = string(lens?.renderedBlock || '');
               const candidateWithLens = [baseContent, lensRenderedBlock].filter(Boolean).join('\n\n');
               const candidateBlockWithLens = candidateWithLens ? [UNIFIED_CLASSIC_HEADER, candidateWithLens, UNIFIED_CLASSIC_FOOTER].join('\n') : '';
@@ -78761,8 +78769,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               if (graph) releaseMemoryGraphUnifiedQuery(graph);
             }
           } catch (err) {
+            if (/CANCELED|ABORT/i.test(err?.code || err?.message || '')) throw err;
             warn('LIBRA select recall error', err);
-            return { content: '' };
+            return { content: '', error: err?.code || 'LIB_READ_OWNER_UNAVAILABLE' };
           }
         },
         capture: async request => {

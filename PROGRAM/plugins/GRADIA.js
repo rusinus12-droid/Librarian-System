@@ -4263,13 +4263,21 @@ Before continuing, verify:
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
-        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
+        if (turnsChanged) {
           // Record which parts differed and their sizes only; never prompt text.
           const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
+          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged: true, changedFields,
             sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
             turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
           throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
+        }
+        if (JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
+          // Record which parts differed and their sizes only; never prompt text.
+          // Under the owner-trust model, reprojection/prompt view differences do not abort the pipeline.
+          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
+          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged: false, changedFields,
+            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
+            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
         }
         this.stageViews.set(stage, recent);
       },
@@ -29102,8 +29110,9 @@ function createGradiaModelContextBudget({ digest }) {
         const assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
         // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
         // their own memory, and an owner that is not running contributes none.
+        // In plugin_ipc mode, openReadSession has already captured owner selections directly; do not re-query.
         let ownerUnavailable = null;
-        if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
+        if (multipleOwners && readSource !== 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
           const kept = readSource === 'unified_engine'
             ? raw.items.filter(item => item?.owner === 'libra')
             : [];
@@ -37715,10 +37724,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
-  // A plugin that did not answer is not asked again for a minute, so its absence costs one short wait.
+  // A plugin that did not answer is not asked again for a short duration, scoped by chat.
   const libOwnerAbsentUntil = new Map();
   const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
-    if (Date.now() < (libOwnerAbsentUntil.get(owner) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
+    const scopeKey = scope?.scopeKey || scope?.chatId || '';
+    const cacheKey = `${owner}:${scopeKey}`;
+    if (Date.now() < (libOwnerAbsentUntil.get(cacheKey) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
@@ -37728,7 +37739,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       noteLibOwnerLost(owner, code);
       return { absent: true, code };
     }
-    if (answer.absent) libOwnerAbsentUntil.set(owner, Date.now() + 60000); else libOwnerAbsentUntil.delete(owner);
+    if (answer.absent) {
+      const ttl = answer.code === 'LIB_READ_TIMEOUT' ? 5000 : 60000;
+      libOwnerAbsentUntil.set(cacheKey, Date.now() + ttl);
+    } else {
+      libOwnerAbsentUntil.delete(cacheKey);
+    }
     return answer;
   };
   const LibReadConsumer = createLibServerReadConsumer({ holdSelection: true, onOwnerOmitted: (owner, code) => noteLibOwnerLost(owner, code), selectOwnerRecall: selectLibOwnerRecall, getBinding: () => libReadBinding, assertNativeScope: assertLibNativeScope, onSelection: value => { libReadSelection = value; } });
@@ -44258,6 +44274,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -44381,16 +44398,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // What the response request looks like, so an owner searches as if it had received that request itself.
   // Numbers only: a request must stay small, and the owner holds the chat itself.
   const runHints = owner => options.runHints?.(owner) || {};
-  // Pure IPC select: queries the owner plugin directly and accepts its rendered recall string as-is.
-  const select = async (owner, scope, queryText, signal, hints = {}) => {
+  // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
+  const select = async (owner, scope, queryText, signal) => {
     try {
-      const result = await rpc(owner, 'select', { native: native(scope), queryText: queryText || '', ...runHints(owner), ...hints }, signal);
-      if (typeof result?.content === 'string' && result.content.trim()) {
-        return { content: result.content.trim(), absent: false };
-      }
-      return { content: '', absent: false };
+      const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
+      if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
+      return { content: result.content };
     } catch (error) {
-      return { absent: true, code: error?.code || 'IPC_ERROR', content: '' };
+      if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code };
+      throw error;
     }
   };
   const createClient = scopes => Object.freeze({ schema: 'memory-suite.memory-read-client.v1', pluginId: readerId,
