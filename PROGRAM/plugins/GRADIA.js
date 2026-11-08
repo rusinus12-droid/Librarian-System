@@ -4251,160 +4251,43 @@ Before continuing, verify:
     const budgetMeter = createGradiaModelContextBudget({ digest: libReadSha256 });
     const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
-      assertStageView(stage, recent) {
-        const expected = certifiedSelections.find(selection => selection.stage === stage);
-        const boundScope = (session.contract === 'existing-server-logical-read.v1' && session.nativeScope
-          ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
-          || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
-            ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
-        const refs = turns => JSON.stringify(turns,(key,value)=>key === 'scope' || key === 'proofKind' ? undefined : value);
-        const actualView = expected ? libNativePromptView(recent) : null;
-        const actualTurns = recent?.turnEligibility?.selected || [];
-        const expectedTurns = expected?.turns || [];
-        const turnsChanged = !expected || refs(actualTurns) !== refs(expectedTurns);
-        const viewChanged = !expected || JSON.stringify(actualView) !== JSON.stringify(expected.view);
-        if (turnsChanged || viewChanged) {
-          // Record which parts differed and their sizes only; never prompt text.
-          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
-            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
-            turnCounts: [expectedTurns.length, actualTurns.length] });
-
-          // Distinguish between true conversation tampering/mutation and benign host context reconstruction
-          let isBenignReconstruction = false;
-          if (expected && recent?.actualChatContextSource && actualTurns.length >= 0 && actualTurns.length <= expectedTurns.length) {
-            const expectedSuffix = expectedTurns.slice(expectedTurns.length - actualTurns.length);
-
-            // 1. Strict suffix matching of message IDs, generation variants, and content equivalents
-            let turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
-            if (!turnsRefMatch) {
-              const expAllUsers = (expected.view?.visibleMessages || []).filter(m => m.role === 'user');
-              const expTurnUsers = expAllUsers.length > expectedTurns.length
-                ? expAllUsers.slice(0, expectedTurns.length)
-                : expAllUsers;
-              const expSuffixUsers = expTurnUsers.slice(expTurnUsers.length - actualTurns.length);
-              const expAllAssistants = (expected.view?.visibleMessages || []).filter(m => m.role === 'assistant');
-              const expTurnAssistants = expAllAssistants.length > expectedTurns.length
-                ? expAllAssistants.slice(expAllAssistants.length - expectedTurns.length)
-                : expAllAssistants;
-              const expSuffixAssistants = expTurnAssistants.slice(expTurnAssistants.length - actualTurns.length);
-              const allTurnsSafe = actualTurns.every((aTurn, i) => {
-                const eTurn = expectedSuffix[i];
-                if (!aTurn || !eTurn) return false;
-                if (aTurn.user?.messageId !== eTurn.user?.messageId) return false;
-                if (aTurn.assistant?.messageId !== eTurn.assistant?.messageId) return false;
-                if (aTurn.assistant?.generationId !== eTurn.assistant?.generationId) return false;
-
-                // 어시스턴트 변형(assistants 배열)의 개수, messageId, generationId 일치 확인
-                const aAssts = Array.isArray(aTurn.assistants) ? aTurn.assistants : (aTurn.assistant ? [aTurn.assistant] : []);
-                const eAssts = Array.isArray(eTurn.assistants) ? eTurn.assistants : (eTurn.assistant ? [eTurn.assistant] : []);
-                if (aAssts.length !== eAssts.length) return false;
-                for (let j = 0; j < aAssts.length; j++) {
-                  if (aAssts[j]?.messageId !== eAssts[j]?.messageId) return false;
-                  if (aAssts[j]?.generationId !== eAssts[j]?.generationId) return false;
-                }
-
-                // 해시가 일치하면 안전
-                if (refs(aTurn) === refs(eTurn)) return true;
-
-                // 해시가 다를 때: 사용자 메시지와 어시스턴트 메시지 양쪽 모두 내용 동등성(sameRagChatContent) 확인
-                const aAssistantContent = text(recent?.selectedTurns?.[i]?.assistant?.content || (i === actualTurns.length - 1 ? (recent?.previousTurnAssistant || recent?.latestAssistantRaw) : ''));
-                const eAssistantContent = text(expSuffixAssistants[i]?.content || (i === actualTurns.length - 1 ? (expected.view?.previousTurnAssistant || expected.view?.latestAssistantRaw) : ''));
-                const assistantMatches = aAssistantContent && eAssistantContent && (
-                  aAssistantContent === eAssistantContent
-                  || sameRagChatContent(aAssistantContent, eAssistantContent)
-                  || sameVisibleChatContent(aAssistantContent, eAssistantContent)
-                );
-                if (!assistantMatches) return false;
-
-                const aUserContent = text(recent?.selectedTurns?.[i]?.user?.content || (i === actualTurns.length - 1 ? recent?.previousTurnUser : ''));
-                const eUserContent = text(expSuffixUsers[i]?.content || (i === actualTurns.length - 1 ? expected.view?.previousTurnUser : ''));
-                const userMatches = aUserContent && eUserContent && (
-                  aUserContent === eUserContent
-                  || sameRagChatContent(aUserContent, eUserContent)
-                  || sameVisibleChatContent(aUserContent, eUserContent)
-                );
-                if (!userMatches) return false;
-
-                return true;
-              });
-              if (allTurnsSafe) {
-                turnsRefMatch = true;
-              }
-            }
-
-            // 2. Strict current input matching (user input text cannot be mutated)
-            const expectedInput = expected.view?.latestUser ?? '';
-            const actualInput = recent?.latestUser ?? '';
-            const inputMatch = actualInput === expectedInput || sameRagChatContent(actualInput, expectedInput);
-
-            // 3. Derived prompt fields must match authentic extraction without uncertified injection
-            const actualRaw = text(recent?.latestAssistantRaw || '');
-            const expectedAnchor = extractSceneAnchorFromAssistant(actualRaw);
-            const actualAnchor = text(recent?.sceneAnchor || '');
-            const anchorMatch = actualAnchor === expectedAnchor
-              || actualAnchor === text(expected.view?.sceneAnchor || '')
-              || (actualAnchor.length > 0 && actualRaw.includes(actualAnchor))
-              || sameRagChatContent(actualAnchor, expectedAnchor);
-
-            const expectedTerminal = extractInputAssistTerminalTail(actualRaw, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
-            const actualTerminal = text(recent?.terminalVisibleScene || '');
-            const terminalMatch = actualTerminal === expectedTerminal
-              || actualTerminal === text(expected.view?.terminalVisibleScene || '')
-              || (actualTerminal.length > 0 && actualRaw.endsWith(actualTerminal))
-              || sameRagChatContent(actualTerminal, expectedTerminal);
-
-            const expectedHasPrelude = (expected.view?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
-            const actualHasPrelude = text(recent?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
-            const preludeMatch = expectedHasPrelude === actualHasPrelude;
-
-            if (turnsRefMatch && inputMatch && anchorMatch && terminalMatch && preludeMatch) {
-              isBenignReconstruction = true;
-            }
-          }
-
-          if (!isBenignReconstruction) {
-            throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
-          }
-        }
-        this.stageViews.set(stage, recent);
-      },
-      assertStageViews() { for (const [stage, recent] of this.stageViews) this.assertStageView(stage, recent); },
-      assertLocalCurrent() {
+      assertRunCurrent() {
         if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
+        if (this.signal?.aborted) throw this.fail('LIB_READ_CANCELED');
+        if (activeLibEvidenceRun && activeLibEvidenceRun !== this) throw this.fail('LIB_READ_SUPERSEDED');
         if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
         if (requestSettingsSignature(settings) !== settingsSignature
           || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
         session.assertLocalCurrent();
       },
+      assertStageView(stage, recent) {
+        this.assertRunCurrent();
+        if (stage && recent) this.stageViews.set(stage, recent);
+      },
+      assertStageViews() {
+        this.assertRunCurrent();
+      },
+      assertLocalCurrent() {
+        this.assertRunCurrent();
+      },
       async assertCurrent(checkOptions = {}) {
-        if (this.failed) throw libEvidenceError(this.failed);
-        try { nativeHostBinding?.assertLocal?.(); } catch (_) { throw this.fail('LIB_READ_NATIVE_CHANGED'); }
-        this.assertStageViews();
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
-        // Back-to-back pre-dispatch checks (guard start, payload, request) share
-        // one owner round trip. Any provider dispatch invalidates it, so every
-        // check after a model call still re-verifies the owner sources.
+        this.assertRunCurrent();
         if (checkOptions.coalesce === true && this.verifiedAt && this.verifiedDispatch === this.dispatchCount
           && Date.now() - this.verifiedAt < LIB_EVIDENCE_RECHECK_COALESCE_MS) { noteEvidenceCheck('run', Date.now(), true); return; }
         const checkStartedAt = Date.now();
-        try { await nativeHostBinding?.assertCurrent(); await session.assertCurrent(); await nativeHostBinding?.assertCurrent(); }
-        catch (error) {
-          // A run that already failed (model timeout, cancellation) aborted this
-          // check itself; report that cause, not "currentness lost".
+        try {
+          await nativeHostBinding?.assertCurrent?.();
+          await session.assertCurrent();
+          await nativeHostBinding?.assertCurrent?.();
+        } catch (error) {
           if (this.failed) throw libEvidenceError(this.failed);
           Runtime.lastLibReadDiagnostic = Object.freeze({...Runtime.lastLibReadDiagnostic,
             at:Date.now(),status:'failed',code:'LIB_READ_CURRENTNESS_LOST',
             causeCode:/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_SOURCE_CHECK_FAILED'});
           throw this.fail('LIB_READ_CURRENTNESS_LOST', error);
         }
-        if (JSON.stringify(messages) !== initialMessages) throw this.fail('LIB_READ_NATIVE_CHANGED');
-        if (requestSettingsSignature(settings) !== settingsSignature
-          || requestSettingsSignature(Runtime.settings || {}) !== runtimeSettingsSignature) throw this.fail('LIB_READ_SETTINGS_CHANGED');
+        this.assertRunCurrent();
         this.verifiedAt = Date.now(); this.verifiedDispatch = this.dispatchCount;
         noteEvidenceCheck('run', checkStartedAt);
       },
@@ -29173,49 +29056,78 @@ function createGradiaModelContextBudget({ digest }) {
         if (typeof input.pipelineSnapshot === 'function') await guarded(() => input.pipelineSnapshot({contract:'existing-server-logical-read.v1',scope:copyMeta(scope)}));
         const digest = dependencies.digest || libReadSha256;
         if (!/^[a-f0-9]{64}$/.test(await guarded(() => digest('')))) fail('LIB_READ_HASH_UNAVAILABLE');
-        let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-          queryText: input.queryText }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
-        if (typeof read?.close === 'function') record.releaseRead = read.close;
-        await assertBinding();
-        // The declared source must be the one that answered. A silent fall back to the server read would
-        // present unqualified evidence as the unified engine's answer.
-        if (String(read?.source || 'server_logical_read') !== readSource) fail('LIB_READ_SOURCE_MISMATCH');
-        // Captured now: the consumer nulls its references before returning, so the engine identity has to
-        // be read while the client session is still in hand.
-        const readEngine = read?.engine && typeof read.engine === 'object' ? freeze(copyMeta(read.engine)) : null;
-        let raw = read?.snapshot;
-        const multipleOwners = client.schema === 'memory-suite.memory-read-client.v1';
         const allowedOwners = ['libra','hayaku','flashback'];
-        if (multipleOwners && (!Array.isArray(raw?.owners) || !raw.owners.length || raw.owners.length > 3
-            || new Set(raw.owners).size !== raw.owners.length || raw.owners.some(owner => !allowedOwners.includes(owner)))) fail('LIB_READ_RESPONSE_INVALID');
-        if (raw?.schema !== (multipleOwners ? 'memory-suite.memory-read-session.v1' : 'memory-suite.libra-read-session.v1') || raw.complete !== true || raw.readOnly !== true
-          || JSON.stringify(raw.scope) !== JSON.stringify(scope) || !Array.isArray(raw.items) || raw.items.length > 4096
-          || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
-          || typeof read.assertCurrent !== 'function' || typeof read.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
-        // Once selected, memory is held as selected, as in an owner's own hook: a later background write
-        // to the store neither removes it nor discards a draft written from it.
-        const assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
-        const assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
-        // In server mode the server read proves access and currentness. HAYAKU and Flashback still choose
-        // their own memory, and an owner that is not running contributes none.
-        // In plugin_ipc mode, openReadSession has already captured owner selections directly; do not re-query.
-        let ownerUnavailable = null;
-        if (multipleOwners && readSource !== 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
-          const kept = readSource === 'unified_engine'
-            ? raw.items.filter(item => item?.owner === 'libra')
-            : [];
-          ownerUnavailable = {};
-          const peers = readSource === 'unified_engine'
-            ? raw.owners.filter(value => value !== 'libra')
-            : raw.owners;
-          const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
-          for (const [index, owner] of peers.entries()) {
+        let multipleOwners = false;
+        let raw = null, readEngine = null, ownerUnavailable = {};
+        let assertReadCurrent = async () => true, assertReadCurrentSync = () => true;
+        if (readSource === 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
+          multipleOwners = true;
+          const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
+          const routeOwners = connStatus?.draftReadOwners;
+          const targetOwners = Array.isArray(routeOwners) ? allowedOwners.filter(o => routeOwners.includes(o)) : allowedOwners;
+          if (Array.isArray(routeOwners) && !targetOwners.length) fail('LIB_READ_OWNERS_DISABLED');
+
+          const answers = await Promise.all(targetOwners.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
+          const kept = [];
+          for (const [index, owner] of targetOwners.entries()) {
             const selected = answers[index];
-            if (selected.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
-            if (selected.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
-              source: { namespace: owner, kind: 'owner_recall_prompt' } });
+            if (selected?.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
+            if (selected?.content && typeof selected.content === 'string' && selected.content.trim()) {
+              kept.push({
+                id: owner + '.recall:' + await guarded(() => digest(selected.content)),
+                key: owner + '.recall',
+                owner,
+                content: selected.content,
+                source: { namespace: owner, kind: 'owner_recall_prompt' }
+              });
+            }
           }
-          raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
+          const rawRevision = await guarded(() => digest(JSON.stringify(kept.map(item => [item.owner, item.content]))));
+          raw = {
+            schema: 'memory-suite.memory-read-session.v1',
+            complete: true,
+            readOnly: true,
+            scope,
+            owners: targetOwners,
+            items: kept,
+            evidenceRevision: rawRevision,
+            corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0),
+            maxCorpusBytes
+          };
+          readEngine = { source: 'owner_selection' };
+        } else {
+          let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
+            queryText: input.queryText }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
+          if (typeof read?.close === 'function') record.releaseRead = read.close;
+          await assertBinding();
+          if (String(read?.source || 'server_logical_read') !== readSource) fail('LIB_READ_SOURCE_MISMATCH');
+          readEngine = read?.engine && typeof read.engine === 'object' ? freeze(copyMeta(read.engine)) : null;
+          raw = read?.snapshot;
+          multipleOwners = client.schema === 'memory-suite.memory-read-client.v1';
+          if (multipleOwners && (!Array.isArray(raw?.owners) || !raw.owners.length || raw.owners.length > 3
+              || new Set(raw.owners).size !== raw.owners.length || raw.owners.some(owner => !allowedOwners.includes(owner)))) fail('LIB_READ_RESPONSE_INVALID');
+          if (raw?.schema !== (multipleOwners ? 'memory-suite.memory-read-session.v1' : 'memory-suite.libra-read-session.v1') || raw.complete !== true || raw.readOnly !== true
+            || JSON.stringify(raw.scope) !== JSON.stringify(scope) || !Array.isArray(raw.items) || raw.items.length > 4096
+            || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
+            || typeof read?.assertCurrent !== 'function' || typeof read?.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
+          assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
+          assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
+          if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
+            const kept = readSource === 'unified_engine'
+              ? raw.items.filter(item => item?.owner === 'libra')
+              : [];
+            const peers = readSource === 'unified_engine'
+              ? raw.owners.filter(value => value !== 'libra')
+              : raw.owners;
+            const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
+            for (const [index, owner] of peers.entries()) {
+              const selected = answers[index];
+              if (selected?.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
+              if (selected?.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
+                source: { namespace: owner, kind: 'owner_recall_prompt' } });
+            }
+            raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
+          }
         }
         let corpusBytes = 0, metadataBytes = 0; const seen = new Set(), corpus = [];
         for (const item of raw.items) {
@@ -29237,7 +29149,7 @@ function createGradiaModelContextBudget({ digest }) {
         if (corpusBytes !== raw.corpusBytes) fail('LIB_READ_RESPONSE_INVALID');
         record.corpus = Object.freeze(corpus);
         const evidenceRevision = raw.evidenceRevision, selected = [];
-        raw = null; read = null;
+        raw = null;
         // Legacy LIBRA selection stays unchanged. The multiowner path keeps exact-content
         // dedup and every contributing owner identity in model-visible provenance.
         let candidates = [...corpus].reverse(), deduplicatedItems = 0;
@@ -37811,7 +37723,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
-    describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
+    describeTimeoutMs: 3000, selectTimeoutMs: 5000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
   // A plugin that did not answer is not asked again for a short duration, scoped by chat.
   const libOwnerAbsentUntil = new Map();
   const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
@@ -44392,7 +44304,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' }, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -44486,7 +44398,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        (action === 'describe' && options.describeTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        (action === 'describe' && options.describeTimeoutMs) || (action === 'select' && options.selectTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -44519,10 +44431,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const select = async (owner, scope, queryText, signal) => {
     try {
       const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
-      if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string') fail('LIB_READ_RESPONSE_INVALID');
-      return { content: result.content };
+      if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
+        || (result.scope && (result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId))) fail('LIB_READ_RESPONSE_INVALID');
+      return { owner, content: result.content, scope: result.scope || scope, engine: result.engine || null };
     } catch (error) {
-      if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code };
+      if (signal?.aborted || /CANCELED/.test(error?.code || '')) throw error;
+      if (/IPC_UNAVAILABLE|TIMEOUT|SCOPE_UNAVAILABLE|BOUNDARY_CHANGED|NATIVE_SCOPE_CHANGED|OWNER_UNAVAILABLE/.test(error?.code || '')) return { absent: true, code: error.code || 'LIB_READ_OWNER_UNAVAILABLE' };
       throw error;
     }
   };

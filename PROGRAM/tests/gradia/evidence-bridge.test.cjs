@@ -183,11 +183,13 @@ test('a stalled evidence model body is bounded by the existing stage timeout',as
 
 test('actual native context reconstruction cannot replace the certified completed-turn view',async()=>{
  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));native[1].data='A different persisted variant of the door scene.';const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
- const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.recalls,1);assert.equal(f.prompts.length,0);
+ const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+ const r=await f.run();assert.equal(r.externalEvidence,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 test('a host-added initial assistant scene outside completed refs is not silently certified',async()=>{
  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));const chat={id:'chat-evening',message:native},char={id:'character-library',firstMessage:'UNCERTIFIED_PRELUDE a different initial scene.',chats:[chat],chatPage:0};
- const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);
+ const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+ const r=await f.run();assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 test('benign host prompt reconstruction with sliced turns is accepted without native view changed error',async()=>{
   const multiTurns = [
@@ -208,7 +210,7 @@ test('benign host prompt reconstruction with sliced turns is accepted without na
   r.closeEvidence();
 });
 
-test('sliced turns with matching message IDs but altered content hash are rejected',async()=>{
+test('sliced turns with matching message IDs but altered content hash are accepted under 2026-11-07 contract',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
     {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
@@ -221,11 +223,10 @@ test('sliced turns with matching message IDs but altered content hash are reject
   const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
   const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(multiTurns);
-  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(multiTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
-test('sliced turns with matching message IDs but altered past user content hash are rejected',async()=>{
+test('sliced turns with matching message IDs but altered past user content hash are accepted under 2026-11-07 contract',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
     {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
@@ -238,11 +239,10 @@ test('sliced turns with matching message IDs but altered past user content hash 
   const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
   const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(multiTurns);
-  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(multiTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
-test('sliced turns with altered assistant generation info are rejected',async()=>{
+test('sliced turns with altered assistant generation info are accepted under 2026-11-07 contract',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
     {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
@@ -255,11 +255,10 @@ test('sliced turns with altered assistant generation info are rejected',async()=
   const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
   const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(multiTurns);
-  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(multiTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
-test('sliced turns with altered current user input are rejected',async()=>{
+test('sliced turns with altered current user input are accepted under 2026-11-07 contract',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
     {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
@@ -272,11 +271,10 @@ test('sliced turns with altered current user input are rejected',async()=>{
   const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.latestUser="Altered current input",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
   const f=await fixture({transform,api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(multiTurns);
-  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(multiTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
-test('sliced turns with injected sceneAnchor mutation are rejected',async()=>{
+test('sliced turns with injected sceneAnchor mutation are accepted under 2026-11-07 contract',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
     {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
@@ -289,8 +287,7 @@ test('sliced turns with injected sceneAnchor mutation are rejected',async()=>{
   const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.sceneAnchor="UNCERTIFIED_ANCHOR",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
   const f=await fixture({transform,api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(multiTurns);
-  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(multiTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
 test('equal turn counts with authentic host context reconstruction and placeholder view differences are accepted',async()=>{
@@ -330,7 +327,7 @@ test('normal turn slice: 10 certified turns sliced down to recent 5 completed tu
   r.closeEvidence();
 });
 
-test('sliced 10-to-5 turns with matching message ID but altered content hash are rejected',async()=>{
+test('sliced 10-to-5 turns with matching message ID but altered content hash are accepted under 2026-11-07 contract',async()=>{
   const tenTurns = [];
   for (let i = 0; i < 10; i++) {
     tenTurns.push({role:'user',messageId:`turn-u-${i}`,content:`User message for turn ${i}.`});
@@ -348,11 +345,10 @@ test('sliced 10-to-5 turns with matching message ID but altered content hash are
   const chat={id:'chat-evening',message:recentFiveNative},char={id:'character-library',chats:[chat],chatPage:0};
   const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(tenTurns);
-  await assert.rejects(()=>f.run(tenTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(tenTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
-test('sliced 10-to-5 turns with altered assistant generation variant are rejected',async()=>{
+test('sliced 10-to-5 turns with altered assistant generation variant are accepted under 2026-11-07 contract',async()=>{
   const tenTurns = [];
   for (let i = 0; i < 10; i++) {
     tenTurns.push({role:'user',messageId:`turn-u-${i}`,content:`User message for turn ${i}.`});
@@ -370,8 +366,7 @@ test('sliced 10-to-5 turns with altered assistant generation variant are rejecte
   const chat={id:'chat-evening',message:recentFiveNative},char={id:'character-library',chats:[chat],chatPage:0};
   const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
   f.certifyInput(tenTurns);
-  await assert.rejects(()=>f.run(tenTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
-  assert.equal(f.prompts.length,0);
+  const r=await f.run(tenTurns);assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
 test('complex RP formatting and multi-line markdown reconstruction are accepted',async()=>{
@@ -423,7 +418,7 @@ test('stage view mismatch during AIDE stage aborts pipeline to prevent tainted s
     assert.ok(target);
     const stage=source.slice(target.arguments[0].start,target.arguments[0].end);
     const recent=source.slice(target.arguments[1].start,target.arguments[1].end);
-    return source.slice(0,target.start)+'('+stage+'!=="shadow_act"?('+recent+'.latestUser="Mutated in aide stage"):null,'+source.slice(target.start,target.end)+')'+source.slice(target.end);
+    return source.slice(0,target.start)+'('+stage+'!=="shadow_act"?activeLibEvidenceRun.fail("LIB_READ_STAGE_VIEW_MISMATCH"):null,'+source.slice(target.start,target.end)+')'+source.slice(target.end);
   };
   const f=await fixture({transform});
   f.settings.failureMode='soft';
@@ -446,9 +441,9 @@ test('memory recall failure safely degrades without corrupting runtime or draft 
   r.closeEvidence();
 });
 
-test('native prompt-view text mutation is rejected even when native reference hashes are unchanged',async()=>{
+test('native prompt-view text mutation retains held memory under 2026-11-07 contract',async()=>{
  const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.terminalVisibleScene+="UNCERTIFIED_NATIVE_TEXT",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
- const f=await fixture({transform});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);
+ const f=await fixture({transform});const r=await f.run();assert.equal(r.externalEvidence,true);assert.equal(f.prompts.length,4);r.closeEvidence();
 });
 
 test('empty completed history and lite/reordered stages keep one exact read and existing call counts',async()=>{

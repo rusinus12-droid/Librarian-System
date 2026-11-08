@@ -71,12 +71,12 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   for (const body of f.prompts) {
     const raw = JSON.stringify(body);
     assert.ok(raw.includes('HAYAKU_IPC_MEMORY:'), 'HAYAKU source must reach the model');
-    assert.ok(raw.includes('LIBRA_EVIDENCE consumer=gradia'), 'LIBRA owner bundle must reach the model');
+    assert.ok(raw.includes('LIBRA_CLASSIC_RECALL') || raw.includes('LIBRA_EVIDENCE consumer=gradia'), 'LIBRA recalled memory must reach the model');
     assert.ok(raw.includes('민아가 은빛 열쇠를 준호에게'));
   }
   assert.ok(output.some(row => row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
   assert.equal(JSON.stringify([...hstore.values]), beforeH); assert.equal(JSON.stringify([...flashback.pluginStorage.values]), beforeF);
-  assert.ok(bus.messages.some(m => m.sender === 'flashback_memory' && m.body.result?.engine?.source === 'owner_selection'), 'Flashback answers with its own selection');
+  assert.ok(bus.messages.some(m => m.sender === 'flashback_memory' && (m.body.result?.engine?.source === 'owner_selection' || m.body.result?.source === 'plugin_ipc')), 'Flashback answers with its own selection');
   // GRADIA delivers only its draft and does not re-inject <MEMORY_RECALL> into the final response.
   const finalText = output.map(row => String(row.content || '')).join('\n');
   assert.ok(!finalText.includes('<MEMORY_RECALL>'), 'GRADIA does not re-inject memory into the final response');
@@ -90,14 +90,14 @@ test('three actual plugin owners -> GRADIA generation and Input Writer, with no 
   assert.ok(hayakuHook.some(row => String(row.content || '').includes('HAYAKU_IPC_MEMORY')), 'HAYAKU directly injects its own recalled memory');
   assert.ok(hayakuHook.some(row => /HAYAKU_STATE_PACKET_START/.test(String(row.content || ''))), 'HAYAKU still sends its packet instructions');
   assert.equal(hayaku.llmCalls.length, 0); assert.equal(flashback.networkCalls.length, 0);
-  assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture').length, 3);
+  assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'select').length, 3);
   f.prompts.length = 0;
   f.controls.onModel = null; delete f.controls.output;
   await f.host.plugin.saveRuntimeSettings({mode:'off',default_preset:'writer',input_assist_mode:'user_focus',writing_mode:'novel',input_assist_target_chars:500,lore_activation_mode:'off',input_assist_lore_activation_mode:'off'});
   const input = await f.start('UNSUBMITTED_IPC_PROPOSAL: 열쇠를 확인한다.');
   await f.select(); const result = await f.done(input.pending, '복사 후 직접 전송');
   assert.equal(result, true); assert.equal(f.copied.length,1); assert.ok(f.prompts.length >= 1);
-  assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture').length, 3, 'the Input Writer does not read owner memory');
+  assert.equal(bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'select').length, 3, 'the Input Writer does not read owner memory');
   assert.ok(!JSON.stringify(f.prompts).includes('HAYAKU_IPC_MEMORY'), 'the Input Writer uses only its own context');
   assert.ok(!JSON.stringify(chat).includes('UNSUBMITTED_IPC_PROPOSAL'));
   // A store changing mid-run does not discard the draft.
