@@ -4263,21 +4263,13 @@ Before continuing, verify:
         const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
         const actualView = expected ? libNativePromptView(recent) : null;
         const turnsChanged = !expected || refs(recent.turnEligibility?.selected || []) !== refs(expected.turns);
-        if (turnsChanged) {
+        if (turnsChanged || JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
           // Record which parts differed and their sizes only; never prompt text.
           const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged: true, changedFields,
+          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged, changedFields,
             sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
             turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
           throw this.fail('LIB_READ_NATIVE_VIEW_CHANGED');
-        }
-        if (JSON.stringify(actualView) !== JSON.stringify(expected.view)) {
-          // Record which parts differed and their sizes only; never prompt text.
-          // Under the owner-trust model, reprojection/prompt view differences do not abort the pipeline.
-          const changedFields = expected ? Object.keys(expected.view).filter(key => JSON.stringify(actualView[key]) !== JSON.stringify(expected.view[key])) : ['stage_not_certified'];
-          Runtime.lastStageViewMismatch = Object.freeze({ at: Date.now(), stage, turnsChanged: false, changedFields,
-            sizes: Object.fromEntries(changedFields.filter(key => expected?.view && key in expected.view).map(key => [key, [JSON.stringify(expected.view[key]).length, JSON.stringify(actualView[key]).length]])),
-            turnCounts: [expected?.turns?.length ?? -1, (recent.turnEligibility?.selected || []).length] });
         }
         this.stageViews.set(stage, recent);
       },

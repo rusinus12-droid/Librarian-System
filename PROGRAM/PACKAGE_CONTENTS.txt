@@ -48,7 +48,7 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 - LIBRA 2.6.38
 - LIA Persona Linker 0.29.8
 - RE:TRACE 1.12.10
-- GRADIA 0.29.1
+- GRADIA 0.29.2
 
 [호환 정보]
 - Storage SDK 1.8.35

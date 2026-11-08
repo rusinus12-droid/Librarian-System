@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-08T01:05:51.291Z",
+  "generatedAt": "2026-11-08T03:31:16.001Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "140d2a558bcdfa72b1f5800bef933ff831466d1f87bb69be94cdc423ff5661d0",
+      "sha256": "51e7d3ee1905a8926d659faf9c3752c3b6d26f01af14dd25ac3ea38eedd8a0a7",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4295,7 +4295,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "f1a49e820d00fc57a5d4e209a46d0b9b00e1b73acb379ebd5db6a31a74c19ba8",
+      "sha256": "9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f",
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
@@ -4303,8 +4303,8 @@
       "bytes": 3671872
     },
     "plugins/GRADIA.js": {
-      "sha256": "bd647ab3b52bac0d1da7e1c9fb57ee7d71fdbd1177b0e1b81c6edce0f5f1d70f",
-      "bytes": 3037639
+      "sha256": "7884511daf3b50c260911acfda4ae7399361c404c1b74fdf0f49440a012252f7",
+      "bytes": 3036803
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "69e578d49704b3707f33b789e7b9ef55465ba4ec279a7649b4696394e92b0204",
@@ -12695,7 +12695,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "76e64a3605aca0be0be5be013c647aea19c072d7b96b028918805123baaf686d",
+      "sha256": "24538bfba60615cd5861b73ff3c2faf9854aed1beb8cbdcb40139c263d24c75d",
       "bytes": 3787
     }
   },
