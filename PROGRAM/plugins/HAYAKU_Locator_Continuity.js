@@ -49956,7 +49956,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' }, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -50050,7 +50051,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        (action === 'describe' && options.describeTimeoutMs) || (action === 'select' && options.selectTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        action === 'describe' ? (options.describeTimeoutMs || 3000) : (options.timeoutMs || 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -50082,13 +50083,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try {
+      try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+      catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
       const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
-        || (result.scope && (result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId))) fail('LIB_READ_RESPONSE_INVALID');
-      return { owner, content: result.content, scope: result.scope || scope, engine: result.engine || null };
+        || !result.scope || typeof result.scope !== 'object'
+        || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
+      return { owner, content: result.content, scope: result.scope, engine: result.engine || null };
     } catch (error) {
       if (signal?.aborted || /CANCELED/.test(error?.code || '')) throw error;
-      if (/IPC_UNAVAILABLE|TIMEOUT|SCOPE_UNAVAILABLE|BOUNDARY_CHANGED|NATIVE_SCOPE_CHANGED|OWNER_UNAVAILABLE/.test(error?.code || '')) return { absent: true, code: error.code || 'LIB_READ_OWNER_UNAVAILABLE' };
+      if (/IPC_UNAVAILABLE|TIMEOUT|SCOPE_UNAVAILABLE|BOUNDARY_CHANGED|NATIVE_SCOPE_CHANGED|OWNER_UNAVAILABLE|UNIFIED_UNAVAILABLE/.test(error?.code || '')) return { absent: true, code: error.code || 'LIB_READ_OWNER_UNAVAILABLE' };
       throw error;
     }
   };

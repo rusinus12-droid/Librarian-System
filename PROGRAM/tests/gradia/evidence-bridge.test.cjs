@@ -405,27 +405,21 @@ test('memory owner currentness loss during pipeline stages throws and purges evi
   assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));
 });
 
-test('stage view mismatch during AIDE stage aborts pipeline to prevent tainted shadow draft adoption',async()=>{
-  const transform=source=>{
-    const ast=acorn.parse(source,{ecmaVersion:'latest'});
-    let target;
-    function walk(n){
-      if(!n||typeof n!=='object')return;
-      if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;
-      for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);
+test('run currentness invalidation during AIDE stage aborts pipeline to prevent tainted shadow draft adoption',async()=>{
+  let f;
+  f=await fixture({
+    onModel:n=>{
+      if(n===1){
+        f.setBoundary({scope:{...f.boundary.scope,characterId:'different-character'}});
+      }
     }
-    walk(ast);
-    assert.ok(target);
-    const stage=source.slice(target.arguments[0].start,target.arguments[0].end);
-    const recent=source.slice(target.arguments[1].start,target.arguments[1].end);
-    return source.slice(0,target.start)+'('+stage+'!=="shadow_act"?activeLibEvidenceRun.fail("LIB_READ_STAGE_VIEW_MISMATCH"):null,'+source.slice(target.start,target.end)+')'+source.slice(target.end);
-  };
-  const f=await fixture({transform});
+  });
   f.settings.failureMode='soft';
-  await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED'||e.code==='LIB_READ_STAGE_VIEW_MISMATCH');
+  await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
   assert.equal(f.prompts.length,1);
   const state=JSON.stringify(f.host.plugin.getRuntime());
   assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));
+  assert.ok(!state.includes('EVIDENCE_SENTINEL'));
 });
 
 test('memory recall failure safely degrades without corrupting runtime or draft state',async()=>{

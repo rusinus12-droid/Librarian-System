@@ -37251,7 +37251,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let inspecting = null, lastInspection = null;
     let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS];
     let isLegacyV1Consent = false;
-    let unavailable = {}, excludedServerOwners = {}, readSource = 'unified_engine';
+    let unavailable = {}, excludedServerOwners = {}, readSource = 'plugin_ipc';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
@@ -37410,7 +37410,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (readSource === 'plugin_ipc') {
           const native = await readLibPluginNativeIdentity(); check();
           const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), runHints: libOwnerRunHints,
-            describeTimeoutMs:3000 + MEMORY_READ_TIMEOUT_EXTENSION_MS, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
+            describeTimeoutMs:3000, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
             api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage']), check });
           bridge = next;
           const resolved = await next.describe(native,readOwners); check();
@@ -37577,7 +37577,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     return Object.freeze({status,setUrl,
       connect: connectWithOwners,
-      connectUnified: () => connectWithOwners(null, 'unified_engine'),
+      connectUnified: () => connectWithOwners(null, 'plugin_ipc'),
       setDraftReadOwners: async owners => {
         if (Array.isArray(owners)) {
           draftReadOwners = owners.filter(o => LIB_READ_OWNERS.includes(o));
@@ -37723,7 +37723,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     : createIndependentOwnerReadClient({ scopes, clientFor: owner => clientForScopes({ [owner]: scopes[owner] }), routeOwners: libReadRoute, onOwnerFailed: noteLibOwnerLost });
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
-    describeTimeoutMs: 3000, selectTimeoutMs: 5000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
+    describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
   // A plugin that did not answer is not asked again for a short duration, scoped by chat.
   const libOwnerAbsentUntil = new Map();
   const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
@@ -42783,7 +42783,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (modeChoice) { Gui.libReadSourceDraft = modeChoice.dataset.libModeChoice; mockupRenderSources({preserveUrlDraft:true}); return; }
       if (target.closest('#lib-connect,[data-lib-read-action=connect]')) {
         const st = LibReadConnection.status();
-        const nextSource = Gui.libReadSourceDraft || st.readSource;
+        const urlInput = app.querySelector(target.closest('#lib-connect')?'#lib-url':'#lib-settings-url');
+        const nextSource = Gui.libReadSourceDraft || (urlInput?.value ? 'unified_engine' : st.readSource);
         if (nextSource === 'off') {
           void LibReadConnection.connect({ readSource: 'off' }).then(() => {
             Gui.libDraftReadOwnersDraft = null;
@@ -42928,7 +42929,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (control.matches?.('[data-dirty-key="skill-library"]')) { updateMockupSkillToggle(control); mockupRefreshStatus(); return; }
     if (control.matches?.('#lib-read-source')) { Gui.libReadSourceDraft=control.value; mockupRenderSources({preserveUrlDraft:true}); return; }
-    if (control.matches?.('#lib-url,[data-lib-read-url]')) { LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
+    if (control.matches?.('#lib-url,[data-lib-read-url]')) { if (control.value) Gui.libReadSourceDraft = 'unified_engine'; LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
     if (control.matches?.('[data-lib-draft-owner]')) {
       const targetOwner = control.dataset.libDraftOwner;
       const current = new Set(LibReadConnection.status().draftReadOwners || LIB_READ_OWNERS);
@@ -44304,7 +44305,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
         if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
-        result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' }, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
+        const selection = await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 });
+        result = { ...(selection && typeof selection === 'object' ? selection : {}), owner: options.owner, source: 'plugin_ipc', readOnly: true, scope: value.scope, engine: { source: 'owner_selection' } };
       }
       else if (action === 'current') {
         record = receipts.get(message.receipt);
@@ -44398,7 +44400,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } };
       record.abort = () => record.finish(Object.assign(new Error('LIB_READ_CANCELED'), { code: 'LIB_READ_CANCELED' }));
       record.timer = setTimeout(() => record.finish(Object.assign(new Error('LIB_READ_TIMEOUT'), { code: 'LIB_READ_TIMEOUT' })),
-        (action === 'describe' && options.describeTimeoutMs) || (action === 'select' && options.selectTimeoutMs) || options.timeoutMs || (action === 'describe' ? 3000 : 25000));
+        action === 'describe' ? (options.describeTimeoutMs || 3000) : (options.timeoutMs || 25000));
       pending.set(id, record); signal?.addEventListener('abort', record.abort, { once: true });
       if (signal?.aborted) { record.abort(); return; }
       void send(ids[owner], requestChannel, { schema, kind: 'request', id, action, ...body })
@@ -44430,13 +44432,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try {
+      try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
+      catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
       const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
-        || (result.scope && (result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId))) fail('LIB_READ_RESPONSE_INVALID');
-      return { owner, content: result.content, scope: result.scope || scope, engine: result.engine || null };
+        || !result.scope || typeof result.scope !== 'object'
+        || result.scope.characterId !== scope?.characterId || result.scope.chatId !== scope?.chatId) fail('LIB_READ_RESPONSE_INVALID');
+      return { owner, content: result.content, scope: result.scope, engine: result.engine || null };
     } catch (error) {
       if (signal?.aborted || /CANCELED/.test(error?.code || '')) throw error;
-      if (/IPC_UNAVAILABLE|TIMEOUT|SCOPE_UNAVAILABLE|BOUNDARY_CHANGED|NATIVE_SCOPE_CHANGED|OWNER_UNAVAILABLE/.test(error?.code || '')) return { absent: true, code: error.code || 'LIB_READ_OWNER_UNAVAILABLE' };
+      if (/IPC_UNAVAILABLE|TIMEOUT|SCOPE_UNAVAILABLE|BOUNDARY_CHANGED|NATIVE_SCOPE_CHANGED|OWNER_UNAVAILABLE|UNIFIED_UNAVAILABLE/.test(error?.code || '')) return { absent: true, code: error.code || 'LIB_READ_OWNER_UNAVAILABLE' };
       throw error;
     }
   };
