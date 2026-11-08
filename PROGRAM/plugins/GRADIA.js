@@ -29037,13 +29037,14 @@ function createGradiaModelContextBudget({ digest }) {
         for (const key of ['scopeKey', 'characterId', 'chatId']) if (typeof scope?.[key] !== 'string' || !scope[key] || scope[key].length > 512) fail('LIB_READ_SCOPE_UNAVAILABLE');
         const maxCorpusBytes = binding.maxCorpusBytes === undefined ? 4194304 : binding.maxCorpusBytes;
         if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) fail('LIB_READ_BUDGET_INVALID');
-        const readSource = String(binding.readSource || 'unified_engine');
-        if (!['unified_engine','plugin_ipc'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
+        const readSource = String(binding.readSource || 'plugin_ipc');
+        if (readSource !== 'plugin_ipc') fail('LIB_READ_SOURCE_UNSUPPORTED');
+        if (typeof dependencies.selectOwnerRecall !== 'function') fail('LIB_READ_CONNECTION_UNAVAILABLE');
         const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation, readSource]);
         const assertBindingSignature = () => {
           check(record); const now = dependencies.getBinding?.();
           if (!now || now.client !== client || JSON.stringify([now.scope, now.maxCorpusBytes === undefined ? 4194304 : now.maxCorpusBytes, now.generation,
-            String(now.readSource || 'unified_engine')]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
+            String(now.readSource || 'plugin_ipc')]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
         };
         const assertBinding = async () => {
           assertBindingSignature();
@@ -29060,7 +29061,7 @@ function createGradiaModelContextBudget({ digest }) {
         let multipleOwners = false;
         let raw = null, readEngine = null, ownerUnavailable = {};
         let assertReadCurrent = async () => true, assertReadCurrentSync = () => true;
-        if (readSource === 'plugin_ipc' && typeof dependencies.selectOwnerRecall === 'function') {
+        if (readSource === 'plugin_ipc') {
           multipleOwners = true;
           const connStatus = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
           const routeOwners = connStatus?.draftReadOwners;
@@ -29252,7 +29253,7 @@ function createGradiaModelContextBudget({ digest }) {
     }
     const maxCorpusBytes = options.maxCorpusBytes === undefined ? 4194304 : options.maxCorpusBytes;
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
-    const requestedSource = options.readSource === undefined ? 'unified_engine' : String(options.readSource);
+    const requestedSource = options.readSource === undefined ? 'plugin_ipc' : String(options.readSource);
     const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
     if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
@@ -37256,7 +37257,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
     // A user disconnect, URL change, import or disposal clears `explicit` and stops it.
-    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null;
+    let reconnectTimer = null, reconnectAttempts = 0, reconnecting = null, connecting = null, ownerRefresh = null;
     const LIB_READ_RECONNECT_TERMINAL = ['LIB_READ_SERVER_URL_CHANGED','LIB_READ_SETTINGS_IMPORTED','LIB_READ_CANCELED','LIB_READ_PREFERENCE_UNAVAILABLE','LIB_READ_SOURCE_UNSUPPORTED','LIB_READ_SERVER_URL_INVALID'];
     const status = () => Object.freeze({state,reason,url,explicit,readSource,
       readOwners:Object.freeze([...readOwners]),
@@ -37323,6 +37324,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       catch (_) { /* The read reports the unavailable connection itself. */ }
       finally { clearTimeout(timer); }
       return status();
+    };
+    const refreshOwners = () => {
+      if (ownerRefresh) return ownerRefresh;
+      if (disposed || state !== 'connected' || readSource !== 'plugin_ipc' || !bridge?.describe) return Promise.resolve(status());
+      ownerRefresh = (async () => {
+        try {
+          const native = await readLibPluginNativeIdentity();
+          const resolved = await bridge.describe(native, readOwners);
+          scopeBundle = resolved; scope = resolved.scope; unavailable = { ...resolved.unavailable };
+        } catch (_) {}
+        return status();
+      })().finally(() => { ownerRefresh = null; });
+      return ownerRefresh;
     };
     const forget = async (code = 'LIB_READ_CONNECTION_UNAVAILABLE', forcePersist = false) => {
       const hadConsent = explicit || consentMayBeStored || consentReadPending || forcePersist; explicit = false; invalidate(code);
@@ -37598,7 +37612,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
         return status();
       },
-      inspect,start,assertScope,ensureConnected,
+      inspect,start,assertScope,ensureConnected,refreshOwners,
       disconnect: () => { readSource = 'off'; return forget('LIB_READ_DISABLED', true); },
       imported: () => forget('LIB_READ_SETTINGS_IMPORTED'),
       dispose:async()=>{disposed=true;clearTimeout(reconnectTimer);reconnectTimer=null;invalidate('LIB_READ_CANCELED');try { await preferenceTail; } catch (_) { /* Failed durable revocation remains explicit in status. */ }}});
@@ -37731,7 +37745,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const cacheKey = `${owner}:${scopeKey}`;
     if (Date.now() < (libOwnerAbsentUntil.get(cacheKey) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
     const conn = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
-    if (conn?.unavailable?.[owner]) return { absent: true, code: conn.unavailable[owner] };
+    if (conn?.unavailable?.[owner]) {
+      await LibReadConnection.refreshOwners?.();
+      const refreshed = LibReadConnection.status();
+      if (refreshed?.unavailable?.[owner]) return { absent: true, code: refreshed.unavailable[owner] };
+    }
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }

@@ -216,39 +216,31 @@ function unifiedProvider(options = {}) {
     return { consumer, binding, counts: () => ({ captures }), asked: () => asked };
   }
 
-  await test('N03: the consumer asks for the unified engine and reports which engine answered', async () => {
+  await test('N03: the response consumer refuses the legacy unified engine path', async () => {
     const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'unified_engine', engine: { generation: 'mgm1:5', units: 33 } });
-    const session = await f.consumer.beginRead({ requestId: 'r1' });
-    assert.equal(session.status, 'ready');
-    assert.equal(session.contract, 'existing-server-logical-read.v1', 'the envelope contract the budget and scope gates use stays the same');
-    assert.equal(session.readSource, 'unified_engine');
-    assert.equal(session.engine.generation, 'mgm1:5');
-    assert.equal(session.selection.readSource, 'unified_engine');
-    assert.equal(session.selection.promptByteLimit, 24000*4+8192, 'render bytes follow the reference profile, independently of model tokens');
-    assert.equal(session.selection.promptCharLimit, 24000);
-    assert.equal(session.selection.selectedItems, 1);
-    assert.equal(f.asked()[0], 'unified_engine');
-    assert.equal((await session.getEvidence()).items[0].content, 'historical evidence');
+    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r1' }),
+      error => error.code === 'LIB_READ_SOURCE_UNSUPPORTED');
+    assert.equal(f.counts().captures, 0, 'the legacy path must be rejected before any read session opens');
   });
 
-  await test('N03: a binding that names no source still requires the unified engine', async () => {
+  await test('N03: a binding that names no source defaults to plugin IPC', async () => {
     const f = await consumerFixture({ answerSource: 'server_logical_read' });
-    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r2' }), error => error.code === 'LIB_READ_SOURCE_MISMATCH');
-    const ok = await consumerFixture({ answerSource: 'unified_engine' });
-    assert.equal((await ok.consumer.beginRead({ requestId: 'r2b' })).readSource, 'unified_engine');
+    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r2' }),
+      error => error.code === 'LIB_READ_CONNECTION_UNAVAILABLE');
+    assert.equal(f.counts().captures, 0);
   });
 
-  await test('N03: a server read cannot pass as the unified engine', async () => {
-    const f = await consumerFixture({ readSource: 'unified_engine', answerSource: 'server_logical_read' });
-    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r3' }), error => error.code === 'LIB_READ_SOURCE_MISMATCH');
-    assert.equal(f.counts().captures, 1, 'a mismatching source is refused, never retried against the other source');
+  await test('N03: the response consumer cannot fall back to a server read', async () => {
+    const f = await consumerFixture({ readSource: 'plugin_ipc', answerSource: 'server_logical_read' });
+    await assert.rejects(() => f.consumer.beginRead({ requestId: 'r3' }), error => error.code === 'LIB_READ_CONNECTION_UNAVAILABLE');
+    assert.equal(f.counts().captures, 0);
   });
 
-  await test('N03: a source that is not the unified engine is refused before any capture', async () => {
+  await test('N03: a source that is not plugin IPC is refused before any capture', async () => {
     for (const readSource of ['server_logical_read', 'moon']) {
       const f = await consumerFixture({ readSource, answerSource: 'unified_engine' });
       await assert.rejects(() => f.consumer.beginRead({ requestId: 'r5' }), error => error.code === 'LIB_READ_SOURCE_UNSUPPORTED',
-        readSource + ' must not be served by this consumer');
+        readSource + ' must not be served by the response consumer');
       assert.equal(f.counts().captures, 0, 'the refusal must happen before the provider is asked');
     }
   });
