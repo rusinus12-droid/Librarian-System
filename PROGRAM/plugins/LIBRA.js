@@ -77413,8 +77413,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
-        const basis = volatileState.basis && volatileState.basisScopeKey && volatileState.freshChars
-          && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3 ? volatileState.basis : null;
+        const basis = volatileState.basis && volatileState.basisScopeKey ? volatileState.basis : null;
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
@@ -77424,12 +77423,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
         }).then(result => {
           if (state.disposed || result?.status !== 'published') { store.clear(); return; }
-          if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
-          Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
+          Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: chars,
             scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
+          if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
         }).catch(error => {
           store.clear();
           if (state.disposed || volatileState.yieldRequested) return;
@@ -77456,7 +77455,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // runtime index. It never competes with memory work: if a Micro, receipt or canonical
     // job, a query or another build is active then, it is skipped and the first request
     // builds as before.
-    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 10000;
+    const VOLATILE_CORPUS_STARTUP_DELAY_MS = 800;
     let volatilePrewarmTimer = null;
     const libraMemoryWorkActive = () => state.microJobs.size > 0 || state.microQueues.size > 0 || state.receiptCaptureJobs.size > 0
       || state.receiptRecoveryRuns.size > 0 || Boolean(state.canonicalJobPromise) || Boolean(state.memoryGraphActiveBuilds?.size);
@@ -77464,7 +77463,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (state.disposed || volatilePrewarmTimer) return false;
       volatilePrewarmTimer = setTimeout(() => {
         volatilePrewarmTimer = null;
-        if (state.disposed || libraMemoryWorkActive()) return;
+        if (state.disposed) return;
+        if (libraMemoryWorkActive()) {
+          prewarmVolatileMemoryGraphCorpus(1000);
+          return;
+        }
         const volatileState = volatileMemoryGraphCorpus();
         if (volatileState.store || volatileState.running || volatileState.timer || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) return;
         ensureMemoryGraphUnifiedSuite();
