@@ -78441,8 +78441,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (disposed) fail('LIB_READ_CANCELED');
     // Stable owner order is part of binding identity, independent of RPC order.
     const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
-    // Keep each owner's refusal (e.g. LIB_READ_PLUGIN_MODE_REQUIRED for server-only
-    // stores) so diagnostics can tell "use server read mode" from "owner missing".
+    // Keep each owner's refusal (scope unavailable, boundary changed, IPC unavailable)
+    // so diagnostics can tell why an owner is missing. Storage mode is not a reason.
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };

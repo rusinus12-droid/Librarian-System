@@ -28,7 +28,8 @@ module.exports = function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
+    // Owners answer over plugin IPC in every storage mode; GRADIA only receives.
+    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -166,15 +167,15 @@ module.exports = function createGradiaPluginRead(options) {
       try {
         const result = await rpc(owner, 'describe', { native: native(scope) });
         if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true
-          || result.mode !== 'plugin_only' || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
+          || !validScope(result.scope) || !same(native(result.scope), native(scope))) fail('LIB_READ_RESPONSE_INVALID');
         scopes[owner] = result.scope;
       } catch (error) { unavailable[owner] = error.code || 'LIB_READ_IPC_UNAVAILABLE'; }
     }));
     if (disposed) fail('LIB_READ_CANCELED');
     // Stable owner order is part of binding identity, independent of RPC order.
     const ordered = Object.fromEntries(Object.keys(ids).filter(owner => scopes[owner]).map(owner => [owner, scopes[owner]]));
-    // Keep each owner's refusal (e.g. LIB_READ_PLUGIN_MODE_REQUIRED for server-only
-    // stores) so diagnostics can tell "use server read mode" from "owner missing".
+    // Keep each owner's refusal (scope unavailable, boundary changed, IPC unavailable)
+    // so diagnostics can tell why an owner is missing. Storage mode is not a reason.
     if (!Object.keys(ordered).length) throw Object.assign(new Error('LIB_READ_PLUGIN_OWNERS_UNAVAILABLE'), { code: 'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE', unavailable });
     return { scope: ordered[Object.keys(ordered)[0]], scopes: ordered, unavailable };
   };

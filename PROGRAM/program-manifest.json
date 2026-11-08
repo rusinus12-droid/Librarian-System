@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-08T00:28:31.768Z",
+  "generatedAt": "2026-11-08T00:39:59.613Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "29c5e42646f1c9fab3e007d1866bb3355497da21a6e045799ef82ce833775be1",
+      "sha256": "981dcbc43a65bc9d3f625e55490a4c8c214cd511e29e7573b0200c06f8ec3889",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4299,24 +4299,24 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "a26a9694d6d334748d28990e8ebf6addc7b380bc293d9081055b373a4245a36e",
-      "bytes": 3671930
+      "sha256": "fab15d45488f0c68a611f4948f0088b93c20202f837a817ecb4bdd527de5dcb7",
+      "bytes": 3671935
     },
     "plugins/GRADIA.js": {
-      "sha256": "d549ba02a3bf98736c94af7883c711d928f8c7a880470dbf9b2335306f38c396",
-      "bytes": 3036284
+      "sha256": "9e4bfeb717e5bf4dad3de3a798350beada8aecbdd211a0196c0313c000fb0fa6",
+      "bytes": 3036336
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "1f7b431edcf482b359947a30fcc445704783ffd3e9988ecbbcf1c375bc427b54",
-      "bytes": 4159528
+      "sha256": "c654c03195b83c96f252a5a1508aaf34e1e7571143b9d31d169032044a300121",
+      "bytes": 4159533
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645",
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "e534d7d277f2b6daea8f77e53a5a3ab4e199645aa1b5ae33282141f87f661b42",
-      "bytes": 7095975
+      "sha256": "4e22f751dbf34246025150a9c98e6d929abe096bd24ed16418389a5ebb4f40d3",
+      "bytes": 7095980
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -12087,8 +12087,8 @@
       "bytes": 19693
     },
     "tools/gradia_plugin_read.cjs": {
-      "sha256": "3108d3e5795a8d5b21ac9b623dd62b3c8251ed8aa303eb94f90e654d587cfb5d",
-      "bytes": 20409
+      "sha256": "47358396d381379215ed740b0e42efee42e0c60c98cf66b56c630ea01dc4ebfa",
+      "bytes": 20428
     },
     "tools/gradia_plugin_snapshot.cjs": {
       "sha256": "ddb771e4c1a2da868adce6c149e329503e01714cb15a6ea7e13e267a551aee49",
