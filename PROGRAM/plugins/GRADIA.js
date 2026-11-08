@@ -42929,7 +42929,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (control.matches?.('[data-dirty-key="skill-library"]')) { updateMockupSkillToggle(control); mockupRefreshStatus(); return; }
     if (control.matches?.('#lib-read-source')) { Gui.libReadSourceDraft=control.value; mockupRenderSources({preserveUrlDraft:true}); return; }
-    if (control.matches?.('#lib-url,[data-lib-read-url]')) { if (control.value) Gui.libReadSourceDraft = 'unified_engine'; LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
+    if (control.matches?.('#lib-url,[data-lib-read-url]')) { LibReadConnection.setUrl(control.value); Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(node=>{node.value=control.value;}); mockupRenderSources({preserveUrlDraft:true}); return; }
     if (control.matches?.('[data-lib-draft-owner]')) {
       const targetOwner = control.dataset.libDraftOwner;
       const current = new Set(LibReadConnection.status().draftReadOwners || LIB_READ_OWNERS);

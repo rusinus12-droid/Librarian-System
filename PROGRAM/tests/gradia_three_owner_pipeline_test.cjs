@@ -64,6 +64,15 @@ test('GRADIA uses owner memory for drafting only and never re-injects <MEMORY_RE
  const finalText=output.map(row=>String(row.content||'')).join('\n');
  assert.match(finalText,/GRADIA_LIB_EVIDENCE_NO_REUSE_V1/,'GRADIA delivers its draft');
  assert.doesNotMatch(finalText,/<MEMORY_RECALL>/,'GRADIA does not re-deliver memory to the final model');
+ assert.equal(f.requests.filter(r=>/read-session\/(capture|current)/.test(r)).length,0,'beforeRequest response drafting uses owner select IPC, never server capture/current');
+});
+test('server-storage memory owners retrieve memory internally via select with zero GRADIA server capture/current requests',{timeout:30000},async t=>{
+ const f=await fixture(t);const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,1);
+ const body=JSON.stringify(f.prompts[0]);
+ for(const marker of ['LIBRA_MEMORY_SENTINEL','HAYAKU_MEMORY_SENTINEL','FLASHBACK_MEMORY_SENTINEL_1','FLASHBACK_MEMORY_SENTINEL_2'])assert(body.includes(marker),`draft prompt includes ${marker}`);
+ for(const owner of owners)assert(body.includes('\\"owner\\":\\"'+owner+'\\"'),`draft prompt includes owner ${owner}`);
+ assert.equal(f.requests.filter(r=>/read-session\/(capture|current)/.test(r)).length,0,'GRADIA issues zero read-session capture/current server requests in server storage mode');
+ await r.finalizeHandoff();r.closeEvidence();
 });
 test('a plugin that is not running contributes no memory, and its server records are not read for the model',{timeout:30000},async t=>{const f=await fixture(t,{ownersRunning:false}),started=Date.now(),r=await f.run();assert.equal(r.ok,true);const body=JSON.stringify(f.prompts[0]);assert(body.includes('LIBRA_MEMORY_SENTINEL'));assert(!body.includes('\\"owner\\":\\"hayaku'));assert(!body.includes('\\"owner\\":\\"flashback'));assert(Date.now()-started<15000,'an absent plugin costs one short wait');});
 const ownerMarkers={libra:'LIBRA_MEMORY_SENTINEL',hayaku:'recalled by HAYAKU',flashback:'recalled by Flashback'};
