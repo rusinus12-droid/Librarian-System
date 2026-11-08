@@ -4260,7 +4260,7 @@ Before continuing, verify:
           ? JSON.stringify([session.nativeScope.characterId,session.nativeScope.chatId]) : null)
           || (libReadBinding?.scope?.characterId && libReadBinding?.scope?.chatId
             ? JSON.stringify([libReadBinding.scope.characterId, libReadBinding.scope.chatId]) : null);
-        const refs = turns => JSON.stringify(turns,(key,value)=>boundScope && key === 'scope' && value === boundScope ? undefined : (key === 'proofKind' ? undefined : value));
+        const refs = turns => JSON.stringify(turns,(key,value)=>key === 'scope' || key === 'proofKind' ? undefined : value);
         const actualView = expected ? libNativePromptView(recent) : null;
         const actualTurns = recent.turnEligibility?.selected || [];
         const expectedTurns = expected?.turns || [];
@@ -4275,26 +4275,31 @@ Before continuing, verify:
 
           // Distinguish between true conversation tampering/mutation and benign host context reconstruction
           let isBenignReconstruction = false;
-          if (expected && recent?.actualChatContextSource && actualTurns.length > 0 && actualTurns.length < expectedTurns.length) {
-            const offset = expectedTurns.length - actualTurns.length;
-            let matchesSuffix = true;
-            for (let i = 0; i < actualTurns.length; i++) {
-              const a = actualTurns[i];
-              const e = expectedTurns[offset + i];
-              const aUserMid = a?.user?.messageId;
-              const eUserMid = e?.user?.messageId;
-              const aAsstMid = (a?.assistants?.[0] || a?.assistant)?.messageId;
-              const eAsstMid = (e?.assistants?.[0] || e?.assistant)?.messageId;
-              if (!aUserMid || !eUserMid || aUserMid !== eUserMid) {
-                matchesSuffix = false;
-                break;
-              }
-              if (aAsstMid && eAsstMid && aAsstMid !== eAsstMid) {
-                matchesSuffix = false;
-                break;
-              }
-            }
-            if (matchesSuffix) {
+          if (expected && recent?.actualChatContextSource && actualTurns.length >= 0 && actualTurns.length <= expectedTurns.length) {
+            // 1. Strict suffix matching of all turn references (user, assistant, variants, boundary, messageId, contentHash, generationId)
+            const expectedSuffix = expectedTurns.slice(expectedTurns.length - actualTurns.length);
+            const turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
+
+            // 2. Strict current input matching (user input text cannot be mutated)
+            const expectedInput = expected.view?.latestUser ?? '';
+            const actualInput = recent?.latestUser ?? '';
+            const inputMatch = actualInput === expectedInput || sameRagChatContent(actualInput, expectedInput);
+
+            // 3. Derived prompt fields must match authentic extraction without uncertified injection
+            const actualRaw = text(recent?.latestAssistantRaw || '');
+            const expectedAnchor = extractSceneAnchorFromAssistant(actualRaw);
+            const actualAnchor = text(recent?.sceneAnchor || '');
+            const anchorMatch = actualAnchor === expectedAnchor || actualAnchor === text(expected.view?.sceneAnchor || '');
+
+            const expectedTerminal = extractInputAssistTerminalTail(actualRaw, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
+            const actualTerminal = text(recent?.terminalVisibleScene || '');
+            const terminalMatch = actualTerminal === expectedTerminal || actualTerminal === text(expected.view?.terminalVisibleScene || '');
+
+            const expectedHasPrelude = (expected.view?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
+            const actualHasPrelude = text(recent?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
+            const preludeMatch = expectedHasPrelude === actualHasPrelude;
+
+            if (turnsRefMatch && inputMatch && anchorMatch && terminalMatch && preludeMatch) {
               isBenignReconstruction = true;
             }
           }

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-08T04:19:11.965Z",
+  "generatedAt": "2026-11-08T04:59:55.129Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "336137ec540091ea5267bd824f6ef2f6aa2c52e4d97c9dc6c39b25d05f157517",
+      "sha256": "e557a7e10dc847031255c2bafb4e529cadb90e7fc96267369fd63ce67d4bf747",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4303,8 +4303,8 @@
       "bytes": 3671872
     },
     "plugins/GRADIA.js": {
-      "sha256": "9619e932a694a0b5156f013c130ef75825b2ca293e3975235df40ccafccbabad",
-      "bytes": 3038186
+      "sha256": "4a82f0f871b2932d897eeb46253e3a7ef3685428b1aafb05e31242ad75e272d0",
+      "bytes": 3039100
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "69e578d49704b3707f33b789e7b9ef55465ba4ec279a7649b4696394e92b0204",
@@ -6787,8 +6787,8 @@
       "bytes": 5262
     },
     "tests/gradia/evidence-bridge.test.cjs": {
-      "sha256": "108639ad513b95acf1ef0f66b99083fe146b14e60866d2f8b6ee8cc470b7cbdd",
-      "bytes": 37921
+      "sha256": "24b4d377dbff66600e78d5447a82aaeb96080ddfabd4c1dc255ad4988582fb40",
+      "bytes": 51949
     },
     "tests/gradia/evidence-budget-builder-v2.test.cjs": {
       "sha256": "82424d94c7aa50130fad8423d09b0819baf96b0e1084ed6a71766ecb742d6fdb",

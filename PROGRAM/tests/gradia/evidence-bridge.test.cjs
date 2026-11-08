@@ -190,22 +190,220 @@ test('a host-added initial assistant scene outside completed refs is not silentl
  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');assert.equal(f.prompts.length,0);
 });
 test('benign host prompt reconstruction with sliced turns is accepted without native view changed error',async()=>{
- const multiTurns = [
-   {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
-   {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
-   {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
-   {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
-   {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
- ];
- const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
- const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
- const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
- f.certifyInput(multiTurns);
- const r=await f.run(multiTurns);
- assert.equal(r.externalEvidence,true);
- assert.equal(f.recalls,1);
- assert.equal(f.prompts.length,4);
- r.closeEvidence();
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  const r=await f.run(multiTurns);
+  assert.equal(r.externalEvidence,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,4);
+  r.closeEvidence();
+});
+
+test('sliced turns with matching message IDs but altered content hash are rejected',async()=>{
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  native[1].data='Altered door scene content.';
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('sliced turns with altered assistant generation info are rejected',async()=>{
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  native[1].generationInfo={generationId:'altered-generation-id'};
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('sliced turns with altered current user input are rejected',async()=>{
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.latestUser="Altered current input",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
+  const f=await fixture({transform,api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('sliced turns with injected sceneAnchor mutation are rejected',async()=>{
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const transform=source=>{const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;function walk(n){if(!n||typeof n!=='object')return;if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v)}walk(ast);assert.ok(target);const recent=source.slice(target.arguments[1].start,target.arguments[1].end);return source.slice(0,target.start)+'('+recent+'.sceneAnchor="UNCERTIFIED_ANCHOR",'+source.slice(target.start,target.end)+')'+source.slice(target.end)};
+  const f=await fixture({transform,api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('equal turn counts with authentic host context reconstruction and placeholder view differences are accepted',async()=>{
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  const input=messages();
+  f.certifyInput(input);
+  const r=await f.run(input);
+  assert.equal(r.externalEvidence,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,4);
+  r.closeEvidence();
+});
+
+test('normal turn slice: 10 certified turns sliced down to recent 5 completed turns is accepted',async()=>{
+  const tenTurns = [];
+  for (let i = 0; i < 10; i++) {
+    tenTurns.push({role:'user',messageId:`turn-u-${i}`,content:`User message for turn ${i}.`});
+    tenTurns.push({role:'assistant',messageId:`turn-a-${i}`,generationInfo:{generationId:`gen-a-${i}`},content:`Assistant response for turn ${i}.`});
+  }
+  tenTurns.push({role:'user',messageId:'turn-u-current',content:'Continue the scene.'});
+
+  const recentFiveNative = [];
+  for (let i = 5; i < 10; i++) {
+    recentFiveNative.push({role:'user',chatId:`turn-u-${i}`,data:`User message for turn ${i}.`});
+    recentFiveNative.push({role:'char',chatId:`turn-a-${i}`,generationInfo:{generationId:`gen-a-${i}`},data:`Assistant response for turn ${i}.`});
+  }
+  recentFiveNative.push({role:'user',chatId:'turn-u-current',data:'Continue the scene.'});
+  const chat={id:'chat-evening',message:recentFiveNative},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(tenTurns);
+  const r=await f.run(tenTurns);
+  assert.equal(r.externalEvidence,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,4);
+  r.closeEvidence();
+});
+
+test('sliced 10-to-5 turns with matching message ID but altered content hash are rejected',async()=>{
+  const tenTurns = [];
+  for (let i = 0; i < 10; i++) {
+    tenTurns.push({role:'user',messageId:`turn-u-${i}`,content:`User message for turn ${i}.`});
+    tenTurns.push({role:'assistant',messageId:`turn-a-${i}`,generationInfo:{generationId:`gen-a-${i}`},content:`Assistant response for turn ${i}.`});
+  }
+  tenTurns.push({role:'user',messageId:'turn-u-current',content:'Continue the scene.'});
+
+  const recentFiveNative = [];
+  for (let i = 5; i < 10; i++) {
+    recentFiveNative.push({role:'user',chatId:`turn-u-${i}`,data:`User message for turn ${i}.`});
+    const data = i === 7 ? 'TAMPERED turn 7 assistant text.' : `Assistant response for turn ${i}.`;
+    recentFiveNative.push({role:'char',chatId:`turn-a-${i}`,generationInfo:{generationId:`gen-a-${i}`},data});
+  }
+  recentFiveNative.push({role:'user',chatId:'turn-u-current',data:'Continue the scene.'});
+  const chat={id:'chat-evening',message:recentFiveNative},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(tenTurns);
+  await assert.rejects(()=>f.run(tenTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('sliced 10-to-5 turns with altered assistant generation variant are rejected',async()=>{
+  const tenTurns = [];
+  for (let i = 0; i < 10; i++) {
+    tenTurns.push({role:'user',messageId:`turn-u-${i}`,content:`User message for turn ${i}.`});
+    tenTurns.push({role:'assistant',messageId:`turn-a-${i}`,generationInfo:{generationId:`gen-a-${i}`},content:`Assistant response for turn ${i}.`});
+  }
+  tenTurns.push({role:'user',messageId:'turn-u-current',content:'Continue the scene.'});
+
+  const recentFiveNative = [];
+  for (let i = 5; i < 10; i++) {
+    recentFiveNative.push({role:'user',chatId:`turn-u-${i}`,data:`User message for turn ${i}.`});
+    const generationId = i === 8 ? 'forged-gen-id-8' : `gen-a-${i}`;
+    recentFiveNative.push({role:'char',chatId:`turn-a-${i}`,generationInfo:{generationId},data:`Assistant response for turn ${i}.`});
+  }
+  recentFiveNative.push({role:'user',chatId:'turn-u-current',data:'Continue the scene.'});
+  const chat={id:'chat-evening',message:recentFiveNative},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(tenTurns);
+  await assert.rejects(()=>f.run(tenTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
+test('complex RP formatting and multi-line markdown reconstruction are accepted',async()=>{
+  const complexTurns = [
+    {role:'user',messageId:'turn-u-rp1',content:'*The traveler steps into the dusty archives.*\n\n"Is anyone here?"'},
+    {role:'assistant',messageId:'turn-a-rp1',generationInfo:{generationId:'gen-rp-1'},content:'*A soft rustle echoes between tall shelves laden with ancient tomes.*\n\n"Few venture this deep," *the archivist whispers, adjusting her silver spectacles.*\n\n> "State your purpose, traveler."'},
+    {role:'user',messageId:'turn-u-rp2',content:'*I show the copper crest found in the ruins.*\n\n"I was told this belongs to your lineage."'}
+  ];
+  const native = [
+    {role:'user',chatId:'turn-u-rp1',data:'*The traveler steps into the dusty archives.*\n\n"Is anyone here?"'},
+    {role:'char',chatId:'turn-a-rp1',generationInfo:{generationId:'gen-rp-1'},data:'*A soft rustle echoes between tall shelves laden with ancient tomes.*\n\n"Few venture this deep," *the archivist whispers, adjusting her silver spectacles.*\n\n> "State your purpose, traveler."'},
+    {role:'user',chatId:'turn-u-rp2',data:'*I show the copper crest found in the ruins.*\n\n"I was told this belongs to your lineage."'}
+  ];
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(complexTurns);
+  const r=await f.run(complexTurns);
+  assert.equal(r.externalEvidence,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,4);
+  r.closeEvidence();
+});
+
+test('memory owner currentness loss during pipeline stages throws and purges evidence',async()=>{
+  let valid = true;
+  const f = await fixture({
+    current: () => valid,
+    onModel: n => {
+      if (n === 2) valid = false;
+    }
+  });
+  await assert.rejects(() => f.run(), e => /^LIB_READ_/.test(e.code));
+  assert.equal(f.prompts.length, 2);
+  const state = JSON.stringify(f.host.plugin.getRuntime());
+  assert.ok(!state.includes('EVIDENCE_SENTINEL'));
+  assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));
+});
+
+test('memory recall failure safely degrades without corrupting runtime or draft state',async()=>{
+  const f = await fixture({
+    onRecall: () => {
+      throw new Error('Memory provider connection failure');
+    }
+  });
+  const r = await f.run();
+  assert.equal(r.externalEvidence, false);
+  assert.equal(f.host.plugin.getRuntime().finalDraftMeta.libReadStatus, 'unavailable');
+  assert.ok(f.prompts.every(p => !JSON.stringify(p).includes('EVIDENCE_SENTINEL')));
+  r.closeEvidence();
 });
 
 test('native prompt-view text mutation is rejected even when native reference hashes are unchanged',async()=>{
