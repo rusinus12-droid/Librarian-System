@@ -77355,6 +77355,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // incremental path re-enumerates only changed windows; superseded pages are dropped
     // by starting fresh once the basis outgrows the last fresh build threefold.
     const VOLATILE_CORPUS_DELAY_MS = 1500;
+    const VOLATILE_CORPUS_MAX_RETAINED_BYTES = 64 * 1024 * 1024;
     // Returns the appended turns when the only difference is Micro heads that
     // appeared for turns whose Micro was not verified in the published proof.
     const appendedOnlyMicroTurns = (published, live, verdict) => {
@@ -77387,6 +77388,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, interactiveReaders: 0, builds: 0, failures: 0,
       sourceChangeRetries: 0, consecutiveSourceChangeRetries: 0, lastError: '', lastBuildMs: 0, lastBuildMode: '' });
     const volatileStoreChars = store => { let chars = 0; for (const value of store.values()) chars += String(value).length; return chars; };
+    const volatileUtf8Bytes = value => typeof TextEncoder === 'function'
+      ? new TextEncoder().encode(String(value)).length
+      : String(value).length * 2;
+    const volatileStoreBytes = store => {
+      let bytes = 0;
+      for (const [key, value] of store.entries()) bytes += volatileUtf8Bytes(key) + volatileUtf8Bytes(value);
+      return bytes;
+    };
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
       // A pending or running build is deferred, not cancelled: the yielded build's
@@ -77414,26 +77423,44 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
-        const basis = volatileState.basis && volatileState.basisScopeKey
-          && volatileState.basisScopeKey === volatileState.targetScopeKey && volatileState.freshChars
-          && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3 ? volatileState.basis : null;
-        const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
-        volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
+        let buildStore = null;
+        volatileState.running = (async () => {
+          const frame = await resolveMemoryGraphCorpusFrame('', null);
+          const targetScopeKey = string(frame?.graph?.scopeKey || '');
+          if (!targetScopeKey) throw new Error('LIBRA_GRAPH_SCOPE_UNAVAILABLE');
+          volatileState.targetScopeKey = targetScopeKey;
+          const basis = volatileState.basis && volatileState.basisScopeKey === targetScopeKey && volatileState.freshChars
+            && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3
+            && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_RETAINED_BYTES ? volatileState.basis : null;
+          const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+          buildStore = store;
+          const result = await buildMemoryGraphCorpusInto({ expectedScopeKey: targetScopeKey }, store, () => {
           if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
             || volatileState.yieldRequested || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
             volatileState.yields += 1; throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED');
           }
-        }).then(result => {
+          });
+          return { result, store, startedAt, sourceWrites, basis };
+        })().then(({ result, store, startedAt, sourceWrites, basis }) => {
           if (state.disposed || result?.status !== 'published') { store.clear(); return; }
           if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
+          const bytes = volatileStoreBytes(store);
+          if (bytes > VOLATILE_CORPUS_MAX_RETAINED_BYTES) {
+            store.clear();
+            volatileState.dirty = false;
+            volatileState.lastError = 'LIBRA_GRAPH_VOLATILE_CORPUS_LIMIT';
+            volatileState.lastBuildMs = Date.now() - startedAt;
+            volatileState.lastBuildMode = string(result.buildMode || '');
+            return;
+          }
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, targetScopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), dirty: false, yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
-          store.clear();
+          buildStore?.clear?.();
           if (state.disposed || volatileState.yieldRequested) return;
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
