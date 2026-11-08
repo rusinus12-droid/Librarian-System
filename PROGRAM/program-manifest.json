@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-08T00:04:25.067Z",
+  "generatedAt": "2026-11-08T00:28:31.768Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -3895,7 +3895,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "157a6f43c236addbd19e69f1b5531ef0ecee28c500b1c3ea7db3e4a45e74b977",
+      "sha256": "29c5e42646f1c9fab3e007d1866bb3355497da21a6e045799ef82ce833775be1",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4299,24 +4299,24 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "9f17b22705aed5e6c8f0c5801cbcee4c4c0cb24ff23d8e96d21b7a2377b4253a",
-      "bytes": 3671883
+      "sha256": "a26a9694d6d334748d28990e8ebf6addc7b380bc293d9081055b373a4245a36e",
+      "bytes": 3671930
     },
     "plugins/GRADIA.js": {
-      "sha256": "6bd0398e29e84b640727854290fbd703fe1cf9a2b1fd7fa6447dfd8e92652c64",
-      "bytes": 3036379
+      "sha256": "d549ba02a3bf98736c94af7883c711d928f8c7a880470dbf9b2335306f38c396",
+      "bytes": 3036284
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "1a13a185c049889be8e43977e71be85db60e0278fdfbd336200c66780cd31d10",
-      "bytes": 4159481
+      "sha256": "1f7b431edcf482b359947a30fcc445704783ffd3e9988ecbbcf1c375bc427b54",
+      "bytes": 4159528
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645",
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "5f53916ca80f0239248a77c1a99293b2bcb079b4622a153ef82c119aa3981e0d",
-      "bytes": 7095928
+      "sha256": "e534d7d277f2b6daea8f77e53a5a3ab4e199645aa1b5ae33282141f87f661b42",
+      "bytes": 7095975
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
