@@ -76,7 +76,8 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         };
         const execution = await options.query(payload, authority);
         const content = execution?.packet?.renderedText || '';
-        return { content };
+        const scope = boundary?.scope || payload.scope;
+        return { owner: 'libra', source: 'plugin_ipc', readOnly: true, scope, engine: { source: 'owner_selection' }, content };
       } catch (_) {
         return { content: '' };
       }

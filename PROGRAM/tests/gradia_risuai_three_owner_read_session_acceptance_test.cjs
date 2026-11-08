@@ -293,8 +293,48 @@ async function createRisuThreeOwnerHarness(t, options = {}) {
   let queried = null;
   let ownerSerial = 0;
   t.after(await require('./fixtures/gradia_owner_selection_stub.cjs')(bus, {
-    hayaku: { scope: scopes.hayaku, content: 'HAYAKU_LIVE_KERNEL_SENTINEL recalled by HAYAKU' },
-    flashback: { scope: scopes.flashback, content: 'FLASHBACK_LIVE_KERNEL_SENTINEL recalled by Flashback' }
+    libra: {
+      scope: scopes.libra,
+      content: () => {
+        const row = app.repositories.libra.database.prepare("SELECT value_json FROM kv WHERE space='plugin' AND key=?").get(libraKey);
+        if (!row) return 'LIBRA_MEMORY_SENTINEL';
+        let data = row.value_json;
+        while (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch (_) { break; }
+        }
+        return (data && typeof data === 'object' && data.text) ? data.text : 'LIBRA_MEMORY_SENTINEL';
+      }
+    },
+    hayaku: {
+      scope: scopes.hayaku,
+      content: () => {
+        const row = app.repositories.hayaku.database.prepare("SELECT value_json FROM kv WHERE space='plugin' AND key LIKE 'hayaku.v2.ledger.%'").get();
+        if (!row) return 'HAYAKU_MEMORY_SENTINEL recalled by HAYAKU';
+        let data = row.value_json;
+        while (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch (_) { break; }
+        }
+        const packetData = typeof data?.records?.[0]?.raw === 'string' ? JSON.parse(data.records[0].raw) : (data?.records?.[0]?.raw || {});
+        const summary = packetData.summary || packetData.meta?.summary || 'HAYAKU_MEMORY_SENTINEL';
+        return summary + (summary.includes('recalled by HAYAKU') ? '' : ' recalled by HAYAKU');
+      }
+    },
+    flashback: {
+      scope: scopes.flashback,
+      content: () => {
+        const rows = app.repositories.flashback.database.prepare("SELECT value_json FROM kv WHERE space='plugin' AND key LIKE 'vector_rag_memory:scope:%'").all();
+        const texts = rows.flatMap(r => {
+          let v = r.value_json;
+          while (typeof v === 'string') {
+            try { v = JSON.parse(v); } catch (_) { break; }
+          }
+          return (v?.records || v?.items || []).map(i => i.text || '');
+        }).join(' ');
+        const s1 = texts.includes('FLASHBACK_MEMORY_SENTINEL_1') ? 'FLASHBACK_MEMORY_SENTINEL_1' : '';
+        const s2 = texts.includes('FLASHBACK_MEMORY_SENTINEL_2') ? 'FLASHBACK_MEMORY_SENTINEL_2' : '';
+        return `${s1} ${s2} recalled by Flashback`.trim();
+      }
+    }
   }));
   const libraOwner = createOwner({
     role: 'owner',
@@ -364,7 +404,7 @@ async function createRisuThreeOwnerHarness(t, options = {}) {
 
   const status = await host.plugin.connectLibReadOnly(url);
   assert.equal(status.state, 'connected', JSON.stringify(status));
-  assert.equal(status.readSource, 'unified_engine');
+  assert.equal(status.readSource, 'plugin_ipc');
 
   await host.plugin.saveProviderPreset('offline', {
     provider: 'openai',
@@ -460,13 +500,10 @@ test('Scenario 1: RisuAI raw input vs non-substring transformed <Current Input> 
     }
   }
 
-  // Verify all 3 owners participated in capture and currentness checks (HAYAKU & Flashback via HTTP, LIBRA via IPC owner channel)
-  for (const owner of ['hayaku', 'flashback']) {
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/capture`), `missing ${owner} capture`);
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/current`), `missing ${owner} currentness check`);
-  }
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'capture'), 'missing libra IPC capture');
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'current'), 'missing libra IPC currentness check');
+  // Verify memory retrieval uses owner select IPC with zero server capture/current
+  assert.equal(h.requests.filter(r => /read-session\/(capture|current)/.test(r)).length, 0, 'response path uses owner select IPC, never server capture/current');
+  assert.ok(h.bus.messages.some(m => m.body?.action === 'select'), 'uses owner select IPC');
+  assert.equal(h.bus.messages.filter(m => m.body?.action === 'capture' || m.body?.action === 'current').length, 0, 'no capture/current over IPC');
 
   // Verify native ID binding diagnostic & message preservation
   const rt = h.host.plugin.getRuntime();
@@ -516,12 +553,9 @@ test('Scenario 2: {{user}}, {{char}}, <user>, <char>, and CBS choice macros ({{r
     assert.ok(serialized.includes('철수는 열쇠를 가리킨다 그리고 아키비스트에게 묻는다.'));
   }
 
-  for (const owner of ['hayaku', 'flashback']) {
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/capture`));
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/current`));
-  }
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'capture'));
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'current'));
+  assert.equal(h.requests.filter(r => /read-session\/(capture|current)/.test(r)).length, 0, 'response path uses owner select IPC, never server capture/current');
+  assert.ok(h.bus.messages.some(m => m.body?.action === 'select'), 'uses owner select IPC');
+  assert.equal(h.bus.messages.filter(m => m.body?.action === 'capture' || m.body?.action === 'current').length, 0, 'no capture/current over IPC');
 
   const rt = h.host.plugin.getRuntime();
   assert.equal(rt.lastNativeBindDiagnostic?.mode, 'text_verified_bind');
@@ -569,12 +603,9 @@ for (const withChatSlotIds of [false, true]) {
       }
     }
 
-    for (const owner of ['hayaku', 'flashback']) {
-      assert.ok(h.requests.includes(`/v1/${owner}/read-session/capture`));
-      assert.ok(h.requests.includes(`/v1/${owner}/read-session/current`));
-    }
-    assert.ok(h.bus.messages.some(m => m.body?.action === 'capture'));
-    assert.ok(h.bus.messages.some(m => m.body?.action === 'current'));
+    assert.equal(h.requests.filter(r => /read-session\/(capture|current)/.test(r)).length, 0, 'response path uses owner select IPC, never server capture/current');
+    assert.ok(h.bus.messages.some(m => m.body?.action === 'select'), 'uses owner select IPC');
+    assert.equal(h.bus.messages.filter(m => m.body?.action === 'capture' || m.body?.action === 'current').length, 0, 'no capture/current over IPC');
 
     const rt = h.host.plugin.getRuntime();
     assert.equal(rt.lastLibReadDiagnostic?.status, 'ready');
@@ -652,12 +683,9 @@ test('Scenario 4: Input Writer without owner memory followed by submitted <Curre
       assert.ok(serialized.includes(marker), `stage prompt missing ${marker}`);
     }
   }
-  for (const owner of ['hayaku', 'flashback']) {
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/capture`));
-    assert.ok(h.requests.includes(`/v1/${owner}/read-session/current`));
-  }
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'capture'));
-  assert.ok(h.bus.messages.some(m => m.body?.action === 'current'));
+  assert.equal(h.requests.filter(r => /read-session\/(capture|current)/.test(r)).length, 0, 'response path uses owner select IPC, never server capture/current');
+  assert.ok(h.bus.messages.some(m => m.body?.action === 'select'), 'uses owner select IPC');
+  assert.equal(h.bus.messages.filter(m => m.body?.action === 'capture' || m.body?.action === 'current').length, 0, 'no capture/current over IPC');
   const rt = h.host.plugin.getRuntime();
   assert.equal(rt.lastNativeBindDiagnostic?.mode, 'text_verified_bind');
   assert.equal(rt.lastNativeBindDiagnostic?.textMatched, true);
@@ -884,7 +912,7 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
 
   const status = await g.plugin.connectLibReadOnly(x.server.url);
   assert.equal(status.state, 'connected', JSON.stringify(status));
-  assert.equal(status.readSource, 'unified_engine');
+  assert.equal(status.readSource, 'plugin_ipc');
   assert.deepEqual([...status.draftReadOwners], ['libra', 'hayaku', 'flashback']);
 
   await g.plugin.saveProviderPreset('offline', {
@@ -937,12 +965,9 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
     assert.ok(serialized.includes('HAYAKU_LIVE_KERNEL_SENTINEL'), 'missing live HAYAKU evidence');
     assert.ok(serialized.includes('FLASHBACK_LIVE_KERNEL_SENTINEL'), 'missing live Flashback evidence');
   }
-  for (const owner of ['hayaku', 'flashback']) {
-    assert.ok(serverRoutes.includes(`/v1/${owner}/read-session/capture`));
-    assert.ok(serverRoutes.includes(`/v1/${owner}/read-session/current`));
-  }
-  assert.ok(bus.messages.some(m => m.body?.action === 'capture'));
-  assert.ok(bus.messages.some(m => m.body?.action === 'current'));
+  assert.equal(serverRoutes.filter(r => /read-session\/(capture|current)/.test(r)).length, 0, 'response path uses owner select IPC, never server capture/current');
+  assert.ok(bus.messages.some(m => m.body?.action === 'select'), 'uses owner select IPC');
+  assert.equal(bus.messages.filter(m => m.body?.action === 'capture' || m.body?.action === 'current').length, 0, 'no capture/current over IPC');
 
   const rt = g.plugin.getRuntime();
   assert.equal(rt.lastNativeBindDiagnostic?.mode, 'structural_provenance_bind');

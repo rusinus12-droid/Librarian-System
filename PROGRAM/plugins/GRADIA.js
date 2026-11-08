@@ -37561,7 +37561,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       finally { consentReadPending = false; }
     };
     const connectWithOwners = (first, second, third) => {
-      let src = readSource || 'unified_engine';
+      let src = readSource || 'plugin_ipc';
       let owners = null;
       let cfg = {};
       if (first && typeof first === 'object' && !Array.isArray(first)) {
@@ -37730,6 +37730,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const scopeKey = scope?.scopeKey || scope?.chatId || '';
     const cacheKey = `${owner}:${scopeKey}`;
     if (Date.now() < (libOwnerAbsentUntil.get(cacheKey) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
+    const conn = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
+    if (conn?.unavailable?.[owner]) return { absent: true, code: conn.unavailable[owner] };
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
@@ -43381,12 +43383,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       select.setAttribute('aria-label','기억 읽기 방식');
       for(const [value,title] of [
         ['off','기억 읽기 끄기 (사용 안 함)'],
-        ['unified_engine','서버 · 통합 메모리 검색'],
+        ['unified_engine','서버 · 통합 메모리 검색 (레거시 검사 전용)'],
         ['plugin_ipc','플러그인 · 기억 직접 읽기 (IPC)']
       ]){
-        const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
+        const option=document.createElement('option');option.value=value;option.textContent=title;if(value==='unified_engine')option.disabled=true;select.append(option);
       }
-      select.value=status.readSource;field.append(label,select);connectButton.parentElement?.prepend(field);
+      select.value=status.readSource||'plugin_ipc';field.append(label,select);connectButton.parentElement?.prepend(field);
     }
     if(connectButton&&!page.querySelector('#lib-read-owners-container')){
       const container=mockupNode('div','field');container.id='lib-read-owners-container';
@@ -44432,8 +44434,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try {
-      try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-      catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
       const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'
@@ -44548,8 +44548,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   /* GRADIA PLUGIN READ END */
   const publicApi = Object.freeze({
     bindLibReadOnlyClient, unbindLibReadOnlyClient: () => LibReadConnection.disconnect(),
-    async connectLibReadOnly(url = '', source = 'unified_engine') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(source);},
-    async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connectUnified();},
+    async connectLibReadOnly(url = '', source = 'plugin_ipc') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect(source);},
+    async connectUnifiedLibReadOnly(url = '') {if(url)LibReadConnection.setUrl(url);return await LibReadConnection.connect('plugin_ipc');},
     getLibReadOnlyStatus: () => Object.freeze({ modelSelection:activeLibEvidenceRun?.modelSelection||null, connection: LibReadConnection.status(), status: libReadBinding ? 'bound' : 'unavailable', reason: libReadBinding ? 'request_validation_required' : 'LIB_READ_CONNECTION_UNAVAILABLE', maxCorpusBytes: libReadBinding?.maxCorpusBytes || 4194304, selection: libReadSelection }),
     async debugNativeRecentContext(currentInput = '', currentMessageId = null, turnWindow = DEFAULT_RECENT_TURNS) {
       const context = await resolveCurrentNativeContext();

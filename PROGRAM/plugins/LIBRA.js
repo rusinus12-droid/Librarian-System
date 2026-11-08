@@ -78458,8 +78458,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Absent means nothing answered. A refusal (for example server-only storage) is still an installed owner.
   const select = async (owner, scope, queryText, signal) => {
     try {
-      try { await rpc(owner, 'describe', { native: native(scope) }, signal); }
-      catch (error) { if (/IPC_UNAVAILABLE|TIMEOUT/.test(error?.code || '')) return { absent: true, code: error.code }; }
       const result = await rpc(owner, 'select', { native: native(scope), queryText, ...runHints(owner) }, signal);
       if (result?.owner !== owner || result.source !== 'plugin_ipc' || result.readOnly !== true || typeof result.content !== 'string'
         || !result.scope || typeof result.scope !== 'object'

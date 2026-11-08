@@ -13,11 +13,15 @@ module.exports = async function startOwnerSelections(bus, owners, options = {}) 
         return { scope, mode: 'server_only' };
       },
       capture: async () => { throw new Error('server mode reads through the server'); },
-      select: async () => {
+      select: async (queryText, check, hints) => {
         if (delayMs) await new Promise(r => setTimeout(r, delayMs));
         await onQuery?.();
         if (options.isMutated?.(owner)) throw Object.assign(new Error('LIB_READ_BOUNDARY_CHANGED'), { code: 'LIB_READ_BOUNDARY_CHANGED' });
         if (selectError) throw Object.assign(new Error(selectError), { code: selectError });
+        if (typeof content === 'function') {
+          const res = await content(queryText, check, hints);
+          return typeof res === 'string' ? { content: res } : res;
+        }
         return { content };
       } });
     await stub.start();
