@@ -77392,11 +77392,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const volatileUtf8Bytes = value => typeof TextEncoder === 'function'
       ? new TextEncoder().encode(String(value)).length
       : String(value).length * 2;
-    const volatileStoreBytes = store => {
-      let bytes = 0;
-      for (const [key, value] of store.entries()) bytes += volatileUtf8Bytes(key) + volatileUtf8Bytes(value);
-      return bytes;
+    const createVolatileStore = entries => {
+      const store = new Map();
+      let retainedBytes = 0;
+      const set = store.set.bind(store), del = store.delete.bind(store), clear = store.clear.bind(store);
+      store.set = (key, value) => {
+        if (store.has(key)) retainedBytes -= volatileUtf8Bytes(key) + volatileUtf8Bytes(store.get(key));
+        retainedBytes += volatileUtf8Bytes(key) + volatileUtf8Bytes(value);
+        set(key, value);
+        return store;
+      };
+      store.delete = key => {
+        if (!store.has(key)) return false;
+        retainedBytes -= volatileUtf8Bytes(key) + volatileUtf8Bytes(store.get(key));
+        return del(key);
+      };
+      store.clear = () => { retainedBytes = 0; clear(); };
+      for (const [key, value] of entries || []) store.set(key, value);
+      Object.defineProperty(store, 'retainedBytes', { enumerable: false, configurable: false, get: () => retainedBytes });
+      return store;
     };
+    const volatileStoreBytes = store => Number(store?.retainedBytes) || 0;
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
       // A pending or running build is deferred, not cancelled: the yielded build's
@@ -77434,7 +77450,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const basis = volatileState.basis && volatileState.basisScopeKey === targetScopeKey && volatileState.freshChars
             && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3
             && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_BASIS_BYTES ? volatileState.basis : null;
-          const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+          const store = createVolatileStore(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
           buildStore = store;
           const result = await buildMemoryGraphCorpusInto({ expectedScopeKey: targetScopeKey }, store, () => {
           if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
