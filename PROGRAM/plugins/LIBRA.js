@@ -35698,8 +35698,8 @@ function createLibraReadonlySourceContext(owner) {
       if (/:(?:evidence-link-index|lore-link-index|state-replay-cache|state-replay-errors|recall-catalog):v1$/.test(String(storageKey))) return;
       if (/:(?:predecessor-)?vector:[^:]+:r\d+:[^:]+$/.test(String(storageKey))) return;
       volatileState.sourceWrites = (volatileState.sourceWrites || 0) + 1;
+      volatileState.dirty = true;
       volatileState.consecutiveSourceChangeRetries = 0;
-      if (volatileState.store) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
       if (state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
     };
 
@@ -77382,7 +77382,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return appended.length ? appended : null;
     };
     const volatileMemoryGraphCorpus = () => volatileCorpusRuntime || (volatileCorpusRuntime = {
-      store: null, basis: null, basisScopeKey: '', freshChars: 0, scopeKey: '', generation: '', builtAt: 0, timer: null,
+      store: null, basis: null, basisScopeKey: '', freshChars: 0, scopeKey: '', targetScopeKey: '', generation: '', builtAt: 0, timer: null,
+      dirty: false,
       running: null, yieldRequested: false, yields: 0, queriesInFlight: 0, interactiveReaders: 0, builds: 0, failures: 0,
       sourceChangeRetries: 0, consecutiveSourceChangeRetries: 0, lastError: '', lastBuildMs: 0, lastBuildMode: '' });
     const volatileStoreChars = store => { let chars = 0; for (const value of store.values()) chars += String(value).length; return chars; };
@@ -77398,7 +77399,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         try { await volatileState.running; } catch (_) { /* The yielded build is discarded. */ }
       }
       // The timer re-checks active readers when it fires and waits for them.
-      if (deferred && !state.disposed && !volatileState.store) scheduleVolatileMemoryGraphCorpus();
+      if (deferred && !state.disposed && (!volatileState.store || volatileState.dirty)) scheduleVolatileMemoryGraphCorpus();
     };
     const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
       if (state.disposed) return;
@@ -77413,7 +77414,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
-        const basis = volatileState.basis && volatileState.basisScopeKey && volatileState.freshChars
+        const basis = volatileState.basis && volatileState.basisScopeKey
+          && volatileState.basisScopeKey === volatileState.targetScopeKey && volatileState.freshChars
           && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3 ? volatileState.basis : null;
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
@@ -77427,7 +77429,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
-            scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
+            scopeKey: result.scopeKey, targetScopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), dirty: false, yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
@@ -77632,7 +77634,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       cacheContents: 'diagnostic_storage_keys_only', knownMissing: 0, lastError: microVectorWarmError });
     const inspectVolatileMemoryGraphCorpus = () => {
       const volatileState = volatileMemoryGraphCorpus();
-      return { schema: 'libra.volatile_graph_corpus.v1', available: Boolean(volatileState.store), scopeKey: volatileState.scopeKey,
+      return { schema: 'libra.volatile_graph_corpus.v1', available: Boolean(volatileState.store), dirty: volatileState.dirty === true,
+        scopeKey: volatileState.scopeKey, targetScopeKey: volatileState.targetScopeKey,
         generation: volatileState.generation, builtAt: volatileState.builtAt, building: Boolean(volatileState.running),
         scheduled: Boolean(volatileState.timer), entries: volatileState.store?.size || 0, builds: volatileState.builds,
         failures: volatileState.failures, sourceChangeRetries: volatileState.sourceChangeRetries,
@@ -77738,6 +77741,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if (corpus) corpus = {...corpus,access:{...corpus.access,persistenceBackend:corpusContext.backend}};
           if (!corpus && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
           const volatileState = volatileMemoryGraphCorpus();
+          volatileState.targetScopeKey = graph.scopeKey;
           let runtimeIndex = volatileState.store ? 'unavailable' : volatileState.running ? 'building' : 'absent';
           if (!corpus && corpusMode === 'auto' && volatileState.store && volatileState.scopeKey === graph.scopeKey) {
             runtimeIndex = 'stale';
@@ -77751,7 +77755,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             } catch (error) {
               if (!['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
             }
-            if (!corpus) Object.assign(volatileState, { store: null, scopeKey: '', generation: '' });
+            if (!corpus) volatileState.dirty = true;
           }
           if (!corpus && corpusMode === 'auto') {
             corpus = await runRecallStep(recallGuard, 'graph_corpus_prepare',
