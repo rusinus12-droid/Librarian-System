@@ -4278,6 +4278,8 @@ Before continuing, verify:
             // 1. Strict suffix matching of message IDs, generation variants, and content equivalents
             let turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
             if (!turnsRefMatch) {
+              const expAssistants = (expected.view?.visibleMessages || []).filter(m => m.role === 'assistant');
+              const expSuffixAssistants = expAssistants.slice(expAssistants.length - actualTurns.length);
               const allTurnsSafe = actualTurns.every((aTurn, i) => {
                 const eTurn = expectedSuffix[i];
                 if (!aTurn || !eTurn) return false;
@@ -4288,14 +4290,14 @@ Before continuing, verify:
                 // 해시가 일치하면 안전
                 if (refs(aTurn) === refs(eTurn)) return true;
 
-                // 해시가 다를 때: 최신 어시스턴트 턴인 경우에만 프리셋/포맷터 가공(25자 차이 등) 동등성 확인
-                if (i === actualTurns.length - 1) {
-                  const actualRaw = text(recent?.latestAssistantRaw || '');
-                  const expectedRaw = text(expected.view?.latestAssistantRaw || '');
-                  return actualRaw === expectedRaw || sameRagChatContent(actualRaw, expectedRaw) || sameVisibleChatContent(actualRaw, expectedRaw);
+                // 해시가 다를 때: 호스트 저장 원본과 RisuAI 요청 가공본 간의 내용 동등성(sameRagChatContent) 확인
+                const aContent = text(recent?.selectedTurns?.[i]?.assistant?.content || (i === actualTurns.length - 1 ? recent?.latestAssistantRaw : ''));
+                const eContent = text(expSuffixAssistants[i]?.content || (i === actualTurns.length - 1 ? expected.view?.latestAssistantRaw : ''));
+                if (aContent && eContent) {
+                  return aContent === eContent || sameRagChatContent(aContent, eContent) || sameVisibleChatContent(aContent, eContent);
                 }
 
-                // 과거 턴의 해시가 다르면 변조로 판단
+                // 내용 동등성이 확인되지 않으면 변조로 판단
                 return false;
               });
               if (allTurnsSafe) {
@@ -38205,6 +38207,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           usesLibEvidence = false;
           libReadSession = { status: 'unavailable', reason: stageViewError?.code || 'LIB_READ_STAGE_VIEW_MISMATCH', assertCurrent: async () => true, close() {} };
           delete scopedSettings[LIB_EVIDENCE_CONTEXT];
+          delete settings[LIB_EVIDENCE_CONTEXT];
+          activeLibEvidenceRun = null;
         }
       }
       stageRecents[stageName] = recent;
