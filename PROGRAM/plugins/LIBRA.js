@@ -77413,7 +77413,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           || volatileState.queriesInFlight > 0 || volatileState.interactiveReaders > 0) {
           scheduleVolatileMemoryGraphCorpus(delayMs); return;
         }
-        const basis = volatileState.basis && volatileState.basisScopeKey ? volatileState.basis : null;
+        const basis = volatileState.basis && volatileState.basisScopeKey && volatileState.freshChars
+          && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3 ? volatileState.basis : null;
         const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
         volatileState.yieldRequested = false;
         volatileState.running = buildMemoryGraphCorpusInto({}, store, () => {
@@ -77423,12 +77424,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
         }).then(result => {
           if (state.disposed || result?.status !== 'published') { store.clear(); return; }
+          if ((volatileState.sourceWrites || 0) !== sourceWrites) { store.clear(); scheduleVolatileMemoryGraphCorpus(delayMs); return; }
           const chars = volatileStoreChars(store);
-          Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: chars,
+          Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
-          if ((volatileState.sourceWrites || 0) !== sourceWrites) { scheduleVolatileMemoryGraphCorpus(delayMs); return; }
         }).catch(error => {
           store.clear();
           if (state.disposed || volatileState.yieldRequested) return;

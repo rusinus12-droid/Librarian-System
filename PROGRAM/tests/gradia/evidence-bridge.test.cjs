@@ -225,6 +225,23 @@ test('sliced turns with matching message IDs but altered content hash are reject
   assert.equal(f.prompts.length,0);
 });
 
+test('sliced turns with matching message IDs but altered past user content hash are rejected',async()=>{
+  const multiTurns = [
+    {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
+    {role:'assistant',messageId:'turn-a-0',generationInfo:{generationId:'gen-a-0'},content:'Assistant turn 0.'},
+    {role:'user',messageId:'turn-u-101',content:'The archivist opened the door.'},
+    {role:'assistant',messageId:'turn-a-102',generationInfo:{generationId:'generation-a-2'},content:'The archivist waited beside the blue door.'},
+    {role:'user',messageId:'turn-u-103',content:'Continue the scene.'}
+  ];
+  const native=messages().map(m=>({role:m.role==='assistant'?'char':'user',chatId:m.messageId,data:m.content,generationInfo:m.generationInfo}));
+  native[0].data='Altered past user content.';
+  const chat={id:'chat-evening',message:native},char={id:'character-library',chats:[chat],chatPage:0};
+  const f=await fixture({api:{getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>char,getCharacter:async()=>char,getChatFromIndex:async()=>chat}});
+  f.certifyInput(multiTurns);
+  await assert.rejects(()=>f.run(multiTurns),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED');
+  assert.equal(f.prompts.length,0);
+});
+
 test('sliced turns with altered assistant generation info are rejected',async()=>{
   const multiTurns = [
     {role:'user',messageId:'turn-u-0',content:'User turn 0.'},
@@ -390,6 +407,29 @@ test('memory owner currentness loss during pipeline stages throws and purges evi
   assert.equal(f.prompts.length, 2);
   const state = JSON.stringify(f.host.plugin.getRuntime());
   assert.ok(!state.includes('EVIDENCE_SENTINEL'));
+  assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));
+});
+
+test('stage view mismatch during AIDE stage aborts pipeline to prevent tainted shadow draft adoption',async()=>{
+  const transform=source=>{
+    const ast=acorn.parse(source,{ecmaVersion:'latest'});
+    let target;
+    function walk(n){
+      if(!n||typeof n!=='object')return;
+      if(n.type==='CallExpression'&&n.callee.type==='MemberExpression'&&n.callee.object.type!=='ThisExpression'&&n.callee.property.name==='assertStageView')target=n;
+      for(const v of Object.values(n))if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object')walk(v);
+    }
+    walk(ast);
+    assert.ok(target);
+    const stage=source.slice(target.arguments[0].start,target.arguments[0].end);
+    const recent=source.slice(target.arguments[1].start,target.arguments[1].end);
+    return source.slice(0,target.start)+'('+stage+'!=="shadow_act"?('+recent+'.latestUser="Mutated in aide stage"):null,'+source.slice(target.start,target.end)+')'+source.slice(target.end);
+  };
+  const f=await fixture({transform});
+  f.settings.failureMode='soft';
+  await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_NATIVE_VIEW_CHANGED'||e.code==='LIB_READ_STAGE_VIEW_MISMATCH');
+  assert.equal(f.prompts.length,1);
+  const state=JSON.stringify(f.host.plugin.getRuntime());
   assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));
 });
 

@@ -4278,8 +4278,16 @@ Before continuing, verify:
             // 1. Strict suffix matching of message IDs, generation variants, and content equivalents
             let turnsRefMatch = refs(actualTurns) === refs(expectedSuffix);
             if (!turnsRefMatch) {
-              const expAssistants = (expected.view?.visibleMessages || []).filter(m => m.role === 'assistant');
-              const expSuffixAssistants = expAssistants.slice(expAssistants.length - actualTurns.length);
+              const expAllUsers = (expected.view?.visibleMessages || []).filter(m => m.role === 'user');
+              const expTurnUsers = expAllUsers.length > expectedTurns.length
+                ? expAllUsers.slice(0, expectedTurns.length)
+                : expAllUsers;
+              const expSuffixUsers = expTurnUsers.slice(expTurnUsers.length - actualTurns.length);
+              const expAllAssistants = (expected.view?.visibleMessages || []).filter(m => m.role === 'assistant');
+              const expTurnAssistants = expAllAssistants.length > expectedTurns.length
+                ? expAllAssistants.slice(expAllAssistants.length - expectedTurns.length)
+                : expAllAssistants;
+              const expSuffixAssistants = expTurnAssistants.slice(expTurnAssistants.length - actualTurns.length);
               const allTurnsSafe = actualTurns.every((aTurn, i) => {
                 const eTurn = expectedSuffix[i];
                 if (!aTurn || !eTurn) return false;
@@ -4287,18 +4295,38 @@ Before continuing, verify:
                 if (aTurn.assistant?.messageId !== eTurn.assistant?.messageId) return false;
                 if (aTurn.assistant?.generationId !== eTurn.assistant?.generationId) return false;
 
+                // 어시스턴트 변형(assistants 배열)의 개수, messageId, generationId 일치 확인
+                const aAssts = Array.isArray(aTurn.assistants) ? aTurn.assistants : (aTurn.assistant ? [aTurn.assistant] : []);
+                const eAssts = Array.isArray(eTurn.assistants) ? eTurn.assistants : (eTurn.assistant ? [eTurn.assistant] : []);
+                if (aAssts.length !== eAssts.length) return false;
+                for (let j = 0; j < aAssts.length; j++) {
+                  if (aAssts[j]?.messageId !== eAssts[j]?.messageId) return false;
+                  if (aAssts[j]?.generationId !== eAssts[j]?.generationId) return false;
+                }
+
                 // 해시가 일치하면 안전
                 if (refs(aTurn) === refs(eTurn)) return true;
 
-                // 해시가 다를 때: 호스트 저장 원본과 RisuAI 요청 가공본 간의 내용 동등성(sameRagChatContent) 확인
-                const aContent = text(recent?.selectedTurns?.[i]?.assistant?.content || (i === actualTurns.length - 1 ? recent?.latestAssistantRaw : ''));
-                const eContent = text(expSuffixAssistants[i]?.content || (i === actualTurns.length - 1 ? expected.view?.latestAssistantRaw : ''));
-                if (aContent && eContent) {
-                  return aContent === eContent || sameRagChatContent(aContent, eContent) || sameVisibleChatContent(aContent, eContent);
-                }
+                // 해시가 다를 때: 사용자 메시지와 어시스턴트 메시지 양쪽 모두 내용 동등성(sameRagChatContent) 확인
+                const aAssistantContent = text(recent?.selectedTurns?.[i]?.assistant?.content || (i === actualTurns.length - 1 ? (recent?.previousTurnAssistant || recent?.latestAssistantRaw) : ''));
+                const eAssistantContent = text(expSuffixAssistants[i]?.content || (i === actualTurns.length - 1 ? (expected.view?.previousTurnAssistant || expected.view?.latestAssistantRaw) : ''));
+                const assistantMatches = aAssistantContent && eAssistantContent && (
+                  aAssistantContent === eAssistantContent
+                  || sameRagChatContent(aAssistantContent, eAssistantContent)
+                  || sameVisibleChatContent(aAssistantContent, eAssistantContent)
+                );
+                if (!assistantMatches) return false;
 
-                // 내용 동등성이 확인되지 않으면 변조로 판단
-                return false;
+                const aUserContent = text(recent?.selectedTurns?.[i]?.user?.content || (i === actualTurns.length - 1 ? recent?.previousTurnUser : ''));
+                const eUserContent = text(expSuffixUsers[i]?.content || (i === actualTurns.length - 1 ? expected.view?.previousTurnUser : ''));
+                const userMatches = aUserContent && eUserContent && (
+                  aUserContent === eUserContent
+                  || sameRagChatContent(aUserContent, eUserContent)
+                  || sameVisibleChatContent(aUserContent, eUserContent)
+                );
+                if (!userMatches) return false;
+
+                return true;
               });
               if (allTurnsSafe) {
                 turnsRefMatch = true;
@@ -4314,11 +4342,17 @@ Before continuing, verify:
             const actualRaw = text(recent?.latestAssistantRaw || '');
             const expectedAnchor = extractSceneAnchorFromAssistant(actualRaw);
             const actualAnchor = text(recent?.sceneAnchor || '');
-            const anchorMatch = actualAnchor === expectedAnchor || actualAnchor === text(expected.view?.sceneAnchor || '') || actualRaw.includes(actualAnchor) || sameRagChatContent(actualAnchor, expectedAnchor);
+            const anchorMatch = actualAnchor === expectedAnchor
+              || actualAnchor === text(expected.view?.sceneAnchor || '')
+              || (actualAnchor.length > 0 && actualRaw.includes(actualAnchor))
+              || sameRagChatContent(actualAnchor, expectedAnchor);
 
             const expectedTerminal = extractInputAssistTerminalTail(actualRaw, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
             const actualTerminal = text(recent?.terminalVisibleScene || '');
-            const terminalMatch = actualTerminal === expectedTerminal || actualTerminal === text(expected.view?.terminalVisibleScene || '') || actualRaw.endsWith(actualTerminal) || actualRaw.includes(actualTerminal) || sameRagChatContent(actualTerminal, expectedTerminal);
+            const terminalMatch = actualTerminal === expectedTerminal
+              || actualTerminal === text(expected.view?.terminalVisibleScene || '')
+              || (actualTerminal.length > 0 && actualRaw.endsWith(actualTerminal))
+              || sameRagChatContent(actualTerminal, expectedTerminal);
 
             const expectedHasPrelude = (expected.view?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
             const actualHasPrelude = text(recent?.completeTurnsText || '').includes('<INITIAL_ASSISTANT_SCENE>');
@@ -38201,14 +38235,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         try {
           libReadSession.assertStageView(stageName, recent);
         } catch (stageViewError) {
-          if (scopedSettings.failureMode === 'hard') throw stageViewError;
-          warn('assertStageView mismatch, continuing draft without external memory evidence', stageViewError);
           libReadSession.close();
           usesLibEvidence = false;
-          libReadSession = { status: 'unavailable', reason: stageViewError?.code || 'LIB_READ_STAGE_VIEW_MISMATCH', assertCurrent: async () => true, close() {} };
+          activeLibEvidenceRun = null;
           delete scopedSettings[LIB_EVIDENCE_CONTEXT];
           delete settings[LIB_EVIDENCE_CONTEXT];
-          activeLibEvidenceRun = null;
+
+          // 이미 기억을 활용하여 이전 단계 초안(SHADOW 등)이나 계획 산출물이 생성된 이후라면,
+          // 오염된 기억 기반 결과가 최종 초안으로 채택되지 않도록 안전하게 중단(fail)한다.
+          if (scopedSettings.failureMode === 'hard' || stages.length > 0 || current) {
+            libReadSession = { status: 'unavailable', reason: stageViewError?.code || 'LIB_READ_STAGE_VIEW_MISMATCH', assertCurrent: async () => true, close() {} };
+            throw stageViewError;
+          }
+
+          // 최초 기억 조회(SHADOW 단계) 시작 전 검증 실패인 경우에만:
+          // 아직 기억 기반 산출물이 없으므로 기억 없이 깨끗하게 기본 초안을 계속 작성한다.
+          warn('assertStageView mismatch before memory draft, continuing draft without external memory evidence', stageViewError);
+          libReadSession = { status: 'unavailable', reason: stageViewError?.code || 'LIB_READ_STAGE_VIEW_MISMATCH', assertCurrent: async () => true, close() {} };
         }
       }
       stageRecents[stageName] = recent;
