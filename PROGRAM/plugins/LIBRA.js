@@ -77356,6 +77356,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // by starting fresh once the basis outgrows the last fresh build threefold.
     const VOLATILE_CORPUS_DELAY_MS = 1500;
     const VOLATILE_CORPUS_MAX_RETAINED_BYTES = 64 * 1024 * 1024;
+    const VOLATILE_CORPUS_MAX_BASIS_BYTES = 32 * 1024 * 1024;
     // Returns the appended turns when the only difference is Micro heads that
     // appeared for turns whose Micro was not verified in the published proof.
     const appendedOnlyMicroTurns = (published, live, verdict) => {
@@ -77432,7 +77433,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           volatileState.targetScopeKey = targetScopeKey;
           const basis = volatileState.basis && volatileState.basisScopeKey === targetScopeKey && volatileState.freshChars
             && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3
-            && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_RETAINED_BYTES ? volatileState.basis : null;
+            && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_BASIS_BYTES ? volatileState.basis : null;
           const store = new Map(basis || []), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
           buildStore = store;
           const result = await buildMemoryGraphCorpusInto({ expectedScopeKey: targetScopeKey }, store, () => {
