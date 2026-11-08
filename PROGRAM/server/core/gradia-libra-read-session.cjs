@@ -8,7 +8,9 @@ const CAPTURE_ROUTE = '/v1/libra/read-session/capture';
 const CURRENT_ROUTE = '/v1/libra/read-session/current';
 const MiB = 1024 ** 2;
 const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  manifestBytes: MiB, itemMetadataBytes: 256 * 1024, totalMetadataBytes: 4 * MiB,
+  // Metadata is each stored record without its text. The per-item cap also widens each item's
+  // raw allowance, so it stays small; the total leaves room for large legitimate corpora.
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: 4 * MiB,
   maxRefs: 4096, currentRequestBytes: 4 * MiB });
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -164,6 +166,9 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
         const content = stored.text;
         corpusBytes += Buffer.byteLength(content, 'utf8');
         if (corpusBytes > maxCorpusBytes) fail('gradia_read_corpus_budget_exceeded', 413);
+        const auxiliaryBytes = Buffer.byteLength(JSON.stringify({ ...stored, text: '' }), 'utf8');
+        metadataBytes += auxiliaryBytes;
+        if (auxiliaryBytes > LIMITS.itemMetadataBytes || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
         const id = String(stored.memoryId || stored.id || ref.key);
         if (!validText(id, 1200)) fail('gradia_read_memory_id_invalid');
         const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -171,9 +176,6 @@ function createReadSession({ getRepository, dataInstanceId, epochs, canRead }) {
           memoryId: id, revision: number(stored.revision), sourceDigest: String(stored.sourceDigest || ''),
           turnRange: { start: number(ref.turnRange?.start), end: number(ref.turnRange?.end) },
           sessionEpoch: number(ref.sessionEpoch), inherited, archiveShared: ref.archiveShared === true };
-        const auxiliaryBytes = Buffer.byteLength(JSON.stringify({ id, key: ref.key, source }), 'utf8');
-        metadataBytes += auxiliaryBytes;
-        if (auxiliaryBytes > LIMITS.itemMetadataBytes || metadataBytes > LIMITS.totalMetadataBytes) fail('gradia_read_metadata_budget_exceeded', 413);
         dependencies.push(metadata); items.push({ id, key: ref.key, content, source });
       }
       return { schema: 'memory-suite.libra-read-session.v1', readOnly: true, complete: true, scope, items, dependencies,

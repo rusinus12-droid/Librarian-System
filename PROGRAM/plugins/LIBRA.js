@@ -67020,10 +67020,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           warn('LIBRA post-commit state tracking failed open', continuityStateError);
         }
         // A partial narrative must not prevent fresh admission in ready domains.
-        // Each claim still goes through its own domain/evidence checks.
-        if (continuityStateUpdate?.ok === true && continuityStateUpdate.head) {
+        // Each claim still goes through its own domain/evidence checks. Only this
+        // batch's window is re-admitted, never the whole chat on every commit.
+        if (continuityStateUpdate?.ok === true && ['ready','partial'].includes(continuityStateUpdate.head?.status)) {
           refreshMicroStateAdmissionsAfterCanonical(context.scope, startTurn,
-            buildPairs(context.chat, context.scope.scopeKey).length);
+            Math.min(buildPairs(context.chat, context.scope.scopeKey).length, Number(startTurn || 0) + BATCH_SIZE * 2 - 1));
         }
         if (unified) {
           // Source-bound vector_pending is durable in the active ref. The normal bounded
@@ -78294,7 +78295,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -78324,6 +78325,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
@@ -78721,9 +78723,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           try {
             const context = await resolveContext();
             if (state.disposed || state.deletingScopes.has(context.scope.scopeKey)) return { content: '' };
-            if (state.latestRenderedClassicBlock && typeof state.latestRenderedClassicBlock === 'string') {
-              return { content: state.latestRenderedClassicBlock };
-            }
             const settings = await loadMemorySettings();
             const pairs = buildPairs(context.chat, context.scope.scopeKey);
             const worldlineView = await readUnifiedWorldlineView(context.scope, await loadManifest(context.scope, Math.max(0, ...asArray(pairs).map(pair => Number(pair?.turn) || 0))), pairs);

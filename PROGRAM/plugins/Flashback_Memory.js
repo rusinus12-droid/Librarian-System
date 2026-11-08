@@ -40708,10 +40708,6 @@ const MemorySuiteHealthRecovery = (() => {
 
   // The dynamic evidence the hook would inject, for another reader. It arms no capture and writes nothing.
   const selectFlashbackRecallPrompt = async (queryValue, check = () => {}, { recentChatTurns = 0 } = {}) => {
-    const existing = Runtime.lastInjectedPrompt || Runtime.lastRecall?.injectedPrompt || '';
-    if (existing && typeof existing === 'string') {
-      return { content: existing };
-    }
     const settings = await loadSettings(true), bundle = await resolveCurrentScopeIdentityBundle(false), query = text(queryValue || '');
     check();
     const token = beginFlashbackRecallRequest(bundle.scope.scopeKey);
@@ -53063,7 +53059,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const ownerBoundary = async request => {
     if (disposed) fail('LIB_READ_CANCELED');
     const value = await options.boundary();
-    if (!validScope(value?.scope)) fail('LIB_READ_SCOPE_UNAVAILABLE');
+    if (!validScope(value?.scope) || value.mode !== 'plugin_only') fail('LIB_READ_PLUGIN_MODE_REQUIRED');
     if (value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
     if (request?.native && !same(native(value.scope), request.native)
       || request?.scope && !same(value.scope, request.scope)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
@@ -53093,6 +53089,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {

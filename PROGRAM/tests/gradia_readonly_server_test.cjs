@@ -195,8 +195,9 @@ test('raw manifest, per-item auxiliary metadata and reference count limits fail 
   for (const setup of scenarios) { setup(); const result = await request(CAPTURE, { scope }); assert.equal(result.status, 413); assert.equal(result.body.result, undefined); }
 });
 test('aggregate auxiliary metadata stays bounded even when individual records fit', async () => {
-  seed({ manifest: { memories: Object.fromEntries(Array.from({ length: 22 }, (_, i) => [i * 5 + 1, ref({ key: key(i * 5 + 1) })])) } });
-  for (let i = 0; i < 22; i++) store(key(i * 5 + 1), record('x', { auxiliary: 'a'.repeat(50000) }));
+  // 90 x 50KB of auxiliary fields exceeds the 4MiB aggregate while each record stays under 64KiB.
+  seed({ manifest: { memories: Object.fromEntries(Array.from({ length: 90 }, (_, i) => [i * 5 + 1, ref({ key: key(i * 5 + 1) })])) } });
+  for (let i = 0; i < 90; i++) store(key(i * 5 + 1), record('x', { auxiliary: 'a'.repeat(50000) }));
   const result = await request(CAPTURE, { scope }); assert.equal(result.status, 413); assert.equal(result.body.result, undefined);
 });
 test('SQL bounded get rejects growth after metadata observation before JSON materialization', async () => {

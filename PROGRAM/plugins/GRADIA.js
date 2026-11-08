@@ -8280,12 +8280,14 @@ ${text(paired.leadingAssistant.content || '')}
   const applyBasicRisuPlaceholdersForRag = (value, characterName, userName) => {
     const replaceEntity = (val, entityPattern, name) => {
       const entityName = text(name || '');
+      // A bare particle only counts when no syllable follows it, so `{{char}}아버지` or
+      // `{{char}}이랑` keep their text. 이었/였 are copula stems and always take an ending.
       const re = new RegExp(
-        entityPattern + '(?:(\\((?:은|는|이|가|을|를|과|와|아|야|으|로)\\)[가-힣]+)|(은|는|이|가|을|를|과|와|아|야|으로|로|이어|여|이었|였))?',
+        entityPattern + '(?:(\\((?:은|는|이|가|을|를|과|와|아|야|으|로)\\)[가-힣]+)|(이었|였)(?=[가-힣])|(으로|이어|은|는|이|가|을|를|과|와|아|야|로|여)(?![가-힣]))?',
         'gi'
       );
-      return val.replace(re, (_, parenJosa, simpleJosa) => {
-        const josa = parenJosa || simpleJosa;
+      return val.replace(re, (_, parenJosa, copulaJosa, simpleJosa) => {
+        const josa = parenJosa || copulaJosa || simpleJosa;
         if (!josa) return entityName;
         return entityName + resolveKoreanJosaForRag(entityName, josa);
       });
@@ -37790,7 +37792,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!settings.enableShadowAct) return { ok: false, reason: 'shadow_act_disabled' };
 
     const libReadStartedAt = Date.now();
-    let libReadSession = null;
+    // Same shape as openLibEvidenceRun's unavailable result, so callers never see null.
+    let libReadSession = { status: 'unavailable', reason: 'LIB_READ_DISABLED', assertCurrent: async () => true, close() {} };
     let usesLibEvidence = false;
 
     if (connStatus.readSource !== 'off') {
@@ -44254,6 +44257,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if ((message.recentChatTurns !== undefined && !(Number.isSafeInteger(message.recentChatTurns) && message.recentChatTurns >= 0 && message.recentChatTurns <= 4096)) || (message.requestChars !== undefined && !(Number.isSafeInteger(message.requestChars) && message.requestChars >= 0))) fail('LIB_READ_REQUEST_INVALID');
         const value = await options.boundary();
         if (!validScope(value?.scope) || value.transition || value.migrationRequired === true) fail('LIB_READ_BOUNDARY_CHANGED');
+        if (!same(native(value.scope), message.native)) fail('LIB_READ_NATIVE_SCOPE_CHANGED');
         result = { owner: options.owner, source: 'plugin_ipc', readOnly: true, ...(await options.select(message.queryText, () => { if (disposed) fail('LIB_READ_CANCELED'); }, { recentChatTurns: message.recentChatTurns || 0, requestChars: message.requestChars || 0 })) };
       }
       else if (action === 'current') {
