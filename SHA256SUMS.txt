@@ -724,12 +724,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f  ./PROGRAM/PACKAGE_CONTENTS.txt
 256f365aad7f5d35eb4846395d42276b2cf13498604f6b1bf3448276d0ef1047  ./PROGRAM/plugins/Flashback_Memory.js
-99a924a104c38965f1bc151c235a65460e947066b064f2a70bc9619a3f8dd26a  ./PROGRAM/plugins/GRADIA.js
+cfc189ad5e704946ed2741bf5bfa8bcba3b7ba4dea961a5b3ded98a9c4fdd97b  ./PROGRAM/plugins/GRADIA.js
 a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 7c6bf2be28cf95a73715238ac718c1365bf8579775317aebbfc7345cc0f69b05  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-5afcfd28ab9ad12e7243de89564bc9e40bdf569ce5a29bf5cb86aa4f61e6251b  ./PROGRAM/program-manifest.json
+a75c80ae437ad408db179691677d82bd8b91b64a6fcfd418d6651d62b1eb407e  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 0f034ba6aee7622a2d2f82a1e3efda8b69db16e4f9467ceca203d1bafcc84f75  ./PROGRAM/run_regression_batch.py
@@ -1351,7 +1351,7 @@ e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829  ./PROGRAM/test
 f0579d1bdb8894764de4413430b8b8db570f9e0960296d488d6d01f96ff69633  ./PROGRAM/tests/gradia/bianca-injection.test.cjs
 f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/tests/gradia/context-degradation-gui.test.cjs
 3cdf99734309500766c05902fb8ed487af1f2961ed41ee7c408687566d87103a  ./PROGRAM/tests/gradia/context-degradation.test.cjs
-8d22c67920bf2cf76175f847d528870fb22bf12d93dba4bdc6bd14d5963791d4  ./PROGRAM/tests/gradia/draft-archive-gui.test.cjs
+ffd9850a54af1a07d12118d3425182bf002f0dbc04efc692404b8cb91188ea40  ./PROGRAM/tests/gradia/draft-archive-gui.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
 658de99c193afb2b73017435b8c36c70a46a182e19b5d4cddde87120895cc186  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs

@@ -47,7 +47,7 @@ test('purge keeps a content-free summary and the panel renders it', async () => 
     const panel = f.doc.querySelector('[data-page="results"] [data-subpanel="s"]');
     assert.ok(panel, 'the shadow results panel renders');
     const body = panel.textContent;
-    assert.match(body, /요청 종료 후 정리됨/);
+    assert.match(body, /전달 후 본문 정리됨/);
     assert.match(body, /단계 완료/);
     assert.match(body, /6\.2s/);
     assert.equal(body.includes('젖은 외투'), false, '패널에도 본문을 되살리지 않는다');

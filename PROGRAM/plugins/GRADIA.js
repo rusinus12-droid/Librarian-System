@@ -39097,6 +39097,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.inFlight = true;
     scheduleGuiTraceRefresh();
     Runtime.runs += 1;
+    // 이전 요청의 요약이 새 요청의 결과처럼 보이면 안 된다.
+    Runtime.lastDraftArchive = null;
     Runtime.lastProviderRequest = null;
     Runtime.lastProviderResponse = null;
     Runtime.lastProviderError = null;
@@ -44070,12 +44072,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // 정리(purge) 뒤에는 본문을 보관하지 않는 계약이라, 무엇이 작성됐는지만 요약해 보여준다.
         const archive = Runtime.lastDraftArchive;
         const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft
-          || (archive ? `본문은 요청 종료 후 정리됨 · ${Number(archive.chars || 0).toLocaleString()}자 · `
+          || (archive ? `본문은 응답 모델 전달 후 정리됨 · ${Number(archive.chars || 0).toLocaleString()}자 · `
             + `${(archive.stages || []).filter(row => row.ok).length}/${(archive.stages || []).length}단계 완료` : '');
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
-            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 요청 종료 후 정리됨':'')})]),
-            resultsDraftSection(draftToShow, archive && !shadow?.parsed?.draft && !Runtime.finalDraft ? '작성한 초안 (요청 종료 후 정리됨)' : '작성한 초안',true)
+            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 본문 정리됨':'')})]),
+            resultsDraftSection(draftToShow, archive && !shadow?.parsed?.draft && !Runtime.finalDraft ? '작성한 초안 (전달 후 본문 정리됨)' : '작성한 초안',true)
           ]),
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsContextDegradationSection(),resultsMemorySection(),...resultsMaterialsSections(usage)].filter(Boolean))
         ]));
