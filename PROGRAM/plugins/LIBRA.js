@@ -33844,7 +33844,7 @@ function createLibraReadonlySourceContext(owner) {
       loreLinkIndexCache: new Map(),
       evidenceLinkIndexCacheBytes: 0,
       loreLinkIndexCacheBytes: 0,
-      residentBudgetStats: { evictions: 0, lastEvictionOwner: '', lastEvictionAt: 0 },
+      residentBudgetStats: { evictions: 0, lastEvictionOwner: '', lastEvictionAt: 0, graphBuildBytes: 0 },
       residentSequence: 0,
       memoryGraphPages: null,
       memoryGraphStore: null,
@@ -35732,6 +35732,7 @@ function createLibraReadonlySourceContext(owner) {
         if(!hit || hit.signature!==verifiedReadSignature(mode) || Date.now()<hit.at
           || Date.now()-hit.at>=VERIFIED_READ_CACHE_TTL_MS
           || mode!=='plugin_only' && (!hit.serverPin || !hit.empty && typeof hit.serverRaw!=='string'))return false;
+        touchVerifiedRead(hit);
         entries.set(storageKey,Promise.resolve({local:hit.localRaw,
           remote:mode==='plugin_only'?null:{...hit.serverPin,value:hit.empty?null:hit.serverRaw}}));
         if(!hit.empty)decoded.set(storageKey,clone(hit.value));
@@ -35816,6 +35817,7 @@ function createLibraReadonlySourceContext(owner) {
               if(background)for(const storageKey of part){
                 const hit=verifiedReadCache.get(storageKey);
                 if(hit?.signature===verifiedReadSignature(mode) && hit.serverPin && (hit.empty || typeof hit.serverRaw==='string')){
+                  touchVerifiedRead(hit);
                   warm.set(storageKey,hit);knownValues[storageKey]=hit.serverPin;
                 }
               }
@@ -36120,7 +36122,7 @@ function createLibraReadonlySourceContext(owner) {
         const hit = signature && verifiedReadCache.get(cacheKey);
         if (hit && hit.signature === signature && hit.value?.raw !== raw) noteMemoryGraphSourceWrite(storageKey);
         if (hit && hit.signature === signature && hit.value?.raw === raw && Date.now() - hit.at < VERIFIED_READ_CACHE_TTL_MS) {
-          verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value.decoded);
+          touchVerifiedRead(hit); verifiedReadStats.hits++; return hit.empty ? clone(fallback) : clone(hit.value.decoded);
         }
         const value = decode(raw);
         if (signature && typeof raw === 'string' && raw !== '') rememberVerifiedRead(cacheKey,signature,{raw,decoded:value},false);
@@ -36149,6 +36151,7 @@ function createLibraReadonlySourceContext(owner) {
           pruneVerifiedReads();
           const candidate = verifiedReadCache.get(storageKey);
           hit = candidate?.signature === signature ? candidate : null;
+          if (hit) touchVerifiedRead(hit);
           if (!hit) verifiedReadStats.misses++;
         }
         const seqAtStart = verifiedReadWriteSeq;
@@ -69221,7 +69224,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const linkIndexBytes = index => 2 * JSON.stringify(index ?? null).length;
     const linkIndexCacheBytes = cache => cache === state.evidenceLinkIndexCache
       ? state.evidenceLinkIndexCacheBytes : state.loreLinkIndexCacheBytes;
+    const touchLinkIndexCache = (cache, scopeKey) => {
+      const index = cache.get(scopeKey);
+      if (!index) return null;
+      index.residentOrder = ++state.residentSequence;
+      cache.delete(scopeKey);
+      cache.set(scopeKey, index);
+      return index;
+    };
     const setLinkIndexCache = (cache, scopeKey, index) => {
+      index.residentOrder = ++state.residentSequence;
       const bytes = linkIndexBytes(index), previous = cache.get(scopeKey);
       if (previous) {
         const key = cache === state.evidenceLinkIndexCache ? 'evidenceLinkIndexCacheBytes' : 'loreLinkIndexCacheBytes';
@@ -77467,7 +77479,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const volatileUtf8Bytes = value => typeof TextEncoder === 'function'
       ? new TextEncoder().encode(String(value)).length
       : String(value).length * 2;
-    const createVolatileStore = (entries, maxBytes = Infinity) => {
+    const createVolatileStore = (entries, maxBytes = Infinity, onBytesChange = null) => {
       const store = new Map();
       let retainedBytes = 0;
       const set = store.set.bind(store), del = store.delete.bind(store), clear = store.clear.bind(store);
@@ -77478,15 +77490,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const allowed = typeof maxBytes === 'function' ? maxBytes(nextBytes) : nextBytes <= maxBytes;
         if (!allowed) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_LIMIT');
         retainedBytes = nextBytes;
+        onBytesChange?.(retainedBytes);
         set(key, value);
         return store;
       };
       store.delete = key => {
         if (!store.has(key)) return false;
         retainedBytes -= volatileUtf8Bytes(key) + volatileUtf8Bytes(store.get(key));
+        onBytesChange?.(retainedBytes);
         return del(key);
       };
-      store.clear = () => { retainedBytes = 0; clear(); };
+      store.clear = () => { retainedBytes = 0; onBytesChange?.(0); clear(); };
       for (const [key, value] of entries || []) store.set(key, value);
       Object.defineProperty(store, 'retainedBytes', { enumerable: false, configurable: false, get: () => retainedBytes });
       return store;
@@ -77501,14 +77515,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
     function residentMemoryBudgetSnapshot() {
       const graphStore = volatileMemoryGraphCorpus?.()?.store;
       const graphBytes = volatileStoreBytes(graphStore);
+      const graphBuildBytes = Math.max(0, Number(state.residentBudgetStats?.graphBuildBytes || 0));
       const pairBytes = Math.max(0, Number(state.pairRevisionCacheStats?.retainedChars || 0) * 2);
       const verifiedBytes = Math.max(0, Number(state.verifiedReadCacheStats?.bytes || 0));
       const linkBytes = Math.max(0, Number(state.evidenceLinkIndexCacheBytes || 0))
         + Math.max(0, Number(state.loreLinkIndexCacheBytes || 0));
       return {
         maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
-        totalBytes: graphBytes + pairBytes + verifiedBytes + linkBytes,
-        byCache: { volatileGraph: graphBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
+        totalBytes: graphBytes + graphBuildBytes + pairBytes + verifiedBytes + linkBytes,
+        byCache: { volatileGraph: graphBytes, volatileGraphBuild: graphBuildBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
       };
     }
     function evictOldestVerifiedRead() {
@@ -77541,10 +77556,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return true;
     }
     function evictOldestLinkIndex() {
-      let cache = null, key = null;
+      let cache = null, key = null, order = Infinity;
       for (const candidate of [state.evidenceLinkIndexCache, state.loreLinkIndexCache]) {
-        const candidateKey = candidate.keys().next().value;
-        if (candidateKey != null) { cache = candidate; key = candidateKey; break; }
+        for (const [candidateKey, index] of candidate) {
+          const candidateOrder = Number(index?.residentOrder || 0);
+          if (candidateOrder < order) { cache = candidate; key = candidateKey; order = candidateOrder; }
+        }
       }
       if (!cache) return false;
       deleteLinkIndexCache(cache, key);
@@ -77604,9 +77621,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const basis = volatileState.basis && volatileState.basisScopeKey === targetScopeKey && volatileState.freshChars
             && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3
             && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_BASIS_BYTES ? volatileState.basis : null;
-          const otherResidentBytes = residentMemoryBudgetSnapshot().totalBytes - volatileStoreBytes(volatileState.store);
+          state.residentBudgetStats.graphBuildBytes = 0;
           const store = createVolatileStore(basis || [], nextBytes => nextBytes <= VOLATILE_CORPUS_MAX_RETAINED_BYTES
-            && otherResidentBytes + nextBytes <= LIBRA_RESIDENT_MEMORY_MAX_BYTES), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+            && residentMemoryBudgetSnapshot().totalBytes - Number(state.residentBudgetStats.graphBuildBytes || 0) + nextBytes
+              <= LIBRA_RESIDENT_MEMORY_MAX_BYTES, bytes => {
+              state.residentBudgetStats.graphBuildBytes = bytes;
+            }), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
           buildStore = store;
           const result = await buildMemoryGraphCorpusInto({ expectedScopeKey: targetScopeKey }, store, () => {
           if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
@@ -77628,12 +77648,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
             volatileState.lastBuildMode = string(result.buildMode || '');
             return;
           }
+          state.residentBudgetStats.graphBuildBytes = 0;
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, targetScopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), dirty: false, yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
           buildStore?.clear?.();
+          state.residentBudgetStats.graphBuildBytes = 0;
           if (state.disposed || volatileState.yieldRequested) return;
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
