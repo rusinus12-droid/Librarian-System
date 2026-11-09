@@ -77648,14 +77648,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
             volatileState.lastBuildMode = string(result.buildMode || '');
             return;
           }
-          state.residentBudgetStats.graphBuildBytes = 0;
           Object.assign(volatileState, { store, basis: store, basisScopeKey: result.scopeKey, freshChars: basis ? volatileState.freshChars : chars,
             scopeKey: result.scopeKey, targetScopeKey: result.scopeKey, generation: string(result.generation || ''), builtAt: Date.now(), dirty: false, yields: 0,
             builds: volatileState.builds + 1, consecutiveSourceChangeRetries: 0,
             lastError: '', lastBuildMs: Date.now() - startedAt, lastBuildMode: string(result.buildMode || '') });
         }).catch(error => {
           buildStore?.clear?.();
-          state.residentBudgetStats.graphBuildBytes = 0;
           if (state.disposed || volatileState.yieldRequested) return;
           const message = compact(error?.message || error, 200);
           if (message === 'LIBRA_GRAPH_VOLATILE_CORPUS_YIELDED') { if (!volatileState.yieldRequested) scheduleVolatileMemoryGraphCorpus(delayMs); return; }
@@ -77672,7 +77670,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
           // builds again, so only that attempt's error is kept, not counted as a failure.
           if (!volatileState.prewarming) volatileState.failures += 1;
           volatileState.lastError = message;
-        }).finally(() => { volatileState.running = null; volatileState.yieldRequested = false; volatileState.prewarming = false; });
+        }).finally(() => {
+          state.residentBudgetStats.graphBuildBytes = 0;
+          volatileState.running = null;
+          volatileState.yieldRequested = false;
+          volatileState.prewarming = false;
+        });
       }, delayMs);
     };
     // The first request after load otherwise pays the cold build (~15 s for a 30-turn
