@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T15:12:12.685Z",
+  "generatedAt": "2026-11-09T15:33:19.750Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4303,8 +4303,8 @@
       "bytes": 3753740
     },
     "plugins/GRADIA.js": {
-      "sha256": "1c85405657d1b0f454a4cb481ace9280cf7a808b3d7aaa6d32dbaff797df3daf",
-      "bytes": 3104086
+      "sha256": "5597f8e964701e31d4173d358e1a361c787f527ea007a3ea344f834d9a9a6668",
+      "bytes": 3115139
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82",
@@ -6878,6 +6878,10 @@
       "sha256": "6e4a6949095291006f54f8f4e26954238d658a68c9a5f0228d887dda9063ced2",
       "bytes": 2361
     },
+    "tests/gradia/ipc_connection_fixture.cjs": {
+      "sha256": "f1480b14117e0c351f0307ffa01a57a8547e2018101138bb9012be55b03eb8c6",
+      "bytes": 6829
+    },
     "tests/gradia/legacy-removal.test.cjs": {
       "sha256": "890b443b6eb663cc43c06246f945f7fa044b086269762206c3d577c11b2ec02c",
       "bytes": 3580
@@ -6925,6 +6929,10 @@
     "tests/gradia/owner-read-deadline.test.cjs": {
       "sha256": "593835d2ba9ff0c00fbec9134416b2f12d38a9786b4e07c0e57a297f5b0afef4",
       "bytes": 2636
+    },
+    "tests/gradia/owner-toggle-ipc.test.cjs": {
+      "sha256": "8176d2577cce4b70e2a0c3698d457afbf63e43d6a8983deb116cd71edcdcf320",
+      "bytes": 2593
     },
     "tests/gradia/producer-owner-migration.test.cjs": {
       "sha256": "ff1d9371717209aace0f26da44643994ae49d13f2cc2e20a7d70a2220cb13c8f",

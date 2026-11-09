@@ -15,10 +15,10 @@ const wait = async (fn, ms = 6000) => {
   throw Error('Connection action did not settle');
 };
 
-function ipcHost(t, {saved, delayPreference = false} = {}) {
+function ipcHost(t, {saved, delayPreference = false, onModel = null, chatMessages = []} = {}) {
   const local = new Map(), values = new Map(), unloads = [], locals = [], requests = [], channel = new Map(), asked = [];
   if (saved) local.set(PREF, JSON.stringify(saved));
-  let releasePreference = null, current = {id: 'h', message: []};
+  let releasePreference = null, current = {id: 'h', message: (chatMessages || []).map(row => ({...row}))};
   const chatRows = {0: current, 1: {id: 'other', message: []}};
   let currentIndex = 0;
   const scopes = {
@@ -56,7 +56,11 @@ function ipcHost(t, {saved, delayPreference = false} = {}) {
       },
       removeItem: async k => { locals.push(k); local.delete(k); }
     }),
-    nativeFetch: async (target, init) => { requests.push({url: String(target), headers: init?.headers}); throw Error('IPC path must not use the server transport'); },
+    nativeFetch: async (target, init) => {
+      requests.push({url: String(target), headers: init?.headers});
+      if (onModel) return await onModel(target, init);
+      throw Error('IPC path must not use the server transport');
+    },
     fetch: async () => { throw Error('IPC path must not use the server transport'); },
     onUnload: async fn => unloads.push(fn), showContainer: async () => {}, hideContainer: async () => {},
     getCurrentCharacterIndex: async () => 0, getCurrentChatIndex: async () => currentIndex,

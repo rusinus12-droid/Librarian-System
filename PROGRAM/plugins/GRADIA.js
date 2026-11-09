@@ -4312,6 +4312,76 @@ ${BIANCA_PERSONA_TEXT}`;
   let libRunHints = {};
   const libOwnerRunHints = () => libRunHints;
   const libQueryText = value => { const encoder = new TextEncoder(); let out = '', size = 0; for (const char of String(value || '')) { size += encoder.encode(char).length; if (size > 16000) break; out += char; } return out; };
+  // A request that cannot fit the model context is degraded in a fixed order instead of
+  // aborting the turn: shrink the completion reservation, then drop the shared private
+  // reference, then proceed without owner memory. Every step is recorded so the run results
+  // can say what was thrown away.
+  const CONTEXT_DEGRADATION_MIN_OUTPUT_TOKENS = 1024;
+  const CONTEXT_DEGRADATION_REFERENCE_KEEP_CHARS = 2000;
+  const inferStageFromRequestText = value => {
+    const raw = String(value || '');
+    const patch = raw.match(/Return the compact (aide_\w+) patch JSON/);
+    if (patch) return patch[1];
+    if (/ROLE: SHADOW ACT|SHADOW ACT — analysis phase/.test(raw)) return 'shadow_act';
+    const analysis = raw.match(/Run (\w+) analysis now/);
+    return analysis ? analysis[1] : '';
+  };
+  const adjustRequestOutputBudget = (serialized, requestFormat, allowedTokens) => {
+    let parsed;
+    try { parsed = JSON.parse(serialized); } catch (_) { return { changed: false, body: serialized }; }
+    const target = Math.max(CONTEXT_DEGRADATION_MIN_OUTPUT_TOKENS, Math.min(Number(allowedTokens) || 0, 200000));
+    if (requestFormat === 'gemini') {
+      const config = parsed.generationConfig || (parsed.generationConfig = {});
+      const before = Number(config.maxOutputTokens || 0);
+      if (!before || target >= before) return { changed: false, body: serialized };
+      config.maxOutputTokens = target;
+      return { changed: true, body: JSON.stringify(parsed), before, after: target };
+    }
+    if (requestFormat === 'ollama_native') {
+      const options = parsed.options || (parsed.options = {});
+      const before = Number(options.num_predict || 0);
+      if (!before || target >= before) return { changed: false, body: serialized };
+      options.num_predict = target;
+      return { changed: true, body: JSON.stringify(parsed), before, after: target };
+    }
+    const key = ['max_output_tokens', 'max_completion_tokens', 'max_tokens']
+      .find(name => Number(parsed?.[name]) > 0);
+    if (!key) return { changed: false, body: serialized };
+    const before = Number(parsed[key]);
+    if (target >= before) return { changed: false, body: serialized };
+    parsed[key] = target;
+    return { changed: true, body: JSON.stringify(parsed), before, after: target };
+  };
+  const trimSharedReferenceBlock = (serialized) => {
+    let parsed;
+    try { parsed = JSON.parse(serialized); } catch (_) { return { changed: false, body: serialized }; }
+    let removedChars = 0;
+    const walk = value => {
+      if (typeof value === 'string') {
+        const at = value.indexOf('[GRADIA SHARED REFERENCE]');
+        if (at < 0) return value;
+        const section = value.slice(at);
+        if (section.length <= CONTEXT_DEGRADATION_REFERENCE_KEEP_CHARS) return value;
+        removedChars += section.length - CONTEXT_DEGRADATION_REFERENCE_KEEP_CHARS;
+        return value.slice(0, at) + section.slice(0, CONTEXT_DEGRADATION_REFERENCE_KEEP_CHARS)
+          + '\n\n[SHARED REFERENCE TRUNCATED: model context budget]';
+      }
+      if (Array.isArray(value)) return value.map(walk);
+      if (value && typeof value === 'object') { for (const key of Object.keys(value)) value[key] = walk(value[key]); }
+      return value;
+    };
+    const next = walk(parsed);
+    if (!removedChars) return { changed: false, body: serialized };
+    return { changed: true, body: JSON.stringify(next), removedChars };
+  };
+  const recordContextDegradation = record => {
+    try {
+      const normalized = Object.freeze({ ...record, dropped: Object.freeze([...new Set(record.dropped || [])]) });
+      Runtime.lastContextDegradation = normalized;
+      Runtime.contextDegradations = [...(Array.isArray(Runtime.contextDegradations) ? Runtime.contextDegradations.slice(-7) : []), normalized];
+    } catch (_) {}
+  };
+
   const openLibEvidenceRun = async (messages, settings, baseRecent, requestId, nativeBinding = null, openingController = null) => {
     const initialMessages = JSON.stringify(messages);
     const requestMessages = JSON.parse(initialMessages);
@@ -4486,50 +4556,132 @@ ${BIANCA_PERSONA_TEXT}`;
           ...contents.filter(message => message.role === 'user').flatMap(message => strings(message.parts))];
         const systems = [...messages.filter(message => ['system', 'developer'].includes(message.role)).flatMap(message => strings(message.content)),
           ...strings(payload.instructions), ...strings(payload.system), ...strings((payload.systemInstruction || payload.system_instruction)?.parts)];
-        if (!this.block || count !== 1 || users.filter(value => value === this.expectedUser).length !== 1
-          || (this.expectedSystem && !systems.some(value => value.includes(this.expectedSystem)))) throw this.fail('LIB_READ_PAYLOAD_CHANGED');
+        // A run that already dropped its evidence for budget reasons keeps writing without it,
+        // so a retry of the same request is not judged against a block it no longer carries.
+        const suppressedEvidence = this.suppressEvidence === true || !this.block;
+        if (!suppressedEvidence && (count !== 1 || users.filter(value => value === this.expectedUser).length !== 1
+          || (this.expectedSystem && !systems.some(value => value.includes(this.expectedSystem))))) throw this.fail('LIB_READ_PAYLOAD_CHANGED');
         if (!this.budgetProfile || method !== 'POST') throw this.fail('LIB_READ_TOKEN_ACCOUNTING_UNAVAILABLE');
         const profile = this.budgetProfile;
         let baseBody;
-        try { baseBody = budgetMeter.replaceEvidence(body,profile.requestFormat,profile.modelId,this.block,''); }
+        try { baseBody = suppressedEvidence ? body : budgetMeter.replaceEvidence(body,profile.requestFormat,profile.modelId,this.block,''); }
         catch (_) { throw this.fail('LIB_READ_PAYLOAD_CHANGED'); }
-        const input = (finalBody, block) => ({ providerId:profile.providerId,modelId:profile.modelId,routeIdentity:route,
+        // The meter binds every body to its evidence-free base. A degraded body is a new base,
+        // so both the base and the final body move together.
+        let workingBody = baseBody;
+        const input = (finalBody, block, base = workingBody) => ({ providerId:profile.providerId,modelId:profile.modelId,routeIdentity:route,
           requestFormat:profile.requestFormat,context:{...profile.context,routeIdentity:route},
-          baseBody,finalBody,renderedEvidence:block,renderedByteLimit:this.evidenceBudget.maxBytes });
-        const base = budgetMeter.inspect(input(baseBody,''));
+          baseBody:base,finalBody,renderedEvidence:block,renderedByteLimit:this.evidenceBudget.maxBytes });
+        let base = budgetMeter.inspect(input(workingBody,''));
         if (base.status !== 'available') throw this.fail('LIB_READ_TOKEN_ACCOUNTING_UNAVAILABLE');
-        if (!base.fits) throw this.fail('LIB_READ_MODEL_CONTEXT_EXCEEDED');
+        let degradation = null;
+        if (!base.fits) {
+          degradation = { at: Date.now(), stage: inferStageFromRequestText(workingBody), dropped: [],
+            contextLimit: base.usage.contextLimit, safetyMargin: base.usage.safetyMargin,
+            baseInput: base.usage.baseInputAllowance, outputBefore: base.usage.effectiveOutputReserve };
+          // 1) Give the completion less room; a draft that is shorter than requested still beats no draft.
+          const allowedOutput = base.usage.contextLimit - base.usage.safetyMargin - base.usage.baseInputAllowance;
+          const shrunk = adjustRequestOutputBudget(workingBody, profile.requestFormat, allowedOutput);
+          if (shrunk.changed) {
+            const next = budgetMeter.inspect(input(shrunk.body,'',shrunk.body));
+            if (next.status === 'available') {
+              workingBody = shrunk.body; base = next;
+              degradation.dropped.push('output_tokens');
+              degradation.outputAfter = shrunk.after;
+            }
+          }
+          // 2) Drop the shared private reference; live scene and current input carry the turn.
+          if (!base.fits) {
+            const trimmed = trimSharedReferenceBlock(workingBody);
+            if (trimmed.changed) {
+              const next = budgetMeter.inspect(input(trimmed.body,'',trimmed.body));
+              if (next.status === 'available') {
+                workingBody = trimmed.body; base = next;
+                degradation.dropped.push('shared_reference');
+                degradation.referenceRemovedChars = trimmed.removedChars;
+              }
+            }
+          }
+          if (!base.fits) { recordContextDegradation(degradation); throw this.fail('LIB_READ_MODEL_CONTEXT_EXCEEDED'); }
+        }
+        // Even an empty evidence block needs room; if the reservation leaves none, take it from output.
+        const prefixFloor = budgetMeter.estimateTextTokens(this.evidencePrefix || '') + 64;
+        {
+          const roomNow = base.usage.contextLimit-base.usage.effectiveOutputReserve-base.usage.safetyMargin-base.usage.finalInputAllowance;
+          if (roomNow < prefixFloor) {
+            const tighter = adjustRequestOutputBudget(workingBody, profile.requestFormat,
+              base.usage.effectiveOutputReserve - (prefixFloor - roomNow));
+            if (tighter.changed) {
+              const next = budgetMeter.inspect(input(tighter.body,'',tighter.body));
+              if (next.status === 'available' && next.fits) {
+                workingBody = tighter.body; base = next;
+                degradation = degradation || { at: Date.now(), stage: inferStageFromRequestText(workingBody), dropped: [],
+                  contextLimit: base.usage.contextLimit, safetyMargin: base.usage.safetyMargin,
+                  baseInput: base.usage.baseInputAllowance, outputBefore: tighter.before };
+                if (!degradation.dropped.includes('output_tokens')) degradation.dropped.push('output_tokens');
+                degradation.outputAfter = tighter.after;
+              }
+            }
+          }
+        }
         const available = base.usage.contextLimit-base.usage.effectiveOutputReserve-base.usage.safetyMargin-base.usage.finalInputAllowance;
         const render = items => this.evidencePrefix+renderLibEvidence({...this.evidencePacket,items},this.evidenceBudget);
         // An item whose whole text already appears in this exact request (for example a
         // Flashback record of a turn in the recent-chat window) adds only tokens, so this
         // call omits it. Keep owner order and atomic items. Skip an individually oversized
         // item rather than making a small later owner's complete item unreachable.
-        const nativeText = libEvidencePayloadText(baseBody);
+        const nativeText = libEvidencePayloadText(workingBody);
         const unique = this.evidencePacket.items.filter(item => !libEvidenceCoveredByPrompt(item.content, nativeText));
         const candidates = unique.filter(item => budgetMeter.estimateTextTokens(render([item])) <= available);
         let low = 0, high = candidates.length, chosen = null;
         while (low < high) {
           const count = Math.ceil((low+high)/2), block = render(candidates.slice(0,count));
-          const finalBody = budgetMeter.replaceEvidence(baseBody,profile.requestFormat,profile.modelId,'',block);
+          const finalBody = budgetMeter.replaceEvidence(workingBody,profile.requestFormat,profile.modelId,'',block);
           const decision = budgetMeter.inspect(input(finalBody,block));
           if (decision.status !== 'available') throw this.fail('LIB_READ_TOKEN_ACCOUNTING_UNAVAILABLE');
           if (decision.fits) { low=count;chosen={block,body:finalBody}; } else high=count-1;
         }
         if (!chosen && low) {
-          const block=render(candidates.slice(0,low));chosen={block,body:budgetMeter.replaceEvidence(baseBody,profile.requestFormat,profile.modelId,'',block)};
+          const block=render(candidates.slice(0,low));chosen={block,body:budgetMeter.replaceEvidence(workingBody,profile.requestFormat,profile.modelId,'',block)};
+        }
+        if (!chosen && unique.length) {
+          // No complete owner item fits what the context has left: write the turn without memory
+          // instead of failing it, and say so in the run results.
+          degradation = degradation || { at: Date.now(), stage: inferStageFromRequestText(workingBody), dropped: [] };
+          degradation.dropped.push('memory_evidence');
+          degradation.evidenceChars = this.evidencePacket.items.reduce((total,item)=>total+String(item.content||'').length,0);
+          const block=render([]);chosen={block,body:budgetMeter.replaceEvidence(workingBody,profile.requestFormat,profile.modelId,'',block)};
         }
         if (!chosen && !unique.length) {
-          const block=render([]);chosen={block,body:budgetMeter.replaceEvidence(baseBody,profile.requestFormat,profile.modelId,'',block)};
+          const block=render([]);chosen={block,body:budgetMeter.replaceEvidence(workingBody,profile.requestFormat,profile.modelId,'',block)};
         }
         if (!chosen) throw this.fail('LIB_READ_NO_COMPLETE_ITEM_FITS_CONTEXT');
-        const decision = await budgetMeter.evaluate(input(chosen.body,chosen.block));
+        let decision = await budgetMeter.evaluate(input(chosen.body,chosen.block));
         if (decision.status !== 'available') throw this.fail(decision.reason === 'payload_hash_unavailable' ? 'LIB_READ_HASH_UNAVAILABLE' : 'LIB_READ_TOKEN_ACCOUNTING_UNAVAILABLE');
+        if (!decision.fits) {
+          // Last step of the ladder: the selected evidence still does not fit. Keep the request
+          // without memory rather than failing the turn, and say so in the run results.
+          for (const block of [render([]), '']) {
+            const body = budgetMeter.replaceEvidence(workingBody,profile.requestFormat,profile.modelId,'',block);
+            const retry = await budgetMeter.evaluate(input(body,block));
+            if (retry.status !== 'available' || !retry.fits) continue;
+            chosen = { block, body }; decision = retry;
+            degradation = degradation || { at: Date.now(), stage: inferStageFromRequestText(workingBody), dropped: [] };
+            if (!degradation.dropped.includes('memory_evidence')) degradation.dropped.push('memory_evidence');
+            degradation.evidenceChars = this.evidencePacket.items.reduce((total,item)=>total+String(item.content||'').length,0);
+            recordContextDegradation(degradation);
+            break;
+          }
+        }
         if (!decision.fits) throw this.fail('LIB_READ_MODEL_CONTEXT_EXCEEDED');
         await this.assertCurrent();
-        this.expectedUser = this.expectedUser.slice(0,-this.block.length)+chosen.block;
+        const evidenceHead = this.block ? this.expectedUser.slice(0,-this.block.length) : this.expectedUser;
+        this.expectedUser = evidenceHead + chosen.block;
+        this.suppressEvidence = !chosen.block;
         this.block = chosen.block;
-        this.modelSelection = Object.freeze({ selectedItems:low,omittedItems:unique.length-low,
+        if (degradation) recordContextDegradation(degradation);
+        this.modelSelection = Object.freeze({ ...(degradation ? { contextDegradation: degradation } : {}),
+          selectedItems:low,omittedItems:unique.length-low,
           duplicateItems:this.evidencePacket.items.length-unique.length,
           ...Object.fromEntries(['contextLimit','contextSource','finalInputAllowance','effectiveOutputReserve','safetyMargin',
             'serializedPayloadBytes','renderedEvidenceBytes','payloadByteLimit','meterKind'].map(key=>[key,decision.witness[key]])) });
@@ -42097,6 +42249,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
     lastStageViewMismatch: Runtime.lastStageViewMismatch || null,
     lastDraftOutputBudget: Runtime.lastDraftOutputBudget || null,
+    lastContextDegradation: Runtime.lastContextDegradation || null,
+    contextDegradations: Array.isArray(Runtime.contextDegradations) ? Runtime.contextDegradations.slice(-8) : [],
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
     lastInputAssist: Runtime.lastInputAssist ? {
@@ -43714,6 +43868,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     });
     return resultsSection('기억 (LIBRA · HAYAKU · Flashback)', status, groups, true);
   };
+  // 실행 결과: 모델 컨텍스트를 맞추려고 무엇을 버렸는지 그대로 보여준다.
+  const resultsContextDegradationSection = () => {
+    const record = Runtime.lastContextDegradation;
+    if (!record) return null;
+    const label = { output_tokens: '출력 토큰 축소', shared_reference: '공유 참조 축소', memory_evidence: '기억 증거 생략' };
+    const dropped = Array.isArray(record.dropped) ? record.dropped : [];
+    const detail = [];
+    if (dropped.includes('output_tokens')) detail.push(`출력 ${Number(record.outputBefore || 0).toLocaleString('ko-KR')} → ${Number(record.outputAfter || 0).toLocaleString('ko-KR')} 토큰`);
+    if (dropped.includes('shared_reference')) detail.push(`공유 참조 ${Number(record.referenceRemovedChars || 0).toLocaleString('ko-KR')}자 제외`);
+    if (dropped.includes('memory_evidence')) detail.push(`기억 증거 ${Number(record.evidenceChars || 0).toLocaleString('ko-KR')}자 미주입`);
+    const meta = `${record.stage || '요청'} · 한도 ${Number(record.contextLimit || 0).toLocaleString('ko-KR')} 토큰`;
+    return resultsSection('컨텍스트 조정', meta, [
+      resultsList(dropped.map(item => label[item] || item), '조정 없음'),
+      detail.length ? guiEl('p', { class: 'gx-meta', text: detail.join(' · ') }) : null
+    ].filter(Boolean), true);
+  };
   const resultsMaterialsSections = usage => {
     if (!usage) return [guiEl('p', { class: 'gx-empty', text: '실행 자료 미조회' })];
     const refs = Array.isArray(usage.referenceMaterials) ? usage.referenceMaterials : [];
@@ -43788,7 +43958,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')})]),
             resultsDraftSection(draftToShow,'작성한 초안',true)
           ]),
-          guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsMemorySection(),...resultsMaterialsSections(usage)])
+          guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsContextDegradationSection(),resultsMemorySection(),...resultsMaterialsSections(usage)].filter(Boolean))
         ]));
       }
       for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');if(!panel)continue;panel.replaceChildren(guiEl('div',{class:'gx-status'+(info.className==='warn'||info.className==='danger'?' gx-status--warn':'')},[guiEl('strong',{text:info.label}),guiEl('span',{class:'gx-meta',text:[info.elapsed,trace?.model].filter(Boolean).join(' · ')||info.title})]),resultsAideView(trace));}
