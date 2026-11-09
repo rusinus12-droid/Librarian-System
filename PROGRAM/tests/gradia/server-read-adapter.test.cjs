@@ -1,53 +1,47 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {load}=require('./host.cjs');
-const acorn=require('../../tools/gradia/load-dev-dependency.cjs')('acorn');
-const {fixture:legacyFixture}=require('./evidence-bridge.test.cjs');
-function capture(source){
- const ast=acorn.parse(source,{ecmaVersion:'latest'});let target;
- function walk(n){if(!n||typeof n!=='object')return;if(n.type==='ArrowFunctionExpression'&&source.slice(n.start,n.end).includes('gradia.lib-server-read-consumer.v1')&&(!target||n.end-n.start<target.end-target.start))target=n;for(const value of Object.values(n))if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value);}walk(ast);assert.ok(target);
- return source.slice(0,target.start)+'(globalThis.__testCreateLibReadConsumer='+source.slice(target.start,target.end)+')'+source.slice(target.end);
-}
-async function fixture(options={}){
- let captures=0,checks=0,valid=true;const scope={scopeKey:'s',characterId:'c',chatId:'h'};
- const host=await load({transformSource:capture,testGlobals:{crypto:crypto.webcrypto}});
- const items=options.items||[{id:'m1',key:'k1',content:'historical evidence',source:{revision:1,turnRange:{start:1,end:5}}}];
- const packet={schema:'memory-suite.libra-read-session.v1',scope,readOnly:true,complete:true,items,evidenceRevision:'a'.repeat(64),dependencies:[],corpusBytes:items.reduce((n,i)=>n+Buffer.byteLength(i.content),0),maxCorpusBytes:options.maxCorpusBytes||4194304,dataInstanceId:'A'.repeat(32),resetEpoch:0};
- const client={schema:'memory-suite.libra-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async(s,o)=>{captures++;assert.deepEqual(JSON.parse(JSON.stringify(s)),scope);assert.equal(o.maxCorpusBytes,options.maxCorpusBytes||4194304);return {snapshot:packet,source:String(o?.source||'unified_engine'),assertCurrentSync:()=>{if(!valid)throw Error('changed');return true},assertCurrent:async()=>{checks++;if(!valid)throw Error('changed');return true}}}};
- const consumer=host.createLibReadConsumer({getBinding:()=>options.unbound?null:{client,scope,maxCorpusBytes:options.maxCorpusBytes||4194304},assertNativeScope:async()=>true,digest:async s=>crypto.createHash('sha256').update(s).digest('hex')});
- return {host,consumer,packet,client,counts:()=>({captures,checks}),invalidate:()=>valid=false};
-}
-test('production default requires connection; new binder is explicit and never persists credentials',async()=>{const h=await load();assert.equal(typeof h.plugin.bindLibReadOnlyClient,'function');assert.equal(h.plugin.getLibReadOnlyStatus().status,'unavailable');assert.equal(h.getCalls(),0);const f=await fixture({unbound:true});await assert.rejects(()=>f.consumer.beginRead({}),e=>e.code==='LIB_READ_CONNECTION_UNAVAILABLE');assert.equal(f.counts().captures,0);});
-test('4MiB default corpus is retained complete, prompt selection uses only whole bounded items',async()=>{const huge='x'.repeat(3*1024*1024),f=await fixture({items:[{id:'large',key:'a',content:huge,source:{revision:1}},{id:'small',key:'b',content:'SMALL_FULL',source:{revision:1}}]});const s=await f.consumer.beginRead({requestId:'r'});const e=await s.getEvidence();assert.equal(e.items.length,1);assert.equal(e.items[0].content,'SMALL_FULL');assert.equal(s.selection.corpusBytes,Buffer.byteLength(huge)+10);assert.equal(s.selection.omittedItems,1);assert.equal(s.selection.truncated,false);assert.equal(s.selection.reason,'complete_items_prompt_budget');assert.equal(f.counts().captures,1);assert.equal(f.host.getCalls(),0);await s.bindDraft('DRAFT');assert.equal(await s.finalizeDraft(),'DRAFT');});
-test('32MiB logical corpus accepted independently of escaped prompt overhead',async()=>{const f=await fixture({maxCorpusBytes:33554432,items:[{id:'big',key:'a',content:'x'.repeat(33554420),source:{revision:1}},{id:'small',key:'b',content:'ok',source:{revision:1}}]});const s=await f.consumer.beginRead({requestId:'r'});assert.equal(s.selection.corpusBytes,33554422);assert.equal((await s.getEvidence()).items[0].content,'ok');});
-test('one full item beyond the reference profile is unavailable, never clipped',async()=>{const f=await fixture({items:[{id:'big',key:'a',content:'x'.repeat(250000),source:{revision:1}}]});await assert.rejects(()=>f.consumer.beginRead({requestId:'r'}),e=>e.code==='LIB_READ_NO_COMPLETE_ITEM_FITS_PROMPT');assert.equal(f.host.getCalls(),0);});
-test('mutable provider objects cannot replace captured evidence; stale draft and cancellation fail',async()=>{const f=await fixture();const s=await f.consumer.beginRead({requestId:'r'});f.packet.items[0].content='FORGED';assert.equal((await s.getEvidence()).items[0].content,'historical evidence');await s.bindDraft('DRAFT');f.invalidate();await assert.rejects(()=>s.finalizeDraft(),e=>/^LIB_READ_/.test(e.code));const other=await fixture();const c=new AbortController();c.abort();await assert.rejects(()=>other.consumer.beginRead({requestId:'r',signal:c.signal}),e=>e.code==='LIB_READ_CANCELED');assert.equal(other.counts().captures,0);});
 
-async function pipelineFixture(options={}){
- const scope={scopeKey:'bound-scope',characterId:'character-library',chatId:'chat-evening'};let reads=0,current=true;
- const f=await legacyFixture({server:true,testGlobals:{crypto:crypto.webcrypto},expectedUrl:/^https:\/\/api\.openai\.com\/v1\/chat\/completions$/,api:{getCharacter:async()=>({chaId:scope.characterId,chats:[{id:scope.chatId}],chatPage:0})}});
- Object.assign(f.settings,{enableCharacterAide:false,enableWorldAide:false,enablePlotAide:false,mode:'lite',multiPipelineMode:options.mode||'lightweight'});
- f.settings.presets.offline={provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:options.context||128000,max_tokens:4096,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:1000,stream:false,...options.preset};
- const content='ACTUAL_SERVER_ITEM';
- const client={schema:'memory-suite.libra-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async(s,o)=>{reads++;return {source:String(o?.source||'unified_engine'),snapshot:{schema:'memory-suite.libra-read-session.v1',scope,readOnly:true,complete:true,items:[{id:'item',key:'record',content,source:{revision:1,turnRange:{start:1,end:5}}}],dependencies:[],evidenceRevision:'b'.repeat(64),corpusBytes:Buffer.byteLength(content),maxCorpusBytes:4194304,dataInstanceId:'A'.repeat(32),resetEpoch:0},assertCurrentSync:()=>{if(!current)throw Error('changed');return true},assertCurrent:async()=>{if(!current)throw Error('changed');return true}}}};
- f.host.plugin.bindLibReadOnlyClient(client,{scope});return {...f,getReads:()=>reads,setCurrent:v=>current=v};
+const scope={scopeKey:'s',characterId:'c',chatId:'h'};
+const digest=value=>crypto.createHash('sha256').update(value).digest('hex');
+async function fixture({readSource='plugin_ipc',selectOwnerRecall}={}){
+  const host=await load({
+    captureInternals:true,
+    transformSource:source=>source.replace(
+      'clearStructuredSettings, fullDraftStagePrompt, Runtime };',
+      'clearStructuredSettings, fullDraftStagePrompt, Runtime, createLibServerReadConsumer };'
+    ),
+    testGlobals:{crypto:crypto.webcrypto}
+  });
+  const client={schema:'memory-suite.memory-read-client.v1',pluginId:'serial_gradation_agents_for_rp',
+    openReadSession:async()=>{throw Error('legacy server read must not be opened');}};
+  const consumer=host.internals.createLibServerReadConsumer({
+    getBinding:()=>({client,scope,readSource}),
+    assertNativeScope:async()=>true,
+    digest,
+    selectOwnerRecall
+  });
+  return {host,consumer};
 }
-test('real production consumer enters unchanged SHADOW pipeline once without extra models',async()=>{const f=await pipelineFixture();const result=await f.run();assert.equal(result.ok,true);assert.equal(f.getReads(),1);assert.equal(f.prompts.length,1);assert.ok(JSON.stringify(f.prompts[0]).includes('ACTUAL_SERVER_ITEM'));assert.equal(f.host.plugin.getLibReadOnlyStatus().selection.selectedItems,1);result.closeEvidence();});
 
-for(const mutate of [false,true])test(`ID-less request uses running-owner recall and excludes absent peers; host mutation=${mutate}`,async()=>{
- const scope={scopeKey:'bound-scope',characterId:'character-library',chatId:'chat-evening'};
- const input=[{role:'user',content:'Open the cabinet.'},{role:'assistant',content:'The blue ledger rests on the upper shelf.'},{role:'user',content:'Where is the blue ledger?'}];
- const chat={id:scope.chatId,message:input.map((row,i)=>({role:row.role,chatId:'native-'+i,data:row.content}))},character={chaId:scope.characterId,chats:[chat],chatPage:0};
- const f=await legacyFixture({server:true,testGlobals:{crypto:crypto.webcrypto},api:{getCharacter:async()=>character,getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getChatFromIndex:async()=>chat},onModel:n=>{if(mutate&&n===1)chat.message[1].data='The ledger has moved to the lower shelf.';}});
- const owners=['libra','hayaku','flashback'],items=owners.map(owner=>({owner,id:owner+'-record',key:owner+'-key',content:owner.toUpperCase()+'_MEMORY_EVIDENCE',source:{namespace:owner,revision:1,turnRange:{start:1,end:1}}}));let reads=0;
- f.host.plugin.bindLibReadOnlyClient({schema:'memory-suite.memory-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async()=>{reads++;return {source:'unified_engine',snapshot:{schema:'memory-suite.memory-read-session.v1',scope,owners,readOnly:true,complete:true,items,evidenceRevision:'c'.repeat(64),corpusBytes:items.reduce((sum,row)=>sum+Buffer.byteLength(row.content),0),maxCorpusBytes:4194304},assertCurrent:async()=>true,assertCurrentSync:()=>true};}},{scope});
- if(mutate){await assert.rejects(()=>f.run(input),error=>/^LIB_READ_/.test(error.code));assert.equal(f.prompts.length,1);}
- else{const result=await f.run(input);assert.equal(result.ok,true);assert.equal(f.prompts.length,4);for(const prompt of f.prompts){assert.ok(JSON.stringify(prompt).includes('LIBRA_MEMORY_EVIDENCE'));for(const owner of ['hayaku','flashback'])assert.ok(!JSON.stringify(prompt).includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));assert.ok(JSON.stringify(prompt).includes('The blue ledger rests on the upper shelf.'));}result.closeEvidence();}
- assert.equal(reads,1);
+test('legacy unified-engine response reads are rejected before transport use',async()=>{
+  const f=await fixture({readSource:'unified_engine',selectOwnerRecall:async()=>({content:'unexpected'})});
+  await assert.rejects(()=>f.consumer.beginRead({requestId:'legacy'}),error=>error.code==='LIB_READ_SOURCE_UNSUPPORTED');
+  assert.equal(f.host.getCalls(),0);
 });
-test('actual provider body must fit known context and extra body overrides remain blocked',async()=>{for(const options of [{context:2048},{preset:{model:'unregistered-model',context_window:0,catalog_context_window:0,metadata_model_id:''}},{mode:'heavyweight',preset:{model:'unregistered-model',context_window:0,catalog_context_window:0,metadata_model_id:''}},{preset:{extra_body_json:'{"temperature":0.2}'}}]){const f=await pipelineFixture(options);await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));assert.equal(f.prompts.length,0);assert.equal(f.getReads(),1);}});
-test('qualified heavyweight SHADOW schema uses one captured read for analysis and draft',async()=>{const f=await pipelineFixture({mode:'heavyweight'});const result=await f.run();assert.equal(result.ok,true);assert.equal(f.getReads(),1);assert.equal(f.prompts.length,2);assert.ok(JSON.stringify(f.prompts[0]).includes('ACTUAL_SERVER_ITEM'));result.closeEvidence();});
-test('new server facade requires literal true from async and synchronous current checks',async()=>{
- for(const answer of [false,undefined,null,0,'true']){const f=await fixture(),open=f.client.openReadSession;f.client.openReadSession=async(...a)=>({...await open(...a),assertCurrent:async()=>answer});await assert.rejects(()=>f.consumer.beginRead({requestId:'r'}),e=>e.code==='LIB_READ_STALE');}
- const f=await fixture(),open=f.client.openReadSession;f.client.openReadSession=async(...a)=>({...await open(...a),assertCurrentSync:()=>false});const session=await f.consumer.beginRead({requestId:'r'});assert.throws(()=>session.assertLocalCurrent(),e=>e.code==='LIB_READ_STALE');
+
+test('plugin IPC requires the owner-selection contract and never opens the legacy client',async()=>{
+  const f=await fixture();
+  await assert.rejects(()=>f.consumer.beginRead({requestId:'missing-owner-contract'}),error=>error.code==='LIB_READ_CONNECTION_UNAVAILABLE');
+  assert.equal(f.host.getCalls(),0);
+});
+
+test('client schema cannot opt response reads into unified-engine transport',async()=>{
+  const f=await fixture({readSource:'plugin_ipc',selectOwnerRecall:async owner=>owner==='libra'
+    ?{content:'OWNER_SELECTED_MEMORY'}
+    :{absent:true,code:'LIB_READ_OWNER_UNAVAILABLE'}});
+  const session=await f.consumer.beginRead({requestId:'owner-selection'});
+  assert.equal(session.readSource,'plugin_ipc');
+  assert.equal((await session.getEvidence()).items[0].content,'OWNER_SELECTED_MEMORY');
+  assert.equal(f.host.getCalls(),0);
 });

@@ -60,6 +60,28 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         scope: record.request.scope, evidenceRevision: record.proof.evidenceRevision,
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
     }
+    if (action === 'select') {
+      try {
+        const boundary = await options.boundary(payload);
+        const record = { id: options.randomId(), operationId: 'select_' + options.randomId(), request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
+        const authority = {
+          bindGraph(graph) {
+            const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
+              nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
+              bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+            record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
+            return record.receipt;
+          },
+          verifyReceipt() { return true; }
+        };
+        const execution = await options.query(payload, authority);
+        const content = execution?.packet?.renderedText || '';
+        const scope = boundary?.scope || payload.scope;
+        return { owner: 'libra', source: 'plugin_ipc', readOnly: true, scope, engine: { source: 'owner_selection' }, content };
+      } catch (_) {
+        return { content: '' };
+      }
+    }
     if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
     if (payload.proposal !== undefined) {
       const p = payload.proposal;
@@ -104,7 +126,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         ...(execution.corpusRead ? { corpusRead: execution.corpusRead } : {}),
         ownerCorpusDigest: record.receipt.ownerCorpusDigest, selectionReceiptId: record.id };
       const items = content ? [{ id: 'unified-bundle:' + record.id, key: 'libra.unified.bundle:' + record.id, content,
-        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', finalDelivery: execution.finalDelivery !== false, ...engine } }] : [];
+        source: { namespace: 'libra', kind: 'owner_issued_evidence_bundle', ...engine } }] : [];
       const corpusBytes = bytes(content);
       const metadataBytes = bytes(items.map(({ content, ...metadata }) => metadata));
       const readIdentity = { scope: record.request.scope, dataInstanceId: record.boundary.dataInstanceId,

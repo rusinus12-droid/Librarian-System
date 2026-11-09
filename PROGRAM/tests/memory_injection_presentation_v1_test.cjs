@@ -509,7 +509,8 @@ test('Standalone, 2-product, and 3-product real beforeRequest hook combinations 
       const msgs = await host.f.control.hooks.beforeRequest([{ role: 'user', content: LIBRA_FIXTURE_QUOTE }], 'model');
       const sys = msgs.filter(m => m.role === 'system').map(m => m.content).join('\n');
       assert.match(sys, /\[LIBRA CLASSIC RECALL — CURRENT TURN ONLY\]/, `${mode}: classic header`);
-      assert.match(sys, /\[LIBRA_EVIDENCE consumer=classic/, `${mode}: evidence header`);
+      // User requested removal of [LIBRA_EVIDENCE consumer=classic ...] meta header
+      assert.doesNotMatch(sys, /\[LIBRA_EVIDENCE consumer=classic/, `${mode}: evidence header stripped`);
       assert.match(sys, /\[RELATIONSHIPS\]/, `${mode}: RELATIONSHIPS section`);
       assert.match(sys, /\[KNOWLEDGE\]/, `${mode}: KNOWLEDGE section`);
       assert.match(sys, /\[OPEN THREADS\]/, `${mode}: OPEN THREADS section`);

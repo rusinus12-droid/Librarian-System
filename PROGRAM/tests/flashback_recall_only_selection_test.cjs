@@ -52,21 +52,8 @@ const QUERY = '서재 계기판 바늘과 은빛 열쇠 고리 상태를 알려�
     const otherChat = await runtime.api._selectionTest.selectRecallPrompt(QUERY, () => {}, { recentChatTurns: 0 });
     assert.ok(otherChat.content.includes(PHRASE), 'a turn the recent chat does not show stays available');
 
-
-    await runtime.api._selectionTest.selectRecallPrompt(QUERY);
-    const shown = (await runtime.api.debugState()).lastRecall;
-    assert.equal(shown.gradia.status, 'selected', 'the selection is visible in Flashback');
-    assert.match(runtime.api._test.renderLastRecallPanel(shown, shown.scopeKey), /GRADIA에 전달 대기/);
-
-    runtime.api._selectionTest.noteGradiaAttach({ active: true, ttlMs: 60000 });
-    const compat = (await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u9', content: QUERY }], 'model')).map(row => String(row.content || '')).join('\n');
-    assert.ok(!compat.includes(PHRASE), 'GRADIA delivers the evidence in compatibility mode');
-    assert.equal((await runtime.api.debugState()).lastRecall.gradia.status, 'selected', 'the hook does not overwrite what was selected');
-    // An announcement nobody renews expires by itself, as when GRADIA stops without saying so.
-    runtime.api._selectionTest.noteGradiaAttach({ active: true, ttlMs: 20 });
-    await new Promise(resolve => setTimeout(resolve, 40));
-    const restored = (await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u9', content: QUERY }], 'model')).map(row => String(row.content || '')).join('\n');
-    assert.ok(restored.includes(PHRASE), 'without the announcement Flashback works alone again');
+    const hookAfterSelect = (await runtime.api._selectionTest.beforeRequest([{ role: 'user', chatId: 'u9', content: QUERY }], 'model')).map(row => String(row.content || '')).join('\n');
+    assert.ok(hookAfterSelect.includes(PHRASE), 'Flashback hook always runs its own recall and direct injection independently');
   } finally { await runtime.dispose(); }
   console.log('flashback_recall_only_selection_test: PASS');
   process.exit(0);

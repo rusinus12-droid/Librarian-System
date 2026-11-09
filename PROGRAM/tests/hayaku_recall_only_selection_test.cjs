@@ -31,20 +31,7 @@ const PACKET_INSTRUCTIONS = /HAYAKU_STATE_PACKET_START|SIDE-WRITE FINAL REMINDER
     const outgoing = await runtime.callBeforeRequest(request(), 'model');
     const body = outgoing.map(row => String(row.content || '')).join('\n');
     assert.match(body, PACKET_INSTRUCTIONS, 'the response model still gets the packet instructions');
-    assert.ok(body.includes(selected.recallPrompt), 'without GRADIA the hook delivers the same recall prompt itself');
-
-    // While GRADIA reads HAYAKU the hook still runs, but neither searches nor injects recall.
-    runtime.hayaku._test.noteHayakuGradiaAttach({ active: true, ttlMs: 60000 });
-    const compat = (await runtime.callBeforeRequest(request(), 'model')).map(row => String(row.content || '')).join('\n');
-    assert.ok(!compat.includes(FACT), 'GRADIA delivers the recall in compatibility mode');
-    assert.match(compat, PACKET_INSTRUCTIONS, 'packet instructions are always sent');
-    assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.gradiaCompat, true);
-    assert.equal(runtime.hayaku.lastDebug().lastBeforeRequest.stages.search < 50, true);
-    // An announcement nobody renews expires by itself, as when GRADIA stops without saying so.
-    runtime.hayaku._test.noteHayakuGradiaAttach({ active: true, ttlMs: 20 });
-    await new Promise(resolve => setTimeout(resolve, 40));
-    const restored = (await runtime.callBeforeRequest(request(), 'model')).map(row => String(row.content || '')).join('\n');
-    assert.ok(restored.includes(FACT), 'without the announcement HAYAKU works alone again');
+    assert.ok(body.includes(selected.recallPrompt), 'the hook always delivers its own recall prompt independently');
   } finally { await runtime.dispose(); }
   console.log('hayaku_recall_only_selection_test: PASS');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

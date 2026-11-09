@@ -8,7 +8,9 @@ const CAPTURE_ROUTE = '/v1/libra/read-session/capture';
 const CURRENT_ROUTE = '/v1/libra/read-session/current';
 const MiB = 1024 ** 2;
 const LIMITS = Object.freeze({ defaultCorpusBytes: 4 * MiB, maxCorpusBytes: 32 * MiB,
-  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: MiB,
+  // Metadata is each stored record without its text. The per-item cap also widens each item's
+  // raw allowance, so it stays small; the total leaves room for large legitimate corpora.
+  manifestBytes: MiB, itemMetadataBytes: 64 * 1024, totalMetadataBytes: 4 * MiB,
   maxRefs: 4096, currentRequestBytes: 4 * MiB });
 const fail = (message, statusCode = 409) => { throw Object.assign(new Error(message), { statusCode }); };
 const object = value => !!value && typeof value === 'object' && !Array.isArray(value);

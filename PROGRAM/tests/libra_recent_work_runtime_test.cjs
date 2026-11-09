@@ -23,7 +23,7 @@ const partOf = (overview, id) => jobOf(overview, 'embedding').parts.find(part =>
     const f = await fixture();
     try {
       const empty = await f.r.api.getRecentWorkOverview();
-      assert.deepEqual([...empty.jobs].map(job => job.id), ['canonical', 'micro', 'lens', 'state', 'embedding', 'gradia']);
+      assert.deepEqual([...empty.jobs].map(job => job.id), ['canonical', 'micro', 'lens', 'state', 'embedding']);
       assert.equal(jobOf(empty, 'embedding').status, 'off', 'embedding off is reported as off, not as healthy');
       await f.r.api.saveLibraProviderConfig({ responseFamily: 'libra', libraResponseMode: 'classic' });
       await f.r.api.saveEmbeddingSettings(config);
@@ -83,7 +83,7 @@ const partOf = (overview, id) => jobOf(overview, 'embedding').parts.find(part =>
       assert.ok(dialog.querySelector('.kv'), 'the status values stay');
       const tabs = () => [...dialog.querySelectorAll('[data-execution-logs] [role="tab"]')];
       assert.deepEqual(tabs().map(tab => tab.textContent), ['최근 작업', '작업 로그', '오류']);
-      assert.deepEqual([...dialog.querySelectorAll('[data-recent-work-job]')].map(node => node.dataset.recentWorkJob), ['canonical', 'micro', 'lens', 'state', 'embedding', 'gradia']);
+      assert.deepEqual([...dialog.querySelectorAll('[data-recent-work-job]')].map(node => node.dataset.recentWorkJob), ['canonical', 'micro', 'lens', 'state', 'embedding']);
       tabs()[1].click();
       await pause(300);
       assert.ok(dialog.querySelector('[data-execution-work-log="all"]'), 'the log merges every receipt kind by default');

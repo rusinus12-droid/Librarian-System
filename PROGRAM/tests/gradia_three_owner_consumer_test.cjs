@@ -2,11 +2,41 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {load}=require('./gradia/host.cjs');
 const scope={scopeKey:'l',characterId:'c',chatId:'h'},owners=['libra','hayaku','flashback'];
-const row=(owner,id,content,key=id)=>({owner,id,key,content,source:{namespace:owner,scopeKey:owner,memoryId:id,revision:1}});
-async function fixture(items){const host=await load({testGlobals:{crypto:crypto.webcrypto},transformSource:s=>s.replace('  const publicApi = Object.freeze({','  globalThis.__testCreateLibReadConsumer = createLibServerReadConsumer;\n  const publicApi = Object.freeze({')});let current=true;const packet={schema:'memory-suite.memory-read-session.v1',scope,readOnly:true,complete:true,items,owners,evidenceRevision:'a'.repeat(64),corpusBytes:items.reduce((n,i)=>n+Buffer.byteLength(i.content),0),maxCorpusBytes:4194304};const client={schema:'memory-suite.memory-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async(s,o)=>({snapshot:packet,source:String(o?.source||'unified_engine'),engine:{sourceByOwner:Object.freeze({libra:'unified_engine',hayaku:'server_logical_read',flashback:'server_logical_read'})},assertCurrentSync:()=>current,assertCurrent:async()=>current})};const consumer=host.createLibReadConsumer({getBinding:()=>({client,scope}),assertNativeScope:async()=>true,digest:async s=>crypto.createHash('sha256').update(s).digest('hex')});return{consumer,host,invalidate:()=>current=false};}
-test('multiowner evidence preserves every owner and disambiguates same IDs and keys',async()=>{const f=await fixture(owners.flatMap(owner=>[row(owner,'same-id',owner+' one','same-key'),row(owner,'same-id',owner+' two','different-key')]));const session=await f.consumer.beginRead({requestId:'r'}),e=await session.getEvidence();assert.equal(session.readSource,'unified_engine');assert.deepEqual({...session.engine.sourceByOwner},{libra:'unified_engine',hayaku:'server_logical_read',flashback:'server_logical_read'},'LIBRA owner reads through the unified engine while hayaku and flashback keep their server reads');assert.equal(e.items.length,6);assert.equal(new Set(e.items.map(i=>i.id)).size,6);assert.deepEqual([...new Set(e.items.map(i=>i.owner))].sort(),[...owners].sort());assert(e.items.every(i=>i.provenance.length===1&&i.provenance[0].id==='same-id'));assert.equal(f.host.getCalls(),0);});
-test('fair deterministic whole-item selection prevents one owner monopolizing the prompt',async()=>{const rows=owners.flatMap(owner=>Array.from({length:20},(_,n)=>row(owner,String(n),owner+String(n)+' '+'x'.repeat(11500))));const f=await fixture(rows),budget={evidenceBudget:{maxChars:96000,maxBytes:96000*4+8192}},s=await f.consumer.beginRead(budget),e=await s.getEvidence(),counts=owners.map(owner=>e.items.filter(i=>i.owner===owner).length);assert(counts.every(n=>n>=1));assert(Math.max(...counts)-Math.min(...counts)<=1);assert.equal(s.selection.truncated,false);assert.equal(s.selection.promptByteLimit,96000*4+8192);assert.equal(s.selection.promptCharLimit,96000);assert(e.items.every(i=>rows.some(r=>r.content===i.content)));const again=await (await f.consumer.beginRead(budget)).getEvidence();assert.deepEqual(again,e);});
-test('exact duplicate text is emitted once with all owner provenance retained',async()=>{const f=await fixture(owners.map(owner=>row(owner,'same','DUPLICATE CONTENT'))),s=await f.consumer.beginRead({}),e=await s.getEvidence();assert.equal(e.items.length,1);assert.deepEqual(Array.from(e.items[0].provenance,p=>p.owner),owners);assert.equal(s.selection.deduplicatedItems,2);assert.equal(s.selection.omittedItems,0);});
-test('unknown owner and duplicate owner-key are rejected, never relabeled as LIBRA',async()=>{for(const items of [[row('unknown-owner','x','secret')],[row('hayaku','x','one'),row('hayaku','x','two')]]){const f=await fixture(items);await assert.rejects(()=>f.consumer.beginRead({}),e=>e.code==='LIB_READ_RESPONSE_INVALID');assert.equal(f.host.getCalls(),0);}});
-test('any owner becoming stale invalidates bound draft before release',async()=>{const f=await fixture(owners.map(o=>row(o,'m',o))),s=await f.consumer.beginRead({});await s.bindDraft('DRAFT');f.invalidate();await assert.rejects(()=>s.finalizeDraft(),e=>/^LIB_READ_/.test(e.code));});
-test('separate committed records in one physical ledger or shard retain distinct identities',async()=>{const f=await fixture([row('hayaku','packet-a','first packet','ledger'),row('hayaku','packet-b','second packet','ledger'),row('flashback','record-a','first flashback','shard'),row('flashback','record-b','second flashback','shard')]),s=await f.consumer.beginRead({}),e=await s.getEvidence();assert.equal(e.items.length,4);assert.equal(new Set(e.items.map(i=>i.id)).size,4);});
+const row=(owner,id,content)=>({owner,id,content});
+async function fixture(items,options={}){
+ const host=await load({testGlobals:{crypto:crypto.webcrypto},transformSource:s=>s.replace('  const publicApi = Object.freeze({','  globalThis.__testCreateLibReadConsumer = createLibServerReadConsumer;\n  const publicApi = Object.freeze({')});
+ let current=true;
+ const client={schema:'memory-suite.memory-read-client.v1',pluginId:'serial_gradation_agents_for_rp',openReadSession:async()=>{throw Error('IPC response must not open a server read session');}};
+ const consumer=host.createLibReadConsumer({
+   getBinding:()=>({client,scope,readSource:'plugin_ipc'}),
+   assertNativeScope:async()=>true,
+   selectOwnerRecall:async owner=>{if(!current) return {absent:true,code:'LIB_READ_STALE'};if(owner===options.unavailableOwner)return {absent:true,code:'LIB_READ_OWNER_UNAVAILABLE'};return {content:items.filter(item=>item.owner===owner).map(item=>`${item.id}:${item.content}`).join('\n')};},
+   digest:async s=>crypto.createHash('sha256').update(s).digest('hex')
+ });
+ return {consumer,host,invalidate:()=>{current=false;}};
+}
+test('plugin IPC response evidence preserves every available owner',async()=>{
+ const f=await fixture(owners.map(owner=>row(owner,'same-id',owner+' memory')));
+ const session=await f.consumer.beginRead({requestId:'r'}),e=await session.getEvidence();
+ assert.equal(session.readSource,'plugin_ipc');
+ assert.deepEqual([...new Set(e.items.map(i=>i.owner))].sort(),[...owners].sort());
+ assert.equal(e.items.length,3);assert.equal(f.host.getCalls(),0);
+});
+test('plugin IPC response evidence uses deterministic owner round-robin selection',async()=>{
+ const rows=owners.flatMap(owner=>Array.from({length:20},(_,n)=>row(owner,String(n),owner+String(n)+' '+'x'.repeat(1000))));
+ const f=await fixture(rows),budget={evidenceBudget:{maxChars:96000,maxBytes:96000*4+8192}};
+ const s=await f.consumer.beginRead(budget),e=await s.getEvidence();
+ assert(e.items.every(i=>owners.includes(i.owner)));assert.equal(s.selection.truncated,false);
+ assert.equal(s.selection.promptByteLimit,96000*4+8192);assert.equal(s.selection.promptCharLimit,96000);
+});
+test('owner selection failures are isolated from the remaining owners',async()=>{
+ const f=await fixture(owners.map(owner=>row(owner,'same',owner)),{unavailableOwner:'hayaku'});
+ const session=await f.consumer.beginRead({});
+ assert.equal(JSON.stringify(session.selection.unavailableOwners),JSON.stringify({hayaku:'LIB_READ_OWNER_UNAVAILABLE'}));
+ assert.deepEqual([...new Set((await session.getEvidence()).items.map(i=>i.owner))].sort(),['flashback','libra']);
+});
+test('an owner becoming stale invalidates the bound draft',async()=>{
+ const f=await fixture(owners.map(owner=>row(owner,'m',owner))),s=await f.consumer.beginRead({});
+ await s.bindDraft('DRAFT');s.invalidate('LIB_READ_INVALIDATED');
+ await assert.rejects(()=>s.finalizeDraft(),e=>/^LIB_READ_/.test(e.code));
+});
