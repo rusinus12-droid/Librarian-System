@@ -37636,7 +37636,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         try { url = normalizeLibReadUrl(saved.url); } catch (_) { url = String(saved.url || ''); }
-        readSource = 'plugin_ipc';
+        // 'off' is a user choice to keep, not a legacy source to migrate.
+        readSource = saved.readSource === 'off' ? 'off' : 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         // Consent is the user's explicit choice to let GRADIA read memory, not a server address:
         // with plugin IPC the URL carries no authority, so an old or malformed value cannot block.
