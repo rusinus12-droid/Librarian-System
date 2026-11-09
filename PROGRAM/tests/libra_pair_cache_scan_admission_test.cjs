@@ -40,6 +40,10 @@ test('global pair revision budget bounds retained projections across scopes',asy
  const first=chat(8,'global-a'),second=chat(8,'global-b');for(const row of [...first.message,...second.message])row.data='abcdefgh';
  build(r,first);build(r,second);const diagnostics=r.api.getPairRevisionCacheDiagnostics();
  assert.equal(diagnostics.maxTotalRetainedChars,128);assert.ok(diagnostics.stats.retainedChars<=128);
+ const budget=r.api.inspectResidentMemoryBudget();
+ assert.equal(budget.schema,'libra.resident_memory_budget.v1');
+ assert.equal(budget.maxBytes,128*1024*1024);
+ assert.equal(budget.totalBytes,budget.byCache.volatileGraph+budget.byCache.pairRevision+budget.byCache.verifiedRead+budget.byCache.linkIndexes);
 }finally{await r.cleanup();}});
 test('removed carrier changes remain observations even with unchanged visible body',async()=>{const r=await harness();try{
  const c=chat(2);c.message[1].data='Visible';const first=build(r,c);c.message[1].data='Visible<img src="local" />';const b=stats(r),second=build(r,c),d=delta(b,stats(r));assert.equal(d.misses,1);assert.notDeepEqual(second[0].assistant.rawPayloadDigests,first[0].assistant.rawPayloadDigests);assert.equal(second[0].assistant.text,'Visible');assert.equal(second[0].assistant.internalCarrierRemoved,true);

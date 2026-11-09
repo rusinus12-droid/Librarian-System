@@ -33842,6 +33842,10 @@ function createLibraReadonlySourceContext(owner) {
       deletingScopes: new Set(),
       evidenceLinkIndexCache: new Map(),
       loreLinkIndexCache: new Map(),
+      evidenceLinkIndexCacheBytes: 0,
+      loreLinkIndexCacheBytes: 0,
+      residentBudgetStats: { evictions: 0, lastEvictionOwner: '', lastEvictionAt: 0 },
+      residentSequence: 0,
       memoryGraphPages: null,
       memoryGraphStore: null,
       memoryGraphStoreSerial: 0,
@@ -35988,6 +35992,7 @@ function createLibraReadonlySourceContext(owner) {
       verifiedReadStats.bytes = verifiedReadCacheBytes;
       verifiedReadStats.entries = verifiedReadCache.size;
     };
+    const touchVerifiedRead = row => { if (row) row.residentOrder = ++state.residentSequence; return row; };
     const pruneVerifiedReads = () => {
       const now = Date.now();
       for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
@@ -36002,7 +36007,8 @@ function createLibraReadonlySourceContext(owner) {
       if (bytes > VERIFIED_READ_CACHE_ENTRY_BYTES) return;
       while (verifiedReadCache.size >= VERIFIED_READ_CACHE_MAX || verifiedReadCacheBytes + bytes > VERIFIED_READ_CACHE_MAX_BYTES)
         deleteVerifiedRead(verifiedReadCache.keys().next().value);
-      verifiedReadCache.set(key, { signature, at: Date.now(), empty, value: empty ? null : clone(value), serverPin, localRaw:localWitness,serverRaw, bytes });
+      ensureResidentBudget(bytes, 'verifiedRead');
+      verifiedReadCache.set(key, touchVerifiedRead({ signature, at: Date.now(), empty, value: empty ? null : clone(value), serverPin, localRaw:localWitness,serverRaw, bytes }));
       verifiedReadCacheBytes += bytes;
       verifiedReadStats.bytes = verifiedReadCacheBytes;
       verifiedReadStats.entries = verifiedReadCache.size;
@@ -38825,18 +38831,23 @@ function createLibraReadonlySourceContext(owner) {
       const stats = state.pairRevisionCacheStats;
       while (Number(stats.retainedChars || 0) > PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS
         || residentMemoryBudgetSnapshot().totalBytes > LIBRA_RESIDENT_MEMORY_MAX_BYTES) {
-        let target = null;
+        let target = null, targetKey = null, oldestOrder = Infinity;
         for (const cache of state.pairRevisionCaches.values()) {
-          if (cache?.entries?.size) { target = cache; break; }
+          for (const [key, entry] of cache?.entries || []) {
+            const order = Number(entry?.residentOrder || 0);
+            if (order < oldestOrder) { target = cache; targetKey = key; oldestOrder = order; }
+          }
         }
         if (!target) break;
-        const oldestKey = target.entries.keys().next().value;
-        const entry = target.entries.get(oldestKey);
-        target.entries.delete(oldestKey);
+        const entry = target.entries.get(targetKey);
+        target.entries.delete(targetKey);
         const chars = Math.max(0, Number(entry?.retainedChars || 0) || 0);
         target.retainedChars = Math.max(0, target.retainedChars - chars);
         stats.retainedChars = Math.max(0, Number(stats.retainedChars || 0) - chars);
         stats.evictions += 1;
+        state.residentBudgetStats.evictions += 1;
+        state.residentBudgetStats.lastEvictionOwner = 'pairRevision';
+        state.residentBudgetStats.lastEvictionAt = Date.now();
       }
     };
     const pairRevisionProjectionWithCache = (raw, index, cache, sourceTagKey, observation = null) => {
@@ -38855,6 +38866,7 @@ function createLibraReadonlySourceContext(owner) {
         cache.entries.set(keyValue, entry);
         entry.index = index;
         entry.lastSeenAt = Date.now();
+        entry.residentOrder = ++state.residentSequence;
         state.pairRevisionCacheStats.hits += 1;
         return entry;
       }
@@ -38883,12 +38895,13 @@ function createLibraReadonlySourceContext(owner) {
         sanitizedTextDigest: digest({ role, body }),
         sanitizationTransformed: rawComparable.type !== 'string' || rawComparable.value !== body,
         internalCarrierRemoved: liveTailRawContainsRemovedCarrier(rawComparable.value),
-        signature, retainedChars, lastSeenAt: Date.now()
+        signature, retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
       };
       // A full observation must read all retained entries before admitting
       // misses. Otherwise a missing prefix evicts the still-unread suffix.
       // One oversized projection is usable for this read, never a cache flush.
       if (observation || retainedChars > PAIR_REVISION_CACHE_MAX_RETAINED_CHARS) return entry;
+      ensureResidentBudget(retainedChars * 2, 'pairRevision');
       cache.entries.set(keyValue, entry);
       cache.retainedChars += retainedChars;
       state.pairRevisionCacheStats.retainedChars += retainedChars;
@@ -67263,8 +67276,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const libraDerivedCacheRecovery = MemorySuiteHealthRecovery.ownerAdapter({ owner: 'LIBRA', snapshot: libraHealthSnapshot,
       clear: scopeKey => {
         state.recallCatalogCache?.delete(scopeKey);
-        state.evidenceLinkIndexCache?.delete(scopeKey);
-        state.loreLinkIndexCache?.delete(scopeKey);
+        deleteLinkIndexCache(state.evidenceLinkIndexCache, scopeKey);
+        deleteLinkIndexCache(state.loreLinkIndexCache, scopeKey);
         state.memoryGraphPages?.invalidate();
         state.memoryGraphCompiler?.invalidateAll();
       },
@@ -69205,15 +69218,38 @@ function mountMemorySuiteReanalysisReview(container,config) {
       buildMs: Number(index?.status?.buildMs || 0), builtAt: string(index?.status?.builtAt || ''),
       providerCalls: 0, llmCalls: 0
     });
+    const linkIndexBytes = index => 2 * JSON.stringify(index ?? null).length;
+    const linkIndexCacheBytes = cache => cache === state.evidenceLinkIndexCache
+      ? state.evidenceLinkIndexCacheBytes : state.loreLinkIndexCacheBytes;
+    const setLinkIndexCache = (cache, scopeKey, index) => {
+      const bytes = linkIndexBytes(index), previous = cache.get(scopeKey);
+      if (previous) {
+        const key = cache === state.evidenceLinkIndexCache ? 'evidenceLinkIndexCacheBytes' : 'loreLinkIndexCacheBytes';
+        state[key] = Math.max(0, state[key] - linkIndexBytes(previous));
+        cache.delete(scopeKey);
+      }
+      ensureResidentBudget(bytes, cache === state.evidenceLinkIndexCache ? 'evidenceLink' : 'loreLink');
+      cache.set(scopeKey, index);
+      const key = cache === state.evidenceLinkIndexCache ? 'evidenceLinkIndexCacheBytes' : 'loreLinkIndexCacheBytes';
+      state[key] += bytes;
+    };
+    const deleteLinkIndexCache = (cache, scopeKey) => {
+      const previous = cache.get(scopeKey);
+      if (!previous) return;
+      const key = cache === state.evidenceLinkIndexCache ? 'evidenceLinkIndexCacheBytes' : 'loreLinkIndexCacheBytes';
+      state[key] = Math.max(0, state[key] - linkIndexBytes(previous));
+      cache.delete(scopeKey);
+    };
     const trimLinkIndexCache = cache => {
-      let bytes = 0;
-      for (const index of cache.values()) bytes += 2 * JSON.stringify(index ?? null).length;
+      let bytes = linkIndexCacheBytes(cache);
       while (cache.size > LINK_INDEX_CACHE_MAX_SCOPES || bytes > LINK_INDEX_CACHE_MAX_BYTES) {
-        const key = cache.keys().next().value;
-        if (key == null) break;
-        const index = cache.get(key);
-        cache.delete(key);
-        bytes = Math.max(0, bytes - 2 * JSON.stringify(index ?? null).length);
+        const scopeKey = cache.keys().next().value;
+        if (scopeKey == null) break;
+        deleteLinkIndexCache(cache, scopeKey);
+        bytes = linkIndexCacheBytes(cache);
+        state.residentBudgetStats.evictions += 1;
+        state.residentBudgetStats.lastEvictionOwner = cache === state.evidenceLinkIndexCache ? 'evidenceLink' : 'loreLink';
+        state.residentBudgetStats.lastEvictionAt = Date.now();
       }
     };
 
@@ -69228,7 +69264,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const stored = cached && string(cached.signature || '') === signature ? cached : await storage.getJson(key.evidenceLinkIndex(scope), null);
       if (!force && stored && string(stored.signature || '') === signature && stored.schema === EVIDENCE_LINK_INDEX_SCHEMA) {
         stored.status = { ...asObject(stored.status), persisted: true };
-        state.evidenceLinkIndexCache.set(scopeKey, stored);
+        setLinkIndexCache(state.evidenceLinkIndexCache, scopeKey, stored);
         trimLinkIndexCache(state.evidenceLinkIndexCache);
         Runtime.lastEvidenceLinkIndexDiagnostics = { ...evidenceLinkIndexDiagnostics(stored), source: 'cache_or_storage' };
         return stored;
@@ -69248,7 +69284,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       }
       index.status.persisted = persisted;
-      state.evidenceLinkIndexCache.set(scopeKey, index);
+      setLinkIndexCache(state.evidenceLinkIndexCache, scopeKey, index);
       trimLinkIndexCache(state.evidenceLinkIndexCache);
       Runtime.lastEvidenceLinkIndexDiagnostics = { ...evidenceLinkIndexDiagnostics(index), source: 'rebuilt' };
       return index;
@@ -69573,7 +69609,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           try { await storage.setJson(key.loreLinkIndex(scope), stored); persisted = true; } catch (_) { persisted = false; }
         }
         stored.status = { ...asObject(stored.status), persisted };
-        state.loreLinkIndexCache.set(scopeKey, stored);
+        setLinkIndexCache(state.loreLinkIndexCache, scopeKey, stored);
         trimLinkIndexCache(state.loreLinkIndexCache);
         Runtime.lastLoreLinkIndexDiagnostics = { ...loreLinkIndexDiagnostics(stored), source: 'cache_or_storage' };
         return stored;
@@ -69589,7 +69625,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         try { await storage.setJson(key.loreLinkIndex(scope), index); persisted = true; } catch (_) { persisted = false; }
       }
       index.status.persisted = persisted;
-      state.loreLinkIndexCache.set(scopeKey, index);
+      setLinkIndexCache(state.loreLinkIndexCache, scopeKey, index);
       trimLinkIndexCache(state.loreLinkIndexCache);
       Runtime.lastLoreLinkIndexDiagnostics = { ...loreLinkIndexDiagnostics(index), source: 'rebuilt' };
       return index;
@@ -69657,7 +69693,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       };
       next.mappingDigest = stableDraftHash(JSON.stringify({ removals: next.removals, confirmed: next.confirmed }));
       await storage.setJson(key.loreLinkMapping(scope), next);
-      state.loreLinkIndexCache.delete(string(scope.scopeKey || ''));
+      deleteLinkIndexCache(state.loreLinkIndexCache, string(scope.scopeKey || ''));
       return next;
     };
 
@@ -77439,7 +77475,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const keyBytes = volatileUtf8Bytes(key), valueBytes = volatileUtf8Bytes(value);
         const previous = store.has(key) ? keyBytes + volatileUtf8Bytes(store.get(key)) : 0;
         const nextBytes = retainedBytes - previous + keyBytes + valueBytes;
-        if (nextBytes > maxBytes) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_LIMIT');
+        const allowed = typeof maxBytes === 'function' ? maxBytes(nextBytes) : nextBytes <= maxBytes;
+        if (!allowed) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_LIMIT');
         retainedBytes = nextBytes;
         set(key, value);
         return store;
@@ -77466,15 +77503,69 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const graphBytes = volatileStoreBytes(graphStore);
       const pairBytes = Math.max(0, Number(state.pairRevisionCacheStats?.retainedChars || 0) * 2);
       const verifiedBytes = Math.max(0, Number(state.verifiedReadCacheStats?.bytes || 0));
-      const linkBytes = [state.evidenceLinkIndexCache, state.loreLinkIndexCache].reduce((total, cache) => {
-        for (const index of cache?.values?.() || []) total += 2 * JSON.stringify(index ?? null).length;
-        return total;
-      }, 0);
+      const linkBytes = Math.max(0, Number(state.evidenceLinkIndexCacheBytes || 0))
+        + Math.max(0, Number(state.loreLinkIndexCacheBytes || 0));
       return {
         maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
         totalBytes: graphBytes + pairBytes + verifiedBytes + linkBytes,
         byCache: { volatileGraph: graphBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
       };
+    }
+    function evictOldestVerifiedRead() {
+      let key = null, order = Infinity;
+      for (const [candidate, row] of verifiedReadCache) {
+        if (Number(row?.residentOrder || 0) < order) { key = candidate; order = Number(row?.residentOrder || 0); }
+      }
+      if (key == null) return false;
+      deleteVerifiedRead(key);
+      state.residentBudgetStats.evictions += 1;
+      state.residentBudgetStats.lastEvictionOwner = 'verifiedRead';
+      state.residentBudgetStats.lastEvictionAt = Date.now();
+      return true;
+    }
+    function evictOldestPairRevision() {
+      let target = null, key = null, order = Infinity;
+      for (const cache of state.pairRevisionCaches.values()) for (const [candidate, row] of cache.entries || []) {
+        if (Number(row?.residentOrder || 0) < order) { target = cache; key = candidate; order = Number(row?.residentOrder || 0); }
+      }
+      if (!target) return false;
+      const entry = target.entries.get(key);
+      target.entries.delete(key);
+      const chars = Math.max(0, Number(entry?.retainedChars || 0) || 0);
+      target.retainedChars = Math.max(0, target.retainedChars - chars);
+      state.pairRevisionCacheStats.retainedChars = Math.max(0, Number(state.pairRevisionCacheStats.retainedChars || 0) - chars);
+      state.pairRevisionCacheStats.evictions += 1;
+      state.residentBudgetStats.evictions += 1;
+      state.residentBudgetStats.lastEvictionOwner = 'pairRevision';
+      state.residentBudgetStats.lastEvictionAt = Date.now();
+      return true;
+    }
+    function evictOldestLinkIndex() {
+      let cache = null, key = null;
+      for (const candidate of [state.evidenceLinkIndexCache, state.loreLinkIndexCache]) {
+        const candidateKey = candidate.keys().next().value;
+        if (candidateKey != null) { cache = candidate; key = candidateKey; break; }
+      }
+      if (!cache) return false;
+      deleteLinkIndexCache(cache, key);
+      state.residentBudgetStats.evictions += 1;
+      state.residentBudgetStats.lastEvictionOwner = cache === state.evidenceLinkIndexCache ? 'evidenceLink' : 'loreLink';
+      state.residentBudgetStats.lastEvictionAt = Date.now();
+      return true;
+    }
+    function ensureResidentBudget(requiredBytes, protectedOwner = '') {
+      const required = Math.max(0, Number(requiredBytes) || 0);
+      while (residentMemoryBudgetSnapshot().totalBytes + required > LIBRA_RESIDENT_MEMORY_MAX_BYTES) {
+        if (protectedOwner !== 'verifiedRead' && evictOldestVerifiedRead()) continue;
+        if (protectedOwner !== 'pairRevision' && evictOldestPairRevision()) continue;
+        if (protectedOwner !== 'evidenceLink' && protectedOwner !== 'loreLink' && evictOldestLinkIndex()) continue;
+        if (protectedOwner === 'verifiedRead' && evictOldestVerifiedRead()) continue;
+        if (protectedOwner === 'pairRevision' && evictOldestPairRevision()) continue;
+        if (protectedOwner === 'evidenceLink' && evictOldestLinkIndex()) continue;
+        if (protectedOwner === 'loreLink' && evictOldestLinkIndex()) continue;
+        throw new Error('LIBRA_RESIDENT_MEMORY_LIMIT');
+      }
+      return true;
     }
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
@@ -77513,7 +77604,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const basis = volatileState.basis && volatileState.basisScopeKey === targetScopeKey && volatileState.freshChars
             && volatileStoreChars(volatileState.basis) <= volatileState.freshChars * 3
             && volatileStoreBytes(volatileState.basis) <= VOLATILE_CORPUS_MAX_BASIS_BYTES ? volatileState.basis : null;
-          const store = createVolatileStore(basis || [], VOLATILE_CORPUS_MAX_RETAINED_BYTES), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
+          const otherResidentBytes = residentMemoryBudgetSnapshot().totalBytes - volatileStoreBytes(volatileState.store);
+          const store = createVolatileStore(basis || [], nextBytes => nextBytes <= VOLATILE_CORPUS_MAX_RETAINED_BYTES
+            && otherResidentBytes + nextBytes <= LIBRA_RESIDENT_MEMORY_MAX_BYTES), startedAt = Date.now(), sourceWrites = volatileState.sourceWrites || 0;
           buildStore = store;
           const result = await buildMemoryGraphCorpusInto({ expectedScopeKey: targetScopeKey }, store, () => {
           if (auxiliaryReanalysisRunning || state.currentRun || state.canonicalJobPromise || state.microJobs.size > 0
@@ -100615,6 +100708,8 @@ advanced
       LibraMemoryCore.state.branchAuditInFlight?.clear?.();
       LibraMemoryCore.state.evidenceLinkIndexCache?.clear?.();
       LibraMemoryCore.state.loreLinkIndexCache?.clear?.();
+      LibraMemoryCore.state.evidenceLinkIndexCacheBytes = 0;
+      LibraMemoryCore.state.loreLinkIndexCacheBytes = 0;
       LibraMemoryCore.state.storyArcRebuildInFlight?.clear?.();
       LibraMemoryCore.state.bootstrapReferenceCache?.clear?.();
       LibraMemoryCore.state.outputListenerRegistered = false;
