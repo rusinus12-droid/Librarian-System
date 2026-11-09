@@ -39433,7 +39433,17 @@ const MemorySuiteHealthRecovery = (() => {
   };
   const reconcileStaleEmbeddingAttemptsOnce = async (options = {}) => {
     if (Runtime.unloaded) return { ok: false, reason: 'unloaded', settled: 0, reset: 0 };
-    const boundary = await readEmbeddingWorkBoundary(options).catch(() => null);
+    // A boundary read can fail for a transient reason (slow server transport, FLASHBACK_WRITER_BUSY).
+    // Swallowing it as "no scope" hid both the retry and the real cause; keep the code so the wrapper
+    // can retry and the debug export shows why nothing was settled.
+    let boundary = null;
+    try {
+      boundary = await readEmbeddingWorkBoundary(options);
+    } catch (error) {
+      throw Object.assign(new Error(error?.message || 'reconcile_boundary_unavailable'), {
+        code: error?.code || 'reconcile_boundary_unavailable', cause: error
+      });
+    }
     const scopeKey = text(boundary?.scope?.scopeKey || '');
     if (!scopeKey) return { ok: false, reason: 'no_scope', settled: 0, reset: 0 };
     const staleMs = Math.max(60000, Number(options.staleMs || EMBEDDING_STALE_ATTEMPT_MS) || EMBEDDING_STALE_ATTEMPT_MS);
@@ -54037,15 +54047,36 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // Independent of the worldline restore above: that block can abort on FLASHBACK_WRITER_BUSY,
       // and attempts interrupted by the previous runtime must still be settled or they pin their
       // turns forever.
-      scheduleTimer(() => {
-        void (async () => {
-          if (Runtime.unloaded) return;
-          const snapshot = await loadRisuSnapshot(false).catch(() => null);
-          const scope = snapshot ? resolveScopeFromSnapshot(snapshot) : null;
-          if (!scope?.scopeKey || !scope.available) return;
-          await reconcileStaleEmbeddingAttempts({ scope });
-        })().catch(error => warn('startup stale embedding attempt reconciliation failed', error));
-      }, 1200);
+      // 1.2 s after startup the chat is often not open yet, so the first pass legitimately has no
+      // scope. Record that outcome and try again instead of returning silently: a null
+      // lastEmbeddingAttemptReconcile is indistinguishable from "the code never ran".
+      const reconcileStartupDelays = [1200, 4000, 10000, 20000];
+      const scheduleStartupReconcile = (attempt = 0) => {
+        const delay = reconcileStartupDelays[Math.min(attempt, reconcileStartupDelays.length - 1)];
+        scheduleTimer(() => {
+          void (async () => {
+            if (Runtime.unloaded) return;
+            let reason = '';
+            const snapshot = await loadRisuSnapshot(false).catch(error => {
+              reason = 'snapshot_unavailable:' + String(error?.code || error?.message || 'unknown').slice(0, 80);
+              return null;
+            });
+            const scope = snapshot ? resolveScopeFromSnapshot(snapshot) : null;
+            if (!scope?.scopeKey) reason = reason || 'scope_unavailable';
+            else if (scope.available === false) reason = scope.reason || 'scope_unavailable';
+            if (reason) {
+              Runtime.lastEmbeddingAttemptReconcile = {
+                at: Date.now(), ok: false, reason, attempt: attempt + 1, settled: 0, reset: 0
+              };
+              if (attempt + 1 < reconcileStartupDelays.length) scheduleStartupReconcile(attempt + 1);
+              else warn('stale embedding attempt reconciliation skipped', new Error(reason));
+              return;
+            }
+            await reconcileStaleEmbeddingAttempts({ scope });
+          })().catch(error => warn('startup stale embedding attempt reconciliation failed', error));
+        }, delay);
+      };
+      scheduleStartupReconcile();
       return true;
     })().finally(() => {
       flashbackStartupCompletionPromise = null;

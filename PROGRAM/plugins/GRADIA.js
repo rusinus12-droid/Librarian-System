@@ -24276,9 +24276,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : '- In Novel mode, distinguish pre-existing evidence from newly authored current-scene fiction. You may create character interiority/decisions consistent with author direction and canon, but do not mislabel newly invented material as historical fact or known evidence.'
   ].join('\n');
 
-  // Clothing is state, not scenery: a coat taken off in an earlier beat stays off until the
-  // prose performs the action that puts it back on. Both the draft and every AIDE phase carry
-  // this contract so a patch cannot silently re-dress a character the scene already undressed.
+  // Clothing and place are state, not scenery: a coat taken off in an earlier beat stays off, and a
+  // room does not change without the move being performed on the page. Both the draft and every AIDE
+  // phase carry these contracts so a patch cannot silently re-dress a character or teleport a scene.
   const buildWardrobeContinuityContract = () => [
     'WARDROBE AND APPEARANCE CONTINUITY — HARD CONDITION:',
     '- Treat every named garment, accessory, and item of footwear as state, not decoration: worn, removed, loosened, opened, pushed aside, torn, soiled, wet, or held. Carry the last explicitly narrated state into this turn.',
@@ -26477,8 +26477,6 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         ? 'A dedicated analysis call has already completed. Treat DEDICATED DOMAIN ANALYSIS as the controlling diagnosis for this patch; do not replace it with a new plan. Convert only its evidence-grounded findings into minimal structural edits.'
         : '',
       'Treat source sections as read-only evidence. Current user intent and the latest visible scene outrank older context; older context cannot relocate or restage the current scene.',
-      buildWardrobeContinuityContract(),
-      buildLocationContinuityContract(),
       isPlayerControlledDraftMode(settings)
         ? 'Keep actor -> action -> target, speaker, observer, knowledge path, player agency, and the current response boundary literal.'
         : 'Keep actor -> action -> target, speaker, observer, knowledge path, explicit author-fixed/reserved commitments, and the current response boundary literal. Do not impose an RP player-agency boundary on the Novel-mode user persona.',
@@ -26509,10 +26507,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         'The immediately preceding exchanges govern location, staging, wardrobe, mood, and commitments over older summaries, archives, or agent notes.',
         'CURRENT SAME-TURN DRAFT is the only patch target; preserve all unaffected blocks.'
       ],
-      task: systemParts.slice(0, 10),
+      task: systemParts.slice(0, 8),
       hardConstraints: [
         buildHardResponseInvariantBlock(settings),
-        ...systemParts.slice(10).filter(line => !line.startsWith('Return one valid JSON object only:'))
+        buildWardrobeContinuityContract(),
+        buildLocationContinuityContract(),
+        ...systemParts.slice(8).filter(line => !line.startsWith('Return one valid JSON object only:'))
       ],
       skillGuidance: stageSkillBlockForPrompt(recent, 'patch', settings),
       optionalCriteria: '',
@@ -29271,35 +29271,6 @@ function createGradiaModelContextBudget({ digest }) {
             maxCorpusBytes
           };
           readEngine = { source: 'owner_selection' };
-        } else {
-          let read = await guarded(() => client.openReadSession(scope, { maxCorpusBytes, signal: record.controller.signal, source: readSource,
-            queryText: input.queryText }), LIB_MEMORY_OWNER_READ_TIMEOUT_MS);
-          if (typeof read?.close === 'function') record.releaseRead = read.close;
-          await assertBinding();
-          if (String(read?.source || 'server_logical_read') !== readSource) fail('LIB_READ_SOURCE_MISMATCH');
-          readEngine = read?.engine && typeof read.engine === 'object' ? freeze(copyMeta(read.engine)) : null;
-          raw = read?.snapshot;
-          multipleOwners = client.schema === 'memory-suite.memory-read-client.v1';
-          if (multipleOwners && (!Array.isArray(raw?.owners) || !raw.owners.length || raw.owners.length > 3
-              || new Set(raw.owners).size !== raw.owners.length || raw.owners.some(owner => !allowedOwners.includes(owner)))) fail('LIB_READ_RESPONSE_INVALID');
-          if (raw?.schema !== (multipleOwners ? 'memory-suite.memory-read-session.v1' : 'memory-suite.libra-read-session.v1') || raw.complete !== true || raw.readOnly !== true
-            || JSON.stringify(raw.scope) !== JSON.stringify(scope) || !Array.isArray(raw.items) || raw.items.length > 4096
-            || raw.maxCorpusBytes !== maxCorpusBytes || !/^[a-f0-9]{64}$/.test(raw.evidenceRevision || '')
-            || typeof read?.assertCurrent !== 'function' || typeof read?.assertCurrentSync !== 'function') fail('LIB_READ_RESPONSE_INVALID');
-          assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
-          assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
-          if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
-            const kept = [];
-            const peers = raw.owners;
-            const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
-            for (const [index, owner] of peers.entries()) {
-              const selected = answers[index];
-              if (selected?.absent) { ownerUnavailable[owner] = selected.code || 'LIB_READ_OWNER_UNAVAILABLE'; continue; }
-              if (selected?.content) kept.push({ id: owner + '.recall:' + await guarded(() => digest(selected.content)), key: owner + '.recall', owner, content: selected.content,
-                source: { namespace: owner, kind: 'owner_recall_prompt' } });
-            }
-            raw = { ...raw, items: kept, corpusBytes: kept.reduce((total, item) => total + bytes(item.content), 0) };
-          }
         }
         let corpusBytes = 0, metadataBytes = 0; const seen = new Set(), corpus = [];
         for (const item of raw.items) {
@@ -37664,10 +37635,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const store = await preferenceStore(), raw = await store.getItem(LIB_READ_CONNECTION_KEY);
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
-        url = normalizeLibReadUrl(saved.url);
+        try { url = normalizeLibReadUrl(saved.url); } catch (_) { url = String(saved.url || ''); }
         readSource = 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
-        if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
+        // Consent is the user's explicit choice to let GRADIA read memory, not a server address:
+        // with plugin IPC the URL carries no authority, so an old or malformed value cannot block.
+        if (saved.explicit !== true || saved.readSource === 'off') {
           explicit = false;
           state = 'disconnected';
           reason = saved.readSource === 'off' ? 'LIB_READ_DISABLED' : '';
@@ -43546,7 +43519,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       select.setAttribute('aria-label','기억 읽기 방식');
       for(const [value,title] of [
         ['off','기억 읽기 끄기 (사용 안 함)'],
-
         ['plugin_ipc','플러그인 · 기억 직접 읽기 (IPC)']
       ]){
         const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
@@ -43623,7 +43595,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const state=page.querySelector('#lib-state');if(state)state.textContent=(status.state==='error'||status.reason)?(status.state+' · '+status.reason+(hint?' ('+hint+')':'')):status.readSource==='off'?'기억 읽기 끔 (사용 안 함)':status.state;
     const inspect=page.querySelector('#lib-check');if(inspect){inspect.disabled=status.state!=='connected'||status.inspecting||status.readSource==='off';inspect.textContent=status.inspecting?'확인 중…':'기억 연결 확인';}
     const connect=page.querySelector('#lib-connect');if(connect){connect.disabled=status.state==='connecting';connect.textContent=selectedSource==='off'?'기억 읽기 끄기 적용':'읽기 전용 연결 · 적용';}
-    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.readSource==='off'?'기억 읽기 꺼짐 · RisuAI 원본 문맥만 사용':status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?.source==='unified_engine'?'통합 검색 연결 확인 · 질문은 실행 시 전달됩니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
+    const corpus=page.querySelector('.kv dd:last-child');if(corpus)corpus.textContent=status.readSource==='off'?'기억 읽기 꺼짐 · RisuAI 원본 문맥만 사용':status.corpus?.source==='plugin_ipc'?'플러그인 IPC 연결 확인 · 실행 순서와 무관하게 읽습니다':status.corpus?status.corpus.items+'개 / '+status.corpus.bytes+' bytes (한도 4 MiB)':'연결 뒤 실제 읽기 검증 전';
     const activeOwners=page.querySelector('.kv dd:first-of-type');if(activeOwners)activeOwners.textContent=status.readSource==='off'?'없음 (기억 읽기 끔)':(status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음');
     const names=page.querySelectorAll('.state-grid > div');
     if(names[1])names[1].replaceChildren(mockupNode('b','','활성 읽기 대상'),document.createTextNode((status.activeOwners.map(o=>o.toUpperCase()).join(' · ')||'없음')+' · 쓰기 권한 없음'));

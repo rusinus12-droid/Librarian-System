@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T13:24:39.640Z",
+  "generatedAt": "2026-11-09T14:59:45.088Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4299,12 +4299,12 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "a60c3cb16071d373783eaeca6d693f0ed92f019fe9ec5c49d90b39d30eae1f07",
-      "bytes": 3751942
+      "sha256": "256f365aad7f5d35eb4846395d42276b2cf13498604f6b1bf3448276d0ef1047",
+      "bytes": 3753740
     },
     "plugins/GRADIA.js": {
-      "sha256": "e6a536f8ef79d733ce1c0e981a5fef678830aa6cf09a3557244bc44dea825baa",
-      "bytes": 3106561
+      "sha256": "1da612f2d631e0469885613b353278e7af787e3a7e4a2fb1226dc51f0bb0a53d",
+      "bytes": 3103973
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82",
@@ -6739,8 +6739,8 @@
       "bytes": 42465
     },
     "tests/gradia_route_memory_owner_toggle_test.cjs": {
-      "sha256": "00c362c4ec3cadf35b3ba3a1618030868f93e7ad673ec95029b056877b5da47c",
-      "bytes": 11988
+      "sha256": "547a7d3980e1b9836e1b5115bca4c787a7a967ff277a5aa0679ea1fd3710314d",
+      "bytes": 12521
     },
     "tests/gradia_shadow_draft_mode_gui_test.cjs": {
       "sha256": "3a18aff7fae76fe624b6a2c51290fe96cbdf8164e1e400c534c245996fe2a1b1",
@@ -6755,8 +6755,8 @@
       "bytes": 1384
     },
     "tests/gradia_three_owner_connection_test.cjs": {
-      "sha256": "583a11c846bb1da47ba9e0b1728af1c91061a3fe499ee48ddaa1ef545c64f6de",
-      "bytes": 9283
+      "sha256": "6da9677ac8594850df70a16e61dd44e38810890436841dfbf3f4ab25d489acb1",
+      "bytes": 9929
     },
     "tests/gradia_three_owner_consumer_test.cjs": {
       "sha256": "0f86d15acad34014076e122ca23f585c5cf18d0fa2753af7532a888d4d7081aa",
@@ -6947,8 +6947,8 @@
       "bytes": 6816
     },
     "tests/gradia/readonly-connection.test.cjs": {
-      "sha256": "c5c32205fe9281db9607720bb3d717ad2f623bb808894c6a7439e1f33e8740a2",
-      "bytes": 25420
+      "sha256": "b7b796b8618ec238fc19596dddaecd114ef150d258cfabe231abe34d462375aa",
+      "bytes": 26600
     },
     "tests/gradia/server-read-adapter.test.cjs": {
       "sha256": "a99d4dccf69ec4fce716ae453a0a01da58759b654825ea58c7fb414fa6d2b122",
