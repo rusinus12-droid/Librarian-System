@@ -25101,15 +25101,54 @@ const MemorySuiteSnapshotCache = (() => {
     return { scope, adopted: false, migrated };
   };
 
+  // Scope root bootstrap. The read-only inspection verifies a scope THROUGH its manifest, but the
+  // manifest was only ever written as part of a record commit, so a chat that already had history
+  // when the plugin was loaded had no verifiable root: every inspection returned
+  // scope_manifest_unverified, no counts, and no strategy - not even the turn sync that would have
+  // filled it. HAYAKU and LIBRA publish their root object when a scope is bound; Flashback did not.
+  // Publish the empty root once, under the scope write lock, and never touch an existing or
+  // archive-linked manifest.
+  const ensureInitialScopeManifest = async (scope, manifest = null) => {
+    const scopeKey = text(scope?.scopeKey || '');
+    if (!scopeKey) return { written: false, reason: 'no_scope' };
+    if (manifest?.manifestRawPresent === true) return { written: false, reason: 'manifest_present' };
+    if (manifest?.manifestCorrupt === true || manifest?.manifestRecovered === true) return { written: false, reason: 'manifest_unverified' };
+    if (normalizeFlashbackArchiveRef(manifest?.archiveRef) || manifest?.archiveRefRawPresent === true
+      || manifest?.archiveRefInvalid === true) return { written: false, reason: 'archive_linked' };
+    if (text(manifest?.foreignScopeKey || '').trim()) return { written: false, reason: 'foreign_scope' };
+    if (Runtime.portableMemoryActiveOperationId || Runtime.storageTransitionPending === true) return { written: false, reason: 'storage_busy' };
+    if (Number(scope?.chatMessageCount || 0) <= 0) return { written: false, reason: 'empty_chat' };
+    const outcome = await withScopeWriteLock(scopeKey, async () => {
+      const current = await loadScopeManifest(scopeKey);
+      if (current?.manifestRawPresent === true) return { written: false, reason: 'manifest_present' };
+      if (Number(current?.count || 0) > 0 || Number(current?.shardCount || 0) > 0) return { written: false, reason: 'records_present' };
+      const saved = await saveScopeManifest(emptyManifest(scope), scope);
+      return { written: true, manifest: saved };
+    });
+    if (outcome?.written === true) {
+      pushActivityLog('scope_manifest_initialized', '이 채팅의 FLASHBACK 기억 저장소를 처음 만들었습니다.', {
+        scopeKey, records: 0, shardCount: 0, reason: 'scope_bind_root'
+      }, 'info');
+      Runtime.lastInitialScopeManifest = { at: Date.now(), scopeKey };
+    }
+    return outcome || { written: false, reason: 'write_skipped' };
+  };
+
   const scheduleDeferredScopeStorageReady = (scope, settings, options = {}) => {
     const scopeKey = text(scope?.scopeKey || '').trim();
     if (!scopeKey || Runtime.unloaded || Runtime.deferredScopeStorageTasks.has(scopeKey)) return false;
     const task = Promise.resolve()
       .then(async () => {
         if (Runtime.unloaded || Runtime.currentScope?.scopeKey !== scopeKey) return null;
-        return await ensureScopeStorageReady(scope, settings, {
+        const ready = await ensureScopeStorageReady(scope, settings, {
           copyCandidates: Array.isArray(options.copyCandidates) ? options.copyCandidates : []
         });
+        // A chat that already has history but no stored memory has no verifiable root, so the
+        // read-only inspection can never plan the turn sync that would fill it. Publish the empty
+        // root here, on the background path a request already earned.
+        await ensureInitialScopeManifest(scope, ready?.manifest || await loadScopeManifest(scopeKey))
+          .catch(error => warn('initial scope manifest write failed', error));
+        return ready;
       })
       .catch(error => {
         warn('deferred scope storage discovery failed', error);
@@ -43442,8 +43481,12 @@ ${cleanedText}`, 80),
         await assertHost();await assertSourceCurrent();await observed.assertCurrent();await assertSourceCurrent();assertHostSync();
       };
       const assertCurrentSync=()=>{assertHostSync();settingsState?.assertCurrentSync();observed.assertCurrentSync();};
+      // A certified, complete inventory that holds no manifest for this scope proves the scope
+      // stores nothing. That is the one case where counts can be reported without reading records.
+      const manifestKeyOwned=`${scopePrefix(scope.scopeKey)}:manifest:v2`;
+      const manifestAbsent=!(captured.records||[]).some(row=>row?.space==='plugin'&&String(row.key||'')===manifestKeyOwned&&row.tombstone!==true);
       const inspection={readOnly:true,coverage:'server_snapshot',snapshotComplete:captured.complete===true,snapshotHealthVerified:false,
-        inventoryComplete:captured.inventoryComplete===true,scopeVerified:captured.scopeVerified===true,liveHostGuarantee:false,
+        inventoryComplete:captured.inventoryComplete===true,scopeVerified:captured.scopeVerified===true,liveHostGuarantee:false,manifestAbsent,
         complete:false,storageSourceComplete:false,credentialStatus:'not_inspected',providerStatus:'not_tested',physicalRepairAllowed:false,
         preparationPerformed:false,credentialSynchronizationPerformed:false,providerCalls:0,
         reasons:[...new Set((captured.skipped||[]).map(row=>/^[a-z_]{1,80}$/.test(row.reason||'')?row.reason:'unverified_evidence'))]};
@@ -44110,6 +44153,23 @@ ${cleanedText}`, 80),
   };
   // Record every returned verdict, including early incomplete snapshots. Keep
   // diagnostic blockers detached from the caller and never retain source data.
+  // An incomplete server snapshot used to return no counts at all, so the panel could only say
+  // "확인 필요" while the chat was missing every turn. Report the same keys the full plan would
+  // (best effort, no writes) and keep the verdict blocked.
+  const maintenanceIncompleteCounts = ({ snapshot, scope, inspection } = {}) => {
+    if (!snapshot || !scope?.scopeKey) return null;
+    const liveTurns = collectLiveChatSourcesFromSnapshot(snapshot, {}).length;
+    // No record read happens here: an incomplete inspection must stay write-free and must not
+    // fall back to local storage (the read-only boundary tests assert both). A complete
+    // inventory without a manifest for this scope is the certified form of "no stored memory",
+    // and only that form lets the panel show real missing-turn counts instead of nothing.
+    if (inspection?.inventoryComplete === true && inspection?.manifestAbsent === true) {
+      return { liveTurns, storedTurns: 0, storedRecords: 0, missingTurns: liveTurns, changedTurns: 0,
+        countsSource: 'certified_inventory_without_manifest' };
+    }
+    return { liveTurns };
+  };
+
   const recordMaintenanceInspection = plan => {
     Runtime.lastMaintenanceInspection=cloneRuntimeValue({at:plan.at,scopeKey:plan.scopeKey,automatic:plan.automatic,inspection:plan.inspection,
       counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
@@ -44126,7 +44186,10 @@ ${cleanedText}`, 80),
     const readContext=await createMaintenanceInspectionContext(options);
     if(readContext.serverInspection&&readContext.inspection.complete!==true){
       readContext.assertCurrentSync();
+      // Report what is waiting even when the snapshot cannot be verified; the verdict stays blocked.
+      const partialCounts=maintenanceIncompleteCounts(readContext)||null;
       return recordMaintenanceInspection({at:Date.now(),scopeKey:readContext.scope.scopeKey,healthy:false,storageSourceHealthy:null,inspection:readContext.inspection,
+        ...(partialCounts||{}),
         automatic:{strategy:'server_inspection_only',stages:[],blocked:true,reason:'inspection_incomplete'}});
     }
     const {settings,snapshot,scope,readers,credentialStatus}=readContext;
@@ -53453,7 +53516,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     clearOperationLogs,
     getActivityLog: activityLogSnapshot,
     clearActivityLog,
-    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
+    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, ensureInitialScopeManifest, scheduleDeferredScopeStorageReady, maintenanceIncompleteCounts, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
   });
   publicApi._test.buildUiHtml = buildUiHtml;
   publicApi._test.renderManualEditorPanelHtml = renderManualEditorPanelHtml;
@@ -53691,6 +53754,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               }
             }
           }
+          await ensureInitialScopeManifest(scope, await loadScopeManifest(scope.scopeKey))
+            .catch(error => warn('startup scope manifest publication failed', error));
           await scheduleLegacyGlobalMigration(scope, Runtime.settings);
           schedulePendingEmbeddingWork(scope.scopeKey, { reason: 'startup_resume' });
         }).catch(error => warn('startup worldline restore / legacy migration scheduling failed', error));

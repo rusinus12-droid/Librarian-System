@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T11:14:50.722Z",
+  "generatedAt": "2026-11-09T11:58:56.698Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4299,8 +4299,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "d673de0680899066cda4e5233b3824ddb8f9d3294128aca3f35a7e9cbb5b10c3",
-      "bytes": 3672417
+      "sha256": "484cf878d4ece810ead1a4a26ad4280ba438d2d0fdecff2a8a456b43b5b4c067",
+      "bytes": 3733682
     },
     "plugins/GRADIA.js": {
       "sha256": "488c3717c368a39402e5179d5f2256a1a9ed0b0d4a7f0d2d2d12192df440bec8",
@@ -6415,8 +6415,8 @@
       "bytes": 7240
     },
     "tests/flashback_server_inspection_boundaries_test.cjs": {
-      "sha256": "657fccb3fbef2bc99a45b252b33e67c7b360bc5a5b3729959c23c00ae6c54511",
-      "bytes": 8054
+      "sha256": "1380685d76f30a57967783681efacf64256a2a28395a2c439387d619bf797f42",
+      "bytes": 8169
     },
     "tests/flashback_server_inspection_consent_runtime_test.cjs": {
       "sha256": "f924c8fbd77baa9d278fbf71777d25128a3e5301636b07fc13973749fd4993d8",
