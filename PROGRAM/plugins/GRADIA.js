@@ -3635,6 +3635,12 @@ ${BIANCA_PERSONA_TEXT}`;
     callTelemetry: null,
     risuEngine: null,
     finalDraft: '',
+    // 요청 정리(purge) 뒤에도 초안 패널이 무엇이 작성됐는지 보여줄 수 있게 남기는 요약.
+    // 계약상 초안 본문은 보관하지 않는다: 자수·해시·단계별 성공/소요만 남긴다.
+    lastDraftArchive: null,
+    // Per-stage record of which prompt blocks were actually included and how big they were.
+    // Debug export only carries counts, never prompt text.
+    promptBlocks: {},
     finalDraftMeta: null,
     lastInputAssist: null,
     lastInputAssistTranslation: null,
@@ -3738,7 +3744,38 @@ ${BIANCA_PERSONA_TEXT}`;
     const block = libEvidencePrompt(settings);
     return block ? `${value}\n\n${block}` : value;
   };
+  // The panel reads stageTrace/finalDraft, both of which this purge clears. Keep a content
+  // summary so "무엇이 작성됐는지" survives the cleanup (measured 2026-11-09: the draft was
+  // written in 4 stages, then the GUI showed 실행 전 / (초안 없음) while the response was
+  // still being generated).
+  // Contract (tests/gradia/evidence-bridge.test.cjs): runtime must never retain derived draft
+  // content. The archive therefore stores counts and hashes only — enough for the panel to say
+  // what ran, never the prose itself.
+  const archiveDraftBeforePurge = () => {
+    const draft = text(Runtime.finalDraft || '');
+    const traces = Array.isArray(Runtime.stageTrace) ? Runtime.stageTrace : [];
+    const stageDrafts = Runtime.lastCompletedDraftSet && typeof Runtime.lastCompletedDraftSet === 'object'
+      ? Object.keys(Runtime.lastCompletedDraftSet).length : 0;
+    if (!draft && !traces.length) return;
+    Runtime.lastDraftArchive = {
+      at: Date.now(),
+      chars: draft.length,
+      hash: draft ? stableDraftHash(draft) : '',
+      stages: traces.map(trace => ({
+        stage: text(trace?.stage || ''),
+        ok: trace?.ok === true,
+        fallback: trace?.fallback === true || trace?.parsed?.fallback === true,
+        skipped: trace?.skipped === true || trace?.parsed?.skipped === true,
+        elapsedMs: Number(trace?.elapsedMs || 0),
+        model: text(trace?.model || ''),
+        reason: compact(text(trace?.reason || trace?.parsed?.reason || ''), 200)
+      })).filter(row => row.stage),
+      stageDrafts,
+      status: 'request_local_purged'
+    };
+  };
   const purgeLibEvidenceRuntime = () => {
+    archiveDraftBeforePurge();
     Runtime.lastInjection = ''; Runtime.finalDraft = ''; Runtime.lastSafeStage = null;
     Runtime.lastCompletedDraftSet = null; Runtime.analysisLedger = {}; Runtime.activeLineage = null;
     Runtime.stageTrace = []; Runtime.lastProviderRequest = null; Runtime.lastProviderResponse = null;
@@ -24963,6 +25000,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : stageName === 'shadow_act'
         ? arcDirectorBriefForPrompt(recent, 'shadow')
         : (arcControl, arcAudience, '');
+    const blockParts = {
+      stylePack, authorNoteAuthority, playerAgencyLedger, arcDirectorBrief, shadowDraftBridge,
+      sameTurnLock, shadowModeInheritance, lengthGuide, nsfwGuidance, biancaInjection, constraintBlock
+    };
+    try {
+      Runtime.promptBlocks = {
+        ...(Runtime.promptBlocks || {}),
+        [stageName]: Object.freeze({
+          at: Date.now(), phase: 'writing',
+          nsfwMode: normalizeNsfwMode(settings?.nsfwMode),
+          nsfwGuidanceEnabled: settings?.nsfwGuidanceEnabled !== false,
+          biancaInject: settings?.biancaInject === true,
+          chars: Object.fromEntries(Object.entries(blockParts).map(([key, value]) => [key, text(value || '').length]))
+        })
+      };
+    } catch (_) {}
     return [
       stylePack,
       buildLivingCanonAuthorityContract(settings),
@@ -41462,7 +41515,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for (let i = (traces || []).length - 1; i >= 0; i -= 1) {
       if (traces[i]?.stage === stageId) return traces[i];
     }
-    return null;
+    // After the request-local purge the live trace is gone; the archive still knows what ran.
+    const archived = (Runtime.lastDraftArchive?.stages || []).find(row => row.stage === stageId);
+    if (!archived) return null;
+    return {
+      stage: stageId, ok: archived.ok, fallback: archived.fallback, skipped: archived.skipped,
+      elapsedMs: archived.elapsedMs, model: archived.model, reason: archived.reason,
+      archived: true
+    };
   };
 
   const resultText = (value, max = 1000) => {
@@ -42293,6 +42353,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     contextDegradations: Array.isArray(Runtime.contextDegradations) ? Runtime.contextDegradations.slice(-8) : [],
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
+    promptBlocks: Runtime.promptBlocks ? JSON.parse(JSON.stringify(Runtime.promptBlocks)) : {},
+    promptGates: {
+      biancaInject: Runtime.settings?.biancaInject === true,
+      nsfwMode: String(Runtime.settings?.nsfwMode || 'off'),
+      nsfwGuidanceEnabled: Runtime.settings?.nsfwGuidanceEnabled !== false,
+      nsfwInjectFinalRequest: Runtime.settings?.nsfwInjectFinalRequest === true
+    },
+    lastDraftArchive: Runtime.lastDraftArchive ? {
+      at: Runtime.lastDraftArchive.at, chars: Runtime.lastDraftArchive.chars,
+      status: Runtime.lastDraftArchive.status, stageDrafts: Runtime.lastDraftArchive.stageDrafts,
+      stages: (Runtime.lastDraftArchive.stages || []).map(row => ({ ...row })),
+      hash: Runtime.lastDraftArchive.hash || ''
+    } : null,
     lastInputAssist: Runtime.lastInputAssist ? {
       at: Runtime.lastInputAssist.at,
       ok: Runtime.lastInputAssist.ok,
@@ -43994,11 +44067,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),shadowPanel=results.querySelector('[data-subpanel="s"]');
       if(shadowPanel){
         const info=traceStateInfo(shadow);
-        const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft;
+        // 정리(purge) 뒤에는 본문을 보관하지 않는 계약이라, 무엇이 작성됐는지만 요약해 보여준다.
+        const archive = Runtime.lastDraftArchive;
+        const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft
+          || (archive ? `본문은 요청 종료 후 정리됨 · ${Number(archive.chars || 0).toLocaleString()}자 · `
+            + `${(archive.stages || []).filter(row => row.ok).length}/${(archive.stages || []).length}단계 완료` : '');
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
-            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')})]),
-            resultsDraftSection(draftToShow,'작성한 초안',true)
+            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 요청 종료 후 정리됨':'')})]),
+            resultsDraftSection(draftToShow, archive && !shadow?.parsed?.draft && !Runtime.finalDraft ? '작성한 초안 (요청 종료 후 정리됨)' : '작성한 초안',true)
           ]),
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsContextDegradationSection(),resultsMemorySection(),...resultsMaterialsSections(usage)].filter(Boolean))
         ]));

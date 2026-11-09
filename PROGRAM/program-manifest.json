@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T16:24:35.337Z",
+  "generatedAt": "2026-11-09T16:50:04.988Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4303,8 +4303,8 @@
       "bytes": 3753740
     },
     "plugins/GRADIA.js": {
-      "sha256": "4df0f4eca75906dbad37eb0fa2b37f0359567c06e2449e9f153b7da7efa0f56b",
-      "bytes": 3118595
+      "sha256": "99a924a104c38965f1bc151c235a65460e947066b064f2a70bc9619a3f8dd26a",
+      "bytes": 3123278
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82",
@@ -8069,6 +8069,10 @@
     "tests/libra_associative_recall_test.cjs": {
       "sha256": "a7311830ed34fd00a77b12e1360df95037ef5d8091d4408f8403f8cb6924ba1e",
       "bytes": 4178
+    },
+    "tests/libra_auto_durable_index_test.cjs": {
+      "sha256": "ff3e01f1e76521a75fd98794d718fad84c7178df26f977d0f9ac38f45336f468",
+      "bytes": 3530
     },
     "tests/libra_automatic_identity_review_test.cjs": {
       "sha256": "aad6b2d90a92dff303f7ed972aeac297ec99b5ba83911f1b1586a4cd1f497712",
