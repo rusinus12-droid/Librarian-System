@@ -37665,7 +37665,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         url = normalizeLibReadUrl(saved.url);
-        readSource = 'plugin_ipc';
+        // Plugin IPC is the only read channel, but a saved "off" is the user's choice and must
+        // survive a restart; legacy server sources migrate to plugin_ipc.
+        readSource = saved.readSource === 'off' ? 'off' : 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;

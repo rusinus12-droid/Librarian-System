@@ -50,7 +50,7 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
   getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacterFromIndex:async()=>character,getCharacter:async()=>character,getChar:async()=>character,
   getChat:async()=>chat,getCurrentChat:async()=>chat,getChatFromIndex:async()=>chat,
   getDatabase:async()=>({characters:[character],personas:[],selectedPersona:'',modules:[]}),nativeFetch:sdkFetch,onUnload:async fn=>{unload.push(fn);return true;}}});
- const status=await g.plugin.connectLibReadOnly(x.server?.url||'',mode==='plugin_only'?'plugin_ipc':'unified_engine');
+ const status=await g.plugin.connectLibReadOnly(x.server?.url||'','plugin_ipc');
  assert.equal(status.state,'connected',JSON.stringify(status));
  assert.ok(status.activeOwners.includes('libra'));
  await g.plugin.saveProviderPreset('offline',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',key:'synthetic-only',model:'gpt-4o-mini-2024-07-18',request_format:'chat_completions',context_window:128000,max_tokens:2048,reasoning_preset:'off',reasoning_effort:'none',timeout_ms:5000,stream:false});
@@ -65,7 +65,8 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  assert.ok(prompts.every(body=>JSON.stringify(body).includes('정본 기억이 우선')),'noncanonical precedence travels with the lens notes');
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(lensBytes(),before,'reading creates no lens storage mutations');assert.equal(f.control.calls.length,calls);
- const replies=bus.messages.filter(m=>m.body.action==='capture'&&m.body.result?.items?.some(item=>item.content.includes('LENS_IPC_ONLY'))||m.body.result?.engine?.lensEvidence?.itemCount);
+ // GRADIA reads each owner's own selection over plugin IPC (select), in every storage mode.
+ const replies=bus.messages.filter(m=>m.body.kind==='response'&&m.body.action==='select'&&String(m.body.result?.content||'').includes('LENS_IPC_ONLY'));
  assert.ok(replies.length,'real host-routed reply contains lens bytes');
  // Selected memory is held as selected: a later lens change neither stops the run nor discards the draft.
  prompts.length=0;onModel=async()=>{await f.r.api.updateLens(lens.lensId,{recall:{enabled:false,mode:'recent',share:100,maxItems:2}});};
