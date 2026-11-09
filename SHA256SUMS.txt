@@ -1,3 +1,4 @@
+8f412442d7c3b8390c81768b73392395ddfed0830a04709dab49a2438cccc916  ./_gradia_prompt_contracts.py
 162191d9e43619331a020d99702f81f47769e5b5a4f2d1b3481207f4810d7d1e  ./.github/workflows/_risu-compatibility-check.yml
 8695c7ec5dcb5c637be0b484631dd28d4ed6dd2fea58db2fcef8ce179cef1360  ./.github/workflows/manual-release.yml
 9ad03541dadf90608ccaa31282b41c2dfc265cf4227138b7a3e82293eb21b33b  ./.github/workflows/release-builder-gate.yml
@@ -724,12 +725,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f  ./PROGRAM/PACKAGE_CONTENTS.txt
 a60c3cb16071d373783eaeca6d693f0ed92f019fe9ec5c49d90b39d30eae1f07  ./PROGRAM/plugins/Flashback_Memory.js
-488c3717c368a39402e5179d5f2256a1a9ed0b0d4a7f0d2d2d12192df440bec8  ./PROGRAM/plugins/GRADIA.js
+7f34a791f7db60c4f271e41681e356c714049560675c52493d89e8750a7bb5b8  ./PROGRAM/plugins/GRADIA.js
 a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 cc6956af9820348963e36d4904d9462fe92d215d8ddd44136c601bb4209f2e11  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-1bdf18ce760c1751affed61955475a155344b4d62e4194192d92b38150a336d9  ./PROGRAM/program-manifest.json
+040db071abd55d9c173e0b27d422f0459b770f60d1c95dd33292919b886bcb88  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 0f034ba6aee7622a2d2f82a1e3efda8b69db16e4f9467ceca203d1bafcc84f75  ./PROGRAM/run_regression_batch.py
@@ -1372,6 +1373,7 @@ d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/test
 890b443b6eb663cc43c06246f945f7fa044b086269762206c3d577c11b2ec02c  ./PROGRAM/tests/gradia/legacy-removal.test.cjs
 4893916de251c1f5b3316ea00b53d99907485299c6b8ceaf14883a980cccb416  ./PROGRAM/tests/gradia/lib-read-consumer.test.cjs
 999ac8faf30fbae97f84004d98af5f3808bf12019de7e3b9ddbf4301094ca29c  ./PROGRAM/tests/gradia/load-dev-dependency.test.cjs
+7c25fcb40f7db53dc86ce970ba21db71ca7d9b022211e69484f0701656c0d2e4  ./PROGRAM/tests/gradia/location-continuity.test.cjs
 27ddcea66104b83d80ccc2e046005d410fd640b0e7f9c3164139be2c904537dc  ./PROGRAM/tests/gradia/lore-activation-scale.test.cjs
 5af0932856b5883a620389d8a5a8af548acaa7564b0eb0ec3aba16627b6b9bbf  ./PROGRAM/tests/gradia/manual-skills.test.cjs
 8a11d182a681b21a1ae0c9d33bee2c4b94f4b3ea23d4003c4317dba272bdf3b9  ./PROGRAM/tests/gradia/memory-retirement.test.cjs
@@ -1392,6 +1394,7 @@ dd882dd1dbef4d4284b74e482365f0202c63a4d5c31a49e09ba9dbf8d08549f7  ./PROGRAM/test
 ad8a0e832935bce5be4c3b3bee94febc85c4474dd5c8b00e08c125d81f8aedc7  ./PROGRAM/tests/gradia/settings-backup.test.cjs
 2855298547053c1354fd0aa399d21f125b1726ce78f551ec761a237e69702e66  ./PROGRAM/tests/gradia/suite-inventory.json
 3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0  ./PROGRAM/tests/gradia/turn-eligibility.test.cjs
+cdc967acad2c621f1586bc901df5cf9efad71235870046dac70526e32738bc50  ./PROGRAM/tests/gradia/wardrobe-continuity.test.cjs
 bca6c474546d1a0c78415fa54ea4cabb643d2c8aaab993c44bbc4256774d6055  ./PROGRAM/tests/gradia/writing-mode-separation.test.cjs
 7b94413622e53ae5ea5e92ba92991312c9cb40e3811f2a4606d6dba2b0ead9d1  ./PROGRAM/tests/gui_availability_patch_runtime_test.cjs
 c72301b0d0a6811f185839355ee0516ec876c7e00508e8eca179664ee14725be  ./PROGRAM/tests/gui_final_design_tokens_test.cjs

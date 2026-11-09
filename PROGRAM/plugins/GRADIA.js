@@ -24250,6 +24250,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '- Authority order: explicit current user decisions/corrections; current user input and declared action; for SHADOW ACT only, the supplied Current Chat Author Note; latest direct narrative facts; exact active setting/lore/system constraints; current same-turn draft as rewrite target; selected stage creative direction; then prior-stage notes as fallible aids.',
     '- The Current Chat Author Note is a dedicated user directive only when explicitly supplied to SHADOW ACT. Later AIDEs inherit its realized intent through SHADOW ACT’s same-turn draft and must not independently reinterpret, redistribute, or override it.',
     '- STAGE CREATIVE DIRECTION: custom creative guidance applies only to its selected stage. It may shape tone, focus, pacing, and revision priorities, but it cannot erase an explicit current-turn correction, refusal, boundary, concrete choice, canon fact, or continuity constraint.',
+    '- CONVERSATION CONTEXT: the immediately preceding exchanges govern location, staging, wardrobe, mood, and commitments. When they conflict with an older summary, archive entry, or agent plan, the recent conversation wins and the older material is stale.',
+    '- CURRENT USER INPUT IS SUPREME. It outranks every note, archive, plan, and prior draft. Never let a lower-ranked source override, soften, or contradict what the current input states or performs.',
     '- A detail omitted from an agent note is not forbidden. One agent’s unsupported claim cannot validate another agent’s claim.',
     '- Preserve literal attribution: actor, target, speaker, owner, observer, location, time, posture, distance, visible/held objects, injury, damage, and object state. Do not infer hidden actor, cause, method, identity, intention, ownership, or information path from an observed result.',
     '- Separate objective truth from character knowledge. Knowledge requires a valid in-world path such as direct perception, communication, established memory, public information, or another confirmed route. Suspicion is not knowledge; rumor is not fact; a correct guess remains a guess until confirmed to that character.',
@@ -24272,6 +24274,31 @@ Begin directly with the in-world response and finish the complete same-turn draf
     isPlayerControlledDraftMode(settings)
       ? '- When supplied evidence is insufficient, preserve observable uncertainty instead of inventing the player character’s hidden feeling/consent/knowledge or pretending unsupported causality is already established.'
       : '- In Novel mode, distinguish pre-existing evidence from newly authored current-scene fiction. You may create character interiority/decisions consistent with author direction and canon, but do not mislabel newly invented material as historical fact or known evidence.'
+  ].join('\n');
+
+  // Clothing and place are state, not scenery: a coat taken off in an earlier beat stays off, and a
+  // room does not change without the move being performed on the page. The draft and every AIDE
+  // phase carry both contracts so a patch cannot silently re-dress a character or teleport a scene.
+  const buildWardrobeContinuityContract = () => [
+    'WARDROBE AND APPEARANCE CONTINUITY — HARD CONDITION:',
+    '- Treat every named garment, accessory, and item of footwear as state, not decoration: worn, removed, loosened, opened, pushed aside, torn, soiled, wet, or held. Carry the last explicitly narrated state into this turn.',
+    '- A garment removed or opened in an earlier beat stays removed or open until the prose shows the physical action that reverses it. Never re-dress a character between turns, and never restore a coat, jacket, shirt, skirt, or shoes that the visible scene already took off.',
+    '- Perform every change on the page: the hand at a hem, the step out of a sleeve, the tug that closes a collar. Never report a change in summary voice after the fact.',
+    '- When the current state was never narrated, infer it from setting, weather, and the immediately preceding action, state it once, and hold it consistently. Never contradict an explicit earlier statement to make a new beat easier.',
+    '- Clothing governs access, warmth, injury, and intimacy. A garment that reappears without cause breaks posture, contact, and every downstream beat that depended on it.',
+    '- In a patch, a silently restored or newly invented garment is a defect: either restore the last narrated state, or supply the missing physical action that changes it.',
+    '- The immediately preceding exchanges govern wardrobe and staging more than older summaries, archives, or agent notes.'
+  ].join('\n');
+
+  const buildLocationContinuityContract = () => [
+    'LOCATION AND STAGING CONTINUITY — HARD CONDITION:',
+    '- Treat the current place as state: the site, the sub-area inside it, who is present, what is in view, which exit is being used, and how far each character stands from it. Carry the last explicitly narrated location into this turn.',
+    '- Never relocate a character without a performed transition. A new room, building, or street must be reached on the page: the walk, the door, the stairs, the ride, or the passage of time that makes the move possible.',
+    '- Do not open somewhere else because the scene would be easier there. If the previous beat ended in a specific room, this beat continues in that room until the prose moves it.',
+    '- When the current input performs a move, render the move instead of announcing its result. When the input only implies a move, the first sentence carries the character out of the old place and into the new one.',
+    '- Offscreen movement is not current presence. A character who left is absent until shown arriving; a character never shown leaving is still in the room.',
+    '- Keep place-linked facts literal: weather, light, noise, temperature, furniture, injuries taken there, objects left behind, and who can see or hear whom.',
+    '- In a patch, a location change without a narrated transition is a defect: either restore the previous place, or supply the missing movement that carries the scene there.'
   ].join('\n');
 
   const analysisSourceBlock = (label, content) => [
@@ -24731,6 +24758,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       buildLivingCanonAuthorityContract(settings),
       authorNoteAuthority,
       buildPhysicalRoleLedgerContract(settings),
+      buildWardrobeContinuityContract(),
+      buildLocationContinuityContract(),
       playerAgencyLedger,
       arcDirectorBrief,
       shadowDraftBridge,
@@ -25074,6 +25103,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       buildLivingCanonAuthorityContract(settings),
       authorNoteAuthority,
       buildPhysicalRoleLedgerContract(settings),
+      buildWardrobeContinuityContract(),
+      buildLocationContinuityContract(),
       playerAgencyLedger,
       arcDirectorAnalysisBrief,
       analysisDepthContract,
@@ -26446,6 +26477,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         ? 'A dedicated analysis call has already completed. Treat DEDICATED DOMAIN ANALYSIS as the controlling diagnosis for this patch; do not replace it with a new plan. Convert only its evidence-grounded findings into minimal structural edits.'
         : '',
       'Treat source sections as read-only evidence. Current user intent and the latest visible scene outrank older context; older context cannot relocate or restage the current scene.',
+      buildWardrobeContinuityContract(),
+      buildLocationContinuityContract(),
       isPlayerControlledDraftMode(settings)
         ? 'Keep actor -> action -> target, speaker, observer, knowledge path, player agency, and the current response boundary literal.'
         : 'Keep actor -> action -> target, speaker, observer, knowledge path, explicit author-fixed/reserved commitments, and the current response boundary literal. Do not impose an RP player-agency boundary on the Novel-mode user persona.',
@@ -26472,7 +26505,8 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       phase: 'patch',
       stage: stageName,
       authority: [
-        'Current user input and literal live continuity outrank older evidence.',
+        'Current user input and literal live continuity outrank older evidence. CURRENT USER INPUT IS SUPREME: no note, archive, plan, or prior draft may soften or contradict it.',
+        'The immediately preceding exchanges govern location, staging, wardrobe, mood, and commitments over older summaries, archives, or agent notes.',
         'CURRENT SAME-TURN DRAFT is the only patch target; preserve all unaffected blocks.'
       ],
       task: systemParts.slice(0, 10),
