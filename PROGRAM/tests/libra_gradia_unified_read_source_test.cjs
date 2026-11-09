@@ -223,8 +223,8 @@ function unifiedProvider(options = {}) {
     assert.equal(f.counts().captures, 0, 'the legacy path must be rejected before any read session opens');
   });
 
-  await test('N03: a binding that names no source defaults to plugin IPC', async () => {
-    const f = await consumerFixture({ answerSource: 'server_logical_read' });
+  await test('N03: a legacy memory-read client without a source cannot enter unified response drafting', async () => {
+    const f = await consumerFixture({ answerSource: 'unified_engine' });
     await assert.rejects(() => f.consumer.beginRead({ requestId: 'r2' }),
       error => error.code === 'LIB_READ_CONNECTION_UNAVAILABLE');
     assert.equal(f.counts().captures, 0);
@@ -245,10 +245,14 @@ function unifiedProvider(options = {}) {
     }
   });
 
-  await test('N03: a legacy source request is migrated at the binding and the effective source is recorded', () => {
+  await test('N03: source selection never comes from the client schema', () => {
     const plugin = fs.readFileSync(path.join(__dirname, '..', 'plugins', 'GRADIA.js'), 'utf8');
-    assert.ok(plugin.includes("requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource"),
-      'a retired source selection is migrated rather than served');
+    assert.ok(plugin.includes("options.readSource === undefined ? 'plugin_ipc' : String(options.readSource)"),
+      'an omitted source defaults to plugin IPC');
+    assert.ok(plugin.includes("String(binding.readSource || 'plugin_ipc')"),
+      'the response consumer defaults to plugin IPC');
+    assert.ok(!plugin.includes("client.schema)\n            ? 'unified_engine'"),
+      'the client schema must not select the response architecture');
     const binding = plugin.slice(plugin.indexOf('libReadBinding = Object.freeze({ client, scope'));
     assert.ok(binding.slice(0, 200).includes('readSource'), 'the binding records the effective source, not the requested one');
     assert.ok(plugin.includes("String(read?.source || 'server_logical_read') !== readSource"),
