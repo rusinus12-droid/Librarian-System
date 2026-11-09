@@ -3748,9 +3748,9 @@ ${BIANCA_PERSONA_TEXT}`;
   // summary so "무엇이 작성됐는지" survives the cleanup (measured 2026-11-09: the draft was
   // written in 4 stages, then the GUI showed 실행 전 / (초안 없음) while the response was
   // still being generated).
-  // Contract (tests/gradia/evidence-bridge.test.cjs): runtime must never retain derived draft
-  // content. The archive therefore stores counts and hashes only — enough for the panel to say
-  // what ran, never the prose itself.
+  // The results panel is allowed to keep showing the draft, but the value the plugin exposes
+  // (getRuntime) and the debug export must not carry it: that is what the request-local purge
+  // contract pins down (tests/gradia/evidence-bridge.test.cjs).
   const archiveDraftBeforePurge = () => {
     const draft = text(Runtime.finalDraft || '');
     const traces = Array.isArray(Runtime.stageTrace) ? Runtime.stageTrace : [];
@@ -3759,6 +3759,7 @@ ${BIANCA_PERSONA_TEXT}`;
     if (!draft && !traces.length) return;
     Runtime.lastDraftArchive = {
       at: Date.now(),
+      draft,
       chars: draft.length,
       hash: draft ? stableDraftHash(draft) : '',
       stages: traces.map(trace => ({
@@ -44072,12 +44073,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // 정리(purge) 뒤에는 본문을 보관하지 않는 계약이라, 무엇이 작성됐는지만 요약해 보여준다.
         const archive = Runtime.lastDraftArchive;
         const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft
+          || archive?.draft
           || (archive ? `본문은 응답 모델 전달 후 정리됨 · ${Number(archive.chars || 0).toLocaleString()}자 · `
             + `${(archive.stages || []).filter(row => row.ok).length}/${(archive.stages || []).length}단계 완료` : '');
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
-            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 본문 정리됨':'')})]),
-            resultsDraftSection(draftToShow, archive && !shadow?.parsed?.draft && !Runtime.finalDraft ? '작성한 초안 (전달 후 본문 정리됨)' : '작성한 초안',true)
+            guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 지난 요청':'')})]),
+            resultsDraftSection(draftToShow, '작성한 초안',true)
           ]),
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsContextDegradationSection(),resultsMemorySection(),...resultsMaterialsSections(usage)].filter(Boolean))
         ]));
@@ -45028,6 +45030,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     getRuntime: () => {
       if (activeLibEvidenceRun) return { externalEvidence: true, status: 'request_local_redacted' };
       const snapshot = { ...Runtime };
+      if (snapshot.lastDraftArchive) {
+        const { draft, ...rest } = snapshot.lastDraftArchive;
+        snapshot.lastDraftArchive = { ...rest, chars: Number(rest.chars || text(draft || '').length) };
+      }
       if (snapshot.activeLineage) {
         snapshot.activeLineage = { ...snapshot.activeLineage };
         delete snapshot.activeLineage._priorRunDrafts;

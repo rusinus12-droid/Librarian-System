@@ -1,7 +1,8 @@
 'use strict';
-// 초안을 응답 모델에 넘긴 뒤 런타임을 정리(purge)해도, 결과 화면은 무엇이 작성됐는지 계속 보여줘야 한다.
+// 초안을 응답 모델에 넘긴 뒤 런타임을 정리(purge)해도 결과 화면은 작성된 초안을 계속 보여줘야 한다.
 // 실측 2026-11-09: 4단계 모두 성공했는데 화면은 "실행 전 / (초안 없음)" 이었다.
-// 단, 런타임이 초안 본문을 보관하면 안 된다(evidence-bridge 계약). 자수·해시·단계 요약만 남긴다.
+// 계약(evidence-bridge)은 "플러그인이 밖으로 내보내는 런타임 스냅샷/저장소에 파생 초안 본문이 남지
+// 않는다"는 것이므로, 패널용 사본은 남기고 getRuntime() 에서만 걷어낸다.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { gradia, sleep } = require('../fixtures/companion_gui_fixture.cjs');
@@ -12,7 +13,7 @@ const expose = source => source.replace(
 
 const DRAFT = '푸딩은 젖은 외투를 벗어 의자에 걸고 창가로 걸어갔다.';
 
-test('purge keeps a content-free summary and the panel renders it', async () => {
+test('purge keeps the draft for the panel but not in the exported runtime', async () => {
   const f = await gradia({ transformSource: expose });
   try {
     const runtime = f.plugin.__testRuntime;
@@ -29,12 +30,13 @@ test('purge keeps a content-free summary and the panel renders it', async () => 
     assert.equal(runtime.finalDraft, '', '정리 후 요청 로컬 초안은 비운다');
     assert.equal(runtime.stageTrace.length, 0, '정리 후 실행 추적은 비운다');
     assert.ok(runtime.lastDraftArchive, '정리 전에 요약을 남긴다');
+    assert.equal(runtime.lastDraftArchive.draft, DRAFT, '패널용 본문 사본은 남는다');
     assert.equal(runtime.lastDraftArchive.chars, DRAFT.length);
-    assert.equal('draft' in runtime.lastDraftArchive, false, '초안 본문은 보관하지 않는다');
-    assert.ok(runtime.lastDraftArchive.hash.length > 0, '본문 대신 해시를 남긴다');
     assert.equal(runtime.lastDraftArchive.stages.length, 4);
     assert.equal(runtime.lastDraftArchive.stages[0].stage, 'shadow_act');
-    assert.equal(JSON.stringify(f.plugin.getRuntime()).includes('젖은 외투'), false, '런타임 스냅샷에도 본문이 없다');
+
+    // 계약: 밖으로 나가는 스냅샷에는 본문이 없다.
+    assert.equal(JSON.stringify(f.plugin.getRuntime()).includes('젖은 외투'), false, 'getRuntime() 스냅샷에 본문이 없다');
 
     const shadow = f.plugin.__testTraceFor('shadow_act');
     assert.ok(shadow?.archived, '정리 뒤에도 단계 상태를 복원한다');
@@ -47,10 +49,10 @@ test('purge keeps a content-free summary and the panel renders it', async () => 
     const panel = f.doc.querySelector('[data-page="results"] [data-subpanel="s"]');
     assert.ok(panel, 'the shadow results panel renders');
     const body = panel.textContent;
-    assert.match(body, /전달 후 본문 정리됨/);
-    assert.match(body, /단계 완료/);
+    assert.match(body, /작성한 초안/);
+    assert.match(body, /젖은 외투를 벗어/, '정리 뒤에도 패널은 본문을 보여준다');
+    assert.match(body, /지난 요청/);
     assert.match(body, /6\.2s/);
-    assert.equal(body.includes('젖은 외투'), false, '패널에도 본문을 되살리지 않는다');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
