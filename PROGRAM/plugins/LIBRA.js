@@ -33531,6 +33531,8 @@ function createLibraReadonlySourceContext(owner) {
     const PAIR_REVISION_CACHE_MAX_SCOPES = 4;
     const PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE = 4096;
     const PAIR_REVISION_CACHE_MAX_RETAINED_CHARS = 24 * 1024 * 1024;
+    const PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS = 24 * 1024 * 1024;
+    const LIBRA_RESIDENT_MEMORY_MAX_BYTES = 128 * 1024 * 1024;
     const MICRO_QUEUE_CAPACITY = 64;
     const LIVE_SCAN_EMBEDDING_RETRY_LIMIT = 2;
     const LOCAL_VECTOR_PAYLOAD_SCHEMA = 'libra.local_vector_payload.v1';
@@ -38817,6 +38819,24 @@ function createLibraReadonlySourceContext(owner) {
       }
       return cache;
     };
+    const trimPairRevisionCachesGlobal = () => {
+      const stats = state.pairRevisionCacheStats;
+      while (Number(stats.retainedChars || 0) > PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS
+        || residentMemoryBudgetSnapshot().totalBytes > LIBRA_RESIDENT_MEMORY_MAX_BYTES) {
+        let target = null;
+        for (const cache of state.pairRevisionCaches.values()) {
+          if (cache?.entries?.size) { target = cache; break; }
+        }
+        if (!target) break;
+        const oldestKey = target.entries.keys().next().value;
+        const entry = target.entries.get(oldestKey);
+        target.entries.delete(oldestKey);
+        const chars = Math.max(0, Number(entry?.retainedChars || 0) || 0);
+        target.retainedChars = Math.max(0, target.retainedChars - chars);
+        stats.retainedChars = Math.max(0, Number(stats.retainedChars || 0) - chars);
+        stats.evictions += 1;
+      }
+    };
     const pairRevisionProjectionWithCache = (raw, index, cache, sourceTagKey, observation = null) => {
       state.memoryNetworkIO.rawRoleMetadataRowsValidated++;
       const role = messageRole(raw);
@@ -38872,6 +38892,7 @@ function createLibraReadonlySourceContext(owner) {
       state.pairRevisionCacheStats.retainedChars += retainedChars;
       state.pairRevisionCacheStats.writes += 1;
       trimPairRevisionCache(cache);
+      trimPairRevisionCachesGlobal();
       return entry;
     };
     const pairRevisionProjection = (raw, index, cacheKeyInput = '') =>
@@ -38912,6 +38933,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       state.pairRevisionCacheStats.retainedChars += retainedChars - cache.retainedChars;
       cache.retainedChars = retainedChars;
+      trimPairRevisionCachesGlobal();
       cache.entries = nextEntries;
     };
     const pairRevisionSequenceEqual = (left = [], right = []) => left.length === right.length
@@ -77422,6 +77444,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       for (const [key, value] of store?.entries?.() || []) bytes += volatileUtf8Bytes(key) + volatileUtf8Bytes(value);
       return bytes;
     };
+    function residentMemoryBudgetSnapshot() {
+      const graphStore = volatileMemoryGraphCorpus?.()?.store;
+      const graphBytes = volatileStoreBytes(graphStore);
+      const pairBytes = Math.max(0, Number(state.pairRevisionCacheStats?.retainedChars || 0) * 2);
+      const verifiedBytes = Math.max(0, Number(state.verifiedReadCacheStats?.bytes || 0));
+      return {
+        maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
+        totalBytes: graphBytes + pairBytes + verifiedBytes,
+        byCache: { volatileGraph: graphBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes }
+      };
+    }
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
       const volatileState = volatileMemoryGraphCorpus();
       // A pending or running build is deferred, not cancelled: the yielded build's
@@ -77694,6 +77727,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         failures: volatileState.failures, sourceChangeRetries: volatileState.sourceChangeRetries,
         lastError: volatileState.lastError, lastBuildMs: volatileState.lastBuildMs, lastBuildMode: volatileState.lastBuildMode };
     };
+    const inspectResidentMemoryBudget = () => ({ schema: 'libra.resident_memory_budget.v1', ...residentMemoryBudgetSnapshot() });
     const verifyMemoryGraphCorpus = async (options = {}) => {
       if (!options || typeof options !== 'object' || Array.isArray(options)
         || Object.keys(options).some(key => !['expectedScopeKey','resourceBudget'].includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
@@ -83703,6 +83737,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await scheduleLensVectorRefresh(context.scope, lensSlug(lensId), '', { force: true }); },
       prewarmLensQuery: async (text = '') => { await prewarmLensQuery(await resolveContext(), text); },
       PAIR_REVISION_CACHE_MAX_SCOPES, PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE, PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
+      PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS,
       recallMinDynamicChars: RECALL_BUDGET_MIN_CHARS,
       recallMaxDynamicChars: RECALL_MAX_DYNAMIC_CHARS,
       recallDynamicBudgetTiers: RECALL_DYNAMIC_BUDGET_TIERS.slice(),
@@ -83730,7 +83765,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, listUnifiedIdentityLinkReviews, confirmUnifiedIdentityLink, identityLinkReviewRows:unifiedIdentityReviewRows, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectResidentMemoryBudget, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -99480,6 +99515,8 @@ advanced
         maxScopes: LibraMemoryCore.PAIR_REVISION_CACHE_MAX_SCOPES,
         maxEntriesPerScope: LibraMemoryCore.PAIR_REVISION_CACHE_MAX_ENTRIES_PER_SCOPE,
         maxRetainedChars: LibraMemoryCore.PAIR_REVISION_CACHE_MAX_RETAINED_CHARS,
+        maxTotalRetainedChars: LibraMemoryCore.PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS,
+        residentBudget: LibraMemoryCore.inspectResidentMemoryBudget(),
         stats: LibraMemoryCore.state.pairRevisionCacheStats || {}
       });
     },
@@ -99567,6 +99604,7 @@ advanced
     getMemoryRecallDiagnosticsView() { return safeClone(LibraMemoryCore.getMemoryRecallDiagnosticsView()); },
     cancelMemoryGraphGenerationBuild() { return LibraMemoryCore.cancelMemoryGraphGenerationBuild(); },
     inspectVolatileMemoryGraphCorpus() { return safeClone(LibraMemoryCore.inspectVolatileMemoryGraphCorpus()); },
+    inspectResidentMemoryBudget() { return safeClone(LibraMemoryCore.inspectResidentMemoryBudget()); },
     inspectMicroRepresentationVectors() { return safeClone(LibraMemoryCore.inspectMicroRepresentationVectors()); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) {

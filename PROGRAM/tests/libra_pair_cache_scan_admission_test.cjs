@@ -36,6 +36,11 @@ test('scope limit and native identity changes retain their current invalidation 
  const chats=Array.from({length:5},(_,i)=>chat(2,'scope-'+i));for(const c of chats)build(r,c);assert.equal(r.api.getPairRevisionCacheDiagnostics().scopes,4);let b=stats(r);build(r,chats[0]);assert.equal(delta(b,stats(r)).misses,4);
  const c=chats[0];c.message[1].chatId='replacement-native-assistant';b=stats(r);const out=build(r,c),d=delta(b,stats(r));assert.equal(out[0].assistant.chatId,'replacement-native-assistant');assert.equal(d.misses,1);assert.equal(d.pruned,1);
 }finally{await r.cleanup();}});
+test('global pair revision budget bounds retained projections across scopes',async()=>{const r=await harness({transformSource:s=>smallBudgets(s).replace('const PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS = 24 * 1024 * 1024;','const PAIR_REVISION_CACHE_MAX_TOTAL_RETAINED_CHARS = 128;')});try{
+ const first=chat(8,'global-a'),second=chat(8,'global-b');for(const row of [...first.message,...second.message])row.data='abcdefgh';
+ build(r,first);build(r,second);const diagnostics=r.api.getPairRevisionCacheDiagnostics();
+ assert.equal(diagnostics.maxTotalRetainedChars,128);assert.ok(diagnostics.stats.retainedChars<=128);
+}finally{await r.cleanup();}});
 test('removed carrier changes remain observations even with unchanged visible body',async()=>{const r=await harness();try{
  const c=chat(2);c.message[1].data='Visible';const first=build(r,c);c.message[1].data='Visible<img src="local" />';const b=stats(r),second=build(r,c),d=delta(b,stats(r));assert.equal(d.misses,1);assert.notDeepEqual(second[0].assistant.rawPayloadDigests,first[0].assistant.rawPayloadDigests);assert.equal(second[0].assistant.text,'Visible');assert.equal(second[0].assistant.internalCarrierRemoved,true);
 }finally{await r.cleanup();}});
