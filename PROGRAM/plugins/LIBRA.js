@@ -383,6 +383,12 @@ async function prepareMemorySuiteNativeBranchTargetStorage(input = {}) {
  */
 
 (async () => {
+// Recall reads these during branch reconcile. They used to be declared 100k lines lower, so an
+// initializer that never finished left them in the temporal dead zone and every recall failed
+// open with "Cannot access '__LIBRA_NARRATIVE_DIRECTION_LEGACY_SCHEMA' before initialization".
+const __LIBRA_NARRATIVE_COMPLETION_V2 = 'libra.narrative_completion.v2';
+const __LIBRA_NARRATIVE_DIRECTION_LEGACY_SCHEMA = 'libra.planner_narrative_direction.v1';
+const __LIBRA_STORY_ARC_MIGRATION_SCHEMA = 'libra.story_arc_to_narrative_migration.v1';
 /* LIBRARIAN SYSTEM EXECUTION CONTRACT v1.1.0 — BEGIN
  * Shared contracts and bounded operation lifecycle helpers. No storage, network or owner queues.
  * Provider authority and persistent corpus ownership remain inside each plugin.
@@ -102880,7 +102886,10 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         console.warn('[LIBRA]', 'portable restore startup recovery probe failed', msg);
       }
     }
-    ensureUi();
+    try { ensureUi(); } catch (error) {
+      runtime.lastError = compactValue(error?.message || error, 800);
+      console.warn('[LIBRA]', 'portable backup UI mount failed', runtime.lastError);
+    }
     const unloadApi = findHost(['onUnload']);
     if (typeof unloadApi?.onUnload === 'function' && !runtime.cleanupRegistered) {
       runtime.cleanupRegistered = true;
@@ -102899,7 +102908,16 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     return publicApi;
   };
 
-  await installLibraPortableMemoryBackup();
+  // The portable-backup UI is optional. Awaiting it here let one slow/failed installer stop the
+  // rest of this module from initializing (measured 2026-11-09: recall then threw a TDZ error).
+  // Start it, log a failure, and let initialization continue.
+  try {
+    Promise.resolve(installLibraPortableMemoryBackup()).catch(error => {
+      try { console.warn('[LIBRA]', 'portable backup installer failed', error?.message || error); } catch (_) {}
+    });
+  } catch (error) {
+    try { console.warn('[LIBRA]', 'portable backup installer threw', error?.message || error); } catch (_) {}
+  }
   /* LIBRARIAN SYSTEM PORTABLE MEMORY BACKUP v1 :: Libra END */
 
 
@@ -102909,10 +102927,6 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
  * 0.3.16: World Manager Narrative is the single factual narrative authority.
  * Legacy Story Arc is read-only migration/compatibility input only.
  * ──────────────────────────────────────────────────────────────────────── */
-const __LIBRA_NARRATIVE_COMPLETION_V2 = 'libra.narrative_completion.v2';
-const __LIBRA_NARRATIVE_DIRECTION_LEGACY_SCHEMA = 'libra.planner_narrative_direction.v1';
-const __LIBRA_STORY_ARC_MIGRATION_SCHEMA = 'libra.story_arc_to_narrative_migration.v1';
-
 function __libraCompletionClone(value) {
     if (value == null) return value;
     try { return structuredClone(value); } catch (_) {}
