@@ -1,4 +1,3 @@
-8f412442d7c3b8390c81768b73392395ddfed0830a04709dab49a2438cccc916  ./_gradia_prompt_contracts.py
 162191d9e43619331a020d99702f81f47769e5b5a4f2d1b3481207f4810d7d1e  ./.github/workflows/_risu-compatibility-check.yml
 8695c7ec5dcb5c637be0b484631dd28d4ed6dd2fea58db2fcef8ce179cef1360  ./.github/workflows/manual-release.yml
 9ad03541dadf90608ccaa31282b41c2dfc265cf4227138b7a3e82293eb21b33b  ./.github/workflows/release-builder-gate.yml
@@ -725,12 +724,12 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f  ./PROGRAM/PACKAGE_CONTENTS.txt
 a60c3cb16071d373783eaeca6d693f0ed92f019fe9ec5c49d90b39d30eae1f07  ./PROGRAM/plugins/Flashback_Memory.js
-7f34a791f7db60c4f271e41681e356c714049560675c52493d89e8750a7bb5b8  ./PROGRAM/plugins/GRADIA.js
+e6a536f8ef79d733ce1c0e981a5fef678830aa6cf09a3557244bc44dea825baa  ./PROGRAM/plugins/GRADIA.js
 a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 cc6956af9820348963e36d4904d9462fe92d215d8ddd44136c601bb4209f2e11  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-040db071abd55d9c173e0b27d422f0459b770f60d1c95dd33292919b886bcb88  ./PROGRAM/program-manifest.json
+10f5e4adc4379d407a55672949612dfec7f5539530a0d4dacf3a24280555b080  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 0f034ba6aee7622a2d2f82a1e3efda8b69db16e4f9467ceca203d1bafcc84f75  ./PROGRAM/run_regression_batch.py

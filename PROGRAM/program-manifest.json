@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T13:22:04.957Z",
+  "generatedAt": "2026-11-09T13:24:39.640Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4303,8 +4303,8 @@
       "bytes": 3751942
     },
     "plugins/GRADIA.js": {
-      "sha256": "7f34a791f7db60c4f271e41681e356c714049560675c52493d89e8750a7bb5b8",
-      "bytes": 3111597
+      "sha256": "e6a536f8ef79d733ce1c0e981a5fef678830aa6cf09a3557244bc44dea825baa",
+      "bytes": 3106561
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82",
@@ -6890,6 +6890,10 @@
       "sha256": "999ac8faf30fbae97f84004d98af5f3808bf12019de7e3b9ddbf4301094ca29c",
       "bytes": 2282
     },
+    "tests/gradia/location-continuity.test.cjs": {
+      "sha256": "7c25fcb40f7db53dc86ce970ba21db71ca7d9b022211e69484f0701656c0d2e4",
+      "bytes": 3402
+    },
     "tests/gradia/lore-activation-scale.test.cjs": {
       "sha256": "27ddcea66104b83d80ccc2e046005d410fd640b0e7f9c3164139be2c904537dc",
       "bytes": 2487
@@ -6969,6 +6973,10 @@
     "tests/gradia/turn-eligibility.test.cjs": {
       "sha256": "3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0",
       "bytes": 14784
+    },
+    "tests/gradia/wardrobe-continuity.test.cjs": {
+      "sha256": "cdc967acad2c621f1586bc901df5cf9efad71235870046dac70526e32738bc50",
+      "bytes": 4388
     },
     "tests/gradia/writing-mode-separation.test.cjs": {
       "sha256": "bca6c474546d1a0c78415fa54ea4cabb643d2c8aaab993c44bbc4256774d6055",
