@@ -29037,15 +29037,21 @@ function createGradiaModelContextBudget({ digest }) {
         for (const key of ['scopeKey', 'characterId', 'chatId']) if (typeof scope?.[key] !== 'string' || !scope[key] || scope[key].length > 512) fail('LIB_READ_SCOPE_UNAVAILABLE');
         const maxCorpusBytes = binding.maxCorpusBytes === undefined ? 4194304 : binding.maxCorpusBytes;
         if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) fail('LIB_READ_BUDGET_INVALID');
-        const readSource = String(binding.readSource || 'plugin_ipc');
-        if (readSource !== 'plugin_ipc') fail('LIB_READ_SOURCE_UNSUPPORTED');
+        const readSource = String(binding.readSource
+          || (['memory-suite.memory-read-client.v1', 'memory-suite.libra-read-client.v1'].includes(client.schema)
+            ? 'unified_engine'
+            : 'plugin_ipc'));
+        if (!['plugin_ipc', 'unified_engine'].includes(readSource)) fail('LIB_READ_SOURCE_UNSUPPORTED');
         if (readSource === 'plugin_ipc' && typeof dependencies.selectOwnerRecall !== 'function') {
           fail('LIB_READ_CONNECTION_UNAVAILABLE');
         }
         const signature = JSON.stringify([scope, maxCorpusBytes, binding.generation, readSource]);
         const assertBindingSignature = () => {
           check(record); const now = dependencies.getBinding?.();
-          const nowSource = String(now?.readSource || 'plugin_ipc');
+          const nowSource = String(now?.readSource
+            || (['memory-suite.memory-read-client.v1', 'memory-suite.libra-read-client.v1'].includes(client.schema)
+              ? 'unified_engine'
+              : 'plugin_ipc'));
           if (!now || now.client !== client || JSON.stringify([now.scope, now.maxCorpusBytes === undefined ? 4194304 : now.maxCorpusBytes, now.generation,
             nowSource]) !== signature) fail('LIB_READ_BOUNDARY_CHANGED');
         };
@@ -29256,7 +29262,11 @@ function createGradiaModelContextBudget({ digest }) {
     }
     const maxCorpusBytes = options.maxCorpusBytes === undefined ? 4194304 : options.maxCorpusBytes;
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
-    const requestedSource = options.readSource === undefined ? 'plugin_ipc' : String(options.readSource);
+    const requestedSource = options.readSource === undefined
+      ? (['memory-suite.memory-read-client.v1', 'memory-suite.libra-read-client.v1'].includes(client.schema)
+        ? 'unified_engine'
+        : 'plugin_ipc')
+      : String(options.readSource);
     const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
     if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
