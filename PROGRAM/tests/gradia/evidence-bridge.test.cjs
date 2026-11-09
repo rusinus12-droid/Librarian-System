@@ -33,11 +33,11 @@ async function fixture(opts={}){
   if(opts.modelContent)content=opts.modelContent(prompts.length,body,content);
   const finish=opts.finish?.(prompts.length,body)||'stop';
   return {ok:true,status:200,json:async()=>({choices:[{message:{content},finish_reason:finish}]}),text:async()=>{await opts.onBody?.();return JSON.stringify({choices:[{message:{content},finish_reason:finish}]})}};}}});
- await host.hooks.beforeRequest(messages(),'model');
+ if(!opts.deferInitialRequest) await host.hooks.beforeRequest(messages(),'model');
  const settings={...host.plugin.getRuntime().settings,inputAssistMode:'off',enableShadowAct:true,enableCharacterAide:true,enableWorldAide:true,enablePlotAide:true,multiPipelineMode:opts.mode||'lightweight',mode:'normal',failureMode:'hard',loreActivationMode:'off',debugLog:true,stagePresetNames:{},defaultPresetName:'offline',presets:{offline:{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic-not-a-credential',model:'offline-fake',context_window:128000,max_tokens:4096,timeout_ms:1000,stream:false}},skillRouterEnabled:false};
  const certifyInput=input=>{
- const stages=['shadow_act',...settings.aideStageOrder].filter(stage=>stage==='shadow_act'||stage==='aide_character'&&settings.enableCharacterAide&&settings.mode!=='lite'||stage==='aide_world'&&settings.enableWorldAide&&settings.mode!=='lite'||stage==='aide_plot'&&settings.enablePlotAide);
- const selections=stages.map(stage=>{const recent=host.buildRecent(input,{...settings,turnWindow:settings.stageOptions[stage]?.turn_window||settings.turnWindow});return {stage,turns:recent.turnEligibility.selected,viewSHA256:sha(canonical(nativeView(recent)))};});
+ const stages=['shadow_act',...(settings.aideStageOrder||[])].filter(stage=>stage==='shadow_act'||stage==='aide_character'&&settings.enableCharacterAide&&settings.mode!=='lite'||stage==='aide_world'&&settings.enableWorldAide&&settings.mode!=='lite'||stage==='aide_plot'&&settings.enablePlotAide);
+ const selections=stages.map(stage=>{const recent=host.buildRecent(input,{...settings,turnWindow:settings.stageOptions?.[stage]?.turn_window||settings.turnWindow});return {stage,turns:recent.turnEligibility.selected,viewSHA256:sha(canonical(nativeView(recent)))};});
  const refs=[...new Map(selections.flatMap(s=>s.turns.flatMap(t=>[t.user,...t.assistants,t.boundary])).map(r=>[JSON.stringify(r),r])).values()];
  const current=input.at(-1);let hash=2166136261;for(let i=0;i<current.content.length;i++){hash^=current.content.charCodeAt(i);hash=Math.imul(hash,16777619)}hash^=31;hash=Math.imul(hash,16777619);
  const currentInputRef={messageId:current.messageId,generationId:current.generationInfo?.generationId||null,speakerId:null,speakerName:current.name||null,contentHash:(hash>>>0).toString(16).padStart(8,'0')+':'+(current.content.length+1)};
