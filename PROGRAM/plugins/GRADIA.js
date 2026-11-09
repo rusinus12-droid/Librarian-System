@@ -39830,6 +39830,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     style.id = 'sga-rp-gui-style';
     style.textContent = `${GRADIA_MOCKUP_STYLE}\n#sga-rp-gui-root{position:fixed;inset:0;z-index:9999;display:block;overflow:hidden;background:transparent;color:var(--text,#edf0f7);color-scheme:dark}\n#sga-rp-gui-root .dialog textarea::placeholder{color:var(--text2);opacity:1}\n\n#sga-rp-gui-root .app{width:100%;height:100%}
 #sga-rp-gui-root .proto-bar{display:none}
+#sga-rp-gui-root .gx-statusbar{display:none;padding:9px 24px;border-top:1px solid var(--border2);background:var(--surface2);font-size:12.5px;color:var(--text2)}
+#sga-rp-gui-root .gx-statusbar:not(:empty){display:block}
+#sga-rp-gui-root .gx-statusbar.err{background:var(--danger-soft);border-top-color:var(--danger-line);color:var(--danger-ink)}
 #sga-rp-gui-root > .stage{height:100%;padding:16px;align-items:center;overflow:hidden;background:transparent}
 #sga-rp-gui-root > .stage > .frame{height:min(830px,100%);min-height:0}
 #sga-rp-gui-root .gx-results{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
@@ -42817,7 +42820,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (target.closest('[data-provider-test]')) {
         const name=target.closest('[data-provider-test]').dataset.providerTest;
         const preset=Gui.state.providers?.[name];
-        void testProviderPreset(preset).then(result=>guiSetStatus(`‘${name}’ 연결 테스트 성공 · ${result?.model||preset?.model||'응답 확인'}`)).catch(error=>guiSetStatus(error?.message||String(error),true,true));
+        if(!preset){guiSetStatus(`‘${name}’ 연결 테스트를 실행할 프리셋을 찾지 못했습니다.`,true,true);return;}
+        if(!String(preset.url||'').trim()){guiSetStatus(`‘${name}’ 연결 테스트 실패 · 주소가 비어 있습니다.`,true,true);return;}
+        if(!String(preset.model||'').trim()){guiSetStatus(`‘${name}’ 연결 테스트 실패 · 모델 이름이 비어 있습니다.`,true,true);return;}
+        guiSetStatus(`‘${name}’ 연결 테스트 중…`,false,true);
+        // callLLMWithPreset은 실패를 throw 대신 ok:false로 돌려주기도 한다. 그 경우까지 실패로 표시한다.
+        void testProviderPreset(preset).then(result=>{
+          if(result?.ok)guiSetStatus(`‘${name}’ 연결 테스트 성공 · ${result?.model||preset.model||'응답 확인'}`);
+          else guiSetStatus(`‘${name}’ 연결 테스트 실패 · ${result?.reason||result?.error||'응답 없음'}`,true,true);
+        }).catch(error=>guiSetStatus(`‘${name}’ 연결 테스트 실패 · ${error?.message||String(error)}`,true,true));
         return;
       }
       if (target.closest('[data-provider-key-delete]')) {
@@ -43813,6 +43824,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     dialogLayer.addEventListener('click', event => { if (event.target === dialogLayer) closeGuiDialog(); });
     app.appendChild(dialogLayer);
     Gui.app = app; Gui.contentNode = app.querySelector('.page-body'); Gui.saveBarNode = app.querySelector('#savebar'); Gui.dialogLayer = dialogLayer;
+    // guiSetStatus()는 [data-gui-status] 노드를 찾아 문구를 쓴다. 이 노드가 없으면 연결 테스트·저장
+    // 결과가 조용히 사라지므로, 셸에 상태 표시줄을 붙이고 저장 바 바로 위에 둔다.
+    const statusBar = guiEl('div', { class: 'gx-statusbar', role: 'status', 'aria-live': 'polite' });
+    statusBar.setAttribute('data-gui-status', '');
+    const saveBarHost = Gui.saveBarNode?.parentNode || app;
+    saveBarHost.insertBefore(statusBar, Gui.saveBarNode || null);
+    Gui.statusBarNode = statusBar;
     stage.appendChild(frame);
     Gui.root.appendChild(stage);
     bindMockupEvents(app); Gui.shellReady = true;
