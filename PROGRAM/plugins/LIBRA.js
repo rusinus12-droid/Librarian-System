@@ -77398,7 +77398,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const set = store.set.bind(store), del = store.delete.bind(store), clear = store.clear.bind(store);
       store.set = (key, value) => {
         const keyBytes = volatileUtf8Bytes(key), valueBytes = volatileUtf8Bytes(value);
-        const previous = store.has(key) ? volatileUtf8Bytes(store.get(key)) : 0;
+        const previous = store.has(key) ? keyBytes + volatileUtf8Bytes(store.get(key)) : 0;
         const nextBytes = retainedBytes - previous + keyBytes + valueBytes;
         if (nextBytes > maxBytes) throw new Error('LIBRA_GRAPH_VOLATILE_CORPUS_LIMIT');
         retainedBytes = nextBytes;

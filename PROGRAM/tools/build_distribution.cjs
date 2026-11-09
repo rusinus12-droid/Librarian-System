@@ -99,6 +99,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'hayaku_native_repair_worldline_race_test.cjs',
   'native_branch_lia_runtime_test.cjs',
   'native_branch_libra_runtime_test.cjs',
+  'libra_volatile_store_bytes_test.cjs',
   'native_branch_libra_t7_continue_test.cjs',
   'native_branch_libra_precanonical_fork_test.cjs',
   'native_branch_libra_worldline_meta_test.cjs',
