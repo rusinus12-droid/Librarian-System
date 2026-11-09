@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T12:23:55.258Z",
+  "generatedAt": "2026-11-09T12:29:51.818Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4299,8 +4299,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "18c36afba4625be992b142d543f3a9f6c6a64dd859b6927e31c6fa19e73323e5",
-      "bytes": 3743514
+      "sha256": "b06ef65385284ffd92871c8fdb4e9fbfb43598c2ce639be37059c2e80f85e4c1",
+      "bytes": 3749749
     },
     "plugins/GRADIA.js": {
       "sha256": "488c3717c368a39402e5179d5f2256a1a9ed0b0d4a7f0d2d2d12192df440bec8",
@@ -6553,6 +6553,10 @@
     "tests/flashback_temporal_candidate_parity_runtime_test.cjs": {
       "sha256": "1310a1ac3bbc2fe466dede4b655925f6f52fdd584f7087d2e5ddcbc77d45c6cc",
       "bytes": 1495
+    },
+    "tests/flashback_turn_vector_coverage_test.cjs": {
+      "sha256": "399c21a7feb78e2eeb4b2ccce39875d2fd9d6f368d7c57e9a29f3a9e286a436c",
+      "bytes": 6385
     },
     "tests/flashback_uncertain_recovery_runtime_test.cjs": {
       "sha256": "e8969b2de34274bdade7d88b0a0a3a622f752db1a513dd8f6076387d5155f99b",
