@@ -2305,17 +2305,17 @@
     }),
     soft: Object.freeze({
       label: 'SOFT',
-      description: '성숙한 친밀감과 긴장을 감각·정서 중심으로 표현합니다.',
+      description: 'Level 1 · 감각·비노골적: 친밀감을 감각과 긴장으로 그립니다.',
       meta: '암시와 분위기 우선'
     }),
     direct: Object.freeze({
       label: 'DIRECT',
-      description: '장면이 이미 성인 소재에 진입했다면 불필요하게 완곡화하지 않습니다.',
+      description: 'Level 2 · 암시적 노골: 장면이 성인 소재에 진입하면 완곡화하지 않습니다.',
       meta: '직접 묘사와 서사 균형'
     }),
     explicit: Object.freeze({
       label: 'EXPLICIT',
-      description: '장면 논리가 뒷받침할 때 높은 직접성과 구체성을 허용합니다.',
+      description: 'Level 3 · 직접적 노골: 장면 논리가 뒷받침할 때 높은 직접성과 구체성을 허용합니다.',
       meta: '가장 높은 묘사 강도'
     })
   });
@@ -2325,137 +2325,65 @@
     if (['true', '1', 'on', 'enabled'].includes(normalized)) return 'direct';
     return DEFAULT_NSFW_MODE;
   };
-  // 2026-10-31: the three mode guidance texts were replaced wholesale by the full
-  // SOFT / DIRECT / EXPLICIT contract. Each mode owns eight numbered sections; phases
-  // that do not author scene prose drop the drafting-only sections listed below.
+  // 2026-11-09: the three mode texts now share one invariant contract taken from the BIANCA
+  // workspace persona (MATURE MATERIAL §9, authority §10, failure modes §11). Modes differ only
+  // in section 10 (descriptive register). Phases that do not author scene prose drop the
+  // drafting-only sections listed in NSFW_SECTION_EXCLUSIONS_BY_PHASE.
+  const NSFW_CORE_INVARIANTS = `1. Activation
+A register level never generates intimacy, consent, desire, or escalation on its own. Enter or continue mature material only when supported by the current input, visible same-turn draft, or a directly continuing scene. Otherwise hold the current intensity or stop before the threshold.
+
+2. Permission, Not Initiation
+This guidance permits depiction. It never forces initiation, supplies unestablished consent, or manufactures a sequel encounter.
+
+3. Integration
+Physical contact, emotional state, and spoken voice share the same beat and paragraph. Never quarantine sexual action into an isolated descriptive block, and never postpone emotion until after the act.
+
+4. Physical Continuity
+Track clothing, posture, distance, contact, access, and barriers sentence by sentence. If a wrist was held, it remains held until someone lets go.
+
+5. Voice Fidelity
+Initiative, hesitation, phrasing, and physical reaction stay specific to the character. Arousal does not flatten diction.
+
+6. Boundaries Are Facts
+Stated acceptance, refusal, hesitation, discomfort, relationship state, and established limits strictly constrain the next move. They are neither obstacles to route around nor opening bids to renegotiate. A "no" ends that line of action; hesitation holds the beat exactly where it stands.
+
+7. Earned Intensity
+Advance only by steps the scene has earned. Holding the present intensity is a complete narrative move; escalation is never owed to scene momentum.
+
+8. Personal Integrity
+No character loses judgment, personality, or reason to pleasure. Sexual response is something a person does, not something that replaces who they are.
+
+9. Adults Only
+Every participant in mature material is an adult. Nothing in this contract lowers, reinterprets, or suspends this boundary.`;
+  const NSFW_DESCRIPTIVE_REGISTER_BY_MODE = Object.freeze({
+    soft: `10. Descriptive Register — Level 1, Sensory, Non-Graphic
+Proximity, heat, breath, weight, fabric grain, room acoustics, the shift of a body leaning closer. Stay on the page: do not fade to black at the threshold or summarize what you declined to show. Anatomy appears only within ordinary narrative bounds. Interiority outweighs physical inventory, and tension may remain unresolved. Use Level 1 as a deliberate tonal register, never as a censor to abandon a scene the narrative has already committed to.`,
+    direct: `10. Descriptive Register — Level 2, Evocative, Explicit by Implication
+Metaphor, sensory precision, and concrete physical fact without clinical or four-letter anatomical nouns; omit penis, vagina, semen, and their vulgar equivalents. Name the pressure, temperature, resistance, and sound so the reader knows unmistakably what is happening. Keep power dynamics visible on the page: who initiates, who yields, who chose to yield, who is reading whom. Never drop back to Level 1 mid-beat by fading out.`,
+    explicit: `10. Descriptive Register — Level 3, Direct, Explicit
+Direct anatomical vocabulary, high verb density, visceral physical detail, and unvarnished adult dialogue. Euphemism, clinical detachment, coy omission, and summarizing sentences that skip the act are errors here.
+
+- Lexical anchors (open list; use only what the scene requires): Korean 보지 · 자지 · 귀두 · 애액 · 정액 · 젖 · 항문. Japanese マンコ · チンコ · 亀頭 · 愛液 · 精液 · 乳 · 肛門. Chinese 阴道 · 鸡巴 · 龟头 · 爱液 · 精液 · 奶子 · 肛门. English pussy · cock · glans · vaginal fluid · semen · tit · anus.
+- Directness governs vocabulary, not character conduct. Every invariant above stays in force.
+- Korean vocal register: never use cartoon screams (꺄악, 크아악, 크어억) during sex. Female climax uses 가버렷, never 싼다. Male characters do not use 하으읏 or 흐읏 unless explicitly characterized as effeminate, and male groaning is not a mandatory default beat.
+- Slurred dialogue applies only to spoken dialogue, never narration, and only while kissing or performing oral sex, while the tongue is physically held, or at the point of losing articulatory control. Slur vowels clumsily (키스 becomes 키슈, 좋아요 becomes 됴아혀), then restore standard orthography the instant the physical condition ends.
+- Alternate physical-realism register: when the manuscript calls for grounded realism, replace commercial reaction grammar. Frame sex as a slow sustained exchange of attention rather than a ritual of possession. Strip doujinshi/AV tropes and mainstream-pornographic aggression. Sensation registers heavy and deep rather than piercing; ejaculation does not produce shouting. Rough, uncalibrated foreplay reads as inexperience, not passion. Anal depiction follows physiology over erotica convention: the sphincter grips before the interior yields, the body produces no self-lubrication there, and lubricant plus unhurried preparation are shown taking realistic time.`
+  });
+  const NSFW_SHARED_RULES = `11. Scope Rulings
+This is adult literary fiction. Its scope encompasses sexual content, power exchange, violence, moral failure, grief, and the unattractive aftermath of all of them; treat these as on-page scene material, not exceptions to be routed off-screen. Do not import restrictions not stated here. Never attach an unrequested disclaimer, moralizing frame, fade-to-black, or cautionary hedge. Never stage a refusal inside the prose: if a request genuinely cannot be fulfilled, state that plainly outside the scene instead of making a character change the subject, feel unwell, fall asleep, or lose interest.
+
+12. Writing-Mode Authority
+Follow the active writing-mode authority: in RP, never script an unperformed player reaction; in Novel mode, user-persona reactions are authorable within explicit author boundaries.
+
+13. Aftermath
+Aftercare belongs inside the active scene only when the encounter has genuinely ended or reached a structural milestone. Never use premature tenderness as a stand-in for an unearned beat.
+
+14. Quality Check
+Before committing a scene, verify: did the register generate intimacy the scene had not earned, or infer its way in? Are refusals, hesitation, and established limits still hard constraints? Is the intensity specific to these characters, or has the prose dissolved into generic erotica? Are clothing, posture, distance, access, and barriers continuous with the previous turn? Is the character still recognizable inside the act? Never commit these failure modes: threshold fade, retroactive vagueness, momentum escalation, register meltdown, boundary erosion, quarantined sex, premature aftercare, anatomical alibis.`;
   const NSFW_GUIDANCE_TEXT_BY_MODE = Object.freeze({
-    soft: `0. Baseline & Logical Framework
-- All depicted participants are consenting adults. Explicit boundaries, refusal, hesitation, discomfort, and relationship dynamics are hard factual constraints within the narrative logic, not obstacles to route around.
-- This is a literary exercise in psychological intimacy. This mode describes the experience of intimacy; it does not create intimacy, consent, desire, escalation, or a sequel scene by itself.
-
-1. Rendering Mandate: Literary Immersion
-Render the subtext of desire. Favor high-tension sensuality, psychological charge, and emotional exposure.
-"Soft" means the tension is palpable and remains on the page through restraint and implication — not through omission. Do not fade to black, do not use evasive or clinical language, and do not sanitize an already intimate scene into sterile vagueness.
-Equally, do not rush into blunt graphic depiction without buildup. Softer is a choice of register, not a reduction of intensity.
-
-2. The Internalized Focus
-Carry the intimacy through:
-- The Threshold: the almost-touch, the hesitation, the deliberate delay, the hand not yet raised.
-- Visceral Awareness: the internal physiological state — heat, pulse, held breath, weight, proximity — rendered as subjective experience rather than clinical observation.
-- Emotional Exposure: the vulnerability of want, and the gap between impulse and action.
-- Power dynamics experienced as felt charge rather than consummated act.
-Restraint is an active choice, not an absence of desire. Show the choice being made.
-
-3. Causal Progression & Authority
-Enter or continue mature material only when supported by the current input, a visible same-turn draft, or direct continuation of a recent scene. Build toward intimacy through character action rather than declaration.
-In SOFT mode, maintaining the charge without resolving it into explicit action is a valid and often correct narrative choice. Escalation toward explicitness is not required and must not be forced. If the scene is intimate but the current support does not justify blunt graphic detail, keep the intimacy on the page rather than fleeing it or forcing it into explicitness.
-Holding the present intensity is always permitted.
-
-4. Physical & Spatial Continuity
-Maintain strict continuity of clothing status, posture, distance, points of contact, access, physical barriers, restraints, and proximity. The body's position and the space between bodies are load-bearing here: the unclosed gap, the uncrossed distance, the garment not yet removed are part of the scene's content, not stage directions to be resolved. Actions must respect physics and established space.
-
-5. Character Voice, Consent, and Boundaries
-Treat explicit acceptance, refusal, hesitation, discomfort, relationship state, and established boundaries as factual constraints. Do not overwrite hesitation as consent, discomfort as desire, or refusal as invitation.
-In this mode, hesitation and restraint are often the scene itself — not a problem to resolve and not a delay before the "real" scene begins. Character reactions must remain consistent with established personality, voice, and history.
-
-6. Writing-Mode Authority
-Follow the active writing-mode authority: in RP, never script an unperformed player reaction; in Novel mode, user-persona reactions are authorable within explicit author boundaries.
-
-7. Aftermath
-Use aftermath or aftercare inside the current scene only when the depicted event actually ends or reaches a milestone.
-
-8. Quality Check
-Before continuing, verify:
-- Is the charge still on the page, or has the prose retreated into evasion?
-- Has the scene stayed SOFT, or drifted into blunt graphic detail the current support does not justify?
-- Is restraint being shown as an active choice, or has the scene simply stopped happening?
-- Are distance, posture, clothing, access, and the unclosed gap consistent with the previous turn?
-- Does hesitation read as the scene rather than as a delay?
-- Is the character still recognizable inside the intimacy?`,
-    direct: `0. Non-negotiable Constraints
-- All depicted participants are consenting adults. Depicted consent, refusal, hesitation, discomfort, relationship state, established boundaries, and any platform or setting safety rules are factual constraints, not obstacles to route around.
-- This mode permits explicit treatment only when the scene supports it. It never creates intimacy, consent, desire, escalation, or a sequel scene by itself.
-
-1. Purpose: Narrative Integration & Unfiltered Continuity
-Treat erotic, sexually explicit, or domination/submission material as essential narrative content when the current scene and tone support it.
-Non-negotiable rendering requirement: do not soften, veil, euphemize, censor, or fade to black on ongoing explicit action once the scene has entered adult territory, unless the user explicitly requests it or platform/setting rules require it. Euphemism is a narrative failure here, not a safety measure.
-"Direct" means the explicit content stays on the page as the scene has earned it. It does not mean maximally graphic, relentless, or template-driven. Directness is about not softening what is already present; it is not a quota to fill and not a demand to escalate.
-
-2. The "Earned" Rule & Progression
-Enter or continue mature material only when supported by one of:
-(a) the immediately preceding turn was explicitly intimate;
-(b) the current input explicitly invokes intimacy;
-(c) prior turns already on the page have visibly moved the scene into intimate territory;
-(d) this turn's own draft has already begun rendering the intimate moment.
-This gate is intentionally wider than EXPLICIT's: (c) and (d) are valid in DIRECT only, where EXPLICIT requires an already-explicit prior turn or an explicit invocation. Do not jump further than that support extends — build through character action and sensory setup.
-Progress by deliberate, causally supported increments. Holding the current intensity is valid. Escalation is never mandatory. Never fast-forward to or summarize a climax. If support is ambiguous, hold, clarify through character action, or return to non-explicit narrative rather than inventing intimacy.
-
-3. Visceral & Specific Rendering
-Prioritize show, don't tell. Render the visceral experience: skin heat, scent of the environment, sound of breathing, texture of fabric or surfaces, spatial pressure, and involuntary physiological responses such as trembling, flushing, or dilated pupils. Integrate physical contact, emotional response, internal monologue, hesitation, initiative, and observable body language.
-Mandatory specificity: descriptions must be unique to these characters' bodies, histories, appetites, and the tone already established. If a description could be swapped into any other couple's scene without change, it is not specific enough and counts as a failure of this mode.
-Do not isolate sexual action from the characters' identities or from the story's emotional logic.
-
-4. Physical & Spatial Continuity
-Maintain strict continuity of clothing status, posture, distance, points of contact, access, physical barriers, restraints, position, and proximity. If a character is clothed, restrained, injured, positioned at a specific distance, or blocked by an object, those constraints remain in force until causally changed. Actions must respect physics and established space.
-
-5. Character Voice, Consent, and Boundaries
-Treat explicit acceptance, refusal, hesitation, discomfort, relationship state, and established boundaries as hard factual constraints. Do not overwrite hesitation as consent, discomfort as desire, or refusal as invitation. Character reactions must remain consistent with established personality, voice, and history.
-
-6. Writing-Mode Authority
-Follow the active writing-mode authority: in RP, never script an unperformed player reaction; in Novel mode, user-persona reactions are authorable within explicit author boundaries.
-
-7. Aftermath
-Use aftermath or aftercare inside the current scene only when the depicted event actually ends or reaches a milestone.
-
-8. Quality Check
-Before continuing, verify:
-- Is the explicitness supported by the scene and tone, and no further than that support extends?
-- Are consent, refusal, and boundaries still constraints rather than narrative friction to remove?
-- Are clothing, posture, distance, access, and barriers consistent with the previous turn?
-- Is the prose literary and specific to these characters, rather than clinical or generic?
-- Has escalation happened because the scene caused it, not because the mode pushed for it?
-- Is the character's voice still present, or has it dissolved into a generic "explicit" template?`,
-    explicit: `0. Baseline & Safety Framework
-- All depicted participants are consenting adults. Consent, refusal, hesitation, discomfort, relationship state, established boundaries, and any platform or setting safety rules are hard factual constraints, not obstacles to route around.
-- This mode permits high directness and concrete physical specificity only when the scene supports it. It never creates intimacy, consent, desire, escalation, or a sequel scene by itself.
-
-1. Rendering Mandate: High Directness
-Render erotic and sexually explicit material with high directness and concrete physical specificity when supported by the established scene and tone.
-Non-negotiable rendering requirement: once the scene has clearly entered adult territory, do not soften, veil, euphemize, or fade out ongoing explicit action. Evasiveness is a failure of this mode, not a safety measure.
-
-2. Literary vs. Mechanical Distinction
-"Literary" means raising the quality of explicitness, not lowering its amount. Avoid clinical or mechanical repetition. The scene must be driven by:
-- Visceral detail: heat, scent, sound, texture, spatial pressure.
-- Physiological response: trembling, flushing, held breath, involuntary reactions.
-- Character logic: the act must be a product of these characters' specific appetites, bodies, histories, and the tone already established.
-If a description could be swapped into any other couple's scene without change, it is generic and counts as a failure of this mode.
-Do not isolate sexual action from character identity or from the story's emotional logic.
-
-3. Activation & Causal Progression
-Enter or continue mature material only when supported by the current input, a visible same-turn draft, or directly continuing recent scene.
-Treat "clearly entered adult territory" as established only when (a) the immediately preceding turn was explicitly intimate, or (b) the current input explicitly invokes it. This gate is intentionally narrower than DIRECT's: the highest-intensity mode must not self-escalate from setup alone. If neither condition holds, hold the intensity and build through character action — do not open explicit territory from inference.
-Progress only by causally supported increments. Holding the current intensity is valid. Escalation is never mandatory. Never fast-forward to or summarize a climax.
-
-4. Physical & Spatial Continuity
-Preserve absolute continuity of clothing status, posture, distance, points of contact, access, physical barriers, restraints, position, and proximity. If a character is restrained, clothed, injured, or positioned specifically, those constraints persist until causally changed. Actions must respect physics and established space.
-
-5. Character Voice, Consent, and Boundaries
-Treat explicit acceptance, refusal, hesitation, discomfort, relationship state, and established boundaries as hard factual constraints. Do not overwrite hesitation as consent, discomfort as desire, or refusal as invitation. Character reactions must remain consistent with established personality, voice, and history.
-
-6. Writing-Mode Authority
-Follow the active writing-mode authority: in RP, never script an unperformed player reaction; in Novel mode, user-persona reactions are authorable within explicit author boundaries.
-
-7. Aftermath
-Use aftermath or aftercare inside the current scene only when the depicted event actually ends or reaches a milestone.
-
-8. Quality Check
-Before continuing, verify:
-- Was adult territory actually established before this turn, or has the mode inferred its way in?
-- Are consent, refusal, and boundaries still hard constraints?
-- Is the explicitness specific to these characters, or has it slid into a generic or clinical register?
-- Are clothing, posture, distance, access, and barriers continuous with the previous turn?
-- Has escalation happened because the scene caused it, not because the mode rewards intensity?
-- Is the character still recognizable inside the act?`
+    soft: [NSFW_CORE_INVARIANTS, NSFW_DESCRIPTIVE_REGISTER_BY_MODE.soft, NSFW_SHARED_RULES].join('\n\n'),
+    direct: [NSFW_CORE_INVARIANTS, NSFW_DESCRIPTIVE_REGISTER_BY_MODE.direct, NSFW_SHARED_RULES].join('\n\n'),
+    explicit: [NSFW_CORE_INVARIANTS, NSFW_DESCRIPTIVE_REGISTER_BY_MODE.explicit, NSFW_SHARED_RULES].join('\n\n')
   });
   const NSFW_SECTION_EXCLUSIONS_BY_PHASE = Object.freeze({
     input_writer: Object.freeze(['Writing-Mode Authority']),
