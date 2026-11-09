@@ -3298,10 +3298,18 @@ ${BIANCA_PERSONA_TEXT}`;
     }
     const providerDefault = mode === 'ollama_native' || libOllamaServedRoute(providerId, preset.url)
       ? ollamaContextWindowTokens(preset) : 0;
-    const limit = manual && catalog ? Math.min(manual, catalog) : manual || catalog || providerDefault;
+    // Nothing configured leaves two estimates: the provider route default and the model-name heuristic.
+    // Taking the larger one keeps the evidence gate on the same number the rest of GRADIA budgets with,
+    // instead of cutting a 1M-token model down to ollama's 32k fallback.
+    const hinted = estimateModelContextTokens(preset) || 0;
+    let limit, source;
+    if (manual && catalog && catalog < manual) { limit = catalog; source = 'catalog'; }
+    else if (manual) { limit = manual; source = 'configured'; }
+    else if (catalog) { limit = catalog; source = 'catalog'; }
+    else if (providerDefault && hinted && hinted > providerDefault) { limit = hinted; source = 'model_heuristic'; }
+    else if (providerDefault) { limit = providerDefault; source = 'provider_default'; }
+    else { limit = hinted; source = 'model_heuristic'; }
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 4000000) return null;
-    const source = catalog && limit === catalog && (!manual || catalog < manual) ? 'catalog'
-      : manual ? 'configured' : 'provider_default';
     return Object.freeze({ providerId, modelId, requestFormat, context: Object.freeze({ source, limit,
       sourceIdentity: `${source}:${name}:${modelId}:${metadataAt}`, providerId, modelId }) });
   };
@@ -4696,6 +4704,13 @@ ${BIANCA_PERSONA_TEXT}`;
         if (text(preset.extra_body_json || '').trim()) throw this.fail('LIB_READ_EXTRA_BODY_UNSUPPORTED');
         this.budgetProfile = libModelContextProfile(preset, name);
         if (!this.budgetProfile) throw this.fail('LIB_READ_MODEL_CONTEXT_UNAVAILABLE');
+        // Which context number the evidence gate used, and where it came from.
+        try {
+          Runtime.lastLibModelBudget = Object.freeze({ at: Date.now(), presetName: name,
+            providerId: this.budgetProfile.providerId, modelId: this.budgetProfile.modelId,
+            source: this.budgetProfile.context.source, limit: this.budgetProfile.context.limit,
+            sourceIdentity: this.budgetProfile.context.sourceIdentity });
+        } catch (_) {}
         this.budgetWitness = null; this.budgetEnvelope = null;
       },
       assertDispatch(route, init) {
@@ -18109,17 +18124,25 @@ ${passage.text || ''}`, 420));
           : Math.max(2048, Math.ceil(visibleWanted * 0.75)))
       : 0;
     const wanted = visibleWanted + reasoningHeadroom;
+    // A reasoning model can ask for more than the context can hold once input and margin are paid for.
+    const contextTokens = clampInt(preset?.context_window, 0, 4000000, 0)
+      || clampInt(preset?.catalog_context_window, 0, 4000000, 0)
+      || estimateModelContextTokens(preset) || 0;
+    const contextOutputCap = contextTokens ? Math.max(1024, Math.floor(contextTokens * 0.35)) : 0;
     const draftSafetyCap = Math.min(32768, Math.max(8192, Math.ceil(draftChars / Math.min(1.7, charsPerToken)) + 2048));
     const reasoningDraftCap = reasoningActive
       ? Math.min(32768, Math.max(draftSafetyCap, Math.ceil(visibleWanted * 1.8)))
       : draftSafetyCap;
     const analysisCap = reasoningActive ? MAX_ANALYSIS_RETRY_OUTPUT_TOKENS : MAX_ANALYSIS_OUTPUT_TOKENS;
-    const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap));
+    const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap,
+      contextOutputCap || Number.MAX_SAFE_INTEGER));
     // Shows when a draft target cannot fit the preset's own max_tokens.
     try {
       Runtime.lastDraftOutputBudget = { ...(Runtime.lastDraftOutputBudget || {}), [stageName + (isAnalysis ? ':analysis' : ':write')]: {
         at: Date.now(), targetMaxChars: draftChars, charsPerToken, wanted, presetMax, granted, reasoningActive,
-        limitedByPreset: granted === presetMax && presetMax < wanted } };
+        contextOutputCap: contextOutputCap || null,
+        limitedByPreset: granted === presetMax && presetMax < wanted,
+        limitedByContext: !!contextOutputCap && granted === contextOutputCap && contextOutputCap < Math.min(presetMax, wanted) } };
     } catch (_) {}
     return granted;
   };
@@ -29093,7 +29116,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
 // Pure, locally issued budget evidence. This is not owner authentication and is
 // not embedded into GRADIA runtime. Content is bounded; framing is an estimate.
 /* GRADIA MODEL CONTEXT BUDGET BEGIN */
-// Source: sdk/GradiaModelContextBudget.source.js sha256=610925c140c711e12e6e8dc3388c7d57b3005f93d1c2eeda1195a15e528fd214
+// Source: sdk/GradiaModelContextBudget.source.js sha256=19dae413007a26737815b18ef2661ae5c1aa2daa33577ee610166354a44038d2
 'use strict';
 // Model context and transport bytes are different resources. This meter uses a
 // disclosed text estimate, not an exact provider tokenizer or an owner receipt.
@@ -29239,7 +29262,7 @@ function createGradiaModelContextBudget({ digest }) {
       const { providerId, modelId, routeIdentity, requestFormat, context } = input;
       if (typeof providerId !== 'string' || !providerId || typeof modelId !== 'string' || !modelId
         || typeof routeIdentity !== 'string' || !/^https?:\/\//.test(routeIdentity)) stop('model_identity_changed');
-      if (!context || !['configured','catalog','provider_default'].includes(context.source)
+      if (!context || !['configured','catalog','provider_default','model_heuristic'].includes(context.source)
         || !integer(context.limit) || context.limit > 4000000
         || typeof context.sourceIdentity !== 'string' || !context.sourceIdentity
         || context.providerId !== providerId || context.modelId !== modelId
@@ -42249,6 +42272,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     lastNativeBindFailure: Runtime.lastNativeBindFailure || null,
     lastStageViewMismatch: Runtime.lastStageViewMismatch || null,
     lastDraftOutputBudget: Runtime.lastDraftOutputBudget || null,
+    lastLibModelBudget: Runtime.lastLibModelBudget || null,
     lastContextDegradation: Runtime.lastContextDegradation || null,
     contextDegradations: Array.isArray(Runtime.contextDegradations) ? Runtime.contextDegradations.slice(-8) : [],
     finalDraft: Runtime.finalDraft || '',

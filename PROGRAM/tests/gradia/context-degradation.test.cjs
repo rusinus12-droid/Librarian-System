@@ -55,3 +55,21 @@ test('a context too small for its own prompt still fails after the ladder and is
   assert.equal(record.contextLimit,900);
   assert.equal(prompts.length,0,'nothing is dispatched when no degradation can make it fit');
 });
+
+test('an unset context window uses the model heuristic instead of the ollama 32k default',async t=>{
+  const prompts=[];
+  const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
+  await f.host.plugin.saveProviderPreset('hosted',{provider:'custom',url:'https://ollama.com/v1/chat/completions',key:'synthetic',
+    model:'deepseek-v4.1-flash:1017-cloud',max_tokens:16384,timeout_ms:5000,stream:false});
+  await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'hosted',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
+    failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:false,enable_world_aide:false,enable_plot_aide:false});
+  await f.connect();
+  assert.equal(f.status().connection.state,'connected');
+  await f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
+  const runtime=f.host.plugin.getRuntime();
+  const budget=runtime.lastLibModelBudget;
+  assert.ok(budget,'the evidence gate records which context it used');
+  assert.equal(budget.limit,1000000,'the model heuristic wins over the 32,768 route fallback');
+  assert.equal(budget.source,'model_heuristic');
+  assert.ok(!runtime.lastContextDegradation,'nothing has to be dropped at the real model size');
+});

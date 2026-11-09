@@ -1,4 +1,3 @@
-ec69d1acdfb22e08ca749d8f83cfcb9c378cb1a43ed80e7000182f4029f90a39  ./_gradia_context_degrade.py
 162191d9e43619331a020d99702f81f47769e5b5a4f2d1b3481207f4810d7d1e  ./.github/workflows/_risu-compatibility-check.yml
 8695c7ec5dcb5c637be0b484631dd28d4ed6dd2fea58db2fcef8ce179cef1360  ./.github/workflows/manual-release.yml
 9ad03541dadf90608ccaa31282b41c2dfc265cf4227138b7a3e82293eb21b33b  ./.github/workflows/release-builder-gate.yml
@@ -725,18 +724,18 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 4587c121f08b56d71872eb94cc19ecd7e546d2890011bb673aa08f9d1188c7cf  ./PROGRAM/memory-suite.sh
 9bd28fa12c227ec713654c766f6230d9d80834307bbf0cf16bd91c42dd8b3b5f  ./PROGRAM/PACKAGE_CONTENTS.txt
 256f365aad7f5d35eb4846395d42276b2cf13498604f6b1bf3448276d0ef1047  ./PROGRAM/plugins/Flashback_Memory.js
-5597f8e964701e31d4173d358e1a361c787f527ea007a3ea344f834d9a9a6668  ./PROGRAM/plugins/GRADIA.js
+4f8bc1a973c261d5c1fc4c85efeeb23d7f3104c3d3c895024ae918a719aec58a  ./PROGRAM/plugins/GRADIA.js
 a07cf10e043ecae9ca0973abe98489650ce8522de3590ce56427bb4de0e6ec82  ./PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 cc6956af9820348963e36d4904d9462fe92d215d8ddd44136c601bb4209f2e11  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-d20a412b3536e8fc3215f04b9b867b5a5cbb8e89ae6fa57f61960830395b134f  ./PROGRAM/program-manifest.json
+c2554fb65b91baded3538237a05cac751443dac1b8fe78d80f7edc1013ebb772  ./PROGRAM/program-manifest.json
 8d5c64f1573f97a5a442db122023d0c2fb7a087fd6acffcbc087c550eee3645b  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 0f034ba6aee7622a2d2f82a1e3efda8b69db16e4f9467ceca203d1bafcc84f75  ./PROGRAM/run_regression_batch.py
 891ad119690f9aa83c127448e3eeea500c10cd5e0d0732d532d25b63b90ffae5  ./PROGRAM/sdk/FlashbackServerRepair.source.js
 1a0ad5457621b1611885189351631b2661e3658becd8cdc0b927dae3099b6dac  ./PROGRAM/sdk/gradia/GradiaNativeProjection.source.js
-610925c140c711e12e6e8dc3388c7d57b3005f93d1c2eeda1195a15e528fd214  ./PROGRAM/sdk/GradiaModelContextBudget.source.js
+19dae413007a26737815b18ef2661ae5c1aa2daa33577ee610166354a44038d2  ./PROGRAM/sdk/GradiaModelContextBudget.source.js
 f5824b697df20fecb9b136c53262f14df9fb8cc60c884661b5e7aefbaca4a59c  ./PROGRAM/sdk/LibraReadonlySourceContext.source.js
 edd6f287b24337a4f534b9a226f3de79949cd991fe1e85ff6661413dbd7bec60  ./PROGRAM/sdk/MemorySuiteComputeClient.source.js
 255ecd56ffaff6c49dfad9daea70943f417553e0838c8a5fef4ac9164e4ce175  ./PROGRAM/sdk/MemorySuiteExecutionContract.source.js
@@ -1351,7 +1350,7 @@ e13f4eade5c5f4373802de39ae06d5debe9d5b302e6f99835a9d913b3723b597  ./PROGRAM/test
 e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829  ./PROGRAM/tests/gradia/bianca-injection-gui.test.cjs
 f0579d1bdb8894764de4413430b8b8db570f9e0960296d488d6d01f96ff69633  ./PROGRAM/tests/gradia/bianca-injection.test.cjs
 f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/tests/gradia/context-degradation-gui.test.cjs
-ebe07788c377c5ef3a8bba011ba24060cd4dd2f15b85fd70ea9306c71295b778  ./PROGRAM/tests/gradia/context-degradation.test.cjs
+3cdf99734309500766c05902fb8ed487af1f2961ed41ee7c408687566d87103a  ./PROGRAM/tests/gradia/context-degradation.test.cjs
 fcac35e825ffff26245c63cd75a611bcd2ae0ee547068e47095e6725eeb3a25d  ./PROGRAM/tests/gradia/draft-live-scene.test.cjs
 75e5511a6ef48115094ca8801d7d53924e709370ca10cb9e3e688dd936862998  ./PROGRAM/tests/gradia/draft-only.test.cjs
 658de99c193afb2b73017435b8c36c70a46a182e19b5d4cddde87120895cc186  ./PROGRAM/tests/gradia/evidence-bridge.test.cjs

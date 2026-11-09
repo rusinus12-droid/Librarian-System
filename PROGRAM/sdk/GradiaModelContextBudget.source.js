@@ -143,7 +143,7 @@ function createGradiaModelContextBudget({ digest }) {
       const { providerId, modelId, routeIdentity, requestFormat, context } = input;
       if (typeof providerId !== 'string' || !providerId || typeof modelId !== 'string' || !modelId
         || typeof routeIdentity !== 'string' || !/^https?:\/\//.test(routeIdentity)) stop('model_identity_changed');
-      if (!context || !['configured','catalog','provider_default'].includes(context.source)
+      if (!context || !['configured','catalog','provider_default','model_heuristic'].includes(context.source)
         || !integer(context.limit) || context.limit > 4000000
         || typeof context.sourceIdentity !== 'string' || !context.sourceIdentity
         || context.providerId !== providerId || context.modelId !== modelId
