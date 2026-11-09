@@ -33741,6 +33741,7 @@ function createLibraReadonlySourceContext(owner) {
       recallSimilarityWeight: DEFAULT_RECALL_SIMILARITY_WEIGHT,
       recallRecencyWeight: DEFAULT_RECALL_RECENCY_WEIGHT,
       autoCatchUpEnabled: true,
+      autoDurableIndex: true,
       autoCatchUpMaxBatches: DEFAULT_AUTO_CATCHUP_MAX_BATCHES,
       storyArcEnabled: true,
       storyArcUpdateMode: 'derived',
@@ -37682,6 +37683,7 @@ function createLibraReadonlySourceContext(owner) {
         recallSimilarityWeight: recallBlend.similarity,
         recallRecencyWeight: recallBlend.recency,
         autoCatchUpEnabled: source.autoCatchUpEnabled !== false,
+        autoDurableIndex: source.autoDurableIndex !== false,
         autoCatchUpMaxBatches: Math.floor(clamp(source.autoCatchUpMaxBatches, 1, 6, DEFAULT_SETTINGS.autoCatchUpMaxBatches)),
         storyArcEnabled: source.storyArcEnabled !== false,
         storyArcUpdateMode: STORY_ARC_UPDATE_MODES.includes(string(source.storyArcUpdateMode || '').toLowerCase()) ? string(source.storyArcUpdateMode).toLowerCase() : DEFAULT_SETTINGS.storyArcUpdateMode,
@@ -68482,6 +68484,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
             at: Date.now(), scheduleSerial, trigger: baseDiagnostic.reason, requestType: baseDiagnostic.requestType,
             expectedScope: clone(expectedScope), settleAttempt, staleRetryAttempt, result: clone(result)
           };
+          // B: canonical work touched memories, so the durable index is stale until rebuilt.
+          if (result?.processed > 0 || result?.staleDiscards?.length || result?.partialCommitted > 0) {
+            scheduleDurableIndexBuild('canonical_commit', 15000);
+          }
           const observedTurns = Number(result?.observedTurns || 0);
           const staleSourceChanged = result?.historicalBackfill !== true
             && asArray(result?.staleDiscards).some(item => string(item?.reason || '') === 'source_digest_changed');
@@ -77626,6 +77632,52 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // The timer re-checks active readers when it fires and waits for them.
       if (deferred && !state.disposed && (!volatileState.store || volatileState.dirty)) scheduleVolatileMemoryGraphCorpus();
     };
+    // 상설(durable) 인덱스는 지금까지 GUI 버튼으로만 만들 수 있었다. 첫 cold 회수가 끝난 뒤 한 번,
+    // 그리고 정본 커밋으로 자료가 늘어난 뒤 idle 시점에 증분 갱신해, 리로드마다 20초를 다시 쓰지
+    // 않게 한다. 설정(autoDurableIndex)으로 끌 수 있고, 모든 트리거는 idle 게이트를 통과해야 한다.
+    // The timer handle stays out of state: diagnostics deep-clone state, and a Node timer
+    // object is circular (it blew the stack in redactPublicSecrets).
+    let durableIndexTimer = null;
+    const durableIndexTimerPending = () => Boolean(durableIndexTimer);
+    const durableIndexRuntime = () => state.durableIndexAuto || (state.durableIndexAuto = {
+      running: false, pendingReason: '', lastAt: 0, lastResult: null, attempts: 0
+    });
+    const durableIndexIdle = () => !state.disposed && !state.currentRun && !state.canonicalJobPromise
+      && !(state.microJobs?.size) && !libraMemoryWorkActive?.()
+      && !state.memoryGraphCorpus?.inspect().activeBuild && !volatileCorpusRuntime?.running
+      && !volatileCorpusRuntime?.queriesInFlight && !volatileCorpusRuntime?.interactiveReaders;
+    const scheduleDurableIndexBuild = (reason = 'cold_recall', delayMs = 5000) => {
+      const runtime = durableIndexRuntime();
+      runtime.pendingReason = reason;
+      if (durableIndexTimer || runtime.running) return;
+      durableIndexTimer = setTimeout(() => {
+        durableIndexTimer = null;
+        void (async () => {
+          if (state.disposed) return;
+          let settings = null;
+          // LIBRA 설정 저장소를 직접 읽는다(방금 바꿨을 수 있어 캐시를 우회).
+          try { settings = await loadMemorySettings({ force: true }); } catch (_) { settings = null; }
+          if (settings && settings.autoDurableIndex === false) { runtime.pendingReason = ''; return; }
+          if (!durableIndexIdle()) { scheduleDurableIndexBuild(reason, Math.min(60000, delayMs * 2)); return; }
+          // 대화가 계속 이어지는 동안 매 커밋마다 전체 재구축을 반복하지 않도록 최소 간격을 둔다.
+          if (runtime.lastAt && Date.now() - runtime.lastAt < 600000) { runtime.pendingReason = ''; return; }
+          runtime.running = true; runtime.attempts += 1;
+          try {
+            const result = await buildMemoryGraphCorpus({});
+            runtime.lastAt = Date.now();
+            runtime.lastResult = { ok: result?.status === 'published', status: String(result?.status || ''),
+              windowCount: Number(result?.windowCount || 0), pageCount: Number(result?.pageCount || 0), reason };
+          } catch (error) {
+            runtime.lastAt = Date.now();
+            runtime.lastResult = { ok: false, status: 'failed', reason, error: compact(error?.message || error, 300) };
+            warn('LIBRA durable index auto build failed', error);
+          } finally {
+            runtime.running = false; runtime.pendingReason = '';
+          }
+        })();
+      }, Math.max(0, Number(delayMs) || 0));
+      durableIndexTimer?.unref?.();
+    };
     const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
       if (state.disposed) return;
       const volatileState = volatileMemoryGraphCorpus();
@@ -78017,6 +78069,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             corpus = { ...corpus, access: { ...corpus.access, runtimeIndex, coldReason } };
             state.lastCorpusColdReason = { at: Date.now(), reason: coldReason, runtimeIndex };
             scheduleVolatileMemoryGraphCorpus();
+            // A: the first cold turn leaves a durable index behind so later sessions skip the rebuild.
+            scheduleDurableIndexBuild('cold_recall', 5000);
           }
           if (corpus) {
             graph = corpus.graph;
@@ -83933,6 +83987,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, listUnifiedIdentityLinkReviews, confirmUnifiedIdentityLink, identityLinkReviewRows:unifiedIdentityReviewRows, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
+      durableIndexTimerPending,
       getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectResidentMemoryBudget, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
@@ -88624,6 +88679,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
     lastMemoryAfterRequest: LibraMemoryCore.state.lastAfterRequest ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastAfterRequest)) : null,
     lastGradiaUnifiedRead: LibraMemoryCore.state.lastGradiaUnifiedRead ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastGradiaUnifiedRead)) : null,
+    autoDurableIndex: LibraMemoryCore.state.durableIndexAuto ? {
+      running: LibraMemoryCore.state.durableIndexAuto.running === true,
+      scheduled: Boolean(LibraMemoryCore.durableIndexTimerPending?.()),
+      pendingReason: LibraMemoryCore.state.durableIndexAuto.pendingReason || '',
+      attempts: Number(LibraMemoryCore.state.durableIndexAuto.attempts || 0),
+      lastAt: Number(LibraMemoryCore.state.durableIndexAuto.lastAt || 0),
+      lastResult: LibraMemoryCore.state.durableIndexAuto.lastResult ? JSON.parse(JSON.stringify(LibraMemoryCore.state.durableIndexAuto.lastResult)) : null
+    } : null,
     lastResponseBoundaryRebase: LibraMemoryCore.state.lastResponseBoundaryRebase ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastResponseBoundaryRebase)) : null,
     lastResponseBoundaryFailure: LibraMemoryCore.state.lastResponseBoundaryFailure ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastResponseBoundaryFailure)) : null,
     lastCorpusColdReason: LibraMemoryCore.state.lastCorpusColdReason ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastCorpusColdReason)) : null,
@@ -95589,7 +95652,7 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ])),
 guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
-          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
+          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoDurableIndex','전체 이력 인덱스 자동 구축'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
         ])])
 ];
       const RECALL_BUDGET_PRESETS = [

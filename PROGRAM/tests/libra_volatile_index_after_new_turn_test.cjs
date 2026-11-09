@@ -21,6 +21,12 @@ for (const mode of ['plugin_only', 'server_only']) test(`${mode}: recall after a
   const server = mode !== 'plugin_only' ? await serverFixture({ mode, host }) : null;
   const f = server ? withLorebook(server.f) : await localFixture({ host });
   try {
+    // 이 테스트는 세션(volatile) 인덱스 재사용만 검증한다. 상설 인덱스 자동 구축이 켜져 있으면
+    // 첫 cold 회수 뒤 durable 인덱스가 생겨 기대값이 durable_common_index 로 바뀌므로 끈다.
+    const memorySettings = await f.r.api.getLibraMemorySettings();
+    if (memorySettings.autoDurableIndex !== false) {
+      await f.r.api.saveLibraMemorySettings({ ...memorySettings, autoDurableIndex: false });
+    }
     await f.run(); await f.r.api.retryPendingUnifiedVectors();
     const values = server?.local || f.r.values;
     const registry = JSON.parse(values.get('libra:v1:scope-registry:v1'));
