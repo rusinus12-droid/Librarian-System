@@ -24276,9 +24276,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : '- In Novel mode, distinguish pre-existing evidence from newly authored current-scene fiction. You may create character interiority/decisions consistent with author direction and canon, but do not mislabel newly invented material as historical fact or known evidence.'
   ].join('\n');
 
-  // Clothing and place are state, not scenery: a coat taken off in an earlier beat stays off, and a
-  // room does not change without the move being performed on the page. The draft and every AIDE
-  // phase carry both contracts so a patch cannot silently re-dress a character or teleport a scene.
+  // Clothing is state, not scenery: a coat taken off in an earlier beat stays off until the
+  // prose performs the action that puts it back on. Both the draft and every AIDE phase carry
+  // this contract so a patch cannot silently re-dress a character the scene already undressed.
   const buildWardrobeContinuityContract = () => [
     'WARDROBE AND APPEARANCE CONTINUITY — HARD CONDITION:',
     '- Treat every named garment, accessory, and item of footwear as state, not decoration: worn, removed, loosened, opened, pushed aside, torn, soiled, wet, or held. Carry the last explicitly narrated state into this turn.',
@@ -29289,12 +29289,8 @@ function createGradiaModelContextBudget({ digest }) {
           assertReadCurrent = dependencies.holdSelection ? async () => true : read.assertCurrent;
           assertReadCurrentSync = dependencies.holdSelection ? () => true : read.assertCurrentSync;
           if (multipleOwners && typeof dependencies.selectOwnerRecall === 'function') {
-            const kept = readSource === 'unified_engine'
-              ? raw.items.filter(item => item?.owner === 'libra')
-              : [];
-            const peers = readSource === 'unified_engine'
-              ? raw.owners.filter(value => value !== 'libra')
-              : raw.owners;
+            const kept = [];
+            const peers = raw.owners;
             const answers = await Promise.all(peers.map(owner => guarded(() => dependencies.selectOwnerRecall(owner, scope, input.queryText || '', record.controller.signal), LIB_MEMORY_OWNER_READ_TIMEOUT_MS)));
             for (const [index, owner] of peers.entries()) {
               const selected = answers[index];
@@ -29428,9 +29424,9 @@ function createGradiaModelContextBudget({ digest }) {
     }
     const maxCorpusBytes = options.maxCorpusBytes === undefined ? 4194304 : options.maxCorpusBytes;
     if (!Number.isSafeInteger(maxCorpusBytes) || maxCorpusBytes < 1 || maxCorpusBytes > 33554432) throw libEvidenceError('LIB_READ_BUDGET_INVALID');
-    const requestedSource = options.readSource === undefined ? 'plugin_ipc' : String(options.readSource);
-    const readSource = requestedSource === 'server_logical_read' ? 'unified_engine' : requestedSource;
-    if (!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource)) throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
+    // Owners answer memory reads over plugin IPC in every storage mode; there is no
+    // second, server-side read channel to fall back to.
+    const readSource = 'plugin_ipc';
     LibReadConsumer.invalidate('LIB_READ_BOUNDARY_CHANGED');
     if (activeLibEvidenceRun) { const old = activeLibEvidenceRun; old.fail('LIB_READ_BOUNDARY_CHANGED'); old.close(); }
     libReadSelection = null;
@@ -37427,7 +37423,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let inspecting = null, lastInspection = null;
     let readOwners = [...LIB_READ_OWNERS], draftReadOwners = [...LIB_READ_OWNERS];
     let isLegacyV1Consent = false;
-    let unavailable = {}, excludedServerOwners = {}, readSource = 'plugin_ipc';
+    let unavailable = {}, readSource = 'plugin_ipc';
     let consentReadPending = true, consentMayBeStored = false, preferenceRevision = 0;
     // A saved connection is re-established with the same consented owners after a
     // transient loss (owner plugin loaded later, server restart, slow scope probe).
@@ -37542,23 +37538,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       url = next;
       void saving.catch(() => { reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; });
     };
-    const resolveServerScopes = async () => {
-      const found = await resolveLibRegisteredScopes(readOwners);
-      const scopes = Object.fromEntries(Object.entries(found.scopes).filter(([owner])=>!excludedServerOwners[owner]));
-      const scope = Object.values(scopes)[0];
-      if (!scope) throw libEvidenceError('LIB_READ_OWNER_UNAVAILABLE');
-      return {scope,scopes,unavailable:{...found.unavailable,...excludedServerOwners}};
-    };
     const assertScope = async expected => {
-      if (readSource === 'plugin_ipc') {
-        const current = await readLibPluginNativeIdentity();
-        if (current.characterId !== expected.characterId || current.chatId !== expected.chatId) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
-        return true;
-      }
-      let current;
-      try { current = await resolveServerScopes(); } catch (_) { throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED'); }
-      if (JSON.stringify(current.scope) !== JSON.stringify(expected)
-        || scopeBundle && JSON.stringify(current) !== JSON.stringify(scopeBundle)) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
+      const current = await readLibPluginNativeIdentity();
+      if (current.characterId !== expected.characterId || current.chatId !== expected.chatId) throw libEvidenceError('LIB_READ_NATIVE_SCOPE_CHANGED');
       return true;
     };
     const watch = epoch => {
@@ -37600,13 +37582,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         refresh();
         return status();
       }
-      readSource = String(src) === 'server_logical_read' ? 'unified_engine' : String(src);
-      invalidate(''); unavailable = {}; excludedServerOwners = {}; state = 'connecting'; refresh();
+      readSource = 'plugin_ipc';
+      invalidate(''); unavailable = {}; state = 'connecting'; refresh();
       const epoch = generation, target = url;
       const check = () => { if (disposed || epoch !== generation || url !== target) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED'); };
       try {
-        if(!['server_logical_read','unified_engine','plugin_ipc'].includes(readSource))throw libEvidenceError('LIB_READ_SOURCE_UNSUPPORTED');
-        if (readSource === 'plugin_ipc') {
+        {
           const native = await readLibPluginNativeIdentity(); check();
           const next = createGradiaPluginRead({ role:'reader', primitives:createGradiaReadPrimitives(), runHints: libOwnerRunHints,
             describeTimeoutMs:3000, timeoutMs:LIB_MEMORY_OWNER_READ_TIMEOUT_MS,
@@ -37623,37 +37604,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           bindLibReadOnlyClient(independentOwnerClient(resolved.scopes, value => next.createClient(value)),{scope,readSource});
           watch(epoch); state = 'connected'; reason = ''; refresh(); return status();
         }
-        const normalized = normalizeLibReadUrl(target);
-        // Input is normalized before the operation; an imported setting is never consent.
-        if (normalized !== target) throw libEvidenceError('LIB_READ_SERVER_URL_INVALID');
-        let resolvedBundle = await resolveServerScopes(); check();
-        const next = createPrivateLibReadBridge(target,check,readOwners); bridge = next;
-        await next.bootstrap(); check();
-        if (resolvedBundle.scopes.libra) {
-          try {
-            const capability = await next.describeUnifiedRead(); check();
-            if (capability?.source!=='unified_engine'||capability.readOnly!==true) throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
-          } catch (error) {
-            check();
-            if (!['LIB_READ_TIMEOUT','LIB_READ_UNIFIED_UNAVAILABLE','LIB_READ_TRANSPORT_UNAVAILABLE'].includes(error?.code)) throw error;
-            excludedServerOwners.libra = error.code;
-          }
-          resolvedBundle = await resolveServerScopes(); check();
-        }
-        const resolved = resolvedBundle.scope;
-        scopeBundle = resolvedBundle; unavailable = {...resolvedBundle.unavailable}; scope = resolved;
-        watch(epoch);
-        await assertScope(resolved); check();
-        const client = readOwners.length === 1 && readOwners[0] === 'libra' ? next.createLibraReadOnlyClient() : independentOwnerClient(resolvedBundle.scopes, value => next.createMemoryReadOnlyClient(value));
-        let read = await client.openReadSession(resolved,{maxCorpusBytes:4194304}); check();
-        await read.assertCurrent(); read = null; await assertScope(resolved); check();
-        if (!startup) {
-          pendingConsent = {url:target};
-          await persistPreference({schema:'gradia.lib-read-connection.v2',url:target,explicit:true,readOwners:[...readOwners],readSource,draftReadOwners:[...draftReadOwners]}); check();
-          await assertScope(resolved); check();
-          pendingConsent = null; explicit = true;
-        }
-        bindLibReadOnlyClient(client,{scope:resolved,readSource}); state = 'connected'; reason = '';
       } catch (error) {
         if (epoch === generation) {
           unavailable = {...unavailable, ...(error?.unavailable || {})};
@@ -37681,15 +37631,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
           corpus = {source:'plugin_ipc',queried:false}; refresh(); return status();
         }
-        let read = await binding.client.openReadSession(binding.scope,{maxCorpusBytes:binding.maxCorpusBytes});
-        await read.assertCurrent(); await assertScope(binding.scope);
-        if (disposed || epoch !== generation || binding !== libReadBinding) throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
-        if(binding.readSource==='unified_engine' && scopeBundle?.scopes.libra){
-          const capability=await bridge.describeUnifiedRead();
-          if(capability?.source!=='unified_engine'||capability.readOnly!==true)throw libEvidenceError('LIB_READ_UNIFIED_UNAVAILABLE');
-          if(disposed||epoch!==generation||binding!==libReadBinding)throw libEvidenceError('LIB_READ_CONNECTION_CHANGED');
-          corpus={source:'unified_engine',queried:false};
-        }else corpus = {items:read.snapshot.items.length,bytes:read.snapshot.corpusBytes}; read = null;
       } catch (error) {
         if (epoch === generation) {
           invalidate(/^LIB_READ_[A-Z_]+$/.test(error?.code || '') ? error.code : 'LIB_READ_UNAVAILABLE'); state = 'error';
@@ -37724,7 +37665,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (epoch !== generation || disposed || !saved || !['gradia.lib-read-connection.v1','gradia.lib-read-connection.v2'].includes(saved.schema)) return;
         url = normalizeLibReadUrl(saved.url);
-        if (saved.readSource) readSource = String(saved.readSource) === 'server_logical_read' ? 'unified_engine' : saved.readSource;
+        readSource = 'plugin_ipc';
         if (Array.isArray(saved.draftReadOwners)) draftReadOwners = saved.draftReadOwners.filter(owner => LIB_READ_OWNERS.includes(owner));
         if (saved.explicit !== true || saved.url !== url || saved.readSource === 'off') {
           explicit = false;
@@ -37739,7 +37680,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           readOwners = ['libra'];
           consentMayBeStored = true;
           explicit = true;
-          await connect(true, ['libra'], saved.readSource || 'unified_engine', { draftReadOwners });
+          await connect(true, ['libra'], 'plugin_ipc', { draftReadOwners });
           return;
         }
         isLegacyV1Consent = false;
@@ -37751,7 +37692,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           : [...savedOwners];
         readOwners = LIB_READ_OWNERS.filter(owner => savedOwners.includes(owner));
         consentMayBeStored = true; explicit = true;
-        await connect(true, readOwners, saved.readSource || 'unified_engine', { draftReadOwners });
+        await connect(true, readOwners, 'plugin_ipc', { draftReadOwners });
       } catch (_) {
         if (epoch === generation && !disposed) {
           state = 'error'; reason = 'LIB_READ_PREFERENCE_UNAVAILABLE'; refresh();
@@ -43006,7 +42947,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (target.closest('#lib-connect,[data-lib-read-action=connect]')) {
         const st = LibReadConnection.status();
         const urlInput = app.querySelector(target.closest('#lib-connect')?'#lib-url':'#lib-settings-url');
-        const nextSource = Gui.libReadSourceDraft || (urlInput?.value ? 'unified_engine' : st.readSource);
+        const nextSource = Gui.libReadSourceDraft || 'plugin_ipc';
         if (nextSource === 'off') {
           void LibReadConnection.connect({ readSource: 'off' }).then(() => {
             Gui.libDraftReadOwnersDraft = null;
@@ -43605,10 +43546,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       select.setAttribute('aria-label','기억 읽기 방식');
       for(const [value,title] of [
         ['off','기억 읽기 끄기 (사용 안 함)'],
-        ['unified_engine','서버 · 통합 메모리 검색 (레거시 검사 전용)'],
+
         ['plugin_ipc','플러그인 · 기억 직접 읽기 (IPC)']
       ]){
-        const option=document.createElement('option');option.value=value;option.textContent=title;if(value==='unified_engine')option.disabled=true;select.append(option);
+        const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);
       }
       select.value=status.readSource||'plugin_ipc';field.append(label,select);connectButton.parentElement?.prepend(field);
     }
@@ -43647,7 +43588,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       button.classList.toggle('is-on',selected);button.setAttribute('aria-pressed',String(selected));button.disabled=status.state==='connecting';
     });
     Gui.app.querySelectorAll('#lib-url,[data-lib-read-url]').forEach(input=>{
-      if(!options.preserveUrlDraft)input.value=status.url;input.dataset.savedUrl=status.url;input.disabled=selectedSource!=='unified_engine';
+      if(!options.preserveUrlDraft)input.value=status.url;input.dataset.savedUrl=status.url;input.disabled=true;
     });
     const serverField=Gui.app.querySelector('[data-lib-server-field]');if(serverField)serverField.hidden=selectedSource==='plugin_ipc'||selectedSource==='off';
     const reasonHint = code => {
@@ -44754,7 +44695,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
+          [value.owner, 'plugin_ipc'])),
           ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
             owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },
@@ -45131,7 +45072,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }, event);
     },
     async rewriteInput(content) {
-      if (['unified_engine','plugin_ipc'].includes(libReadBinding?.readSource) && Runtime.inputAssistSend?.busy) throw libEvidenceError('LIB_READ_BUSY');
+      if (libReadBinding?.readSource === 'plugin_ipc' && Runtime.inputAssistSend?.busy) throw libEvidenceError('LIB_READ_BUSY');
       const settings = await loadSettings();
       try {
         return await runInputAssistForContent(content, settings, {
