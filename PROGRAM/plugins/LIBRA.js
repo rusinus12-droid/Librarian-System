@@ -33488,6 +33488,8 @@ function createLibraReadonlySourceContext(owner) {
     // `partial`, rather than growing without limit or stalling the read path.
     const EVIDENCE_LINK_INDEX_MEMORY_LIMIT = 512;
     const EVIDENCE_LINK_INDEX_FACT_LIMIT = 20000;
+    const LINK_INDEX_CACHE_MAX_SCOPES = 4;
+    const LINK_INDEX_CACHE_MAX_BYTES = 8 * 1024 * 1024;
     // ── Stage 2: lore reference linking (`libra.lore_link_index.v1`) ─────────────────────────────────
     // Binds the ALLOWED lore corpus (already gated by the host's selection/exclusion/CBS rules) to the
     // same entity identities the evidence link index uses, so a memory and a lore passage that name the
@@ -69203,6 +69205,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       buildMs: Number(index?.status?.buildMs || 0), builtAt: string(index?.status?.builtAt || ''),
       providerCalls: 0, llmCalls: 0
     });
+    const trimLinkIndexCache = cache => {
+      let bytes = 0;
+      for (const index of cache.values()) bytes += 2 * JSON.stringify(index ?? null).length;
+      while (cache.size > LINK_INDEX_CACHE_MAX_SCOPES || bytes > LINK_INDEX_CACHE_MAX_BYTES) {
+        const key = cache.keys().next().value;
+        if (key == null) break;
+        const index = cache.get(key);
+        cache.delete(key);
+        bytes = Math.max(0, bytes - 2 * JSON.stringify(index ?? null).length);
+      }
+    };
 
     const loadOrRefreshEvidenceLinkIndex = async (scope, manifest, optionsValue = {}) => {
       const force = asObject(optionsValue).force === true;
@@ -69216,6 +69229,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!force && stored && string(stored.signature || '') === signature && stored.schema === EVIDENCE_LINK_INDEX_SCHEMA) {
         stored.status = { ...asObject(stored.status), persisted: true };
         state.evidenceLinkIndexCache.set(scopeKey, stored);
+        trimLinkIndexCache(state.evidenceLinkIndexCache);
         Runtime.lastEvidenceLinkIndexDiagnostics = { ...evidenceLinkIndexDiagnostics(stored), source: 'cache_or_storage' };
         return stored;
       }
@@ -69235,6 +69249,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       index.status.persisted = persisted;
       state.evidenceLinkIndexCache.set(scopeKey, index);
+      trimLinkIndexCache(state.evidenceLinkIndexCache);
       Runtime.lastEvidenceLinkIndexDiagnostics = { ...evidenceLinkIndexDiagnostics(index), source: 'rebuilt' };
       return index;
     };
@@ -69559,6 +69574,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         stored.status = { ...asObject(stored.status), persisted };
         state.loreLinkIndexCache.set(scopeKey, stored);
+        trimLinkIndexCache(state.loreLinkIndexCache);
         Runtime.lastLoreLinkIndexDiagnostics = { ...loreLinkIndexDiagnostics(stored), source: 'cache_or_storage' };
         return stored;
       }
@@ -69574,6 +69590,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       index.status.persisted = persisted;
       state.loreLinkIndexCache.set(scopeKey, index);
+      trimLinkIndexCache(state.loreLinkIndexCache);
       Runtime.lastLoreLinkIndexDiagnostics = { ...loreLinkIndexDiagnostics(index), source: 'rebuilt' };
       return index;
     };
@@ -77449,10 +77466,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const graphBytes = volatileStoreBytes(graphStore);
       const pairBytes = Math.max(0, Number(state.pairRevisionCacheStats?.retainedChars || 0) * 2);
       const verifiedBytes = Math.max(0, Number(state.verifiedReadCacheStats?.bytes || 0));
+      const linkBytes = [state.evidenceLinkIndexCache, state.loreLinkIndexCache].reduce((total, cache) => {
+        for (const index of cache?.values?.() || []) total += 2 * JSON.stringify(index ?? null).length;
+        return total;
+      }, 0);
       return {
         maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
-        totalBytes: graphBytes + pairBytes + verifiedBytes,
-        byCache: { volatileGraph: graphBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes }
+        totalBytes: graphBytes + pairBytes + verifiedBytes + linkBytes,
+        byCache: { volatileGraph: graphBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
       };
     }
     const yieldVolatileMemoryGraphCorpusBuild = async () => {
@@ -100593,6 +100614,7 @@ advanced
       if (LibraMemoryCore.state.pairRevisionCacheStats) LibraMemoryCore.state.pairRevisionCacheStats.retainedChars = 0;
       LibraMemoryCore.state.branchAuditInFlight?.clear?.();
       LibraMemoryCore.state.evidenceLinkIndexCache?.clear?.();
+      LibraMemoryCore.state.loreLinkIndexCache?.clear?.();
       LibraMemoryCore.state.storyArcRebuildInFlight?.clear?.();
       LibraMemoryCore.state.bootstrapReferenceCache?.clear?.();
       LibraMemoryCore.state.outputListenerRegistered = false;
