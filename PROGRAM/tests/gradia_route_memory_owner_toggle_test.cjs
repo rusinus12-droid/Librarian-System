@@ -2,6 +2,7 @@
 const {test} = require('node:test'), assert = require('node:assert/strict'), crypto = require('node:crypto');
 const {JSDOM} = require('jsdom');
 const {load} = require('./gradia/host.cjs');
+const createBus = require('./fixtures/libra_gradia_read_bus.cjs'), startOwnerSelections = require('./fixtures/gradia_owner_selection_stub.cjs');
 
 const PREF = 'serial_gradation_agents_for_rp:lib_read_connection:v1', url = 'http://127.0.0.1:47630';
 const owners = ['libra', 'hayaku', 'flashback'];
@@ -43,81 +44,13 @@ async function fixture(t, {saved} = {}) {
     removeItem: async k => { writes.push(k); values.delete(k); }
   };
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {pretendToBeVisual: true, url: 'https://offline.invalid/'});
-  const id = 'A'.repeat(32);
-  const transport = async (target, init) => {
-    const path = new URL(target).pathname;
-    requests.push({path, headers: init.headers, body: init.body && JSON.parse(init.body)});
-    if (path === '/bootstrap') {
-      const readNamespaces = init.headers['X-Memory-Suite-Read-Owners']
-        ? JSON.parse(init.headers['X-Memory-Suite-Read-Owners'])
-        : ['libra'];
-      return new Response(JSON.stringify({
-        ok: true,
-        schema: 'memory-suite.storage.bootstrap.v1',
-        url,
-        token: 'offline-only',
-        dataInstanceId: id,
-        dataIdentityContract: 'memory-suite.physical-data-identity.v1',
-        resetEpochs: {},
-        protocol: {major: 1, minor: 0},
-        namespaces: owners,
-        authorization: {
-          schema: 'memory-suite.bootstrap-authorization.v1',
-          pluginId: 'serial_gradation_agents_for_rp',
-          namespace: 'libra',
-          roles: ['readonly'],
-          readNamespaces,
-          writeNamespaces: []
-        },
-        capabilities: Object.fromEntries([
-          'kv.v1','keys.v1','revision.v1','digest.v1','idempotency.v1',
-          'tombstone.v1','readback.v1','namespace-integrity.v1',
-          'data-instance-binding.v1','libra-read-session.v1','gradia-memory-read-session.v1'
-        ].map(k => [k, true]))
-      }));
-    }
-    const match = /^\/v1\/(libra|hayaku|flashback)\/read-session\/(capture|current)$/.exec(path);
-    assert(match, path);
-    const owner = match[1], body = JSON.parse(init.body), scope = scopes[owner];
-    const evidenceRevision = crypto.createHash('sha256').update(owner).digest('hex');
-    const result = match[2] === 'capture' ? {
-      schema: `memory-suite.${owner}-read-session.v1`,
-      scope,
-      readOnly: true,
-      complete: true,
-      items: [{id: 'm', key: 'k', content: owner, source: {namespace: owner, scopeKey: scope.scopeKey}}],
-      dependencies: [],
-      evidenceRevision,
-      corpusBytes: owner.length,
-      maxCorpusBytes: body.maxCorpusBytes,
-      maxRawBytes: body.maxRawBytes,
-      metadataBytes: 10,
-      rawBytes: 10,
-      dataInstanceId: id,
-      resetEpoch: 0,
-      readIdentity: {scope, dataInstanceId: id, resetEpoch: 0}
-    } : {
-      schema: `memory-suite.${owner}-read-session-current.v1`,
-      scope,
-      current: true,
-      evidenceRevision,
-      dataInstanceId: id,
-      resetEpoch: 0
-    };
-    return new Response(JSON.stringify({ok: true, dataInstanceId: id, result}));
-  };
-  const channel = new Map();
+  // Every owner answers GRADIA over plugin IPC with its own selection, whatever its storage mode.
+  const bus = createBus();
+  const stopOwners = await startOwnerSelections(bus, Object.fromEntries(owners.map(o => [o, {scope: scopes[o], content: o + ' memory'}])));
+  const transport = async target => { requests.push({path: new URL(target).pathname}); throw Error('NETWORK FORBIDDEN: GRADIA reads over plugin IPC'); };
   const host = await load({
     api: {
-      addPluginChannelListener: async (name, fn) => { channel.set(name, fn); return true; },
-      removePluginChannelListener: async name => { channel.delete(name); },
-      postPluginChannelMessage: async (target, name, message) => {
-        if (target !== 'libra' || name !== 'libra_gradia_unified_read_request_v1' || message.kind !== 'request') return;
-        const reply = message.action === 'describe'
-          ? {ok: true, result: {schema: 'libra.gradia-unified-read.v1', source: 'unified_engine', readOnly: true, purposes: ['response_evidence', 'input_writer_proposal']}}
-          : {ok: false, errorCode: 'LIB_READ_UNIFIED_UNAVAILABLE'};
-        setTimeout(() => channel.get('libra_gradia_unified_read_response_v1')?.({schema: 'libra.gradia-unified-read.v1', kind: 'response', requestId: message.requestId, ...reply}, {sender: 'libra'}), 0);
-      },
+      ...bus.api('serial_gradation_agents_for_rp'),
       pluginStorage: store,
       getLocalPluginStorage: async () => ({getItem: async k => local.get(k) ?? null, setItem: async (k, v) => local.set(k, v)}),
       nativeFetch: transport,
@@ -145,6 +78,7 @@ async function fixture(t, {saved} = {}) {
   t.after(async () => {
     await host.plugin.closeSettingsGui();
     for (const f of unloads) await f();
+    await stopOwners();
     dom.window.close();
   });
   await host.plugin.openSettingsGui();
@@ -155,7 +89,7 @@ async function fixture(t, {saved} = {}) {
     await wait(() => ['connected', 'error'].includes(status().connection.state));
     return status();
   };
-  return {...host, dom, values, local, requests, status, connect};
+  return {...host, dom, bus, values, local, requests, status, connect};
 }
 
 test('UI renders owner toggle checkboxes for the draft route only', async t => {
@@ -255,6 +189,7 @@ test('saved off preference restores cleanly without network requests or reconnec
   assert.equal(conn.explicit, false);
   assert.equal(conn.reason, 'LIB_READ_DISABLED');
   assert.equal(f.requests.length, 0, 'No network requests on startup when memory read is off');
+  assert.equal(f.bus.messages.filter(m => m.sender === 'serial_gradation_agents_for_rp').length, 0, 'No owner reads on startup when memory read is off');
 });
 
 test('clicking #lib-disconnect disables memory reading, updates UI and persists off state', async t => {
