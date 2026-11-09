@@ -40022,7 +40022,11 @@ const MemorySuiteHealthRecovery = (() => {
       assertCompleteScopeLoad(loaded, 'pending embedding queue discovery');
       const worldline = await loadTurnWorldline(scopeKey,physicalReaders(options));
       inventory = embeddingQueueInventory(boundary, loaded.records, worldline, options, readEmbeddingAttemptRegistry(loaded.manifest));
-      reportMaintenanceTask(options, 'embedding_queue', { scopeKey, totalRecords: inventory.eligible.reduce((sum, group) => sum + group.records, 0), completedRecords: 0, execution: ledger.snapshot() });
+      // The drain runs several passes; a fresh pass must not reset the job's meter to 0/51 after
+      // the previous pass already completed 23 records.
+      const carryCompleted = Math.max(0, Number(options.carryCompleted || 0) || 0);
+      const passTotal = inventory.eligible.reduce((sum, group) => sum + group.records, 0);
+      reportMaintenanceTask(options, 'embedding_queue', { scopeKey, totalRecords: carryCompleted + passTotal, completedRecords: carryCompleted, execution: ledger.snapshot() });
       if (!explicitDeadlineAt) deadlineAt = Date.now() + requestTimeoutMs * (maxRequests + 1);
       ledger.check();
       if (!inventory.eligible.length && migration.deferred) stopReason = 'migration_deferred';
@@ -40044,7 +40048,7 @@ const MemorySuiteHealthRecovery = (() => {
         ready += Number(result.ready || 0); failed += Number(result.failed || 0);
         if(result.failed)failureReason=result.reason||'embedding_failed';
         if(result.uncertain)uncertainRecords+=group.records;
-        reportMaintenanceTask(options, 'embedding_done', { scopeKey, completedRecords: ready, failedRecords: failed, uncertainRecords,
+        reportMaintenanceTask(options, 'embedding_done', { scopeKey, completedRecords: carryCompleted + ready, failedRecords: failed, uncertainRecords,
           execution: ledger.snapshot(), reason: result.reason || '' });
         if (!result.ok && !result.failed && !result.uncertain) {
           stopReason = result.reason || 'no_durable_progress'; break;
@@ -40081,6 +40085,8 @@ const MemorySuiteHealthRecovery = (() => {
 
   const scheduledEmbeddingQueues = new Map();
   const embeddingQueueUnsentRetries = new Map();
+  // A conditional-batch conflict is a lost race, not a terminal state: retry with backoff.
+  const embeddingQueueConflictRetries = new Map();
   const schedulePendingEmbeddingWork = (scopeKey, options = {}) => {
     const key = text(scopeKey || '');
     if (!key || Runtime.unloaded || Runtime.settings?.embeddingAutoProcess === false || !configuredModelEmbedding(Runtime.settings)) return false;
@@ -40109,9 +40115,15 @@ const MemorySuiteHealthRecovery = (() => {
         const unsentTimeout = result.reason === 'TIMEOUT' && !Number(result.physicalRequests || 0) && !result.uncertain;
         const timeoutRetries = unsentTimeout ? (embeddingQueueUnsentRetries.get(key) || 0) + 1 : 0;
         if (unsentTimeout) embeddingQueueUnsentRetries.set(key, timeoutRetries); else embeddingQueueUnsentRetries.delete(key);
+        const conflictStopped = /conditional_batch_state_changed|FLASHBACK_COMMIT_READBACK_UNCONFIRMED|FLASHBACK_COMMIT_CONFLICT|COMMIT_CONFLICT/.test(String(result.reason || ''));
+        const conflictRetries = conflictStopped ? (embeddingQueueConflictRetries.get(key) || 0) + 1 : 0;
+        if (conflictStopped) embeddingQueueConflictRetries.set(key, conflictRetries); else embeddingQueueConflictRetries.delete(key);
         if ((!result.passStopped && !result.uncertain && result.pendingSources > 0 && Number(result.ready || 0) + Number(result.failed || 0) > 0)
           || ['queue_running', 'request_active', 'maintenance_inspection_active', 'maintenance_running'].includes(result.reason)) {
           schedulePendingEmbeddingWork(key, { reason: 'continue_pending', delayMs: result.reason === 'queue_running' ? 1000 : 250 });
+        } else if (conflictStopped && conflictRetries <= 4) {
+          // 2s → 5s → 10s → 20s, then give up until the next capture or a manual retry.
+          schedulePendingEmbeddingWork(key, { reason: 'conflict_retry', delayMs: [2000, 5000, 10000, 20000][conflictRetries - 1] || 20000 });
         } else if (unsentTimeout && timeoutRetries <= 3) {
           schedulePendingEmbeddingWork(key, { reason: 'unsent_timeout_retry', delayMs: 5000 });
         }
@@ -44875,7 +44887,8 @@ ${cleanedText}`, 80),
       if (signal?.aborted) throw new EmbeddingAdapterError('ABORTED', 'Maintenance cancelled.');
       const queue = await processPendingEmbeddingQueue({ scopeKey, retryFailed: true, signal,
         onProgress: progressOptions.onProgress, maintenanceOperationId: progressOptions.maintenanceOperationId,
-        deadlineAt: progressOptions.deadlineAt, maintenanceSourceValidate: progressOptions.maintenanceSourceValidate });
+        deadlineAt: progressOptions.deadlineAt, maintenanceSourceValidate: progressOptions.maintenanceSourceValidate,
+        carryCompleted: ready });
       passes.push({ ready: Number(queue.ready || 0), failed: Number(queue.failed || 0), pendingSources: Number(queue.pendingSources || 0),
         physicalRequests: Number(queue.physicalRequests || 0), elapsedMs: Number(queue.elapsedMs || 0), reason: queue.reason || '' });
       ready += Number(queue.ready || 0); failed += Number(queue.failed || 0); uncertain += Number(queue.uncertainRecords || 0);
@@ -45997,6 +46010,82 @@ ${cleanedText}`, 80),
 
   const renderEmbeddingCostPanel = (settings, stats = {}) => `<section id="embeddingCostPanel" class="card">${renderEmbeddingCostPanelBody(settings, stats)}</section>`;
 
+  // Per-turn storage vs vector coverage for the overview card. "Stored" means this turn's
+  // response chunks are in the scope; "vector" means every chunk owns a committed embedding.
+  // Recall silently degrades when the two disagree, so the home screen shows them separately.
+  const TURN_VECTOR_COVERAGE_TTL_MS = 15000;
+  // The stored payload is the fact the user asked about, so sidecar/inline vectors both count.
+  const turnVectorRecordHasVector = record => {
+    if (Array.isArray(record?.vector) && record.vector.length > 0) return true;
+    if (record?.vectorPayloadLocal === true && record.vectorPayloadMissing !== true) return true;
+    if (record?.vectorRef && record.vectorPayloadMissing !== true) return true;
+    return record?.embeddingWork?.status === 'ready';
+  };
+  const turnVectorCoverageSnapshot = async (scopeKey, options = {}) => {
+    const key = text(scopeKey || '');
+    if (!key) return null;
+    const cache = Runtime.turnVectorCoverageCache;
+    if (options.force !== true && cache && cache.scopeKey === key && Date.now() - Number(cache.at || 0) <= TURN_VECTOR_COVERAGE_TTL_MS) return cache.value;
+    const inFlight = Runtime.turnVectorCoverageInFlight;
+    if (inFlight?.scopeKey === key) return await inFlight.task;
+    const task = (async () => {
+      let scopeRecords = Array.isArray(options.records) ? options.records : null;
+      if (!scopeRecords) {
+        const loaded = await loadScopeRecordsRaw(key).catch(() => null);
+        if (!loaded) {
+          // A scope that never stored anything has no shard to read; that is an empty answer, not
+          // an unknown one. Anything else stays unknown so the card never invents zero coverage.
+          const manifest = await loadScopeManifest(key).catch(() => null);
+          if (manifest?.manifestRawPresent !== true) return { scopeKey: key, at: Date.now(), rows: [], storedTurns: 0, vectorTurns: 0, partialTurns: 0, emptyScope: true };
+          return null;
+        }
+        scopeRecords = loaded.records || [];
+      }
+      const byTurn = new Map();
+      // Turns the worldline knows about but that hold no stored chunks still belong in the list:
+      // '저장 없음' is exactly the state the card has to make visible.
+      const worldline = await loadTurnWorldline(key).catch(() => null);
+      for (const node of worldline?.nodes || []) {
+        const turn = Math.max(0, Number(node?.pairIndex || 0) || 0);
+        if (turn) byTurn.set(turn, []);
+      }
+      for (const record of scopeRecords) {
+        if (!isResponseMemoryRecord(record) || record.archiveReferenceOnly === true) continue;
+        const turn = Math.max(0, Number(record.pairIndex ?? record.turnIndex ?? 0) || 0);
+        if (!turn) continue;
+        if (!byTurn.has(turn)) byTurn.set(turn, []);
+        byTurn.get(turn).push(record);
+      }
+      const rows = [...byTurn.entries()].sort((left, right) => left[0] - right[0]).map(([turn, chunks]) => {
+        const expectedChunks = Math.max(1, ...chunks.map(chunk => Number(chunk.chunkCount || 1) || 1));
+        const storedChunks = chunks.length;
+        const embeddedChunks = chunks.filter(turnVectorRecordHasVector).length;
+        const runningChunks = chunks.filter(chunk => chunk.embeddingWork?.status === 'running').length;
+        const failedChunks = chunks.filter(chunk => ['failed', 'repair_needed'].includes(chunk.embeddingWork?.status)).length;
+        const stored = storedChunks >= expectedChunks;
+        const vector = stored && embeddedChunks >= expectedChunks;
+        return {
+          turn, stored, vector, storedChunks, embeddedChunks, expectedChunks,
+          state: vector ? 'ready' : runningChunks ? 'running' : failedChunks ? 'failed' : embeddedChunks ? 'partial' : 'missing'
+        };
+      });
+      return {
+        scopeKey: key, at: Date.now(), rows,
+        storedTurns: rows.filter(row => row.stored).length,
+        vectorTurns: rows.filter(row => row.vector).length,
+        partialTurns: rows.filter(row => row.stored && !row.vector).length
+      };
+    })();
+    Runtime.turnVectorCoverageInFlight = { scopeKey: key, task };
+    try {
+      const value = await task;
+      Runtime.turnVectorCoverageCache = { at: Date.now(), scopeKey: key, value };
+      return value;
+    } finally {
+      if (Runtime.turnVectorCoverageInFlight?.task === task) Runtime.turnVectorCoverageInFlight = null;
+    }
+  };
+
   const currentScopeStats = async (options = {}) => {
     const ttlMs = clampInt(options.ttlMs, 0, 60000, 5000);
     const cached = Runtime.guiCurrentStatsCache;
@@ -46020,11 +46109,13 @@ ${cleanedText}`, 80),
       const manifest = summary?.manifest || await loadScopeManifest(scope);
       const stats = normalizeStatsForDisplay(summary?.stats || manifest.stats || statsForRecords([]));
       const count = Math.max(0, Number(manifest.count || stats.recordTotal || 0) || 0);
+      const turnVectors = await turnVectorCoverageSnapshot(scope.scopeKey).catch(() => null);
       const value = {
         scope: summary?.scope || scope,
         manifest: { ...manifest, stats, count },
         records: { length: count },
-        stats
+        stats,
+        turnVectors
       };
       Runtime.guiCurrentStatsCache = { at: Date.now(), value };
       return value;
@@ -47655,6 +47746,30 @@ ${cleanedText}`, 80),
     return FLASHBACK_GUI_TAB_IDS.includes(candidate) ? candidate : 'overview';
   };
 
+  // Pure presentation model for the home "턴별 벡터 상태" card: summary sentence, badge and the
+  // per-turn rows. Kept separate from the renderer so the wording can be tested without a DOM.
+  const turnVectorCardModel = (coverage = null, formatter = value => String(value)) => {
+    if (!coverage) return { summary: '턴별 벡터 상태를 아직 불러오지 않았습니다.', badge: '', rows: '', empty: true };
+    const rows = Array.isArray(coverage.rows) ? coverage.rows : [];
+    const stored = Math.max(0, Number(coverage.storedTurns || 0) || 0);
+    const vectorised = Math.max(0, Number(coverage.vectorTurns || 0) || 0);
+    const missing = Math.max(0, stored - vectorised);
+    const summary = stored
+      ? `저장된 턴 ${formatter(stored)} · 임베딩 벡터 저장 턴 ${formatter(vectorised)}${missing ? ` · 벡터 없음 ${formatter(missing)}` : ' · 모두 완료'}`
+      : '저장된 턴이 없습니다.';
+    const badge = stored && missing
+      ? `<span class="badge badge--warn">벡터 미완료 ${formatter(missing)}턴</span>`
+      : '<span class="badge badge--ok">벡터 완료</span>';
+    const rowLabel = row => row.vector ? '벡터 있음'
+      : row.state === 'failed' ? '벡터 실패'
+      : row.state === 'running' ? '벡터 처리 중'
+      : `벡터 없음 ${formatter(Number(row.embeddedChunks || 0))}/${formatter(Number(row.expectedChunks || 0))}`;
+    const rowsHtml = rows.length
+      ? `<dl class="kv" id="turnVectorList">${rows.map(row => `<dt>T${formatter(row.turn)}</dt><dd><span class="badge ${row.stored ? 'badge--ok' : 'badge--danger'}">${row.stored ? '저장' : '저장 없음'}</span> <span class="badge ${row.vector ? 'badge--ok' : row.state === 'failed' ? 'badge--danger' : 'badge--warn'}">${rowLabel(row)}</span></dd>`).join('')}</dl>`
+      : '<p class="hint">저장된 턴이 없습니다.</p>';
+    return { summary, badge, rows: rowsHtml, empty: !rows.length, stored, vectorised, missing };
+  };
+
   const flashbackOverviewHealth = (current = {}) => {
     const manifest = current?.manifest || {};
     const issues = [];
@@ -47687,14 +47802,35 @@ ${cleanedText}`, 80),
         meta: '현재 포인터 범위만 집계했습니다. 전체 무결성은 ‘상태 점검 및 자동 복구’에서 확인할 수 있습니다.'
       };
     }
+    // Storage integrity alone is not memory readiness: a scope whose vectors are missing still
+    // recalls worse, and the header used to call that "정상".
+    const embeddingWork = current?.stats?.embeddingWork || {};
+    const embeddingFailed = Math.max(0, Number(embeddingWork.failed || 0) + Number(embeddingWork.repairNeeded || 0) + Number(embeddingWork.unconfigured || 0));
+    const embeddingOpen = Math.max(0, Number(embeddingWork.pending || 0) + Number(embeddingWork.running || 0) + Number(embeddingWork.uncertain || 0));
+    const coverage = current?.turnVectors || null;
+    const coverageMissing = coverage ? Math.max(0, Number(coverage.storedTurns || 0) - Number(coverage.vectorTurns || 0)) : 0;
+    if (embeddingFailed) {
+      return {
+        tone: 'danger',
+        title: '임베딩 확인 필요',
+        meta: `벡터 실패·미설정 ${formatNumber(embeddingFailed)}건 · ‘임베딩·서버’에서 결과를 확인하세요.`
+      };
+    }
+    if (embeddingOpen || coverageMissing) {
+      return {
+        tone: 'warning',
+        title: '임베딩 미완료',
+        meta: `저장된 턴 ${formatNumber(coverage ? coverage.storedTurns : 0)} · 벡터 저장 턴 ${formatNumber(coverage ? coverage.vectorTurns : 0)}${embeddingOpen ? ` · 대기 ${formatNumber(embeddingOpen)}건` : ''}`
+      };
+    }
     return {
       tone: 'success',
       title: '기본 저장 상태에서 이상 없음',
-      meta: '전체 무결성은 ‘상태 점검 및 자동 복구’에서 확인할 수 있습니다.'
+      meta: '저장과 임베딩 벡터가 모두 확인되었습니다. 전체 무결성은 ‘상태 점검 및 자동 복구’에서 확인할 수 있습니다.'
     };
   };
 
-  const flashbackHealthChipLabel = health => ({'저장 상태 확인 필요':'저장 확인','현재 채팅 상태 불러오는 중':'불러오는 중','부분 통계 표시 중':'부분 통계','기본 저장 상태에서 이상 없음':'기본 정상'})[health.title] || health.title;
+  const flashbackHealthChipLabel = health => ({'저장 상태 확인 필요':'저장 확인','임베딩 확인 필요':'벡터 확인','임베딩 미완료':'벡터 미완료','현재 채팅 상태 불러오는 중':'불러오는 중','부분 통계 표시 중':'부분 통계','기본 저장 상태에서 이상 없음':'기본 정상'})[health.title] || health.title;
 
   const flashbackOverviewRecallSummary = (recall = Runtime.lastRecall, currentScopeKey = '') => {
     if (!recall) return { value: '아직 없음', meta: '이번 세션에서 리콜 기록이 없습니다.', badge: '대기' };
@@ -48653,6 +48789,10 @@ ${cleanedText}`, 80),
     };
     const currentCost = scopeEmbeddingCostEstimate(current.stats, settings);
     const health = flashbackOverviewHealth(current);
+    const turnVectorCard = turnVectorCardModel(current.turnVectors || null, formatNumber);
+    const turnVectorSummary = turnVectorCard.summary;
+    const turnVectorBadgeHtml = turnVectorCard.badge;
+    const turnVectorRowsHtml = turnVectorCard.rows;
     const healthTone = health.tone === 'danger' ? 'health--danger' : health.tone === 'warning' ? 'health--warn' : 'health--ok';
     const routeFor = tab => ({
       overview: 'lab', storage: 'vault', worldline: 'vault', import: 'care', 'source-edits': 'care', restore: 'care',
@@ -48690,7 +48830,7 @@ ${cleanedText}`, 80),
     const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div><details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
     const settingsBody = buildAdvancedTab(settings);
     const pages = [
-      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
+      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="card" id="turnVectorCard"><div class="card__head"><div><h2 class="card__title">턴별 벡터 상태</h2><p class="card__desc">${escapeHtml(turnVectorSummary)}</p></div>${turnVectorBadgeHtml}</div>${turnVectorRowsHtml}</div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
       `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
       `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
       `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','이전 · 검증',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
@@ -53516,7 +53656,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     clearOperationLogs,
     getActivityLog: activityLogSnapshot,
     clearActivityLog,
-    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, ensureInitialScopeManifest, scheduleDeferredScopeStorageReady, maintenanceIncompleteCounts, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
+    _test: { maintenanceResultText, automaticMaintenanceStrategyForPlan, saveTurnWorldline, loadTurnWorldline, maintenancePartialSuccessLines, maintenanceIsolatedReasonText, formatErrorMessage, embedTextsIsolated, classifyIsolatedEmbeddingFailure, embeddingFailureIsItemScoped, pushActivityLog, activityLogSnapshot, normalizeMaintenanceJournal, flashbackLiveChatCacheKey, flashbackMessageRevisionProjection, liveChatRevisionCacheScope, splitTextIntoChunks, reconstructChunkGroupText, lexicalOverlap, buildSparseFieldsForRecord, sparseProjectionForRecord, scoreBm25fCandidates, reciprocalRankFusion, classifyTemporalIntent, classifyTruthIntent, applyRecallHardGates, applyRecallTemporalHardGate, resolveRecallLane, recallLaneLimits, computeMemoryHeat, buildCurrentUserStateOverlay, generateRecallCandidateArms, selectRecallByLanes, ensureRecallIntentCoverage, collectLiveStructuredStateFacts, extractLatestUserInput, resolveFlashbackCurrentTurn, latestFlashbackCurrentInputRange, hasFlashbackChatProvenance, latestFlashbackProvenanceUserTurn, hasUnresolvedPromptTemplate, findFlashbackTerminalAssistantPrefillIndex, isLikelyMetaUserMessage, stripNestedThoughtBlocks, lastVisibleResponseBoundary, stripExternalRuntimeArtifacts, stripSourceArtifacts, formatRecallBlock, formatFlashbackDynamicEvidenceBlock, buildFlashbackStaticEvidenceContract, flashbackStaticProfileId, injectFlashbackMessages, findStableSystemPrefixEnd, getCachedQueryEmbedding, getCachedQueryEmbeddings, queryEmbeddingCacheKey, invalidateQueryEmbeddingCache, normalizeQueryForEmbeddingCache, estimateTokens, embeddingPricingFor, estimateEmbeddingCostForTokens, estimateEmbeddingCostForRecords, statsForRecords, debugRecords: debugRecordsSnapshot, normalizeSettings, repairZeroInitializedSettings, readArgumentSettings, applyArgumentOverrides, settingsOverrideDiff, readEmbeddingKey, saveEmbeddingKeyLocal, saveEmbeddingCredential, inspectEmbeddingKeyPersistence, setPluginArgumentValue, embeddingArgumentBackendState, embeddingSyncedBackendState, embeddingLocalBackendState, selectEmbeddingCredential, providerRequiresEmbeddingCredential, maintenanceEmbeddingWorkRequested, requireMaintenanceEmbeddingCredential, embedTexts, inspectLastEmbedFallback: () => Runtime.lastEmbedUsedFallback === true, normalizeStoredChatMessages, liveChatStateFromNormalized, liveChatStateFromResponseGroups, changedConversationPairIndexes, collectLiveChatSourcesFromSnapshot, diffLiveChatSourcesAgainstRecords, sameMaintenanceTurnText, recordMemorySanitizerVersion, recordNeedsLiveSanitizerRebuild, automaticMaintenanceStrategyForPlan, classifyRequestType, flashbackModelMainRequestEvidence, requestKindCore: FlashbackRequestKindCore, classifyRecallQuery, adaptiveRecallProfile, previousTurnRecallProfile, buildDiscriminativeRecallAnchors, selectDiverseRecall, applyRecallQualityBalance, compareRecallItemsFinal, buildRecallQuery, buildSceneContextQuery, decomposeRecallTopics, effectiveRecallPreferenceWeights, applyFlashbackRecallPreference, applyFlashbackMultiTopicCoverage, ensureFlashbackMustCarryCoverage, ensureFlashbackContradictionCoverage, computeImportanceDensity, extractEntityAnchors, buildLatestStateByEntity, applyCurrentUserOverlaySuppressions, collectCurrentStateFacts, structuredStateFactsFromMetadata, extractQueryStateProperties, buildRecallShardSummary, flashbackMemoryLaneDocumentStats, flashbackMemoryLaneWeightedMatch, flashbackMemoryLaneQueryPhrases, selectRecallShardIndexes, previousTurnSourceShardIndexes, detectEpisodeBoundaries, buildEpisodeIndexRecords, sanitizeAssistantForMemory, extractMemoryMetadata, cleanRecordForMemory, collectCurrentSceneTailCandidates, collectEntityFocusedCandidates, applyPerSourceDiversityLimit, injectMessage, finalizedAssistantCandidate, finalizedAssistantMatchesPendingBaselineVariant, serializePendingCaptureJournalEntry, normalizePendingCaptureJournalEnvelope, persistPendingCaptureJournalEntry, loadPendingCaptureJournalEntries, recoverPendingCapturesFromJournal, finiteTurnIndex, latestResponseTurnIndex, latestLiveResponseTurnIndex, computeStoryRecency, storyOrderValue, buildRecentResponseRanks, buildStoredTurnVectorGroups, selectPreviousTurnVectorContext, recallSemanticSignals, manualRecordDeleteKey, memoryRecordDisplayTitle, turnPairDisplayText, formatCostSummary, formatGuiDateTime, flashbackLineageReasonLabel, manualEditorShardIndexes, currentScopeStats, isGuiRenderActive, maybeScheduleConversationDriftCheck, isRetainedMemoryRecord, isPermanentSessionHistoryRecord, isInheritedScopeMemoryRecord, normalizeInheritedScopeRecordForActiveHistory, memorySessionBridgeMarker, resolveScopeFromSnapshot, sameCharacterChatIdentity, findSameChatPersonaScopeSource, findCloneSource, rebindRecordForSameChatPersonaRecovery, cloneRecordForNativeChatCopy, liveRecordForNativeChatCopy, repairMisclassifiedNativeCopyScope, cloneScopeStorage, ensureScopeStorageReady, ensureInitialScopeManifest, scheduleDeferredScopeStorageReady, turnVectorCoverageSnapshot, turnVectorCardModel, flashbackOverviewHealth, maintenanceIncompleteCounts, prepareScopeStorageForRequest, resolveCurrentScopeIdentityBundle, beforeRequest, pendingCaptureRuntimeSnapshot: () => ({ lastRecall: Runtime.lastRecall, pendingTurns: (Runtime.pendingTurns || []).map(item => ({ pendingId: item.pendingId || '', scopeKey: item.scope?.scopeKey || '', pairIndex: Number(item.pairIndex || 0) || 0, latestUser: item.latestUser || '' })), deferredScopeStorage: Array.from(Runtime.deferredScopeStorageTasks.keys()) }), ensureFlashbackArchiveForHandoff, createImmutableFlashbackHandoffArchive, archiveAndCompactFlashbackSourceScope, flashbackSourceIntegritySnapshot, compareFlashbackSourceIntegrity, restoreLegacyCompactedSourceScope, readFlashbackHandoffLedger, writeFlashbackHandoffReceipt, verifyFlashbackArchiveRef, loadFlashbackArchiveChain, loadFlashbackArchiveManifestSummary, normalizeFlashbackArchiveRef, flashbackArchiveRecordIdentity, loadScopeManifest, saveScopeManifest, buildFlashbackVectorShardPayload, hydrateFlashbackVectorRecords, persistFlashbackVectorShard, encodeFlashbackShardEnvelope, decodeFlashbackShardEnvelope, flashbackArchiveGzipSupported, retireExternalRecordsForScope, reconcileFlashbackTurnWorldline, debugWorldlineSnapshot, flashbackPairIdentity, flashbackLiveWorldlineHash, responseGroupsForWorldline, protectPendingGenerationWorldlineTarget, prepareFlashbackWorldlineReplacement, synchronizeFlashbackTurnWorldline, loadTurnWorldline, loadScopeRecords, loadScopeRecordsForRecall, invalidateRecallCache, saveAllRecords, pendingThresholds: Object.freeze({ fallbackMinOverlap: PENDING_FALLBACK_MIN_OVERLAP, shortMarkedFallbackMinOverlap: PENDING_SHORT_MARKED_FALLBACK_MIN_OVERLAP, shortLatestScoreSlack: PENDING_SHORT_LATEST_SCORE_SLACK, shortUnconfirmedGraceMs: PENDING_SHORT_UNCONFIRMED_GRACE_MS, singleShortZeroOverlapMs: PENDING_SINGLE_SHORT_ZERO_OVERLAP_MS }) }
   });
   publicApi._test.buildUiHtml = buildUiHtml;
   publicApi._test.renderManualEditorPanelHtml = renderManualEditorPanelHtml;

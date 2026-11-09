@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T11:58:56.698Z",
+  "generatedAt": "2026-11-09T12:23:55.258Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4299,8 +4299,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "484cf878d4ece810ead1a4a26ad4280ba438d2d0fdecff2a8a456b43b5b4c067",
-      "bytes": 3733682
+      "sha256": "18c36afba4625be992b142d543f3a9f6c6a64dd859b6927e31c6fa19e73323e5",
+      "bytes": 3743514
     },
     "plugins/GRADIA.js": {
       "sha256": "488c3717c368a39402e5179d5f2256a1a9ed0b0d4a7f0d2d2d12192df440bec8",
@@ -6374,13 +6374,17 @@
       "sha256": "e616f543d84c9c78d1d62c6da6044017cec34256558e611e48f3c9cc86becdc4",
       "bytes": 7943
     },
+    "tests/flashback_scope_manifest_bootstrap_test.cjs": {
+      "sha256": "229efd80ac5d1a5a1de90e3fd552ee9b287bf0dee6ceca7a1b62be3c4d2469bc",
+      "bytes": 7906
+    },
     "tests/flashback_scope_observer_retry_test.cjs": {
       "sha256": "5c7c6b3fe449eeff7b69362bfb4791f9a03abb69e14ed745223a4e5aced5b5cc",
       "bytes": 2204
     },
     "tests/flashback_scope_panels_browser_test.cjs": {
-      "sha256": "be5ceca786f231746aaebf823c871908ff7f1a378823327ac7e512ffdba28089",
-      "bytes": 36909
+      "sha256": "5b30f792db86cd47b46f0b458ef04bfc6b856dfd929d85c8bd6d42809620c78c",
+      "bytes": 37356
     },
     "tests/flashback_scope_panels_contract_test.cjs": {
       "sha256": "efe52f2e08d51eda562b0aaf61e8ac4049f49ea5ab0baa9f2da6fd7434aa1e4b",
