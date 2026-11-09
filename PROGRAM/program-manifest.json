@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T12:29:51.818Z",
+  "generatedAt": "2026-11-09T12:38:22.025Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4299,8 +4299,8 @@
       "bytes": 3353
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "b06ef65385284ffd92871c8fdb4e9fbfb43598c2ce639be37059c2e80f85e4c1",
-      "bytes": 3749749
+      "sha256": "a60c3cb16071d373783eaeca6d693f0ed92f019fe9ec5c49d90b39d30eae1f07",
+      "bytes": 3751942
     },
     "plugins/GRADIA.js": {
       "sha256": "488c3717c368a39402e5179d5f2256a1a9ed0b0d4a7f0d2d2d12192df440bec8",
@@ -6045,6 +6045,10 @@
     "tests/flashback_embedding_reservation_runtime_test.cjs": {
       "sha256": "dea619edff085b9f80e99a2509cc7614136e79c1fc131ad5949b54aceab37e4d",
       "bytes": 23525
+    },
+    "tests/flashback_embedding_stale_attempt_test.cjs": {
+      "sha256": "1b70d4a3f34a538470a682a82b02d0e3b7adfaebeb1806cb4b98c725efdb2bd1",
+      "bytes": 5992
     },
     "tests/flashback_embedding_work_gui_runtime_test.cjs": {
       "sha256": "beeb3f6f972f7c1ff9b303de1e53b8acdc491810a3e1ffda0a24e8b231de7f36",

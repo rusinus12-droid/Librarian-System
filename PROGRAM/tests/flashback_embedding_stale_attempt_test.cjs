@@ -66,11 +66,16 @@ const { createFixture } = require('./fixtures/flashback_native_runtime_fixture.c
     assert.equal(settled.embeddingWork, undefined, 'a verified target drops its stale work marker instead of re-embedding');
     results.push('a verified target is settled as committed');
 
-    // 5. Nothing to settle on a clean scope.
+    // 5. Nothing to settle on a clean scope, and the outcome is always recorded for the export.
     const clean = await t.reconcileStaleEmbeddingAttempts({ scope });
     assert.equal(clean.settled, 0);
     assert.equal(clean.reason, 'no_stale_attempts');
-    results.push('a clean scope reports no stale attempts');
+    const recorded = t.debugReconcileState();
+    assert.ok(recorded, 'the reconciliation outcome is recorded');
+    assert.equal(recorded.ok, true);
+    assert.equal(recorded.attempt, 1, 'the first attempt is recorded');
+    assert.equal(recorded.reason, 'no_stale_attempts');
+    results.push('a clean scope reports no stale attempts and the outcome is recorded');
 
     console.log(JSON.stringify({ test: 'flashback_embedding_stale_attempt', passed: results.length, results,
       boundary: 'full plugin in native runtime fixture; live RisuAI server mirror untested' }));
