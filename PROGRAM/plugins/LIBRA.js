@@ -33829,6 +33829,9 @@ function createLibraReadonlySourceContext(owner) {
       lastMicroPlanRefusal: null,
       lastGradiaUnifiedRead: null,
       lastResponseBoundaryFailure: null,
+      lastResponseBoundaryRebase: null,
+      lastBoundaryCaptureAt: 0,
+      lastSelfStateWriteAt: 0,
       lastCorpusColdReason: null,
       canonicalJob: null,
       canonicalJobPromise: null,
@@ -37479,6 +37482,7 @@ function createLibraReadonlySourceContext(owner) {
       let readback = clone(head);
       if (!dryRun) {
         await storage.setJson(key.continuityState(context.scope), head);
+        markUnifiedStateSelfWrite();
         readback = await loadContinuityState(context.scope, manifest, { requireCurrent: true });
         if (!readback) throw new Error('continuity_state_readback_failed');
         state.lastContinuityState = clone(readback);
@@ -56245,6 +56249,7 @@ function createLibraReadonlySourceContext(owner) {
       if (memory && anchorMatches.length !== 1) throw new Error(anchorMatches.length ? 'state_replay_anchor_ref_ambiguous' : 'state_replay_anchor_ref_missing');
       next = applyStateCorrectionsAtAnchor(next, correctionJournal, Number(anchorTurn || 0), worldlineId, anchorMatches[0] || null).head;
       await storage.setJson(key.continuityState(context.scope), next);
+      markUnifiedStateSelfWrite();
       const readback = await loadContinuityState(context.scope, manifest, { requireCurrent: true });
       if (!readback || string(readback.worldlineId || '') !== string(worldlineId || 'main')
         || string(readback.entityRegistryFingerprint || '') !== string(registry?.fingerprint || '')) throw new Error('state_replay_head_readback_failed');
@@ -72276,6 +72281,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (entry.responseBoundary && digest(entry.responseBoundary) !== digest(boundary)) throw consumerContractError('CONSUMER_DATA_BINDING_CHANGED');
       entry.responseBoundary = unifiedDeepFreeze(clone(boundary));
     };
+    // 회수 경계는 두 종류의 사실을 섞고 있었다. 권한 필드(대화록·스코프·저장 모드·정책)는 이 회수가
+    // 말해도 되는지를 정하고, 상태 필드(continuity head·worldline·registry 등)는 LIBRA 자신이 회수
+    // 도중에도 갱신하는 메모리 상태다. 2026-11-09 실측: pending state tracking 복구가 회수 중에
+    // continuity head 를 쓰자 경계 검증이 headDigest 불일치로 회수 전체를 폐기했다(기억 0자).
+    // 그래서 자기 쓰기가 경계 캡처 이후에 일어난 경우에만 상태 필드 변경을 재기준(rebase)으로
+    // 받아들이고, 그 밖의 변경은 기존대로 권한 변경으로 거부한다.
+    const UNIFIED_RESPONSE_STATE_FIELDS = Object.freeze(['manifestDigest','headDigest','registryDigest',
+      'worldlineDigest','migrationDigest','directionDigest']);
+    const markUnifiedStateSelfWrite = () => { state.lastSelfStateWriteAt = Date.now(); };
     const captureUnifiedResponseBoundary=async(context,settings=null,options={})=>{
       const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);
       let timer;
@@ -72285,6 +72299,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         storage.getJson(key.manifest(scope),null),storage.getJson(key.continuityState(scope),null),storage.getJson(key.entityRegistry(scope),null),
         storage.getJson(key.stateWorldlineMeta(scope),null),storage.getJson(unifiedMigrationKey(scope),null),getNarrativeDirection({scopeKey:scope.scopeKey})
       ]);
+      if (options.markCapture !== false) state.lastBoundaryCaptureAt = Date.now();
       return {scopeKey:scope.scopeKey,sourceDigest:digest(responseTranscriptProjection(pairs)),manifestDigest:unifiedResponseManifestIdentity(manifest),
         headDigest:digest(head),registryDigest:digest(registry),worldlineDigest:digest(meta),migrationDigest:digest(migration),
         directionDigest:digest(direction),policyDigest:digest(settings||await loadSettings({force:options.force===true})),
@@ -72298,12 +72313,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const deadlineAt=Math.min(Date.now()+CONSUMER_REVALIDATION_BUDGET_MS,Number(options.deadlineAt)||Infinity);let timer;
       try{return await Promise.race([(async()=>{
         const context=await resolveContext();unifiedAssert(context.scope.scopeKey===boundary.scopeKey,'UNIFIED_RESPONSE_SCOPE_CHANGED');
-        const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true});
+        const current=await captureUnifiedResponseBoundary(context,null,{...options,deadlineAt,force:true,markCapture:false});
         if (digest(current)!==digest(boundary)) {
           // Record field names only: no transcript, settings, or memory values.
           const allKeys = [...new Set([...Object.keys(current || {}), ...Object.keys(boundary || {})])];
           const diffFields = allKeys.filter(field => digest(current?.[field]) !== digest(boundary?.[field]));
           const changedFields = diffFields.length ? diffFields : ['unclassified_boundary_change'];
+          const stateOnly = changedFields.every(field => UNIFIED_RESPONSE_STATE_FIELDS.includes(field));
+          const selfWriteSinceCapture = Number(state.lastSelfStateWriteAt || 0) >= Number(state.lastBoundaryCaptureAt || 0);
+          if (stateOnly && selfWriteSinceCapture) {
+            // LIBRA advanced its own memory state during this recall: keep the recall and re-base
+            // on the fresher head instead of discarding every memory of the turn.
+            state.lastResponseBoundaryRebase = { at: Date.now(), code: 'UNIFIED_RESPONSE_BOUNDARY_REBASED',
+              changedFields: [...changedFields] };
+            return clone(current);
+          }
           state.lastResponseBoundaryFailure = { at: Date.now(), code: 'UNIFIED_RESPONSE_AUTHORITY_CHANGED', changedFields };
           const error = Error('UNIFIED_RESPONSE_AUTHORITY_CHANGED');
           error.code = 'UNIFIED_RESPONSE_AUTHORITY_CHANGED';
@@ -72650,7 +72674,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (block.length > CLASSIC_MAX_INJECTION_CHARS) throw new Error('LIBRA_GRAPH_CONSUMER_CHARACTER_BUDGET');
         const position = normalizeChoice(runtimeSettings?.injectionPosition || DEFAULT_INJECTION_POSITION,
           ['first_system','last_system','before_last_user'], DEFAULT_INJECTION_POSITION);
-        if (responseBoundary) await runRecallStep(guard, 'unified_response_boundary', () => assertUnifiedResponseBoundary(responseBoundary), RECALL_STEP_BUDGET_MS);
+        if (responseBoundary) {
+          const rebound = await runRecallStep(guard, 'unified_response_boundary', () => assertUnifiedResponseBoundary(responseBoundary), RECALL_STEP_BUDGET_MS);
+          // 자기 상태 갱신으로 재기준된 경우, 이후 단계와 소비 바인딩은 새 경계를 따라간다.
+          if (rebound && typeof rebound === 'object' && rebound.scopeKey) responseBoundary = rebound;
+        }
         assertConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));
         await runRecallStep(guard, 'unified_query_receipts', () => assertConsumedDataCurrent(receiptToken), RECALL_STEP_BUDGET_MS);
         const verified = await runRecallStep(guard, 'unified_final_consumer',
@@ -80261,6 +80289,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           // canonical-ref Head write. Never reapply it in this public wrapper.
           attemptedHead=clone(head);
           await storage.setJson(key.continuityState(liveContext.scope),head);
+          markUnifiedStateSelfWrite();
           durableHead=await assertStateReplayHead({scope:liveContext.scope,expected:head,worldlineId:activeId,replayFingerprint});
           const cache={schema:STATE_REPLAY_CACHE_SCHEMA,scopeKey:string(liveContext.scope.scopeKey),worldlineId:activeId,fingerprint:replayFingerprint,throughTurn:Number(durableHead.throughTurn||0),appliedDeltas,appliedCorrections:clone(appliedCorrections),reason,updatedAt:nowIso()};
           attemptedCache=clone(cache);
@@ -88595,6 +88624,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
     lastMemoryAfterRequest: LibraMemoryCore.state.lastAfterRequest ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastAfterRequest)) : null,
     lastGradiaUnifiedRead: LibraMemoryCore.state.lastGradiaUnifiedRead ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastGradiaUnifiedRead)) : null,
+    lastResponseBoundaryRebase: LibraMemoryCore.state.lastResponseBoundaryRebase ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastResponseBoundaryRebase)) : null,
     lastResponseBoundaryFailure: LibraMemoryCore.state.lastResponseBoundaryFailure ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastResponseBoundaryFailure)) : null,
     lastCorpusColdReason: LibraMemoryCore.state.lastCorpusColdReason ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastCorpusColdReason)) : null,
     lastMicroPlanRefusal: LibraMemoryCore.state.lastMicroPlanRefusal ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastMicroPlanRefusal)) : null,

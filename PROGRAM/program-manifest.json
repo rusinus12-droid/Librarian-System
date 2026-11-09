@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.0",
-  "generatedAt": "2026-11-09T16:01:19.041Z",
+  "generatedAt": "2026-11-09T16:11:19.457Z",
   "server": {
     "version": "0.5.0",
     "protocol": {
@@ -4315,8 +4315,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "cc6956af9820348963e36d4904d9462fe92d215d8ddd44136c601bb4209f2e11",
-      "bytes": 7110143
+      "sha256": "e5c0548740879873a4d72290212852ba2bab895b6e50040a2e7344edefe8bf95",
+      "bytes": 7112545
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -7001,6 +7001,10 @@
     "tests/gradia/wardrobe-continuity.test.cjs": {
       "sha256": "cdc967acad2c621f1586bc901df5cf9efad71235870046dac70526e32738bc50",
       "bytes": 4388
+    },
+    "tests/gradia/work-scale-context-budget.test.cjs": {
+      "sha256": "a04d5d12fd0ec7efaff27ca98e67caf46b3ee2aa9134c053d66f87d76159c8e8",
+      "bytes": 2634
     },
     "tests/gradia/writing-mode-separation.test.cjs": {
       "sha256": "bca6c474546d1a0c78415fa54ea4cabb643d2c8aaab993c44bbc4256774d6055",
