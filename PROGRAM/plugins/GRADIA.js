@@ -2249,6 +2249,33 @@
       analysisTokenScale: 1, analysisLabel: '심층 분석'
     })
   });
+  // 작업 규모 프리셋은 모델 문맥 하나에서 출발한다. 완성 예약(문맥의 35% 상한)과 10% 여유를
+  // 빼고 남은 입력을 실제 문자/토큰 비율로 환산한 뒤, 프로파일별 비중만큼 참조 자료와 기억에
+  // 나눠 준다. 저장된 상한은 그대로 최댓값으로 남으므로 큰 문맥에서는 지금 쓰던 값이 유지된다.
+  const WORK_SCALE_REFERENCE_SHARE = Object.freeze({ fast: 0.55, balanced: 0.60, quality: 0.65, custom: 0.60 });
+  const WORK_SCALE_MEMORY_SHARE = Object.freeze({ fast: 0.18, balanced: 0.25, quality: 0.30, custom: 0.25 });
+  const workScaleCharsPerToken = settings => normalizeInternalDraftLanguage(settings?.internalDraftLanguage) === 'english' ? 1.8 : 1.1;
+  const workScaleContextBudget = (settings = {}, preset = null, profileIdInput = null) => {
+    const profileId = normalizeChoice(profileIdInput || settings?.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
+    let source = preset;
+    if (!source) { try { source = resolvePreset(settings, 'shadow_act')?.preset || {}; } catch (_) { source = {}; } }
+    const manual = clampInt(source.context_window, 0, 4000000, 0);
+    const catalog = (!source.metadata_model_id || source.metadata_model_id === source.model)
+      ? clampInt(source.catalog_context_window, 0, 4000000, 0) : 0;
+    const contextTokens = manual || catalog || estimateModelContextTokens(source) || 0;
+    const charsPerToken = workScaleCharsPerToken(settings);
+    if (!contextTokens) return Object.freeze({ contextTokens: 0, source: 'unknown', charsPerToken, profileId,
+      availableChars: null, referenceChars: null, memoryChars: null });
+    const outputReserve = Math.min(clampInt(source.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS),
+      Math.max(1024, Math.floor(contextTokens * 0.35)));
+    const margin = Math.ceil(contextTokens * 0.10);
+    const availableChars = Math.max(0, Math.floor(Math.max(0, contextTokens - outputReserve - margin) * charsPerToken));
+    return Object.freeze({ contextTokens, source: manual ? 'manual' : catalog ? 'catalog' : 'model_heuristic',
+      charsPerToken, outputReserve, margin, availableChars, profileId,
+      referenceChars: Math.floor(availableChars * (WORK_SCALE_REFERENCE_SHARE[profileId] ?? WORK_SCALE_REFERENCE_SHARE.balanced)),
+      memoryChars: Math.floor(availableChars * (WORK_SCALE_MEMORY_SHARE[profileId] ?? WORK_SCALE_MEMORY_SHARE.balanced)) });
+  };
+
   const SIMPLE_LENGTH_CHOICES = Object.freeze([
     Object.freeze({
       id: 'compact',
@@ -3758,8 +3785,13 @@ ${BIANCA_PERSONA_TEXT}`;
   const libEvidenceBudget = (settings = {}) => {
     const profile = normalizeChoice(settings.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
     const configured = Number(settings.memoryBudgetChars);
-    const maxChars = Number.isSafeInteger(configured) && configured >= 1000 ? Math.min(configured, REFERENCE_BUDGET_CUSTOM_MAX_CHARS)
+    const profileCap = Number.isSafeInteger(configured) && configured >= 1000 ? Math.min(configured, REFERENCE_BUDGET_CUSTOM_MAX_CHARS)
       : (MEMORY_PROFILE_CAPS[profile] || MEMORY_PROFILE_CAPS.balanced);
+    // Same context number as the prompt builder: memory may use its share of what the model
+    // actually has left, and never more than the stored ceiling.
+    const contextBudget = workScaleContextBudget(settings, null, profile);
+    const maxChars = contextBudget.memoryChars === null ? profileCap
+      : Math.max(2000, Math.min(profileCap, contextBudget.memoryChars));
     return Object.freeze({ maxChars, maxBytes: Math.min(LIB_EVIDENCE_MAX_BYTES, Math.max(65536, maxChars * 4 + 8192)) });
   };
   // JSON escaping prevents structural delimiter/template spoofing. This is NOT
@@ -16756,9 +16788,12 @@ ${passage.text || ''}`, 420));
         200000,
         DEFAULT_MAX_STAGE_TOKENS
       );
-      const reservedOutputTokens = Math.min(outputTokens, 8192);
+      // Reference material shares the same context budget as memory and the completion reservation,
+      // measured with the real characters-per-token ratio instead of the old 3.2 approximation.
+      const stageBudget = workScaleContextBudget(settings, preset, profileId);
+      const reservedOutputTokens = stageBudget.outputReserve || Math.min(outputTokens, 8192);
       const safeChars = contextTokens
-        ? Math.max(1000, Math.floor(contextTokens * 3.2 * 0.70 - reservedOutputTokens * 3.2 - 12000))
+        ? Math.max(1000, Math.min(configuredProfileCap, stageBudget.referenceChars || configuredProfileCap))
         : configuredProfileCap;
       stages.push({
         stage: stageName,
@@ -42718,10 +42753,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const maxTokens = clampInt(preset.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), need = workScaleOutputNeed(def.id, preset, runtime);
       stages.push({ id: def.id, label: def.label, presetName, model: preset.model || '', maxTokens, need, ok: maxTokens >= need });
       if (maxTokens < need) note('warn', `${def.label}: ${presetName} 맥스 토큰 ${maxTokens.toLocaleString('ko-KR')} / 필요 ${need.toLocaleString('ko-KR')}. 응답이 잘릴 수 있습니다.`);
-      const context = clampInt(preset.context_window, 0, 4000000, 0) || clampInt(preset.catalog_context_window, 0, 4000000, 0) || estimateModelContextTokens(preset);
-      const input = Number(slot.maxChars || REFERENCE_PROFILE_CAPS.balanced) + memory + previous + Number(slot.turnWindow || DEFAULT_RECENT_TURNS) * draftMax;
+      // 같은 문맥 예산으로 실제 적용값을 계산한다. 저장된 상한이 문맥보다 크면 여기서 줄어든다.
+      const stageBudget = workScaleContextBudget(runtime, preset, profileId);
+      const context = stageBudget.contextTokens;
+      const effectiveReference = stageBudget.referenceChars === null ? Number(slot.maxChars || REFERENCE_PROFILE_CAPS.balanced)
+        : Math.min(Number(slot.maxChars || REFERENCE_PROFILE_CAPS.balanced), stageBudget.referenceChars);
+      const effectiveMemory = stageBudget.memoryChars === null ? memory : Math.min(memory, Math.max(2000, stageBudget.memoryChars));
+      const input = effectiveReference + effectiveMemory + previous + Number(slot.turnWindow || DEFAULT_RECENT_TURNS) * draftMax;
       if (!context) note('info', `${def.label}: ${presetName}의 문맥 크기를 알 수 없어 입력량을 비교하지 못했습니다.`);
       else {
+        const outputCap = Math.max(1024, Math.floor(context * 0.35));
+        if (need > outputCap) note('warn', `${def.label}: 문맥의 35% 상한 때문에 출력이 ${outputCap.toLocaleString('ko-KR')} 토큰으로 제한됩니다(요청 ${need.toLocaleString('ko-KR')}).`);
         const limit = Math.floor((context * 0.9 - maxTokens) * INPUT_CHARS_PER_TOKEN);
         if (input > limit) note('warn', `${def.label}: 입력이 최대 약 ${input.toLocaleString('ko-KR')}자로, 모델 문맥(약 ${Math.max(0, limit).toLocaleString('ko-KR')}자)을 넘을 수 있습니다. 자료가 줄어들 수 있으니 작업 규모를 낮추세요.`);
       }
@@ -44888,6 +44930,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ollama_cloud: OLLAMA_CLOUD_SUGGESTED_MODELS.slice(),
       nanogpt: NANO_GPT_SUGGESTED_MODELS.slice(),
       deepseek: DEEPSEEK_SUGGESTED_MODELS.slice()
+    },
+    // 작업 규모 프리셋이 주어진 문맥에서 실제로 얼마를 쓰는지 확인한다(GUI 진단·테스트용).
+    debugWorkScaleBudget(profileId = 'balanced', presetOverride = {}, settingsOverride = null) {
+      const id = normalizeChoice(profileId, QUICK_PROFILE_IDS, 'balanced');
+      const preset = { context_window: Number(presetOverride.context_window || 0),
+        max_tokens: Number(presetOverride.max_tokens || DEFAULT_MAX_STAGE_TOKENS),
+        model: String(presetOverride.model || ''), provider: String(presetOverride.provider || 'custom') };
+      const language = settingsOverride?.internalDraftLanguage !== undefined
+        ? settingsOverride.internalDraftLanguage : Runtime.settings?.internalDraftLanguage;
+      const budget = workScaleContextBudget({ quickProfile: id, internalDraftLanguage: language }, preset, id);
+      const referenceCap = Math.min(REFERENCE_PROFILE_CAPS[id] ?? REFERENCE_PROFILE_CAPS.balanced,
+        budget.referenceChars === null ? REFERENCE_PROFILE_CAPS[id] ?? REFERENCE_PROFILE_CAPS.balanced : budget.referenceChars);
+      const memoryCap = Math.min(MEMORY_PROFILE_CAPS[id] ?? MEMORY_PROFILE_CAPS.balanced,
+        budget.memoryChars === null ? MEMORY_PROFILE_CAPS[id] ?? MEMORY_PROFILE_CAPS.balanced : Math.max(2000, budget.memoryChars));
+      return { ...budget, referenceCap, memoryCap };
     },
     getRuntime: () => {
       if (activeLibEvidenceRun) return { externalEvidence: true, status: 'request_local_redacted' };
