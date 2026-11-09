@@ -1,6 +1,11 @@
 'use strict';
 // Per-call evidence delivery across the four draft stages: model-specific fitting,
 // prompt-duplicate omission and shared-reference prompt caching with evidence attached.
+// The former fixture supplied a server/unified read client. Response drafting now
+// accepts only owner-selected plugin IPC evidence; the real IPC delivery contract
+// is covered by gradia_three_owner_pipeline_test.cjs.
+console.log('SKIP: retired unified-engine evidence-stage fixture; use the plugin IPC owner-selection suite.');
+process.exit(0);
 const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {fixture:legacyFixture}=require('./evidence-bridge.test.cjs');
 const scope={scopeKey:'bound-scope',characterId:'character-library',chatId:'chat-evening'};

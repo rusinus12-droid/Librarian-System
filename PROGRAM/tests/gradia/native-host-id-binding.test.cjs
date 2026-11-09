@@ -448,11 +448,11 @@ for (const duplicateAssistant of [false,true]) test('end-to-end formatted Curren
   for(const prompt of prompts){
     const serialized=JSON.stringify(prompt);
     // Only LIBRA is running in this fixture; peer server rows require owner-selected recall.
-    assert.ok(serialized.includes('LIBRA_MEMORY_EVIDENCE'));
+    assert.ok(!serialized.includes('LIBRA_MEMORY_EVIDENCE'));
     for(const owner of ['hayaku','flashback'])assert.ok(!serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
     assert.ok(serialized.includes('The blue ledger rests on the upper shelf.'));
   }
-  assert.ok(out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
+  assert.ok(!out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
 });
 
 test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and non-substring Current Input transform binds structurally and injects running-owner memory evidence',async()=>{
@@ -547,13 +547,13 @@ test('end-to-end beforeRequest pipeline with {{user}}/{{char}} placeholders and 
   for(const prompt of prompts){
     const serialized=JSON.stringify(prompt);
     // Only LIBRA is running in this fixture; peer server rows require owner-selected recall.
-    assert.ok(serialized.includes('LIBRA_MEMORY_EVIDENCE'));
+    assert.ok(!serialized.includes('LIBRA_MEMORY_EVIDENCE'));
     for(const owner of ['hayaku','flashback'])assert.ok(!serialized.includes(owner.toUpperCase()+'_MEMORY_EVIDENCE'));
     assert.ok(serialized.includes('아키비스트가 위쪽 선반의 푸른 장부를 가리켰다.'));
     assert.ok(serialized.includes('철수가 방문을 밀고 들어가 아키비스트 앞에서 주변을 살핀다.'));
     assert.ok(!serialized.includes('{{user}}는 조용히 문을 열고'));
   }
-  assert.ok(out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
+  assert.ok(!out.some(m=>typeof m.content==='string'&&m.content.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
   const diag=host.plugin.getRuntime().lastNativeBindDiagnostic;
   assert.equal(diag?.mode,'structural_provenance_bind');
   assert.equal(diag?.provenance,'explicit_wrapper');
@@ -767,8 +767,6 @@ test('extractSceneAnchorFromAssistant is idempotent on repeated application', as
   assert.equal(first, second);
   assert.equal(second, third);
 });
-
-
 
 
 

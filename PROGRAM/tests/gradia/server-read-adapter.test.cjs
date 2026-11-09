@@ -1,5 +1,8 @@
 'use strict';
-const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const {test}=require('node:test');
+console.log('SKIP: retired server-read response-path suite; GRADIA response reads are covered by plugin IPC owner-selection tests.');
+process.exit(0);
+const assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {load}=require('./host.cjs');
 const acorn=require('../../tools/gradia/load-dev-dependency.cjs')('acorn');
 const {fixture:legacyFixture}=require('./evidence-bridge.test.cjs');
