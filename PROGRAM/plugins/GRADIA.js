@@ -966,6 +966,9 @@
     quality: 2600,
     custom: 2600
   });
+  // A guarded replace_draft carries the whole new draft, so the edit-sized profile cap must not
+  // bound it. This is the ceiling for that case; the preset's own max_tokens still applies.
+  const AIDE_PATCH_WHOLE_DRAFT_MAX_TOKENS = 8192;
   const DRAFT_PATCH_MAX_EDITS = 36;
   const DRAFT_PATCH_BLOCK_MAX_CHARS = 1800;
   const DEFAULT_RECENT_TURNS = 8;
@@ -26207,8 +26210,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     phase === 'analysis'
       ? 'In analysis.summary and rewrite_directives, name the unusable class, the required scene beats, and the ending boundary of the recovered scene. Do not write the replacement prose in the analysis call.'
       : 'Return exactly one edit: operation replace_draft, target draft, expected_hash copied from input_draft_hash, content the complete in-world response that performs the current submitted input, reason the concrete diagnosis and why local editing is insufficient. The replacement supersedes the whole candidate, so it must leave no meta block, refusal, or alternative list behind. Never mix it with paragraph operations or simulate it by deleting all blocks.',
+    phase === 'integrated'
+      ? 'This mode has no separate analysis call: name the unusable class, the required scene beats, and the ending boundary in analysis.summary and rewrite_directives in this same response, then apply the one replace_draft edit.'
+      : '',
     'The recovered prose must contain no refusal, apology, option list, question to the user, or mention of writing, drafting, or the pipeline. Do not use recovery for a real scene with local defects; patch those normally. This recovery does not authorize an extra model call.'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const aidePatchJsonContract = (stageName, dedicatedAnalysis = false) => `Return one valid JSON object only:
 {
@@ -26274,13 +26280,19 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     return compact([header, prioritized, `${domainLabel}\n${domainText}`].filter(Boolean).join('\n\n'), limit);
   };
 
-  const aidePatchOutputTokenBudget = (settings, draft) => {
+  const aidePatchOutputTokenBudget = (settings, draft, presetMax = 0) => {
     const profileId = normalizeChoice(settings?.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
     const cap = AIDE_PATCH_OUTPUT_TOKEN_CAPS[profileId] || AIDE_PATCH_OUTPUT_TOKEN_CAPS.custom;
-    const proportional = 700 + Math.ceil(Math.min(text(draft || '').length, 24000) * 0.16 / 2.2);
+    const draftChars = Math.min(text(draft || '').length, 24000);
+    const proportional = 700 + Math.ceil(draftChars * 0.16 / 2.2);
     // A Korean patch JSON with a few edits needs ~1200-1600 tokens; at 900 a real model
     // stopped at the length limit in 4 of 6 calls, and an evidence run cannot retry one.
-    return Math.max(Math.min(cap, 1800), Math.min(cap, proportional));
+    const forEdits = Math.max(Math.min(cap, 1800), Math.min(cap, proportional));
+    // The same call may return one guarded replace_draft instead of edits. That body is a whole
+    // draft, so size the budget for it too and let the preset's max_tokens cap the request.
+    const forWholeDraft = Math.ceil(draftChars / draftCharsPerToken(settings)) + 768;
+    const wanted = Math.max(forEdits, Math.min(AIDE_PATCH_WHOLE_DRAFT_MAX_TOKENS, forWholeDraft));
+    return Math.max(forEdits, presetMax > 0 ? Math.min(wanted, presetMax) : wanted);
   };
 
   const aidePatchPrompt = (stageName, recent, previous, settings, ledger, precomputedAnalysis = null) => {
@@ -26320,7 +26332,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       'Before emitting insert_before, insert_after, or replace, compare the proposed prose with every CURRENT SAME-TURN DRAFT block. Never emit a normalized exact duplicate of prose already present; existing intentional repetitions must remain untouched.',
       'For paragraph operations, target an existing DRAFT_BLOCK id and copy its hash into expected_hash. Patch content must contain only in-world prose, without DRAFT_BLOCK markers.',
       'Paragraph edits form one transaction: a missing target, stale hash, or invalid deletion cancels the entire batch. Exact duplicates may be skipped. Never combine replacement and deletion of every original block to simulate replace_draft. Each paragraph content must fit 7000 characters; oversized content is rejected, never truncated.',
-      aideFullDraftRecoveryContract('patch'),
+      aideFullDraftRecoveryContract(precomputedAnalysis ? 'patch' : 'integrated'),
       dedicatedAnalysis
         ? 'Do not re-run or restate the dedicated analysis. Return one short application note and the structural edits only.'
         : 'Analyze the full draft privately, but expose only the compact analysis fields and structural edits in the required JSON.',
@@ -26426,7 +26438,11 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const precomputedAnalysis = execution?.precomputedAnalysis || null;
     const pipelineMode = precomputedAnalysis ? 'heavyweight' : 'lightweight';
     const prompts = aidePatchPrompt(stageName, recent, previous, settings, ledger || {}, precomputedAnalysis);
-    const maxTokens = aidePatchOutputTokenBudget(settings, prompts.previousDraft);
+    // The patch call may return a whole-draft replacement, so its output budget is sized against
+    // the draft and capped by the preset's own max_tokens.
+    const patchPresetMax = Number(resolvePreset(settings, stageName)?.preset?.max_tokens);
+    const maxTokens = aidePatchOutputTokenBudget(settings, prompts.previousDraft,
+      Number.isFinite(patchPresetMax) && patchPresetMax > 0 ? patchPresetMax : 0);
     const analysisTraceFields = {
       analysisSystemPrompt: execution?.analysisSystemPrompt || '',
       analysisUserPrompt: execution?.analysisUserPrompt || '',
