@@ -199,7 +199,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopeRoutingEnabled = !managerOnly && options.scopeRouting !== false;
   const startupDiagnosticsEnabled = !localOnlyOwner && !managerOnly && options.startupDiagnostics !== false;
   const scopeCacheMs = Math.max(0, Math.min(10000, Number(options.scopeCacheMs || 0) || 0));
-  const sharedRouteModeRaw = String(options.sharedRouteMode || MODE_MIRROR);
+  const sharedRouteModeRaw = options.sharedRouteMode ? String(options.sharedRouteMode) : '';
   // Optional owner semantic validation runs only after the SDK has restored and
   // read back every generic key.  It lets each plugin reject a structurally
   // complete but semantically unusable snapshot without weakening the common
@@ -942,8 +942,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const readConfig = async (force = false) => {
     if (!force && state.transientMode && VALID_MODES.has(state.transientMode)) return { ...state.config, mode: state.transientMode };
     if (!force && Date.now() - Number(state.config.at || 0) < configCacheMs) return state.config;
-    const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
-    const mode = localOnlyOwner || managerOnly ? MODE_PLUGIN_ONLY : state.transientMode && VALID_MODES.has(state.transientMode) ? state.transientMode : normalizeMode(rawMode);
+    let mode = MODE_PLUGIN_ONLY;
+    if (!localOnlyOwner && !managerOnly) {
+      if (state.transientMode && VALID_MODES.has(state.transientMode)) {
+        mode = state.transientMode;
+      } else {
+        const registry = await loadScopeRegistry(false, false);
+        const globalStored = liveGlobalRow(registry);
+        if (globalStored) {
+          mode = normalizeMode(globalStored.mode);
+        } else {
+          const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
+          mode = normalizeMode(rawMode);
+        }
+      }
+    }
     const rawUrl = await getArgumentValue(urlArguments, defaultUrl);
     const url = normalizeServerUrl(rawUrl);
     if (state.config.url !== url) resetBootstrapCache();
@@ -5450,7 +5463,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (kind === 'scope' && !scope.scopeId) scope = normalizeScopeDescriptor(currentScope);
     let mode = MODE_PLUGIN_ONLY;
     if (kind === 'scope') mode = (await readScopeMode(scope, false)).mode;
-    else if (kind === 'shared') mode = (await anyServerScopedMode()) ? normalizeMode(sharedRouteModeRaw) : MODE_PLUGIN_ONLY;
+    else if (kind === 'shared') {
+      if (await anyServerScopedMode()) {
+        if (sharedRouteModeRaw) {
+          mode = normalizeMode(sharedRouteModeRaw);
+        } else {
+          const registry = await loadScopeRegistry(false, false);
+          const globalStored = liveGlobalRow(registry);
+          const effectiveGlobal = globalStored ? normalizeMode(globalStored.mode) : normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
+          if (effectiveGlobal === MODE_SERVER_ONLY) {
+            mode = MODE_SERVER_ONLY;
+          } else if (effectiveGlobal === MODE_MIRROR) {
+            mode = MODE_MIRROR;
+          } else {
+            const curScope = state.scopeRouting.current;
+            const curMode = curScope?.scopeId && registry.entries?.[curScope.scopeId] ? normalizeMode(registry.entries[curScope.scopeId].mode) : null;
+            mode = curMode === MODE_SERVER_ONLY ? MODE_SERVER_ONLY : MODE_MIRROR;
+          }
+        }
+      } else {
+        mode = MODE_PLUGIN_ONLY;
+      }
+    }
     const remoteKey = String(raw.remoteKey || (raw.scopedContainer === true && scope.scopeId
       ? `${key}${SCOPED_REMOTE_KEY_MARKER}${encodeURIComponent(scope.scopeId)}`
       : key));
@@ -9326,9 +9360,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const acquireGraphStorageLease=async(scopeKey,kind)=>{
     const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
     if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
-    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0;
+    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0,granted=0;
     for(;;){
-      try{lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
+      try{granted=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
       catch(error){
         if(kind==='gc'||!String(error?.code||error?.message||'').includes('LIBRA_GRAPH_NAMESPACE_BUSY')||retries>0&&Date.now()-started>=5000)throw error;
         // An interactive reader asks the GC holder to finish its current page
@@ -9341,8 +9375,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     let closed=false,timer=null,failure=null;
     const key=lease.token;
-    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
-    const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
+    // The server keeps a lease for 60 s and this session renews it every 20 s. Nothing but that
+    // expiry ends a read or build lease, so inside the granted time (less a margin, counted from
+    // before the request was sent) it is confirmed locally instead of with a round trip per page.
+    // A GC lease still asks the server every time: a reader may have asked it to yield.
+    let validUntil=granted+45000;
+    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');if(kind!=='gc'&&Date.now()<validUntil)return {current:true,token:key,kind,confirmedLocally:true};const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
+    const renew=async()=>{try{if(closed)return;const sent=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});validUntil=sent+45000;}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
     timer=setTimeout(renew,20000);timer?.unref?.();
     const session={scopeKey,kind,token:key,assertCurrent,
       command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},

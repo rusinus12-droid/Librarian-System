@@ -15,7 +15,7 @@ module.exports = function createMemoryGraphResources({ measure, encodedSize, sta
   // still bounds them together.
   const defaults = Object.freeze({ maxSourceBytes: 64 * 1024 * 1024, maxDurableBytes: 32 * 1024 * 1024,
     maxRetainedBytes: 128 * 1024 * 1024, maxValueBytes: 8 * 1024 * 1024, maxDecodeBytes: 64 * 1024 * 1024, maxReads: 8192 });
-  const maintenanceDefaults = Object.freeze({ ...defaults, maxRetainedBytes: 192 * 1024 * 1024 });
+  const maintenanceDefaults = Object.freeze({ ...defaults, maxSourceBytes: 256 * 1024 * 1024, maxDurableBytes: 128 * 1024 * 1024, maxRetainedBytes: 192 * 1024 * 1024, maxReads: 65536 });
   const inspect = () => ({ ...pool, limits: { ...poolLimits } });
   const openWithDefaults = (input = {}, check = () => {}, profile = defaults) => {
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof check !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
@@ -145,6 +145,8 @@ module.exports = function createMemoryGraphResources({ measure, encodedSize, sta
       };
       const accept = body => {
         assertCurrent(); if (released || accepted) fail('read_lease_invalid'); accepted = true;
+        const availableInBudget = Math.max(0, maximum - counters[category]);
+        const valueCap = Math.min(config.maxValueBytes, availableInBudget);
         let bytes;
         if (body == null) bytes = 0;
         else if (typeof body === 'string') {
@@ -153,13 +155,13 @@ module.exports = function createMemoryGraphResources({ measure, encodedSize, sta
             const code=body.charCodeAt(i);
             if (code>=0xd800&&code<=0xdbff&&i+1<body.length&&body.charCodeAt(i+1)>=0xdc00&&body.charCodeAt(i+1)<=0xdfff) { bytes+=4;i++; }
             else bytes+=code<128?1:code<2048?2:3;
-            if (bytes>cap) break;
+            if (bytes>valueCap) break;
           }
         } else {
-          try { bytes = measure(body,cap).utf8Bytes; }
-          catch (error) { if(error.reason==='row_exceeds_page') { counters.rejectedPayloadLowerBoundBytes += cap+1; fail('value_byte_budget'); } throw error; }
+          try { bytes = measure(body,valueCap).utf8Bytes; }
+          catch (error) { if(error.reason==='row_exceeds_page') { counters.rejectedPayloadLowerBoundBytes += valueCap+1; fail('value_byte_budget'); } throw error; }
         }
-        if (bytes>cap || counters[category] + bytes > maximum) { counters.rejectedPayloadLowerBoundBytes += bytes; fail('value_byte_budget'); }
+        if (bytes>config.maxValueBytes || counters[category] + bytes > maximum) { counters.rejectedPayloadLowerBoundBytes += bytes; fail(bytes>config.maxValueBytes ? 'value_byte_budget' : kind + '_byte_budget'); }
         counters[category] += bytes;
       };
       return Object.freeze({ accept, release, prepare: reserveValue });

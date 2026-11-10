@@ -594,6 +594,33 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     if (await owner.read(key) !== raw) fail('write_readback'); owner.check();
     return reused;
   };
+  // Pages are independent records named by their content, so they need not be written one
+  // after another. Two at a time halves the wait on a slow transport and still leaves the
+  // shared read slots a search needs. The queue is bounded; flush() must run before the
+  // pages are referenced by a record that is published.
+  const immutableWriter = (owner, onWritten = () => {}) => {
+    const queued = new Map(); let queuedChars = 0;
+    const flush = async () => {
+      const jobs = [...queued.values()]; queued.clear(); queuedChars = 0;
+      let next = 0, failure = null;
+      const worker = async () => {
+        while (next < jobs.length) {
+          const job = jobs[next++];
+          try { if (!failure) onWritten(await immutable(owner, job.key, job.raw)); }
+          catch (error) { failure = failure || error; }
+          finally { job.held?.release(); }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      if (failure) throw failure;
+    };
+    return { flush, add: async (key, raw, held = null) => {
+      const same = queued.get(key);
+      if (same) { held?.release(); if (same.raw !== raw) fail('immutable_collision'); onWritten(true); return; }
+      queued.set(key, { key, raw, held }); queuedChars += raw.length;
+      if (queued.size >= 16 || queuedChars > 262144) await flush();
+    } };
+  };
   // A cold or superseded derived index never selects another search engine.
   // Read the current owner corpus and compile it once in the same query path.
   const prepare = async ({ snapshot, owner, options = {}, reason = 'no_published_corpus' } = {}) => {
@@ -904,12 +931,13 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const projectionMetrics = () => ({ schema: pagedProjectionSchema, pagesRead: 0, bytesRead: 0, cacheHits: 0, windowRecordsRead: 0 });
   const writeProjection = async (owner, loc, graph, collected, windows, serializedGraphBytes, config) => {
     const generation = stamp(graph), written = new Set(); let totalBytes = 0;
+    const writer = immutableWriter(owner);
     const save = async value => {
       const raw = JSON.stringify(value), bytes = pages.encodedSize(raw).utf8Bytes, digest = hash(raw), key = loc.prefix + 'projection:' + digest;
       if (!written.has(key)) {
         totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget');
         const held = owner.resources?.retain(value, 'publication_projection_page');
-        try { await immutable(owner, key, raw); written.add(key); } finally { held?.release(); }
+        await writer.add(key, raw, held); written.add(key);
       }
       owner.check(); return { key, digest, bytes };
     };
@@ -960,6 +988,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     pages.measure(record, 131072);
     owner.resources?.retain(record, 'publication_projection', 2);
     const ref = await save(record);
+    await writer.flush();
     return { ...ref, pageCount: written.size, serializedBytes: totalBytes };
   };
   const loadProjection = async (owner, loc, summary, config, history = false, metrics = projectionMetrics()) => {
@@ -992,6 +1021,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         const scope = owner.resources?.scope();
         try {
         const assembler = createTableReassembler('projection:' + label, scope);
+        await owner.prefetch?.(part.refs.map(ref => ref?.key));
         for (const ref of part.refs) {
           if (!projectionRefValid(ref, loc, config.pageBytes) || !Number.isSafeInteger(ref.rows) || ref.rows < 1) fail('projection_directory_invalid');
           let handle, stage, lease;
@@ -1222,6 +1252,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       await owner.onForestIndex?.(compiled,graph,value.collected);
       const refs = [];
       let total = 0, reusedPageCount = 0, writtenPageCount = 0, splitRowCount = 0, splitChunkCount = 0;
+      const indexWriter = immutableWriter(owner, reused => { if (reused) reusedPageCount++; else writtenPageCount++; });
 
       for (const table of tables) {
         const sourceRows = compiled[table];
@@ -1230,8 +1261,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
           if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-          const wasReused = await immutable(owner, key, text);
-          if (wasReused) reusedPageCount++; else writtenPageCount++;
+          await indexWriter.add(key, text);
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
           continue;
         }
@@ -1251,8 +1281,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
               if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-              const wasReused = await immutable(owner, key, text);
-              if (wasReused) reusedPageCount++; else writtenPageCount++;
+              await indexWriter.add(key, text);
               refs.push({
                 key,
                 table,
@@ -1278,8 +1307,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
               if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-              const wasReused = await immutable(owner, key, text);
-              if (wasReused) reusedPageCount++; else writtenPageCount++;
+              await indexWriter.add(key, text);
               const isFirstPart = partOffset === 0;
               refs.push({
                 key,
@@ -1305,6 +1333,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           }
         }
       }
+      await indexWriter.flush();
 
       const ownerProof = typeof owner.captureSourceProof === 'function'
         ? await owner.captureSourceProof({
@@ -1554,8 +1583,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     // No raw/decoded table cache: re-acquire validated content through the shared
     // Cache Manager. Every new request physically verifies its first page use.
     const validated = new Set();
-    const assertIndexCurrent = async () => {
-      owner.check(); if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    // The closing checks read the root physically. The check after each table access may share
+    // a root read the owner made moments ago: a publication it misses is caught by the closing one.
+    const assertIndexCurrent = async (fresh = true) => {
+      owner.check(); if (await (fresh && owner.readFresh ? owner.readFresh(loc.rootKey) : owner.read(loc.rootKey)) !== rootRaw) fail('root_changed'); owner.check();
     };
     const readPage = async (ref, consume, budget) => {
       owner.check(); let handle, stage, lease;
@@ -1640,12 +1671,13 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         if (staging) reassembler.restoreStaging(staging);
         for (let i = startIndex; i < matchingRefs.length; i++) {
           const ref = matchingRefs[i];
+          if ((i - startIndex) % 16 === 0) await owner.prefetch?.(matchingRefs.slice(i, i + 16).map(next => next.key));
           let pageItems = null;
           const stopped = await readPage(ref, page => {
             pageItems = page; scope?.retain(page, 'selected_index_rows');
           }, credit);
           if (stopped) {
-            await assertIndexCurrent();
+            await assertIndexCurrent(false);
             const stagingKey = saveStaging(reassembler.getStagingData(), {
               rootKey: loc.rootKey, rootBinding, accessBinding, refIndex: i,
               generation: manifest.generation, indexDigest, partition: loc.partition
@@ -1664,7 +1696,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           }
           if (pageItems) await reassembler.pushPage(pageItems);
         }
-        await assertIndexCurrent();
+        await assertIndexCurrent(false);
         const { rows, splitReassembled } = reassembler.finish();
         scope?.retain(rows, 'reassembled_index_rows');
         releaseScope = false;
@@ -1780,7 +1812,15 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     const raw = input.initialGraph ? await input.owner.read(location(input.initialGraph).rootKey) : null;
     const previous = raw ? await forest.manifest(input.owner,location(input.initialGraph),raw) : null;
     const head=input.initialGraph?.corpusTotals || await input.owner.captureForestHead();
-    if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) return buildLegacy(input);
+    if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) {
+      try {
+        return await buildLegacy(input);
+      } catch (legacyErr) {
+        if (!['value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
+          throw legacyErr;
+        }
+      }
+    }
     if (active) fail('build_busy'); active=true;
     buildProgress={phase:'planning',startedAt:now(),updatedAt:now(),mode:'sharded',windowsDone:0};
     try { const result=await forest.build(input); noteBuild({outcome:result.status}); return result; }

@@ -90,6 +90,7 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
   const childOwner = (owner, rootKey, root, scope) => ({
     ...owner, resources:scope || owner.resources,
     read: key => key === rootKey ? Promise.resolve(root.raw) : owner.read(key),
+    readFresh: key => key === rootKey ? Promise.resolve(root.raw) : (owner.readFresh || owner.read)(key),
     publish: async value => { root.raw = value.raw; },
     // A shard's publication stays private until the forest root is published.
   });
@@ -192,7 +193,7 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
           break;
         } catch (error) {
           if (size <= 1 || !['workspace_budget','index_budget','record_size','page_row_exceeds_page',
-            'read_count_budget','retained_byte_budget','retained_value_budget','decode_value_budget','decode_workspace_budget','value_byte_budget'].includes(error.reason)) throw error;
+            'read_count_budget','retained_byte_budget','retained_value_budget','decode_value_budget','decode_workspace_budget','value_byte_budget','source_byte_budget','durable_byte_budget'].includes(error.reason)) throw error;
           size = Math.max(1,Math.floor(size/2));windowHint=Math.min(windowHint,size); oldShard = null; routeKeys=null;
         } finally { shardScope?.close(); await context?.close(); }
       }
@@ -349,7 +350,7 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
     owner.resources?.retain(graph,'forest_selected_graph');
     const generation=pages.generation(graph,{partition:loc.partition,restoreEpoch:graph.readerFrame.restoreEpoch,view:graph.readerFrame});
     const compiledIndex=index.compile(graph,{partition:loc.partition,generation,resources:owner.resources});
-    const assertIndexCurrent=async()=>{owner.check();if(await owner.read(loc.rootKey)!==rootRaw)fail('root_changed');await owner.assertRoute?.();};
+    const assertIndexCurrent=async()=>{owner.check();if(await (owner.readFresh?owner.readFresh(loc.rootKey):owner.read(loc.rootKey))!==rootRaw)fail('root_changed');await owner.assertRoute?.();};
     const assertCurrent = async () => {
       owner.check(); if (await owner.read(loc.rootKey)!==rootRaw) fail('root_changed');
       if (!equal(forest.head,await owner.captureForestHead())) fail('stale_generation');

@@ -13232,9 +13232,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const acquireGraphStorageLease=async(scopeKey,kind)=>{
     const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
     if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
-    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0;
+    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0,granted=0;
     for(;;){
-      try{lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
+      try{granted=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
       catch(error){
         if(kind==='gc'||!String(error?.code||error?.message||'').includes('LIBRA_GRAPH_NAMESPACE_BUSY')||retries>0&&Date.now()-started>=5000)throw error;
         // An interactive reader asks the GC holder to finish its current page
@@ -13247,8 +13247,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     let closed=false,timer=null,failure=null;
     const key=lease.token;
-    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
-    const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
+    // The server keeps a lease for 60 s and this session renews it every 20 s. Nothing but that
+    // expiry ends a read or build lease, so inside the granted time (less a margin, counted from
+    // before the request was sent) it is confirmed locally instead of with a round trip per page.
+    // A GC lease still asks the server every time: a reader may have asked it to yield.
+    let validUntil=granted+45000;
+    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');if(kind!=='gc'&&Date.now()<validUntil)return {current:true,token:key,kind,confirmedLocally:true};const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
+    const renew=async()=>{try{if(closed)return;const sent=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});validUntil=sent+45000;}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
     timer=setTimeout(renew,20000);timer?.unref?.();
     const session={scopeKey,kind,token:key,assertCurrent,
       command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},
@@ -35905,7 +35910,9 @@ function createLibraReadonlySourceContext(owner) {
       const frame = {
         background, disabled:false, scopeKey:scope.scopeKey,
         owns: storageKey => !frame.disabled && string(storageKey).startsWith(prefix),
-        observeExtra(storageKey,raw){if(!extraReads.has(storageKey))extraReads.set(storageKey,stableReferenceJson(raw));},
+        // `project` narrows a shared record to the part this job read, so an unrelated
+        // field saved in the same record does not void the job.
+        observeExtra(storageKey,raw,project=null){if(!extraReads.has(storageKey))extraReads.set(storageKey,{raw:stableReferenceJson(raw),project,projected:project?project(raw):null});},
         disable(){frame.disabled=true;activeBackgroundReadFrames.delete(frame);},
         acceptOwnWrite(storageKey){
           entries.delete(storageKey);decoded.delete(storageKey);consumed.delete(storageKey);
@@ -36002,7 +36009,11 @@ function createLibraReadonlySourceContext(owner) {
         async assertCurrent(){
           if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only')
             || mode !== 'plugin_only' && binding !== stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()))throw new Error('LIBRA_GRAPH_READER_ROUTE_CHANGED');
-          for(const [storageKey,before]of extraReads)if(before!==stableReferenceJson(await RisuCompat.getItem(storageKey)))throw new Error('LIBRA_BACKGROUND_SETTINGS_CHANGED');
+          for(const [storageKey,before]of extraReads){
+            const now=await RisuCompat.getItem(storageKey);
+            if(before.raw===stableReferenceJson(now))continue;
+            if(!before.project||before.project(now)!==before.projected)throw new Error('LIBRA_BACKGROUND_SETTINGS_CHANGED');
+          }
           const keys = [...(background?consumed:entries.keys())];
           for(let offset=0;offset<keys.length;){
             const access = resources?.inspect();
@@ -36068,7 +36079,7 @@ function createLibraReadonlySourceContext(owner) {
           // discard the entire frame and re-read, never waive the closing fence.
           const mayRetry = typeof options.retryTornRead === 'function' ? options.retryTornRead() : options.retryTornRead === true;
           if(!mayRetry||attempt>=2||state.disposed
-            ||String(error?.code||error?.message)!=='LIBRA_GRAPH_READER_BODY_CHANGED')throw error;
+            ||!['LIBRA_GRAPH_READER_BODY_CHANGED','LIBRA_BACKGROUND_SETTINGS_CHANGED'].includes(String(error?.code||error?.message)))throw error;
         }finally{frame.close();}
         await new Promise(resolve=>setTimeout(resolve,40*(attempt+1)));
       }
@@ -48611,6 +48622,7 @@ function createLibraReadonlySourceContext(owner) {
   const childOwner = (owner, rootKey, root, scope) => ({
     ...owner, resources:scope || owner.resources,
     read: key => key === rootKey ? Promise.resolve(root.raw) : owner.read(key),
+    readFresh: key => key === rootKey ? Promise.resolve(root.raw) : (owner.readFresh || owner.read)(key),
     publish: async value => { root.raw = value.raw; },
     // A shard's publication stays private until the forest root is published.
   });
@@ -48870,7 +48882,7 @@ function createLibraReadonlySourceContext(owner) {
     owner.resources?.retain(graph,'forest_selected_graph');
     const generation=pages.generation(graph,{partition:loc.partition,restoreEpoch:graph.readerFrame.restoreEpoch,view:graph.readerFrame});
     const compiledIndex=index.compile(graph,{partition:loc.partition,generation,resources:owner.resources});
-    const assertIndexCurrent=async()=>{owner.check();if(await owner.read(loc.rootKey)!==rootRaw)fail('root_changed');await owner.assertRoute?.();};
+    const assertIndexCurrent=async()=>{owner.check();if(await (owner.readFresh?owner.readFresh(loc.rootKey):owner.read(loc.rootKey))!==rootRaw)fail('root_changed');await owner.assertRoute?.();};
     const assertCurrent = async () => {
       owner.check(); if (await owner.read(loc.rootKey)!==rootRaw) fail('root_changed');
       if (!equal(forest.head,await owner.captureForestHead())) fail('stale_generation');
@@ -49481,6 +49493,33 @@ function createLibraReadonlySourceContext(owner) {
     if (await owner.read(key) !== raw) fail('write_readback'); owner.check();
     return reused;
   };
+  // Pages are independent records named by their content, so they need not be written one
+  // after another. Two at a time halves the wait on a slow transport and still leaves the
+  // shared read slots a search needs. The queue is bounded; flush() must run before the
+  // pages are referenced by a record that is published.
+  const immutableWriter = (owner, onWritten = () => {}) => {
+    const queued = new Map(); let queuedChars = 0;
+    const flush = async () => {
+      const jobs = [...queued.values()]; queued.clear(); queuedChars = 0;
+      let next = 0, failure = null;
+      const worker = async () => {
+        while (next < jobs.length) {
+          const job = jobs[next++];
+          try { if (!failure) onWritten(await immutable(owner, job.key, job.raw)); }
+          catch (error) { failure = failure || error; }
+          finally { job.held?.release(); }
+        }
+      };
+      await Promise.all([worker(), worker()]);
+      if (failure) throw failure;
+    };
+    return { flush, add: async (key, raw, held = null) => {
+      const same = queued.get(key);
+      if (same) { held?.release(); if (same.raw !== raw) fail('immutable_collision'); onWritten(true); return; }
+      queued.set(key, { key, raw, held }); queuedChars += raw.length;
+      if (queued.size >= 16 || queuedChars > 262144) await flush();
+    } };
+  };
   // A cold or superseded derived index never selects another search engine.
   // Read the current owner corpus and compile it once in the same query path.
   const prepare = async ({ snapshot, owner, options = {}, reason = 'no_published_corpus' } = {}) => {
@@ -49791,12 +49830,13 @@ function createLibraReadonlySourceContext(owner) {
   const projectionMetrics = () => ({ schema: pagedProjectionSchema, pagesRead: 0, bytesRead: 0, cacheHits: 0, windowRecordsRead: 0 });
   const writeProjection = async (owner, loc, graph, collected, windows, serializedGraphBytes, config) => {
     const generation = stamp(graph), written = new Set(); let totalBytes = 0;
+    const writer = immutableWriter(owner);
     const save = async value => {
       const raw = JSON.stringify(value), bytes = pages.encodedSize(raw).utf8Bytes, digest = hash(raw), key = loc.prefix + 'projection:' + digest;
       if (!written.has(key)) {
         totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget');
         const held = owner.resources?.retain(value, 'publication_projection_page');
-        try { await immutable(owner, key, raw); written.add(key); } finally { held?.release(); }
+        await writer.add(key, raw, held); written.add(key);
       }
       owner.check(); return { key, digest, bytes };
     };
@@ -49847,6 +49887,7 @@ function createLibraReadonlySourceContext(owner) {
     pages.measure(record, 131072);
     owner.resources?.retain(record, 'publication_projection', 2);
     const ref = await save(record);
+    await writer.flush();
     return { ...ref, pageCount: written.size, serializedBytes: totalBytes };
   };
   const loadProjection = async (owner, loc, summary, config, history = false, metrics = projectionMetrics()) => {
@@ -49879,6 +49920,7 @@ function createLibraReadonlySourceContext(owner) {
         const scope = owner.resources?.scope();
         try {
         const assembler = createTableReassembler('projection:' + label, scope);
+        await owner.prefetch?.(part.refs.map(ref => ref?.key));
         for (const ref of part.refs) {
           if (!projectionRefValid(ref, loc, config.pageBytes) || !Number.isSafeInteger(ref.rows) || ref.rows < 1) fail('projection_directory_invalid');
           let handle, stage, lease;
@@ -50109,6 +50151,7 @@ function createLibraReadonlySourceContext(owner) {
       await owner.onForestIndex?.(compiled,graph,value.collected);
       const refs = [];
       let total = 0, reusedPageCount = 0, writtenPageCount = 0, splitRowCount = 0, splitChunkCount = 0;
+      const indexWriter = immutableWriter(owner, reused => { if (reused) reusedPageCount++; else writtenPageCount++; });
 
       for (const table of tables) {
         const sourceRows = compiled[table];
@@ -50117,8 +50160,7 @@ function createLibraReadonlySourceContext(owner) {
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
           if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-          const wasReused = await immutable(owner, key, text);
-          if (wasReused) reusedPageCount++; else writtenPageCount++;
+          await indexWriter.add(key, text);
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
           continue;
         }
@@ -50138,8 +50180,7 @@ function createLibraReadonlySourceContext(owner) {
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
               if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-              const wasReused = await immutable(owner, key, text);
-              if (wasReused) reusedPageCount++; else writtenPageCount++;
+              await indexWriter.add(key, text);
               refs.push({
                 key,
                 table,
@@ -50165,8 +50206,7 @@ function createLibraReadonlySourceContext(owner) {
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
               if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
-              const wasReused = await immutable(owner, key, text);
-              if (wasReused) reusedPageCount++; else writtenPageCount++;
+              await indexWriter.add(key, text);
               const isFirstPart = partOffset === 0;
               refs.push({
                 key,
@@ -50192,6 +50232,7 @@ function createLibraReadonlySourceContext(owner) {
           }
         }
       }
+      await indexWriter.flush();
 
       const ownerProof = typeof owner.captureSourceProof === 'function'
         ? await owner.captureSourceProof({
@@ -50441,8 +50482,10 @@ function createLibraReadonlySourceContext(owner) {
     // No raw/decoded table cache: re-acquire validated content through the shared
     // Cache Manager. Every new request physically verifies its first page use.
     const validated = new Set();
-    const assertIndexCurrent = async () => {
-      owner.check(); if (await owner.read(loc.rootKey) !== rootRaw) fail('root_changed'); owner.check();
+    // The closing checks read the root physically. The check after each table access may share
+    // a root read the owner made moments ago: a publication it misses is caught by the closing one.
+    const assertIndexCurrent = async (fresh = true) => {
+      owner.check(); if (await (fresh && owner.readFresh ? owner.readFresh(loc.rootKey) : owner.read(loc.rootKey)) !== rootRaw) fail('root_changed'); owner.check();
     };
     const readPage = async (ref, consume, budget) => {
       owner.check(); let handle, stage, lease;
@@ -50527,12 +50570,13 @@ function createLibraReadonlySourceContext(owner) {
         if (staging) reassembler.restoreStaging(staging);
         for (let i = startIndex; i < matchingRefs.length; i++) {
           const ref = matchingRefs[i];
+          if ((i - startIndex) % 16 === 0) await owner.prefetch?.(matchingRefs.slice(i, i + 16).map(next => next.key));
           let pageItems = null;
           const stopped = await readPage(ref, page => {
             pageItems = page; scope?.retain(page, 'selected_index_rows');
           }, credit);
           if (stopped) {
-            await assertIndexCurrent();
+            await assertIndexCurrent(false);
             const stagingKey = saveStaging(reassembler.getStagingData(), {
               rootKey: loc.rootKey, rootBinding, accessBinding, refIndex: i,
               generation: manifest.generation, indexDigest, partition: loc.partition
@@ -50551,7 +50595,7 @@ function createLibraReadonlySourceContext(owner) {
           }
           if (pageItems) await reassembler.pushPage(pageItems);
         }
-        await assertIndexCurrent();
+        await assertIndexCurrent(false);
         const { rows, splitReassembled } = reassembler.finish();
         scope?.retain(rows, 'reassembled_index_rows');
         releaseScope = false;
@@ -77375,6 +77419,64 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     };
     const getMemoryGraphProjectionPage = async options => await readMemoryGraphProjection(options);
+    // Display-only view of one projected window: what nodes exist and how they are joined.
+    // It carries labels and endpoints only. No binding, source body or authority leaves here.
+    const inspectMemoryGraphStructure = async (options = {}) => {
+      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit'];
+      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) throw new Error('LIBRA_GRAPH_STRUCTURE_OPTIONS_INVALID');
+      let collected = null;
+      const graph = await readMemoryGraphProjection({ limit: 20, ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined && value !== '')) }, value => { collected = value; });
+      const short = value => string(value).slice(-12);
+      const unitByNode = new Map(asArray(graph.units).map(unit => [unit.nodeId, unit]));
+      const registry = new Map();
+      for (const row of asArray(collected?.entityRegistry)) {
+        const name = string(row?.name || row?.canonicalName || row?.displayName || '');
+        for (const id of [row?.id, row?.entityKey, row?.entityId, row?.tempId]) if (id && name) registry.set(string(id), { name, kind: string(row?.kind || row?.type || '') });
+      }
+      const entityLabel = new Map(), degree = new Map(), childFamilies = new Map(), childTurns = new Map();
+      const bump = id => degree.set(id, (degree.get(id) || 0) + 1);
+      const nodeById = new Map(asArray(graph.nodes).map(node => [node.id, node]));
+      for (const edge of asArray(graph.edges)) {
+        bump(edge.from); bump(edge.to);
+        const unit = unitByNode.get(edge.from);
+        if (!unit || nodeById.get(edge.to)?.layer !== 'entity' || entityLabel.has(edge.to)) continue;
+        const targets = asArray(unit.targetIds);
+        const known = edge.predicate === 'subject_of' ? registry.get(string(unit.subjectId || ''))
+          : edge.predicate === 'target_of' && targets.length === 1 ? registry.get(string(targets[0])) : null;
+        if (known) entityLabel.set(edge.to, known);
+      }
+      for (const node of asArray(graph.nodes)) {
+        const unit = unitByNode.get(node.id);
+        if (!unit || !node.sourceId) continue;
+        if (!childFamilies.has(node.sourceId)) childFamilies.set(node.sourceId, new Map());
+        const families = childFamilies.get(node.sourceId); families.set(unit.family, (families.get(unit.family) || 0) + 1);
+        const turn = Number(unit.turn || unit.turnRange?.end || 0);
+        if (turn) { const range = childTurns.get(node.sourceId) || [turn, turn]; childTurns.set(node.sourceId, [Math.min(range[0], turn), Math.max(range[1], turn)]); }
+      }
+      const nodes = asArray(graph.nodes).map(node => {
+        const unit = unitByNode.get(node.id), entity = entityLabel.get(node.id);
+        const families = childFamilies.get(node.id), range = childTurns.get(node.id);
+        const family = unit ? string(unit.family) : families ? [...families].sort((a, b) => b[1] - a[1])[0][0] : '';
+        return { id: short(node.id), layer: string(node.layer), family, kind: string(node.kind || entity?.kind || ''),
+          label: node.layer === 'meaning' ? compact(unit?.text || '', 200)
+            : node.layer === 'entity' ? (entity?.name || '')
+            : families ? [...families].map(([name, count]) => name + ' ' + count).join(' · ') : '',
+          turn: unit ? Number(unit.turn || unit.turnRange?.end || 0) || null : null,
+          turnRange: range ? { start: range[0], end: range[1] } : null,
+          role: string(unit?.semanticRole || ''), degree: degree.get(node.id) || 0,
+          parent: node.sourceId ? short(node.sourceId) : '' };
+      });
+      const countBy = (rows, pick) => { const out = {}; for (const row of rows) { const name = pick(row) || 'unknown'; out[name] = (out[name] || 0) + 1; } return out; };
+      const inventory = graph.coverage?.inventory || {};
+      return clone({ schema: 'libra.memory_graph_structure.v1', authority: 'display_only', scopeKey: graph.scopeKey,
+        nodes, edges: asArray(graph.edges).map(edge => ({ from: short(edge.from), to: short(edge.to), predicate: string(edge.predicate) })),
+        summary: { nodes: nodes.length, edges: asArray(graph.edges).length, byLayer: countBy(nodes, node => node.layer),
+          byFamily: countBy(nodes.filter(node => node.layer === 'meaning'), node => node.family),
+          byPredicate: countBy(asArray(graph.edges), edge => string(edge.predicate)) },
+        window: { limit: Number(options.limit || 20), canonicalRead: Number(inventory.canonicalRead || 0), canonicalTotal: Number(inventory.canonicalTotal || 0),
+          microRead: Number(inventory.microRead || 0), microTotal: Number(inventory.microTurnTotal || 0),
+          canonicalNextCursor: string(inventory.canonicalNextCursor || ''), microNextCursor: string(inventory.microNextCursor || '') } });
+    };
     const getMemoryGraphAccessPage = async (options = {}) => {
       const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','pool','cursor','pageBytes'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) throw new Error('LIBRA_GRAPH_PAGE_OPTIONS_INVALID');
@@ -77616,6 +77718,29 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     // `volatile` (a Map) keeps the derived corpus pages in this runtime only. Owner
     // sources and their currentness proofs are still read from storage per request.
+    // Session cache of immutable corpus pages for search. A page a search needs is reachable from
+    // the root it has just read from storage, so it exists and, being named by its digest, holds
+    // exactly these bytes. Builds do not use it: they must see what storage really holds.
+    const GRAPH_PAGE_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+    const graphPageCache = new Map();
+    const graphPageCacheStats = { bytes: 0, hits: 0, misses: 0, evictions: 0 };
+    const graphPageCacheGet = storageKey => {
+      const value = graphPageCache.get(storageKey);
+      if (value === undefined) { graphPageCacheStats.misses += 1; return undefined; }
+      graphPageCache.delete(storageKey); graphPageCache.set(storageKey, value); graphPageCacheStats.hits += 1;
+      return value;
+    };
+    const graphPageCachePut = (storageKey, value) => {
+      if (typeof value !== 'string' || graphPageCache.has(storageKey)) return;
+      const bytes = (value.length + storageKey.length) * 2;
+      if (bytes > GRAPH_PAGE_CACHE_MAX_BYTES / 8) return;
+      graphPageCache.set(storageKey, value); graphPageCacheStats.bytes += bytes;
+      while (graphPageCacheStats.bytes > GRAPH_PAGE_CACHE_MAX_BYTES) {
+        const [oldest, old] = graphPageCache.entries().next().value;
+        graphPageCache.delete(oldest); graphPageCacheStats.bytes -= (old.length + oldest.length) * 2; graphPageCacheStats.evictions += 1;
+      }
+    };
+    const clearGraphPageCache = () => { graphPageCache.clear(); graphPageCacheStats.bytes = 0; };
     const memoryGraphCorpusContext = async (initialGraph, collected, epoch, serial, guard = null, resources = null, leaseKind = 'read', volatile = null) => {
       const mode = string((await MemorySuiteStorageBridge.getScopeMode(collected.scope))?.mode || '');
       if (!['plugin_only','server_only','mirror'].includes(mode)) throw new Error('LIBRA_GRAPH_CORPUS_MODE_UNSUPPORTED');
@@ -77653,8 +77778,76 @@ function mountMemorySuiteReanalysisReview(container,config) {
         check();
       };
       const prefix = `${PREFIX}:scope:${initialGraph.scopeKey}:memory-graph:v1:corpus:`;
-      const read = async storageKey => {
+      // Pages named by their own content digest cannot change, and the lease keeps them from
+      // being collected while this context is open. One physical read per page is enough: the
+      // same page used to be fetched again on every table access and after every write.
+      // The root is the one mutable record. Reads made within a moment of each other share a
+      // result; readFresh always goes to storage and is what the closing checks use.
+      const IMMUTABLE_PAGE = /^(?:page:[A-Za-z]+:|projection:|manifest:|proof:|forest:)[a-f0-9]{64}$/;
+      const ROOT_SHARE_MS = 400, PAGE_MEMO_MAX_BYTES = 24 * 1024 * 1024;
+      const pageMemo = new Map(), rootMemo = new Map(), readInFlight = new Map();
+      let pageMemoBytes = 0;
+      const memoStats = { pageHits: 0, sessionHits: 0, rootHits: 0, physicalReads: 0, batchedReads: 0 };
+      try { resources?.onClose(() => { pageMemo.clear(); rootMemo.clear(); pageMemoBytes = 0; }); } catch (_) {}
+      const rememberPage = (storageKey, value) => {
+        if (typeof value !== 'string' || pageMemo.has(storageKey) || !IMMUTABLE_PAGE.test(storageKey.slice(prefix.length))) return;
+        const bytes = value.length * 2 + storageKey.length * 2;
+        if (pageMemoBytes + bytes > PAGE_MEMO_MAX_BYTES) return;
+        pageMemo.set(storageKey, value); pageMemoBytes += bytes;
+      };
+      const read = async (storageKey, fresh = false) => {
         if (!storageKey.startsWith(prefix)) throw new Error('LIBRA_GRAPH_CORPUS_KEY_UNOWNED');
+        if (volatile || localLease) return await readPhysical(storageKey);
+        if (pageMemo.has(storageKey)) { check(); memoStats.pageHits += 1; return pageMemo.get(storageKey); }
+        const root = storageKey.startsWith(prefix + 'root:');
+        const shareable = leaseKind === 'read' && !root && IMMUTABLE_PAGE.test(storageKey.slice(prefix.length));
+        if (shareable) {
+          const cached = graphPageCacheGet(storageKey);
+          if (cached !== undefined) { check(); memoStats.sessionHits += 1; rememberPage(storageKey, cached); return cached; }
+        }
+        if (root && !fresh) {
+          const shared = rootMemo.get(storageKey);
+          if (shared && Date.now() - shared.at < ROOT_SHARE_MS) { check(); memoStats.rootHits += 1; return shared.value; }
+        }
+        // Concurrent readers of one key wait for the same request.
+        const pending = !fresh && readInFlight.get(storageKey);
+        if (pending) return await pending;
+        const request = (async () => {
+          const value = await readPhysical(storageKey);
+          if (root) rootMemo.set(storageKey, { at: Date.now(), value }); else rememberPage(storageKey, value);
+          if (shareable) graphPageCachePut(storageKey, value);
+          return value;
+        })();
+        if (!fresh) readInFlight.set(storageKey, request);
+        try { return await request; } finally { if (readInFlight.get(storageKey) === request) readInFlight.delete(storageKey); }
+      };
+      // Loads pages the caller is about to read one by one with a single request per group.
+      // It only fills the memo: every page is still validated by its reader, and a failure
+      // here just leaves the pages to be read singly.
+      const prefetch = async keys => {
+        if (volatile || localLease || mode === 'plugin_only') return;
+        const wanted = [...new Set(asArray(keys))].filter(storageKey => typeof storageKey === 'string' && storageKey.startsWith(prefix)
+          && IMMUTABLE_PAGE.test(storageKey.slice(prefix.length)) && !pageMemo.has(storageKey)
+          && !(leaseKind === 'read' && graphPageCache.has(storageKey)));
+        try {
+          for (let offset = 0; offset < wanted.length; offset += 16) {
+            const part = wanted.slice(offset, offset + 16);
+            await assertRoute();
+            const load = () => MemorySuiteStorageBridge.serverGetMany('plugin', part);
+            const rows = resources ? await resources.read(load, { kind: 'durable', select: batch => part.map(storageKey => batch?.values?.[storageKey]?.value ?? null) }) : await load();
+            await assertRoute();
+            memoStats.batchedReads += 1;
+            for (const storageKey of part) {
+              const row = rows?.values?.[storageKey];
+              if (row?.exists !== true || row.tombstone === true || typeof row.value !== 'string') continue;
+              rememberPage(storageKey, row.value);
+              if (leaseKind === 'read') graphPageCachePut(storageKey, row.value);
+            }
+          }
+        } catch (_) { /* single reads report any real failure */ }
+      };
+      const readPhysical = async storageKey => {
+        memoStats.physicalReads += 1;
         await assertRoute();
         if (volatile) { const value = volatile.get(storageKey); await assertRoute(); return value ?? null; }
         if (localLease) { const value = resources ? await resources.read(() => localLease.read(storageKey),{kind:'durable'}) : await localLease.read(storageKey); await assertRoute(); return value; }
@@ -77676,7 +77869,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await assertRoute();
         const batch = await MemorySuiteStorageBridge.prepareConditionalBatch({ mutations, conditions });
         await assertRoute();
-        const receipt = await commitVerifiedConditionalBatch(batch);
+        // Every key here is a derived graph record under the corpus prefix. Writing one changes no
+        // memory source, so it must not empty the verified source cache or stop the background
+        // readers (the screen refresh, capture jobs): a build writes hundreds of pages, and doing
+        // that per page made every other reader start over for as long as the build ran.
+        const derivedOnly = mutations.every(item => String(item?.key || '').startsWith(prefix));
+        const receipt = derivedOnly ? await MemorySuiteStorageBridge.commitConditionalBatch(batch) : await commitVerifiedConditionalBatch(batch);
         await assertRoute();
         if (receipt.endToEndVerified !== true) throw new Error('LIBRA_GRAPH_CORPUS_COMMIT_UNVERIFIED');
         } finally { stage?.release(); }
@@ -77684,7 +77882,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const writeDerived = async (storageKey, raw) => {
         if (volatile) { await assertRoute(); volatile.set(storageKey, raw); await assertRoute(); }
         else if (localLease) { await assertRoute(); await localLease.putImmutable(storageKey,raw); await assertRoute(); }
-        else if (mode !== 'plugin_only') await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]);
+        // The commit is verified end to end, so the page it created is known without reading it back.
+        else if (mode !== 'plugin_only') { await commit([{ key: storageKey, kind: 'set', expected: { exists: false }, value: raw }]); rememberPage(storageKey, raw); }
         else { await assertRoute(); await fencedMemoryStorageSet(storageKey,raw); await assertRoute(); }
       };
       const semanticVectorBodies=new Map(),semanticVectorRevisions=new Map(),semanticVectorPins=[];
@@ -77692,7 +77891,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         for(const pin of semanticVectorPins)await MemorySuiteStorageBridge.assertConditionalReadSet(pin,{readObserver:resources?()=>resources.reserveRead('source'):null});
         for(const [key,hash] of semanticVectorBodies){if(memoryGraphSourceFingerprint(stableReferenceJson(await storage.getVerifiedJson(key,collected.scope,null)))!==hash)throw new Error('LIBRA_GRAPH_SEMANTIC_VECTOR_CHANGED');}
       };
-      return { backend: localLease ? 'indexeddb' : volatile ? 'runtime_memory' : mode === 'plugin_only' ? 'host_storage' : 'server_storage', owner: { check, read, assertRoute, resources, graphLease,
+      return { backend: localLease ? 'indexeddb' : volatile ? 'runtime_memory' : mode === 'plugin_only' ? 'host_storage' : 'server_storage', owner: { check, read: storageKey => read(storageKey), readFresh: storageKey => read(storageKey, true), prefetch, memoStats, assertRoute, resources, graphLease,
         assertForestSupport:()=>MemorySuiteStorageBridge.assertGraphForestSupport(),
         isForestSemanticEnabled:async()=>normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed||DEFAULT_EMBEDDING).enabled===true,
         async forestStateEvidenceRequests(graph,canonicalRows) {
@@ -77838,7 +78037,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (await read(rootKey) !== previous || await read(manifestKey) !== manifestRaw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_CONFLICT');
             await fencedMemoryStorageSet(rootKey,raw); await assertRoute();
           }
-          if (await read(rootKey) !== raw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_READBACK');
+          rootMemo.delete(rootKey);
+          if (await read(rootKey, true) !== raw) throw new Error('LIBRA_GRAPH_CORPUS_ROOT_READBACK');
           await assertSemanticDirectoryCurrent();
         },
         async captureSourceProof({ collected: corpusCollected, windowProofs = [], config = {}, previousOwnerProof = null, reusedOnlySourceKeys = [] }) {
@@ -78384,8 +78584,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         + Math.max(0, Number(state.loreLinkIndexCacheBytes || 0));
       return {
         maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
-        totalBytes: graphBytes + graphBuildBytes + pairBytes + verifiedBytes + linkBytes,
-        byCache: { volatileGraph: graphBytes, volatileGraphBuild: graphBuildBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
+        totalBytes: graphBytes + graphBuildBytes + pairBytes + verifiedBytes + linkBytes + graphPageCacheStats.bytes,
+        byCache: { volatileGraph: graphBytes, volatileGraphBuild: graphBuildBytes, pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes, graphPages: graphPageCacheStats.bytes }
       };
     }
     function evictOldestVerifiedRead() {
@@ -78435,6 +78635,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     function ensureResidentBudget(requiredBytes, protectedOwner = '') {
       const required = Math.max(0, Number(requiredBytes) || 0);
       while (residentMemoryBudgetSnapshot().totalBytes + required > LIBRA_RESIDENT_MEMORY_MAX_BYTES) {
+        // Search pages are the cheapest to give up: they are re-read from the published graph.
+        if (graphPageCache.size) { clearGraphPageCache(); continue; }
         if (protectedOwner !== 'verifiedRead' && evictOldestVerifiedRead()) continue;
         if (protectedOwner !== 'pairRevision' && evictOldestPairRevision()) continue;
         if (protectedOwner !== 'evidenceLink' && protectedOwner !== 'loreLink' && evictOldestLinkIndex()) continue;
@@ -78678,6 +78880,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return true;
     };
     const disposeVolatileMemoryGraphCorpus = () => {
+      clearGraphPageCache();
       clearTimeout(volatilePrewarmTimer); volatilePrewarmTimer = null;
       if (!volatileCorpusRuntime) return;
       clearTimeout(volatileCorpusRuntime.timer); volatileCorpusRuntime.timer = null;
@@ -78875,6 +79078,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       });
     };
     const verifyMemoryGraphCorpus = async (options = {}) => {
+      // An audit reads every page from storage, never from the search cache.
+      clearGraphPageCache();
       if (!options || typeof options !== 'object' || Array.isArray(options)
         || Object.keys(options).some(key => !['expectedScopeKey','resourceBudget'].includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
@@ -83193,12 +83398,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     let lensRegistryCache = null;
     let lensRegistryCacheRaw = '', lensRegistryCacheSignature = '';
     const invalidateLensRegistryCache = () => { lensRegistryCache = null; lensRegistryCacheRaw = ''; lensRegistryCacheSignature = ''; };
+    // What a background job depends on in the runtime settings record: the lens definitions.
+    const lensRegistryProjection = raw => stableReferenceJson(normalizeLensRegistry(normalizeRuntimeRecord(parseRuntimeSettingsEnvelope(raw) || {})?.lens_registry));
     const readLensRegistry = async (options = {}) => {
       // Definitions live in runtime settings, not the chat's Lens result Head.
       // Read their actual bytes even inside the former 3s registry TTL. Only the
       // pure normalization is memoized, under the same lifecycle fence.
       const raw = await RisuCompat.getItem(STORAGE_RUNTIME_SETTINGS_KEY);
-      for(const frame of activeBackgroundReadFrames)frame.observeExtra(STORAGE_RUNTIME_SETTINGS_KEY,raw);
+      for(const frame of activeBackgroundReadFrames)frame.observeExtra(STORAGE_RUNTIME_SETTINGS_KEY,raw,lensRegistryProjection);
       const witness = typeof raw === 'string' ? raw : stableReferenceJson(raw);
       const signature = verifiedReadSignature('lens-registry');
       if (options.force !== true && lensRegistryCache && lensRegistryCacheRaw === witness && lensRegistryCacheSignature === signature)
@@ -84930,7 +85137,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
       durableIndexTimerPending, scheduleDurableIndexBuild,
       cancelDurableIndexBuild:()=>{clearTimeout(durableIndexTimer);clearTimeout(durableGCTimer);durableGCTimer=null;durableIndexTimer=null;durableIndexRuntime().yieldRequested=true;},
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectResidentMemoryBudget, inspectDurableGraphStatus, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectResidentMemoryBudget, inspectDurableGraphStatus, inspectMemoryGraphStructure, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -89869,7 +90076,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ] : [])
     ];
     const cacheRows = [['임시 인덱스', resident.byCache?.volatileGraph], ['임시 인덱스 구축 작업', resident.byCache?.volatileGraphBuild],
-      ['대화 원문 대조', resident.byCache?.pairRevision], ['검증한 원본 읽기', resident.byCache?.verifiedRead], ['근거·로어 연결표', resident.byCache?.linkIndexes]]
+      ['대화 원문 대조', resident.byCache?.pairRevision], ['검증한 원본 읽기', resident.byCache?.verifiedRead], ['검색용 그래프 페이지', resident.byCache?.graphPages], ['근거·로어 연결표', resident.byCache?.linkIndexes]]
       .map(([label, bytes]) => ({ label, bytes: Number(bytes || 0), percent: resident.maxBytes ? Math.min(100, Math.round(Number(bytes || 0) / resident.maxBytes * 100)) : 0 }));
     return { badge, steps, statusLine, percent, stats, autoRows, recallRows, cacheRows, busy: Boolean(progress || auto.running || auto.scheduled || runtime.building || runtime.scheduled) };
   };
@@ -89932,6 +90139,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     } });
     return guiEl('div', { class: 'stack', dataset: { settingsCategory: 'mem', settingsReadback: 'durable-graph' } }, [
       live,
+      buildDurableGraphStructureCard(),
       card('사용과 자동 구축', '두 설정은 따로 동작합니다. 사용을 끄면 게시본을 검색하지 않고, 자동 구축을 끄면 아래 버튼으로만 만듭니다.', [
         memoryToggle('useDurableIndex', '상설 그래프 사용'), memoryToggle('autoDurableIndex', '상설 그래프 자동 구축 · 증분')
       ]),
@@ -89966,6 +90174,165 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ])
       ])
     ]);
+  };
+  // ---- Durable graph structure ------------------------------------------------------------
+  // What the graph is made of: its nodes, and for a chosen node every node it is joined to.
+  const GRAPH_LAYER_LABELS = Object.freeze({ source: '원본 기록', meaning: '기억 항목', entity: '대상' });
+  const GRAPH_FAMILY_LABELS = Object.freeze({ canonical: '정본', micro: 'Micro', state: '상태', lore: '로어' });
+  const GRAPH_PREDICATE_LABELS = Object.freeze({ subject_of: '주체', target_of: '대상', derived_from: '근거에서 파생', mentions: '언급',
+    evidenced_by: '근거', supersedes: '이전 기록을 대체', contradicts: '서로 충돌', reopens: '다시 열림', part_of: '소속', recorded_in: '기록 원본' });
+  const GRAPH_ENTITY_KIND_LABELS = Object.freeze({ person: '인물', location: '장소', object: '사물', organization: '단체', thread: '이야기 줄기', world: '세계' });
+  const graphNodeTitle = node => node.layer === 'source'
+    ? `${GRAPH_FAMILY_LABELS[node.family] || '원본'} 기록${/[0-9]/.test(node.label || '') ? ' · 항목 ' + String(node.label).match(/[0-9]+/g).reduce((sum, value) => sum + Number(value), 0) + '개' : ''}`
+    : node.label || (node.layer === 'entity' ? '이름을 확인하지 못한 대상' : '내용 없음');
+  const graphNodeMeta = node => [GRAPH_LAYER_LABELS[node.layer] || node.layer,
+    node.layer === 'entity' ? (GRAPH_ENTITY_KIND_LABELS[node.kind] || node.kind) : (GRAPH_FAMILY_LABELS[node.family] || node.family),
+    node.turn ? `T${node.turn}` : node.turnRange ? (node.turnRange.start === node.turnRange.end ? `T${node.turnRange.start}` : `T${node.turnRange.start}–T${node.turnRange.end}`) : '',
+    `연결 ${node.degree}`].filter(Boolean).join(' · ');
+  // Pure view model: the structure DTO, the chosen node and the list filter in; what to print out.
+  const durableGraphStructureModel = (structure, selectedId = '', filter = {}) => {
+    const nodes = Array.isArray(structure?.nodes) ? structure.nodes : [], edges = Array.isArray(structure?.edges) ? structure.edges : [];
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const text = String(filter.text || '').trim().toLowerCase(), kind = String(filter.kind || 'all');
+    const matches = node => (kind === 'all' || (kind === 'entity' || kind === 'source' ? node.layer === kind : node.layer === 'meaning' && node.family === kind))
+      && (!text || graphNodeTitle(node).toLowerCase().includes(text));
+    const ordered = nodes.filter(matches).sort((a, b) => b.degree - a.degree || graphNodeTitle(a).localeCompare(graphNodeTitle(b), 'ko'));
+    const selected = byId.get(selectedId) || null;
+    const groups = new Map();
+    if (selected) for (const edge of edges) {
+      const outward = edge.from === selected.id, inward = edge.to === selected.id;
+      if (!outward && !inward) continue;
+      const other = byId.get(outward ? edge.to : edge.from);
+      if (!other) continue;
+      const key = (outward ? 'out:' : 'in:') + edge.predicate;
+      if (!groups.has(key)) groups.set(key, { predicate: edge.predicate, label: GRAPH_PREDICATE_LABELS[edge.predicate] || edge.predicate, outward, items: [] });
+      if (!groups.get(key).items.some(item => item.id === other.id)) groups.get(key).items.push(other);
+    }
+    const connectionGroups = [...groups.values()].sort((a, b) => Number(b.outward) - Number(a.outward) || b.items.length - a.items.length);
+    // The drawing shows the chosen node and up to twelve of its neighbours on a ring.
+    const spokes = connectionGroups.flatMap(group => group.items.map(node => ({ node, label: group.label, outward: group.outward }))).slice(0, 12);
+    const diagram = selected ? { center: selected, hidden: Math.max(0, connectionGroups.reduce((sum, group) => sum + group.items.length, 0) - spokes.length),
+      spokes: spokes.map((spoke, index) => {
+        const angle = -Math.PI / 2 + index * 2 * Math.PI / Math.max(spokes.length, 1);
+        return { ...spoke, x: Math.round(280 + 205 * Math.cos(angle)), y: Math.round(150 + 108 * Math.sin(angle)) };
+      }) } : null;
+    const summary = structure?.summary || { nodes: 0, edges: 0, byLayer: {}, byFamily: {}, byPredicate: {} };
+    return { list: ordered.slice(0, 120), listTotal: ordered.length, selected, connectionGroups, diagram,
+      tiles: [
+        { label: '원본 기록', value: Number(summary.byLayer.source || 0), meta: '정본·Micro·상태·로어 한 건이 원본 하나' },
+        { label: '기억 항목', value: Number(summary.byLayer.meaning || 0), meta: Object.keys(GRAPH_FAMILY_LABELS).map(name => `${GRAPH_FAMILY_LABELS[name]} ${Number(summary.byFamily[name] || 0)}`).join(' · ') },
+        { label: '대상', value: Number(summary.byLayer.entity || 0), meta: '인물·장소·사물·이야기 줄기' },
+        { label: '연결', value: Number(summary.edges || 0), meta: '기억 항목을 원본과 대상에 잇는 선' }
+      ],
+      predicates: Object.entries(summary.byPredicate || {}).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, label: GRAPH_PREDICATE_LABELS[name] || name, count })) };
+  };
+  const buildDurableGraphStructureCard = () => {
+    const state = Gui.durableGraphStructure || (Gui.durableGraphStructure = { data: null, selected: '', text: '', kind: 'all', loading: false, error: '', trail: [] });
+    const host = guiEl('div', { class: 'card', dataset: { durableGraphStructure: 'true' } });
+    const svg = (tag, attrs = {}, children = []) => {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [key, value] of Object.entries(attrs)) if (key === 'text') node.textContent = value; else node.setAttribute(key, String(value));
+      for (const child of children) if (child) node.appendChild(child);
+      return node;
+    };
+    // A node row is a title over one line of facts; the columns wrap to one when the card is narrow.
+    const rowStyle = 'grid-template-columns:minmax(0,1fr);grid-template-areas:none;gap:2px';
+    const clip = (value, length) => { const textValue = String(value || ''); return textValue.length > length ? textValue.slice(0, length - 1) + '…' : textValue; };
+    const load = async (cursor = null) => {
+      if (state.loading) return;
+      state.loading = true; state.error = ''; render();
+      try {
+        const binding = canonicalReaderBinding();
+        state.data = await LibraMemoryCore.inspectMemoryGraphStructure({ expectedScopeKey: binding.scopeKey, ...(cursor || {}) });
+        if (!state.data.nodes.some(node => node.id === state.selected)) {
+          state.selected = [...state.data.nodes].sort((a, b) => b.degree - a.degree)[0]?.id || '';
+        }
+      } catch (error) { state.error = String(error?.message || error); }
+      finally { state.loading = false; render(); }
+    };
+    const select = id => { state.selected = id; render(); };
+    const drawDiagram = diagram => {
+      const pill = (node, x, y, center) => {
+        const width = center ? 190 : 132, height = center ? 40 : 30;
+        const group = svg('g', { tabindex: '0', role: 'button', 'aria-label': graphNodeTitle(node), style: 'cursor:pointer', 'data-graph-node': node.id });
+        group.appendChild(svg('rect', { x: x - width / 2, y: y - height / 2, width, height, rx: 9,
+          fill: center ? 'var(--accent-soft)' : 'var(--surface)', stroke: center ? 'var(--accent)' : 'var(--border2)', 'stroke-width': center ? 2 : 1 }));
+        group.appendChild(svg('text', { x, y: y + 4, 'text-anchor': 'middle', 'font-size': center ? 13 : 11.5, 'font-weight': center ? 700 : 500, fill: 'var(--text)', text: clip(graphNodeTitle(node), center ? 15 : 10) }));
+        group.appendChild(svg('title', { text: `${graphNodeTitle(node)} — ${graphNodeMeta(node)}` }));
+        const choose = () => select(node.id);
+        group.addEventListener('click', choose);
+        group.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); } });
+        return group;
+      };
+      const lines = diagram.spokes.map(spoke => svg('g', {}, [
+        svg('line', { x1: 280, y1: 150, x2: spoke.x, y2: spoke.y, stroke: 'var(--border2)', 'stroke-width': 1.2 }),
+        svg('text', { x: Math.round((280 + spoke.x) / 2), y: Math.round((150 + spoke.y) / 2) - 3, 'text-anchor': 'middle', 'font-size': 10, fill: 'var(--text3)',
+          text: (spoke.outward ? '→ ' : '← ') + spoke.label })
+      ]));
+      return svg('svg', { viewBox: '0 0 560 300', role: 'img', 'aria-label': `${graphNodeTitle(diagram.center)}와 이어진 노드`, style: 'width:100%;height:auto;display:block' },
+        [...lines, ...diagram.spokes.map(spoke => pill(spoke.node, spoke.x, spoke.y, false)), pill(diagram.center, 280, 150, true)]);
+    };
+    function render() {
+      const data = state.data;
+      const head = guiEl('div', { class: 'card__head' }, [
+        guiEl('div', {}, [guiEl('h2', { class: 'card__title', text: '그래프 구조' }),
+          guiEl('p', { class: 'card__desc', text: '그래프는 세 가지 노드로 이루어집니다. 원본 기록 하나에서 기억 항목이 여러 개 나오고, 기억 항목은 그 주체와 대상에 이어집니다. 노드를 고르면 무엇과 어떤 관계로 이어졌는지 볼 수 있습니다.' })]),
+        guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: state.loading, dataset: { graphStructureLoad: 'true' },
+          text: state.loading ? '읽는 중…' : data ? '다시 읽기' : '구조 불러오기', onClick: () => { state.trail = []; void load(); } })
+      ]);
+      if (!data) {
+        host.replaceChildren(head, guiEl('p', { class: 'hint', text: state.error ? `구조를 읽지 못했습니다: ${state.error}` : '현재 채팅의 기억 원본에서 구조를 읽어 옵니다. 저장된 내용은 바꾸지 않습니다.' }));
+        return;
+      }
+      const model = durableGraphStructureModel(data, state.selected, { text: state.text, kind: state.kind });
+      const windowInfo = data.window || {}, hasNext = Boolean(windowInfo.canonicalNextCursor || windowInfo.microNextCursor);
+      const search = guiEl('input', { class: 'input', type: 'search', placeholder: '노드 찾기', value: state.text, 'aria-label': '노드 찾기', dataset: { graphStructureSearch: 'true' },
+        onInput: event => { state.text = event.target.value; const at = event.target.selectionStart; render(); const next = host.querySelector('[data-graph-structure-search]'); next?.focus(); try { next?.setSelectionRange(at, at); } catch (_) {} } });
+      const kinds = [['all', '전체'], ['entity', '대상'], ['canonical', '정본'], ['micro', 'Micro'], ['state', '상태'], ['lore', '로어'], ['source', '원본 기록']];
+      const kindSelect = guiEl('select', { class: 'select', 'aria-label': '노드 종류', onChange: event => { state.kind = event.target.value; render(); } },
+        kinds.map(([value, label]) => guiEl('option', { value, selected: state.kind === value, text: label })));
+      const list = guiEl('div', { class: 'list', style: 'max-height:420px;overflow:auto', dataset: { graphStructureList: 'true' } }, model.list.length
+        ? model.list.map(node => guiEl('button', { class: 'row', type: 'button', style: rowStyle, 'aria-pressed': String(node.id === state.selected), dataset: { graphNode: node.id }, onClick: () => select(node.id) }, [
+            guiEl('div', { class: 'row__title', style: 'grid-area:auto', text: clip(graphNodeTitle(node), 60) }), guiEl('div', { class: 'row__meta', style: 'grid-area:auto', text: graphNodeMeta(node) })
+          ]))
+        : [guiEl('p', { class: 'hint', style: 'padding:14px', text: '조건에 맞는 노드가 없습니다.' })]);
+      const detail = model.selected ? guiEl('div', { class: 'stack', dataset: { graphStructureDetail: model.selected.id } }, [
+        drawDiagram(model.diagram),
+        model.diagram.hidden ? guiEl('p', { class: 'hint', text: `그림에는 12개까지만 그렸습니다. 나머지 ${model.diagram.hidden}개는 아래 목록에 있습니다.` }) : null,
+        guiEl('div', {}, [guiEl('h3', { text: graphNodeTitle(model.selected) }), guiEl('p', { class: 'hint', text: graphNodeMeta(model.selected) })]),
+        ...(model.connectionGroups.length ? model.connectionGroups.map(group => guiEl('div', { class: 'stack', style: 'gap:6px', dataset: { graphConnection: group.predicate } }, [
+          guiEl('div', { class: 'split' }, [guiEl('b', { text: group.outward ? `이 노드의 ${group.label}` : `이 노드를 '${group.label}'(으)로 둔 노드` }), guiEl('span', { class: 'badge', text: `${group.items.length}개` })]),
+          guiEl('div', { class: 'list' }, group.items.map(node => guiEl('button', { class: 'row', type: 'button', style: rowStyle, dataset: { graphNode: node.id }, onClick: () => select(node.id) }, [
+            guiEl('div', { class: 'row__title', style: 'grid-area:auto', text: clip(graphNodeTitle(node), 80) }), guiEl('div', { class: 'row__meta', style: 'grid-area:auto', text: graphNodeMeta(node) })
+          ])))
+        ])) : [guiEl('p', { class: 'hint', text: '이 구간 안에서는 다른 노드와 이어져 있지 않습니다.' })])
+      ].filter(Boolean)) : guiEl('p', { class: 'hint', text: '왼쪽에서 노드를 고르세요.' });
+      host.replaceChildren(...[
+        head,
+        state.error ? guiEl('p', { class: 'hint', text: `구조를 읽지 못했습니다: ${state.error}` }) : null,
+        guiEl('div', { class: 'stats', dataset: { graphStructureStats: 'true' } }, model.tiles.map(tile => guiEl('div', { class: 'stat' }, [
+          guiEl('div', { class: 'stat__label', text: tile.label }), guiEl('div', { class: 'stat__value', text: String(tile.value) }), guiEl('div', { class: 'stat__meta', text: tile.meta })
+        ]))),
+        guiEl('div', { class: 'cluster', style: 'margin:12px 0', dataset: { graphStructurePredicates: 'true' } }, [guiEl('span', { class: 'hint', text: '연결 종류' }),
+          ...model.predicates.map(item => guiEl('span', { class: 'chip', text: `${item.label} ${item.count}` }))]),
+        guiEl('div', { class: 'split', style: 'margin-bottom:12px' }, [
+          guiEl('span', { class: 'hint', text: `이 구간: 정본 ${windowInfo.canonicalRead}/${windowInfo.canonicalTotal}건 · Micro ${windowInfo.microRead}/${windowInfo.microTotal}턴${state.trail.length ? ` · ${state.trail.length + 1}번째 구간` : ''}` }),
+          guiEl('div', { class: 'cluster' }, [
+            state.trail.length ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '처음 구간', onClick: () => { state.trail = []; void load(); } }) : null,
+            hasNext ? guiEl('button', { class: 'btn btn--sm', type: 'button', dataset: { graphStructureNext: 'true' }, text: '다음 구간', onClick: () => {
+              const cursor = { canonicalCursor: windowInfo.canonicalNextCursor, microCursor: windowInfo.microNextCursor }; state.trail.push(cursor); void load(cursor);
+            } }) : null
+          ].filter(Boolean))
+        ]),
+        guiEl('div', { class: 'grid', style: 'grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start' }, [
+          guiEl('div', { class: 'stack' }, [guiEl('div', { class: 'cluster' }, [search, kindSelect]),
+            guiEl('p', { class: 'hint', text: model.listTotal > model.list.length ? `연결이 많은 순서로 ${model.list.length}개를 보입니다(전체 ${model.listTotal}개). 찾기로 좁혀 보세요.` : `노드 ${model.listTotal}개 · 연결이 많은 순서` }), list]),
+          detail
+        ])
+      ].filter(Boolean));
+    }
+    render();
+    return host;
   };
   const buildDebugTab = () => {
     MemorySuiteStorageBridge.scheduleDiagnosticsRefresh(0);
@@ -100995,6 +101362,7 @@ advanced
     inspectVolatileMemoryGraphCorpus() { return safeClone(LibraMemoryCore.inspectVolatileMemoryGraphCorpus()); },
     inspectResidentMemoryBudget() { return safeClone(LibraMemoryCore.inspectResidentMemoryBudget()); },
     inspectDurableGraphStatus() { return safeClone(LibraMemoryCore.inspectDurableGraphStatus()); },
+    async inspectMemoryGraphStructure(options = {}) { return safeClone(await LibraMemoryCore.inspectMemoryGraphStructure(options)); },
     inspectMicroRepresentationVectors() { return safeClone(LibraMemoryCore.inspectMicroRepresentationVectors()); },
     inspectMemoryGraphStore() { return LibraMemoryCore.inspectMemoryGraphStore(); },
     async executeMemoryGraphUnifiedQuery(options = {}) {
