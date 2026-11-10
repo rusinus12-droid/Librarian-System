@@ -9,7 +9,7 @@ assert(start>0&&end>start,'unique real core hook body');
 const ownerLine='    let latestRecallPublicationOwner = null;';
 const prefix=source.slice(Math.max(0,start-100),start).includes(ownerLine)?ownerLine+'\n':'';
 const plain=value=>JSON.parse(JSON.stringify(value));
-function fixture({oldPhase='before_branch_reconcile',sameScope=false,currentEarly=false,oldContextResolves=false}={}){
+function fixture({oldPhase='before_branch_reconcile',sameScope=false,currentEarly=false,oldContextResolves=false,rawEarlyFailure=''}={}){
  let seq=0,enter,release;const entered=new Promise(r=>enter=r),blocked=new Promise(r=>release=r),Runtime={lastInjection:'prior'},state={captureBackend:'none',bootstrapReferenceCache:new Map(),pendingBoundaryRecoveryCheckedScopes:new Set(),lastRequestScope:{scope:{scopeKey:'unrelated-prior'}}};
  const scope=id=>({scopeKey:sameScope?'same-scope':'scope-'+id,chatId:'chat-'+id});
  const fail=message=>Object.assign(new Error(message),{code:'SYNTHETIC_DEPENDENCY_FAILURE'});
@@ -18,7 +18,7 @@ function fixture({oldPhase='before_branch_reconcile',sameScope=false,currentEarl
   isMainNarrativeRequest:type=>type==='model',contentToText:String,createRecallGuard:()=>({id:++seq}),recallGuardSnapshot:g=>({id:g?.id||0}),
   volatileMemoryGraphCorpus:()=>({interactiveReaders:0}),yieldVolatileMemoryGraphCorpusBuild:async()=>{},
   async runRecallStep(g,phase){
-   if(currentEarly&&phase==='before_settings')throw fail('current_early_failure');
+   if(currentEarly&&phase==='before_settings')throw rawEarlyFailure?new Error(rawEarlyFailure):fail('current_early_failure');
    if(g.id===1&&phase===oldPhase){enter();await blocked;if(oldContextResolves&&phase==='before_context')return{scope:scope(g.id),chat:{}};throw fail('older_failure');}
    if(phase==='before_settings')return{enabled:true,autoAnalyze:false};
    if(phase==='before_background_drain')return null;
@@ -38,6 +38,14 @@ test('current failing recall still publishes fail-open diagnostics for its own s
  const f=fixture({oldPhase:'never'}),messages=[{role:'user',content:'current request'}];
  assert.equal(await f.context.hook(messages,'model'),messages);
  assert.equal(f.Runtime.lastMemoryRecallViewer.error,'newer_failure');assert.equal(f.Runtime.lastMemoryRecallViewer.scopeKey,'scope-1');assert.equal(f.Runtime.lastMemoryRecallViewer.failOpen,true);assert.equal(f.Runtime.lastInjection,'');
+});
+test('maintenance and graph quota failures retain a typed diagnostic instead of an empty error code',async()=>{
+ for(const [message,code]of [['server_maintenance_in_progress','LIBRA_STORAGE_MAINTENANCE'],['LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET','LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET']]){
+  const f=fixture({currentEarly:true,rawEarlyFailure:message});
+  await f.context.hook([{role:'user',content:'current request'}],'model');
+  assert.equal(f.Runtime.lastMemoryRecallViewer.errorCode,code);
+  assert.equal(f.Runtime.lastMemoryRecallViewer.error,message);
+ }
 });
 for(const sameScope of [false,true])test((sameScope?'same':'different')+'-scope older failed read cannot replace newer request diagnostics',async()=>{
  const f=fixture({sameScope}),oldMessages=[{role:'user',content:'older request'}],newMessages=[{role:'user',content:'newer request'}];

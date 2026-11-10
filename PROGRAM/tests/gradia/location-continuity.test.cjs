@@ -13,7 +13,7 @@ const ANCHORS=[
   'a location change without a narrated transition is a defect'
 ];
 
-async function pipelineFixture(){
+async function pipelineFixture(runtime={}){
   const prompts=[],h=await load({api:{nativeFetch:async(_url,init)=>{
     const body=JSON.parse(init.body);prompts.push(body);
     const system=body.messages.filter(m=>m.role==='system').map(m=>typeof m.content==='string'?m.content:JSON.stringify(m.content)).join('\n');
@@ -23,7 +23,7 @@ async function pipelineFixture(){
   }}});
   await h.plugin.saveProviderPreset('offline',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',model:'offline-model',context_window:128000,max_tokens:4096,timeout_ms:5000,stream:false});
   await h.plugin.saveRuntimeSettings({mode:'normal',default_preset:'offline',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
-    failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
+    failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true,...runtime});
   return {h,prompts};
 }
 
@@ -38,3 +38,37 @@ test('location continuity reaches the first draft and every AIDE stage exactly o
     assert.ok(text.includes('exchanges govern location'),`call ${index} must rank live place above older notes`);
   }
 });
+
+const ANATOMY='ANATOMICAL AND SPATIAL FEASIBILITY — HARD CONDITION:';
+const FEASIBILITY_ANCHORS=[
+  'limb and side, posture, support, reach, contact, grip, and occupied space',
+  'a second hand cannot enter while the first remains there',
+  'BEFORE the incompatible next action',
+  'Compatible multitasking is allowed',
+  'replace_draft together with unchanged neighboring beats',
+  'Never invent an exception to force an impossible move',
+  'Keep this feasibility ledger private'
+];
+
+for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true])for(const writingMode of ['novel','rp']){
+  test(`anatomical feasibility covers every draft and AIDE call (${mode}, Bianca ${bianca}, ${writingMode})`,async()=>{
+    const f=await pipelineFixture({multi_pipeline_mode:mode,bianca_inject:String(bianca),writing_mode:writingMode,
+      nsfw_mode:'off',nsfw_guidance_enabled:'false'});
+    const out=await f.h.hooks.beforeRequest([{role:'user',messageId:'u-current',
+      content:'The narrow maintenance opening has room for only one hand. Her left hand is still inside, holding the latch. Continue without resetting that position.'}],'model');
+    assert.equal(f.prompts.length,mode==='heavyweight'?8:4,'the condition adds no model calls');
+    for(const [index,body] of f.prompts.entries()){
+      const text=JSON.stringify(body);
+      assert.equal(text.split(ANATOMY).length-1,1,`call ${index} receives the shared condition once`);
+      for(const anchor of FEASIBILITY_ANCHORS)assert.ok(text.includes(anchor),`call ${index}: ${anchor}`);
+      assert.ok(text.includes('holding the latch'),'the source occupancy state remains in context');
+      assert.ok(text.includes('GUARDED UNUSABLE-DRAFT RECOVERY')||!text.includes('Return the compact aide_'),
+        'the same AIDE call also covers whole-draft recovery');
+      if(writingMode==='rp')assert.ok(text.includes('Do not invent an unperformed player withdrawal'));
+      else assert.ok(text.includes('In Novel mode, narrate any needed release'));
+    }
+    assert.ok(JSON.stringify(out).includes('ANATOMICAL FEASIBILITY — PRESERVE REPAIRS'),'the final model preserves physical repairs');
+    const block=f.h.plugin.getRuntime().promptBlocks.shadow_act;
+    assert.ok(block.chars.anatomicalFeasibility>1000,'debug metadata records the mandatory writing condition');
+  });
+}

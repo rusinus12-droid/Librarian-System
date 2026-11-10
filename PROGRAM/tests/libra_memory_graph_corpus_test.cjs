@@ -85,6 +85,30 @@ function fixture({count=53,canonicalCount=2,incrementalProof=false,hubEdges=0}={
     change(){editedMicro=count-1;revision++;},changeCanonical(){canonicalRev++;},changeState(){stateRev++;},changeLore(){loreRev++;},
     grow(delta=1){count+=delta;},restartCursor(){cursorEpoch++;},cancel(){broken=true;},uncancel(){broken=false;},get compiles(){return compileCount;}};
 }
+test('large posting tables publish and restore beyond the former 512-page cap without widening graph workspace',async()=>{
+  const x=fixture({count:64,canonicalCount:1});
+  const snapshot=async options=>{
+    const value=await x.snapshot(options);
+    for(const unit of value.graph.units)unit.text=Array.from({length:450},(_,i)=>`lexical_${unit.nodeId}_${i}`).join(' ');
+    return value;
+  };
+  await assert.rejects(()=>x.corpus.build({owner:x.owner,snapshot,options:{limit:1,maxIndexBytes:65536}}),/INDEX_BUDGET/);
+  const resources=require('../tools/libra_memory_graph_resources.cjs')({measure:x.pages.measure,encodedSize:x.pages.encodedSize,stageCost:x.pages.stageCost});
+  const ledger=resources.openMaintenance();x.owner.resources=ledger;
+  let built;
+  try{built=await x.corpus.build({owner:x.owner,snapshot,options:{limit:1}});}
+  finally{ledger.close();}
+  assert.ok(ledger.inspect().peakRetainedBytes<=192*1024*1024);
+  assert.equal(resources.inspect().retainedBytes,0);
+  delete x.owner.resources;
+  assert.equal(built.status,'published');assert.ok(built.pageCount>512);
+  assert.ok(built.serializedIndexBytes>4194304);assert.ok(built.serializedGraphBytes<4194304);
+  const restored=await x.corpus.read({owner:x.owner,snapshot,initialGraph:(await snapshot({limit:1,canonicalCursor:'',microCursor:''})).graph,eager:false});
+  assert.equal(restored.access.indexDigest,built.indexDigest);
+  assert.equal(restored.access.nativeReprojectionRequired,true);
+  x.idle();
+});
+
 test('cold request uses owner proofs without graph re-enumeration and refuses changes in every family',async()=>{
   for(const mutation of [null,'change','changeCanonical','changeState','changeLore','grow']){
     const x=fixture({count:5,incrementalProof:true});

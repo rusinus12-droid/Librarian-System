@@ -54,6 +54,7 @@ async function run(mode) {
   });
   try {
     const f = snapshot.f;
+    await f.r.api.saveLibraMemorySettings({...await f.r.api.getLibraMemorySettings(),autoDurableIndex:false});
     await f.run();
     moreTurns(f, 1); await f.run(); await f.r.api.retryPendingUnifiedVectors?.();
     // Startup migration writes its device marker after 1.5s. Settle that

@@ -58,6 +58,9 @@ test('native build and eager audit share retained admission and always release t
  const built=await api.buildMemoryGraphCorpus();assert.ok(built.resourceAccess.peakRetainedBytes>0);
  assert.equal(built.resourceAccess.limits.maxDecodeBytes,64*1024*1024);assert.equal(built.resourceAccess.limits.maxRetainedBytes,192*1024*1024);
  assert.ok(built.resourceAccess.retainedByCategory.publication_projection>0);
+ assert.equal(built.resourceAccess.retainedByCategory.native_projection_inputs||0,0,'temporary reader inputs are released before publication');
+ assert.ok(built.resourceAccess.retainedByCategory.native_projection_evidence>0,'surviving canonical rows and proof baselines remain accounted');
+ assert.equal(built.resourceAccess.retainedByCategory.index_compile_input||0,0,'compiler workspace does not remain charged for the whole query');
  const roots=()=>[...x.f.r.values].filter(([key])=>key.includes(':corpus:root:'));
  const root=JSON.parse(roots()[0][1]),manifest=JSON.parse(x.f.r.values.get(root.manifestKey));
  assert.equal(manifest.config.limit,20);assert.equal(manifest.config.pageBytes,8192);
@@ -86,7 +89,7 @@ test('real owner receipts hold accounted authority across repeated checks and re
  const proof=r=>({scope:r.scope,readIdentity:r.readIdentity,dependencies:r.dependencies,evidenceRevision:r.evidenceRevision,dataInstanceId:r.dataInstanceId,resetEpoch:r.resetEpoch});
  const first=await client.capture(input),held=api.inspectMemoryGraphStore().resources.retainedBytes;assert.ok(held>0);
  for(let i=0;i<3;i++){assert.equal((await client.current({proof:proof(first)})).current,true);assert.equal(api.inspectMemoryGraphStore().resources.retainedBytes,held);}
- await assert.rejects(()=>client.capture(input),/LIB_READ_UNIFIED_UNAVAILABLE/);
+ await assert.rejects(()=>client.capture(input),/LIBRA_GRAPH_RESOURCE_SESSION_BACKPRESSURE/);
  assert.equal(api.inspectMemoryGraphStore().resources.retainedBytes,held,'backpressure preserves the prior receipt');
  await client.release(first.readIdentity.ownerReceiptId);assert.equal(api.inspectMemoryGraphStore().resources.retainedBytes,0);
  await assert.rejects(()=>client.current({proof:proof(first)}),/LIB_READ_STALE/);

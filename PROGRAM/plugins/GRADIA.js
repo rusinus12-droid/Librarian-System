@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v0.29.2
+//@display-name GRADIA v0.29.4
 //@api 3.0
-//@version 0.29.2
+//@version 0.29.4
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '0.29.2';
+  const PLUGIN_VERSION = '0.29.4';
   
   
   
@@ -3608,6 +3608,9 @@ ${BIANCA_PERSONA_TEXT}`;
   ]);
 
   const registered = { input: null, before: null, after: null, setting: null, button: null, continueButton: null, retraceIpc: null, retraceIpcApi: null, retraceIpcRegistration: null };
+  // Read-only results for the current/last request. Never exported, persisted, or reused
+  // as pipeline input; evidence-derived stage details belong only to the results UI.
+  const guiExecutionResults = { traces: [], archived: false };
   const Runtime = {
     runs: 0,
     last: null,
@@ -3635,8 +3638,7 @@ ${BIANCA_PERSONA_TEXT}`;
     callTelemetry: null,
     risuEngine: null,
     finalDraft: '',
-    // 요청 정리(purge) 뒤에도 초안 패널이 무엇이 작성됐는지 보여줄 수 있게 남기는 요약.
-    // 계약상 초안 본문은 보관하지 않는다: 자수·해시·단계별 성공/소요만 남긴다.
+    // The panel retains the final draft; exported snapshots carry only its summary.
     lastDraftArchive: null,
     // Per-stage record of which prompt blocks were actually included and how big they were.
     // Debug export only carries counts, never prompt text.
@@ -3744,19 +3746,22 @@ ${BIANCA_PERSONA_TEXT}`;
     const block = libEvidencePrompt(settings);
     return block ? `${value}\n\n${block}` : value;
   };
-  // The panel reads stageTrace/finalDraft, both of which this purge clears. Keep a content
-  // summary so "무엇이 작성됐는지" survives the cleanup (measured 2026-11-09: the draft was
-  // written in 4 stages, then the GUI showed 실행 전 / (초안 없음) while the response was
-  // still being generated).
-  // The results panel is allowed to keep showing the draft, but the value the plugin exposes
-  // (getRuntime) and the debug export must not carry it: that is what the request-local purge
-  // contract pins down (tests/gradia/evidence-bridge.test.cjs).
+  const resetGuiExecutionResults = () => {
+    guiExecutionResults.traces = [];
+    guiExecutionResults.archived = false;
+    Runtime.lastDraftArchive = null;
+  };
+  // Preserve each stage's display data before request-local cleanup. Prompts and raw
+  // provider responses are excluded; public runtime/debug snapshots keep only the summary.
   const archiveDraftBeforePurge = () => {
     const draft = text(Runtime.finalDraft || '');
-    const traces = Array.isArray(Runtime.stageTrace) ? Runtime.stageTrace : [];
+    const traces = guiExecutionResults.traces.length ? guiExecutionResults.traces
+      : (Array.isArray(Runtime.stageTrace) ? Runtime.stageTrace : []);
     const stageDrafts = Runtime.lastCompletedDraftSet && typeof Runtime.lastCompletedDraftSet === 'object'
       ? Object.keys(Runtime.lastCompletedDraftSet).length : 0;
     if (!draft && !traces.length) return;
+    guiExecutionResults.traces = traces.map(executionResultTrace);
+    guiExecutionResults.archived = true;
     Runtime.lastDraftArchive = {
       at: Date.now(),
       draft,
@@ -3765,7 +3770,7 @@ ${BIANCA_PERSONA_TEXT}`;
       stages: traces.map(trace => ({
         stage: text(trace?.stage || ''),
         ok: trace?.ok === true,
-        fallback: trace?.fallback === true || trace?.parsed?.fallback === true,
+        fallback: trace?.fallback === true || !!trace?.fallbackStage || trace?.parsed?.fallback === true,
         skipped: trace?.skipped === true || trace?.parsed?.skipped === true,
         elapsedMs: Number(trace?.elapsedMs || 0),
         model: text(trace?.model || ''),
@@ -3817,8 +3822,8 @@ ${BIANCA_PERSONA_TEXT}`;
       o.checkMaxMs = Math.max(o.checkMaxMs, clampedMs);
     }
   };
-  // Per evidence request: at most this many stall/length recoveries (see beforeModel), so the
-  // whole request stays within (stage calls + this) x stage timeout.
+  // Transport recovery is capped independently of one compact mandatory-analysis recovery
+  // per heavyweight AIDE. Neither path can re-open an evidence read or retry a draft repair.
   const LIB_EVIDENCE_MAX_RECOVERIES = 2;
   const libEvidenceBudget = (settings = {}) => {
     const profile = normalizeChoice(settings.quickProfile || 'balanced', QUICK_PROFILE_IDS, 'balanced');
@@ -4516,7 +4521,7 @@ ${BIANCA_PERSONA_TEXT}`;
     }
     if (session.status !== 'ready') return { ...session, close() {} };
     const budgetMeter = createGradiaModelContextBudget({ digest: libReadSha256 });
-    const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
+    const run = { status: 'ready', purpose: 'response', evidenceBudget: libEvidenceBudget(settings), evidencePacket: null, evidencePrefix: '', budgetProfile: null, budgetWitness: null, budgetEnvelope: null, signal: controller.signal, block: '', consumed: false, failed: '', calls: new Set(), recoveries: new Set(), analysisRecoveries: new Set(), attempt: null, stageViews: new Map(), dispatchCount: 0, verifiedAt: Date.now(), verifiedDispatch: 0,
       fail(code, cause) { this.failed = code; this.budgetWitness = null; this.budgetEnvelope = null; this.modelSelection = null; this.evidencePacket = null; this.block = ''; this.expectedUser = ''; this.expectedSystem = ''; this.stageViews.clear(); controller.abort(); session.invalidate(code); if (activeLibEvidenceRun === this) { purgeLibEvidenceRuntime(); } return libEvidenceError(code, cause); },
       assertRunCurrent() {
         if (this.failed) throw libEvidenceError(this.failed);
@@ -4567,6 +4572,15 @@ ${BIANCA_PERSONA_TEXT}`;
       // re-admitted through assertPayload/assertDispatch like any other call.
       async beforeModel(stage, phase, recovery = '') {
         await this.assertCurrent();
+        if (recovery === 'analysis') {
+          if (phase !== 'analysis' || normalizeMultiPipelineMode(settings.multiPipelineMode) !== 'heavyweight'
+            || !CORE_AIDE_STAGE_IDS.includes(stage) || !this.calls.has(`${stage}:analysis`)
+            || this.analysisRecoveries.has(stage)) throw this.fail('LIB_READ_RETRY_DISABLED');
+          // Re-analyze the same input and draft using a compact contract, never the
+          // rejected output. The immutable packet is re-admitted at dispatch as usual.
+          this.analysisRecoveries.add(stage);
+          return;
+        }
         if (recovery) {
           const base = `${stage}:${phase}`, key = `${base}:${recovery}`;
           if (!['stall', 'length'].includes(recovery) || this.recoveries.has(key) || this.recoveries.size >= LIB_EVIDENCE_MAX_RECOVERIES
@@ -19780,7 +19794,7 @@ ${passage.text || ''}`, 420));
     const telemetry = ensureCallTelemetry(settings, stageName === INPUT_ASSIST_STAGE_ID ? 'input_assist' : 'pipeline');
     if (options.telemetryLogicalCallId) return options.telemetryLogicalCallId;
     const id = `${telemetry.runId}:logical:${telemetry.actualLogicalCalls + 1}`;
-    const recovery = promptPhase === 'repair' || promptPhase === 'reconstruction';
+    const recovery = promptPhase === 'repair' || promptPhase === 'reconstruction' || options.evidenceRecovery === 'analysis';
     telemetry.actualLogicalCalls += 1;
     if (recovery) telemetry.recoveryLogicalCalls += 1;
     telemetry.logicalCalls.push({ id, stage: stageName, promptPhase, recovery, startedAt: Date.now(), status: 'running' });
@@ -19845,9 +19859,8 @@ ${passage.text || ''}`, 420));
     const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
     if (evidenceRun) {
       await evidenceRun.assertCurrent({ coalesce: true });
-      // An evidence run sends no repair request. The draft-pipeline caller handles
-      // the refusal like a failed repair, so SHADOW fails closed and an AIDE keeps
-      // the previous draft, without invalidating the evidence session.
+      // Draft repair requests remain disabled. Mandatory AIDE analysis has its own
+      // bounded 'analysis' recovery route, checked by beforeModel below.
       if (isDraftPipelineStage(stageName)
         && normalizePromptExecutionPhase(options.promptPhase || options.phase || (options.jsonMode ? 'analysis' : 'draft')) === 'repair') {
         return { ok: false, skipped: true, reason: 'evidence_repair_disabled', presetName: '' };
@@ -19958,7 +19971,7 @@ ${passage.text || ''}`, 420));
       const dispatchDeadlineMs = Number(preset.timeout_ms || DEFAULT_STAGE_TIMEOUT_MS) + 5000;
       let dispatchTimer = null;
       result = evidenceRun
-        ? await evidenceRun.guardModel(dispatch, preset.timeout_ms, { stallRetryable: !options.evidenceStallRetry && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES })
+        ? await evidenceRun.guardModel(dispatch, preset.timeout_ms, { stallRetryable: !options.evidenceAnalysisRetry && !options.evidenceStallRetry && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES })
         : await Promise.race([dispatch(), new Promise((_, reject) => {
           dispatchTimer = setTimeout(() => reject(Object.assign(new Error(`${stageName} provider request timed out after ${dispatchDeadlineMs}ms`), { code: 'PROVIDER_REQUEST_TIMEOUT' })), dispatchDeadlineMs);
         })]).finally(() => clearTimeout(dispatchTimer));
@@ -20149,7 +20162,7 @@ ${passage.text || ''}`, 420));
     const lengthLimit = providerLengthLimitInfo(result.finishReason) || unreportedJsonTruncation;
     if (evidenceRun) {
       await evidenceRun.assertCurrent({ coalesce: true });
-      if (result.content && lengthLimit && !lengthLimit.unreported && !options.lengthLimitRetry && !options.evidenceLengthRetry) {
+      if (result.content && lengthLimit && !lengthLimit.unreported && !options.lengthLimitRetry && !options.evidenceLengthRetry && !options.evidenceAnalysisRetry) {
         // Only a provider-reported length stop (the output budget was too small). The truncated
         // response is discarded, never reused; the same prompts and evidence are sent once more
         // with a larger output budget, re-admitted by the context budget gate. Malformed output
@@ -20170,8 +20183,8 @@ ${passage.text || ''}`, 420));
         }
       }
       if (lengthLimit || !result.content) {
-        // An incomplete AIDE response is discarded without a resend; the AIDE keeps
-        // the previous same-turn draft. SHADOW has no previous draft and fails closed.
+        // Discard incomplete output. A heavyweight AIDE caller may request one compact
+        // mandatory analysis; other failures keep its previous draft. SHADOW fails closed.
         if (!CORE_AIDE_STAGE_IDS.includes(stageName)) throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
         finishTelemetryLogicalCall(telemetryLogicalCallId, 'failed_truncated');
         return {
@@ -20180,7 +20193,9 @@ ${passage.text || ''}`, 420));
           presetName: name,
           provider,
           model: result.model || preset.model,
-          finishReason: result.finishReason || ''
+          finishReason: result.finishReason || '',
+          incompleteReason: lengthLimit?.reason || 'empty',
+          usage: result.usage || null
         };
       }
     }
@@ -24115,7 +24130,26 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     };
   };
 
+  const executionResultTrace = entry => JSON.parse(JSON.stringify({
+    at: entry.at || Date.now(),
+    stage: entry.stage,
+    ok: entry.ok === true,
+    skipped: entry.skipped === true,
+    fallback: entry.fallback === true,
+    reason: entry.reason || '',
+    elapsedMs: Number(entry.elapsedMs || 0),
+    model: entry.model || '',
+    parsed: entry.parsed ? publicStageView(entry.parsed) : null,
+    fallbackStage: entry.fallbackStage ? publicStageView(entry.fallbackStage) : null,
+    materialsUsed: entry.materialsUsed
+      || (entry.stage === INPUT_ASSIST_STAGE_ID ? Runtime.lastInputAssistMaterialUsage : null)
+      || Runtime.lastRisuContext?.stages?.[entry.stage]?.materialsUsed
+      || null
+  }));
   const recordStageTrace = (entry) => {
+    guiExecutionResults.traces.push(executionResultTrace(entry));
+    if (guiExecutionResults.traces.length > 32) guiExecutionResults.traces.splice(0, guiExecutionResults.traces.length - 32);
+    scheduleGuiTraceRefresh();
     if (activeLibEvidenceRun && entry.stage !== INPUT_ASSIST_STAGE_ID) return;
     Runtime.stageTrace.push({
       at: Date.now(),
@@ -24154,7 +24188,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       fallbackStage: entry.fallbackStage ? publicStageView(entry.fallbackStage) : null
     });
     if (Runtime.stageTrace.length > 32) Runtime.stageTrace.splice(0, Runtime.stageTrace.length - 32);
-    scheduleGuiTraceRefresh();
   };
 
   const renderPromptTemplate = (template, vars) => String(template || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => text(vars[key] ?? ''));
@@ -24522,6 +24555,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     isPlayerControlledDraftMode(settings)
       ? '- When supplied evidence is insufficient, preserve observable uncertainty instead of inventing the player character’s hidden feeling/consent/knowledge or pretending unsupported causality is already established.'
       : '- In Novel mode, distinguish pre-existing evidence from newly authored current-scene fiction. You may create character interiority/decisions consistent with author direction and canon, but do not mislabel newly invented material as historical fact or known evidence.'
+  ].join('\n');
+
+  const buildAnatomicalFeasibilityContract = (settings = {}) => [
+    'ANATOMICAL AND SPATIAL FEASIBILITY — HARD CONDITION:',
+    '- Before writing or accepting each physical beat, privately track actor, limb and side, posture, support, reach, contact, grip, and occupied space. Carry these states across beats, turns, and AIDE edits until an explicit action changes them.',
+    '- Check the established number of limbs, joint range, body orientation, balance, distance, barriers, and object geometry. Reject extra hands, swapped limb ownership, impossible bends or reach, and movement that ignores an obstacle or required support.',
+    '- Respect clearance and simultaneous capacity: if an opening admits only one hand and one hand is already inside, a second hand cannot enter while the first remains there. The same rule applies to narrow passages, containers, body contact, and shared working space; do not silently enlarge or empty them.',
+    '- Show withdrawal, release, regripping, repositioning, or an established change in geometry BEFORE the incompatible next action. A hand holding a necessary grip or supporting weight cannot also perform an incompatible action. Compatible multitasking is allowed when the actual grip, reach, and space permit it.',
+    '- This is a shared condition for Character, World, and Plot AIDEs. World AIDE should prioritize mechanical and spatial defects; every AIDE must preserve physical feasibility while making its own domain edits. Recheck each insertion, replacement, or replace_draft together with unchanged neighboring beats and all simultaneous contacts. Repair the smallest connected span needed; never fix one action by breaking the next.',
+    '- Use nonhuman anatomy, prostheses, flexible materials, or supernatural mechanics only when explicitly established by the user or canon. Never invent an exception to force an impossible move. With uncertain dimensions, avoid unsupported precision and choose a feasible permitted action or leave its completion unresolved.',
+    isPlayerControlledDraftMode(settings)
+      ? '- PLAYER-CONTROLLED RP: preserve the player\'s stated intent. An attempted movement does not prove success through a physical obstruction. Do not invent an unperformed player withdrawal, release, relocation, or new choice to repair NPC/world staging; repair the NPC/world action or stop before the impossible step.'
+      : '- In Novel mode, narrate any needed release, withdrawal, or posture transition inside the current scene and its existing response boundary, preserving explicit author-fixed actions and reservations. Do not turn an attempted action into an impossible completed configuration.',
+    '- Keep this feasibility ledger private. In analysis, report material contradictions and concrete repairs through the existing constraints, risks, and rewrite_directives fields. In prose, show natural physical transitions, not a checklist, anatomy lecture, or invented measurement.'
   ].join('\n');
 
   // Clothing and place are state, not scenery: a coat taken off in an earlier beat stays off, and a
@@ -24993,6 +25040,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : '';
     const nsfwGuidance = buildNsfwGuidanceBlock(settings, 'writing');
     const biancaInjection = buildBiancaInjectionBlock(settings, 'writing');
+    const anatomicalFeasibility = buildAnatomicalFeasibilityContract(settings);
     const constraintBlock = stageName === 'shadow_act' ? '' : buildConstraintBlock(ledger, stageName);
     const arcControl = recent?.arcDirector || Runtime.arcDirector;
     const arcAudience = arcContinuityAudienceForStage(stageName);
@@ -25003,7 +25051,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : (arcControl, arcAudience, '');
     const blockParts = {
       stylePack, authorNoteAuthority, playerAgencyLedger, arcDirectorBrief, shadowDraftBridge,
-      sameTurnLock, shadowModeInheritance, lengthGuide, nsfwGuidance, biancaInjection, constraintBlock
+      sameTurnLock, shadowModeInheritance, lengthGuide, nsfwGuidance, biancaInjection, anatomicalFeasibility, constraintBlock
     };
     try {
       Runtime.promptBlocks = {
@@ -25022,6 +25070,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       buildLivingCanonAuthorityContract(settings),
       authorNoteAuthority,
       buildPhysicalRoleLedgerContract(settings),
+      anatomicalFeasibility,
       buildWardrobeContinuityContract(),
       buildLocationContinuityContract(),
       playerAgencyLedger,
@@ -25367,6 +25416,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       buildLivingCanonAuthorityContract(settings),
       authorNoteAuthority,
       buildPhysicalRoleLedgerContract(settings),
+      buildAnatomicalFeasibilityContract(settings),
       buildWardrobeContinuityContract(),
       buildLocationContinuityContract(),
       playerAgencyLedger,
@@ -25910,6 +25960,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       task: 'Repair a failed mandatory private RP analysis response from the compact evidence only.',
       hardConstraints: [
         buildHardResponseInvariantBlock(settings),
+        buildAnatomicalFeasibilityContract(settings),
         stageName === 'shadow_act' ? shadowDraftModeContract(settings, 'analysis') : shadowDraftModeAideInheritanceContract(settings, stageName, 'analysis'),
         isPlayerControlledDraftMode(settings)
           ? 'Do not write RP prose, explain the repair, or invent hidden causality, knowledge, consent, feelings, exact values, completed outcomes, or new player behavior.'
@@ -25940,15 +25991,29 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return { system: compiled.text, user };
   };
 
-  const retryMandatoryAnalysis = async (settings, stageName, prompts, recent = {}, previous = null) => {
+  const retryMandatoryAnalysis = async (settings, stageName, prompts, recent = {}, previous = null, initialResult = null) => {
+    const evidenceRun = settings?.[LIB_EVIDENCE_CONTEXT];
+    if (evidenceRun) {
+      await evidenceRun.assertCurrent({ coalesce: true });
+      if (normalizeMultiPipelineMode(settings.multiPipelineMode) !== 'heavyweight'
+        || !CORE_AIDE_STAGE_IDS.includes(stageName) || evidenceRun.analysisRecoveries.has(stageName)) {
+        // Preserve the real provider/contract failure when no recovery is authorized.
+        return {result:initialResult,analysis:null,
+          system:initialResult?.effectiveSystemPrompt || prompts.system,
+          user:initialResult?.effectiveUserPrompt || prompts.user};
+      }
+    }
     const shadowMinimumBeats = stageName === 'shadow_act'
       ? shadowRequiredAnalysisBeatCount(settings)
       : 0;
     const corrective = buildCompactMandatoryAnalysisRetryPrompts(settings, stageName, prompts, recent, previous);
+    const retryTokens = Math.max(MAX_ANALYSIS_RETRY_OUTPUT_TOKENS, shadowMinimumBeats * 420);
     const result = await callLLMWithPreset(settings, stageName, corrective.system, corrective.user, {
-      maxTokens: Math.max(MAX_ANALYSIS_RETRY_OUTPUT_TOKENS, shadowMinimumBeats * 420),
+      maxTokens: evidenceRun ? Math.min(retryTokens,
+        clampInt(resolvePreset(settings,stageName).preset?.max_tokens,64,200000,DEFAULT_MAX_STAGE_TOKENS)) : retryTokens,
       temp: 0.1,
-      promptPhase: 'repair',
+      promptPhase: evidenceRun ? 'analysis' : 'repair',
+      ...(evidenceRun ? {evidenceRecovery:'analysis',evidenceAnalysisRetry:true,telemetryRetryKind:'analysis_compact'} : {}),
       jsonMode: true,
       jsonSchema: analysisJsonSchemaForStage(stageName),
       jsonSchemaName: `gradia_${stageName}_analysis_retry`
@@ -26319,7 +26384,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         }
       }
       if (!hasMeaningfulAnalysisResult(analysis, stageName, settings)) {
-        const retriedAnalysis = await retryMandatoryAnalysis(settings, stageName, analysisPrompts, recent, previous);
+        const retriedAnalysis = await retryMandatoryAnalysis(settings, stageName, analysisPrompts, recent, previous, analysisResult);
         analysisResult = retriedAnalysis.result;
         analysis = retriedAnalysis.analysis;
         lastPrompts = { system: retriedAnalysis.system, user: retriedAnalysis.user };
@@ -26774,6 +26839,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       task: systemParts.slice(0, 8),
       hardConstraints: [
         buildHardResponseInvariantBlock(settings),
+        buildAnatomicalFeasibilityContract(settings),
         buildWardrobeContinuityContract(),
         buildLocationContinuityContract(),
         ...systemParts.slice(8).filter(line => !line.startsWith('Return one valid JSON object only:'))
@@ -27194,7 +27260,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         }
       }
       if (!hasMeaningfulAnalysisResult(analysis, stageName, settings)) {
-        const retriedAnalysis = await retryMandatoryAnalysis(settings, stageName, analysisPrompts, recent, previous);
+        const retriedAnalysis = await retryMandatoryAnalysis(settings, stageName, analysisPrompts, recent, previous, analysisResult);
         analysisResult = retriedAnalysis.result;
         analysis = retriedAnalysis.analysis;
         effectiveAnalysisSystem = retriedAnalysis.system;
@@ -27531,6 +27597,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     '- A lower tier may not overwrite a higher tier. Missing supporting detail is not a conflict. On a direct conflict, repair only the smallest conflicting span and preserve the rest of the candidate.',
     '[CANDIDATE SEMANTIC LOCK]',
     '- Preserve the supported actors, actions, targets, modality, outcomes, causal order, positions, knowledge paths, unresolved choices, scene function, and terminal handoff.',
+    '- ANATOMICAL FEASIBILITY — PRESERVE REPAIRS: keep established limb use, posture, support, contact, clearance, and occupied-space limits. Never reintroduce an impossible simultaneous action or put a second hand into a one-hand opening while the first remains inside. Preserve the withdrawal or repositioning that made the candidate possible.',
     '- The candidate terminal beat is the latest permitted story moment. Do not add an event, reaction, consequence, discovery, transition, aftermath, or sequel after it.'
   ].join('\n');
 
@@ -38173,6 +38240,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       messages: Array.isArray(messages) ? messages.slice() : []
     };
     Runtime.stageTrace = [];
+    resetGuiExecutionResults();
     if (
       settings.inputAssistMode !== 'off'
       && Runtime.lastInputAssist?.trace
@@ -38919,6 +38987,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           } : null
         };
         Runtime.stageTrace = [];
+        resetGuiExecutionResults();
         if (inputTrace) recordStageTrace(inputTrace);
         Runtime.lastInjection = '';
         Runtime.lastFinalOverlayMeta = null;
@@ -39098,8 +39167,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Runtime.inFlight = true;
     scheduleGuiTraceRefresh();
     Runtime.runs += 1;
-    // 이전 요청의 요약이 새 요청의 결과처럼 보이면 안 된다.
-    Runtime.lastDraftArchive = null;
+    // 이전 요청의 결과가 새 요청의 결과처럼 보이면 안 된다.
+    resetGuiExecutionResults();
     Runtime.lastProviderRequest = null;
     Runtime.lastProviderResponse = null;
     Runtime.lastProviderError = null;
@@ -41518,7 +41587,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for (let i = (traces || []).length - 1; i >= 0; i -= 1) {
       if (traces[i]?.stage === stageId) return traces[i];
     }
-    // After the request-local purge the live trace is gone; the archive still knows what ran.
+    for (let i = guiExecutionResults.traces.length - 1; i >= 0; i -= 1) {
+      if (guiExecutionResults.traces[i]?.stage === stageId) {
+        return { ...guiExecutionResults.traces[i], archived: guiExecutionResults.archived };
+      }
+    }
+    // Compatibility for a summary-only archive.
     const archived = (Runtime.lastDraftArchive?.stages || []).find(row => row.stage === stageId);
     if (!archived) return null;
     return {
@@ -41569,7 +41643,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 
   const executionResultTracesForStage = stageId =>
-    (Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
+    (guiExecutionResults.traces.length ? guiExecutionResults.traces : Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
 
   const executionResultAnalysisParts = parsed => {
     const twoCall = parsed?.twoCallAnalysis && typeof parsed.twoCallAnalysis === 'object'
@@ -44029,7 +44103,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     ].filter(Boolean);
   };
   const resultsAideView = trace => {
-    const parsed = trace?.parsed && typeof trace.parsed === 'object' ? trace.parsed : null;
+    const stage = trace?.parsed || trace?.fallbackStage;
+    const parsed = stage && typeof stage === 'object' ? stage : null;
     if (!parsed) return guiEl('p', { class: 'gx-empty', text: trace ? text(trace.reason || '분석 기록 없음') : '실행 기록 없음' });
     const { analysis, directives } = executionResultAnalysisParts(parsed);
     const edits = Array.isArray(parsed.edits) ? parsed.edits : [];
@@ -44060,7 +44135,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     mockupRefreshStatus();
     // Replace the mockup's example execution rows and results with actual product trace data.
     const recent=app.querySelector('[data-page="home"] .list');
-    if(recent){recent.replaceChildren();const traces=(Runtime.stageTrace||[]).slice(-4).reverse();traces.forEach(trace=>{const row=mockupNode('div','row');const info=traceStateInfo(trace);const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',STAGE_DEF_MAP[trace.stage]?.label||trace.stage||'요청'),mockupNode('div','row__meta',info.label));row.append(mockupNode('i','',info.label),copy,mockupNode('span','hint',info.elapsed||''));recent.append(row);});if(!traces.length)recent.append(mockupNode('div','empty','실행 기록이 없습니다.'));}
+    if(recent){recent.replaceChildren();const traces=(guiExecutionResults.traces.length?guiExecutionResults.traces:Runtime.stageTrace||[]).slice(-4).reverse();traces.forEach(trace=>{const row=mockupNode('div','row');const info=traceStateInfo(trace);const copy=mockupNode('div','');copy.append(mockupNode('div','row__title',STAGE_DEF_MAP[trace.stage]?.label||trace.stage||'요청'),mockupNode('div','row__meta',info.label));row.append(mockupNode('i','',info.label),copy,mockupNode('span','hint',info.elapsed||''));recent.append(row);});if(!traces.length)recent.append(mockupNode('div','empty','실행 기록이 없습니다.'));}
     const results=app.querySelector('[data-page="results"]');
     if(results){
       const assist=Runtime.lastInputAssist;
@@ -44070,12 +44145,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const shadow=latestTraceForStage('shadow_act'),usage=stageMaterialUsageForDisplay('shadow_act',shadow),shadowPanel=results.querySelector('[data-subpanel="s"]');
       if(shadowPanel){
         const info=traceStateInfo(shadow);
-        // 정리(purge) 뒤에는 본문을 보관하지 않는 계약이라, 무엇이 작성됐는지만 요약해 보여준다.
+        // Prefer SHADOW ACT's own draft, including its UI copy after request cleanup.
         const archive = Runtime.lastDraftArchive;
-        const draftToShow = shadow?.parsed?.draft || Runtime.lastSafeStage?.draft || Runtime.finalDraft
-          || archive?.draft
+        const draftToShow = shadow?.parsed?.draft || shadow?.fallbackStage?.draft
+          || (!Runtime.inFlight ? Runtime.lastSafeStage?.draft || Runtime.finalDraft || archive?.draft
           || (archive ? `본문은 응답 모델 전달 후 정리됨 · ${Number(archive.chars || 0).toLocaleString()}자 · `
-            + `${(archive.stages || []).filter(row => row.ok).length}/${(archive.stages || []).length}단계 완료` : '');
+            + `${(archive.stages || []).filter(row => row.ok).length}/${(archive.stages || []).length}단계 완료` : '') : '');
         shadowPanel.replaceChildren(guiEl('div',{class:'gx-results'},[
           guiEl('div',{class:'gx-col'},[
             guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'SHADOW ACT'}),guiEl('span',{class:'gx-meta',text:info.label+(info.elapsed?' · '+info.elapsed:'')+(shadow?.model?' · '+shadow.model:'')+(shadow?.archived?' · 지난 요청':'')})]),

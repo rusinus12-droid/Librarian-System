@@ -136,11 +136,13 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     delete clean.maxWindowsPerStep;
     delete clean.incremental;
     delete clean.resume;
-    const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, pageBytes: 8192, ...clean };
-    for (const [key,min,max] of [['limit',1,50],['nodeLimit',1,8192],['maxWindows',1,128],['maxSerializedBytes',65536,8388608],['pageBytes',512,16384]]) {
+    // On-disk adjacency/posting/dependency tables have their own ceiling; they
+    // are larger than the graph. The shared in-memory resource caps still apply.
+    const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, maxIndexBytes: 16777216, pageBytes: 8192, ...clean };
+    for (const [key,min,max] of [['limit',1,50],['nodeLimit',1,8192],['maxWindows',1,128],['maxSerializedBytes',65536,8388608],['maxIndexBytes',65536,67108864],['pageBytes',512,16384]]) {
       if (!Number.isSafeInteger(value[key]) || value[key] < min || value[key] > max) fail('policy_invalid');
     }
-    if (Object.keys(value).some(key => !['limit','nodeLimit','maxWindows','maxSerializedBytes','pageBytes'].includes(key))) fail('policy_invalid');
+    if (Object.keys(value).some(key => !['limit','nodeLimit','maxWindows','maxSerializedBytes','maxIndexBytes','pageBytes'].includes(key))) fail('policy_invalid');
     if (input?.maxWindowsPerStep !== undefined) {
       if (!Number.isSafeInteger(input.maxWindowsPerStep) || input.maxWindowsPerStep < 1 || input.maxWindowsPerStep > value.maxWindows) {
         fail('policy_invalid');
@@ -1061,7 +1063,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       if (root?.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) return null;
       const manifestRaw = await owner.read(root.manifestKey); owner.check();
       if (typeof manifestRaw !== 'string' || hash(manifestRaw) !== root.digest) return null;
-      const manifest = await parse(manifestRaw, 131072, owner.resources);
+      const manifest = await parse(manifestRaw, 8388608, owner.resources);
       if (!same(manifest.frame, startGraph.readerFrame)
         || manifest.config?.limit !== config.limit
         || manifest.config?.nodeLimit !== config.nodeLimit
@@ -1189,7 +1191,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           const page = pages.page({ units: [] }, { partition: loc.partition, generation, pool: 'units', offset: 0, pageBytes: config.pageBytes });
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
-          if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
           const wasReused = await immutable(owner, key, text);
           if (wasReused) reusedPageCount++; else writtenPageCount++;
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
@@ -1210,7 +1212,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               if (page.nextOffset === subOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               const wasReused = await immutable(owner, key, text);
               if (wasReused) reusedPageCount++; else writtenPageCount++;
               refs.push({
@@ -1237,7 +1239,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               if (page.nextOffset === partOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               const wasReused = await immutable(owner, key, text);
               if (wasReused) reusedPageCount++; else writtenPageCount++;
               const isFirstPart = partOffset === 0;
@@ -1338,7 +1340,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
         sourceProofs, semanticDirectory, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
-      pages.measure(manifest, 131072);
+      pages.measure(manifest, config.maxSerializedBytes);
       owner.resources?.retain(manifest,'publication_manifest',2);
       const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
       await immutable(owner, key, raw);
@@ -1388,9 +1390,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     if (rootRaw === null) return null;
     const root = await parse(rootRaw, 2048, owner.resources);
     if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
-    const raw = await owner.read(root.manifestKey), manifest = await parse(raw, 131072, owner.resources);
+    const raw = await owner.read(root.manifestKey), manifest = await parse(raw, 8388608, owner.resources);
     if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame, startGraph.readerFrame)
-      || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
+      || !Array.isArray(manifest.refs) || manifest.refs.length > 4096 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
     if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
     if (!validSourceProofSummary(manifest.sourceProofs, loc, manifest.windows.length)) fail('manifest_invalid');
@@ -1423,7 +1425,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         fail('directory_invalid');
       }
       counts[ref.table] += ref.rows;
-      total += ref.bytes; if (total > config.maxSerializedBytes) fail('index_budget');
+      total += ref.bytes; if (total > config.maxIndexBytes) fail('index_budget');
     }
     for (const table of tables) {
       if (splitTracker[table] !== null) fail('directory_invalid');

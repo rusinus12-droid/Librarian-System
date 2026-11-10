@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v2.6.38
+//@display-name LIBRA v2.6.40
 //@api 3.0
-//@version 2.6.38
+//@version 2.6.40
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '2.6.38';
+  const PLUGIN_VERSION = '2.6.40';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -33748,6 +33748,7 @@ function createLibraReadonlySourceContext(owner) {
       recallRecencyWeight: DEFAULT_RECALL_RECENCY_WEIGHT,
       autoCatchUpEnabled: true,
       autoDurableIndex: true,
+      useDurableIndex: true,
       autoCatchUpMaxBatches: DEFAULT_AUTO_CATCHUP_MAX_BATCHES,
       storyArcEnabled: true,
       storyArcUpdateMode: 'derived',
@@ -35719,6 +35720,10 @@ function createLibraReadonlySourceContext(owner) {
       volatileState.dirty = true;
       volatileState.consecutiveSourceChangeRetries = 0;
       if (state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
+      if (state.memoryGraphCorpus && (/:(?:manifest|continuity-state|entity-registry)$/.test(String(storageKey))
+        || /:(?:micro-memory-head|state-corrections|state-worldline|lore-link-mapping):/.test(String(storageKey)))) {
+        scheduleDurableIndexBuild('owner_source_write',5000);
+      }
     };
 
     const memoryGraphSourceBudgets = new WeakMap();
@@ -35959,7 +35964,8 @@ function createLibraReadonlySourceContext(owner) {
           // Only explicitly opted-in, unpaid source preparation can restart.
           // A concurrent inventory/receipt publication invalidates its witness;
           // discard the entire frame and re-read, never waive the closing fence.
-          if(!options.retryTornRead||attempt>=2||state.disposed
+          const mayRetry = typeof options.retryTornRead === 'function' ? options.retryTornRead() : options.retryTornRead === true;
+          if(!mayRetry||attempt>=2||state.disposed
             ||String(error?.code||error?.message)!=='LIBRA_GRAPH_READER_BODY_CHANGED')throw error;
         }finally{frame.close();}
         await new Promise(resolve=>setTimeout(resolve,40*(attempt+1)));
@@ -37690,6 +37696,7 @@ function createLibraReadonlySourceContext(owner) {
         recallRecencyWeight: recallBlend.recency,
         autoCatchUpEnabled: source.autoCatchUpEnabled !== false,
         autoDurableIndex: source.autoDurableIndex !== false,
+        useDurableIndex: source.useDurableIndex !== false,
         autoCatchUpMaxBatches: Math.floor(clamp(source.autoCatchUpMaxBatches, 1, 6, DEFAULT_SETTINGS.autoCatchUpMaxBatches)),
         storyArcEnabled: source.storyArcEnabled !== false,
         storyArcUpdateMode: STORY_ARC_UPDATE_MODES.includes(string(source.storyArcUpdateMode || '').toLowerCase()) ? string(source.storyArcUpdateMode).toLowerCase() : DEFAULT_SETTINGS.storyArcUpdateMode,
@@ -47893,7 +47900,10 @@ function createLibraReadonlySourceContext(owner) {
       fail('input_invalid');
     }
 
-    resources?.retain(graph, 'index_compile_input', 4);
+    const workspace = resources?.scope?.();
+    let inputLease;
+    try {
+    inputLease = (workspace || resources)?.retain(graph, 'index_compile_input', 4);
     const normalizedGraph = {
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
@@ -48163,6 +48173,7 @@ function createLibraReadonlySourceContext(owner) {
       authority: 'descriptive_only',
       modelDispatchEligible: false
     });
+    } finally { if (workspace) workspace.close(); else inputLease?.release(); }
   };
 
   const affectedByChanges = (compiled, changedDependencyKeys = []) => {
@@ -48512,11 +48523,13 @@ function createLibraReadonlySourceContext(owner) {
     delete clean.maxWindowsPerStep;
     delete clean.incremental;
     delete clean.resume;
-    const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, pageBytes: 8192, ...clean };
-    for (const [key,min,max] of [['limit',1,50],['nodeLimit',1,8192],['maxWindows',1,128],['maxSerializedBytes',65536,8388608],['pageBytes',512,16384]]) {
+    // On-disk adjacency/posting/dependency tables have their own ceiling; they
+    // are larger than the graph. The shared in-memory resource caps still apply.
+    const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, maxIndexBytes: 16777216, pageBytes: 8192, ...clean };
+    for (const [key,min,max] of [['limit',1,50],['nodeLimit',1,8192],['maxWindows',1,128],['maxSerializedBytes',65536,8388608],['maxIndexBytes',65536,67108864],['pageBytes',512,16384]]) {
       if (!Number.isSafeInteger(value[key]) || value[key] < min || value[key] > max) fail('policy_invalid');
     }
-    if (Object.keys(value).some(key => !['limit','nodeLimit','maxWindows','maxSerializedBytes','pageBytes'].includes(key))) fail('policy_invalid');
+    if (Object.keys(value).some(key => !['limit','nodeLimit','maxWindows','maxSerializedBytes','maxIndexBytes','pageBytes'].includes(key))) fail('policy_invalid');
     if (input?.maxWindowsPerStep !== undefined) {
       if (!Number.isSafeInteger(input.maxWindowsPerStep) || input.maxWindowsPerStep < 1 || input.maxWindowsPerStep > value.maxWindows) {
         fail('policy_invalid');
@@ -49437,7 +49450,7 @@ function createLibraReadonlySourceContext(owner) {
       if (root?.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) return null;
       const manifestRaw = await owner.read(root.manifestKey); owner.check();
       if (typeof manifestRaw !== 'string' || hash(manifestRaw) !== root.digest) return null;
-      const manifest = await parse(manifestRaw, 131072, owner.resources);
+      const manifest = await parse(manifestRaw, 8388608, owner.resources);
       if (!same(manifest.frame, startGraph.readerFrame)
         || manifest.config?.limit !== config.limit
         || manifest.config?.nodeLimit !== config.nodeLimit
@@ -49565,7 +49578,7 @@ function createLibraReadonlySourceContext(owner) {
           const page = pages.page({ units: [] }, { partition: loc.partition, generation, pool: 'units', offset: 0, pageBytes: config.pageBytes });
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
-          if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
           const wasReused = await immutable(owner, key, text);
           if (wasReused) reusedPageCount++; else writtenPageCount++;
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
@@ -49586,7 +49599,7 @@ function createLibraReadonlySourceContext(owner) {
               if (page.nextOffset === subOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               const wasReused = await immutable(owner, key, text);
               if (wasReused) reusedPageCount++; else writtenPageCount++;
               refs.push({
@@ -49613,7 +49626,7 @@ function createLibraReadonlySourceContext(owner) {
               if (page.nextOffset === partOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxSerializedBytes || refs.length >= 512) fail('index_budget');
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               const wasReused = await immutable(owner, key, text);
               if (wasReused) reusedPageCount++; else writtenPageCount++;
               const isFirstPart = partOffset === 0;
@@ -49714,7 +49727,7 @@ function createLibraReadonlySourceContext(owner) {
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
         sourceProofs, semanticDirectory, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
-      pages.measure(manifest, 131072);
+      pages.measure(manifest, config.maxSerializedBytes);
       owner.resources?.retain(manifest,'publication_manifest',2);
       const raw = JSON.stringify(manifest), digest = hash(raw), key = loc.prefix + 'manifest:' + digest;
       await immutable(owner, key, raw);
@@ -49764,9 +49777,9 @@ function createLibraReadonlySourceContext(owner) {
     if (rootRaw === null) return null;
     const root = await parse(rootRaw, 2048, owner.resources);
     if (root.schema !== schema || !/^[a-f0-9]{64}$/.test(root.digest) || root.manifestKey !== loc.prefix + 'manifest:' + root.digest) fail('root_invalid');
-    const raw = await owner.read(root.manifestKey), manifest = await parse(raw, 131072, owner.resources);
+    const raw = await owner.read(root.manifestKey), manifest = await parse(raw, 8388608, owner.resources);
     if (hash(raw) !== root.digest || manifest.schema !== schema || !same(manifest.frame, startGraph.readerFrame)
-      || !Array.isArray(manifest.refs) || manifest.refs.length > 512 || !Array.isArray(manifest.windows)
+      || !Array.isArray(manifest.refs) || manifest.refs.length > 4096 || !Array.isArray(manifest.windows)
       || manifest.windows.length < 1 || manifest.windows.length > 128) fail('manifest_invalid');
     if (manifest.routingVersion !== undefined && manifest.routingVersion !== routingVersion) fail('routing_invalid');
     if (!validSourceProofSummary(manifest.sourceProofs, loc, manifest.windows.length)) fail('manifest_invalid');
@@ -49799,7 +49812,7 @@ function createLibraReadonlySourceContext(owner) {
         fail('directory_invalid');
       }
       counts[ref.table] += ref.rows;
-      total += ref.bytes; if (total > config.maxSerializedBytes) fail('index_budget');
+      total += ref.bytes; if (total > config.maxIndexBytes) fail('index_budget');
     }
     for (const table of tables) {
       if (splitTracker[table] !== null) fail('directory_invalid');
@@ -60086,6 +60099,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       let analysis = work.result;
       if (!analysis) {
+        options.onInvocationPrepared?.();
         let inventory = null;
         try {
           const saved = await readPersonSpanInventory(scope, worldlineId, sessionEpoch, turn);
@@ -60165,8 +60179,24 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...micro, attemptId:string(work.attemptId||''),
         personInventoryStatus, personInventoryError };
     };
-    const produceMicroForTurn=(scope,worldlineId,sessionEpoch,turn,expectedRevisionId='',options={})=>withBackgroundReadJob(scope,
-      observed=>produceMicroForTurnImpl(observed,worldlineId,sessionEpoch,turn,expectedRevisionId,options));
+    const produceMicroForTurn=async(scope,worldlineId,sessionEpoch,turn,expectedRevisionId='',options={})=>{
+      let invocationPrepared=false;
+      try {
+        return await withBackgroundReadJob(scope,
+          observed=>produceMicroForTurnImpl(observed,worldlineId,sessionEpoch,turn,expectedRevisionId,
+            {...options,onInvocationPrepared:()=>{invocationPrepared=true;}}),
+          {retryTornRead:()=>!invocationPrepared});
+      }catch(error){
+        if(!invocationPrepared||String(error?.code||error?.message)!=='LIBRA_GRAPH_READER_BODY_CHANGED')throw error;
+        // A provider call may already have happened. Only resume a durable
+        // result's publication; publishOnly cannot dispatch another analysis.
+        const repaired=await withBackgroundReadJob(scope,
+          observed=>produceMicroForTurnImpl(observed,worldlineId,sessionEpoch,turn,expectedRevisionId,
+            {...options,publishOnly:true}),{retryTornRead:true});
+        return repaired?.reason==='publish_result_not_ready'
+          ? {status:'pending_reconciliation',reason:'micro_result_not_durably_ready'} : repaired;
+      }
+    };
     const memoryReviewKey=(scope,worldline)=>`${PREFIX}:scope:${scope.scopeKey}:memory-review:v1:${worldline}`;
     const memoryReviewId=(kind,record,index)=>`${kind}:${digest([record.scopeKey,record.sourceDigest,record.analysisRevisionId||record.artifactDigest,index])}`;
     const readMemoryReviewPolicy=async(scope,worldline)=>{
@@ -67760,7 +67790,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
               ? 'micro_analysis_unavailable_source_only' : ''),
             stateAdmission: clone(result?.stateAdmission || null) };
           if (result?.status === 'verified') scheduleCurrentStateSnapshotRefresh(scope);
-          if (result?.status === 'verified' && state.memoryGraphCorpus) scheduleVolatileMemoryGraphCorpus();
+          if (result?.status === 'verified' && state.memoryGraphCorpus) {
+            scheduleVolatileMemoryGraphCorpus();
+            scheduleDurableIndexBuild('micro_commit',5000);
+          }
           if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
         }).catch(error => {
@@ -72788,7 +72821,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           injectedMemories: 0,
           blockChars: 0,
           error: compact(error?.message || error, 700),
-          errorCode: string(error?.code || ''),
+          errorCode: string(error?.code || (error?.message === 'server_maintenance_in_progress' ? 'LIBRA_STORAGE_MAINTENANCE'
+            : /^LIBRA_GRAPH_[A-Z_]+$/.test(string(error?.message || '')) ? error.message : '')),
           ...(error?.responseBoundary ? { responseBoundary: clone(error.responseBoundary) } : {}),
           ...(error?.readDiagnostic ? { admission: clone(error.readDiagnostic) } : {}),
           modePublicationStatus: string(error?.modePublicationStatus || ''),
@@ -76444,7 +76478,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(nodeLimit)) throw new Error('LIBRA_GRAPH_READER_OPTIONS_INVALID');
       const requestId = id('graph_reader');
       const sourceContext = collect || microOnly ? ownerReadonlySourceContext : readonlySourceContext;
-      let captured = null, graphIdentity = null, readFrame = null;
+      let captured = null, graphIdentity = null, readFrame = null, projectionInputs = null, projectionGraph = null, projectionReturned = false;
       try {
         captured = await sourceContext.capture({ requestId, durationMs: RECALL_REQUEST_BUDGET_MS });
         const request = { handle: captured.handle, requestId };
@@ -76599,14 +76633,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
           scope: 'request_local_reader_page', exhaustiveOwnerDeltaVerified: false };
         if (inventory.canonicalNextCursor) pending.canonical.push('canonical_pages_unread');
         if (inventory.microNextCursor) pending.micro.push('micro_pages_unread');
-        resources?.retain({ canonical, micro, registry, state: stateView || null, lore: allowedLore }, 'native_projection_inputs', 2);
+        projectionInputs = resources?.retain({ canonical, micro, registry, state: stateView || null, lore: allowedLore }, 'native_projection_inputs', 2);
         const graph = readers.project({ frame, registry: { key: key.entityRegistry(scope), record: registry }, canonical, micro,
           claimContracts: UNIFIED_CLAIMS,
           state: { key: key.continuityState(scope), revision: stableReferenceJson({ stateWorldline, correctionStore, basis: stateView?.head?.basis || null }),
             view: stateView, correctionKey: key.stateCorrections(scope), corrections: correctionJournal },
           lore: { entries: allowedLore.filter(entry => !hostDeliveredLore.has(entry.identity)), index: loreIndex, revision: stableReferenceJson(loreIndex.basis),
             selectionBinding: loreIndex.basis }, inventory, pending }, { nodeLimit });
-        resources?.retain(graph,'native_projection_graph',2);
+        projectionGraph = resources?.retain(graph,'native_projection_graph',2);
         // Capture the physical body baseline before the final logical readback.
         // A later build step must never certify different bytes for this graph.
         const sourceBodyDigests = {};
@@ -76628,7 +76662,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await readFrame.assertCurrent();
         const currentness = await sourceContext.assertCurrent(request);
         resources?.check();
-        if (collect) collect({
+        if (collect) {
+        const collectedEvidence = {
           scope,
           sourceKeys: [...sourceKeys].sort(),
           sourceBodyDigests,
@@ -76671,11 +76706,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
               loreRevision: stableReferenceJson(loreIndex.basis)
             }
           }
-        });
+        };
+        // Canonical rows and proof baselines outlive the temporary projection
+        // inputs. Keep their real retained footprint charged to this request.
+        resources?.retain(collectedEvidence,'native_projection_evidence');
+        collect(collectedEvidence);
+        }
+        projectionReturned = true;
         return clone({ ...graph, scopeKey: scope.scopeKey, readerFrame: frame, requestLocalReadOnly: true,
           readerValidation: { ...currentness, storedSelectedBodiesRechecked: true },
           nativeSourceCaptureAdmission: 'unsupported', modelDispatchEligible: false });
       } finally {
+        projectionInputs?.release();
+        if (!projectionReturned) projectionGraph?.release();
         readFrame?.close();
         graphIdentity?.clear();
         if (captured) sourceContext.release({ handle: captured.handle, requestId });
@@ -77421,12 +77464,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await assertRoute(); return { graph, collected: next, windowProof: next?.windowProof || null };
       } };
     };
-    const buildMemoryGraphCorpus = async (options = {}) => {
-      const allowed = ['expectedScopeKey','limit','nodeLimit','maxWindows','maxWindowsPerStep','maxSerializedBytes','pageBytes','incremental','resume','resourceBudget'];
+    const buildMemoryGraphCorpus = async (options = {}, yieldCheck = null) => {
+      const allowed = ['expectedScopeKey','limit','nodeLimit','maxWindows','maxWindowsPerStep','maxSerializedBytes','maxIndexBytes','pageBytes','incremental','resume','resourceBudget'];
       if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => !allowed.includes(key))) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
       // An explicit build takes precedence over the background runtime index.
+      if (!yieldCheck) await yieldDurableMemoryGraphCorpusBuild();
       await yieldVolatileMemoryGraphCorpusBuild();
-      const result = await buildMemoryGraphCorpusInto(options, null);
+      const result = await buildMemoryGraphCorpusInto(options, null, yieldCheck);
+      if(result.status==='published')state.lastDurableGraphPublication={at:Date.now(),scopeKey:result.scopeKey,
+        generation:result.generation,indexDigest:result.indexDigest,buildMode:result.buildMode,
+        windowCount:result.windowCount,pageCount:result.pageCount,serializedIndexBytes:result.serializedIndexBytes};
       if (result.persistenceBackend === 'indexeddb') {
         try { result.reclamation = await collectLocalMemoryGraphGarbage(result.scopeKey); }
         catch (error) { result.reclamation = {status:'failed',code:String(error?.message || error)}; }
@@ -77643,10 +77690,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // 않게 한다. 설정(autoDurableIndex)으로 끌 수 있고, 모든 트리거는 idle 게이트를 통과해야 한다.
     // The timer handle stays out of state: diagnostics deep-clone state, and a Node timer
     // object is circular (it blew the stack in redactPublicSecrets).
-    let durableIndexTimer = null;
+    let durableIndexTimer = null, durableIndexJob = null;
+    const DURABLE_INDEX_MIN_INTERVAL_MS = 60000;
     const durableIndexTimerPending = () => Boolean(durableIndexTimer);
     const durableIndexRuntime = () => state.durableIndexAuto || (state.durableIndexAuto = {
-      running: false, pendingReason: '', lastAt: 0, lastResult: null, attempts: 0
+      running: false, pendingReason: '', lastAt: 0, lastResult: null, attempts: 0,
+      requested: 0, failures: 0, scopeKey: '', yieldRequested: false
     });
     const durableIndexIdle = () => !state.disposed && !state.currentRun && !state.canonicalJobPromise
       && !(state.microJobs?.size) && !libraMemoryWorkActive?.()
@@ -77655,34 +77704,66 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const scheduleDurableIndexBuild = (reason = 'cold_recall', delayMs = 5000) => {
       const runtime = durableIndexRuntime();
       runtime.pendingReason = reason;
+      runtime.requested += 1;
       if (durableIndexTimer || runtime.running) return;
       durableIndexTimer = setTimeout(() => {
         durableIndexTimer = null;
-        void (async () => {
+        runtime.yieldRequested = false;
+        durableIndexJob = (async () => {
           if (state.disposed) return;
           let settings = null;
           // LIBRA 설정 저장소를 직접 읽는다(방금 바꿨을 수 있어 캐시를 우회).
           try { settings = await loadMemorySettings({ force: true }); } catch (_) { settings = null; }
           if (settings && settings.autoDurableIndex === false) { runtime.pendingReason = ''; return; }
-          if (!durableIndexIdle()) { scheduleDurableIndexBuild(reason, Math.min(60000, delayMs * 2)); return; }
-          // 대화가 계속 이어지는 동안 매 커밋마다 전체 재구축을 반복하지 않도록 최소 간격을 둔다.
-          if (runtime.lastAt && Date.now() - runtime.lastAt < 600000) { runtime.pendingReason = ''; return; }
+          if (!durableIndexIdle()) { scheduleDurableIndexBuild(runtime.pendingReason, Math.min(60000, Math.max(1000,delayMs * 2))); return; }
+          const context = await resolveContext();
+          const remaining = runtime.scopeKey === context.scope.scopeKey
+            ? DURABLE_INDEX_MIN_INTERVAL_MS - (Date.now() - runtime.lastAt) : 0;
+          // Keep the dirty request during cooldown; dropping it lost the last increment.
+          if (runtime.lastAt && remaining > 0) { scheduleDurableIndexBuild(runtime.pendingReason,remaining); return; }
+          const requested = runtime.requested, buildReason = runtime.pendingReason;
+          let retryDelay = 0;
           runtime.running = true; runtime.attempts += 1;
           try {
-            const result = await buildMemoryGraphCorpus({});
+            const result = await buildMemoryGraphCorpus({expectedScopeKey:context.scope.scopeKey,incremental:true,resume:true},() => {
+              if (runtime.yieldRequested || state.currentRun || state.microJobs.size
+                || volatileCorpusRuntime?.queriesInFlight || volatileCorpusRuntime?.interactiveReaders) {
+                throw new Error('LIBRA_GRAPH_BACKGROUND_YIELDED');
+              }
+            });
             runtime.lastAt = Date.now();
+            runtime.scopeKey = context.scope.scopeKey;
+            runtime.failures = 0;
             runtime.lastResult = { ok: result?.status === 'published', status: String(result?.status || ''),
-              windowCount: Number(result?.windowCount || 0), pageCount: Number(result?.pageCount || 0), reason };
+              scopeKey:result.scopeKey,buildMode:result.buildMode,
+              windowCount: Number(result?.windowCount || 0), pageCount: Number(result?.pageCount || 0),
+              reusedWindowCount:Number(result.reusedWindowCount||0),enumeratedWindowCount:Number(result.enumeratedWindowCount||0),reason:buildReason };
           } catch (error) {
-            runtime.lastAt = Date.now();
-            runtime.lastResult = { ok: false, status: 'failed', reason, error: compact(error?.message || error, 300) };
-            warn('LIBRA durable index auto build failed', error);
+            const yielded = error?.message === 'LIBRA_GRAPH_BACKGROUND_YIELDED';
+            const cancelled = ['LIBRA_GRAPH_QUERY_EPOCH_CHANGED','LIBRA_GRAPH_STORE_CANCELLED','LIBRA_GRAPH_STORE_OWNER_CHANGED'].includes(error?.message);
+            if (!yielded && !cancelled) runtime.failures += 1;
+            retryDelay = cancelled ? 0 : yielded ? 5000 : Math.min(300000,60000 * Math.max(1,runtime.failures));
+            runtime.lastResult = { ok: false, status: cancelled ? 'canceled' : yielded ? 'deferred' : 'failed', reason:buildReason,
+              retryDelayMs:retryDelay,error: compact(error?.message || error, 300),
+              ...(error.indexBytes ? {indexBytes:error.indexBytes,indexByteLimit:error.indexByteLimit,indexPages:error.indexPages} : {}) };
+            if (!yielded && !cancelled) warn('LIBRA durable index auto build failed', error);
           } finally {
-            runtime.running = false; runtime.pendingReason = '';
+            runtime.running = false;
+            if (!state.disposed && (retryDelay || runtime.requested !== requested)) {
+              scheduleDurableIndexBuild(runtime.pendingReason || buildReason,retryDelay || 5000);
+            } else runtime.pendingReason = '';
           }
-        })();
+        })().catch(error=>{
+          runtime.lastResult={ok:false,status:'deferred',reason:runtime.pendingReason,error:compact(error?.message||error,300)};
+          if(!state.disposed)scheduleDurableIndexBuild(runtime.pendingReason || 'startup_retry',60000);
+        }).finally(()=>{durableIndexJob=null;});
       }, Math.max(0, Number(delayMs) || 0));
       durableIndexTimer?.unref?.();
+    };
+    const yieldDurableMemoryGraphCorpusBuild = async () => {
+      if (!durableIndexJob) return;
+      durableIndexRuntime().yieldRequested = true;
+      await durableIndexJob;
     };
     const scheduleVolatileMemoryGraphCorpus = (delayMs = VOLATILE_CORPUS_DELAY_MS) => {
       if (state.disposed) return;
@@ -77981,7 +78062,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       volatileState.queriesInFlight += 1;
       try {
         await runRecallStep(recallGuard, 'graph_background_drain',
-          () => yieldVolatileMemoryGraphCorpusBuild(), RECALL_STEP_BUDGET_MS);
+          async () => { await yieldVolatileMemoryGraphCorpusBuild(); await yieldDurableMemoryGraphCorpusBuild(); }, RECALL_STEP_BUDGET_MS);
         // Background owner writes (a Micro finishing) can tear the cold corpus build
         // between projection and its source proof. Rebuild from a fresh frame, bounded.
         for (let attempt = 0; ; attempt++) {
@@ -78033,7 +78114,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
             access.pool.limits.reads-access.pool.reads));
         };
         const corpusMode = options.corpusMode || 'auto';
+        const useDurableIndex = (await loadMemorySettings()).useDurableIndex !== false;
         if (!['auto','required','window'].includes(corpusMode)) throw new Error('LIBRA_GRAPH_CORPUS_OPTIONS_INVALID');
+        if (corpusMode === 'required' && !useDurableIndex) throw new Error('LIBRA_GRAPH_CORPUS_DISABLED');
         const explicitWindow = ['limit','nodeLimit','canonicalCursor','microCursor'].some(key => options[key] !== undefined);
         if (explicitWindow && corpusMode === 'required') throw new Error('LIBRA_GRAPH_CORPUS_WINDOW_CONFLICT');
         let initialCollected = null, graph = null, corpusContext = null, corpus = null, coldReason = 'no_published_corpus';
@@ -78044,8 +78127,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           initialCollected = frameResolved.collected;
           corpusContext = await runRecallStep(recallGuard, 'graph_corpus_context',
             () => memoryGraphCorpusContext(graph, initialCollected, epoch, serial, recallGuard, resources), RECALL_REQUEST_BUDGET_MS);
-          try { corpus = await runRecallStep(recallGuard, 'graph_corpus_read',
-            () => state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext }), RECALL_REQUEST_BUDGET_MS); }
+          try { corpus = useDurableIndex ? await runRecallStep(recallGuard, 'graph_corpus_read',
+            () => state.memoryGraphCorpus.read({ initialGraph: graph, ...corpusContext }), RECALL_REQUEST_BUDGET_MS) : null; }
           catch (error) {
             if (corpusMode !== 'auto' || !['stale_generation','restore_binding_invalid'].includes(error.reason)) throw error;
             coldReason = error.reason === 'stale_generation' ? 'superseded_derived_index' : 'incompatible_derived_index';
@@ -78070,6 +78153,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             if (!corpus) volatileState.dirty = true;
           }
           if (!corpus && corpusMode === 'auto') {
+            // A failed first recall must still leave an automatic build queued.
+            scheduleDurableIndexBuild('cold_recall',5000);
             corpus = await runRecallStep(recallGuard, 'graph_corpus_prepare',
               () => state.memoryGraphCorpus.prepare({ ...corpusContext, reason: coldReason }), RECALL_REQUEST_BUDGET_MS);
             corpus = { ...corpus, access: { ...corpus.access, runtimeIndex, coldReason } };
@@ -83993,7 +84078,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       getUnifiedResponseContext, validateUnifiedResponseContext, listUnifiedIdentityLinkReviews, confirmUnifiedIdentityLink, identityLinkReviewRows:unifiedIdentityReviewRows, previewUnifiedIdentityMerge, mergeUnifiedIdentity, previewUnifiedIdentitySplit, splitUnifiedIdentity, previewUnifiedMigration, beginUnifiedMigration, previewUnifiedLegacyRebuild, getUnifiedLegacyRebuildEvidence, rebuildSelectedUnifiedLegacy, previewUnifiedRetention, collectUnifiedRetention, listWorldManagerHistory, getWorldManagerHistoryDetail, listCanonicalReaderChapters, getCanonicalReaderChapter, getCanonicalEvidenceChain,
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
-      durableIndexTimerPending,
+      durableIndexTimerPending, scheduleDurableIndexBuild,
+      cancelDurableIndexBuild:()=>{clearTimeout(durableIndexTimer);durableIndexTimer=null;durableIndexRuntime().yieldRequested=true;},
       getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, getMemoryGraphProjectionPage, getMemoryGraphAccessPage, inspectMemoryGraphPages, inspectLocalMemoryGraphCorpus, buildMemoryGraphGeneration, buildMemoryGraphCorpus, verifyMemoryGraphCorpus, inspectVolatileMemoryGraphCorpus, inspectResidentMemoryBudget, inspectMicroRepresentationVectors, warmMicroRepresentationVectors, prewarmVolatileMemoryGraphCorpus, disposeVolatileMemoryGraphCorpus, getMemoryGraphDurablePage, cancelMemoryGraphGenerationBuild, inspectMemoryGraphStore, executeMemoryGraphUnifiedQuery, releaseMemoryGraphUnifiedQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, collectMemoryGraphGarbage, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics, inspectMemoryNetwork,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
@@ -88680,6 +88766,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     branchAuditInFlight: LibraMemoryCore.state.branchAuditInFlight?.size || 0,
     memoryGraphBuildActive: LibraMemoryCore.state.memoryGraphCorpus?.inspect().activeBuild === true,
+    durableGraphPublication: LibraMemoryCore.state.lastDurableGraphPublication ? {...LibraMemoryCore.state.lastDurableGraphPublication} : null,
     lastMemoryBeforeRequestRecovery: LibraMemoryCore.state.lastBeforeRequestRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastBeforeRequestRecovery)) : null,
     lastMemoryPendingBoundaryArm: LibraMemoryCore.state.lastPendingBoundaryArm ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryArm)) : null,
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
@@ -88829,6 +88916,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
 
+  const buildDurableGraphRebuildButton = () => guiEl('button',{class:'btn',type:'button',text:'상설 그래프 재구축',dataset:{durableGraphRebuild:'true'},onClick:async event=>{
+    const button=event?.currentTarget;
+    if(button)button.disabled=true;
+    try{
+      guiSetStatus('상설 그래프를 원본에서 다시 구축하고 있습니다.');
+      const result=await LibraMemoryCore.buildMemoryGraphCorpus({expectedScopeKey:canonicalReaderBinding().scopeKey,incremental:false,resume:false});
+      guiSetStatus(`상설 그래프 재구축 완료: ${result.windowCount}구간 · ${result.pageCount}페이지`);
+    }catch(error){guiSetStatus(error?.message||String(error),true,true);}
+    finally{if(button)button.disabled=false;}
+  }});
   const buildDebugTab = () => {
     MemorySuiteStorageBridge.scheduleDiagnosticsRefresh(0);
     const stageLabel = (id) => id === 'beforeRequest'
@@ -88923,13 +89020,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
             guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows,
             guiEl('div', { class: 'hint', text: '통합 엔진이 모든 기억 검색을 담당합니다. 전체 이력 인덱스를 구축하면 현재 자료와 일치할 때 재사용하고, 없거나 낡으면 현재 원본을 직접 검색합니다.' }),
-            guiEl('button', { class: 'btn', text: '전체 이력 인덱스 구축', onClick: async () => {
+            guiEl('button', { class: 'btn', text: '상설 그래프 구축 · 증분', onClick: async () => {
               try {
                 guiSetStatus('전체 이력 인덱스를 구축하는 중입니다.');
                 const result = await LibraMemoryCore.buildMemoryGraphCorpus();
                 guiSetStatus(`전체 이력 인덱스 게시: ${result.windowCount}구간 · ${result.pageCount}페이지${result.reclamation?.status === 'completed' ? ' · 이전 로컬 페이지 ' + result.reclamation.deletedKeys.length + '개 정리' : result.reclamation?.status === 'failed' ? ' · 이전 페이지 정리 실패: ' + result.reclamation.code : result.reclamation?.status === 'blocked_atomic_gc_unavailable' ? ' · 이 환경은 이전 페이지 자동 정리를 지원하지 않음' : ''}`);
               } catch (error) { guiSetStatus(error?.message || String(error),true,true); }
             } }),
+            buildDurableGraphRebuildButton(),
             guiEl('button', { class: 'btn', text: '전체 인덱스 검증', onClick: async () => {
               try { guiSetStatus('전체 이력 인덱스를 검증하고 있습니다.');
                 const result = await LibraMemoryCore.verifyMemoryGraphCorpus();
@@ -95658,7 +95756,16 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ])),
 guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
-          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoDurableIndex','전체 이력 인덱스 자동 구축'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
+          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('useDurableIndex','상설 그래프 사용'),memoryToggle('autoDurableIndex','상설 그래프 자동 구축 · 증분'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기'),
+          guiEl('p',{class:'hint',text:'상설 그래프와 메모리 캐시는 통합 그래프 엔진의 검색 자료를 재사용합니다. 사용을 끄면 상설 게시본을 검색하지 않습니다. 자동 구축·증분은 별도 설정이며 기본으로 켜져 있습니다.'}),
+          guiEl('p',{class:'hint',dataset:{durableGraphStatus:'true'},text:(()=>{
+            const d=LibraMemoryCore.state.durableIndexAuto,r=d?.lastResult,p=LibraMemoryCore.state.lastDurableGraphPublication;
+            if(d?.running)return '상설 그래프: 백그라운드 갱신 중';
+            if(p?.scopeKey===canonicalReaderBinding().scopeKey)return `상설 그래프: 마지막 게시 ${p.windowCount}구간 · ${p.pageCount}페이지${LibraMemoryCore.durableIndexTimerPending?.()?' · 다음 갱신 대기':''}${r?.error?' · 최근 갱신: '+r.error:''}`;
+            if(r?.error)return `상설 그래프: ${r.status==='deferred'?'갱신 대기':'구축 실패 · 자동 재시도 예정'} · ${r.error}`;
+            return '상설 그래프: 게시 확인 전 · 자동 구축 대기';
+          })()}),
+          buildDurableGraphRebuildButton()
         ])])
 ];
       const RECALL_BUDGET_PRESETS = [
@@ -100817,6 +100924,7 @@ advanced
       LibraMemoryCore.state.memoryGraphCompiler?.invalidateAll();
       LibraMemoryCore.state.memoryGraphResources?.closeAll('unloaded');
       LibraMemoryCore.disposeVolatileMemoryGraphCorpus();
+      LibraMemoryCore.cancelDurableIndexBuild();
       for(const group of ConsumerActiveOperations.keys())cancelConsumerOperation(group);
       LibraMemoryCore.disposeSourceRules();
       LibraMemoryCore.state.scheduledScanSerial += 1;
@@ -101013,6 +101121,7 @@ advanced
         Runtime.storageTransitionPending = false;
         Runtime.storageTransitionError = '';
         Runtime.storageStartupCompleted = true;
+        LibraMemoryCore.scheduleDurableIndexBuild('startup',5000);
         if (!Gui.dirty) {
           applyGuiSettingsState(settings, { preserveDirty: true, basisHash: basis.semanticHash });
         }

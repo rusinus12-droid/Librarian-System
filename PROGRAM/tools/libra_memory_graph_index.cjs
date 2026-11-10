@@ -45,7 +45,10 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       fail('input_invalid');
     }
 
-    resources?.retain(graph, 'index_compile_input', 4);
+    const workspace = resources?.scope?.();
+    let inputLease;
+    try {
+    inputLease = (workspace || resources)?.retain(graph, 'index_compile_input', 4);
     const normalizedGraph = {
       ...graph,
       nodes: Array.isArray(graph.nodes) ? graph.nodes : [],
@@ -315,6 +318,7 @@ module.exports = function createMemoryGraphIndex({ pages, fingerprint, tokenize 
       authority: 'descriptive_only',
       modelDispatchEligible: false
     });
+    } finally { if (workspace) workspace.close(); else inputLease?.release(); }
   };
 
   const affectedByChanges = (compiled, changedDependencyKeys = []) => {
