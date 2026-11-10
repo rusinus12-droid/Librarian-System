@@ -736,7 +736,7 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 7431deb5eb746a04031d521b5a9733f7dcc626ceb9ec7b7d859a0b385984b645  ./PROGRAM/plugins/LIA_Persona_Linker.js
 0cbac5b75bce23fd9a607ba9a9bb992ae29851f33af43c0a5af3734c563b92eb  ./PROGRAM/plugins/LIBRA.js
 291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b  ./PROGRAM/plugins/RETRACE.js
-4f71eb9191c5c71e070319e852e5406fa7752c6c22158920d1578896362cc464  ./PROGRAM/program-manifest.json
+8e70181c18d63ff9e0d438fe77e31b00f21dc7a0b388d42fe2ffa98e07da67e9  ./PROGRAM/program-manifest.json
 9e6061acd4b684fd1cc5423427054c7b95cce9376b872adae641f7db8a4c2759  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -1395,6 +1395,7 @@ c4a90523bf5343c2abc01f3be076edb9650fdc6561022ad2acebd330732c2b67  ./PROGRAM/test
 ff1d9371717209aace0f26da44643994ae49d13f2cc2e20a7d70a2220cb13c8f  ./PROGRAM/tests/gradia/producer-owner-migration.test.cjs
 1b63f591c5211a509526d9e01d6c8ba8bf5dd1a5558a441a5bea7bfbe12a6cd4  ./PROGRAM/tests/gradia/prompt-blocks.test.cjs
 b8e2320c21b8d9824ca750e68f7ce824fc52deb9f8618520f6a30f072b655b50  ./PROGRAM/tests/gradia/ranked-evidence-basic.test.cjs
+b3f7f3bfbd77e539ba3db10651d0b15357027c54f05f76989178645cbb5c04d3  ./PROGRAM/tests/gradia/read-source-off-restart.test.cjs
 c0d6631a3c7bc56e8849591e785eff0cf2c6917e17fd014eafdb0dca6141fd2a  ./PROGRAM/tests/gradia/read-v2-credit.test.cjs
 d556eaee6d9cb88c7be70399df8d1f45508ecadb505cd14ce24ffa50bd9668c1  ./PROGRAM/tests/gradia/read-v2-frames.test.cjs
 854f2012cbe8b007a5c1b2da55a85525ec1730ff586c45f786cdbb331aa42c72  ./PROGRAM/tests/gradia/read-v2-protocol.test.cjs
