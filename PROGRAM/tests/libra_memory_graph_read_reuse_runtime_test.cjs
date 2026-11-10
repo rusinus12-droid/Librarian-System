@@ -99,7 +99,12 @@ test('a warm query still reads the mutable root and refuses its replacement', as
 test('the structure view names every node and joins meaning nodes to their source and subjects', async t => {
   const x = await fixture({ mode: 'plugin_only', microCount: 2, pauseAutomaticAnalysis: true });
   t.after(() => x.cleanup());
+  await assert.rejects(() => x.f.r.api.inspectMemoryGraphStructure({ expectedScopeKey: x.scopeKey }), /CORPUS_MISSING_GENERATION/);
+  assert.equal((await x.f.r.api.buildMemoryGraphCorpus()).status, 'published');
   const view = await x.f.r.api.inspectMemoryGraphStructure({ expectedScopeKey: x.scopeKey });
+  assert.equal(view.publication.source, 'published_durable_corpus');
+  assert.ok(view.publication.generation);
+  await assert.rejects(() => x.f.r.api.inspectMemoryGraphStructure({ expectedScopeKey: x.scopeKey, expectedGeneration: 'replaced' }), /STRUCTURE_GENERATION_CHANGED/);
   assert.equal(view.schema, 'libra.memory_graph_structure.v1'); assert.equal(view.authority, 'display_only');
   assert.equal(view.summary.nodes, view.nodes.length); assert.equal(view.summary.edges, view.edges.length);
   for (const layer of ['source', 'meaning', 'entity']) assert.ok(view.summary.byLayer[layer] > 0, layer + ' nodes are present');

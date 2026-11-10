@@ -5249,7 +5249,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity', '/v1/libra/graph-lifecycle'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -48781,8 +48781,10 @@ function createLibraReadonlySourceContext(owner) {
     if (!equal(forest.head,await owner.captureForestHead())) fail('stale_generation');
     const store = io(owner,loc), selected = new Set(), loaded = new Map(), graphs = [], children = [], canonical = new Map(), sourceKeys = new Set(), bodyDigests = {}, dependencies = {};
     const maxBytes = selectionBudget.maxGraphBytes ?? 4194304, maxShards = selectionBudget.maxShards ?? 32;
+    const shardOffset = selectionBudget.shardOffset ?? 0;
+    if (!Number.isSafeInteger(shardOffset) || shardOffset < 0 || shardOffset >= forest.shardCount || shardOffset && !eager) fail('policy_invalid');
     if (!Number.isSafeInteger(maxBytes)||maxBytes<65536||maxBytes>8388608||!Number.isSafeInteger(maxShards)||maxShards<1||maxShards>128) fail('policy_invalid');
-    let bytes = 0, partial = false, storagePages = 0;
+    let bytes = 0, partial = shardOffset > 0, storagePages = 0;
     const routeCache=new Map();
     const lookup=async term=>{
       if(routeCache.has(term))return routeCache.get(term);
@@ -48791,8 +48793,10 @@ function createLibraReadonlySourceContext(owner) {
       routeCache.set(term,entry);return entry;
     };
     const select = async term => { const entry=await lookup(term);if(!entry)return;
+      let position = 0;
       for await (const hit of store.scan(entry.shards)) {
       if (hit.term !== term) fail('page_corrupt');
+      if (term === 'all' && position++ < shardOffset) continue;
       if (selected.size >= maxShards && !selected.has(hit.start)) { partial=true; break; } selected.add(hit.start);
     }};
     if (eager) await select('all'); else {
@@ -48894,8 +48898,11 @@ function createLibraReadonlySourceContext(owner) {
     return {graph,compiledIndex,config:m.config,collected:{entityRegistry:children[0]?.collected.entityRegistry || [],canonicalRows:[...canonical.values()],sourceKeys:[...sourceKeys]},
       sourceProofs:{proofVersion:'libra.source_proof_contract.v2',ownerProof:{sourceBodyDigests:bodyDigests,recordDependencyKeys:dependencies}},
       currentGraph:assertCurrent,assertIndexCurrent,
-      access:{schema,mode:'durable_common_index',generation:m.generation,indexDigest:compiledIndex.indexDigest,windowCount:forest.windowCount,
-        shardCount:forest.shardCount,selectedShardCount:graphs.length,selectionComplete:!partial,pageCount:graphs.reduce((n,g)=>n+g.nodes.length,0),
+      access:{schema,mode:'durable_common_index',generation:m.generation,indexDigest:compiledIndex.indexDigest,
+        publicationIndexDigest:JSON.parse(rootRaw).digest,windowCount:forest.windowCount,
+      shardCount:forest.shardCount,selectedShardCount:graphs.length,selectionComplete:!partial && shardOffset === 0,
+        shardOffset, nextShardOffset:eager && shardOffset + graphs.length < forest.shardCount ? shardOffset + graphs.length : null,
+        pageCount:graphs.reduce((n,g)=>n+g.nodes.length,0),
         storage:{storageAccess:'routed_durable_shards',projectionPagesRead:storagePages,selectedGraphBytes:bytes},selectedIndexCompilations:1,
         nativeReprojectionRequired:stateEvidenceReprojectionPages>0,stateEvidenceReprojectionPages,ownerAtomicity:false,inventoryComplete:false,byteBounded:false}};
   };
@@ -49834,7 +49841,8 @@ function createLibraReadonlySourceContext(owner) {
     const save = async value => {
       const raw = JSON.stringify(value), bytes = pages.encodedSize(raw).utf8Bytes, digest = hash(raw), key = loc.prefix + 'projection:' + digest;
       if (!written.has(key)) {
-        totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget');
+        totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget', {
+          budgetStage: 'projection', indexBytes: totalBytes, indexByteLimit: config.maxSerializedBytes, indexPages: written.size });
         const held = owner.resources?.retain(value, 'publication_projection_page');
         await writer.add(key, raw, held); written.add(key);
       }
@@ -50159,7 +50167,7 @@ function createLibraReadonlySourceContext(owner) {
           const page = pages.page({ units: [] }, { partition: loc.partition, generation, pool: 'units', offset: 0, pageBytes: config.pageBytes });
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
-          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
           await indexWriter.add(key, text);
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
           continue;
@@ -50179,7 +50187,7 @@ function createLibraReadonlySourceContext(owner) {
               if (page.nextOffset === subOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               await indexWriter.add(key, text);
               refs.push({
                 key,
@@ -50205,7 +50213,7 @@ function createLibraReadonlySourceContext(owner) {
               if (page.nextOffset === partOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               await indexWriter.add(key, text);
               const isFirstPart = partOffset === 0;
               refs.push({
@@ -50265,7 +50273,9 @@ function createLibraReadonlySourceContext(owner) {
       };
       owner.resources?.retain(proofRecord,'publication_proof',2);
       const proofRaw = JSON.stringify(proofRecord), proofDigest = hash(proofRaw), proofKey = loc.prefix + 'proof:' + proofDigest;
-      if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
+      const proofBytes = new TextEncoder().encode(proofRaw).length;
+      if (proofBytes > config.maxSerializedBytes) fail('index_budget', {
+        budgetStage: 'source_proof', indexBytes: proofBytes, indexByteLimit: config.maxSerializedBytes });
       await immutable(owner, proofKey, proofRaw);
 
       const projection = await writeProjection(owner, loc, graph, value.collected, value.windowSlices, value.serializedGraphBytes, config);
@@ -50704,27 +50714,49 @@ function createLibraReadonlySourceContext(owner) {
       for (const [family,entry] of Object.entries(families)) entry.units=graph.units.filter(u=>u.family===family).length;
       return graph;
     }}) : null;
-  const build = async (input = {}) => {
+  const buildOnce = async (input = {}) => {
     if (!forest || !input.owner?.captureForestHead) return buildLegacy(input);
     const checked={...input.options};delete checked.shardWindows;delete checked.maxShardsPerStep;policy(checked);
-    const limit=input.options?.limit || 20;
+    let limit=input.options?.limit || 20;
     const raw = input.initialGraph ? await input.owner.read(location(input.initialGraph).rootKey) : null;
     const previous = raw ? await forest.manifest(input.owner,location(input.initialGraph),raw) : null;
+    // Keep a successfully adapted window width on later incremental builds.
+    if (input.options?.limit === undefined && previous?.config?.limit) {
+      limit = previous.config.limit;
+      input = {...input, options: {...input.options, limit}};
+      checked.limit = limit;
+      policy(checked);
+    }
     const head=input.initialGraph?.corpusTotals || await input.owner.captureForestHead();
     if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) {
       try {
-        return await buildLegacy(input);
+        return {...await buildLegacy({...input, options: checked}), effectiveLimit: limit};
       } catch (legacyErr) {
-        if (!['value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
+        if (!['index_budget','record_size','page_row_exceeds_page','value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
           throw legacyErr;
         }
       }
     }
     if (active) fail('build_busy'); active=true;
     buildProgress={phase:'planning',startedAt:now(),updatedAt:now(),mode:'sharded',windowsDone:0};
-    try { const result=await forest.build(input); noteBuild({outcome:result.status}); return result; }
+    try { const result=await forest.build(input); noteBuild({outcome:result.status}); return {...result, effectiveLimit: limit}; }
     catch(error) {noteBuild({outcome:'failed',error:String(error.message)});throw error;}
     finally {lastBuildProgress={...buildProgress,finishedAt:now()};buildProgress=null;active=false;}
+  };
+  const build = async (input = {}) => {
+    let options = Object.fromEntries(Object.entries(input.options || {}).filter(([, value]) => value !== undefined)), windowLimitRetries = 0;
+    for (;;) {
+      try { return {...await buildOnce({...input, options}), windowLimitRetries}; }
+      catch (error) {
+        // A single 20-record window can still exceed a shard's index/projection cap.
+        // Reduce the native window width too; never relax the byte budget or drop rows.
+        const limit = options.limit || 20;
+        if (!forest || !input.owner?.captureForestHead || limit <= 1
+          || !['index_budget','workspace_budget','record_size','page_row_exceeds_page'].includes(error?.reason)) throw error;
+        options = {...options, limit: Math.max(1, Math.floor(limit / 2))};
+        windowLimitRetries++;
+      }
+    }
   };
   const read = async (input = {}) => {
     if (forest && input.initialGraph && input.owner?.captureForestHead) {
@@ -77419,14 +77451,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
     };
     const getMemoryGraphProjectionPage = async options => await readMemoryGraphProjection(options);
-    // Display-only view of one projected window: what nodes exist and how they are joined.
-    // It carries labels and endpoints only. No binding, source body or authority leaves here.
+    // Inspect the published durable corpus itself. Never substitute a fresh native projection.
+    // Large forests are browsed one stored shard at a time, bound to the publication generation.
     const inspectMemoryGraphStructure = async (options = {}) => {
-      const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit'];
-      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))) throw new Error('LIBRA_GRAPH_STRUCTURE_OPTIONS_INVALID');
-      let collected = null;
-      const graph = await readMemoryGraphProjection({ limit: 20, ...Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined && value !== '')) }, value => { collected = value; });
-      const short = value => string(value).slice(-12);
+      const allowed = ['expectedScopeKey','shardOffset','expectedGeneration'];
+      if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(name => !allowed.includes(name))
+        || options.expectedGeneration !== undefined && (typeof options.expectedGeneration !== 'string' || options.expectedGeneration.length > 256)
+        || options.shardOffset !== undefined && (!Number.isSafeInteger(options.shardOffset) || options.shardOffset < 0)) throw new Error('LIBRA_GRAPH_STRUCTURE_OPTIONS_INVALID');
+      ensureMemoryGraphUnifiedSuite();
+      const epoch = Number(state.microRestoreGeneration || 0), serial = state.memoryGraphStoreSerial;
+      const resources = state.memoryGraphResources.openMaintenance({}, () => {
+        if (state.disposed || serial !== state.memoryGraphStoreSerial || epoch !== Number(state.microRestoreGeneration || 0)) throw new Error('LIBRA_GRAPH_QUERY_EPOCH_CHANGED');
+      });
+      const activity = resources.begin(); let context = null;
+      try {
+      const initial = await resolveMemoryGraphCorpusFrame(options.expectedScopeKey || '', resources);
+      context = await memoryGraphCorpusContext(initial.graph, initial.collected, epoch, serial, null, resources);
+      const corpus = await state.memoryGraphCorpus.read({ initialGraph: initial.graph, ...context, eager: true,
+        queryInput: { semanticEnabled: false }, selectionBudget: { maxShards: 1, shardOffset: options.shardOffset || 0 } });
+      if (!corpus) throw new Error('LIBRA_GRAPH_CORPUS_MISSING_GENERATION');
+      if (options.shardOffset && !corpus.access.shardCount) throw new Error('LIBRA_GRAPH_STRUCTURE_OPTIONS_INVALID');
+      if (options.expectedGeneration && options.expectedGeneration !== corpus.access.generation) throw new Error('LIBRA_GRAPH_STRUCTURE_GENERATION_CHANGED');
+      await corpus.assertIndexCurrent();
+      const graph = corpus.graph, collected = corpus.collected;
+      const short = value => string(value);
       const unitByNode = new Map(asArray(graph.units).map(unit => [unit.nodeId, unit]));
       const registry = new Map();
       for (const row of asArray(collected?.entityRegistry)) {
@@ -77468,14 +77516,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
       });
       const countBy = (rows, pick) => { const out = {}; for (const row of rows) { const name = pick(row) || 'unknown'; out[name] = (out[name] || 0) + 1; } return out; };
       const inventory = graph.coverage?.inventory || {};
+      const visibleIds = new Set(nodes.map(node => node.id));
+      const visibleEdges = asArray(graph.edges).filter(edge => visibleIds.has(edge.from) && visibleIds.has(edge.to));
       return clone({ schema: 'libra.memory_graph_structure.v1', authority: 'display_only', scopeKey: graph.scopeKey,
-        nodes, edges: asArray(graph.edges).map(edge => ({ from: short(edge.from), to: short(edge.to), predicate: string(edge.predicate) })),
-        summary: { nodes: nodes.length, edges: asArray(graph.edges).length, byLayer: countBy(nodes, node => node.layer),
+        nodes, edges: visibleEdges.map(edge => ({ from: short(edge.from), to: short(edge.to), predicate: string(edge.predicate) })),
+        summary: { nodes: nodes.length, edges: visibleEdges.length, externalEdges: asArray(graph.edges).length - visibleEdges.length, byLayer: countBy(nodes, node => node.layer),
           byFamily: countBy(nodes.filter(node => node.layer === 'meaning'), node => node.family),
-          byPredicate: countBy(asArray(graph.edges), edge => string(edge.predicate)) },
-        window: { limit: Number(options.limit || 20), canonicalRead: Number(inventory.canonicalRead || 0), canonicalTotal: Number(inventory.canonicalTotal || 0),
-          microRead: Number(inventory.microRead || 0), microTotal: Number(inventory.microTurnTotal || 0),
-          canonicalNextCursor: string(inventory.canonicalNextCursor || ''), microNextCursor: string(inventory.microNextCursor || '') } });
+          byPredicate: countBy(visibleEdges, edge => string(edge.predicate)) },
+        publication: { source: 'published_durable_corpus', generation: corpus.access.generation, indexDigest: corpus.access.publicationIndexDigest || corpus.access.indexDigest,
+          backend: context.backend, windowCount: corpus.access.windowCount, shardCount: corpus.access.shardCount || 1,
+          selectedShardCount: corpus.access.selectedShardCount || 1, selectionComplete: corpus.access.selectionComplete !== false },
+        window: { shardOffset: corpus.access.shardOffset || 0, nextShardOffset: corpus.access.nextShardOffset ?? null,
+          canonicalRead: Number(inventory.canonicalRead || 0), canonicalTotal: Number(initial.graph.corpusTotals?.canonicalTotal || 0),
+          microRead: Number(inventory.microRead || 0), microTotal: Number(initial.graph.corpusTotals?.microTurnTotal || 0) } });
+      } finally {
+        try { await context?.owner.graphLease?.release(); }
+        finally { resources.close('structure_complete'); activity.release(); }
+      }
     };
     const getMemoryGraphAccessPage = async (options = {}) => {
       const allowed = ['expectedScopeKey','canonicalCursor','microCursor','limit','nodeLimit','pool','cursor','pageBytes'];
@@ -78436,9 +78493,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // An explicit build takes precedence over the background runtime index.
       if (!yieldCheck) await yieldDurableMemoryGraphCorpusBuild();
       await yieldVolatileMemoryGraphCorpusBuild();
-      const result = await buildMemoryGraphCorpusInto(options, null, yieldCheck);
+      let result;
+      try {
+        result = await buildMemoryGraphCorpusInto(options, null, yieldCheck);
+        state.lastDurableGraphBuildFailure = null;
+      } catch (error) {
+        state.lastDurableGraphBuildFailure = { at: Date.now(), scopeKey: string(options.expectedScopeKey || ''),
+          code: string(error?.code || error?.message || error), reason: string(error?.reason || ''),
+          serverError: string(error?.payload?.error || ''), status: Number(error?.status || 0),
+          budgetStage: string(error?.budgetStage || ''), indexBytes: error?.indexBytes ?? null,
+          indexByteLimit: error?.indexByteLimit ?? null, indexPages: error?.indexPages ?? null,
+          buildProgress: state.memoryGraphCorpus?.inspect().lastBuild || null };
+        throw error;
+      }
       if(result.status==='checkpointed'){
-        durableIndexRuntime().pendingBuildOptions={...options,expectedScopeKey:result.scopeKey,resume:true};
+        durableIndexRuntime().pendingBuildOptions={...options,limit:result.effectiveLimit || options.limit || 20,expectedScopeKey:result.scopeKey,resume:true};
         if(!yieldCheck)scheduleDurableIndexBuild('checkpoint_resume',1000);
         return result;
       }
@@ -79059,6 +79128,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         buildProgress: state.memoryGraphCorpus?.inspect().buildProgress || null, lastBuild: state.memoryGraphCorpus?.inspect().lastBuild || null,
         buildActive: Boolean(state.memoryGraphCorpus?.inspect().activeBuild) || Boolean(state.memoryGraphActiveBuilds?.size),
         publication: state.lastDurableGraphPublication || null,
+        buildFailure: state.lastDurableGraphBuildFailure || null,
         garbageCollection:state.durableGraphGC||null,
         runtimeIndex: { ...inspectVolatileMemoryGraphCorpus(), bytes: volatileStoreBytes(volatileState.store), maxBytes: VOLATILE_CORPUS_MAX_RETAINED_BYTES },
         resident: residentMemoryBudgetSnapshot(),
@@ -89826,6 +89896,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     branchAuditInFlight: LibraMemoryCore.state.branchAuditInFlight?.size || 0,
     memoryGraphBuildActive: LibraMemoryCore.state.memoryGraphCorpus?.inspect().activeBuild === true,
     durableGraphPublication: LibraMemoryCore.state.lastDurableGraphPublication ? {...LibraMemoryCore.state.lastDurableGraphPublication} : null,
+    durableGraphBuildFailure: LibraMemoryCore.state.lastDurableGraphBuildFailure ? {...LibraMemoryCore.state.lastDurableGraphBuildFailure} : null,
     lastMemoryBeforeRequestRecovery: LibraMemoryCore.state.lastBeforeRequestRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastBeforeRequestRecovery)) : null,
     lastMemoryPendingBoundaryArm: LibraMemoryCore.state.lastPendingBoundaryArm ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryArm)) : null,
     lastMemoryPendingBoundaryRecovery: LibraMemoryCore.state.lastPendingBoundaryRecovery ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastPendingBoundaryRecovery)) : null,
@@ -90227,7 +90298,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       predicates: Object.entries(summary.byPredicate || {}).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, label: GRAPH_PREDICATE_LABELS[name] || name, count })) };
   };
   const buildDurableGraphStructureCard = () => {
-    const state = Gui.durableGraphStructure || (Gui.durableGraphStructure = { data: null, selected: '', text: '', kind: 'all', loading: false, error: '', trail: [] });
+    const scopeKey = canonicalReaderBinding().scopeKey;
+    if (Gui.durableGraphStructure?.scopeKey !== scopeKey) Gui.durableGraphStructure = null;
+    const state = Gui.durableGraphStructure || (Gui.durableGraphStructure = { scopeKey, data: null, selected: '', text: '', kind: 'all', loading: false, error: '', trail: [] });
     const host = guiEl('div', { class: 'card', dataset: { durableGraphStructure: 'true' } });
     const svg = (tag, attrs = {}, children = []) => {
       const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -90243,11 +90316,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       state.loading = true; state.error = ''; render();
       try {
         const binding = canonicalReaderBinding();
-        state.data = await LibraMemoryCore.inspectMemoryGraphStructure({ expectedScopeKey: binding.scopeKey, ...(cursor || {}) });
+        const nextData = await LibraMemoryCore.inspectMemoryGraphStructure({ expectedScopeKey: binding.scopeKey, ...(cursor || {}) });
+        if (binding.scopeKey !== canonicalReaderBinding().scopeKey) throw new Error('LIBRA_GRAPH_READER_SCOPE_CHANGED');
+        state.data = nextData;
         if (!state.data.nodes.some(node => node.id === state.selected)) {
           state.selected = [...state.data.nodes].sort((a, b) => b.degree - a.degree)[0]?.id || '';
         }
-      } catch (error) { state.error = String(error?.message || error); }
+      } catch (error) { state.data = null; const code = String(error?.message || error); state.error = code === 'LIBRA_GRAPH_CORPUS_MISSING_GENERATION' ? '아직 게시된 상설 그래프가 없습니다. 아래에서 상설 그래프 구축 및 증분을 실행하세요.' : code.includes('STALE_GENERATION') ? '원본이 바뀌어 게시본이 오래되었습니다. 상설 그래프 구축 및 증분을 실행하세요.' : code === 'LIBRA_GRAPH_STRUCTURE_GENERATION_CHANGED' ? '탐색 중 새 그래프가 게시되었습니다. 처음부터 다시 불러오세요.' : code; }
       finally { state.loading = false; render(); }
     };
     const select = id => { state.selected = id; render(); };
@@ -90275,17 +90350,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     function render() {
       const data = state.data;
       const head = guiEl('div', { class: 'card__head' }, [
-        guiEl('div', {}, [guiEl('h2', { class: 'card__title', text: '그래프 구조' }),
-          guiEl('p', { class: 'card__desc', text: '그래프는 세 가지 노드로 이루어집니다. 원본 기록 하나에서 기억 항목이 여러 개 나오고, 기억 항목은 그 주체와 대상에 이어집니다. 노드를 고르면 무엇과 어떤 관계로 이어졌는지 볼 수 있습니다.' })]),
+        guiEl('div', {}, [guiEl('h2', { class: 'card__title', text: '상설 그래프 구조' }),
+          guiEl('p', { class: 'card__desc', text: '검색 가속에 쓰는 게시된 상설 그래프를 읽습니다. 노드를 고르면 연결 관계를 탐색할 수 있습니다. 큰 그래프는 저장된 묶음별로 나누어 표시합니다.' })]),
         guiEl('button', { class: 'btn btn--sm', type: 'button', disabled: state.loading, dataset: { graphStructureLoad: 'true' },
           text: state.loading ? '읽는 중…' : data ? '다시 읽기' : '구조 불러오기', onClick: () => { state.trail = []; void load(); } })
       ]);
       if (!data) {
-        host.replaceChildren(head, guiEl('p', { class: 'hint', text: state.error ? `구조를 읽지 못했습니다: ${state.error}` : '현재 채팅의 기억 원본에서 구조를 읽어 옵니다. 저장된 내용은 바꾸지 않습니다.' }));
+        host.replaceChildren(head, guiEl('p', { class: 'hint', text: state.error ? `구조를 읽지 못했습니다: ${state.error}` : '상설 그래프 구축 및 증분으로 게시한 저장본을 불러옵니다. 게시본이 없으면 원본에서 임시 구조를 만들지 않습니다.' }));
         return;
       }
       const model = durableGraphStructureModel(data, state.selected, { text: state.text, kind: state.kind });
-      const windowInfo = data.window || {}, hasNext = Boolean(windowInfo.canonicalNextCursor || windowInfo.microNextCursor);
+      const windowInfo = data.window || {}, hasNext = windowInfo.nextShardOffset != null;
       const search = guiEl('input', { class: 'input', type: 'search', placeholder: '노드 찾기', value: state.text, 'aria-label': '노드 찾기', dataset: { graphStructureSearch: 'true' },
         onInput: event => { state.text = event.target.value; const at = event.target.selectionStart; render(); const next = host.querySelector('[data-graph-structure-search]'); next?.focus(); try { next?.setSelectionRange(at, at); } catch (_) {} } });
       const kinds = [['all', '전체'], ['entity', '대상'], ['canonical', '정본'], ['micro', 'Micro'], ['state', '상태'], ['lore', '로어'], ['source', '원본 기록']];
@@ -90315,12 +90390,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ]))),
         guiEl('div', { class: 'cluster', style: 'margin:12px 0', dataset: { graphStructurePredicates: 'true' } }, [guiEl('span', { class: 'hint', text: '연결 종류' }),
           ...model.predicates.map(item => guiEl('span', { class: 'chip', text: `${item.label} ${item.count}` }))]),
+        data.summary?.externalEdges ? guiEl('p', { class: 'hint', text: `다른 묶음으로 이어지는 연결 ${data.summary.externalEdges}개는 이 묶음의 그림에서 생략했습니다.` }) : null,
         guiEl('div', { class: 'split', style: 'margin-bottom:12px' }, [
-          guiEl('span', { class: 'hint', text: `이 구간: 정본 ${windowInfo.canonicalRead}/${windowInfo.canonicalTotal}건 · Micro ${windowInfo.microRead}/${windowInfo.microTotal}턴${state.trail.length ? ` · ${state.trail.length + 1}번째 구간` : ''}` }),
+          guiEl('span', { class: 'hint', text: `게시본 ${String(data.publication?.generation || '').slice(-12)} · 묶음 ${Number(windowInfo.shardOffset || 0) + 1}/${data.publication?.shardCount || 1} · ${data.publication?.backend || ''}${data.publication?.selectionComplete === false ? ' · 전체 중 일부 표시' : ''}` }),
           guiEl('div', { class: 'cluster' }, [
             state.trail.length ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '처음 구간', onClick: () => { state.trail = []; void load(); } }) : null,
             hasNext ? guiEl('button', { class: 'btn btn--sm', type: 'button', dataset: { graphStructureNext: 'true' }, text: '다음 구간', onClick: () => {
-              const cursor = { canonicalCursor: windowInfo.canonicalNextCursor, microCursor: windowInfo.microNextCursor }; state.trail.push(cursor); void load(cursor);
+              const cursor = { shardOffset: windowInfo.nextShardOffset, expectedGeneration: data.publication.generation }; state.trail.push(cursor); void load(cursor);
             } }) : null
           ].filter(Boolean))
         ]),

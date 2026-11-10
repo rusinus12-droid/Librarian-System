@@ -3,7 +3,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=re
 const createPages=require('../tools/libra_memory_graph_pages.cjs'),createIndex=require('../tools/libra_memory_graph_index.cjs'),createCorpus=require('../tools/libra_memory_graph_corpus.cjs');
 const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
 function fixture(count=129){
-  const rows=new Map(),reads=[],visits=[],versions=new Map(),links=new Map();let broken=false,payload=0;
+  const rows=new Map(),reads=[],visits=[],versions=new Map(),links=new Map();let broken=false,payload=0,vocabulary=0;
   const pages=createPages({fingerprint:hash}),index=createIndex({pages,fingerprint:hash});
   const frame={owner:'libra:plugin_only',scopeKey:'forest-test',worldlineId:'main',restoreEpoch:0,view:{viewerId:'owner_reader'}};
   const head=async shard=>({canonicalTotal:0,microTurnTotal:count,...(shard?{count:shard.count}:{}),
@@ -16,7 +16,7 @@ function fixture(count=129){
     verifySourceProofs:async(p,{config})=>({status:p.ownerProof.stamp===(await head({start:config.windowStart||0,count:config.windowCount||count})).digest?'verified':'stale_source'})};
   const snapshot=async o=>{
     const start=o.microOffset??Number(o.microCursor||0);visits.push(start);const end=Math.min(count,start+(o.limit||1));
-    const units=Array.from({length:end-start},(_,i)=>({nodeId:'m'+(start+i),family:'micro',recordKey:'record'+(start+i),text:'keyword'+(start+i)+' extra'.repeat(payload),turn:start+i+1,revision:versions.get(start+i)||0}));
+    const units=Array.from({length:end-start},(_,i)=>({nodeId:'m'+(start+i),family:'micro',recordKey:'record'+(start+i),text:'keyword'+(start+i)+' extra'.repeat(payload)+Array.from({length:vocabulary},(_,j)=>' term'+(start+i)+'x'+j).join(''),turn:start+i+1,revision:versions.get(start+i)||0}));
     const graph={schema:'libra.memory_graph_projection.v1',scopeKey:frame.scopeKey,readerFrame:frame,
       nodes:units.map(u=>({id:u.nodeId,layer:'meaning',kind:'claim',bindingId:'b'+u.revision,identityCoverage:'revision_bound'})),
       edges:units.flatMap(u=>links.has(u.turn-1)?[{id:'edge'+u.turn,from:u.nodeId,to:'m'+links.get(u.turn-1),predicate:'follows',family:'micro'}]:[]),bases:[],units,
@@ -28,7 +28,7 @@ function fixture(count=129){
   return {rows,reads,visits,pages,index,owner,initial,snapshot,
     build:options=>corpus.build({initialGraph:initial,owner,snapshot,options:{limit:1,...options}}),
     read:options=>corpus.read({initialGraph:initial,owner,snapshot,queryInput:{queryText:'keyword128',semanticEnabled:false},...options}),
-    restart(){corpus=make();},grow(){count++;},edit(n){versions.set(n,(versions.get(n)||0)+1);},cancel(){broken=true;},link(a,b){links.set(a,b);},payload(n){payload=n;}};
+    restart(){corpus=make();},grow(){count++;},edit(n){versions.set(n,(versions.get(n)||0)+1);},cancel(){broken=true;},link(a,b){links.set(a,b);},payload(n){payload=n;},vocabulary(n){vocabulary=n;}};
 }
 test('129 windows publish in three bounded shards and route only the matching old/new shard across restart',async()=>{
   const f=fixture(),built=await f.build();assert.equal(built.status,'published');assert.equal(built.shardCount,3);assert.equal(built.windowCount,129);
@@ -79,4 +79,51 @@ test('more than 64 shards use a two-level term directory and still read only the
   const f=fixture();let built;do{built=await f.build({shardWindows:1,maxShardsPerStep:64});}while(built.status==='checkpointed');
   assert.equal(built.shardCount,129);f.restart();f.visits.length=0;
   const read=await f.read();assert.equal(read.access.selectedShardCount,2);assert.ok(read.graph.units.some(u=>u.nodeId==='m128'));assert.equal(f.visits.length,0);
+});
+
+test('a small corpus exceeding the legacy index budget splits, publishes and uses stored routing after restart', async () => {
+  const f = fixture(16); f.vocabulary(100);
+  const result = await f.build({ maxIndexBytes: 65536 });
+  assert.equal(result.status, 'published');
+  assert.ok(result.shardCount > 1, 'a corpus below 64 windows still splits when its index is too large');
+  f.restart(); f.visits.length = 0;
+  const read = await f.read({ queryInput: { queryText: 'keyword15', semanticEnabled: false } });
+  assert.equal(read.access.storage.storageAccess, 'routed_durable_shards');
+  assert.ok(read.graph.units.some(unit => unit.nodeId === 'm15'));
+  assert.equal(f.visits.length, 0, 'retrieval opens stored graph pages instead of enumerating native windows');
+  f.edit(15);
+  const updated = await f.build({ maxIndexBytes: 65536 });
+  assert.equal(updated.status, 'published');
+  assert.ok(updated.reusedWindowCount > 0);
+  const latest = await f.read({ queryInput: { queryText: 'keyword15', semanticEnabled: false } });
+  assert.ok(latest.graph.units.some(unit => unit.nodeId === 'm15' && unit.revision === 1));
+});
+
+test('published structure pages enumerate each stored shard without repeating or omitting one', async () => {
+  const f = fixture(7); await f.build({ shardWindows: 2 });
+  const seen = new Set(); let offset = 0, generation = '';
+  do {
+    const read = await f.read({ eager: true, queryInput: { semanticEnabled: false }, selectionBudget: { maxShards: 1, shardOffset: offset } });
+    generation ||= read.access.generation;
+    assert.equal(read.access.generation, generation);
+    assert.equal(read.access.selectedShardCount, 1);
+    for (const unit of read.graph.units) {
+      assert.ok(!seen.has(unit.nodeId), 'no repeated stored node'); seen.add(unit.nodeId);
+    }
+    offset = read.access.nextShardOffset;
+  } while (offset != null);
+  assert.equal(seen.size, 7);
+});
+
+test('one oversized native window narrows without relaxing index limits and preserves its width for incremental reuse', async () => {
+  const f = fixture(16); f.vocabulary(100);
+  const result = await f.build({ limit: 20, maxIndexBytes: 65536, maxShardsPerStep: 64 });
+  assert.equal(result.status, 'published');
+  assert.ok(result.effectiveLimit < 20);
+  assert.ok(result.windowLimitRetries > 0);
+  const again = await f.build({ limit: undefined, maxIndexBytes: 65536, maxShardsPerStep: 64 });
+  assert.equal(again.status, 'published');
+  assert.equal(again.effectiveLimit, result.effectiveLimit);
+  assert.ok(again.reusedWindowCount > 0);
+  assert.equal(again.windowLimitRetries, 0);
 });

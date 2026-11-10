@@ -935,7 +935,8 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     const save = async value => {
       const raw = JSON.stringify(value), bytes = pages.encodedSize(raw).utf8Bytes, digest = hash(raw), key = loc.prefix + 'projection:' + digest;
       if (!written.has(key)) {
-        totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget');
+        totalBytes += bytes; if (totalBytes > config.maxSerializedBytes || written.size >= 4096) fail('index_budget', {
+          budgetStage: 'projection', indexBytes: totalBytes, indexByteLimit: config.maxSerializedBytes, indexPages: written.size });
         const held = owner.resources?.retain(value, 'publication_projection_page');
         await writer.add(key, raw, held); written.add(key);
       }
@@ -1260,7 +1261,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           const page = pages.page({ units: [] }, { partition: loc.partition, generation, pool: 'units', offset: 0, pageBytes: config.pageBytes });
           const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
           total += page.serializedUtf8Bytes;
-          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+          if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
           await indexWriter.add(key, text);
           refs.push({ key, table, digest, rows: 0, bytes: page.serializedUtf8Bytes, offset: 0, routing: [] });
           continue;
@@ -1280,7 +1281,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               if (page.nextOffset === subOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               await indexWriter.add(key, text);
               refs.push({
                 key,
@@ -1306,7 +1307,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
               if (page.nextOffset === partOffset) fail('page_' + page.stopReason);
               const text = JSON.stringify(page.items), digest = hash(text), key = loc.prefix + 'page:' + table + ':' + digest;
               total += page.serializedUtf8Bytes;
-              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
+              if (total > config.maxIndexBytes || refs.length >= 4096) fail('index_budget', { budgetStage: 'index_tables', indexBytes: total, indexByteLimit: config.maxIndexBytes, indexPages: refs.length });
               await indexWriter.add(key, text);
               const isFirstPart = partOffset === 0;
               refs.push({
@@ -1366,7 +1367,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       };
       owner.resources?.retain(proofRecord,'publication_proof',2);
       const proofRaw = JSON.stringify(proofRecord), proofDigest = hash(proofRaw), proofKey = loc.prefix + 'proof:' + proofDigest;
-      if (new TextEncoder().encode(proofRaw).length > config.maxSerializedBytes) fail('index_budget');
+      const proofBytes = new TextEncoder().encode(proofRaw).length;
+      if (proofBytes > config.maxSerializedBytes) fail('index_budget', {
+        budgetStage: 'source_proof', indexBytes: proofBytes, indexByteLimit: config.maxSerializedBytes });
       await immutable(owner, proofKey, proofRaw);
 
       const projection = await writeProjection(owner, loc, graph, value.collected, value.windowSlices, value.serializedGraphBytes, config);
@@ -1805,27 +1808,49 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       for (const [family,entry] of Object.entries(families)) entry.units=graph.units.filter(u=>u.family===family).length;
       return graph;
     }}) : null;
-  const build = async (input = {}) => {
+  const buildOnce = async (input = {}) => {
     if (!forest || !input.owner?.captureForestHead) return buildLegacy(input);
     const checked={...input.options};delete checked.shardWindows;delete checked.maxShardsPerStep;policy(checked);
-    const limit=input.options?.limit || 20;
+    let limit=input.options?.limit || 20;
     const raw = input.initialGraph ? await input.owner.read(location(input.initialGraph).rootKey) : null;
     const previous = raw ? await forest.manifest(input.owner,location(input.initialGraph),raw) : null;
+    // Keep a successfully adapted window width on later incremental builds.
+    if (input.options?.limit === undefined && previous?.config?.limit) {
+      limit = previous.config.limit;
+      input = {...input, options: {...input.options, limit}};
+      checked.limit = limit;
+      policy(checked);
+    }
     const head=input.initialGraph?.corpusTotals || await input.owner.captureForestHead();
     if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) {
       try {
-        return await buildLegacy(input);
+        return {...await buildLegacy({...input, options: checked}), effectiveLimit: limit};
       } catch (legacyErr) {
-        if (!['value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
+        if (!['index_budget','record_size','page_row_exceeds_page','value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
           throw legacyErr;
         }
       }
     }
     if (active) fail('build_busy'); active=true;
     buildProgress={phase:'planning',startedAt:now(),updatedAt:now(),mode:'sharded',windowsDone:0};
-    try { const result=await forest.build(input); noteBuild({outcome:result.status}); return result; }
+    try { const result=await forest.build(input); noteBuild({outcome:result.status}); return {...result, effectiveLimit: limit}; }
     catch(error) {noteBuild({outcome:'failed',error:String(error.message)});throw error;}
     finally {lastBuildProgress={...buildProgress,finishedAt:now()};buildProgress=null;active=false;}
+  };
+  const build = async (input = {}) => {
+    let options = Object.fromEntries(Object.entries(input.options || {}).filter(([, value]) => value !== undefined)), windowLimitRetries = 0;
+    for (;;) {
+      try { return {...await buildOnce({...input, options}), windowLimitRetries}; }
+      catch (error) {
+        // A single 20-record window can still exceed a shard's index/projection cap.
+        // Reduce the native window width too; never relax the byte budget or drop rows.
+        const limit = options.limit || 20;
+        if (!forest || !input.owner?.captureForestHead || limit <= 1
+          || !['index_budget','workspace_budget','record_size','page_row_exceeds_page'].includes(error?.reason)) throw error;
+        options = {...options, limit: Math.max(1, Math.floor(limit / 2))};
+        windowLimitRetries++;
+      }
+    }
   };
   const read = async (input = {}) => {
     if (forest && input.initialGraph && input.owner?.captureForestHead) {

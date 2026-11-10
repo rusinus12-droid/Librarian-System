@@ -249,8 +249,10 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
     if (!equal(forest.head,await owner.captureForestHead())) fail('stale_generation');
     const store = io(owner,loc), selected = new Set(), loaded = new Map(), graphs = [], children = [], canonical = new Map(), sourceKeys = new Set(), bodyDigests = {}, dependencies = {};
     const maxBytes = selectionBudget.maxGraphBytes ?? 4194304, maxShards = selectionBudget.maxShards ?? 32;
+    const shardOffset = selectionBudget.shardOffset ?? 0;
+    if (!Number.isSafeInteger(shardOffset) || shardOffset < 0 || shardOffset >= forest.shardCount || shardOffset && !eager) fail('policy_invalid');
     if (!Number.isSafeInteger(maxBytes)||maxBytes<65536||maxBytes>8388608||!Number.isSafeInteger(maxShards)||maxShards<1||maxShards>128) fail('policy_invalid');
-    let bytes = 0, partial = false, storagePages = 0;
+    let bytes = 0, partial = shardOffset > 0, storagePages = 0;
     const routeCache=new Map();
     const lookup=async term=>{
       if(routeCache.has(term))return routeCache.get(term);
@@ -259,8 +261,10 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
       routeCache.set(term,entry);return entry;
     };
     const select = async term => { const entry=await lookup(term);if(!entry)return;
+      let position = 0;
       for await (const hit of store.scan(entry.shards)) {
       if (hit.term !== term) fail('page_corrupt');
+      if (term === 'all' && position++ < shardOffset) continue;
       if (selected.size >= maxShards && !selected.has(hit.start)) { partial=true; break; } selected.add(hit.start);
     }};
     if (eager) await select('all'); else {
@@ -362,8 +366,11 @@ module.exports = function createMemoryGraphForest({ pages, index, fingerprint: h
     return {graph,compiledIndex,config:m.config,collected:{entityRegistry:children[0]?.collected.entityRegistry || [],canonicalRows:[...canonical.values()],sourceKeys:[...sourceKeys]},
       sourceProofs:{proofVersion:'libra.source_proof_contract.v2',ownerProof:{sourceBodyDigests:bodyDigests,recordDependencyKeys:dependencies}},
       currentGraph:assertCurrent,assertIndexCurrent,
-      access:{schema,mode:'durable_common_index',generation:m.generation,indexDigest:compiledIndex.indexDigest,windowCount:forest.windowCount,
-        shardCount:forest.shardCount,selectedShardCount:graphs.length,selectionComplete:!partial,pageCount:graphs.reduce((n,g)=>n+g.nodes.length,0),
+      access:{schema,mode:'durable_common_index',generation:m.generation,indexDigest:compiledIndex.indexDigest,
+        publicationIndexDigest:JSON.parse(rootRaw).digest,windowCount:forest.windowCount,
+      shardCount:forest.shardCount,selectedShardCount:graphs.length,selectionComplete:!partial && shardOffset === 0,
+        shardOffset, nextShardOffset:eager && shardOffset + graphs.length < forest.shardCount ? shardOffset + graphs.length : null,
+        pageCount:graphs.reduce((n,g)=>n+g.nodes.length,0),
         storage:{storageAccess:'routed_durable_shards',projectionPagesRead:storagePages,selectedGraphBytes:bytes},selectedIndexCompilations:1,
         nativeReprojectionRequired:stateEvidenceReprojectionPages>0,stateEvidenceReprojectionPages,ownerAtomicity:false,inventoryComplete:false,byteBounded:false}};
   };
