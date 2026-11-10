@@ -4071,7 +4071,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopeRoutingEnabled = !managerOnly && options.scopeRouting !== false;
   const startupDiagnosticsEnabled = !localOnlyOwner && !managerOnly && options.startupDiagnostics !== false;
   const scopeCacheMs = Math.max(0, Math.min(10000, Number(options.scopeCacheMs || 0) || 0));
-  const sharedRouteModeRaw = String(options.sharedRouteMode || MODE_MIRROR);
+  const sharedRouteModeRaw = options.sharedRouteMode ? String(options.sharedRouteMode) : '';
   // Optional owner semantic validation runs only after the SDK has restored and
   // read back every generic key.  It lets each plugin reject a structurally
   // complete but semantically unusable snapshot without weakening the common
@@ -4814,8 +4814,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const readConfig = async (force = false) => {
     if (!force && state.transientMode && VALID_MODES.has(state.transientMode)) return { ...state.config, mode: state.transientMode };
     if (!force && Date.now() - Number(state.config.at || 0) < configCacheMs) return state.config;
-    const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
-    const mode = localOnlyOwner || managerOnly ? MODE_PLUGIN_ONLY : state.transientMode && VALID_MODES.has(state.transientMode) ? state.transientMode : normalizeMode(rawMode);
+    let mode = MODE_PLUGIN_ONLY;
+    if (!localOnlyOwner && !managerOnly) {
+      if (state.transientMode && VALID_MODES.has(state.transientMode)) {
+        mode = state.transientMode;
+      } else {
+        const registry = await loadScopeRegistry(false, false);
+        const globalStored = liveGlobalRow(registry);
+        if (globalStored) {
+          mode = normalizeMode(globalStored.mode);
+        } else {
+          const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
+          mode = normalizeMode(rawMode);
+        }
+      }
+    }
     const rawUrl = await getArgumentValue(urlArguments, defaultUrl);
     const url = normalizeServerUrl(rawUrl);
     if (state.config.url !== url) resetBootstrapCache();
@@ -9322,7 +9335,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (kind === 'scope' && !scope.scopeId) scope = normalizeScopeDescriptor(currentScope);
     let mode = MODE_PLUGIN_ONLY;
     if (kind === 'scope') mode = (await readScopeMode(scope, false)).mode;
-    else if (kind === 'shared') mode = (await anyServerScopedMode()) ? normalizeMode(sharedRouteModeRaw) : MODE_PLUGIN_ONLY;
+    else if (kind === 'shared') {
+      if (await anyServerScopedMode()) {
+        if (sharedRouteModeRaw) {
+          mode = normalizeMode(sharedRouteModeRaw);
+        } else {
+          const registry = await loadScopeRegistry(false, false);
+          const globalStored = liveGlobalRow(registry);
+          const effectiveGlobal = globalStored ? normalizeMode(globalStored.mode) : normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
+          if (effectiveGlobal === MODE_SERVER_ONLY) {
+            mode = MODE_SERVER_ONLY;
+          } else if (effectiveGlobal === MODE_MIRROR) {
+            mode = MODE_MIRROR;
+          } else {
+            const curScope = state.scopeRouting.current;
+            const curMode = curScope?.scopeId && registry.entries?.[curScope.scopeId] ? normalizeMode(registry.entries[curScope.scopeId].mode) : null;
+            mode = curMode === MODE_SERVER_ONLY ? MODE_SERVER_ONLY : MODE_MIRROR;
+          }
+        }
+      } else {
+        mode = MODE_PLUGIN_ONLY;
+      }
+    }
     const remoteKey = String(raw.remoteKey || (raw.scopedContainer === true && scope.scopeId
       ? `${key}${SCOPED_REMOTE_KEY_MARKER}${encodeURIComponent(scope.scopeId)}`
       : key));
@@ -46402,7 +46436,7 @@ function createLibraReadonlySourceContext(owner) {
   // still bounds them together.
   const defaults = Object.freeze({ maxSourceBytes: 64 * 1024 * 1024, maxDurableBytes: 32 * 1024 * 1024,
     maxRetainedBytes: 128 * 1024 * 1024, maxValueBytes: 8 * 1024 * 1024, maxDecodeBytes: 64 * 1024 * 1024, maxReads: 8192 });
-  const maintenanceDefaults = Object.freeze({ ...defaults, maxRetainedBytes: 192 * 1024 * 1024 });
+  const maintenanceDefaults = Object.freeze({ ...defaults, maxSourceBytes: 256 * 1024 * 1024, maxDurableBytes: 128 * 1024 * 1024, maxRetainedBytes: 192 * 1024 * 1024, maxReads: 65536 });
   const inspect = () => ({ ...pool, limits: { ...poolLimits } });
   const openWithDefaults = (input = {}, check = () => {}, profile = defaults) => {
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof check !== 'function') throw new TypeError('LIBRA_GRAPH_RESOURCE_OPTIONS_INVALID');
@@ -46532,6 +46566,8 @@ function createLibraReadonlySourceContext(owner) {
       };
       const accept = body => {
         assertCurrent(); if (released || accepted) fail('read_lease_invalid'); accepted = true;
+        const availableInBudget = Math.max(0, maximum - counters[category]);
+        const valueCap = Math.min(config.maxValueBytes, availableInBudget);
         let bytes;
         if (body == null) bytes = 0;
         else if (typeof body === 'string') {
@@ -46540,13 +46576,13 @@ function createLibraReadonlySourceContext(owner) {
             const code=body.charCodeAt(i);
             if (code>=0xd800&&code<=0xdbff&&i+1<body.length&&body.charCodeAt(i+1)>=0xdc00&&body.charCodeAt(i+1)<=0xdfff) { bytes+=4;i++; }
             else bytes+=code<128?1:code<2048?2:3;
-            if (bytes>cap) break;
+            if (bytes>valueCap) break;
           }
         } else {
-          try { bytes = measure(body,cap).utf8Bytes; }
-          catch (error) { if(error.reason==='row_exceeds_page') { counters.rejectedPayloadLowerBoundBytes += cap+1; fail('value_byte_budget'); } throw error; }
+          try { bytes = measure(body,valueCap).utf8Bytes; }
+          catch (error) { if(error.reason==='row_exceeds_page') { counters.rejectedPayloadLowerBoundBytes += valueCap+1; fail('value_byte_budget'); } throw error; }
         }
-        if (bytes>cap || counters[category] + bytes > maximum) { counters.rejectedPayloadLowerBoundBytes += bytes; fail('value_byte_budget'); }
+        if (bytes>config.maxValueBytes || counters[category] + bytes > maximum) { counters.rejectedPayloadLowerBoundBytes += bytes; fail(bytes>config.maxValueBytes ? 'value_byte_budget' : kind + '_byte_budget'); }
         counters[category] += bytes;
       };
       return Object.freeze({ accept, release, prepare: reserveValue });
@@ -48677,7 +48713,7 @@ function createLibraReadonlySourceContext(owner) {
           break;
         } catch (error) {
           if (size <= 1 || !['workspace_budget','index_budget','record_size','page_row_exceeds_page',
-            'read_count_budget','retained_byte_budget','retained_value_budget','decode_value_budget','decode_workspace_budget','value_byte_budget'].includes(error.reason)) throw error;
+            'read_count_budget','retained_byte_budget','retained_value_budget','decode_value_budget','decode_workspace_budget','value_byte_budget','source_byte_budget','durable_byte_budget'].includes(error.reason)) throw error;
           size = Math.max(1,Math.floor(size/2));windowHint=Math.min(windowHint,size); oldShard = null; routeKeys=null;
         } finally { shardScope?.close(); await context?.close(); }
       }
@@ -50631,7 +50667,15 @@ function createLibraReadonlySourceContext(owner) {
     const raw = input.initialGraph ? await input.owner.read(location(input.initialGraph).rootKey) : null;
     const previous = raw ? await forest.manifest(input.owner,location(input.initialGraph),raw) : null;
     const head=input.initialGraph?.corpusTotals || await input.owner.captureForestHead();
-    if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) return buildLegacy(input);
+    if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) {
+      try {
+        return await buildLegacy(input);
+      } catch (legacyErr) {
+        if (!['value_byte_budget','source_byte_budget','durable_byte_budget','workspace_budget','retained_byte_budget','io_backpressure'].includes(legacyErr?.reason)) {
+          throw legacyErr;
+        }
+      }
+    }
     if (active) fail('build_busy'); active=true;
     buildProgress={phase:'planning',startedAt:now(),updatedAt:now(),mode:'sharded',windowsDone:0};
     try { const result=await forest.build(input); noteBuild({outcome:result.status}); return result; }
@@ -86914,8 +86958,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // Small readability fixes layered after the approved stylesheet (which stays byte-identical).
   const LIBRA_UX_POLISH_STYLE = [
     'html,body{height:100%;overflow:hidden;background:transparent!important}',
-    '#sga-rp-gui-root{height:100dvh!important;background:transparent!important}',
-    '.stage{height:100dvh;padding:16px;align-items:center;background:transparent;overflow:hidden}',
+    '#sga-rp-gui-root{position:fixed!important;inset:0!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100vw!important;height:100dvh!important;z-index:9999!important;display:block!important;overflow:hidden!important;background:transparent!important}',
+    '#sga-rp-gui-root > .stage{position:fixed!important;inset:0!important;top:0!important;left:0!important;width:100vw!important;height:100dvh!important;padding:16px!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;background:transparent!important}',
+    '#sga-rp-gui-root > .stage > .frame{height:min(830px,calc(100dvh - 32px))!important;max-height:calc(100dvh - 32px)!important;min-height:0!important}',
+    '.switch{position:relative!important}',
     '.frame{height:min(830px,100%);min-height:0}',
     '[data-final-evidence] .evidence-text{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}',
     '[data-final-evidence] .kv{grid-template-columns:max-content minmax(0,1fr);gap:6px 14px;font-size:13px}',
@@ -97109,7 +97155,8 @@ advanced
           node.scrollLeft = Number(position.left || 0);
         }
         const page = document.scrollingElement || document.documentElement;
-        if (page) { page.scrollTop = Number(state.pageTop || 0); page.scrollLeft = Number(state.pageLeft || 0); }
+        if (page) { page.scrollTop = 0; page.scrollLeft = 0; }
+        try { window.scrollTo(0, 0); } catch (_) {}
       } catch (_) {}
     };
     try { requestAnimationFrame(apply); } catch (_) { setTimeout(apply, 0); }
@@ -99953,12 +100000,23 @@ advanced
     }
     const root = document.getElementById('sga-rp-gui-root');
     if (root?.style?.setProperty) {
+      root.style.setProperty('position', 'fixed', 'important');
+      root.style.setProperty('inset', '0', 'important');
+      root.style.setProperty('top', '0', 'important');
+      root.style.setProperty('left', '0', 'important');
+      root.style.setProperty('right', '0', 'important');
+      root.style.setProperty('bottom', '0', 'important');
+      root.style.setProperty('width', '100vw', 'important');
+      root.style.setProperty('height', '100dvh', 'important');
+      root.style.setProperty('z-index', '9999', 'important');
+      root.style.setProperty('overflow', 'hidden', 'important');
       root.style.setProperty('background', 'transparent', 'important');
       root.style.setProperty('background-color', 'transparent', 'important');
       root.style.setProperty('background-image', 'none', 'important');
       root.style.setProperty('backdrop-filter', 'none', 'important');
       root.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
     }
+    try { window.scrollTo(0, 0); } catch (_) {}
   };
 
   const waitForDocumentBody = async () => {
@@ -99984,10 +100042,18 @@ advanced
         else if (oldRoot.parentElement) oldRoot.parentElement.removeChild?.(oldRoot);
       }
       const root = guiEl('div', { id: 'sga-rp-gui-root' });
+      root.style.setProperty('position', 'fixed', 'important');
+      root.style.setProperty('inset', '0', 'important');
+      root.style.setProperty('top', '0', 'important');
+      root.style.setProperty('left', '0', 'important');
+      root.style.setProperty('right', '0', 'important');
+      root.style.setProperty('bottom', '0', 'important');
+      root.style.setProperty('z-index', '9999', 'important');
       root.style.setProperty('display', 'block', 'important');
-      root.style.setProperty('width', '100%', 'important');
-      root.style.setProperty('height', '100%', 'important');
+      root.style.setProperty('width', '100vw', 'important');
+      root.style.setProperty('height', '100dvh', 'important');
       root.style.setProperty('padding', '0', 'important');
+      root.style.setProperty('overflow', 'hidden', 'important');
       body.appendChild(root);
       Gui.root = root;
       Gui.mockupApp = null;
@@ -100378,6 +100444,9 @@ advanced
     Gui.libraSelectedRunId = '';
 
     if (!Gui.root || !document.getElementById('sga-rp-gui-root')) await initSettingsGui();
+    try { window.scrollTo(0, 0); } catch (_) {}
+    const scrollPage = document.scrollingElement || document.documentElement;
+    if (scrollPage) { scrollPage.scrollTop = 0; scrollPage.scrollLeft = 0; }
     if (!Gui.state) primeGuiStateFromRuntimeCache();
 
     if (Gui.refreshTimer) { clearTimeout(Gui.refreshTimer); Gui.refreshTimer = null; }
