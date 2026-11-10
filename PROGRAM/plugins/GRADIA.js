@@ -3536,6 +3536,7 @@ ${BIANCA_PERSONA_TEXT}`;
     }
     if (family === 'gemini_pro' && profile !== 'fast') effort = 'high';
     if (family === 'gemini_flash' && profile === 'balanced') effort = 'medium';
+    if (family === 'deepseek' && phase === 'analysis' && (!preset?.reasoning_effort || preset?.reasoning_effort === 'none')) effort = 'medium';
     if (family === 'gpt56' && effort === 'max') effort = 'high';
     if (repair) effort = 'minimal';
     const alwaysThinking = family === 'claude_fable5' || family === 'kimi';
@@ -18220,7 +18221,10 @@ ${passage.text || ''}`, 420));
     const reasoningDraftCap = reasoningActive
       ? Math.min(32768, Math.max(draftSafetyCap, Math.ceil(visibleWanted * 1.8)))
       : draftSafetyCap;
-    const analysisCap = reasoningActive ? MAX_ANALYSIS_RETRY_OUTPUT_TOKENS : MAX_ANALYSIS_OUTPUT_TOKENS;
+    const reasoningAnalysisCap = reasoningActive
+      ? (presetMax > MAX_ANALYSIS_RETRY_OUTPUT_TOKENS ? Math.min(presetMax - 2048, 14336) : MAX_ANALYSIS_RETRY_OUTPUT_TOKENS)
+      : MAX_ANALYSIS_OUTPUT_TOKENS;
+    const analysisCap = reasoningActive ? reasoningAnalysisCap : MAX_ANALYSIS_OUTPUT_TOKENS;
     const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap,
       contextOutputCap || Number.MAX_SAFE_INTEGER));
     // Shows when a draft target cannot fit the preset's own max_tokens.
@@ -20168,8 +20172,14 @@ ${passage.text || ''}`, 420));
         // with a larger output budget, re-admitted by the context budget gate. Malformed output
         // that claims a normal stop is not retried.
         const configuredCap = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
+        const reasoningFamily = effectiveReasoningFamilyForPreset(preset);
+        const reasoningActive = resolveProviderOutputBudget(preset, { maxTokens: preset?.max_tokens }, reasoningFamily).reasoningAllowed === true;
+        const retryMultiplier = reasoningActive ? 1.8 : 1.5;
+        const minJsonLengthRetry = options.jsonMode === true
+          ? (reasoningActive ? Math.min(configuredCap, 16384) : MIN_JSON_LENGTH_RETRY_TOKENS)
+          : 0;
         const expandedMaxTokens = Math.min(configuredCap, Math.max(effectiveOptions.maxTokens + 1024,
-          Math.ceil(effectiveOptions.maxTokens * 1.5), options.jsonMode === true ? MIN_JSON_LENGTH_RETRY_TOKENS : 0));
+          Math.ceil(effectiveOptions.maxTokens * retryMultiplier), minJsonLengthRetry));
         if (expandedMaxTokens > effectiveOptions.maxTokens && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES) {
           warn('evidence_provider_length_retry', `${stageName}: provider stopped at ${lengthLimit.reason}; retrying once with ${expandedMaxTokens} output tokens`);
           return await callLLMWithPreset(settings, stageName, systemPrompt, userPromptBeforeEvidence, {
@@ -20201,12 +20211,18 @@ ${passage.text || ''}`, 420));
     }
     if (result.content && lengthLimit && !options.lengthLimitRetry) {
       const configuredCap = clampInt(preset?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS);
+      const reasoningFamily = effectiveReasoningFamilyForPreset(preset);
+      const reasoningActive = resolveProviderOutputBudget(preset, { maxTokens: preset?.max_tokens }, reasoningFamily).reasoningAllowed === true;
+      const retryMultiplier = reasoningActive ? 1.8 : 1.5;
+      const minJsonLengthRetry = options.jsonMode === true
+        ? (reasoningActive ? Math.min(configuredCap, 16384) : MIN_JSON_LENGTH_RETRY_TOKENS)
+        : 0;
       const expandedMaxTokens = Math.min(
         configuredCap,
         Math.max(
           effectiveOptions.maxTokens + 1024,
-          Math.ceil(effectiveOptions.maxTokens * 1.5),
-          options.jsonMode === true ? MIN_JSON_LENGTH_RETRY_TOKENS : 0
+          Math.ceil(effectiveOptions.maxTokens * retryMultiplier),
+          minJsonLengthRetry
         )
       );
       if (expandedMaxTokens > effectiveOptions.maxTokens) {
@@ -26007,10 +26023,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ? shadowRequiredAnalysisBeatCount(settings)
       : 0;
     const corrective = buildCompactMandatoryAnalysisRetryPrompts(settings, stageName, prompts, recent, previous);
-    const retryTokens = Math.max(MAX_ANALYSIS_RETRY_OUTPUT_TOKENS, shadowMinimumBeats * 420);
+    const stagePreset = resolvePreset(settings, stageName).preset;
+    const compactReasoningFamily = effectiveReasoningFamilyForPreset(stagePreset);
+    const compactReasoning = resolveProviderOutputBudget(stagePreset, { maxTokens: stagePreset?.max_tokens }, compactReasoningFamily).reasoningAllowed === true;
+    const baseRetryTokens = Math.max(MAX_ANALYSIS_RETRY_OUTPUT_TOKENS, shadowMinimumBeats * 420);
+    const retryTokens = compactReasoning ? Math.min(32768, Math.max(baseRetryTokens, 12288)) : baseRetryTokens;
     const result = await callLLMWithPreset(settings, stageName, corrective.system, corrective.user, {
       maxTokens: evidenceRun ? Math.min(retryTokens,
-        clampInt(resolvePreset(settings,stageName).preset?.max_tokens,64,200000,DEFAULT_MAX_STAGE_TOKENS)) : retryTokens,
+        clampInt(stagePreset?.max_tokens,64,200000,DEFAULT_MAX_STAGE_TOKENS)) : retryTokens,
       temp: 0.1,
       promptPhase: evidenceRun ? 'analysis' : 'repair',
       ...(evidenceRun ? {evidenceRecovery:'analysis',evidenceAnalysisRetry:true,telemetryRetryKind:'analysis_compact'} : {}),
@@ -38644,6 +38664,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     current = multiPipelineMode === 'heavyweight'
       ? await runTwoCallStage('shadow_act', shadowEnv.recent, null, shadowEnv.settings, ledger)
       : await runStage('shadow_act', shadowEnv.recent, null, shadowEnv.settings, ledger);
+    if (!isUsableStage(current) && multiPipelineMode === 'heavyweight' && !usesLibEvidence) {
+      warn('shadow_act_two_call_degraded_to_single_stage', current?.reason || 'unusable_two_call');
+      current = await runStage('shadow_act', shadowEnv.recent, null, shadowEnv.settings, ledger);
+    }
     finishStageModelTiming('shadow_act');
     await libReadSession.assertCurrent();
     stages.push(current);
