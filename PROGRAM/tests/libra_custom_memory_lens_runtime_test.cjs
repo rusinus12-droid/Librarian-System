@@ -209,7 +209,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
 
     await check('recall: own budget, header, relevance floor and stale exclusion', async () => {
       const recall = await api.recallLensMemories({ query: '푸른 열쇠 약속 기억나?', canonicalBudgetChars: 12000 });
-      assert.equal(recall.budgetChars, Math.min(2600, Math.floor(12000 * 0.22)));
+      assert.equal(recall.budgetChars, Math.min(4000, Math.floor(12000 * 0.30)));
       assert.ok(recall.injectedItems.length >= 1);
       assert.ok(recall.renderedBlock.startsWith('[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]'));
       assert.ok(recall.renderedBlock.length <= recall.budgetChars);

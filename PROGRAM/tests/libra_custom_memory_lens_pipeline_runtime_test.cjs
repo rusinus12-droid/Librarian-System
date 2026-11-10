@@ -68,6 +68,8 @@ const results = [];
     assert.ok(f.getMemory()?.canonicalArtifact, 'canonical memory is stored as before');
     results.push('the queued lens run stores its note after the commit');
 
+    // The lens budget follows the configured evidence budget (it used to fall back to 4,000).
+    await f.r.api.saveLibraMemorySettings({ ...await f.r.api.getLibraMemorySettings(), recallMaxChars: 12000 });
     const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: '지호가 열쇠를 돌려주기로 한 약속은 어떻게 됐지?' }], 'model');
     const system = messages.filter(message => message.role === 'system').map(message => String(message.content)).join('\n');
     assert.match(system, /\[LIBRA LENS MEMORY — PERSPECTIVE NOTES \(NON-CANONICAL\)\]/);
@@ -77,6 +79,8 @@ const results = [];
     assert.equal(validity.ok, true, JSON.stringify(validity));
     const viewer = f.r.api.getLastMemoryRecallViewer?.() || null;
     if (viewer?.lensRecall) assert.equal(viewer.lensRecall.injected, true);
+    assert.equal(viewer?.lensRecall?.budgetChars, 4000, 'lens notes are budgeted from the configured evidence budget, up to their own ceiling');
+    assert.doesNotMatch(system, /^\(\d+\) \[|^\[LIBRA_EVIDENCE /m, 'the final document carries no packet numbering or packet header');
     results.push('the next request delivers the lens note and the response context validates');
 
     await f.r.api.trashLens(lens.lensId);

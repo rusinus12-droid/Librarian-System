@@ -5,6 +5,8 @@ const pages = require('./libra_memory_graph_pages.cjs');
 const store = require('./libra_memory_graph_store.cjs');
 const index = require('./libra_memory_graph_index.cjs');
 const corpus = require('./libra_memory_graph_corpus.cjs');
+const forest = require('./libra_memory_graph_forest.cjs');
+const forestRefs = require('./libra_memory_graph_forest_refs.cjs');
 const lane = require('./libra_memory_graph_lane.cjs');
 const query = require('./libra_memory_graph_query.cjs');
 const semantic = require('./libra_memory_graph_semantic.cjs');
@@ -15,7 +17,7 @@ const representation = require('./libra_memory_graph_representation.cjs');
 const resources = require('./libra_memory_graph_resources.cjs');
 const localStore = require('./libra_memory_graph_local_store.cjs');
 const begin = '// BEGIN LIBRA MEMORY GRAPH', end = '// END LIBRA MEMORY GRAPH';
-const block = () => `    ${begin}\n    const createLibraMemoryGraphLocalStore = (${localStore.toString()});\n    const createLibraMemoryGraphResources = (${resources.toString()});\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphCorpus = (${corpus.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphSemantic = (${semantic.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    const createLibraMemoryGraphInventory = (${inventory.toString()});\n    const createLibraMemoryGraphRepresentation = (${representation.toString()});\n    ${end}`;
+const block = () => `    ${begin}\n    const libraForestReferences = (${forestRefs.toString()});\n    const createLibraMemoryGraphLocalStore = (${localStore.toString()});\n    const createLibraMemoryGraphResources = (${resources.toString()});\n    const createLibraMemoryGraphIdentity = (${identity.toString()});\n    const createLibraMemoryGraphReaders = (${readers.toString()});\n    const createLibraMemoryGraphPages = (${pages.toString()});\n    const createLibraMemoryGraphStore = (${store.toString()});\n    const createLibraMemoryGraphIndex = (${index.toString()});\n    const createLibraMemoryGraphForest = (${forest.toString()});\n    const createLibraMemoryGraphCorpus = (${corpus.toString()});\n    const createLibraMemoryGraphLane = (${lane.toString()});\n    const createLibraMemoryGraphQuery = (${query.toString()});\n    const createLibraMemoryGraphSemantic = (${semantic.toString()});\n    const createLibraMemoryGraphCompiler = (${compiler.toString()});\n    const createLibraMemoryGraphRollout = (${rollout.toString()});\n    const createLibraMemoryGraphInventory = (${inventory.toString()});\n    const createLibraMemoryGraphRepresentation = (${representation.toString()});\n    ${end}`;
 function sync({ target = path.join(__dirname, '../plugins/LIBRA.js'), check = false } = {}) {
   const before = fs.readFileSync(target, 'utf8');
   const starts = [...before.matchAll(/^[ \t]*\/\/ BEGIN LIBRA MEMORY GRAPH[ \t]*$/gm)];

@@ -181,6 +181,10 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     const maxUnits = policy.maxUnits ?? 24;
     if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 32 || maxCharacters > 262144) fail('max_characters_invalid');
     if (!Number.isSafeInteger(maxUnits) || maxUnits < 1 || maxUnits > 256) fail('max_units_invalid');
+    // Lore is background. It may take at most this share of the rendered budget while memory
+    // candidates are still waiting; what memory leaves unused is given back to lore afterwards.
+    const loreShare = policy.loreShare ?? 0.2;
+    if (typeof loreShare !== 'number' || !Number.isFinite(loreShare) || loreShare < 0 || loreShare > 1) fail('lore_share_invalid');
     if (consumer === 'gradia') {
       const receipt = policy.gradiaSelectionReceipt;
       if (!receipt || typeof receipt !== 'object'
@@ -199,6 +203,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       historicalFormatOnly: packetPolicy.historicalFormatOnly,
       maxCharacters,
       maxUnits,
+      loreShare,
       includeMandatoryLore: policy.includeMandatoryLore !== false,
       hydrateSourceQuotes: Boolean(policy.hydrateSourceQuotes),
       correspondenceMap: policy.correspondenceMap && typeof policy.correspondenceMap === 'object' ? policy.correspondenceMap : {},
@@ -750,7 +755,17 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
       };
     };
 
+    // Admission renders the packet once per candidate. A candidate's presentation depends only on
+    // the graph, so it is derived once instead of once per trial for every admitted item.
+    const decoratedByNodeId = new Map();
     const decorateCandidateForFormat = cand => {
+      const known = decoratedByNodeId.get(cand.nodeId);
+      if (known && known.source === cand) return known.value;
+      const value = decorateCandidate(cand);
+      decoratedByNodeId.set(cand.nodeId, { source: cand, value });
+      return value;
+    };
+    const decorateCandidate = cand => {
       const unit = unitByNodeId.get(cand.nodeId) || {};
       const lifecycleStatus = resolveLifecycleStatus(cand);
       const presentationMeta = policy.presentation === 'model_document'
@@ -794,17 +809,32 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
     const droppedForBudget = [];
     const suppressedMicro = [];
     const provisionalHeldMicro = [];
+    const orderedNodeIds = new Set(ordered.map(cand => cand.nodeId));
+    const loreCharacterCap = Math.floor(policy.maxCharacters * policy.loreShare);
+    const deferredLore = [];
+    let loreCharacters = 0;
+    const admit = cand => {
+      admittedRenderedLength = lastTrialLength;
+      admitted.push(cand);
+      admittedNodeIds.add(cand.nodeId);
+      if (cand.family === 'lore') loreCharacters += String(cand.text || '').length;
+    };
 
     const countIndependentSources = list => computeIndependentPrimarySources(list, nodeById, graph.edges).size;
 
+    // Adding an item only adds lines, so the last admitted length plus the new item line is a
+    // lower bound: a candidate that cannot fit is refused without rendering the packet again.
+    let admittedRenderedLength = 0, lastTrialLength = 0;
     const fitsRenderedBudget = candidateToAdd => {
       if (admitted.length >= policy.maxUnits) return false;
+      if (admittedRenderedLength + singleLine(candidateToAdd.text).length + 6 > policy.maxCharacters) return false;
       const decorated = decorateCandidateForFormat(candidateToAdd);
       const trialList = [...admitted.map(decorateCandidateForFormat), decorated];
       const trialSources = countIndependentSources(trialList);
       // Measure the order that will be delivered: time lines depend on it.
       const trialRows = policy.presentation === 'model_document' ? orderDocumentItems(trialList) : trialList;
       const trialRendered = formatPacketText(policy.consumer, scopeKey, trialRows, trialSources, policy.hydrateSourceQuotes, policy.presentation);
+      lastTrialLength = trialRendered.length;
       return trialRendered.length <= policy.maxCharacters;
     };
 
@@ -819,8 +849,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
             candidate: cand
           });
         } else if (fitsRenderedBudget(cand)) {
-          admitted.push(cand);
-          admittedNodeIds.add(cand.nodeId);
+          admit(cand);
         } else {
           droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
         }
@@ -844,8 +873,12 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         });
         continue;
       }
-      if (counterpartCanonicalId && ordered.some(other => other.nodeId === counterpartCanonicalId)) {
+      if (counterpartCanonicalId && orderedNodeIds.has(counterpartCanonicalId)) {
         provisionalHeldMicro.push({ cand, counterpartCanonicalId });
+        continue;
+      }
+      if (cand.family === 'lore' && loreCharacters + String(cand.text || '').length > loreCharacterCap) {
+        deferredLore.push(cand);
         continue;
       }
 
@@ -854,8 +887,7 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         resolveHeldForCanonical(cand.nodeId);
         continue;
       }
-      admitted.push(cand);
-      admittedNodeIds.add(cand.nodeId);
+      admit(cand);
       resolveHeldForCanonical(cand.nodeId);
     }
 
@@ -867,11 +899,16 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
           candidate: cand
         });
       } else if (fitsRenderedBudget(cand)) {
-        admitted.push(cand);
-        admittedNodeIds.add(cand.nodeId);
+        admit(cand);
       } else {
         droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'budget_exceeded' });
       }
+    }
+    // Every memory candidate has had its turn; lore held back by its share takes what is left.
+    let backfilledLoreUnits = 0;
+    for (const cand of deferredLore) {
+      if (fitsRenderedBudget(cand)) { admit(cand); backfilledLoreUnits += 1; }
+      else droppedForBudget.push({ nodeId: cand.nodeId, family: cand.family, reason: 'lore_share_exceeded' });
     }
 
     // Build consumed dependency sets across BOTH admitted candidates AND suppressed/absorbed Micro candidates (§10, V09, M10)
@@ -985,7 +1022,12 @@ module.exports = function createMemoryGraphCompiler({ fingerprint } = {}) {
         admittedUnits: items.length,
         excludedUnreadableUnits: excludedUnreadable.length,
         droppedUnits: droppedForBudget.length,
-        suppressedMicroCount: suppressedMicro.length
+        suppressedMicroCount: suppressedMicro.length,
+        loreShare: policy.loreShare,
+        loreCharacterCap,
+        loreCharacters,
+        loreUnitsHeldForMemory: deferredLore.length,
+        loreUnitsBackfilled: backfilledLoreUnits
       },
       independentSupportingSourceCount: independentSupportingSources.size,
       items,

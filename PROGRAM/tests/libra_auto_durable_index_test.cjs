@@ -120,11 +120,19 @@ test('automatic construction yields to an interactive unified recall',async()=>{
   }finally{release();await f.r.cleanup();}
 });
 
-test('mounted memory settings expose saving usage/automatic switches and a functional full rebuild button',async()=>{
+test('the durable graph room shows the build, holds the usage/automatic switches and a functional full rebuild button',async()=>{
   const {create,pause,until}=require('./fixtures/libra_gui_memory_dom_host.cjs');
   const f=await create('LIBRA');
   try{
     await f.open();await f.click('.sidebar [data-go="settings"]');
+    const openGraph=async()=>{const tab=[...f.doc.querySelectorAll('nav.tabs button[role="tab"]')].find(b=>b.textContent.trim()==='상설 그래프');assert.ok(tab,'the memory group has a durable graph tab');tab.click();await pause(200);};
+    assert.equal(f.doc.querySelector('input[aria-label="상설 그래프 사용"]'),null,'the switches left the general memory panel');
+    await openGraph();
+    const cleanup=[...f.doc.querySelectorAll('button')].find(b=>b.textContent.trim()==='이전 페이지 정리');
+    assert.ok(cleanup&&!cleanup.disabled,'the durable graph tab exposes manual reclamation');
+    assert.equal(f.doc.querySelectorAll('[data-durable-graph-step]').length,4,'the build is shown as four steps');
+    assert.match(f.doc.querySelector('[data-durable-graph-status]').textContent,/상설 그래프:/);
+    assert.equal(f.doc.querySelectorAll('[data-durable-graph-stats] .stat').length,4);
     const use=f.doc.querySelector('input[aria-label="상설 그래프 사용"]');
     const auto=f.doc.querySelector('input[aria-label="상설 그래프 자동 구축 · 증분"]');
     assert.ok(use&&auto);assert.equal(use.checked,true);assert.equal(auto.checked,true);
@@ -138,8 +146,12 @@ test('mounted memory settings expose saving usage/automatic switches and a funct
     await until(()=>!rebuild.disabled,'full rebuild completion',15000);
     assert.ok([...f.values.keys()].some(key=>key.includes(':memory-graph:v1:corpus:root:')),'the button publishes a real corpus root');
     assert.ok(f.api.debugRuntimeForDisplay().durableGraphPublication?.generation,'manual publication is visible in diagnostics');
-    await f.click('.sidebar [data-go="settings"]');
+    await f.click('.sidebar [data-go="settings"]');await openGraph();
     assert.match(f.doc.querySelector('[data-durable-graph-status]').textContent,/마지막 게시/);
+    assert.ok(['게시됨','갱신 대기'].includes(f.doc.querySelector('[data-durable-graph-badge]').textContent),'a published graph reads as published, or as waiting for its next increment');
+    assert.deepEqual([...f.doc.querySelectorAll('[data-durable-graph-step]')].slice(0,3).map(node=>node.dataset.stepState),['done','done','done']);
+    const status=f.api.inspectDurableGraphStatus();
+    assert.equal(status.lastBuild.outcome,'published');assert.ok(status.lastBuild.windowsDone>=1);assert.equal(status.buildProgress,null);
     assert.equal(f.wire.length,0,'derived graph construction invokes no provider or remote service');
     assert.deepEqual(f.errors,[]);
   }finally{await f.close();}

@@ -280,8 +280,8 @@
     }
   ],
   "currentRelease": {
-    "packageVersion": "0.5.0",
-    "artifact": "Librarian-System-0.5.0-Source.zip",
+    "packageVersion": "0.5.1",
+    "artifact": "Librarian-System-0.5.1-Source.zip",
     "plugins": {
       "flashback": {
         "version": "1.3.26",
@@ -294,9 +294,9 @@
         "bytes": 4161942
       },
       "libra": {
-        "version": "2.6.40",
-        "sha256": "efbd3b78aa108452460238df721587e614d660e0eeafb994aa40f9c9c86cf0e0",
-        "bytes": 7126680
+        "version": "2.6.41",
+        "sha256": "a7927bdd3dfeaaa43a23105c54462a8a5080339febd33698d094418059f1aaf9",
+        "bytes": 7210322
       },
       "lia": {
         "version": "0.29.8",

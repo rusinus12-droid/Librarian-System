@@ -3,6 +3,7 @@
 // + N01-B incremental corpus build/resume & oversized single-row splitting.
 // Native readers still supply every fact and final delivery proof; persisted tables grant no authority.
 module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, inventory = null, resources = null,
+  forestFactory = typeof createLibraMemoryGraphForest === 'function' ? createLibraMemoryGraphForest : require('./libra_memory_graph_forest.cjs'),
   stagingLifetimeMs = 60000, maxStorageStaging = 16, schedule = setTimeout, cancel = clearTimeout, now = Date.now } = {}) {
   if (!pages || !index?.restore || typeof fingerprint !== 'function') throw new TypeError('LIBRA_GRAPH_CORPUS_ADAPTER_REQUIRED');
   const pools = ['nodes','edges','bases','units'];
@@ -24,6 +25,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   const maxCheckpointAttempts = 128;
   const rowChunkSchema = 'libra.graph_corpus_row_chunk.v1';
   let active = false;
+  // Display-only record of what the running (and the last finished) build is doing.
+  let buildProgress = null, lastBuildProgress = null;
+  const noteBuild = patch => { if (buildProgress) Object.assign(buildProgress, patch, { updatedAt: now() }); };
   const knownFrames = new WeakMap();
   const fail = (reason, extra = null) => {
     const e = new Error('LIBRA_GRAPH_CORPUS_' + reason.toUpperCase());
@@ -136,6 +140,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     delete clean.maxWindowsPerStep;
     delete clean.incremental;
     delete clean.resume;
+    delete clean.windowStart;
+    delete clean.windowCount;
+    delete clean.historicalShard;
+    delete clean.skipCanonical;delete clean.skipMicro;
     // On-disk adjacency/posting/dependency tables have their own ceiling; they
     // are larger than the graph. The shared in-memory resource caps still apply.
     const value = { limit: 20, nodeLimit: 2048, maxWindows: 64, maxSerializedBytes: 4194304, maxIndexBytes: 16777216, pageBytes: 8192, ...clean };
@@ -150,6 +158,12 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     }
     if (input?.incremental !== undefined && typeof input.incremental !== 'boolean') fail('policy_invalid');
     if (input?.resume !== undefined && typeof input.resume !== 'boolean') fail('policy_invalid');
+    for (const name of ['windowStart','windowCount']) if (input?.[name] !== undefined) {
+      if (!Number.isSafeInteger(input[name]) || input[name] < (name === 'windowStart' ? 0 : 1)) fail('policy_invalid');
+      value[name] = input[name];
+    }
+    if(input?.historicalShard!==undefined){if(typeof input.historicalShard!=='boolean')fail('policy_invalid');value.historicalShard=input.historicalShard;}
+    for(const name of ['skipCanonical','skipMicro'])if(input?.[name]!==undefined){if(typeof input[name]!=='boolean')fail('policy_invalid');value[name]=input[name];}
     return value;
   };
 
@@ -182,7 +196,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     return nextGraph;
   };
 
-  const enumerate = async (snapshot, input, check = () => {}, incrementalPlan = null) => {
+  const enumerate = async (snapshot, input, check = () => {}, incrementalPlan = null, onWindow = null, allowPartial = false) => {
     const config = policy(input);
     const maxWindowsPerStep = Number.isSafeInteger(input?.maxWindowsPerStep) ? input.maxWindowsPerStep : null;
     const priorSlices = Array.isArray(incrementalPlan?.priorSlices) ? incrementalPlan.priorSlices : [];
@@ -195,12 +209,15 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     const collectedSlices = [];
     let first = null, baseCollected = incrementalPlan?.baseCollected || null;
     let options = { limit: config.limit, nodeLimit: config.nodeLimit, canonicalCursor: '', microCursor: '' };
-    let enumeratedWindowCount = 0, reusedWindowCount = 0, pausedAtCheckpoint = false;
+    let enumeratedWindowCount = 0, reusedWindowCount = 0, pausedAtCheckpoint = false, partial=false;
 
     for (;;) {
       check();
       const ordinal = collectedSlices.length;
-      if (ordinal >= config.maxWindows) fail('window_budget');
+      if(typeof allowPartial==='function'){const allowed=allowPartial();if(ordinal>0&&!allowed){partial=true;break;}}
+      onWindow?.({ windowsDone: ordinal, reusedWindows: reusedWindowCount, enumeratedWindows: enumeratedWindowCount,
+        windowTotal: targetWindowCount, maxWindows: config.maxWindows });
+      if (ordinal >= config.maxWindows) {if(allowPartial){partial=true;break;}fail('window_budget');}
 
       if (reusableSet.has(ordinal) && priorSlices[ordinal]?.graph) {
         const reused = clone(priorSlices[ordinal]);
@@ -509,6 +526,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     }
     for (const [family, entry] of Object.entries(families)) {
       entry.reasons = [...reasons[family]];
+      if(partial&&['canonical','micro'].includes(family))entry.reasons.push('corpus_index_preparing');
       const units = arrays.units.filter(unit => unit.family === family);
       entry.units = units.length;
       entry.records = new Set(units.map(unit => maps.nodes.get(unit.nodeId)?.sourceId || unit.recordKey || unit.nodeId)).size;
@@ -517,9 +535,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       sourceReadFailures: [...sourceReadFailures.values()],
       inventory: { ...firstSliceGraph.coverage.inventory, canonicalTotal, microTurnTotal, canonicalRead: canonicalRows.size,
         microRead: new Set(arrays.units.filter(unit => unit.family === 'micro').map(unit => unit.recordKey || unit.nodeId)).size,
-        canonicalNextCursor: '', microNextCursor: '', inventoryComplete: false,
+        canonicalNextCursor: partial?collectedSlices.at(-1).nextCanonical:'', microNextCursor: partial?collectedSlices.at(-1).nextMicro:'', inventoryComplete: false,
         scope: 'enumerated_owner_windows', enumeratedWindows: windows.length, exhaustiveOwnerDeltaVerified: false },
-      projectionComplete: sourceReadFailures.size === 0 && Object.values(families).every(entry => !entry.reasons.length) } };
+      projectionComplete: !partial && sourceReadFailures.size === 0 && Object.values(families).every(entry => !entry.reasons.length) } };
     const windowSlices = collectedSlices.map(s => ({
       ordinal: s.ordinal,
       stamp: s.stamp,
@@ -535,7 +553,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       windowProof: s.windowProof || null
     }));
     return {
-      pausedAtCheckpoint: false,
+      pausedAtCheckpoint: false,partial,
       graph,
       windows,
       windowProofs,
@@ -579,7 +597,18 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
   // A cold or superseded derived index never selects another search engine.
   // Read the current owner corpus and compile it once in the same query path.
   const prepare = async ({ snapshot, owner, options = {}, reason = 'no_published_corpus' } = {}) => {
-    const native = await enumerate(snapshot, options, owner.check), generation = stamp(native.graph);
+    let previousBudget=null;
+    const partialAllowed=Boolean(owner.captureForestHead)&&options.maxWindows===undefined ? ()=>{
+      const current=owner.resources?.inspect();if(!current)return true;
+      const before=previousBudget;previousBudget=current;
+      if(!before)return true;
+      const reads=Math.max(1,current.reads-before.reads),source=Math.max(1,current.sourceBytes-before.sourceBytes);
+      return current.reads+reads*3<current.limits.maxReads
+        && current.sourceBytes+source*3<current.limits.maxSourceBytes
+        && current.retainedBytes<current.limits.maxRetainedBytes*0.35;
+    } : false;
+    const native = await enumerate(snapshot, options, owner.check,null,null,partialAllowed), generation = stamp(native.graph);
+    if(native.partial)native.config.maxWindows=native.windows.length;
     if (owner && typeof owner === 'object') knownFrames.set(owner, native.graph);
     owner.resources?.retain(native.graph,'merged_corpus_graph');
     // Use the same owner-issued source proof as the durable index. A cold read
@@ -602,11 +631,12 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           if (!verdict || verdict.status !== 'verified') fail('source_changed', { currentnessVerification: verdict || null });
           return native.graph;
         }
-        const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check);
+        const live = await enumerate(opts => snapshot(opts,resources), native.config, resources?.check || owner.check,null,null,partialAllowed);
         if (!same(live.windows,native.windows) || stamp(live.graph) !== generation) fail('source_changed');
         return live.graph;
       },
       access: { schema, mode: 'request_local_corpus', reason, generation, windowCount: native.windows.length,
+        selectionComplete:!native.partial,
         familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         nativeReprojectionRequired: !proofRecord, currentnessVerification: proofRecord ? 'request_local_owner_proof' : 'native_reprojection',
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false }
@@ -1094,8 +1124,10 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     }
   };
 
-  const build = async ({ initialGraph, snapshot, owner, options = {} } = {}) => {
+  const buildLegacy = async ({ initialGraph, snapshot, owner, options = {} } = {}) => {
     if (active) fail('build_busy'); active = true;
+    buildProgress = { phase: 'planning', startedAt: now(), updatedAt: now(), mode: '', windowsDone: 0, reusedWindows: 0,
+      enumeratedWindows: 0, windowTotal: null, maxWindows: null, pagesWritten: 0, pagesReused: 0, indexBytes: 0, outcome: '' };
     try {
       const config = policy(options);
       const allowIncremental = options?.incremental !== false;
@@ -1108,8 +1140,12 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         ? await resolveIncrementalPlan({ owner, startGraph, loc: priorLoc, previousRootRaw: previous, config, resume: allowResume })
         : null;
 
-      const value = await enumerate(snapshot, options, owner.check, incrementalPlan);
+      noteBuild({ phase: 'enumerating', mode: incrementalPlan?.mode || '' });
+      const value = await enumerate(snapshot, options, owner.check, incrementalPlan, noteBuild);
+      noteBuild({ windowsDone: value.pausedAtCheckpoint ? value.windowSlices.length : value.windows.length,
+        reusedWindows: value.reusedWindowCount, enumeratedWindows: value.enumeratedWindowCount });
       if (value.pausedAtCheckpoint) {
+        noteBuild({ phase: 'checkpointing' });
         const fg = value.firstGraph;
         if (owner && typeof owner === 'object') knownFrames.set(owner, fg);
         const loc = location(fg);
@@ -1181,7 +1217,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         previous = await owner.read(loc.rootKey);
         owner.check();
       }
+      noteBuild({ phase: 'indexing' });
       const compiled = index.compile(graph, { partition: loc.partition, generation, pageBytes: config.pageBytes, resources: owner.resources });
+      await owner.onForestIndex?.(compiled,graph,value.collected);
       const refs = [];
       let total = 0, reusedPageCount = 0, writtenPageCount = 0, splitRowCount = 0, splitChunkCount = 0;
 
@@ -1337,6 +1375,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
           pages.measure(directory,config.maxSerializedBytes);owner.resources?.retain(directory,'publication_semantic_directory',2);
           await immutable(owner,key,raw);semanticDirectory={schema:directory.schema,key,digest};}
       }
+      await owner.onForestSemantic?.(semanticDirectory);
       const manifest = { schema, routingVersion, frame: graph.readerFrame, config, windows: value.windows, generation, metadata, refs,
         sourceProofs, semanticDirectory, buildMetrics, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
@@ -1353,7 +1392,9 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         const final = await enumerate(snapshot, config, owner.check);
         if (!same(value.windows, final.windows) || stamp(final.graph) !== generation) fail('source_changed');
       }
+      noteBuild({ phase: 'publishing', mode: buildMetrics.mode, pagesWritten: writtenPageCount, pagesReused: reusedPageCount, indexBytes: total });
       await owner.publish({ key: loc.rootKey, previous, raw: JSON.stringify({ schema, manifestKey: key, digest }), manifestKey: key, manifestRaw: raw });
+      noteBuild({ phase: 'verifying' });
       if (ownerProof && typeof owner.verifySourceProofs === 'function') {
         const postCommitVerdict = await owner.verifySourceProofs(proofRecord, { initialGraph: graph, config, phase: 'build_post_commit' });
         owner.check();
@@ -1363,12 +1404,20 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
         if (!same(value.windows, after.windows)) fail('source_changed_after_publication');
       }
       return { schema, status: 'published', buildMode: buildMetrics.mode, generation, indexDigest: compiled.indexDigest, windowCount: value.windows.length,
+        unitCount:graph.units.length,
         reusedWindowCount: value.reusedWindowCount, enumeratedWindowCount: value.enumeratedWindowCount,
         pageCount: refs.length, serializedGraphBytes: value.serializedGraphBytes, serializedIndexBytes: total,
         storage: { pageCount: refs.length, reusedPageCount, writtenPageCount, splitRowCount, splitChunkCount, serializedIndexBytes: total },
         sourceProofs, buildMetrics, familyContracts: FAMILY_CURRENTNESS_CONTRACTS,
         ownerAtomicity: false, inventoryComplete: false, byteBounded: false, modelDispatchEligible: false };
-    } finally { active = false; }
+    } catch (error) {
+      noteBuild({ outcome: 'failed', error: String(error?.message || error).slice(0, 160) });
+      throw error;
+    } finally {
+      if (buildProgress && !buildProgress.outcome) buildProgress.outcome = buildProgress.phase === 'verifying' ? 'published' : buildProgress.phase === 'checkpointing' ? 'checkpointed' : 'stopped';
+      if (buildProgress) lastBuildProgress = { ...buildProgress, finishedAt: now() };
+      buildProgress = null; active = false;
+    }
   };
 
   const validSourceProofSummary = (summary, loc, windowCount) => {
@@ -1382,7 +1431,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     return true;
   };
 
-  const read = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
+  const readLegacy = async ({ initialGraph, snapshot, owner, eager = false } = {}) => {
     const startGraph = initialGraph || (owner && typeof owner === 'object' ? knownFrames.get(owner) : null)
       || (await snapshot({ limit: 1, nodeLimit: 64, canonicalCursor: '', microCursor: '' })).graph;
     if (owner && typeof owner === 'object') knownFrames.set(owner, startGraph);
@@ -1700,6 +1749,50 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
       }
     };
   };
+  const forest = forestFactory ? forestFactory({pages,index,fingerprint,
+    legacy:() => createMemoryGraphCorpus({pages,index,fingerprint,inventory,resources,forestFactory:null}),
+    location,note:noteBuild,
+    merge:(initial,graphs,{partial,windowCount,shardCount}) => {
+      const combined = Object.fromEntries(pools.map(p=>[p,new Map()])), families={}, failures=new Map();
+      for (const graph of graphs) {
+        for (const pool of pools) for (const row of graph[pool]) {
+          const id=row.id || row.nodeId, previous=combined[pool].get(id);
+          if (previous && !same(previous,row)) fail('overlap_changed'); combined[pool].set(id,row);
+        }
+        for (const [family,entry] of Object.entries(graph.coverage?.families || {})) {
+          const before=families[family]; families[family]={...entry,reasons:[...new Set([...(before?.reasons || []),...(entry.reasons || [])])]};
+        }
+        for (const failure of graph.coverage?.sourceReadFailures || []) failures.set(JSON.stringify(failure),failure);
+      }
+      if (partial) failures.set('forest_selection_budget',{family:'corpus',reason:'forest_selection_budget'});
+      const coverage={...(graphs[0]?.coverage || {}),families,scope:'enumerated_owner_windows',
+        sourceReadFailures:[...failures.values()],projectionComplete:!partial && !failures.size && Object.values(families).every(v=>!v.reasons.length),
+        inventory:{...(graphs[0]?.coverage.inventory || {}),enumeratedWindows:windowCount,shardCount,canonicalNextCursor:'',microNextCursor:'',inventoryComplete:false}};
+      const graph={...(graphs[0] || {schema:'libra.memory_graph_projection.v1',...initial}),coverage};
+      for (const pool of pools) graph[pool]=[...combined[pool].values()];
+      for (const [family,entry] of Object.entries(families)) entry.units=graph.units.filter(u=>u.family===family).length;
+      return graph;
+    }}) : null;
+  const build = async (input = {}) => {
+    if (!forest || !input.owner?.captureForestHead) return buildLegacy(input);
+    const checked={...input.options};delete checked.shardWindows;delete checked.maxShardsPerStep;policy(checked);
+    const limit=input.options?.limit || 20;
+    const raw = input.initialGraph ? await input.owner.read(location(input.initialGraph).rootKey) : null;
+    const previous = raw ? await forest.manifest(input.owner,location(input.initialGraph),raw) : null;
+    const head=input.initialGraph?.corpusTotals || await input.owner.captureForestHead();
+    if (!previous?.forest && !input.options?.shardWindows && Math.ceil(Math.max(head.canonicalTotal,head.microTurnTotal)/limit)<=64) return buildLegacy(input);
+    if (active) fail('build_busy'); active=true;
+    buildProgress={phase:'planning',startedAt:now(),updatedAt:now(),mode:'sharded',windowsDone:0};
+    try { const result=await forest.build(input); noteBuild({outcome:result.status}); return result; }
+    catch(error) {noteBuild({outcome:'failed',error:String(error.message)});throw error;}
+    finally {lastBuildProgress={...buildProgress,finishedAt:now()};buildProgress=null;active=false;}
+  };
+  const read = async (input = {}) => {
+    if (forest && input.initialGraph && input.owner?.captureForestHead) {
+      const result=await forest.read(input); if (result) return result;
+    }
+    return readLegacy(input);
+  };
   return Object.freeze({
     FAMILY_CURRENTNESS_CONTRACTS,
     build,
@@ -1707,6 +1800,7 @@ module.exports = function createMemoryGraphCorpus({ pages, index, fingerprint, i
     prepare,
     enumerate,
     location,
-    inspect: () => { pruneStaging(); return { activeBuild: active, storageStaging: { entries: storageStaging.size, retainedBytes: stagingBytes, maxEntries: maxStorageStaging, maxBytes: 67108864, lifetimeMs: stagingLifetimeMs } }; }
+    inspect: () => { pruneStaging(); return { activeBuild: active, buildProgress: buildProgress ? { ...buildProgress } : null,
+      lastBuild: lastBuildProgress ? { ...lastBuildProgress } : null, storageStaging: { entries: storageStaging.size, retainedBytes: stagingBytes, maxEntries: maxStorageStaging, maxBytes: 67108864, lifetimeMs: stagingLifetimeMs } }; }
   });
 };

@@ -7,7 +7,14 @@ const retryBusy = async run => { for (let i = 0; ; i++) { try { return await run
 (async () => {
   const results = [];
   for (const mode of ['plugin_only','server_only']) {
-    const x = await fixture({ mode }), { f } = x, api = f.r.api;
+    // Measure projection reads and their writes/provider calls independently of
+    // the startup/commit background builder (covered by auto_durable_index).
+    const transformSource = source => {
+      const anchor = "const scheduleDurableIndexBuild = (reason = 'cold_recall', delayMs = 5000) => {";
+      assert.equal(source.split(anchor).length, 2, 'automatic builder isolation anchor');
+      return source.replace(anchor, anchor + ' return;');
+    };
+    const x = await fixture({ mode, transformSource }), { f } = x, api = f.r.api;
     try {
       assert.equal(api.inspectMemoryGraphPages().initialized, false, 'existing reader setup never starts the new page store');
       const options = { expectedScopeKey: x.scopeKey, pageBytes: 2500 };

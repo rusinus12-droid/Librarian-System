@@ -4,6 +4,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http
 const {spawn}=require('node:child_process'),assert=require('node:assert/strict');
 const {resolveChromeExecutable}=require('./fixtures/browser_resolver.cjs');
 const createStore=require('../tools/libra_memory_graph_local_store.cjs');
+const forestReferences=require('../tools/libra_memory_graph_forest_refs.cjs');
 const network=require('../tools/libra_memory_network.cjs'),{publish}=require('./fixtures/libra_local_store_fixture.cjs');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'libra-local-idb-'));fs.chmodSync(profile,0o700);
@@ -34,7 +35,7 @@ async function boot(tab,origin){
  await tab.evaluate(`globalThis.hash=(${network.toString()})({hash:()=>''}).fingerprint;
  globalThis.prefix=scope=>'libra:v1:scope:'+scope+':memory-graph:v1:corpus:';
  globalThis.publish=(${publish.toString()});
- globalThis.localStore=(${createStore.toString()})({indexedDB,fingerprint:hash});localStore.ready().then(()=>true)`);
+ globalThis.localStore=(${createStore.toString()})({indexedDB,fingerprint:hash,forestReferences:(${forestReferences.toString()})});localStore.ready().then(()=>true)`);
 }
 const watchdog=setTimeout(()=>{console.error('Native IndexedDB browser test timed out');chrome?.kill();process.exit(1);},60000);
 (async()=>{

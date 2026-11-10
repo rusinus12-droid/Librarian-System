@@ -1212,6 +1212,17 @@ manifest.dataContract.postGuiBoundedFixes = {
   companionReport:'../../reports/companion-gui-defect-fixes-20261009.md'
 };
 
+manifest.dataContract.libraShardedDurableGraph = {
+  pluginVersion: pluginVersions.libra, rootSchema:'libra.graph_corpus.v2', forestSchema:'libra.graph_corpus_forest.v1',
+  windowsPerShard:64, serializedBytesPerShard:1048576, shardsPerBuildStep:4,
+  selectedGraphBytes:4194304, selectedShards:32, partialCoverageExplicit:true,
+  routing:'content_addressed_radix_lexical_entity_predicate_node_and_adjacency',
+  semanticRouting:'conservative_candidate_shards_existing_vectors_and_shared_query_cache',
+  queryIndexCompilation:'selected_graph_only', currentness:'streamed_small_owner_heads_and_consumed_physical_source_rechecks',
+  publication:'single_root_after_all_shards_and_routes', restartableCheckpoint:true,
+  serverCapability:'libra-graph-forest.v1', serverGcBatch:32, localGcBatch:256,
+  serverGcYieldsToReaders:true, originalMemoryDeletion:false, byteBounded:false
+};
 manifest.files = Object.fromEntries(listFiles(root)
   .map(filePath => {
     const relative = path.relative(root, filePath).split(path.sep).join('/');

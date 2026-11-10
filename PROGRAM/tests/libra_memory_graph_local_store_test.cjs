@@ -113,6 +113,20 @@ test('a mid-sweep transaction abort rolls back earlier scheduled deletions',asyn
   assert.deepEqual(await x.rows(),before);
 });
 
+test('large orphan inventory is streamed without retaining all page bodies',async t=>{
+  const x=setup(t);await publish(x.a,1);const writer=await x.a.acquire('test','build'),payload='x'.repeat(1500000);
+  try{for(let n=0;n<12;n++){const raw=JSON.stringify([payload,n]);await writer.putImmutable(prefix('test')+'page:units:'+hash(raw),raw);}}
+  finally{await writer.release();}
+  const pages=require('../tools/libra_memory_graph_pages.cjs')({fingerprint:hash});
+  const manager=require('../tools/libra_memory_graph_resources.cjs')({measure:pages.measure,encodedSize:pages.encodedSize,stageCost:pages.stageCost});
+  const budget=manager.openMaintenance({maxRetainedBytes:1048576});
+  try{
+    const result=await x.a.collectGarbage('test',{resources:budget});
+    assert.equal(result.status,'completed');assert.equal(result.deletedKeys.length,12);assert.ok(result.inventoryBytes>33554432);
+    assert.ok(budget.inspect().peakRetainedBytes<=1048576);
+  }finally{budget.close();}
+});
+
 test('shared retained-budget refusal aborts reclamation without storage mutation',async t=>{
   const x=setup(t);await publish(x.a,1);await publish(x.a,2);const before=await x.rows();
   const resources={check(){},reserveRetained(){throw new Error('LIBRA_GRAPH_RESOURCE_RETAINED_BYTE_BUDGET');}};

@@ -2,6 +2,7 @@
 // Device-local derived corpus only. IndexedDB transactions serialize publication,
 // reader pins and reclamation across tabs; host source records are never written.
 module.exports = function createMemoryGraphLocalStore({ indexedDB, fingerprint, now = Date.now,
+  forestReferences = typeof libraForestReferences === 'function' ? libraForestReferences : require('./libra_memory_graph_forest_refs.cjs'),
   databaseName = 'libra-derived-corpus-v1', leaseMs = 60000 } = {}) {
   if (!indexedDB?.open || typeof fingerprint !== 'function') throw new TypeError('LIBRA_LOCAL_CORPUS_ADAPTER_REQUIRED');
   const fail = reason => { throw new Error('LIBRA_LOCAL_CORPUS_' + reason); };
@@ -102,7 +103,7 @@ module.exports = function createMemoryGraphLocalStore({ indexedDB, fingerprint, 
               if (lease.pins.length >= 32) fail('PIN_LIMIT');
               lease.pins.push({ key, raw: row.raw }); controls.put(state);
             }
-            if (root.schema !== 'libra.graph_corpus.v1') fail('ROOT_CORRUPT');
+            if (!['libra.graph_corpus.v1','libra.graph_corpus.v2'].includes(root.schema)) fail('ROOT_CORRUPT');
           }
           finish(row?.raw ?? null);
         }));
@@ -128,9 +129,10 @@ module.exports = function createMemoryGraphLocalStore({ indexedDB, fingerprint, 
           get(records,key,current => get(records,manifestKey,manifest => {
             if ((current?.raw ?? null) !== previous || manifest?.raw !== manifestRaw) fail('ROOT_CONFLICT');
             const root = JSON.parse(raw);
-            if (root.schema !== 'libra.graph_corpus.v1' || root.manifestKey !== manifestKey
+            if (!['libra.graph_corpus.v1','libra.graph_corpus.v2'].includes(root.schema) || root.manifestKey !== manifestKey
               || fingerprint(manifestRaw) !== (root.digest || root.generation)) fail('ROOT_CORRUPT');
             const pending = [{ key: manifestKey, digest: root.digest || root.generation, type: 'manifest' }], seen = new Set();
+            const forestRoot=root.schema==='libra.graph_corpus.v2';
             let checkedBytes = 0;
             const next = () => {
               const ref = pending.pop();
@@ -149,20 +151,24 @@ module.exports = function createMemoryGraphLocalStore({ indexedDB, fingerprint, 
               owned(prefix,ref.key);
               if (!/^[a-f0-9]{64}$/.test(ref.digest)) fail('REFERENCE_CORRUPT');
               if (seen.has(ref.key)) { next(); return; } seen.add(ref.key);
-              if (seen.size > 8192) fail('REFERENCE_BUDGET');
+              if (seen.size > (forestRoot?100000:8192)) fail('REFERENCE_BUDGET');
               get(records,ref.key,row => {
                 if (!row) fail('REFERENCE_MISSING');
                 checkedBytes += row.raw.length * 2 + 2048;
-                if (checkedBytes > 33554432) fail('REFERENCE_BUDGET');
+                if ((!forestRoot&&checkedBytes > 33554432)||row.raw.length*2+2048>33554432) fail('REFERENCE_BUDGET');
                 if (fingerprint(row.raw) !== ref.digest) fail('REFERENCE_CORRUPT');
                 if (ref.type) {
                   const item = JSON.parse(row.raw);
                   if (ref.type === 'manifest') {
-                    if (item.schema !== 'libra.graph_corpus.v1' || !Array.isArray(item.refs)) fail('MANIFEST_CORRUPT');
+                    if (!['libra.graph_corpus.v1','libra.graph_corpus.v2'].includes(item.schema) || !Array.isArray(item.refs)) fail('MANIFEST_CORRUPT');
+                    pending.push(...forestReferences(item,prefix));
                     pending.push(...item.refs);
                     if (item.sourceProofs) pending.push({key:item.sourceProofs.proofKey,digest:item.sourceProofs.proofDigest},
                       {key:item.sourceProofs.projectionKey,digest:item.sourceProofs.projectionDigest,type:'projection'});
                     if (item.semanticDirectory) pending.push({...item.semanticDirectory,type:'semantic'});
+                  } else if (ref.type === 'forest') {
+                    if(item.schema!=='libra.graph_corpus_forest_node.v1')fail('REFERENCE_CORRUPT');
+                    pending.push(...forestReferences(item,prefix));
                   } else if (ref.type === 'semantic') {
                     if (item.schema !== 'libra.graph_semantic_directory.v1' || !Array.isArray(item.entries)) fail('SEMANTIC_DIRECTORY_CORRUPT');
                     for (const entry of item.entries) pending.push(...(entry.vectorPages || []));
@@ -198,90 +204,82 @@ module.exports = function createMemoryGraphLocalStore({ indexedDB, fingerprint, 
     });
   };
   const collectGarbage = async (scope, { dryRun = false, candidateKeys = null, resources = null } = {}) => {
-    const prefix = prefixFor(scope);
-    if (candidateKeys !== null && (!Array.isArray(candidateKeys) || candidateKeys.length > 8192 || candidateKeys.some(key => typeof key !== 'string'))) fail('CANDIDATES_INVALID');
-    const selected = candidateKeys === null ? null : new Set(candidateKeys);
-    return await transaction(scope, ({ records, state, get, run, finish }) => {
-      const base = { schema: 'libra.graph_store_gc.v1', scopeKey: scope, dryRun: Boolean(dryRun),
-        backend: 'indexeddb', corpusReclamation: 'local_transaction_reachability', candidateKeys: [], deletedKeys: [],
-        legacyHostRecords: 'preserved_atomic_gc_unavailable' };
-      if (state.leases.some(lease => lease.kind === 'build')) { finish({ ...base, status: 'blocked_active_builds' }); return; }
-      const rows = new Map(); let bytes = 0;
-      const cursor = records.index('scope').openCursor(scope);
-      cursor.onsuccess = () => run(() => {
-        resources?.check();
-        const current = cursor.result;
-        if (current) {
-          const row = current.value;
-          if (row.scope === scope) {
-            owned(prefix,row.key);
-            bytes += row.raw.length * 2 + 2048;
-            if (rows.size >= 8192 || bytes > 33554432) fail('INVENTORY_BUDGET');
-            resources?.reserveRetained(row.raw.length * 2 + 2048,'local_gc_inventory');
-            rows.set(row.key,row);
+    const prefix=prefixFor(scope);
+    if(candidateKeys!==null&&(!Array.isArray(candidateKeys)||candidateKeys.length>8192||candidateKeys.some(k=>typeof k!=='string')))fail('CANDIDATES_INVALID');
+    const selected=candidateKeys===null?null:new Set(candidateKeys);
+    return transaction(scope,({records,state,get,run,finish})=>{
+      const base={schema:'libra.graph_store_gc.v1',scopeKey:scope,dryRun:Boolean(dryRun),backend:'indexeddb',corpusReclamation:'local_transaction_reachability',
+        candidateKeys:[],deletedKeys:[],legacyHostRecords:'preserved_atomic_gc_unavailable'};
+      if(state.leases.some(l=>l.kind==='build')){finish({...base,status:'blocked_active_builds'});return;}
+      const retained=new Set(),seen=new Set(),pending=[];let inventoryRecords=0,inventoryBytes=0;
+      const keep=key=>{
+        owned(prefix,key);
+        if(!retained.has(key)){if(retained.size>=100000)fail('REFERENCE_BUDGET');resources?.reserveRetained(key.length*2+96,'local_gc_reachability');retained.add(key);}
+      };
+      for(const entry of Object.values(state.roots))pending.push({key:entry.key,type:'root'});
+      for(const lease of state.leases)for(const pin of lease.pins)pending.push({key:pin.key,type:'root',raw:pin.raw});
+      const sweep=()=>{
+        const candidates=[],deleted=[];let more=false;
+        const cursor=records.index('scope').openCursor(scope);
+        cursor.onsuccess=()=>run(()=>{
+          resources?.check();const current=cursor.result;
+          if(!current){finish({...base,status:'completed',candidateKeys:candidates,deletedKeys:deleted,hasMore:more,
+            retainedKeyCount:retained.size,protectedReaderCount:state.leases.filter(l=>l.kind==='read').length,inventoryBytes,inventoryRecords});return;}
+          const row=current.value;owned(prefix,row.key);
+          if(!retained.has(row.key)&&(!selected||selected.has(row.key))){
+            if(candidates.length<256){candidates.push(row.key);if(!dryRun){records.delete([scope,row.key]);deleted.push(row.key);}}
+            else more=true;
           }
-          current.continue(); return;
-        }
-        const retained = new Set(), visited = new Set();
-        const keep = key => {
-          owned(prefix,key);
-          if (!rows.has(key)) fail('REFERENCE_MISSING');
-          retained.add(key); return rows.get(key).raw;
-        };
-        const value = (key, digest = null) => {
-          resources?.check();
-          const raw = keep(key);
-          if (digest && fingerprint(raw) !== digest) fail('REFERENCE_CORRUPT');
-          const parsed = JSON.parse(raw);
-          resources?.retain(parsed,'local_gc_metadata');
-          return parsed;
-        };
-        const projection = ref => {
-          if (!ref || ref.key !== prefix + 'projection:' + ref.digest) fail('REFERENCE_UNOWNED');
-          const item = value(ref.key,ref.digest);
-          if (visited.has(ref.key)) return; visited.add(ref.key);
-          if (item.schema === 'libra.graph_corpus_projection.v1') return;
-          if (item.schema === 'libra.graph_corpus_projection_build.v1') {
-            if (!Array.isArray(item.windows)) fail('PROJECTION_CORRUPT');
-            for (const child of item.windows) projection(child);
-          } else if (['libra.graph_corpus_projection.v2','libra.graph_corpus_projection_window.v1'].includes(item.schema)) {
-            if (!item.parts || Object.keys(item.parts).sort().join(',') !== 'bases,canonicalRows,edges,nodes,units') fail('PROJECTION_CORRUPT');
-            for (const part of Object.values(item.parts)) {
-              if (!Array.isArray(part.refs)) fail('PROJECTION_CORRUPT');
-              for (const child of part.refs) { if (child.key !== prefix + 'projection:' + child.digest) fail('REFERENCE_UNOWNED'); keep(child.key); }
-            }
-            if (item.schema === 'libra.graph_corpus_projection.v2') projection(item.build);
-          } else fail('PROJECTION_CORRUPT');
-        };
-        const root = (key, raw = null) => {
-          const saved = keep(key);
-          // The same mutable root key may already publish a newer manifest.
-          // Retain the old reader's captured manifest as well as the live root.
-          const item = JSON.parse(raw === null ? saved : raw);
-          if (item.schema !== 'libra.graph_corpus.v1') fail('ROOT_CORRUPT');
-          const manifest = value(item.manifestKey,item.digest || item.generation);
-          if (!Array.isArray(manifest.refs)) fail('MANIFEST_CORRUPT');
-          for (const ref of manifest.refs) keep(ref.key);
-          if (manifest.sourceProofs) {
-            keep(manifest.sourceProofs.proofKey);
-            projection({ key: manifest.sourceProofs.projectionKey, digest: manifest.sourceProofs.projectionDigest });
-          }
-          if (manifest.semanticDirectory) {
-            const directory = value(manifest.semanticDirectory.key,manifest.semanticDirectory.digest);
-            if (directory.schema !== 'libra.graph_semantic_directory.v1' || !Array.isArray(directory.entries)) fail('SEMANTIC_DIRECTORY_CORRUPT');
-            for (const entry of directory.entries) for (const page of entry.vectorPages || []) keep(page.key);
-          }
-        };
-        for (const entry of Object.values(state.roots)) root(entry.key);
-        for (const lease of state.leases) for (const pin of lease.pins) root(pin.key,pin.raw);
-        for (const row of rows.values()) if (row.key.startsWith(prefix + 'checkpoint:') && now() - row.updatedAt < 86400000) retained.add(row.key);
-        const candidates = [...rows.keys()].filter(key => !retained.has(key) && (!selected || selected.has(key)));
-        // Inventory, reachability, pins and deletion share this single native
-        // read/write transaction; a crashed tab cannot leave a partial sweep.
-        if (!dryRun) for (const key of candidates) records.delete([scope,key]);
-        finish({ ...base, status: 'completed', candidateKeys: candidates, deletedKeys: dryRun ? [] : candidates,
-          retainedKeyCount: retained.size, protectedReaderCount: state.leases.filter(lease => lease.kind === 'read').length,
-          inventoryBytes: bytes, inventoryRecords: rows.size });
+          current.continue();
+        });
+      };
+      const mark=()=>{
+        resources?.check();let ref,identity;
+        do{ref=pending.pop();if(!ref){sweep();return;}owned(prefix,ref.key);identity=ref.key+(ref.raw===undefined?'':':'+fingerprint(ref.raw));}while(seen.has(identity));
+        seen.add(identity);keep(ref.key);
+        get(records,ref.key,row=>{
+          if(!row)fail('REFERENCE_MISSING');const raw=ref.raw===undefined?row.raw:ref.raw;
+          if(typeof raw!=='string'||raw.length*2+2048>33554432)fail('REFERENCE_BUDGET');
+          if(ref.digest&&fingerprint(raw)!==ref.digest)fail('REFERENCE_CORRUPT');
+          if(!ref.type){mark();return;}
+          const held=resources?.retain(raw,'local_gc_record',2);
+          try{
+            const item=JSON.parse(raw);
+            if(ref.type==='root'){
+              if(!['libra.graph_corpus.v1','libra.graph_corpus.v2'].includes(item.schema))fail('ROOT_CORRUPT');
+              if(item.manifestKey!==prefix+'manifest:'+(item.digest||item.generation))fail('REFERENCE_UNOWNED');
+              pending.push({key:item.manifestKey,digest:item.digest||item.generation,type:'manifest'});
+            }else if(ref.type==='manifest'){
+              if(!['libra.graph_corpus.v1','libra.graph_corpus.v2'].includes(item.schema)||!Array.isArray(item.refs))fail('MANIFEST_CORRUPT');
+              pending.push(...item.refs,...forestReferences(item,prefix));
+              if(item.sourceProofs)pending.push({key:item.sourceProofs.proofKey,digest:item.sourceProofs.proofDigest},
+                {key:item.sourceProofs.projectionKey,digest:item.sourceProofs.projectionDigest,type:'projection'});
+              if(item.semanticDirectory)pending.push({...item.semanticDirectory,type:'semantic'});
+            }else if(ref.type==='forest'||ref.type==='checkpoint'){
+              if(ref.type==='forest'&&item.schema!=='libra.graph_corpus_forest_node.v1')fail('REFERENCE_CORRUPT');
+              pending.push(...forestReferences(item,prefix));
+            }else if(ref.type==='semantic'){
+              if(item.schema!=='libra.graph_semantic_directory.v1'||!Array.isArray(item.entries))fail('SEMANTIC_DIRECTORY_CORRUPT');
+              for(const entry of item.entries)pending.push(...(entry.vectorPages||[]));
+            }else if(item.schema==='libra.graph_corpus_projection_build.v1'){
+              if(!Array.isArray(item.windows))fail('PROJECTION_CORRUPT');pending.push(...item.windows.map(r=>({...r,type:'projection'})));
+            }else if(['libra.graph_corpus_projection.v2','libra.graph_corpus_projection_window.v1'].includes(item.schema)){
+              if(!item.parts||Object.keys(item.parts).sort().join(',')!=='bases,canonicalRows,edges,nodes,units')fail('PROJECTION_CORRUPT');
+              for(const part of Object.values(item.parts)){if(!Array.isArray(part.refs))fail('PROJECTION_CORRUPT');pending.push(...part.refs);}
+              if(item.schema==='libra.graph_corpus_projection.v2')pending.push({...item.build,type:'projection'});
+            }else if(item.schema!=='libra.graph_corpus_projection.v1')fail('PROJECTION_CORRUPT');
+          }finally{held?.release();}
+          mark();
+        });
+      };
+      // Inventory streams one native record at a time. Large chats no longer
+      // require an in-memory Map of every historical page before collecting.
+      const cursor=records.index('scope').openCursor(scope);
+      cursor.onsuccess=()=>run(()=>{
+        resources?.check();const current=cursor.result;if(!current){mark();return;}
+        const row=current.value;owned(prefix,row.key);inventoryRecords++;inventoryBytes+=row.raw.length*2+2048;
+        if(row.key.startsWith(prefix+'checkpoint:')&&now()-row.updatedAt<86400000)pending.push({key:row.key,type:'checkpoint'});
+        current.continue();
       });
     });
   };

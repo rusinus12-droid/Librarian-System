@@ -27,7 +27,7 @@ const { assertLegacyAuthorityUnavailable } = require('./authority/legacy-admissi
 const { openCore3ServerRuntime } = require('./authority/core3-runtime.cjs');
 
 const SERVER_NAME = 'Librarian System Data Server';
-const SERVER_VERSION = '0.5.0';
+const SERVER_VERSION = '0.5.1';
 const PROTOCOL_MAJOR = 1;
 const PROTOCOL_MINOR = 9;
 const DATABASE_SCHEMA_VERSION = 1;
@@ -95,6 +95,7 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'conditional-batch.v1',
   'libra-graph-lifecycle.v1',
   'libra-graph-projection-pages.v1',
+  'libra-graph-forest.v1',
   'flashback-writer-fence.v1',
   'flashback-scope-delete.v1',
   'scope-index.v1',

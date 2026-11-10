@@ -68,7 +68,9 @@ for (const mode of ['plugin_only', 'server_only']) test(`${mode}: recall after a
       assert.fail('runtime index was not rebuilt: ' + JSON.stringify(f.r.api.inspectVolatileMemoryGraphCorpus()));
     };
     await addMicro();
-    assert.equal(await recall(), 'request_local_corpus');
+    // Background source-read preparation can finish the runtime index before
+    // this first recall, especially while other test processes are running.
+    assert.ok(['request_local_corpus','volatile_common_index'].includes(await recall()));
     await waitIndex();
     assert.equal(await recall(), 'volatile_common_index');
     await addMicro();

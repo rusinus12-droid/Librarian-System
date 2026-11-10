@@ -265,10 +265,12 @@ test('V09 & D07: envelope-aware character budget enforces maxCharacters on rende
 
   // Case B (V09 + D07): Tight envelope-aware budget (280 chars) where Lore + Canonical (285 rendered chars) overflows,
   // while Lore + State + Micro (278 rendered chars) fits -> Canonical drops, so Micro MUST NOT be suppressed!
+  // loreShare 1 keeps lore in score order here, so the canonical unit is the one that overflows.
   const tight = compiler.select(queryResult, graph, {
     consumer: 'classic',
     maxCharacters: 280,
     maxUnits: 10,
+    loreShare: 1,
     correspondenceMap: { [microCand.nodeId]: canonicalCand.nodeId }
   });
   const tightPacket = compiler.render(tight);
@@ -277,6 +279,24 @@ test('V09 & D07: envelope-aware character budget enforces maxCharacters on rende
   assert.equal(tight.bundle.items.some(i => i.nodeId === canonicalCand.nodeId), false, 'Canonical dropped due to rendered character budget');
   assert.equal(tight.bundle.items.some(i => i.nodeId === microCand.nodeId), true, 'Micro must survive when Canonical counterpart drops for budget');
   assert.equal(tight.bundle.suppressedMicroIds.length, 0);
+
+  // Lore share: with the default share the same tight budget goes to memory first. Lore that does
+  // not fit its share waits, the canonical unit is admitted, and lore only takes what is left.
+  const memoryFirst = compiler.select(queryResult, graph, { consumer: 'classic', maxCharacters: 280, maxUnits: 10,
+    correspondenceMap: { [microCand.nodeId]: canonicalCand.nodeId } });
+  const memoryFirstPacket = compiler.render(memoryFirst);
+  assert.ok(memoryFirstPacket.characterLength <= 280);
+  assert.equal(memoryFirst.bundle.items.some(i => i.nodeId === canonicalCand.nodeId), true, 'memory is admitted before lore beyond its share');
+  assert.equal(memoryFirst.bundle.budget.loreShare, 0.2);
+  assert.ok(memoryFirst.bundle.budget.loreUnitsHeldForMemory >= 1, 'lore over its share is held until memory had its turn');
+  assert.ok(memoryFirst.bundle.items.filter(i => i.family === 'lore').length < tight.bundle.items.filter(i => i.family === 'lore').length
+    || memoryFirst.bundle.droppedForBudget.some(row => row.reason === 'lore_share_exceeded'), 'held lore is dropped once memory used the budget');
+  // With room to spare, held lore is given back what memory left unused.
+  const roomy = compiler.select(queryResult, graph, { consumer: 'classic', maxCharacters: 4096, maxUnits: 10, loreShare: 0 });
+  assert.ok(roomy.bundle.items.some(i => i.family === 'lore'), 'unused budget is returned to lore');
+  assert.equal(roomy.bundle.budget.loreUnitsBackfilled, roomy.bundle.items.filter(i => i.family === 'lore').length);
+  assert.throws(() => compiler.select(queryResult, graph, { loreShare: 1.5 }), /lore_share_invalid/i);
+  compiler.release?.(memoryFirst); compiler.release?.(roomy);
 
   // Case C (D07): Ultra-tight budget (maxCharacters: 32) never emits a 129-char packet
   const ultraShort = compiler.select(queryResult, graph, { maxCharacters: 32, maxUnits: 10 });

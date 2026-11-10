@@ -560,7 +560,7 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
     const outgoingByNode = new Map();
     const degreeByNode = new Map();
     const seenAdjacencyEdgeDir = new Set();
-    const totalUnits = Math.max(1, (graph.units || []).length);
+    const totalUnits = Math.max(1, graph.coverage?.corpusUnitCount || (graph.units || []).length);
 
     const ingestAccesses = accesses => {
       for (const access of accesses) {
@@ -911,6 +911,13 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
 
     const familySeen = new Map();
     const candidates = [];
+    // One pass over the edges instead of one filter per unit.
+    const derivedFromCount = new Map(), derivedFromTarget = new Map();
+    for (const edge of graph.edges || []) {
+      if (edge.predicate !== 'derived_from' || !isEdgeEligible(edge)) continue;
+      derivedFromCount.set(edge.from, (derivedFromCount.get(edge.from) || 0) + 1);
+      if (!derivedFromTarget.has(edge.from)) derivedFromTarget.set(edge.from, edge.to);
+    }
     for (const unit of graph.units || []) {
       if (!isNodeEligible(unit.nodeId)) continue;
       const node = nodeById.get(unit.nodeId);
@@ -920,9 +927,8 @@ module.exports = function createMemoryGraphQuery({ index, lane, pages, fingerpri
       if (!actState && !directFeat.mandatoryInclusion) continue;
 
       const finalScore = actState ? actState.activation : 0;
-      const derivedEdges = (graph.edges || []).filter(e => e.from === unit.nodeId && e.predicate === 'derived_from' && isEdgeEligible(e));
-      const familyAnchor = derivedEdges.length === 1
-        ? `family:derived:${derivedEdges[0].to}`
+      const familyAnchor = derivedFromCount.get(unit.nodeId) === 1
+        ? `family:derived:${derivedFromTarget.get(unit.nodeId)}`
         : `family:unit:${unit.nodeId}`;
 
       const existingFamily = familySeen.get(familyAnchor);

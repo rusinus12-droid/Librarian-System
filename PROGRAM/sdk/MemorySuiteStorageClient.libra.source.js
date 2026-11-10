@@ -9326,9 +9326,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const acquireGraphStorageLease=async(scopeKey,kind)=>{
     const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
     if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
-    let lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId:operationId('graph-lease')}),closed=false,timer=null,failure=null;
+    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0;
+    for(;;){
+      try{lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
+      catch(error){
+        if(kind==='gc'||!String(error?.code||error?.message||'').includes('LIBRA_GRAPH_NAMESPACE_BUSY')||retries>0&&Date.now()-started>=5000)throw error;
+        // An interactive reader asks the GC holder to finish its current page
+        // and release the namespace. No evidence read happens without a lease.
+        try{await graphLifecycleRequest(scopeKey,{action:'yield'});}catch(yieldError){if(!String(yieldError?.message||'').includes('ACTION_INVALID'))throw yieldError;}
+        await new Promise(resolve=>setTimeout(resolve,50));
+        retries++;
+        if(lifecycle.disposed)throw Error('LIBRA_GRAPH_LEASE_CLOSED');
+      }
+    }
+    let closed=false,timer=null,failure=null;
     const key=lease.token;
-    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');return await graphLifecycleRequest(scopeKey,{action:'assert',token:key});};
+    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
     const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
     timer=setTimeout(renew,20000);timer?.unref?.();
     const session={scopeKey,kind,token:key,assertCurrent,
@@ -9705,6 +9718,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     pluginId,
     observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
     acquireGraphStorageLease,
+    assertGraphForestSupport:async()=>{const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
+      if([MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)&&(await bootstrap(false,true))?.capabilities?.['libra-graph-forest.v1']!==true)throw Error('LIBRA_GRAPH_FOREST_UPGRADE_REQUIRED');},
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,

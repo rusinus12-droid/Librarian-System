@@ -5,7 +5,7 @@ const { waitFor } = require('./libra_vm_harness.cjs');
 const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
 const QUOTE = '민아가 은빛 열쇠를 준호에게 잠시 건넸다.';
 
-async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6, microCount = 1, microText = () => QUOTE, contextGlobals } = {}) {
+async function fixture({ mode = 'plugin_only', minimum = false, transformSource, hostOverrides = {}, args = {}, embeddingConfig, embeddingFetch, includeMicro = true, microTurn = 6, microCount = 1, microText = () => QUOTE, contextGlobals, pauseAutomaticAnalysis = false } = {}) {
   let listener;
   const host = { ...hostOverrides, addRisuChatListener: async (_kind, handler) => { listener = handler; return true; } };
   const serverOptions = { mode, host, transformSource, args, contextGlobals };
@@ -18,6 +18,7 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
       else f.r.context.risuai.nativeFetch = embeddingFetch;
     }
     await f.run(); await f.r.api.retryPendingUnifiedVectors();
+    if(pauseAutomaticAnalysis)await f.r.api.saveLibraMemorySettings({...await f.r.api.getLibraMemorySettings(),autoAnalyze:false,autoDurableIndex:false});
     if (embeddingConfig?.enabled) await waitFor(() => (server ? server.getMemory() : f.getMemory())?.embedding?.status === 'ready', 15000);
     const values = server?.local || f.r.values;
     const registry = JSON.parse(values.get('libra:v1:scope-registry:v1'));
