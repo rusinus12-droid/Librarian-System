@@ -8,7 +8,7 @@ const retryFixture=implementation=>{
  const source=fs.readFileSync(path.join(__dirname,'../plugins/LIBRA.js'),'utf8');
  const region=(a,b)=>{const i=source.indexOf(a),j=source.indexOf(b,i);assert.ok(i>=0&&j>i);return source.slice(i,j);};
  const stats={opened:0,closed:0,providerCalls:0,attempts:0,publishOnly:0};
- const context={state:{disposed:false},memoryGraphReadFrames:new WeakMap(),memoryGraphSourceBudgets:new WeakMap(),setTimeout,
+ const context={state:{disposed:false},nativeReadFrames:new WeakMap(),nativeReadBudgets:new WeakMap(),setTimeout,
   openBackgroundReadFrame:async()=>{stats.opened++;return {assertCurrent:async()=>{},close(){stats.closed++;}};},
   produceMicroForTurnImpl:async(scope,w,e,t,r,options)=>implementation(options,stats),
  };

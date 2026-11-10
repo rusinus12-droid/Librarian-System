@@ -44561,6 +44561,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         scope: record.request.scope, evidenceRevision: record.proof.evidenceRevision,
         dataInstanceId: record.boundary.dataInstanceId, resetEpoch: record.boundary.resetEpoch };
     }
+    if (action === 'select') {
+      try {
+        const boundary = await options.boundary(payload);
+        const record = { id: options.randomId(), operationId: 'select_' + options.randomId(), request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
+        const authority = {
+          bindSelection(selection) {
+            const ownerCorpusDigest = options.fingerprint(JSON.stringify(selection));
+            record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
+            return record.receipt;
+          },
+          verifyReceipt() { return true; }
+        };
+        const execution = await options.query(payload, authority);
+        const content = execution?.packet?.renderedText || '';
+        const scope = boundary?.scope || payload.scope;
+        return { owner: 'libra', source: 'plugin_ipc', readOnly: true, scope, engine: { source: 'owner_selection' }, content };
+      } catch (_) {
+        return { content: '' };
+      }
+    }
     if (action !== 'capture') fail('LIB_READ_SOURCE_UNSUPPORTED');
     if (payload.proposal !== undefined) {
       const p = payload.proposal;
@@ -44583,11 +44603,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       record.boundary = await options.boundary(record.request); assertRecord(record);
       const authority = {
-        bindGraph(graph) {
+        bindSelection(selection) {
           assertRecord(record);
-          const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
-            nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
-            bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+          const ownerCorpusDigest = options.fingerprint(JSON.stringify(selection));
           record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
           return record.receipt;
         },
@@ -44596,7 +44614,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       record.execution = await options.query(record.request, authority); await validate(record);
       const execution = record.execution, content = execution.packet.renderedText;
       if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
-      const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+      const engine = { source: 'unified_engine', servingEngine: execution.engine || 'state_first', generation: execution.bundle.generation,
         ...(execution.lensEvidence ? {lensEvidence:copy(execution.lensEvidence)} : {}),
         purpose: payload.proposal ? 'input_writer_proposal' : 'response_evidence',
         ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),
@@ -44704,6 +44722,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   /* LIBRA GRADIA UNIFIED READ END */
   /* GRADIA PLUGIN READ START */
 function createGradiaReadPrimitives() {
+const fingerprint = (function createLibraMemoryFingerprint() {
   const utf8Bytes = value => {
     const text = String(value || '');
     if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
@@ -44780,8 +44799,9 @@ function createGradiaReadPrimitives() {
     }
     return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
   };
-
-return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+  return sha256Hex;
+})();
+return {fingerprint, byteLength: value => new TextEncoder().encode(String(value)).length};
 }
 const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const schema = 'memory-suite.gradia-plugin-read.v1';
@@ -45060,7 +45080,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           purpose: input.proposal ? 'input_writer_proposal' : 'response_evidence',
           ...(input.proposal ? { proposal: copy(input.proposal) } : {}),
           sourceByOwner: Object.fromEntries(captured.map(value =>
-          [value.owner, 'plugin_ipc'])),
+          [value.owner, value.owner === 'libra' ? 'unified_engine' : 'published_owner_memory'])),
           ...(Object.keys(unavailableOwners).length ? { unavailableOwners } : {}) },
           snapshot: { schema: 'memory-suite.memory-read-session.v1', complete: true, readOnly: true, scope,
             owners: answeringOwners, items, evidenceRevision, corpusBytes, maxCorpusBytes: input.maxCorpusBytes },

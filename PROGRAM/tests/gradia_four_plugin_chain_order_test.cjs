@@ -19,7 +19,7 @@ const FLASHBACK_PROOF_FACT = 'FLASHBACK_PROOF_FACT: 서재 서랍 속에 오래�
 
 test('four-plugin chain integration: Order A (Memory plugins -> GRADIA) and Order B (GRADIA -> Memory plugins)', { timeout: 180000 }, async t => {
   const bus = createBus();
-  const libra = await require('./fixtures/libra_memory_graph_reader_fixture.cjs').fixture({ mode: 'plugin_only', hostOverrides: bus.api('libra') });
+  const libra = await require('./fixtures/libra_direct_memory_reader_fixture.cjs').fixture({ mode: 'plugin_only', hostOverrides: bus.api('libra') });
   t.after(() => libra.cleanup());
 
   const chat = libra.f.chat, character = libra.f.character;

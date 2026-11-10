@@ -7,7 +7,7 @@ const writer = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
 const h64 = value => { let h = 0xcbf29ce484222325n; for (let i = 0; i < value.length; i++) h = BigInt.asUintN(64, (h ^ BigInt(value.charCodeAt(i))) * 0x100000001b3n); return 'h64' + h.toString(36); };
 test('three actual plugin owners -> GRADIA generation and Input Writer, with no preceding recall hooks', { timeout: 120000 }, async t => {
   const bus = createBus();
-  const libra = await require('./fixtures/libra_memory_graph_reader_fixture.cjs').fixture({ mode: 'plugin_only', hostOverrides: bus.api('libra') });
+  const libra = await require('./fixtures/libra_direct_memory_reader_fixture.cjs').fixture({ mode: 'plugin_only', hostOverrides: bus.api('libra') });
   t.after(() => libra.cleanup());
   const chat = libra.f.chat, character = libra.f.character, characterId = character.chaId || character.id, chatId = chat.id;
   chat.message.push({ role: 'user', chatId: 'ipc-current', data: '은빛 열쇠를 누가 보관하고 어디에서 기다리는지 확인한다.' });

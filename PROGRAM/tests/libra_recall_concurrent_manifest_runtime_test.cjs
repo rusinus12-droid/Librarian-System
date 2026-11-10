@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture, QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const { fixture, QUOTE } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 
 for (const mode of ['plugin_only','server_only','mirror']) for (const mutation of ['bookkeeping', 'remove_sources']) test(`${mode}: classic recall verifies a concurrent manifest write: ${mutation}`, async () => {
   const x = await fixture({ mode, transformSource: source => source.replace('let lensRecall = null;', `

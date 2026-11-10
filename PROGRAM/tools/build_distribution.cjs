@@ -341,7 +341,6 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   'VERSION.txt','program-manifest.json','release-policy.json'
 ]);
 const RUNTIME_TOOL_FILES = new Set([
-  'libra_memory_graph_forest_refs.cjs', // Required by the server's publication/GC validator.
   'check_node.cjs','config_env.cjs','install_runtime.ps1','platform_launcher.cjs','portable_export_stopped.cjs',
   'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
 ]);

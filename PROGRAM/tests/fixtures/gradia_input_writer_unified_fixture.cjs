@@ -8,7 +8,7 @@ const fingerprint=v=>crypto.createHash('sha256').update(v).digest('hex');
 const wait=async(fn,label='condition',ms=120000)=>{const at=Date.now();while(Date.now()-at<ms){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT_TIMEOUT: '+label);};
 async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvailable=true,bus:providedBus,chat:providedChat,character:providedCharacter}={}){
  const bus=providedBus||createBus(),controls={current:true,onQuery:null,onModel:null,onCurrent:null,denied:false},unloads=[],prompts=[],sent=[],copied=[],permissions=[];
- const nativeHost=native?await require('./libra_memory_graph_reader_fixture.cjs').fixture({mode:'server_only',hostOverrides:bus.api('libra')}):null;
+ const nativeHost=native?await require('./libra_direct_memory_reader_fixture.cjs').fixture({mode:'server_only',hostOverrides:bus.api('libra')}):null;
  const chat=providedChat||nativeHost?.f.chat||{id:'h',message:[{role:'user',chatId:'u1',data:'민아는 은빛 열쇠를 확인한다.'},{role:'assistant',chatId:'a1',data:'준호가 은빛 열쇠를 보관한 채 문 앞에서 기다렸다.'}]};
  const character=providedCharacter||nativeHost?.f.character||{chaId:'c',name:'민아',chats:[chat],chatPage:0,lorebook:[]};
  const scope=nativeHost?{scopeKey:nativeHost.scopeKey,characterId:character.chaId||character.id,chatId:chat.id}:{scopeKey:'s',characterId:'c',chatId:'h'};

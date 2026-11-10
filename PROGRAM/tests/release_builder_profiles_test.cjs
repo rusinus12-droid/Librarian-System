@@ -21,7 +21,7 @@ assert.equal(builder.shouldCopyRuntimeProgram('plugins/Flashback_Memory.js'),tru
 assert.equal(builder.shouldCopyRuntimeProgram('tools/build_distribution.cjs'),false);
 assert.equal(builder.shouldCopyRuntimeProgram('tools/release_builder_ui.cjs'),false);
 assert.equal(builder.shouldCopyRuntimeProgram('tools/runtime_release_validation.cjs'),true);
-assert.equal(builder.shouldCopyRuntimeProgram('tools/libra_memory_graph_forest_refs.cjs'),true);
+assert.equal(builder.shouldCopyRuntimeProgram('tools/libra_memory_graph_forest_refs.cjs'),false);
 // The search kernel is a test oracle only since server Compute retired; it is not shipped.
 assert.equal(builder.shouldCopyRuntimeProgram('sdk/MemorySuiteSearchKernel.source.cjs'),false);
 assert.equal(builder.shouldCopyRuntimeProgram('sdk/MemorySuiteStorageClient.source.js'),true);

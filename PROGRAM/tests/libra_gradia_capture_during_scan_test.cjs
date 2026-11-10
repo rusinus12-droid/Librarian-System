@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { fixture, QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const { fixture, QUOTE } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 
 const ANCHOR = '    const captureGradiaMemoryEvidenceOnce = async (request, authority) => {';
 test('server_only: GRADIA memory read survives a canonical scan writing the manifest', { timeout: 300000 }, async () => {

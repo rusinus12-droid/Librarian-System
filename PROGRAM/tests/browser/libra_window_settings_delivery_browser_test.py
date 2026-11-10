@@ -15,7 +15,7 @@ SOURCE = Path(os.environ.get('LIBRA_GUI_SOURCE', ROOT/'PROGRAM/plugins/LIBRA.js'
 OUT = Path(os.environ.get('LIBRA_WINDOW_OUTPUT', tempfile.mkdtemp(prefix='libra-window-')))
 OUT.mkdir(parents=True, exist_ok=True)
 seed_code = r"""
-const {fixture}=require('./PROGRAM/tests/fixtures/libra_memory_graph_reader_fixture.cjs');
+const {fixture}=require('./PROGRAM/tests/fixtures/libra_direct_memory_reader_fixture.cjs');
 (async()=>{const x=await fixture();try{const f=x.f;
  await f.r.api.saveEmbeddingSettings({...await f.r.api.getEmbeddingSettings(),enabled:false});
  console.log(JSON.stringify({values:[...f.r.values],character:f.character,chat:f.chat}));

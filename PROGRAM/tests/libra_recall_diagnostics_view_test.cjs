@@ -13,7 +13,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { fixture, QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const { fixture, QUOTE } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 
 const pluginPath = path.join(__dirname, '..', 'plugins', 'LIBRA.js');
 const results = [];

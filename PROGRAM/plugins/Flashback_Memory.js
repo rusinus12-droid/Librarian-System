@@ -53276,6 +53276,7 @@ ${cleanedText}`, 80),
 
   /* GRADIA PLUGIN READ START */
 function createGradiaReadPrimitives() {
+const fingerprint = (function createLibraMemoryFingerprint() {
   const utf8Bytes = value => {
     const text = String(value || '');
     if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
@@ -53352,8 +53353,9 @@ function createGradiaReadPrimitives() {
     }
     return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
   };
-
-return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+  return sha256Hex;
+})();
+return {fingerprint, byteLength: value => new TextEncoder().encode(String(value)).length};
 }
 const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const schema = 'memory-suite.gradia-plugin-read.v1';

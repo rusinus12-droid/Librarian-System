@@ -3,7 +3,7 @@
 // falls back to its lexical graph, the budget adapts, and the next recall is semantic.
 // An explicit semanticPolicy.queryBudgetMs is never adapted.
 const assert = require('node:assert/strict');
-const { fixture } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const { fixture } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 const config = { enabled: true, provider: 'openai', url: 'https://synthetic.invalid/v1/embeddings', model: 'text-embedding-3-small',
   key: 'synthetic-not-a-real-key', dimensions: 256, maxRetries: 0 };
 const queries = ['keepsake custodian rendezvous', 'custodian of the keepsake', 'where the keepsake rests'];

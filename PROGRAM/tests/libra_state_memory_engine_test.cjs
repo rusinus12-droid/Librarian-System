@@ -1,0 +1,161 @@
+'use strict';
+const { test } = require('node:test'), assert = require('node:assert/strict'), crypto = require('node:crypto');
+const fingerprint = value => crypto.createHash('sha256').update(value).digest('hex');
+const create = require('../tools/libra_state_memory_engine.cjs');
+const modes = require('../tools/libra_memory_engine_mode.cjs');
+const engine = create({ fingerprint });
+
+test('lens reserves 40% while the remaining 60% follows the question instead of fixed source shares', () => {
+  const rows = ['lens','canonical','micro','state'].flatMap(family => Array.from({ length: 30 }, (_, n) => ({
+    id: family + n, family, axis: 'world', text: family + ' 은빛 열쇠 ' + n
+  })));
+  for (const [query, intent, family] of [['열쇠 지금 보유자', 'current', 'state'], ['열쇠 과거 경위', 'history', 'canonical'], ['열쇠 정확한 발언', 'detail', 'micro']]) {
+    const plan = engine.allocationPlan(query);
+    const result = engine.select({ rows, query, maxItems: 20, maxCharacters: 10000, plan });
+    assert.equal(plan.intent, intent);
+    assert.equal(result.items.filter(row => row.family === 'lens').length, 8);
+    assert.equal(result.items.filter(row => row.family === family).length, 12);
+    assert.equal(result.budget.familyAllocation.lens.targetCharacters, 4000);
+    assert.equal(result.budget.familyAllocation.evidence.weight, 60);
+    assert.equal(result.budget.familyAllocation.canonical, undefined);
+  }
+});
+
+test('unused family shares are reused and Lore cannot enter even the shared pool', () => {
+  const rows = Array.from({ length: 20 }, (_, n) => ({ id: 'c' + n, family: 'canonical', axis: 'world', text: '은빛 열쇠 ' + n }));
+  rows.push({ id: 'lore', family: 'lore', axis: 'world', text: '은빛 열쇠 로어' });
+  const result = engine.select({ rows, query: '열쇠', maxItems: 10, maxCharacters: 4000, plan: engine.allocationPlan('열쇠') });
+  assert.equal(result.items.length, 10);
+  assert.ok(result.items.every(row => row.family === 'canonical'));
+  assert.equal(result.budget.familyAllocation.evidence.reservedItems, 6);
+});
+
+test('current questions deduplicate identical source assertions while history retains event wording', () => {
+  const rows = [
+    { id: 'state', family: 'state', axis: 'world', text: '열쇠 보유자: 준호', evidenceKeys: ['micro:a:claim'] },
+    { id: 'event', family: 'micro', axis: 'world', text: '민아가 열쇠를 준호에게 건넸다.', evidenceKeys: ['micro:a:claim'] },
+    { id: 'promise', family: 'micro', axis: 'narrative', text: '준호는 열쇠를 해 지기 전에 돌려주겠다고 했다.', evidenceKeys: ['micro:a:promise'] }
+  ];
+  const current = engine.select({ rows, query: '지금 열쇠 보유자', plan: engine.allocationPlan('지금 열쇠 보유자') });
+  assert.ok(current.items.some(row => row.id === 'state'));
+  assert.equal(current.items.some(row => row.id === 'event'), false);
+  assert.ok(current.items.some(row => row.id === 'promise'), 'different source assertions are never merged by similar wording');
+  assert.equal(current.budget.suppressedEvidenceDuplicates, 1);
+  const history = engine.select({ rows, query: '열쇠의 과거 경위', plan: engine.allocationPlan('열쇠의 과거 경위') });
+  assert.ok(history.items.some(row => row.id === 'event'));
+});
+
+test('projected fields retain their own evidence turn and pending authority', () => {
+  const rows = engine.stateRows({ throughTurn: 7, responseAuthority: { current: false, pending: true },
+    world: [{ id: 'key', name: '열쇠', state: { holderRef: '준호' }, fieldEvidence: { holderRef: {
+      schema: 'libra.micro_state_field_evidence.v1', turn: 6, analysisRevisionId: 'a', claimDigest: 'claim'
+    } } }] });
+  assert.equal(rows[0].turn, 6);
+  assert.equal(rows[0].stateStatus, 'last_known');
+  assert.deepEqual(rows[0].evidenceKeys, ['micro:a:claim']);
+});
+
+test('the extracted fingerprint retains native SHA256 compatibility for Korean and supplementary characters', () => {
+  const actual = require('../tools/libra_memory_fingerprint.cjs')();
+  for (const value of ['', '민아와 은빛 열쇠', '🙂한글\nquoted "value"']) assert.equal(actual(value), fingerprint(value));
+});
+
+test('all four axes receive their floor before a highly relevant axis takes the shared budget', () => {
+  const rows = engine.axes.flatMap(axis => Array.from({ length: 6 }, (_, n) => ({ id: axis + n, family: 'state', axis,
+    text: axis === 'world' ? '은빛 열쇠 '.repeat(10) + n : axis + ' fact ' + n })));
+  const result = engine.select({ rows, query: '은빛 열쇠', maxItems: 8, maxCharacters: 3000 });
+  for (const axis of engine.axes) assert.equal(result.coverage[axis].selected, 2);
+  assert.equal(result.graphBuilds, 0);
+});
+
+test('missing axes and budget-limited axes are disclosed without invented or truncated facts', () => {
+  const rows = [{ id: 'a', family: 'state', axis: 'characters', text: 'a'.repeat(200) }];
+  const result = engine.select({ rows, maxCharacters: 50 });
+  assert.equal(result.items.length, 0);
+  assert.equal(result.coverage.characters.reason, 'budget_limited');
+  assert.equal(result.coverage.world.reason, 'no_verified_data');
+});
+
+test('State references resolve to names and narrative status survives field projection', () => {
+  const rows = engine.stateRows({ throughTurn: 5, characters: [{ id: 'p1', name: '민아', state: { mood: '기대' } }],
+    world: [{ id: 'w1', name: '열쇠', state: { holderRef: 'p1' } }], narrative: { threads: [{ id: 't1', title: '약속', status: 'open' }] } });
+  assert.ok(rows.some(row => row.text.includes('holderRef: 민아')));
+  assert.ok(rows.some(row => row.axis === 'narrative' && row.text.includes('status: open')));
+  assert.ok(rows.every(row => row.turn === 5));
+});
+
+test('State evidence locators outrank recency when choosing bounded existing records', () => {
+  const refs = [{ key: 'old', memoryId: 'old', turnRange: { end: 5 } }, { key: 'new', memoryId: 'new', turnRange: { end: 100 } }];
+  assert.equal(engine.rankCatalog(refs, '', [{ evidence: { memoryId: 'old' } }], 1)[0].key, 'old');
+});
+
+test('previous engine settings migrate to State-first; unknown selections remain refused', () => {
+  for (const value of ['', 'state_first', 'legacy', 'shadow', 'unified']) assert.equal(modes.normalizeMemoryEngineMode(value), 'state_first');
+  assert.throws(() => modes.normalizeMemoryEngineMode('unknown'), /MODE_INVALID/);
+});
+
+test('BM25, char n-gram and exact match recognize Korean inflections and rank relevant records higher', () => {
+  const query = '은빛 열쇠';
+  const text1 = '민아는 은빛열쇠를 소중히 간직했다.';
+  const text2 = '열쇠는 서랍 안에 보관되어 있다.';
+  const text3 = '전혀 관련 없는 밤하늘의 별빛 이야기.';
+
+  const s1 = engine.score(text1, query);
+  const s2 = engine.score(text2, query);
+  const s3 = engine.score(text3, query);
+
+  assert.ok(s1 > s2, `s1 (${s1}) should outrank s2 (${s2})`);
+  assert.equal(s3, 0, `unrelated text score should be 0`);
+
+  const ngrams = engine.charNgrams('은빛 열쇠');
+  assert.ok(ngrams.includes('은빛'));
+  assert.ok(ngrams.includes('열쇠'));
+});
+
+test('sparse RRF fusion blends multi-signal ranks into monotonic blended scores with breakdowns', () => {
+  const rows = [
+    { id: 'r1', signals: { bm25: 0.9, charNgram: 0.8, exact: 1.0, anchor: 0 }, score: 10 },
+    { id: 'r2', signals: { bm25: 0.1, charNgram: 0.2, exact: 0.0, anchor: 1.0 }, score: 5 },
+    { id: 'r3', signals: { bm25: 0.0, charNgram: 0.0, exact: 0.0, anchor: 0 }, score: 1 }
+  ];
+  const fused = engine.sparseRrfFusion(rows, ['bm25', 'charNgram', 'exact', 'anchor'], 60, 0.25);
+  assert.equal(fused.length, 3);
+  assert.ok(fused[0].scoreBreakdown.rrfScore > fused[2].scoreBreakdown.rrfScore);
+  assert.ok(fused[0].score > fused[1].score);
+  assert.ok(fused[1].score > fused[2].score);
+  assert.equal(fused[2].scoreBreakdown.rrfScore, 0);
+});
+
+test('extractCanonicalSearchMetadata and upgradeCanonicalManifestSearchMetadata backfill compact search terms without rewriting full history', async () => {
+  const mockMemory = {
+    title: '은빛 열쇠의 기원',
+    summary: '민아가 숲속 고성에서 은빛 열쇠를 발견하고 준호에게 알렸다.',
+    canonicalArtifact: {
+      schema: 'libra.canonical_artifact.v1',
+      title: '은빛 열쇠의 기원',
+      summary: '민아가 숲속 고성에서 은빛 열쇠를 발견하고 준호에게 알렸다.',
+      chronology: [
+        { text: '민아가 고성의 지하실 문을 은빛 열쇠로 열었다.' }
+      ]
+    }
+  };
+  const meta = engine.extractCanonicalSearchMetadata(mockMemory);
+  assert.equal(meta.title, '은빛 열쇠의 기원');
+  assert.ok(meta.searchText.includes('은빛 열쇠'));
+  assert.ok(meta.searchTerms.some(t => t.includes('열쇠') || t.includes('민아')));
+
+  const manifest = {
+    memories: {
+      '5': { key: 'mem:5', memoryId: 'mem-5', summary: '옛 기록 요약문' },
+      '10': { key: 'mem:10', memoryId: 'mem-10', summary: '이미 있는 검색어', searchTerms: ['기존'], searchText: '기존 검색 텍스트' }
+    }
+  };
+  const report = await engine.upgradeCanonicalManifestSearchMetadata(manifest, async ref => {
+    if (ref.key === 'mem:5') return mockMemory;
+    return null;
+  });
+  assert.equal(report.upgraded, 1);
+  assert.equal(report.total, 2);
+  assert.ok(manifest.memories['5'].searchTerms.length > 0);
+  assert.equal(manifest.memories['10'].searchText, '기존 검색 텍스트');
+});

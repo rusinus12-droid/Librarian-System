@@ -13,7 +13,7 @@
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
-const { fixture } = require('../../tests/fixtures/libra_memory_graph_reader_fixture.cjs');
+const { fixture } = require('../../tests/fixtures/libra_direct_memory_reader_fixture.cjs');
 const { load } = require('../../tests/gradia/host.cjs');
 const createBus = require('../../tests/fixtures/libra_gradia_read_bus.cjs');
 
@@ -62,7 +62,6 @@ const chatModel = async (messages, limits = {}) => {
   const results = [];
   try {
     const f = x.f, chat = f.chat, character = f.character;
-    await f.r.api.buildMemoryGraphCorpus({ limit: 2 });
     const sdkFetch = async (url, init) => {
       if (url.startsWith(x.server.url + '/')) return await fetch(url, init);
       const body = JSON.parse(init.body);

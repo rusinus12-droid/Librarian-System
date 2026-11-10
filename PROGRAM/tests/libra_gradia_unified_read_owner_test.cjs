@@ -7,7 +7,7 @@ async function fixture(t,options={}){
  const api=id=>({...bus.api(id),...(options.missingRemove?{removePluginChannelListener:async()=>{throw Error('API method removePluginChannelListener not found');}}:{})});
  const owner=create({role:'owner',api:api('libra'),now:options.now,release:execution=>{releases++;options.onRelease?.(execution);},fingerprint,randomId:()=>String(++serial),
    boundary:async()=>({dataInstanceId:'A'.repeat(32),resetEpoch:0,boundary}),
-   query:async(request,cap)=>{queries++;authority=cap;const receipt=cap.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});
+   query:async(request,cap)=>{queries++;authority=cap;const receipt=cap.bindSelection({scope:request.scope,generation:'g1',sourceKeys:[],itemIds:[]});
      assert.equal(cap.verifyReceipt(receipt),true);await options.onQuery?.();
      return {modelDispatchEligible:true,queryComplete:false,deliveryOutcome:'partial',windowRead:{limit:20},nextWindow:{microCursor:'remaining'},
        bundle:{generation:'g1'},packet:{renderedText:options.content??'TYPED OWNER EVIDENCE',packetDigest:fingerprint('packet')}};},

@@ -354,8 +354,8 @@ manifest.dataContract.computePlane = {
     operation: computePilots.libra.operation,
     algorithmFingerprint: computePilots.libra.fingerprint,
     retired: true,
-    replacement: 'libra.memory_graph_query.v1',
-    execution: 'retired_unified_engine_replacement',
+    replacement: 'libra.state_memory_query.v1',
+    execution: 'retired_direct_memory_replacement',
     localDefaultZeroNetwork: true,
     preferServerDelegatesCurrentRequest: false,
     deadlineMs: 1500,
@@ -1212,16 +1212,13 @@ manifest.dataContract.postGuiBoundedFixes = {
   companionReport:'../../reports/companion-gui-defect-fixes-20261009.md'
 };
 
-manifest.dataContract.libraShardedDurableGraph = {
-  pluginVersion: pluginVersions.libra, rootSchema:'libra.graph_corpus.v2', forestSchema:'libra.graph_corpus_forest.v1',
-  windowsPerShard:64, serializedBytesPerShard:1048576, shardsPerBuildStep:4,
-  selectedGraphBytes:4194304, selectedShards:32, partialCoverageExplicit:true,
-  routing:'content_addressed_radix_lexical_entity_predicate_node_and_adjacency',
-  semanticRouting:'conservative_candidate_shards_existing_vectors_and_shared_query_cache',
-  queryIndexCompilation:'selected_graph_only', currentness:'streamed_small_owner_heads_and_consumed_physical_source_rechecks',
-  publication:'single_root_after_all_shards_and_routes', restartableCheckpoint:true,
-  serverCapability:'libra-graph-forest.v1', serverGcBatch:32, localGcBatch:256,
-  serverGcYieldsToReaders:true, originalMemoryDeletion:false, byteBounded:false
+delete manifest.dataContract.libraShardedDurableGraph;
+manifest.dataContract.libraDirectMemoryRecall = {
+  pluginVersion:pluginVersions.libra, schema:'libra.state_memory_query.v1',
+  allocation:'lens_40_percent_and_query_adaptive_evidence', sources:['lens','state','canonical','micro'],
+  loreDirectDelivery:false, graphConstruction:false, graphPublication:false,
+  currentState:'native_response_projection_with_approved_micro_and_review',
+  currentness:'native_source_and_admission_proof_revalidation', actualHostQualified:false
 };
 manifest.files = Object.fromEntries(listFiles(root)
   .map(filePath => {

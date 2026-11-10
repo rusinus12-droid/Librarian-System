@@ -5,7 +5,6 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const createLibraGraphLifecycle = require('./core/libra-graph-lifecycle.cjs');
 const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { Worker } = require('node:worker_threads');
@@ -93,9 +92,6 @@ const REQUIRED_CAPABILITIES = Object.freeze([
   'server-batch-read-budget.v1',
   'interactive-storage-soft-cap.v1',
   'conditional-batch.v1',
-  'libra-graph-lifecycle.v1',
-  'libra-graph-projection-pages.v1',
-  'libra-graph-forest.v1',
   'flashback-writer-fence.v1',
   'flashback-scope-delete.v1',
   'scope-index.v1',
@@ -1750,8 +1746,6 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     if(row&&Number(row.value_bytes)>limit)throw Object.assign(new Error('storage_value_limit_exceeded'),{code:'STORAGE_VALUE_LIMIT',statusCode:413});
     return decodeRow(row);
   };
-  let graphLifecycle;
-  const assertGraphWrite = (key,options) => graphLifecycle?.assertWrite(key,options);
   const writerFence = createFlashbackWriterFence(database, namespace, {
     prepare:prepareStatement,
     runTransaction:(input,body) => {
@@ -1760,7 +1754,7 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     }
   });
 
-  const mutate = ({ kind, space, key, value, operationId, expectedRevision = null, fence = null, scopeId = '', graphLease = null }) => {
+  const mutate = ({ kind, space, key, value, operationId, expectedRevision = null, fence = null, scopeId = '' }) => {
     if(ownerStore)receiptCodec.assertWriterKey(space,key);
     let valueJson = '';
     if (kind === 'set') validateStoredHostLineage(value, namespace);
@@ -1791,7 +1785,6 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
       }
 
       writerFence.verify(key, fence);
-      assertGraphWrite(key,{graphLease,kind,value});
       const previous = selectKv.get(space, key);
       const previousRevision = Math.max(0, Number(previous?.revision || 0));
       if (normalizedExpectedRevision != null && previousRevision !== normalizedExpectedRevision) {
@@ -1939,7 +1932,7 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
       }
       verifyConditionalBatch(prepared.mutations, !!ownedScopeDeletion);
       for (const mutation of prepared.mutations) {
-        if (mutation.kind !== 'check') { assertGraphWrite(mutation.key,{...options,kind:mutation.kind,value:mutation.value}); writerFence.verify(mutation.key, options.fence, options.maintenance === true); }
+        if (mutation.kind !== 'check') { writerFence.verify(mutation.key, options.fence, options.maintenance === true); }
       }
       for (const mutation of prepared.mutations) {
         if (mutation.kind === 'check') continue;
@@ -2161,8 +2154,7 @@ function createRepository(dataDir, namespace, isMaintenanceActive = () => false,
     try { database.close(); } catch (_) {}
   };
 
-  graphLifecycle = createLibraGraphLifecycle({namespace,get,getMetadata,list,applyConditionalBatch});
-  return { namespace, database:publicDatabase, filePath, ephemeral:opened.ephemeral === true, legacyReadOnly, ...(options.protectedRuntime ? {maintainReceipts:maintenance} : {}), get, getMetadata, getMany, mutate, list, operation, integrity, checkpoint, vacuumInto, verifyConditionalBatch, applyConditionalBatch, graphLifecycle,
+  return { namespace, database:publicDatabase, filePath, ephemeral:opened.ephemeral === true, legacyReadOnly, ...(options.protectedRuntime ? {maintainReceipts:maintenance} : {}), get, getMetadata, getMany, mutate, list, operation, integrity, checkpoint, vacuumInto, verifyConditionalBatch, applyConditionalBatch,
     isOwnerScopeDeleted: scopeId => namespace === 'libra' && !!deletedOwnerScope.get(scopeId), writerFence, close };
 }
 
@@ -3613,13 +3605,6 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           ? sendJson(request, response, 200, operation)
           : sendJson(request, response, 404, { ok: false, error: 'operation_not_found' });
       }
-      if (request.method === 'POST' && url.pathname === '/v1/libra/graph-lifecycle') {
-        assertNamespaceAccess(principal,'libra','write');
-        if(!namespaceReset.allows('libra',request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
-        const body=await readBody(request,32768,'graph_lifecycle_body_limit');
-        if(!['server_only','mirror'].includes(request.headers['x-memory-suite-storage-mode'])||(['inventory','delete'].includes(body?.action)||body?.kind==='gc')&&request.headers['x-memory-suite-storage-mode']!=='server_only'||decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])!==body?.scopeKey)throw Object.assign(new Error('LIBRA_GRAPH_ROUTE_BINDING_REQUIRED'),{statusCode:409});
-        return sendJson(request,response,200,{ok:true,result:repositories.libra.graphLifecycle.command(body)});
-      }
       if (request.method === 'POST' && url.pathname === '/v1/flashback/writer') {
         const body = await readBody(request, 8192, 'flashback_writer_request_too_large');
         if(!namespaceReset.allows('flashback',request.headers['x-memory-suite-reset-epochs']))return sendJson(request,response,409,{ok:false,error:'MEMORY_SUITE_RESET_RECONNECT_REQUIRED'});
@@ -3783,7 +3768,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           return {...m,kind:condition?'check':m.kind};
         };
         const items=[...conditions.map(m=>normalize(m,true)),...mutations.map(m=>normalize(m,false))];
-        const result = repositories[namespace].applyConditionalBatch(items,{operationId, fence: body.fence, graphLease: body.graphLease,
+        const result = repositories[namespace].applyConditionalBatch(items,{operationId, fence: body.fence,
           scopeId:decodeDiagnosticHeader(request.headers['x-memory-suite-scope-id'])});
         scheduleChangeSettledBackup();
         return sendJson(request,response,200,result);

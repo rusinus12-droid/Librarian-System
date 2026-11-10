@@ -1377,7 +1377,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const request = (...args) => withOwnerOperation({kind:'storage_operation',operation:'request'}, () => requestImpl(...args));
   // Reads are served during a backup; callers that wait on read maintenance keep their own UI.
-  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity', '/v1/libra/graph-lifecycle'];
+  const MAINTENANCE_RETRY_LIMIT = 5, MAINTENANCE_RETRY_BASE_MS = 300, MAINTENANCE_RETRY_ROUTES = ['/v1/kv/set', '/v1/kv/remove', '/v1/kv/batch', '/v1/kv/get-many', '/v1/integrity'];
   const requestImpl = async (method, route, body = null, requestOptions = {}) => {
     if (localOnlyOwner && !(method === 'GET' && (route.startsWith('/v1/kv/get?') || route.startsWith('/v1/kv/keys?') || route.startsWith('/v1/integrity?')))) throw localOnlyError();
     const connection = await bootstrap(requestOptions.forceBootstrap === true, requestOptions.allowPluginOnly === true);
@@ -9185,7 +9185,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const dispose = async () => {
     if (lifecycle.disposed) return false;
-    for(const lease of graphStorageLeases.values())void lease.release();
     lifecycle.disposed = true;
     cleanupDialogController?.dispose();cleanupDialogController=null;
     for (const timer of [...lifecycle.timers]) clearTimeout(timer);
@@ -9341,54 +9340,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     throw connectionStaleError();
   };
-  // Server-only derived-store leases. Public DTOs and process-local Maps are
-  // never accepted as a namespace fence by the storage owner.
-  const graphStorageLeases=new Map();
-  const graphLifecycleRequest=async(scopeKey,body)=>{
-    const scope=await resolveCurrentScope(false),mode=(await readScopeMode(scope,false)).mode;
-    if(scope.scopeKey!==scopeKey||![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
-    const before=await conditionalBatchBoundary();
-    const boot=await bootstrap(false,true);
-    if(boot?.capabilities?.['libra-graph-lifecycle.v1']!==true)throw new Error('LIBRA_GRAPH_LEASE_UPGRADE_REQUIRED');
-    // A v2 projection must only be published by a GC-aware storage owner.
-    if(body.action==='acquire'&&body.kind==='build'&&boot?.capabilities?.['libra-graph-projection-pages.v1']!==true)throw new Error('LIBRA_GRAPH_PROJECTION_UPGRADE_REQUIRED');
-    const payload=await request('POST','/v1/libra/graph-lifecycle',{scopeKey,...body},{allowPluginOnly:true,scopeId:scopeKey,storageMode:mode});
-    if(jsonComparable(before)!==jsonComparable(await conditionalBatchBoundary()))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
-    if(payload?.ok!==true||!payload.result)throw new Error('LIBRA_GRAPH_LEASE_RESPONSE_INVALID');
-    return payload.result;
-  };
-  const acquireGraphStorageLease=async(scopeKey,kind)=>{
-    const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
-    if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
-    const requestId=operationId('graph-lease'),started=Date.now();let lease,retries=0,granted=0;
-    for(;;){
-      try{granted=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId});break;}
-      catch(error){
-        if(kind==='gc'||!String(error?.code||error?.message||'').includes('LIBRA_GRAPH_NAMESPACE_BUSY')||retries>0&&Date.now()-started>=5000)throw error;
-        // An interactive reader asks the GC holder to finish its current page
-        // and release the namespace. No evidence read happens without a lease.
-        try{await graphLifecycleRequest(scopeKey,{action:'yield'});}catch(yieldError){if(!String(yieldError?.message||'').includes('ACTION_INVALID'))throw yieldError;}
-        await new Promise(resolve=>setTimeout(resolve,50));
-        retries++;
-        if(lifecycle.disposed)throw Error('LIBRA_GRAPH_LEASE_CLOSED');
-      }
-    }
-    let closed=false,timer=null,failure=null;
-    const key=lease.token;
-    // The server keeps a lease for 60 s and this session renews it every 20 s. Nothing but that
-    // expiry ends a read or build lease, so inside the granted time (less a margin, counted from
-    // before the request was sent) it is confirmed locally instead of with a round trip per page.
-    // A GC lease still asks the server every time: a reader may have asked it to yield.
-    let validUntil=granted+45000;
-    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');if(kind!=='gc'&&Date.now()<validUntil)return {current:true,token:key,kind,confirmedLocally:true};const current=await graphLifecycleRequest(scopeKey,{action:'assert',token:key});if(kind==='gc'&&current.yieldRequested)throw Error('LIBRA_GRAPH_GC_YIELDED');return current;};
-    const renew=async()=>{try{if(closed)return;const sent=Date.now();lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});validUntil=sent+45000;}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
-    timer=setTimeout(renew,20000);timer?.unref?.();
-    const session={scopeKey,kind,token:key,assertCurrent,
-      command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},
-      release:async()=>{if(closed)return;closed=true;clearTimeout(timer);graphStorageLeases.delete(key);try{await graphLifecycleRequest(scopeKey,{action:'release',token:key});}catch(_){/* durable expiration still revokes this lease */}}
-    };
-    graphStorageLeases.set(key,session);return Object.freeze(session);
-  };
   const prepareConditionalBatch = async (input = {}) => {
     const mutations = input.mutations, conditions = input.conditions || [];
     if (!Array.isArray(mutations) || !mutations.length || !Array.isArray(conditions) || mutations.length+conditions.length>64) {
@@ -9418,11 +9369,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const pin of pinnedSets)for(const saved of pin.records){
       const condition=[...body.conditions,...body.mutations].find(c=>c.space===saved.space&&c.key===saved.remoteKey);
       if(!condition||condition.expectedRevision!==saved.revision||condition.expectedDigest!==saved.digest||condition.expectedExists!==saved.exists||condition.expectedTombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_PIN_NOT_BOUND');
-    }
-    const graphScope=/^libra:v1:scope:(.+?):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
-    if(graphScope&&body.mutations.some(m=>m.key.includes(':root:'))){
-      const lease=[...graphStorageLeases.values()].find(x=>x.scopeKey===graphScope&&x.kind==='build');
-      if(!lease)throw new Error('LIBRA_GRAPH_BUILD_LEASE_REQUIRED');await lease.assertCurrent();body.graphLease={scopeKey:graphScope,token:lease.token};
     }
     if (storageValueBytes(body)>4*1024*1024) throw conditionalBatchError('MEMORY_SUITE_BATCH_BODY_LIMIT');
     if (jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary())) throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
@@ -9756,9 +9702,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     namespace,
     pluginId,
     observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
-    acquireGraphStorageLease,
-    assertGraphForestSupport:async()=>{const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
-      if([MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)&&(await bootstrap(false,true))?.capabilities?.['libra-graph-forest.v1']!==true)throw Error('LIBRA_GRAPH_FOREST_UPGRADE_REQUIRED');},
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,
