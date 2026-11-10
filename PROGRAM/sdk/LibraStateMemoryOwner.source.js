@@ -70,9 +70,29 @@
     // State-first owner adapter. Uses existing native records and consumer proofs.
     const stateMemoryFingerprint = createLibraMemoryFingerprint();
     let stateMemoryRuntime = null;
+    // One query reads the same heads and receipts many times. A background read frame
+    // shares those bytes and checks every consumed key once, in batches, before the
+    // result leaves. A frame that saw a change is dropped and the proof runs unshared.
+    const stateReadFrames = new WeakMap();
+    const closeStateReadFrame = context => {
+      const frame = stateReadFrames.get(context);
+      if (frame) { stateReadFrames.delete(context); frame.close(); }
+    };
+    const STATE_FRAME_CHANGED = /LIBRA_MEMORY_READER_(?:BODY|ROUTE)_CHANGED|LIBRA_BACKGROUND_SETTINGS_CHANGED|LIBRA_VERIFIED_STORAGE_UNBOUND_REUSE/;
+    // Search text per Micro turn, taken from the projection each Micro head already stores.
+    // It only chooses which turns to read; delivered rows always come from the verified read.
+    const STATE_MICRO_INDEX_SCOPES = 4, STATE_MICRO_INDEX_TURNS = 4096, STATE_MICRO_INDEX_SCAN_TURNS = 512;
+    const STATE_MICRO_INDEX_TEXT_CHARS = 1200, STATE_MICRO_INDEX_ABSENT_RECHECK_MS = 30000;
+    const stateMicroIndexes = new Map();
+    const invalidateStateMicroIndex = (scopeKey, turn = null) => {
+      for (const [cacheKey, cache] of stateMicroIndexes) {
+        if (!cacheKey.startsWith(string(scopeKey) + '\u0000')) continue;
+        if (turn == null) stateMicroIndexes.delete(cacheKey); else cache.turns.delete(Number(turn));
+      }
+    };
     const getStateMemoryRuntime = () => {
       if (stateMemoryRuntime) return stateMemoryRuntime;
-      const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint });
+      const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const snapshot = async (context, options = {}) => {
         const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
         const stored = await storage.getVerifiedJson(key.manifest(scope), scope, null);
@@ -98,11 +118,65 @@
         const identity = stateMemoryFingerprint(JSON.stringify([scope, resolved.worldlineId, Number(state.microRestoreGeneration || 0), route,
           pairs.map(pair => [pair.turn, completedTurnRevisionId(pair), sourceDigest([pair])]),
           refs.map(ref => [canonicalReaderRefIdentity(ref), ref.summary, ref.searchText, ref.searchTerms, ref.recallTerms, ref.title]), rawHead, head, stateAuthority, stateProofs, review.saved]));
-        return { manifest: active.manifest, head, refs, turns, worldlineId: resolved.worldlineId, identity, owner: 'libra:' + route[0],
+        return { manifest: active.manifest, head, refs, turns, pairs: active.pairs, worldlineId: resolved.worldlineId, identity, owner: 'libra:' + route[0],
           rawHead, stateAuthority, stateProofs, stateKey: key.continuityState(scope), settings: await loadMemorySettings(), review, cutoff };
       };
       const capture = createLibraStateMemoryCapture({
-        context: resolveContext, fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
+        async context() {
+          const resolved = await resolveContext(), context = { ...resolved, scope: { ...resolved.scope } };
+          stateReadFrames.set(context, await openBackgroundReadFrame(context.scope));
+          return context;
+        },
+        async settle(context) {
+          const frame = stateReadFrames.get(context);
+          if (!frame) return true;
+          try { await frame.assertCurrent(); return true; }
+          catch (error) { if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error; return false; }
+          finally { closeStateReadFrame(context); }
+        },
+        abandon: closeStateReadFrame,
+        async microIndex(context, source) {
+          const scope = context.scope, worldline = hostWorldlineIdForScope(scope);
+          const cacheKey = string(scope.scopeKey) + '\u0000' + worldline, generation = Number(state.microRestoreGeneration || 0);
+          let cache = stateMicroIndexes.get(cacheKey);
+          if (!cache || cache.generation !== generation) cache = { generation, turns: new Map() };
+          stateMicroIndexes.delete(cacheKey); stateMicroIndexes.set(cacheKey, cache);
+          while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
+          const allowed = new Set(source.turns);
+          const revisions = new Map(asArray(source.pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
+          for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
+          const at = Date.now();
+          // An entry is reused only while its turn still has the source revision it was read for.
+          const pending = [...allowed].filter(turn => {
+            const entry = cache.turns.get(turn);
+            return !entry || entry.revision !== revisions.get(turn) || entry.text === null && at - entry.at > STATE_MICRO_INDEX_ABSENT_RECHECK_MS;
+          }).sort((a, b) => b - a).slice(0, STATE_MICRO_INDEX_SCAN_TURNS);
+          if (pending.length) {
+            // Heads are small: one request carries 32 of them. They are hints, so this frame
+            // is separate from the query's proof frame and is closed without a proof.
+            const scanScope = { ...scope }, frame = await openNativeReadFrame(scanScope);
+            try {
+              const keys = pending.map(turn => key.microMemoryHead(scanScope, worldline, 0, turn));
+              await frame.prefetch(keys);
+              for (const [index, turn] of pending.entries()) {
+                const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
+                const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
+                  && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
+                cache.turns.set(turn, { revision: revisions.get(turn), at,
+                  text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
+              }
+            } finally { frame.close(); }
+            while (cache.turns.size > STATE_MICRO_INDEX_TURNS) cache.turns.delete(cache.turns.keys().next().value);
+          }
+          const entries = new Map(); let known = 0;
+          for (const turn of allowed) {
+            const entry = cache.turns.get(turn);
+            if (entry?.revision !== revisions.get(turn)) continue;
+            known++; if (entry.text) entries.set(turn, entry.text);
+          }
+          return { entries, known };
+        },
+        fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
         async canonical(context, ref, source) {
@@ -138,7 +212,7 @@
           const sourceKey = 'lens_selection:' + before.digest;
           return { key: sourceKey, proofs: [], delivery,
             rows: asArray(delivery?.injectedItems).map(item => ({
-              text: '[PERSPECTIVE NOTES · NON-CANONICAL] ' + item.renderedLine, domain: 'narrative', turn: Number(item.turnRange?.end || 0), lensItem: item
+              text: '[PERSPECTIVE NOTES · NON-CANONICAL] ' + item.renderedLine, turn: Number(item.turnRange?.end || 0), lensItem: item
             })),
             async assertCurrent() {
               if ((await gradiaLensReadSnapshot(request)).digest !== before.digest) throw Error('LIBRA_LENS_SOURCE_CHANGED');
@@ -149,13 +223,28 @@
             [stateDecisionConsumptionProof(source.stateKey, source.rawHead)]), null);
         },
         async assertCurrent(token, context, source) {
-          await assertConsumedDataCurrent(token);
-          freshReadDepth++;
-          try {
-            const current = await resolveContext();
-            if (!sameSnapshotScope(current.scope, context.scope) || (await snapshot(current, { queryInput: { asOfTurn: source.cutoff } })).identity !== source.identity)
-              throw Error('LIBRA_STATE_SOURCE_CHANGED');
-          } finally { freshReadDepth--; }
+          const prove = async readScope => {
+            // With a read scope, both proofs read through its frame; the frame's own
+            // batched check is what makes those shared bytes current.
+            const adopt = current => readScope && sameSnapshotScope(current.scope, readScope) ? { ...current, scope: readScope } : current;
+            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt } : {});
+            freshReadDepth++;
+            try {
+              const current = adopt(await resolveContext());
+              if (!sameSnapshotScope(current.scope, context.scope) || (await snapshot(current, { queryInput: { asOfTurn: source.cutoff } })).identity !== source.identity)
+                throw Error('LIBRA_STATE_SOURCE_CHANGED');
+            } finally { freshReadDepth--; }
+          };
+          const open = stateReadFrames.get(context);
+          if (open) return open.disabled ? prove(null) : prove(context.scope);
+          // A later delivery proof gets its own frame. If that frame saw a change, the
+          // unshared proof decides, so an unrelated concurrent write cannot refuse delivery.
+          const readScope = { ...context.scope }, frame = await openBackgroundReadFrame(readScope);
+          try { await prove(readScope); await frame.assertCurrent(); }
+          catch (error) {
+            if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error;
+            frame.close(); await prove(null);
+          } finally { frame.close(); }
         },
         release: releaseConsumedDataReadSet
       }, engine);

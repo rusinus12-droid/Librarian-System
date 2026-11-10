@@ -45,3 +45,14 @@ LIBRA Full 빌드와 4개 플러그인·서버 문법 검사, 세 소스 동기�
 `git diff --check`도 통과했다. 폐기한 그래프 테스트는 이 통과 수에 포함하지 않는다.
 
 로그와 삭제 목록은 `.development/graph-retirement/`에 보관한다.
+
+## 후속 삭제 (2026-11-11)
+
+- `plugins/LIBRA.js`: 참조가 없던 옛 검색 상수 48개(recall catalog·연관 회상·BM25F/RRF 가중치·
+  hydrate/latent/temporal·질의 임베딩 예산), 폐기 안내만 하던 `getAssociativeRecallDiagnostics`,
+  회상 래퍼의 창/커서/lane 인자와 `unifiedMemoryEngine` 진단(`legacyRankerExecuted` 등 옛 전환 표식),
+  무시되던 `loreShare` 인자. 저장된 설정의 엔진 선택 이행 코드는 유지한다.
+- 회수 진단 화면의 page·frontier·window·`durable_common_index` 항목.
+- 구 통합 엔진·상설 그래프 설계/계약/현황 문서 27개와 검증·측정 JSON 2개.
+- 삭제된 API만 검증하던 테스트 5개(연관 회상 폐기 계약 3, 질의 임베딩 예산, volatile 색인).
+- 평가 도구의 그래프 색인 구축 단계(`--corpus-index`, `--index-rebuilds`).

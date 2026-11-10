@@ -161,3 +161,72 @@ test('Lore is never read or delivered, even when a caller asks to include it', a
   assert.equal(res.packet.renderedText.includes('고대 왕국의 비밀 열쇠'), false);
   assert.equal(res.diagnostics.headFreshness, 'current');
 });
+
+test('server mode: one query stays within a few dozen requests and an old matching Micro is found without a rebuild', async t => {
+  const x = await fixture({ mode: 'server_only', pauseAutomaticAnalysis: true, microCount: 12,
+    microText: turn => `민아는 은빛 열쇠 기록${turn}을 준호에게 남겼다.` });
+  t.after(() => x.cleanup());
+  let requests = 0, writes = 0;
+  x.server.hooks.beforeServerRequest = async (url, init) => {
+    requests++; if (init?.method === 'POST' && /\/v1\/kv\/(batch|set|remove)$/.test(url)) writes++;
+  };
+  const ask = queryText => x.f.r.api.executeStateMemoryQuery({ ...options, queryInput: { queryText } });
+  const first = await ask('기록9 은빛 열쇠'), cold = requests;
+  // The newest turns alone would be 17..10; turn 9 is read because its stored search text matches.
+  assert.equal(first.diagnostics.candidates.microReasons[9], 'index_match');
+  assert.ok(first.bundle.items.some(row => row.family === 'micro' && row.turn === 9));
+  assert.equal(first.diagnostics.candidates.microIndexKnown, first.diagnostics.candidates.microTotal);
+  assert.ok(cold <= 40, 'cold query requests: ' + cold);
+  requests = 0;
+  const second = await ask('기록7 은빛 열쇠'), warm = requests;
+  assert.ok(second.bundle.items.some(row => row.family === 'micro' && row.turn === 7));
+  assert.ok(warm <= cold, `a following query reuses verified reads (${warm} <= ${cold})`);
+  assert.equal(writes, 0, 'the search text is read from existing Micro heads; nothing is published');
+  console.log(JSON.stringify({ test: 'state_first_request_bound', cold, warm }));
+});
+
+test('a shared read frame is settled once, re-proved without sharing when it saw a change, and abandoned on failure', async () => {
+  const engine = require('../tools/libra_state_memory_engine.cjs')({ fingerprint: value => value });
+  const make = ({ settle, failProof = false }) => {
+    const log = [];
+    const frame = { head: { throughTurn: 1, world: [{ id: 'w', name: '열쇠', state: { place: '서랍' } }] }, refs: [], turns: [], settings: {},
+      identity: 'id', owner: 'libra', scope: { scopeKey: 's' }, worldlineId: 'main', stateKey: 'state', check() {},
+      register() { return 'token'; }, release() { log.push('release'); },
+      async assertCurrent() { log.push('proof'); if (failProof) throw Error('LIBRA_STATE_SOURCE_CHANGED'); },
+      async settle() { log.push('settle'); return settle(); }, abandon() { log.push('abandon'); } };
+    const runtime = require('../tools/libra_state_memory_runtime.cjs')({ engine, capture: async () => frame,
+      fingerprint: value => value, authorityStore: new Map() });
+    return { log, run: () => runtime.query({ queryText: '열쇠' }) };
+  };
+  const clean = make({ settle: () => true }); await clean.run();
+  assert.deepEqual(clean.log, ['proof', 'settle']);
+  const changed = make({ settle: () => false }); await changed.run();
+  assert.deepEqual(changed.log, ['proof', 'settle', 'proof'], 'the unshared proof decides after the frame saw a change');
+  const broken = make({ settle: () => { throw Error('STORAGE_DOWN'); } });
+  await assert.rejects(broken.run, /STORAGE_DOWN/);
+  assert.deepEqual(broken.log, ['proof', 'settle', 'release', 'abandon']);
+  const stale = make({ settle: () => true, failProof: true });
+  await assert.rejects(stale.run, /STATE_SOURCE_CHANGED/);
+  assert.deepEqual(stale.log, ['proof', 'release', 'abandon'], 'a failed proof never reaches the caller and leaves no open frame');
+});
+
+test('server mode: an unrelated rewrite during the query does not refuse it, and an edited source is read again', async t => {
+  const x = await fixture({ mode: 'server_only', pauseAutomaticAnalysis: true });
+  t.after(() => x.cleanup());
+  const manifestKey = `libra:v1:scope:${x.scopeKey}:manifest`;
+  const stored = JSON.parse((await x.server.send('GET', '/v1/kv/get?namespace=libra&space=plugin&key=' + encodeURIComponent(manifestKey))).result.value);
+  let seen = 0, rewritten = false;
+  x.server.hooks.beforeServerRequest = async () => {
+    // Same bytes, new server revision: the shared frame sees a change, the content proof does not.
+    if (++seen === 6 && !rewritten) { rewritten = true; x.server.hooks.beforeServerRequest = null; await x.server.mutate(manifestKey, stored); }
+  };
+  const result = await x.f.r.api.executeStateMemoryQuery(options);
+  assert.equal(rewritten, true);
+  assert.ok(result.bundle.items.length > 0, 'an identical rewrite is not a source change');
+  assert.equal(result.diagnostics.readFrame, 'reproved', 'the frame saw the rewrite and the unshared proof decided');
+  const quiet = await x.f.r.api.executeStateMemoryQuery(options);
+  assert.equal(quiet.diagnostics.readFrame, 'shared');
+  x.f.chat.message.find(row => row.chatId === 't6-a').data += ' 원문 변경';
+  const after = await x.f.r.api.executeStateMemoryQuery(options);
+  assert.notEqual(after.generation, result.generation, 'an edited source turn is read again, never served from shared bytes');
+});

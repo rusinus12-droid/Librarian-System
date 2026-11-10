@@ -159,3 +159,72 @@ test('extractCanonicalSearchMetadata and upgradeCanonicalManifestSearchMetadata 
   assert.ok(manifest.memories['5'].searchTerms.length > 0);
   assert.equal(manifest.memories['10'].searchText, '기존 검색 텍스트');
 });
+
+// ── Candidate discovery and ranking added with the Micro head search summaries ──
+const tokenizer = require('../tools/libra_recall_tokenizer.cjs')();
+const indexed = create({ fingerprint, tokenizer });
+
+test('an old Micro turn is chosen because its stored search text matches, with a floor kept for the newest turns', () => {
+  const turns = Array.from({ length: 200 }, (_, n) => n + 1);
+  const index = new Map(turns.map(turn => [turn, turn === 7 ? '민아가 은빛 열쇠를 우물에 숨겼다.' : `평범한 대화 ${turn}`]));
+  const ranked = indexed.rankMicroTurns({ turns, index, query: '은빛 열쇠는 어디에 숨겼어?', limit: 6 });
+  assert.equal(ranked.reasons[7], 'index_match');
+  assert.deepEqual(ranked.turns.filter(turn => ranked.reasons[turn] === 'recent').slice(0, 2), [200, 199]);
+  assert.equal(ranked.turns.length, 6);
+  assert.equal(ranked.matches, ranked.matchesRead, 'every matching turn fits the candidate limit here');
+  const withoutIndex = indexed.rankMicroTurns({ turns, query: '은빛 열쇠', limit: 6 });
+  assert.deepEqual(withoutIndex.turns, [200, 199, 198, 197, 196, 195], 'without search text the choice is recency only');
+  const evidence = indexed.rankMicroTurns({ turns, index, query: '은빛 열쇠', evidenceTurns: [42, 999], limit: 6 });
+  assert.equal(evidence.turns[0], 42); assert.equal(evidence.turns.includes(999), false, 'a turn outside the view is never read');
+});
+
+test('Korean particles do not hide a match and a repeated term counts more than a single mention', () => {
+  const { tf } = indexed.termFrequency('열쇠를 찾았다. 열쇠는 은빛이었다.');
+  assert.equal(tf.get('w:열쇠'), 2);
+  const docs = ['열쇠 열쇠 열쇠가 문제였다', '열쇠가 문제였다 그리고 다른 이야기', '전혀 다른 이야기와 문제'].map(text => ({ text: indexed.termFrequency(text) }));
+  const corpus = indexed.buildCorpus(docs), terms = indexed.queryTerms('열쇠');
+  const [repeated, once, none] = docs.map(doc => indexed.bm25fScore(terms, doc, corpus));
+  assert.ok(repeated > once && once > none && none === 0, JSON.stringify([repeated, once, none]));
+});
+
+test('catalog ranking weighs a rare title term above a term every record shares', () => {
+  const refs = [
+    { key: 'a', memoryId: 'a', title: '등대의 약속', summary: '민아와 준호가 다시 만났다.', turnRange: { end: 5 } },
+    { key: 'b', memoryId: 'b', title: '시장 나들이', summary: '민아와 준호가 시장에 갔다.', turnRange: { end: 10 } },
+    { key: 'c', memoryId: 'c', title: '비 오는 날', summary: '민아와 준호가 비를 피했다.', turnRange: { end: 15 } }
+  ];
+  assert.equal(indexed.rankCatalog(refs, '민아와 준호의 등대 약속', [], 1)[0].key, 'a');
+});
+
+test('a queried name reaches rows that use another written name of the same entity', () => {
+  const head = { characters: [{ id: 'p1', name: '민아', aliases: ['미나', '은빛의 수호자'] }, { id: 'p2', name: '준호' }], world: [{ id: 'w1', name: '등대' }] };
+  const entities = indexed.entityTable(head);
+  const rows = [
+    { id: 'alias', family: 'micro', axis: 'characters', text: '은빛의 수호자는 약속을 지켰다.' },
+    { id: 'other', family: 'micro', axis: 'characters', text: '준호는 약속을 잊었다.' }
+  ];
+  const result = indexed.select({ rows, query: '민아의 약속', entities, minimumPerAxis: 0, maxItems: 1 });
+  assert.equal(result.items[0].id, 'alias');
+  assert.equal(result.items[0].scoreBreakdown.identity, 1);
+});
+
+test('a lens note is filed under what it is about instead of always under narrative', () => {
+  const entities = indexed.entityTable({ characters: [{ id: 'p1', name: '민아' }, { id: 'p2', name: '준호' }], world: [{ id: 'w1', name: '등대' }] });
+  assert.equal(indexed.classifyAxis('민아는 불안해 보였다.', { entities }), 'characters');
+  assert.equal(indexed.classifyAxis('민아는 준호를 믿기 시작했다.', { entities }), 'relationships');
+  assert.equal(indexed.classifyAxis('등대의 불빛은 자정에 꺼진다.', { entities }), 'world');
+  assert.equal(indexed.classifyAxis('약속의 기한이 다가온다.', { entities }), 'narrative');
+  assert.equal(indexed.classifyAxis('둘 사이가 가까워졌다.', { people: ['민아', '준호'], entities }), 'relationships');
+});
+
+test('history questions bring the source statement behind a matching State field', () => {
+  const rows = [
+    { id: 'state', family: 'state', axis: 'world', text: '세계 · 열쇠 · holderRef: 준호', evidenceKeys: ['micro:a:1'] },
+    { id: 'source', family: 'micro', axis: 'narrative', text: '해 질 무렵 물건이 건네졌다.', evidenceKeys: ['micro:a:1'] },
+    { id: 'noise', family: 'micro', axis: 'narrative', text: '해 질 무렵 바람이 불었다.', evidenceKeys: ['micro:b:1'] }
+  ];
+  const result = indexed.select({ rows, query: '열쇠가 준호에게 넘어간 경위', plan: indexed.allocationPlan('열쇠가 준호에게 넘어간 경위'), minimumPerAxis: 0 });
+  const source = result.items.find(row => row.id === 'source'), noise = result.items.find(row => row.id === 'noise');
+  assert.equal(source.scoreBreakdown.linked, 1);
+  assert.ok(!noise || source.score > noise.score);
+});

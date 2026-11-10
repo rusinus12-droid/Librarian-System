@@ -81,15 +81,10 @@ async function test(name, options, fn) { const f = await enabled(options); try {
     f.r.values.set = original;
     assert.deepEqual(await recallCompared(f), baseline, 'recall must be unaffected by an index write failure');
 
-    // The exempted diagnostic is asserted BY CONTENT so the exception cannot hide a change. Associative
-    // recall was retired with the legacy retriever (9c03c35): even with the index enabled and readable,
-    // nothing is reported into recall, and the feature API states it is retired with participation off.
+    // Even with the index enabled and readable, nothing of it is reported into recall.
     const diagnostic = plain(await f.r.api.previewUnifiedMemoryRecall('도서관 공연 허가'))?.diagnostics?.associativeRecall;
-    assert.equal(diagnostic, undefined, 'the retired associative stage reports nothing into recall');
-    const associative = plain(await f.r.api.getAssociativeRecallDiagnostics());
-    assert.equal(associative.retired, true, 'the associative stage is retired, not silently active');
-    assert.equal(associative.participationEnabled, false, 'the enabled index must not turn associative participation on');
-    assert.equal(associative.engine, 'unified');
+    assert.equal(diagnostic, undefined, 'the link index reports nothing into recall');
+    assert.equal(f.r.api.getAssociativeRecallDiagnostics, undefined, 'the retired associative read model is gone');
   });
 
   await test('one unreadable memory degrades that memory alone, not the whole index', {}, async f => {

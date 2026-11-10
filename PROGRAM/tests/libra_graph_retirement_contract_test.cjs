@@ -6,7 +6,8 @@ const { serverFixture } = require('./fixtures/libra_server_runtime_fixture.cjs')
 test('retired graph APIs, server capabilities and lifecycle endpoint are absent', async t => {
   const x = await serverFixture({ mode: 'server_only' }); t.after(() => x.cleanup());
   for (const name of ['buildMemoryGraphCorpus','buildMemoryGraphGeneration','getMemoryGraphProjectionPage',
-    'inspectMemoryGraphStructure','getMemoryGraphDurablePage','collectMemoryGraphGarbage','inspectMemoryNetwork']) {
+    'inspectMemoryGraphStructure','getMemoryGraphDurablePage','collectMemoryGraphGarbage','inspectMemoryNetwork',
+    'getAssociativeRecallDiagnostics','executeMemoryGraphUnifiedQuery','inspectVolatileMemoryGraphCorpus']) {
     assert.equal(x.f.r.api[name], undefined, name);
     assert.equal(x.f.r.core[name], undefined, 'core ' + name);
   }
@@ -17,5 +18,6 @@ test('retired graph APIs, server capabilities and lifecycle endpoint are absent'
   assert.equal(typeof x.f.r.api.executeStateMemoryQuery, 'function');
   const plugin = fs.readFileSync(path.join(__dirname, '../plugins/LIBRA.js'), 'utf8');
   for (const marker of ['buildAssociativeRecallPanel','buildDurableGraphPanel','acquireGraphStorageLease',
-    'LIBRA MEMORY GRAPH','LIBRA_MEMORY_GRAPH','durableGraphBuildFailure']) assert.equal(plugin.includes(marker), false, marker);
+    'LIBRA MEMORY GRAPH','LIBRA_MEMORY_GRAPH','durableGraphBuildFailure','ASSOCIATIVE_RECALL_','RECALL_CATALOG_BLOCK',
+    'durable_common_index','request_local_corpus','legacyRankerExecuted','unifiedMemoryEngine:','RECALL_HYDRATE_','BM25F_WEIGHTS']) assert.equal(plugin.includes(marker), false, marker);
 });

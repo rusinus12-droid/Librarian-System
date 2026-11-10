@@ -1,6 +1,8 @@
 'use strict';
-// State-led direct recall. Existing records remain the sources; no graph/corpus is built.
-module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
+// State-led direct recall. Existing records stay the sources; nothing is built or published.
+// `tokenizer` is LIBRA's recall tokenizer (particle stripping, Hangul/CJK grams). Without it
+// a plain word split is used, which is enough for unit checks of the selection rules.
+module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer = null }) {
   const axes = Object.freeze(['characters', 'relationships', 'world', 'narrative']);
   const labels = Object.freeze({ characters: '인물', relationships: '관계', world: '세계', narrative: '서사' });
   const array = value => Array.isArray(value) ? value : [];
@@ -60,6 +62,109 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
     return maxRaw > 0 ? Math.min(1, Math.max(0, raw / maxRaw)) : 0;
   };
 
+  // ── Term statistics (BM25 / BM25F) ───────────────────────────────────────────────
+  const termFrequency = value => {
+    if (tokenizer && typeof tokenizer.bm25TermFrequency === 'function') return tokenizer.bm25TermFrequency(value);
+    const tf = new Map(); let length = 0;
+    for (const word of normalize(value).split(/[^\p{L}\p{N}_]+/u)) if (word) { tf.set(word, (tf.get(word) || 0) + 1); length++; }
+    return { tf, length };
+  };
+  const queryTerms = value => [...termFrequency(value).tf.keys()].slice(0, 240);
+  // Field weights follow the HAYAKU reference: short identifying fields count more and
+  // are normalized less by their length than a long body.
+  const CATALOG_FIELDS = Object.freeze({ title: { weight: 2.0, b: 0.30 }, summary: { weight: 2.2, b: 0.50 }, terms: { weight: 1.05, b: 0.25 } });
+  const TEXT_FIELDS = Object.freeze({ text: { weight: 1, b: 0.75 } });
+  const buildCorpus = (documents, fields = TEXT_FIELDS) => {
+    const docs = array(documents), docFreq = new Map(), totals = Object.fromEntries(Object.keys(fields).map(name => [name, 0]));
+    for (const doc of docs) {
+      const seen = new Set();
+      for (const name of Object.keys(fields)) {
+        const field = doc?.[name]; if (!field) continue;
+        totals[name] += field.length;
+        for (const term of field.tf.keys()) seen.add(term);
+      }
+      for (const term of seen) docFreq.set(term, (docFreq.get(term) || 0) + 1);
+    }
+    return { size: docs.length, docFreq, fields,
+      averageLength: Object.fromEntries(Object.keys(fields).map(name => [name, docs.length ? Math.max(1, totals[name] / docs.length) : 1])) };
+  };
+  // Normalized to 0..1 against the best score the query could reach in this corpus.
+  const bm25fScore = (terms = [], doc = {}, corpus = null, k1 = 1.2) => {
+    if (!terms.length || !corpus?.size) return 0;
+    let raw = 0, best = 0;
+    for (const term of terms) {
+      const df = corpus.docFreq.get(term) || 0;
+      const idf = Math.log(1 + ((corpus.size - df + 0.5) / (df + 0.5)));
+      best += idf;
+      let weighted = 0;
+      for (const [name, rule] of Object.entries(corpus.fields)) {
+        const field = doc[name], frequency = field?.tf.get(term) || 0;
+        if (!frequency) continue;
+        weighted += rule.weight * frequency / Math.max(0.15, 1 - rule.b + rule.b * (field.length / corpus.averageLength[name]));
+      }
+      if (weighted > 0) raw += idf * weighted / (weighted + k1);
+    }
+    return best > 0 ? Math.min(1, raw / best) : 0;
+  };
+
+  // ── Identity: one entity, several written names ──────────────────────────────────
+  // Names and aliases come from the State head, so no registry read is added.
+  const entityTable = head => {
+    const table = [];
+    for (const axis of ['characters', 'world']) for (const entity of array(head?.[axis])) {
+      const names = [...new Set([entity?.name, entity?.label, ...array(entity?.aliases), ...array(entity?.state?.aliases)]
+        .map(name => normalize(name).trim()).filter(name => name.length >= 2))];
+      if (entity?.id && names.length) table.push({ id: String(entity.id), axis, names });
+    }
+    return table;
+  };
+  const mentionedEntities = (text, table) => {
+    const body = normalize(text), found = new Set();
+    if (body) for (const entity of array(table)) if (entity.names.some(name => body.includes(name))) found.add(entity.id);
+    return found;
+  };
+  const identitySignal = (queryEntities, text, table) => {
+    if (!queryEntities?.size) return 0;
+    const found = mentionedEntities(text, table); let shared = 0;
+    for (const id of queryEntities) if (found.has(id)) shared++;
+    return shared / queryEntities.size;
+  };
+  // A lens note has no stored domain. Its people and the entities it names decide the axis.
+  const classifyAxis = (text, { people = [], entities = [] } = {}) => {
+    const found = mentionedEntities(text, entities), byId = new Map(array(entities).map(entity => [entity.id, entity.axis]));
+    const characters = Math.max(array(people).filter(Boolean).length, [...found].filter(id => byId.get(id) === 'characters').length);
+    if (characters >= 2) return 'relationships';
+    if (characters === 1) return 'characters';
+    return [...found].some(id => byId.get(id) === 'world') ? 'world' : 'narrative';
+  };
+
+  // ── Micro candidate discovery ────────────────────────────────────────────────────
+  // `index` maps a turn to the search text already stored on its Micro head. Ranking it
+  // lets an old turn be read because it matches, not only because it is recent.
+  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [] } = {}) => {
+    const allowed = new Set(array(turns).map(Number)), cap = Math.max(0, Math.floor(Number(limit) || 0));
+    const chosen = [], taken = new Set();
+    const take = (turn, reason) => { if (chosen.length < cap && allowed.has(turn) && !taken.has(turn)) { taken.add(turn); chosen.push({ turn, reason }); } };
+    const evidence = [...new Set(array(evidenceTurns).map(Number))].filter(turn => allowed.has(turn));
+    for (const turn of evidence.slice(0, Math.ceil(cap / 2))) take(turn, 'state_evidence');
+    const q = normalize(query).trim(), entries = index instanceof Map ? [...index].filter(([turn]) => allowed.has(Number(turn))) : [];
+    let matches = 0;
+    if (q && entries.length) {
+      const docs = entries.map(([turn, text]) => ({ turn: Number(turn), body: String(text || ''), text: termFrequency(text) }));
+      const corpus = buildCorpus(docs), terms = queryTerms(q), queryEntities = mentionedEntities(q, entities);
+      const scored = docs.map(doc => ({ turn: doc.turn,
+        score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, q) }))
+        .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn);
+      matches = scored.length;
+      // The newest turns keep a small floor so a fresh event is never crowded out.
+      const recentFloor = Math.min(2, cap);
+      for (const row of scored) { if (chosen.length >= cap - recentFloor) break; take(row.turn, 'index_match'); }
+    }
+    for (const turn of [...allowed].sort((a, b) => b - a)) take(turn, 'recent');
+    return { turns: chosen.map(row => row.turn), reasons: Object.fromEntries(chosen.map(row => [row.turn, row.reason])),
+      indexed: entries.length, matches, matchesRead: chosen.filter(row => row.reason === 'index_match').length };
+  };
+
   // Standalone composite relevance score for string pairs.
   const score = (text, query) => {
     const q = normalize(query).trim();
@@ -67,7 +172,6 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
     const doc = normalize(text);
     if (!doc) return 0;
     const qWords = tokens(q);
-    const dWords = tokens(doc);
     const wordMatches = qWords.filter(w => doc.includes(w));
     if (!wordMatches.length && !doc.includes(q)) {
       const qGrams = charNgrams(q, 40);
@@ -205,13 +309,17 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
     return rows;
   };
 
-  const rankCatalog = (refs, query, state = [], limit = 16) => {
+  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [] } = {}) => {
     const evidenceIds = new Set(state.map(row => row.evidence?.memoryId).filter(Boolean));
     const refList = array(refs);
     if (!refList.length) return [];
     const q = normalize(query).trim();
-    const qWords = tokens(q);
     const qGrams = charNgrams(q, 40);
+    // Every ref is already in the manifest, so corpus statistics cost no read.
+    const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
+      terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
+    const corpus = q ? buildCorpus(docs, CATALOG_FIELDS) : null, terms = q ? queryTerms(q) : [];
+    const queryEntities = q ? mentionedEntities(q, entities) : new Set();
 
     const scored = refList.map((ref, ordinal) => {
       const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
@@ -220,18 +328,18 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
       const exactVal = q ? exactSignal(textFields, q) : 0;
       const refGrams = new Set(charNgrams(textFields, 80));
       const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
-      const refWords = tokens(textFields);
-      const bm25Val = q ? bm25Score(qWords, refWords, new Map(), 1, Math.max(1, refWords.length)) : 0;
-      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0);
+      const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
+      const identityVal = identitySignal(queryEntities, textFields, entities);
+      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal;
       return {
         ref,
         ordinal,
         score: base,
-        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val }
+        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal }
       };
     });
 
-    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25'], 60, 0.25) : scored;
+    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity'], 60, 0.25) : scored;
     return fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal)
       .slice(0, limit).map(row => row.ref);
   };
@@ -248,7 +356,7 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
       canonicalCandidates: intent === 'history' ? 16 : intent === 'mixed' ? 8 : 4,
       microCandidates: intent === 'detail' ? 12 : intent === 'mixed' ? 8 : 6 };
   };
-  const select = ({ rows = [], query = '', maxCharacters = 8000, maxItems = 24, minimumPerAxis = 2, plan = null } = {}) => {
+  const select = ({ rows = [], query = '', maxCharacters = 8000, maxItems = 24, minimumPerAxis = 2, plan = null, entities = [] } = {}) => {
     if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 32 || maxCharacters > 100000
       || !Number.isSafeInteger(maxItems) || maxItems < 1 || maxItems > 256
       || !Number.isSafeInteger(minimumPerAxis) || minimumPerAxis < 0 || minimumPerAxis > 16) throw Error('LIBRA_STATE_POLICY_INVALID');
@@ -262,36 +370,40 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
     }
 
     const q = normalize(query).trim();
-    const qWords = tokens(q);
     const qGrams = charNgrams(q, 60);
-
-    // Build mini corpus statistics for BM25
-    const docTokensList = validRows.map(row => tokens(row.text));
-    const docFreq = new Map();
-    let totalDocLen = 0;
-    for (const dTokens of docTokensList) {
-      totalDocLen += dTokens.length;
-      for (const token of new Set(dTokens)) docFreq.set(token, (docFreq.get(token) || 0) + 1);
+    // Term counts are kept: a row that repeats the queried word ranks above one that mentions it once.
+    const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
+    const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
+    const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+    // Source statements behind a State field that answers the question travel with it
+    // when the question asks how or what exactly, not what is true now.
+    const linkedKeys = new Set();
+    if (q && plan && plan.intent !== 'current') {
+      const words = terms.filter(term => !/^[gc]:/.test(term));
+      // Only the few State fields that best match the question pull their sources along.
+      validRows.map((row, index) => ({ row, doc: docs[index].text })).filter(({ row, doc }) => row.family === 'state' && array(row.evidenceKeys).length
+        && (words.some(term => doc.tf.has(term)) || identitySignal(queryEntities, row.text, entities) > 0))
+        .map(item => ({ ...item, match: bm25fScore(terms, { text: item.doc }, corpus) })).sort((left, right) => right.match - left.match).slice(0, 4)
+        .forEach(({ row }) => { for (const key of row.evidenceKeys) linkedKeys.add(key); });
     }
-    const avgDocLen = Math.max(1, totalDocLen / validRows.length);
-    const docCount = validRows.length;
 
     const scoredCandidates = validRows.map((row, index) => {
-      const dTokens = docTokensList[index];
       const dGrams = new Set(charNgrams(row.text, 80));
       const exactVal = q ? exactSignal(row.text, q) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
-      const bm25Val = q ? bm25Score(qWords, dTokens, docFreq, docCount, avgDocLen) : 0;
+      const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const anchorVal = row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0);
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0);
+      const identityVal = identitySignal(queryEntities, row.text, entities);
+      const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
+      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal }
       };
     });
 
-    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor'], 60, 0.20) : scoredCandidates;
+    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked'], 60, 0.20) : scoredCandidates;
     candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map();
@@ -359,6 +471,7 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint }) {
 
   return Object.freeze({
     axes, labels, allocationPlan, tokens, charNgrams, exactSignal, charNgramSignal, bm25Score, score,
+    termFrequency, queryTerms, buildCorpus, bm25fScore, entityTable, mentionedEntities, identitySignal, classifyAxis, rankMicroTurns,
     sparseRrfFusion, extractCanonicalSearchMetadata, upgradeCanonicalManifestSearchMetadata,
     axisFor, stateRows, rankCatalog, select
   });

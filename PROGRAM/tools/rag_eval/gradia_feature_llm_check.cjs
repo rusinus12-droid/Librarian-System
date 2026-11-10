@@ -265,7 +265,6 @@ async function writerServer() {
   const after = [];
   try {
     const f = await fixture({ after: fn => after.push(fn) }, { native: true, writingMode: 'novel' });
-    await f.nativeHost.f.r.api.buildMemoryGraphCorpus({ limit: 2 });
     // The fixture's model transport is synthetic; route every model prompt to the real model
     // through the fixture's onModel hook (prompt body is exactly what GRADIA built).
     const meter = meteredFetch(() => true);

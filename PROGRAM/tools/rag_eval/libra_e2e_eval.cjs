@@ -20,8 +20,6 @@
 // --capture-only   extract and save without running recall (use --live for Micro).
 // --repeat N       repeat the question suite in the same runtime (default 1).
 // --entrypoint before-request  score only evidence returned by RisuAI's actual hook.
-// --corpus-index local-simulated --index-rebuilds N  replay a saved snapshot with
-//               fake-indexeddb in the VM; native IndexedDB is tested separately.
 // Snapshots and model logs can contain credentials: keep them outside the repository.
 // Usage: node tools/rag_eval/libra_e2e_eval.cjs [fixture.json] [--mode plugin_only|server_only] [--json out.json] [--state file]
 const fs = require('node:fs');
@@ -41,15 +39,8 @@ const requireState = argv.includes('--require-state');
 const captureOnly = argv.includes('--capture-only');
 const repeats = Number(option('--repeat') || 1);
 const entrypoint = option('--entrypoint') || 'preview';
-const corpusIndex = option('--corpus-index') || 'runtime';
-const indexRebuilds = Number(option('--index-rebuilds') || 1);
-if (!['runtime','local-simulated'].includes(corpusIndex) || !Number.isSafeInteger(indexRebuilds) || indexRebuilds < 1 || indexRebuilds > 8) throw new Error('Invalid corpus index/rebuild options');
-if (corpusIndex === 'local-simulated' && (!requireState || mode !== 'plugin_only')) throw new Error('Simulated local index requires an existing plugin_only --require-state snapshot');
-let contextGlobals;
-if (corpusIndex === 'local-simulated') {
-  let fake; try { fake = require('fake-indexeddb'); } catch (_) { fake = require('../../build-support/node_modules/fake-indexeddb'); }
-  contextGlobals = { indexedDB: new fake.IDBFactory() };
-}
+// The retired graph index options are refused instead of being silently ignored.
+if (option('--corpus-index') || option('--index-rebuilds')) throw new Error('--corpus-index/--index-rebuilds belonged to the retired graph index; recall now reads existing records directly');
 if (!Number.isSafeInteger(repeats) || repeats < 1 || repeats > 20) throw new Error('--repeat must be 1..20');
 if (!['preview', 'before-request'].includes(entrypoint)) throw new Error('Unknown --entrypoint');
 if (requireState && (mode !== 'plugin_only' || !statePath || !fs.existsSync(statePath))) throw new Error('--require-state needs an existing plugin_only snapshot');
@@ -109,7 +100,7 @@ const live = argv.includes('--live');
 const capturePublications = [];
 let outputListener = null;
 (async () => {
-  const snapshot = await serverFixture({ mode, contextGlobals, snapshot: { chat },
+  const snapshot = await serverFixture({ mode, snapshot: { chat },
     host: { runLLMModel: async (...args) => callModel(args),
       addRisuChatListener: async (_kind, handler) => { outputListener = handler; return true; } } });
   const results = [];
@@ -182,11 +173,10 @@ let outputListener = null;
     const activeEmbedding = await f.r.api.getEmbeddingSettings();
     if (requireState && embedUrl && (!activeEmbedding.enabled || activeEmbedding.model !== process.env.RAG_EVAL_EMBED_MODEL
       || activeEmbedding.url !== embedUrl + '/embeddings')) throw new Error('Snapshot embedding configuration does not match the requested provider/model');
-    const pool = f.r.api.inspectMemoryGraphStore?.().resources || null;
     const preparationCalls = { ...stats };
     const pluginSource = f.r.source;
     const provenance = { pluginSha256: digest(pluginSource), snapshotSha256: stateDigest || (statePath ? digest(fs.readFileSync(statePath)) : null),
-      fixtureSha256: digest(fs.readFileSync(fixturePath)), requireState, entrypoint, repeats, corpusIndex,
+      fixtureSha256: digest(fs.readFileSync(fixturePath)), requireState, entrypoint, repeats,
       configuredEmbeddingDimensions: activeEmbedding.dimensions || null };
     if (captureOnly) {
       const report = { schema: 'memory-suite.rag-eval-capture.v1', ...provenance, captureMs: Math.round(captureMs), capturePublications,
@@ -234,7 +224,7 @@ let outputListener = null;
         windowRead: recall?.windowRead || null, dispatchVerification: execution.dispatchVerification || null, stopReason, injectionError,
         budgetStopped: /budget|backpressure/i.test(String(stopReason) + ' ' + String(injectionError)) || Boolean(resources?.failure),
         calls: delta(before), resources, semantic: execution.diagnostics?.nativeSemantic || null,
-        delivered, error, poolAfter: f.r.api.inspectMemoryGraphStore?.().resources || null };
+        delivered, error };
       process.stderr.write(`[recall] ${round}:${question.id} ${elapsedMs}ms hit=${row.hit} stop=${stopReason || 'none'}\n`);
       return row;
     };
@@ -242,29 +232,6 @@ let outputListener = null;
     // same idle time (one cold recall schedules it), then measure steady-state recall.
     const cold = await measure(fixture.questions[0], 0);
     const coldRecallMs = cold.elapsedMs;
-    const indexBuilds = [];
-    if (corpusIndex === 'local-simulated') {
-      // Settle startup source maintenance before a strict immutable publication.
-      // Keep the real fresh-process observation above, including a rejection.
-      await sleep(3000);
-      for (let i = 0; i < indexRebuilds; i++) {
-        const before = { ...stats }, started = performance.now();
-        const build = await f.r.api.buildMemoryGraphCorpus();
-        indexBuilds.push({ elapsedMs: Math.round(performance.now() - started), status: build.status,
-          backend: build.persistenceBackend, reclamation: build.reclamation, calls: delta(before) });
-        if (build.persistenceBackend !== 'indexeddb' || build.reclamation?.status !== 'completed') throw new Error('Local index build/reclamation failed');
-      }
-    }
-    for (const deadline = Date.now() + 120000; corpusIndex === 'runtime' && Date.now() < deadline; await sleep(500)) {
-      const status = f.r.api.inspectVolatileMemoryGraphCorpus?.();
-      if (!status || status.available && !status.building && !status.scheduled) break;
-    }
-    // Micro vectors are stored in the background after publication / index builds.
-    for (const deadline = Date.now() + 120000; Date.now() < deadline; await sleep(500)) {
-      if (!f.r.api.inspectMicroRepresentationVectors?.().warming) break;
-    }
-    const runtimeIndex = f.r.api.inspectVolatileMemoryGraphCorpus?.() || null;
-    const microVectors = f.r.api.inspectMicroRepresentationVectors?.() || null;
     const manifest = mode === 'plugin_only'
       ? JSON.parse([...snapshot.local].find(([key]) => key.endsWith(':manifest'))?.[1] || 'null')
       : snapshot.getManifest?.();
@@ -278,15 +245,13 @@ let outputListener = null;
       ...provenance,
       llm: process.env.RAG_EVAL_LLM_MODEL, embedder: embedUrl ? process.env.RAG_EVAL_EMBED_MODEL : 'none (lexical)',
       canonicals: Object.keys(manifest?.memories || {}).length, captureMs: Math.round(captureMs),
-      resourcePoolAfterCapture: pool && { sessions: pool.sessions, retainedBytes: pool.retainedBytes },
-      coldRecallMs: Math.round(coldRecallMs), cold, capturePublications, preparationCalls, warmupCalls, runtimeIndex, microVectors, indexBuilds,
+      coldRecallMs: Math.round(coldRecallMs), cold, capturePublications, preparationCalls, warmupCalls,
       hitRate: +(results.filter(row => row.hit).length / results.length).toFixed(3), families,
       latencyMs: { p50: (latency[Math.floor((latency.length - 1) / 2)] + latency[Math.floor(latency.length / 2)]) / 2,
         p95: latency[Math.ceil(latency.length * 0.95) - 1], max: latency.at(-1) },
       calls: { ...stats, llmMs: Math.round(stats.llmMs), embedMs: Math.round(stats.embedMs) },
       embeddingRequestModels: [...embeddingRequestModels],
       budgetStops: results.filter(row => row.budgetStopped).length, errors: results.filter(row => row.error).length,
-      resourcePoolAfterQueries: f.r.api.inspectMemoryGraphStore?.().resources || null,
       misses: [...new Set(results.filter(row => !row.hit).map(row => row.id))], results };
     const jsonPath = option('--json');
     if (jsonPath) privateWrite(jsonPath, report);

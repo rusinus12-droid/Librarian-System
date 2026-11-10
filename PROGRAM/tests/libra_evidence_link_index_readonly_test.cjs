@@ -115,13 +115,9 @@ const run = async options => {
       // off, so the index cannot reach the recall through it.
       assert.equal(offDiagnostic, undefined, 'with the index off the retired associative stage reports nothing into recall');
       assert.equal(onDiagnostic, undefined, 'with the index on the retired associative stage still reports nothing into recall');
-      const associative = plain(await on.r.api.getAssociativeRecallDiagnostics());
-      assert.equal(associative.schema, 'libra.associative_recall.v1');
-      assert.equal(associative.retired, true, 'the associative stage is retired, not silently active');
-      assert.equal(associative.participationEnabled, false, 'an enabled index must not turn associative participation on');
-      assert.equal(associative.engine, 'unified');
+      assert.equal(on.r.api.getAssociativeRecallDiagnostics, undefined, 'the retired associative read model is gone');
       // Neither state may leak a memory body into a diagnostic.
-      for (const diagnostic of [offDiagnostic, onDiagnostic, associative]) {
+      for (const diagnostic of [offDiagnostic, onDiagnostic]) {
         const serialized = JSON.stringify(diagnostic || {});
         for (const field of ['canonicalArtifact', 'recallKeys', 'embedding', 'vectorRecord']) {
           assert.equal(serialized.includes(`"${field}"`), false,

@@ -1,21 +1,36 @@
 'use strict';
 module.exports = function createLibraStateMemoryRuntime({ engine, capture, fingerprint, authorityStore, now = Date.now }) {
   const fail = code => { throw Object.assign(Error(code), { code }); };
+  // The capture may hold a shared read frame. It is settled once the first proof passes
+  // and abandoned on every failure, so no frame outlives its query.
   const query = async (options = {}, guard = null, issuer = null) => {
     const startedAt = now(), frame = await capture(options, guard);
+    try { return await run(options, issuer, frame, startedAt); }
+    catch (error) { frame.abandon?.(); throw error; }
+  };
+  const run = async (options, issuer, frame, startedAt) => {
     const queryText = String(options.queryInput?.queryText || options.queryText || '');
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
     const maxItems = Math.floor(Number(policy.maxUnits ?? frame.settings.stateMaxItems ?? 24));
     const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40);
-    const stateRows = engine.stateRows(frame.head);
-    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters,
+    const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
+    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
-    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items, Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates));
+    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
+      Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates), { entities });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
-    const turns = [...new Set([...evidenceTurns, ...frame.turns.slice().reverse()])].filter(turn => frame.turns.includes(turn))
-      .slice(0, Math.min(frame.settings.stateMicroCandidates || 12, plan.microCandidates));
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
+    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
+    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
+    if (frame.microIndex) {
+      try { microIndex = await frame.microIndex(); }
+      catch (error) { microIndexError = String(error.code || error.message || error); }
+    }
+    frame.check();
+    const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
+      limit: Math.min(frame.settings.stateMicroCandidates || 12, plan.microCandidates) });
+    const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;
       if (payloadBytes + bytes > 12 * 1024 * 1024) { payloadLimited = true; return; }
@@ -39,7 +54,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       catch (error) { failures.push({ family: 'micro', turn, code: error.code || error.message }); }
     }
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
-    const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems,
+    const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
     const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
     const sources = loaded.filter(item => chosen.has(item.key));
@@ -70,7 +85,10 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       return { status: 'verified', engine: 'state_first', verifiedNodeCount: publicItems.length, verifiedBasisCount: sources.length };
     };
     const release = () => { if (closed) return; closed = true; frame.release(readSet); };
-    const complete = refs.length === frame.refs.length && turns.length === frame.turns.length && !failures.length && !payloadLimited;
+    // Micro is searched in full either by reading every turn, or by screening every turn's
+    // stored search text and reading each one that matched.
+    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= frame.turns.length && ranked.matchesRead === ranked.matches;
+    const complete = refs.length === frame.refs.length && (turns.length === frame.turns.length || microScreened) && !failures.length && !payloadLimited;
     const stateAsOfTurn = frame.head?.throughTurn ?? null;
     const latestTurn = frame.turns.at(-1) || 0;
     const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
@@ -91,7 +109,9 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, elapsedMs: now() - startedAt,
-        candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length },
+        candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
+          microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
+          microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
         families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, { units: publicItems.filter(item => item.family === family).length }])) },
@@ -99,7 +119,14 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
       scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turn, end: item.turn } })) });
-    try { await validatePacket(packet); return result; }
+    try {
+      await validatePacket(packet);
+      // A frame that saw a concurrent change is closed by settle; prove once more without it.
+      const shared = frame.settle ? await frame.settle() !== false : null;
+      if (shared === false) await validatePacket(packet);
+      result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      return result;
+    }
     catch (error) { release(); throw error; }
   };
   return { query, release: result => authorityStore.get(result)?.release() };

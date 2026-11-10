@@ -1313,7 +1313,7 @@ function __libraNarrativeStripPatch(value) {
   // Historical distribution identity only. No LIBRA runtime registers or
   // executes this retired operation; the manifest discloses its retirement.
   const LIBRA_RECALL_BM25F_COMPUTE_OPERATION = 'libra.recall-bm25f.v1';
-  const LIBRA_RECALL_BM25F_COMPUTE_FINGERPRINT = '7a096a212eb71e1a87639347659ca9216fe32149068153491315734133217840';
+  const LIBRA_RECALL_BM25F_COMPUTE_FINGERPRINT = '6a15c2189099026497c98d819b400e679ebfdb9d44b4da913ab16b7d163031c2';
   const LIBRA_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -33430,13 +33430,6 @@ function createLibraReadonlySourceContext(owner) {
       const configuredCap = Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS);
       return Math.max(32, Math.min(configuredCap, CLASSIC_MAX_INJECTION_CHARS - envelopeOverhead));
     };
-    const unifiedLoreShare = settings => {
-      const percent = Number(settings?.recallLoreSharePercent);
-      return Math.max(0, Math.min(1, (Number.isFinite(percent) ? percent : RECALL_LORE_SHARE_DEFAULT_PERCENT) / 100));
-    };
-    // Lens notes share the block with the evidence: they may use what the hard ceiling leaves.
-    const unifiedLensBlockAllowance = evidenceText => Math.max(0, CLASSIC_MAX_INJECTION_CHARS
-      - UNIFIED_CLASSIC_HEADER.length - UNIFIED_CLASSIC_FOOTER.length - String(evidenceText || '').length - 4);
     // The final document keeps what the model reads and drops what only the packet contract
     // needs: the packet header, item numbers, a family tag its section already states, and an
     // "undated" marker that has no dated line above it to cancel.
@@ -33519,21 +33512,8 @@ function createLibraReadonlySourceContext(owner) {
         const RETRIEVAL_PROJECTION_VERSION = 'libra.retrieval_projection.v2';
     const EMBEDDING_PROJECTION_SCHEMA = 'libra.embedding_projection.v2';
     const EMBEDDING_PROJECTION_LAYOUT_VERSION = 'libra.embedding_projection_layout.v3';
-    const RECALL_CATALOG_SCHEMA = 'libra.recall_catalog.v3';
-    const RECALL_CATALOG_LEGACY_SCHEMA = 'libra.recall_catalog.v2';
-    const RECALL_CATALOG_BUILD_VERSION = 'validator_free_cjk_v3';
-    const RECALL_CATALOG_BLOCK_SCHEMA = 'libra.recall_catalog_block_index.v1';
-    const RECALL_CATALOG_BLOCK_BUILD_VERSION = 'memory_lane_cjk_v3';
-    const RECALL_CATALOG_BLOCK_SIZE = 24;
-    const RECALL_CATALOG_BLOCK_MIN_ENTRIES = 96;
-    const RECALL_CATALOG_BLOCK_MAX_CANDIDATES = 6;
-    const RECALL_CATALOG_BLOCK_TERM_LIMIT = 192;
-    const RECALL_CATALOG_BLOCK_ANCHOR_LIMIT = 160;
-    const RECALL_CATALOG_BLOCK_CACHE_MAX = 4;
-    const RECALL_CATALOG_UPGRADE_DELAY_MS = 30000;
     const EVIDENCE_LINK_INDEX_SCHEMA = 'libra.evidence_link_index.v1';
     const EVIDENCE_LINK_INDEX_BUILD_VERSION = 'readonly_projection_v1';
-    const EVIDENCE_LINK_INDEX_UPGRADE_DELAY_MS = 30000;
     // Bounded so a very long scope degrades by dropping the OLDEST memories and reporting
     // `partial`, rather than growing without limit or stalling the read path.
     const EVIDENCE_LINK_INDEX_MEMORY_LIMIT = 512;
@@ -33550,7 +33530,6 @@ function createLibraReadonlySourceContext(owner) {
     // transitivity, no promotion of lore text into a current fact.
     const LORE_LINK_INDEX_SCHEMA = 'libra.lore_link_index.v1';
     const LORE_LINK_INDEX_BUILD_VERSION = 'shared_person_boundary_v2';
-    const LORE_LINK_INDEX_UPGRADE_DELAY_MS = 30000;
     // Bounded like Stage 1, and for the same reason: a very long scope degrades by dropping the OLDEST
     // entries and reporting `partial` instead of growing without limit.
     const LORE_LINK_INDEX_ENTRY_LIMIT = 512;
@@ -33562,21 +33541,6 @@ function createLibraReadonlySourceContext(owner) {
     // The name must be at least this long to be matched as a mention. One-character names match inside
     // unrelated words in both Korean and English, which is the measured failure mode this avoids.
     const LORE_LINK_INDEX_MIN_NAME_CHARS = 2;
-    // ── Stage 3/4: associative recall (observation, then bounded participation) ──────────────────────
-    // Stage 3 computes what the link indexes would ADD to a recall without changing the prompt at all;
-    // Stage 4 lets a small number of those candidates into the SAME selection pipeline and budget.
-    const ASSOCIATIVE_RECALL_SCHEMA = 'libra.associative_recall.v1';
-    const ASSOCIATIVE_RECALL_BUILD_VERSION = 'bounded_link_expansion_v1';
-    // The research note's "최대 2개" is an INITIAL EXPERIMENT VALUE, not an optimum: Stage 4 admits at
-    // most this many associative candidates into the existing pool, and they still have to pass the same
-    // gate, MMR and budget as every direct candidate.
-    const ASSOCIATIVE_RECALL_ADMIT_LIMIT = 2;
-    // The expansion walks at most this many hops. One hop is the note's starting point ("하나의 경로에
-    // 약한 동일명/언급 연결을 최대 한 번만 허용"); the cap is what keeps a hub entity from reaching the
-    // whole corpus.
-    const ASSOCIATIVE_RECALL_MAX_HOPS = 1;
-    // A candidate reached through a link still has to clear this, so "connected" alone never admits it.
-    const ASSOCIATIVE_RECALL_MIN_RELEVANCE = 0.18;
     const BRANCH_DEEP_AUDIT_INTERVAL_MS = 5 * 60 * 1000;
     const BRANCH_DEEP_AUDIT_DELAY_MS = 30000;
     const BRANCH_BOOTSTRAP_AUDIT_DELAY_MS = 750;
@@ -33596,8 +33560,6 @@ function createLibraReadonlySourceContext(owner) {
     const EMBEDDING_VECTOR_MIGRATION_MARKER_SCHEMA = 'libra.embedding_vector_migration_marker.v1';
     const EMBEDDING_VECTOR_MIGRATION_MARKER_PREFIX = `${PREFIX}:local-vector-migration:`;
     const LOCAL_VECTOR_CACHE_MAX = 96;
-    const RECALL_VECTOR_SKETCH_DIMS = 256;
-    const RECALL_CATALOG_SEARCH_TEXT_MAX_CHARS = 2800;
     const RECALL_CATALOG_ANCHOR_LIMIT = 112;
     const RETRIEVAL_SECTION_ORDER = Object.freeze([
       'chronology',
@@ -33623,34 +33585,11 @@ function createLibraReadonlySourceContext(owner) {
       CONTINUATION: 'continuation',
       EMOTION: 'emotion'
     });
-    const BM25F_WEIGHTS = Object.freeze({
-      summary: 2.2,
-      recall_keys: 1.05,
-      characters_relations: 2.0,
-      narrative_open_threads: 1.9,
-      chronology: 1.5,
-      world_scene: 1.5,
-      facts_uncertainty: 1.4,
-      full_text: 0.7
-    });
-    const BM25F_LENGTH_NORM = Object.freeze({
-      summary: 0.28,
-      recall_keys: 0.24,
-      characters_relations: 0.36,
-      narrative_open_threads: 0.52,
-      chronology: 0.58,
-      world_scene: 0.50,
-      facts_uncertainty: 0.56,
-      full_text: 0.82
-    });
-    const BM25F_K1 = 1.2;
-    const RRF_WEIGHTS = Object.freeze({ dense: 1.0, sparse: 1.0, exact: 1.25, forced: 1.10 });
     // HAYAKU 2.4.4-inspired request-path safety, adapted to LIBRA's much coarser
     // 5-turn canonical memories. Character pressure is the primary prompt-safety
     // budget; token capacity is derived from that budget instead of acting as a
     // second fixed bottleneck.
     const RECALL_RUNTIME_SCHEMA = 'libra.recall_runtime.v1';
-    const RECALL_TOKEN_BUDGET_SCHEMA = 'libra.dynamic_recall_token_budget.v1';
     // User-requested 2026-10-30: every live-recall timeout gets 10 s more, because slow
     // host storage transfers (not the server) were exhausting the original bounds.
     const RECALL_TIMEOUT_EXTENSION_MS = 10000;
@@ -33670,24 +33609,6 @@ function createLibraReadonlySourceContext(owner) {
     // bind through this window, so it stays wide enough for a real slow turn.
     const TURN_BINDING_FRESHNESS_MS = 900000;
     const RECALL_STEP_BUDGET_MS = 45000;
-    const RECALL_EMBEDDING_BUDGET_MS = 3500 + RECALL_TIMEOUT_EXTENSION_MS;
-    // A provider slower than the default budget would otherwise leave every recall
-    // lexical-only. The default query-embedding budget adapts per embedding space: a
-    // timeout doubles it (up to the cap, inside the 30 s recall watchdog); measured
-    // requests pull it back to 1.5x the slowest recent latency, never below the default.
-    const RECALL_EMBEDDING_MAX_BUDGET_MS = 12000 + RECALL_TIMEOUT_EXTENSION_MS;
-    const queryEmbeddingBudgets = new Map();
-    const adaptiveQueryEmbeddingBudget = binding => queryEmbeddingBudgets.get(binding)?.budget || RECALL_EMBEDDING_BUDGET_MS;
-    const noteQueryEmbeddingLatency = (binding, { elapsedMs = 0, timedOut = false } = {}) => {
-      const entry = queryEmbeddingBudgets.get(binding) || { budget: RECALL_EMBEDDING_BUDGET_MS, samples: [] };
-      if (timedOut) entry.budget = Math.min(RECALL_EMBEDDING_MAX_BUDGET_MS, entry.budget * 2);
-      else {
-        entry.samples = [...entry.samples, Math.max(0, Math.round(elapsedMs))].slice(-8);
-        entry.budget = Math.min(RECALL_EMBEDDING_MAX_BUDGET_MS, Math.max(RECALL_EMBEDDING_BUDGET_MS, Math.ceil(Math.max(...entry.samples) * 1.5)));
-      }
-      queryEmbeddingBudgets.delete(binding); queryEmbeddingBudgets.set(binding, entry);
-      while (queryEmbeddingBudgets.size > 32) queryEmbeddingBudgets.delete(queryEmbeddingBudgets.keys().next().value);
-    };
     const RECALL_DYNAMIC_BUDGET_VERSION = 2;
     const RECALL_BUDGET_MIN_CHARS = 3000;
     const RECALL_BUDGET_STANDARD_CHARS = 3000;
@@ -33704,24 +33625,6 @@ function createLibraReadonlySourceContext(owner) {
       RECALL_BUDGET_HEAVY_CHARS,
       RECALL_MAX_DYNAMIC_CHARS
     ]);
-    const RECALL_DYNAMIC_TOKEN_MIN = 640;
-    const RECALL_DYNAMIC_TOKEN_MAX = 48000;
-    const RECALL_DYNAMIC_TOKEN_RATE_FLOOR = 1.0;
-    const RECALL_DYNAMIC_TOKEN_RATE_CEILING = 2.35;
-    const RECALL_DYNAMIC_TOKEN_HEADROOM = 1.12;
-    const RECALL_DYNAMIC_TOKEN_FIXED_RESERVE = 96;
-    const RECALL_CATALOG_RESERVE_MS = 2800;
-    const RECALL_HYDRATE_MIN = 20;
-    const RECALL_HYDRATE_MAX = 48;
-    const RECALL_HYDRATE_CONCURRENCY = 2;
-    const RECALL_LATENT_MIN_AGE_TURNS = 30;
-    const RECALL_LATENT_MIN_SIGNAL = 0.34;
-    const RECALL_LATENT_REPEAT_COOLDOWN_TURNS = 3;
-    const RECALL_TEMPORAL_PROFILES = Object.freeze({
-      canonical: Object.freeze({ halfLife: Number.POSITIVE_INFINITY, floor: 1, maxPenalty: 0 }),
-      durable: Object.freeze({ halfLife: 160, floor: 0.55, maxPenalty: 0.06 }),
-      episodic: Object.freeze({ halfLife: 80, floor: 0.28, maxPenalty: 0.12 })
-    });
     const DEFAULT_RECALL_SIMILARITY_WEIGHT = 0.70;
     const DEFAULT_RECALL_RECENCY_WEIGHT = 0.30;
     const DEFAULT_RECALL_QUERY_MESSAGES = 5;
@@ -34035,7 +33938,6 @@ function createLibraReadonlySourceContext(owner) {
     const consumedCanonicalProofsByMemory = new WeakMap();
     const consumedClosureProofsByResult = new WeakMap();
     const consumedNetworkFramesByResult = new WeakMap();
-    const networkMicroOriginsByMemory = new WeakMap();
     const networkAbsorbedClaimsByMemory = new WeakMap();
     const networkDeliveryClustersByRow = new WeakMap();
     // Embedding publication is derived metadata. Every other canonical field,
@@ -34153,9 +34055,11 @@ function createLibraReadonlySourceContext(owner) {
           throw consumerContractError('CONSUMER_NETWORK_BINDING_CHANGED');
         }
       };
+      // A caller that owns a read frame for this scope may route the proof reads through it.
+      const adoptScope = typeof options.adoptScope === 'function' ? options.adoptScope : context => context;
       const verify = async () => {
         check();
-        const context = await resolveContext();
+        const context = adoptScope(await resolveContext());
         await verifyNetworkFrame(context);
         if (entry.scope?.scopeKey && context.scope.scopeKey !== entry.scope.scopeKey) throw consumerContractError('CONSUMER_DATA_SCOPE_CHANGED');
         if (entry.receiptReadSet?.worldlineId && hostWorldlineIdForScope(context.scope) !== entry.receiptReadSet.worldlineId) throw consumerContractError('CONSUMER_DATA_WORLDLINE_CHANGED');
@@ -45410,6 +45314,24 @@ function createLibraReadonlySourceContext(owner) {
     }
     return tokens;
   };
+  // Same vocabulary as bm25Tokens, but repeated terms keep their count.
+  legacy.bm25TermFrequency = value => {
+    const { lexicalWords, hangulRuns, hangulGrams, cjkGrams } = partsFor(value);
+    const tf = new Map();
+    let length = 0;
+    const add = term => { if (length < 1600) { tf.set(term, (tf.get(term) || 0) + 1); length += 1; } };
+    for (const word of lexicalWords) {
+      add('w:' + word);
+      if (/[가-힣]/u.test(word)) {
+        const stem = word.replace(koreanParticle, '');
+        if (stem && stem !== word) add('w:' + stem);
+      }
+    }
+    for (const run of hangulRuns) if (run.length === 1) add('w:' + run);
+    for (const gram of hangulGrams) add('g:' + gram);
+    for (const gram of cjkGrams) add('c:' + gram);
+    return { tf, length };
+  };
   return legacy;
 })();
     // END LIBRA RECALL TOKENIZER
@@ -45495,7 +45417,7 @@ function createLibraReadonlySourceContext(owner) {
   };
   return sha256Hex;
 });
-    const createLibraStateMemoryEngine = (function createLibraStateMemoryEngine({ fingerprint }) {
+    const createLibraStateMemoryEngine = (function createLibraStateMemoryEngine({ fingerprint, tokenizer = null }) {
   const axes = Object.freeze(['characters', 'relationships', 'world', 'narrative']);
   const labels = Object.freeze({ characters: '인물', relationships: '관계', world: '세계', narrative: '서사' });
   const array = value => Array.isArray(value) ? value : [];
@@ -45555,6 +45477,109 @@ function createLibraReadonlySourceContext(owner) {
     return maxRaw > 0 ? Math.min(1, Math.max(0, raw / maxRaw)) : 0;
   };
 
+  // ── Term statistics (BM25 / BM25F) ───────────────────────────────────────────────
+  const termFrequency = value => {
+    if (tokenizer && typeof tokenizer.bm25TermFrequency === 'function') return tokenizer.bm25TermFrequency(value);
+    const tf = new Map(); let length = 0;
+    for (const word of normalize(value).split(/[^\p{L}\p{N}_]+/u)) if (word) { tf.set(word, (tf.get(word) || 0) + 1); length++; }
+    return { tf, length };
+  };
+  const queryTerms = value => [...termFrequency(value).tf.keys()].slice(0, 240);
+  // Field weights follow the HAYAKU reference: short identifying fields count more and
+  // are normalized less by their length than a long body.
+  const CATALOG_FIELDS = Object.freeze({ title: { weight: 2.0, b: 0.30 }, summary: { weight: 2.2, b: 0.50 }, terms: { weight: 1.05, b: 0.25 } });
+  const TEXT_FIELDS = Object.freeze({ text: { weight: 1, b: 0.75 } });
+  const buildCorpus = (documents, fields = TEXT_FIELDS) => {
+    const docs = array(documents), docFreq = new Map(), totals = Object.fromEntries(Object.keys(fields).map(name => [name, 0]));
+    for (const doc of docs) {
+      const seen = new Set();
+      for (const name of Object.keys(fields)) {
+        const field = doc?.[name]; if (!field) continue;
+        totals[name] += field.length;
+        for (const term of field.tf.keys()) seen.add(term);
+      }
+      for (const term of seen) docFreq.set(term, (docFreq.get(term) || 0) + 1);
+    }
+    return { size: docs.length, docFreq, fields,
+      averageLength: Object.fromEntries(Object.keys(fields).map(name => [name, docs.length ? Math.max(1, totals[name] / docs.length) : 1])) };
+  };
+  // Normalized to 0..1 against the best score the query could reach in this corpus.
+  const bm25fScore = (terms = [], doc = {}, corpus = null, k1 = 1.2) => {
+    if (!terms.length || !corpus?.size) return 0;
+    let raw = 0, best = 0;
+    for (const term of terms) {
+      const df = corpus.docFreq.get(term) || 0;
+      const idf = Math.log(1 + ((corpus.size - df + 0.5) / (df + 0.5)));
+      best += idf;
+      let weighted = 0;
+      for (const [name, rule] of Object.entries(corpus.fields)) {
+        const field = doc[name], frequency = field?.tf.get(term) || 0;
+        if (!frequency) continue;
+        weighted += rule.weight * frequency / Math.max(0.15, 1 - rule.b + rule.b * (field.length / corpus.averageLength[name]));
+      }
+      if (weighted > 0) raw += idf * weighted / (weighted + k1);
+    }
+    return best > 0 ? Math.min(1, raw / best) : 0;
+  };
+
+  // ── Identity: one entity, several written names ──────────────────────────────────
+  // Names and aliases come from the State head, so no registry read is added.
+  const entityTable = head => {
+    const table = [];
+    for (const axis of ['characters', 'world']) for (const entity of array(head?.[axis])) {
+      const names = [...new Set([entity?.name, entity?.label, ...array(entity?.aliases), ...array(entity?.state?.aliases)]
+        .map(name => normalize(name).trim()).filter(name => name.length >= 2))];
+      if (entity?.id && names.length) table.push({ id: String(entity.id), axis, names });
+    }
+    return table;
+  };
+  const mentionedEntities = (text, table) => {
+    const body = normalize(text), found = new Set();
+    if (body) for (const entity of array(table)) if (entity.names.some(name => body.includes(name))) found.add(entity.id);
+    return found;
+  };
+  const identitySignal = (queryEntities, text, table) => {
+    if (!queryEntities?.size) return 0;
+    const found = mentionedEntities(text, table); let shared = 0;
+    for (const id of queryEntities) if (found.has(id)) shared++;
+    return shared / queryEntities.size;
+  };
+  // A lens note has no stored domain. Its people and the entities it names decide the axis.
+  const classifyAxis = (text, { people = [], entities = [] } = {}) => {
+    const found = mentionedEntities(text, entities), byId = new Map(array(entities).map(entity => [entity.id, entity.axis]));
+    const characters = Math.max(array(people).filter(Boolean).length, [...found].filter(id => byId.get(id) === 'characters').length);
+    if (characters >= 2) return 'relationships';
+    if (characters === 1) return 'characters';
+    return [...found].some(id => byId.get(id) === 'world') ? 'world' : 'narrative';
+  };
+
+  // ── Micro candidate discovery ────────────────────────────────────────────────────
+  // `index` maps a turn to the search text already stored on its Micro head. Ranking it
+  // lets an old turn be read because it matches, not only because it is recent.
+  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [] } = {}) => {
+    const allowed = new Set(array(turns).map(Number)), cap = Math.max(0, Math.floor(Number(limit) || 0));
+    const chosen = [], taken = new Set();
+    const take = (turn, reason) => { if (chosen.length < cap && allowed.has(turn) && !taken.has(turn)) { taken.add(turn); chosen.push({ turn, reason }); } };
+    const evidence = [...new Set(array(evidenceTurns).map(Number))].filter(turn => allowed.has(turn));
+    for (const turn of evidence.slice(0, Math.ceil(cap / 2))) take(turn, 'state_evidence');
+    const q = normalize(query).trim(), entries = index instanceof Map ? [...index].filter(([turn]) => allowed.has(Number(turn))) : [];
+    let matches = 0;
+    if (q && entries.length) {
+      const docs = entries.map(([turn, text]) => ({ turn: Number(turn), body: String(text || ''), text: termFrequency(text) }));
+      const corpus = buildCorpus(docs), terms = queryTerms(q), queryEntities = mentionedEntities(q, entities);
+      const scored = docs.map(doc => ({ turn: doc.turn,
+        score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, q) }))
+        .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn);
+      matches = scored.length;
+      // The newest turns keep a small floor so a fresh event is never crowded out.
+      const recentFloor = Math.min(2, cap);
+      for (const row of scored) { if (chosen.length >= cap - recentFloor) break; take(row.turn, 'index_match'); }
+    }
+    for (const turn of [...allowed].sort((a, b) => b - a)) take(turn, 'recent');
+    return { turns: chosen.map(row => row.turn), reasons: Object.fromEntries(chosen.map(row => [row.turn, row.reason])),
+      indexed: entries.length, matches, matchesRead: chosen.filter(row => row.reason === 'index_match').length };
+  };
+
   // Standalone composite relevance score for string pairs.
   const score = (text, query) => {
     const q = normalize(query).trim();
@@ -45562,7 +45587,6 @@ function createLibraReadonlySourceContext(owner) {
     const doc = normalize(text);
     if (!doc) return 0;
     const qWords = tokens(q);
-    const dWords = tokens(doc);
     const wordMatches = qWords.filter(w => doc.includes(w));
     if (!wordMatches.length && !doc.includes(q)) {
       const qGrams = charNgrams(q, 40);
@@ -45700,13 +45724,17 @@ function createLibraReadonlySourceContext(owner) {
     return rows;
   };
 
-  const rankCatalog = (refs, query, state = [], limit = 16) => {
+  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [] } = {}) => {
     const evidenceIds = new Set(state.map(row => row.evidence?.memoryId).filter(Boolean));
     const refList = array(refs);
     if (!refList.length) return [];
     const q = normalize(query).trim();
-    const qWords = tokens(q);
     const qGrams = charNgrams(q, 40);
+    // Every ref is already in the manifest, so corpus statistics cost no read.
+    const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
+      terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
+    const corpus = q ? buildCorpus(docs, CATALOG_FIELDS) : null, terms = q ? queryTerms(q) : [];
+    const queryEntities = q ? mentionedEntities(q, entities) : new Set();
 
     const scored = refList.map((ref, ordinal) => {
       const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
@@ -45715,18 +45743,18 @@ function createLibraReadonlySourceContext(owner) {
       const exactVal = q ? exactSignal(textFields, q) : 0;
       const refGrams = new Set(charNgrams(textFields, 80));
       const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
-      const refWords = tokens(textFields);
-      const bm25Val = q ? bm25Score(qWords, refWords, new Map(), 1, Math.max(1, refWords.length)) : 0;
-      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0);
+      const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
+      const identityVal = identitySignal(queryEntities, textFields, entities);
+      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal;
       return {
         ref,
         ordinal,
         score: base,
-        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val }
+        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal }
       };
     });
 
-    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25'], 60, 0.25) : scored;
+    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity'], 60, 0.25) : scored;
     return fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal)
       .slice(0, limit).map(row => row.ref);
   };
@@ -45743,7 +45771,7 @@ function createLibraReadonlySourceContext(owner) {
       canonicalCandidates: intent === 'history' ? 16 : intent === 'mixed' ? 8 : 4,
       microCandidates: intent === 'detail' ? 12 : intent === 'mixed' ? 8 : 6 };
   };
-  const select = ({ rows = [], query = '', maxCharacters = 8000, maxItems = 24, minimumPerAxis = 2, plan = null } = {}) => {
+  const select = ({ rows = [], query = '', maxCharacters = 8000, maxItems = 24, minimumPerAxis = 2, plan = null, entities = [] } = {}) => {
     if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 32 || maxCharacters > 100000
       || !Number.isSafeInteger(maxItems) || maxItems < 1 || maxItems > 256
       || !Number.isSafeInteger(minimumPerAxis) || minimumPerAxis < 0 || minimumPerAxis > 16) throw Error('LIBRA_STATE_POLICY_INVALID');
@@ -45757,36 +45785,40 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const q = normalize(query).trim();
-    const qWords = tokens(q);
     const qGrams = charNgrams(q, 60);
-
-    // Build mini corpus statistics for BM25
-    const docTokensList = validRows.map(row => tokens(row.text));
-    const docFreq = new Map();
-    let totalDocLen = 0;
-    for (const dTokens of docTokensList) {
-      totalDocLen += dTokens.length;
-      for (const token of new Set(dTokens)) docFreq.set(token, (docFreq.get(token) || 0) + 1);
+    // Term counts are kept: a row that repeats the queried word ranks above one that mentions it once.
+    const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
+    const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
+    const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+    // Source statements behind a State field that answers the question travel with it
+    // when the question asks how or what exactly, not what is true now.
+    const linkedKeys = new Set();
+    if (q && plan && plan.intent !== 'current') {
+      const words = terms.filter(term => !/^[gc]:/.test(term));
+      // Only the few State fields that best match the question pull their sources along.
+      validRows.map((row, index) => ({ row, doc: docs[index].text })).filter(({ row, doc }) => row.family === 'state' && array(row.evidenceKeys).length
+        && (words.some(term => doc.tf.has(term)) || identitySignal(queryEntities, row.text, entities) > 0))
+        .map(item => ({ ...item, match: bm25fScore(terms, { text: item.doc }, corpus) })).sort((left, right) => right.match - left.match).slice(0, 4)
+        .forEach(({ row }) => { for (const key of row.evidenceKeys) linkedKeys.add(key); });
     }
-    const avgDocLen = Math.max(1, totalDocLen / validRows.length);
-    const docCount = validRows.length;
 
     const scoredCandidates = validRows.map((row, index) => {
-      const dTokens = docTokensList[index];
       const dGrams = new Set(charNgrams(row.text, 80));
       const exactVal = q ? exactSignal(row.text, q) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
-      const bm25Val = q ? bm25Score(qWords, dTokens, docFreq, docCount, avgDocLen) : 0;
+      const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const anchorVal = row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0);
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0);
+      const identityVal = identitySignal(queryEntities, row.text, entities);
+      const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
+      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal }
       };
     });
 
-    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor'], 60, 0.20) : scoredCandidates;
+    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked'], 60, 0.20) : scoredCandidates;
     candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map();
@@ -45854,16 +45886,20 @@ function createLibraReadonlySourceContext(owner) {
 
   return Object.freeze({
     axes, labels, allocationPlan, tokens, charNgrams, exactSignal, charNgramSignal, bm25Score, score,
+    termFrequency, queryTerms, buildCorpus, bm25fScore, entityTable, mentionedEntities, identitySignal, classifyAxis, rankMicroTurns,
     sparseRrfFusion, extractCanonicalSearchMetadata, upgradeCanonicalManifestSearchMetadata,
     axisFor, stateRows, rankCatalog, select
   });
 });
     const createLibraStateMemoryCapture = (function createLibraStateMemoryCapture(native, engine) {
   return async (options, guard) => {
-    const context = await native.context(), scope = context.scope;
+    const context = await native.context(options), scope = context.scope;
     if (options.expectedScopeKey && options.expectedScopeKey !== scope.scopeKey) throw Error('LIBRA_STATE_SCOPE_CHANGED');
     const check = () => native.check(scope, guard);
-    const snapshot = await native.snapshot(context, options); check();
+    let snapshot;
+    try { snapshot = await native.snapshot(context, options); check(); }
+    catch (error) { native.abandon?.(context); throw error; }
+    const entities = engine.entityTable(snapshot.head);
     const { manifest, head, refs, turns, worldlineId, identity, owner, stateKey, settings } = snapshot;
     const canonical = async ref => {
       const value = await native.canonical(context, ref, snapshot); check();
@@ -45880,10 +45916,16 @@ function createLibraReadonlySourceContext(owner) {
     const lens = typeof native.lens === 'function' ? async (query, maxCharacters) => {
       const value = await native.lens(context, snapshot, query, maxCharacters); check();
       return { ...value, rows: (value.rows || []).map((row, n) => ({ ...row,
-        id: 'lens:' + native.fingerprint([value.key, row.lensItem?.itemId || n]), family: 'lens', axis: engine.axisFor(row.domain), sourceKey: value.key })) };
+        id: 'lens:' + native.fingerprint([value.key, row.lensItem?.itemId || n]), family: 'lens', sourceKey: value.key,
+        // A note is filed under what it is about, so lens notes no longer all land on one axis.
+        axis: row.domain ? engine.axisFor(row.domain)
+          : engine.classifyAxis(row.lensItem?.text || row.text, { people: row.lensItem?.people, entities }) })) };
     } : null;
     return { scope, manifest, head, refs, turns, worldlineId, identity, owner, stateKey, settings,
       stateAuthority: snapshot.stateAuthority, check, canonical, micro, lens,
+      microIndex: typeof native.microIndex === 'function' ? async () => { const value = await native.microIndex(context, snapshot); check(); return value; } : null,
+      settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
+      abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,
       register: sources => native.register(scope, sources.flatMap(source => source.proofs), snapshot),
       assertCurrent: async token => { check(); await native.assertCurrent(token, context, snapshot); check(); },
       release: native.release };
@@ -45891,21 +45933,36 @@ function createLibraReadonlySourceContext(owner) {
 });
     const createLibraStateMemoryRuntime = (function createLibraStateMemoryRuntime({ engine, capture, fingerprint, authorityStore, now = Date.now }) {
   const fail = code => { throw Object.assign(Error(code), { code }); };
+  // The capture may hold a shared read frame. It is settled once the first proof passes
+  // and abandoned on every failure, so no frame outlives its query.
   const query = async (options = {}, guard = null, issuer = null) => {
     const startedAt = now(), frame = await capture(options, guard);
+    try { return await run(options, issuer, frame, startedAt); }
+    catch (error) { frame.abandon?.(); throw error; }
+  };
+  const run = async (options, issuer, frame, startedAt) => {
     const queryText = String(options.queryInput?.queryText || options.queryText || '');
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
     const maxItems = Math.floor(Number(policy.maxUnits ?? frame.settings.stateMaxItems ?? 24));
     const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40);
-    const stateRows = engine.stateRows(frame.head);
-    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters,
+    const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
+    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
-    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items, Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates));
+    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
+      Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates), { entities });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
-    const turns = [...new Set([...evidenceTurns, ...frame.turns.slice().reverse()])].filter(turn => frame.turns.includes(turn))
-      .slice(0, Math.min(frame.settings.stateMicroCandidates || 12, plan.microCandidates));
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
+    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
+    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
+    if (frame.microIndex) {
+      try { microIndex = await frame.microIndex(); }
+      catch (error) { microIndexError = String(error.code || error.message || error); }
+    }
+    frame.check();
+    const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
+      limit: Math.min(frame.settings.stateMicroCandidates || 12, plan.microCandidates) });
+    const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;
       if (payloadBytes + bytes > 12 * 1024 * 1024) { payloadLimited = true; return; }
@@ -45929,7 +45986,7 @@ function createLibraReadonlySourceContext(owner) {
       catch (error) { failures.push({ family: 'micro', turn, code: error.code || error.message }); }
     }
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
-    const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems,
+    const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
     const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
     const sources = loaded.filter(item => chosen.has(item.key));
@@ -45960,7 +46017,10 @@ function createLibraReadonlySourceContext(owner) {
       return { status: 'verified', engine: 'state_first', verifiedNodeCount: publicItems.length, verifiedBasisCount: sources.length };
     };
     const release = () => { if (closed) return; closed = true; frame.release(readSet); };
-    const complete = refs.length === frame.refs.length && turns.length === frame.turns.length && !failures.length && !payloadLimited;
+    // Micro is searched in full either by reading every turn, or by screening every turn's
+    // stored search text and reading each one that matched.
+    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= frame.turns.length && ranked.matchesRead === ranked.matches;
+    const complete = refs.length === frame.refs.length && (turns.length === frame.turns.length || microScreened) && !failures.length && !payloadLimited;
     const stateAsOfTurn = frame.head?.throughTurn ?? null;
     const latestTurn = frame.turns.at(-1) || 0;
     const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
@@ -45981,7 +46041,9 @@ function createLibraReadonlySourceContext(owner) {
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, elapsedMs: now() - startedAt,
-        candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length },
+        candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
+          microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
+          microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
         families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, { units: publicItems.filter(item => item.family === family).length }])) },
@@ -45989,7 +46051,14 @@ function createLibraReadonlySourceContext(owner) {
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
       scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turn, end: item.turn } })) });
-    try { await validatePacket(packet); return result; }
+    try {
+      await validatePacket(packet);
+      // A frame that saw a concurrent change is closed by settle; prove once more without it.
+      const shared = frame.settle ? await frame.settle() !== false : null;
+      if (shared === false) await validatePacket(packet);
+      result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      return result;
+    }
     catch (error) { release(); throw error; }
   };
   return { query, release: result => authorityStore.get(result)?.release() };
@@ -51716,6 +51785,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (published.status !== 'verified' || published.head.analysisRevisionId !== analysisRevisionId) {
         throw new Error(`LIBRA_MICRO_READBACK_${published.status.toUpperCase()}`);
       }
+      invalidateStateMicroIndex(scope.scopeKey, receipt.turn);
       return { ...published, duplicate: priorHead?.recordKey === recordKey };
     };
     const prepareMicroStageClaim = async (scope,receipt,options={}) => {
@@ -61532,9 +61602,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return await loadOrRefreshLoreLinkIndex(context.scope, manifest, { force, snapshot: asObject(snapshot) });
     };
     /* LIBRA LORE LINK INDEX V1 END */
-    const getAssociativeRecallDiagnostics = async () => ({ schema: 'libra.associative_recall.v1',
-      available: false, retired: true, participationEnabled: false, engine: 'unified',
-      observation: clone(state.lastRecall?.diagnostics?.unifiedMemoryEngine?.accessTrace || null) });
 
 
 
@@ -62385,7 +62452,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
 
     const recall = async (context, queryInput, guard = null) => {
       ensureRecallGuard(guard, 'recall_start');
-      const capturedNetworkEpoch = Number(state.microRestoreGeneration || 0);
       const suppliedBundle = queryInput && typeof queryInput === 'object' ? queryInput : null;
       const settings = suppliedBundle?.settings || await runRecallStep(guard, 'recall_settings', () => loadMemorySettings(), RECALL_STEP_BUDGET_MS);
       let queryBundle = typeof queryInput === 'string'
@@ -62418,13 +62484,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           ...(activeView.cutoffTurn != null ? { asOfTurn: Number(activeView.cutoffTurn) } : {}),
           ...(suppliedBundle?.unifiedQueryInput && typeof suppliedBundle.unifiedQueryInput === 'object' ? suppliedBundle.unifiedQueryInput : {})
         },
-        // A caller may ask for a specific slice of the source window (the owner's own cursor from a
-        // published generation). Otherwise the same engine reads the current full corpus.
-        ...(suppliedBundle?.unifiedWindow && typeof suppliedBundle.unifiedWindow === 'object' && !Array.isArray(suppliedBundle.unifiedWindow) ? {
-          limit: suppliedBundle.unifiedWindow.limit ?? undefined,
-          canonicalCursor: suppliedBundle.unifiedWindow.canonicalCursor ?? undefined,
-          microCursor: suppliedBundle.unifiedWindow.microCursor ?? undefined
-        } : {}),
         consumerPolicy: suppliedBundle?.consumerPolicy && typeof suppliedBundle.consumerPolicy === 'object'
           ? suppliedBundle.consumerPolicy
           : (() => {
@@ -62433,11 +62492,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
                 consumer: targetConsumer,
                 presentation: targetConsumer === 'classic' ? 'model_document' : 'default',
                 maxUnits: settings.stateMaxItems,
-                maxCharacters: unifiedEvidenceCharBudget(settings, suppliedBundle?.unifiedEnvelopeReserve),
-                loreShare: unifiedLoreShare(settings)
+                maxCharacters: unifiedEvidenceCharBudget(settings, suppliedBundle?.unifiedEnvelopeReserve)
               };
-            })(),
-        laneBudget: suppliedBundle?.laneBudget && typeof suppliedBundle.laneBudget === 'object' ? suppliedBundle.laneBudget : {}
+            })()
       }, guard), RECALL_REQUEST_BUDGET_MS);
       const displayRows = memoryEvidenceAuthority.get(unifiedExec)?.displayRows || [];
       const unifiedMemories = asArray(unifiedExec.bundle?.items).map((item, index) => ({
@@ -62464,9 +62521,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         packet: unifiedExec.packet,
         bundle: unifiedExec.bundle,
         unifiedExecution: unifiedExec,
-        windowRead: unifiedExec.windowRead || null,
         corpusRead: unifiedExec.corpusRead || null,
-        nextWindow: unifiedExec.nextWindow || null,
         diagnostics: {
           candidates: asArray(unifiedExec.bundle?.items).length,
           queryMessagesRequested: Number(queryBundle.queryMessagesRequested || 0),
@@ -62474,19 +62529,21 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           queryHistoryRows: clone(asArray(queryBundle.queryHistoryRows)),
           sceneWeight: Number(queryBundle.sceneWeight || 0),
           promptPressure: string(queryBundle.promptPressure || 'normal'),
-          unifiedMemoryEngine: {
-            mode: 'unified',
+          stateMemory: {
+            engine: 'state_first',
             generation: unifiedExec.generation,
-            indexDigest: unifiedExec.indexDigest,
             deliveryOutcome: unifiedExec.deliveryOutcome,
             queryComplete: unifiedExec.queryComplete,
             sourceCoverageComplete: unifiedExec.sourceCoverageComplete,
             stopReason: unifiedExec.stopReason,
             modelDispatchEligible: unifiedExec.modelDispatchEligible,
-            legacyRankerExecuted: false,
-            legacyCachesRebuilt: false,
-            cleanCutoverVerified: true,
-            accessTrace: unifiedExec.accessTrace || null
+            candidates: clone(unifiedExec.diagnostics?.candidates || null),
+            allocationPlan: clone(unifiedExec.diagnostics?.allocationPlan || null),
+            familyAllocation: clone(unifiedExec.diagnostics?.familyAllocation || null),
+            axes: clone(unifiedExec.diagnostics?.axes || null),
+            failures: clone(unifiedExec.diagnostics?.failures || []),
+            headFreshness: string(unifiedExec.diagnostics?.headFreshness || ''),
+            elapsedMs: Number(unifiedExec.diagnostics?.elapsedMs || 0)
           },
           recallRuntime: recallGuardSnapshot(guard)
         },
@@ -68245,9 +68302,29 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     // State-first owner adapter. Uses existing native records and consumer proofs.
     const stateMemoryFingerprint = createLibraMemoryFingerprint();
     let stateMemoryRuntime = null;
+    // One query reads the same heads and receipts many times. A background read frame
+    // shares those bytes and checks every consumed key once, in batches, before the
+    // result leaves. A frame that saw a change is dropped and the proof runs unshared.
+    const stateReadFrames = new WeakMap();
+    const closeStateReadFrame = context => {
+      const frame = stateReadFrames.get(context);
+      if (frame) { stateReadFrames.delete(context); frame.close(); }
+    };
+    const STATE_FRAME_CHANGED = /LIBRA_MEMORY_READER_(?:BODY|ROUTE)_CHANGED|LIBRA_BACKGROUND_SETTINGS_CHANGED|LIBRA_VERIFIED_STORAGE_UNBOUND_REUSE/;
+    // Search text per Micro turn, taken from the projection each Micro head already stores.
+    // It only chooses which turns to read; delivered rows always come from the verified read.
+    const STATE_MICRO_INDEX_SCOPES = 4, STATE_MICRO_INDEX_TURNS = 4096, STATE_MICRO_INDEX_SCAN_TURNS = 512;
+    const STATE_MICRO_INDEX_TEXT_CHARS = 1200, STATE_MICRO_INDEX_ABSENT_RECHECK_MS = 30000;
+    const stateMicroIndexes = new Map();
+    const invalidateStateMicroIndex = (scopeKey, turn = null) => {
+      for (const [cacheKey, cache] of stateMicroIndexes) {
+        if (!cacheKey.startsWith(string(scopeKey) + '\u0000')) continue;
+        if (turn == null) stateMicroIndexes.delete(cacheKey); else cache.turns.delete(Number(turn));
+      }
+    };
     const getStateMemoryRuntime = () => {
       if (stateMemoryRuntime) return stateMemoryRuntime;
-      const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint });
+      const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const snapshot = async (context, options = {}) => {
         const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
         const stored = await storage.getVerifiedJson(key.manifest(scope), scope, null);
@@ -68273,11 +68350,65 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const identity = stateMemoryFingerprint(JSON.stringify([scope, resolved.worldlineId, Number(state.microRestoreGeneration || 0), route,
           pairs.map(pair => [pair.turn, completedTurnRevisionId(pair), sourceDigest([pair])]),
           refs.map(ref => [canonicalReaderRefIdentity(ref), ref.summary, ref.searchText, ref.searchTerms, ref.recallTerms, ref.title]), rawHead, head, stateAuthority, stateProofs, review.saved]));
-        return { manifest: active.manifest, head, refs, turns, worldlineId: resolved.worldlineId, identity, owner: 'libra:' + route[0],
+        return { manifest: active.manifest, head, refs, turns, pairs: active.pairs, worldlineId: resolved.worldlineId, identity, owner: 'libra:' + route[0],
           rawHead, stateAuthority, stateProofs, stateKey: key.continuityState(scope), settings: await loadMemorySettings(), review, cutoff };
       };
       const capture = createLibraStateMemoryCapture({
-        context: resolveContext, fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
+        async context() {
+          const resolved = await resolveContext(), context = { ...resolved, scope: { ...resolved.scope } };
+          stateReadFrames.set(context, await openBackgroundReadFrame(context.scope));
+          return context;
+        },
+        async settle(context) {
+          const frame = stateReadFrames.get(context);
+          if (!frame) return true;
+          try { await frame.assertCurrent(); return true; }
+          catch (error) { if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error; return false; }
+          finally { closeStateReadFrame(context); }
+        },
+        abandon: closeStateReadFrame,
+        async microIndex(context, source) {
+          const scope = context.scope, worldline = hostWorldlineIdForScope(scope);
+          const cacheKey = string(scope.scopeKey) + '\u0000' + worldline, generation = Number(state.microRestoreGeneration || 0);
+          let cache = stateMicroIndexes.get(cacheKey);
+          if (!cache || cache.generation !== generation) cache = { generation, turns: new Map() };
+          stateMicroIndexes.delete(cacheKey); stateMicroIndexes.set(cacheKey, cache);
+          while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
+          const allowed = new Set(source.turns);
+          const revisions = new Map(asArray(source.pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
+          for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
+          const at = Date.now();
+          // An entry is reused only while its turn still has the source revision it was read for.
+          const pending = [...allowed].filter(turn => {
+            const entry = cache.turns.get(turn);
+            return !entry || entry.revision !== revisions.get(turn) || entry.text === null && at - entry.at > STATE_MICRO_INDEX_ABSENT_RECHECK_MS;
+          }).sort((a, b) => b - a).slice(0, STATE_MICRO_INDEX_SCAN_TURNS);
+          if (pending.length) {
+            // Heads are small: one request carries 32 of them. They are hints, so this frame
+            // is separate from the query's proof frame and is closed without a proof.
+            const scanScope = { ...scope }, frame = await openNativeReadFrame(scanScope);
+            try {
+              const keys = pending.map(turn => key.microMemoryHead(scanScope, worldline, 0, turn));
+              await frame.prefetch(keys);
+              for (const [index, turn] of pending.entries()) {
+                const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
+                const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
+                  && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
+                cache.turns.set(turn, { revision: revisions.get(turn), at,
+                  text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
+              }
+            } finally { frame.close(); }
+            while (cache.turns.size > STATE_MICRO_INDEX_TURNS) cache.turns.delete(cache.turns.keys().next().value);
+          }
+          const entries = new Map(); let known = 0;
+          for (const turn of allowed) {
+            const entry = cache.turns.get(turn);
+            if (entry?.revision !== revisions.get(turn)) continue;
+            known++; if (entry.text) entries.set(turn, entry.text);
+          }
+          return { entries, known };
+        },
+        fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
         async canonical(context, ref, source) {
@@ -68313,7 +68444,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           const sourceKey = 'lens_selection:' + before.digest;
           return { key: sourceKey, proofs: [], delivery,
             rows: asArray(delivery?.injectedItems).map(item => ({
-              text: '[PERSPECTIVE NOTES · NON-CANONICAL] ' + item.renderedLine, domain: 'narrative', turn: Number(item.turnRange?.end || 0), lensItem: item
+              text: '[PERSPECTIVE NOTES · NON-CANONICAL] ' + item.renderedLine, turn: Number(item.turnRange?.end || 0), lensItem: item
             })),
             async assertCurrent() {
               if ((await gradiaLensReadSnapshot(request)).digest !== before.digest) throw Error('LIBRA_LENS_SOURCE_CHANGED');
@@ -68324,13 +68455,28 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             [stateDecisionConsumptionProof(source.stateKey, source.rawHead)]), null);
         },
         async assertCurrent(token, context, source) {
-          await assertConsumedDataCurrent(token);
-          freshReadDepth++;
-          try {
-            const current = await resolveContext();
-            if (!sameSnapshotScope(current.scope, context.scope) || (await snapshot(current, { queryInput: { asOfTurn: source.cutoff } })).identity !== source.identity)
-              throw Error('LIBRA_STATE_SOURCE_CHANGED');
-          } finally { freshReadDepth--; }
+          const prove = async readScope => {
+            // With a read scope, both proofs read through its frame; the frame's own
+            // batched check is what makes those shared bytes current.
+            const adopt = current => readScope && sameSnapshotScope(current.scope, readScope) ? { ...current, scope: readScope } : current;
+            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt } : {});
+            freshReadDepth++;
+            try {
+              const current = adopt(await resolveContext());
+              if (!sameSnapshotScope(current.scope, context.scope) || (await snapshot(current, { queryInput: { asOfTurn: source.cutoff } })).identity !== source.identity)
+                throw Error('LIBRA_STATE_SOURCE_CHANGED');
+            } finally { freshReadDepth--; }
+          };
+          const open = stateReadFrames.get(context);
+          if (open) return open.disabled ? prove(null) : prove(context.scope);
+          // A later delivery proof gets its own frame. If that frame saw a change, the
+          // unshared proof decides, so an unrelated concurrent write cannot refuse delivery.
+          const readScope = { ...context.scope }, frame = await openBackgroundReadFrame(readScope);
+          try { await prove(readScope); await frame.assertCurrent(); }
+          catch (error) {
+            if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error;
+            frame.close(); await prove(null);
+          } finally { frame.close(); }
         },
         release: releaseConsumedDataReadSet
       }, engine);
@@ -68835,7 +68981,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         selection = await executeStateMemoryQuery({expectedScopeKey:request.scope.scopeKey,mode:'unified',
           requestId:request.operationId||request.id,queryInput:{queryText:sanitizeRecallCurrentInput(request.queryText||'')||'현재 기억',viewerId:'gradia_reader',...(worldlineView.cutoffTurn != null ? { asOfTurn: Number(worldlineView.cutoffTurn) } : {})},
           resourceBudget:{maxReads:GRADIA_OWNER_SESSION_MAX_READS,maxSourceBytes:GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES},
-          consumerPolicy:{maxCharacters:Math.max(32,maxChars),maxUnits,loreShare:unifiedLoreShare(settings)},
+          consumerPolicy:{maxCharacters:Math.max(32,maxChars),maxUnits},
           ...(isInputWriter ? { corpusMode: 'window', limit: 5, nodeLimit: 256 } : {})},null,authority);
         if (!memoryEvidenceAuthority.has(selection) || selection.modelDispatchEligible!==true) {
           const error = Error('LIB_READ_UNIFIED_UNAVAILABLE');
@@ -68904,7 +69050,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                   ...(worldlineView.cutoffTurn != null ? { asOfTurn: Number(worldlineView.cutoffTurn) } : {})
                 },
                 resourceBudget: { maxReads: GRADIA_OWNER_SESSION_MAX_READS, maxSourceBytes: GRADIA_OWNER_SESSION_MAX_SOURCE_BYTES },
-                consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits, loreShare: unifiedLoreShare(settings) }
+                consumerPolicy: { maxCharacters: Math.max(32, maxChars), maxUnits }
               }, null, null);
               check?.();
               if (!selection || !selection.packet) return { content: '' };
@@ -73719,7 +73865,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       listExecutionReceipts, getExecutionReceiptDetail, listWorldManagerCorrections, getWorldManagerRuntimeMeta,
       portableLineageSnapshot, previewPortableImport, importPortableAsPredecessorArchive, importPortableAsNativeCopy, recoverInterruptedPortableImports,
 
-      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, inspectResidentMemoryBudget, executeStateMemoryQuery, releaseStateMemoryQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, setLoreLinkMapping, buildConsumerReadSet, getAssociativeRecallDiagnostics,
+      getCanonicalMemoryDetail, getEvidenceLinkIndex, getLoreLinkIndex, inspectResidentMemoryBudget, executeStateMemoryQuery, releaseStateMemoryQuery, startGradiaUnifiedRead, stopGradiaUnifiedRead, setLoreLinkMapping, buildConsumerReadSet,
 
       armPendingLiveBoundary, loadPendingBoundaryStore, pruneExpiredPendingBoundaryStore, recoverPendingLiveBoundaryAtStartup, clearPendingBoundaryAfterCommit,
       reconcileCanonicalBranchBeforeRecall, verifyBatchStillCurrent, captureCommittedOutputEvent,
@@ -73991,87 +74137,48 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         lastOutputCapture: state.lastOutputCapture ? clone(state.lastOutputCapture) : null,
         lastMicroPublication: state.lastMicroPublication ? clone(state.lastMicroPublication) : null
       }),
-      // N01 GUI display adapter: a display-only DTO over the last recall. It reads values the recall
-      // already produced and never confers authority — there is no dispatch field here, and the GUI must
-      // not be able to grant one. Numbers are reported against their budgets so a partial window reads
-      // as partial instead of looking like a whole-history answer.
+      // Display-only DTO over the last recall. It reads values the recall already produced and
+      // never confers authority: there is no dispatch field here. Candidate counts are shown
+      // against their totals so a bounded search reads as partial, not as a whole-history answer.
       getMemoryRecallDiagnosticsView: () => {
         const recall = state.lastRecall || null;
-        if (!recall) return clone({ schema: 'libra.recall_diagnostics_view.v1', authority: 'display_only', present: false, at: null, state: 'absent' });
+        if (!recall) return clone({ schema: 'libra.recall_diagnostics_view.v2', authority: 'display_only', present: false, at: null, state: 'absent' });
         const engine = recall.diagnostics?.memoryEngine || null;
-        const trace = recall.accessTrace || recall.diagnostics?.unifiedMemoryEngine?.accessTrace || recall.unifiedExecution?.accessTrace || null;
-        const windowRead = recall.windowRead || null;
-        const bundle = recall.bundle || recall.unifiedExecution?.bundle || null;
-        const packet = recall.packet || null;
-        const itemList = asArray(bundle?.items);
-        const roleStats = asObject(trace?.lane?.roleStats);
-        // N02: the representation contract is read here, so the screen states which families have a
-        // vector producer and which do not, joined with what the semantic bridge actually admitted.
-        const representationKernel = memoryVectorProducerPolicy();
-        const semantic = recall.unifiedExecution?.diagnostics?.nativeSemantic || recall.diagnostics?.nativeSemantic || null;
-        const representationView = {
-          declared: representationKernel.declaredUnits().map(unit => ({
-            family: unit.family, unit: unit.unit, producer: unit.producer, vectorToday: unit.vectorToday === true, note: unit.note
-          })),
-          actual: semantic ? {
-            status: String(semantic.status || ''),
-            spaceId: String(semantic.spaceId || ''), dimension: Number(semantic.dimension || 0),
-            admitted: Number(semantic.admittedRepresentations || 0),
-            vectorlessFamilies: asArray(semantic.vectorlessFamilies).map(String),
-            rejected: asArray(semantic.rejected).slice(0, 8).map(row => String(row?.reason || '')),
-            backgroundEmbeddingStarted: semantic.backgroundEmbeddingStarted === true
-          } : null,
-          // What may be embedded at all is a decision, so it is stated beside the declaration rather than
-          // read off whatever happened during this one recall.
-          policy: {
-            authorized: representationKernel.producerPolicies().filter(policy => policy.authorized === true).map(policy => policy.family),
-            unauthorized: representationKernel.producerPolicies().filter(policy => policy.authorized !== true).map(policy => policy.family),
-            forbiddenTriggers: [...representationKernel.FORBIDDEN_TRIGGERS]
-          }
-        };
+        const run = recall.unifiedExecution || null, diagnostics = asObject(run?.diagnostics);
+        const bundle = recall.bundle || run?.bundle || null, packet = recall.packet || null, itemList = asArray(bundle?.items);
+        const candidates = asObject(diagnostics.candidates), plan = asObject(diagnostics.allocationPlan);
+        const allocation = asObject(diagnostics.familyAllocation), axes = asObject(diagnostics.axes);
+        const count = name => Number(candidates[name] || 0);
         const unread = [
-          ...asArray(trace?.coverage?.sourceReadFailures).map(row => ({ kind: 'source_read_failure', family: String(row?.family || ''), reason: String(row?.reason || '') })),
-          ...asArray(trace?.coverage?.unreadInventoryCursors).map(row => ({ kind: 'owner_cursor', cursorKey: String(row?.cursorKey || '') })),
-          ...asArray(trace?.lane?.unreadCursors).map(row => ({ kind: 'lane_cursor', cursorKey: String(row?.cursorKey || row?.cursor || '') })),
-          ...(recall.nextWindow ? [{ kind: 'next_window', cursorKey: String(recall.nextWindow.microCursor || recall.nextWindow.canonicalCursor || '') }] : [])
-        ].filter(row => row.cursorKey || row.reason);
-        const partial = trace ? trace.coverage?.complete !== true : (windowRead?.projectionComplete !== true);
+          ...asArray(diagnostics.failures).map(row => ({ kind: 'source_read_failure', family: String(row?.family || ''), reason: String(row?.code || '') })),
+          ...(count('canonical') < count('canonicalTotal') ? [{ kind: 'canonical_candidates', reason: count('canonical') + '/' + count('canonicalTotal') }] : []),
+          ...(run && run.queryComplete !== true && count('micro') < count('microTotal') ? [{ kind: 'micro_candidates', reason: count('micro') + '/' + count('microTotal') }] : []),
+          ...(diagnostics.payloadLimited === true ? [{ kind: 'payload_limit', reason: String(diagnostics.payloadBytes || 0) }] : [])
+        ];
+        const share = name => allocation[name] ? { targetItems: Number(allocation[name].targetItems || 0), selected: Number(allocation[name].selected || 0),
+          targetCharacters: Number(allocation[name].targetCharacters || 0), usedCharacters: Number(allocation[name].usedCharacters || 0) } : null;
         return clone({
-          schema: 'libra.recall_diagnostics_view.v1',
+          schema: 'libra.recall_diagnostics_view.v2',
           authority: 'display_only',
           present: true,
-          state: partial ? 'partial' : 'complete',
+          state: run?.queryComplete === true ? 'complete' : 'partial',
           at: Number(recall.at || 0),
           engine: engine ? { mode: String(engine.mode || ''), source: String(engine.source || ''), defaultApplied: engine.defaultApplied === true, qualification: String(engine.qualification || '') } : null,
-          corpus: recall.corpusRead ? { mode: String(recall.corpusRead.mode), windowCount: Number(recall.corpusRead.windowCount || 0),
-            indexBuildsDuringQuery: Number(recall.corpusRead.indexBuildsDuringQuery || 0),
-            nativeReprojectionRequired: recall.corpusRead.nativeReprojectionRequired === true, byteBounded: false } : null,
-          window: windowRead ? {
-            limit: Number(windowRead.limit || 0),
-            canonicalCursor: String(windowRead.canonicalCursor || ''),
-            microCursor: String(windowRead.microCursor || ''),
-            projectionComplete: windowRead.projectionComplete === true,
-            read: { canonical: Number(windowRead.inventory?.canonicalRead || 0), canonicalTotal: Number(windowRead.inventory?.canonicalTotal || 0),
-              micro: Number(windowRead.inventory?.microRead || 0), microTotal: Number(windowRead.inventory?.microTurnTotal || 0) }
+          corpus: recall.corpusRead ? { mode: String(recall.corpusRead.mode || '') } : null,
+          plan: run ? { intent: String(plan.intent || ''), order: asArray(plan.order).map(String), lensSharePercent: Number(plan.lensSharePercent || 0) } : null,
+          read: run ? {
+            canonical: count('canonical'), canonicalTotal: count('canonicalTotal'), micro: count('micro'), microTotal: count('microTotal'),
+            microIndexKnown: count('microIndexKnown'), microMatches: count('microMatches'), microMatchesRead: count('microMatchesRead'),
+            elapsedMs: Number(diagnostics.elapsedMs || 0), stopReason: String(run.stopReason || '')
           } : null,
-          read: trace ? {
-            pages: Number(trace.lane?.pagesRead || 0), bytes: Number(trace.lane?.bytesRead || 0), budget: Number(trace.lane?.maxBytes || 0),
-            cacheHits: Number(trace.lane?.cacheHits || 0), coalesced: Number(trace.lane?.coalescedRequests || 0),
-            roles: Object.keys(roleStats).filter(role => Number(roleStats[role]?.pages || 0) > 0)
-              .map(role => ({ role, pages: Number(roleStats[role].pages || 0), bytes: Number(roleStats[role].bytes || 0) })),
-            frontierSteps: Number(trace.frontier?.steps || 0), onDemandAnchors: Number(trace.frontier?.onDemandNeighborhoodAnchors || 0),
-            workspaceBytes: Number(trace.workspace?.l0WorkspaceBytes || 0), workspaceBudget: Number(trace.workspace?.maxWorkspaceBytes || 0),
-            complete: trace.coverage?.complete === true, stopReason: String(trace.coverage?.stopReason || '')
-          } : null,
+          axes: Object.keys(axes).map(axis => ({ axis, available: Number(axes[axis]?.available || 0), selected: Number(axes[axis]?.selected || 0), reason: String(axes[axis]?.reason || '') })),
+          allocation: { lens: share('lens'), evidence: share('evidence') },
           adoption: bundle ? {
-            admitted: itemList.length, suppressedMicro: asArray(bundle.suppressedMicroIds).length,
+            admitted: itemList.length, suppressedDuplicates: Number(diagnostics.suppressedEvidenceDuplicates || 0),
             families: [...new Set(itemList.map(item => String(item?.family || '')))].filter(Boolean).sort(),
-            packetChars: Number(packet?.characterLength || 0), maxCharacters: Number(bundle.budget?.maxCharacters || 0),
-            independentSources: Number(bundle.independentSupportingSourceCount || 0)
+            packetChars: Number(packet?.characterLength || 0), maxCharacters: Number(bundle.budget?.maxCharacters || 0)
           } : null,
-          representation: representationView,
-          viewpoint: { historicalCanonicalUnavailable: trace?.coverage?.historicalCanonicalUnavailable === true,
-            sourceCoverageComplete: trace?.coverage?.sourceCoverageComplete === true },
+          pointInTime: run ? { headFreshness: String(diagnostics.headFreshness || ''), stateAsOfTurn: diagnostics.stateAsOfTurn ?? null, latestTurn: Number(diagnostics.latestTurn || 0) } : null,
           unread
         });
       },
@@ -78629,23 +78736,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const rows = [];
           if (!view.present) rows.push(guiEl('div', { class: 'hint', text: '아직 회수 기록이 없습니다.' }));
           else {
-            if (view.window) rows.push(guiEl('div', { class: 'hint', text: `창: limit ${view.window.limit} · 정본 ${view.window.read.canonical}/${view.window.read.canonicalTotal} · Micro ${view.window.read.micro}/${view.window.read.microTotal}${view.window.projectionComplete ? '' : ' · 투영 미완(부분)'}` }));
-            if (view.corpus) rows.push(guiEl('div', { class: 'hint', text: view.corpus.mode === 'durable_common_index'
-              ? `전체 구간 인덱스: ${view.corpus.windowCount}구간 · 검색 중 인덱스 재생성 ${view.corpus.indexBuildsDuringQuery}회 · 원본 재검증 사용`
-              : view.corpus.mode === 'request_local_corpus' ? `통합 검색: 현재 원본 ${view.corpus.windowCount}구간 · 요청 내 인덱스 구성 ${view.corpus.indexBuildsDuringQuery}회`
-              : '명시적으로 지정한 원본 구간 검색입니다.' }));
-            if (view.read) rows.push(guiEl('div', { class: 'hint', text: `읽은 경로: page ${view.read.pages} · ${view.read.bytes}/${view.read.budget} bytes · cache hit ${view.read.cacheHits} · frontier ${view.read.frontierSteps} · 작업 ${view.read.workspaceBytes}/${view.read.workspaceBudget}${view.read.stopReason ? ' · 중단 ' + view.read.stopReason : ''}` }));
-            if (view.read?.roles.length) rows.push(guiEl('div', { class: 'hint', text: '역할: ' + view.read.roles.map(role => `${role.role} ${role.pages}p`).join(', ') }));
-            if (view.adoption) rows.push(guiEl('div', { class: 'hint', text: `채택: ${view.adoption.admitted}건(${view.adoption.families.join('/') || '-'}) · 억제 Micro ${view.adoption.suppressedMicro} · ${view.adoption.packetChars}/${view.adoption.maxCharacters}자` }));
+            const intentLabel = { current: '현재 상태', history: '과거 경위', detail: '정확한 발언·세부', mixed: '관련도 중심' };
+            const axisLabel = { characters: '인물', relationships: '관계', world: '세계', narrative: '서사' };
+            if (view.read) rows.push(guiEl('div', { class: 'hint', text: `읽은 후보: 정본 ${view.read.canonical}/${view.read.canonicalTotal} · Micro ${view.read.micro}/${view.read.microTotal} · Micro 검색 요약 확인 ${view.read.microIndexKnown}/${view.read.microTotal}턴(일치 ${view.read.microMatchesRead}/${view.read.microMatches}턴 읽음) · ${view.read.elapsedMs}ms${view.read.stopReason ? ' · 중단 ' + view.read.stopReason : ''}` }));
+            if (view.plan) rows.push(guiEl('div', { class: 'hint', text: `질문 분류: ${intentLabel[view.plan.intent] || view.plan.intent || '-'} · 우선순위 ${view.plan.order.join(' > ') || '-'} · 렌즈 목표 ${view.plan.lensSharePercent}%` }));
+            if (view.axes.length) rows.push(guiEl('div', { class: 'hint', text: '축별 선택: ' + view.axes.map(row => `${axisLabel[row.axis] || row.axis} ${row.selected}/${row.available}${row.reason === 'budget_limited' ? '(예산 부족)' : ''}`).join(' · ') }));
+            if (view.allocation.lens || view.allocation.evidence) rows.push(guiEl('div', { class: 'hint', text: '배분: ' + [['lens', '렌즈'], ['evidence', '공통 근거']]
+              .filter(([name]) => view.allocation[name]).map(([name, label]) => `${label} ${view.allocation[name].selected}건 · ${view.allocation[name].usedCharacters}/${view.allocation[name].targetCharacters}자`).join(' · ') }));
+            if (view.adoption) rows.push(guiEl('div', { class: 'hint', text: `채택: ${view.adoption.admitted}건(${view.adoption.families.join('/') || '-'}) · 중복 억제 ${view.adoption.suppressedDuplicates} · ${view.adoption.packetChars}/${view.adoption.maxCharacters}자` }));
+            if (view.pointInTime) rows.push(guiEl('div', { class: 'hint', text: `State 시점: ${view.pointInTime.stateAsOfTurn ?? '-'}턴 기준 · 최신 ${view.pointInTime.latestTurn}턴 · ${view.pointInTime.headFreshness || '-'}` }));
             rows.push(guiEl('div', { class: 'hint', text: view.unread.length ? '미독: ' + view.unread.map(row => row.kind === 'source_read_failure'
-              ? `원본 읽기 실패(${row.family}: ${row.reason})` : row.kind).join(', ') : '미독 없음' }));
+              ? `원본 읽기 실패(${row.family}: ${row.reason})` : row.kind === 'canonical_candidates' ? `정본 후보 ${row.reason}`
+              : row.kind === 'micro_candidates' ? `Micro 후보 ${row.reason}` : '전달 용량 한도').join(', ') : '미독 없음' }));
             rows.push(guiEl('div', { class: 'hint', text: view.engine ? `엔진: ${view.engine.mode}(${view.engine.source}${view.engine.defaultApplied ? ', 기본값' : ''})` : '' }));
-            if (view.representation?.declared) {
-              const withVector = view.representation.declared.filter(unit => unit.vectorToday).map(unit => unit.family);
-              const without = view.representation.declared.filter(unit => !unit.vectorToday).map(unit => unit.family);
-              rows.push(guiEl('div', { class: 'hint', dataset: { recallRepresentation: 'true' },
-                text: `표현: 벡터 있음 ${withVector.join('/') || '-'} · 생산자 없음 ${without.join('/') || '-'}${view.representation.actual ? ` · 실제 ${view.representation.actual.status || 'n/a'}(채택 ${view.representation.actual.admitted}, 거부 ${view.representation.actual.rejected.length})` : ''}` }));
-            }
           }
           return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
             guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows,
@@ -89365,7 +89468,6 @@ advanced
       const execution = await LibraMemoryCore.executeStateMemoryQuery(options);
       try { return await safeClone(execution); } finally { LibraMemoryCore.releaseStateMemoryQuery(execution); }
     },
-    async getAssociativeRecallDiagnostics() { return await safeClone(await LibraMemoryCore.getAssociativeRecallDiagnostics()); },
     // The read-set contract suite drives the SHIPPED builder, so its bridge handling is asserted against
     // the real function rather than a reimplementation. It is named without the `_test` surface because
     // LIBRA's contract requires that surface to strip to zero bytes.
