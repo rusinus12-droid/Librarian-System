@@ -46,7 +46,7 @@ async function main(){
   assert.ok(!f.getHead().characters.find(c=>c.name==='민아').state.appearance.some(x=>/붉은|흰/.test(x)));
  }finally{await f.r.cleanup();}
  for(const mode of ['plugin_only','mirror','server_only']){
- const args={evidence_link_index_enabled:'true'};
+ const args={};
  const server=mode==='plugin_only'?null:await require('./fixtures/libra_server_runtime_fixture.cjs').serverFixture({mode,args});const g=server?server.f:await fixture({args});
  try{
   // First establish a named room, then refer to that person's same room by a generic noun.
@@ -87,10 +87,10 @@ async function main(){
   assert.ok(memory.canonicalArtifact.facts.some(f=>f.tempFactId==='roomdesc'),'description survives name admission');
   assert.equal(after.characters.find(c=>c.name==='민아').state.locationRef,prior);
   assert.equal(after.world.filter(w=>/^(좁은 방|방)$/.test(w.name)).length,1,'same room retains its identity');
-  const index=await g.r.api.getEvidenceLinkIndex({});
-  const edge=index.links.entityPairs.find(p=>p.via==='location'&&JSON.stringify(p).includes('roomloc2'));
-  assert.ok(edge,JSON.stringify(index.links.entityPairs.filter(p=>p.via==='location')));
-  assert.equal(edge.to,prior,'history reader resolves this artifact mention to the same room');
+  const registry=g.getRecords('libra.entity_registry.v2')[0]?.value;
+  assert.ok(registry.entities.find(row=>row.id===prior)?.contextualReferences.some(ref=>
+    ref.memoryId===memory.memoryId&&ref.revision===memory.revision&&ref.artifactDigest===memory.artifactDigest&&ref.tempId==='room'),
+    'persisted registry binds the canonical room mention to the same identity');
   const beforeReplay=JSON.stringify([after.characters,after.world]);
   assert.equal((await g.r.api.rebuildWorldManagerState()).ok,true);
   assert.equal(JSON.stringify([g.getHead().characters,g.getHead().world]),beforeReplay,'replay retains contextual identity and its facts');

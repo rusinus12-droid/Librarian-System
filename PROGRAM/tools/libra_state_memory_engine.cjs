@@ -280,21 +280,39 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const names = new Map(axes.slice(0, 3).flatMap(axis => array(head[axis])).filter(row => row.id && row.name).map(row => [row.id, row.name]));
     const display = value => Array.isArray(value) ? value.map(display) : value && typeof value === 'object'
       ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, display(item)])) : names.get(value) || value;
+    const fieldLabels = { holderRef:'소지자',ownerRef:'소유자',locationRef:'위치',parentRef:'상위 장소',managerRef:'관리 주체',containerRef:'보관 위치',
+      appearance:'외형',background:'배경',personality:'성격',speech:'말투',habits:'습관',abilities:'능력',goals:'목표',emotions:'감정',mood:'기분',
+      knowledge:'알고 있는 내용',preferences:'선호',boundaries:'경계',affiliations:'소속',condition:'상태',doorStatus:'문 상태',value:'내용',
+      summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',
+      scopeRef:'적용 대상',exceptions:'예외',effect:'효과',personTempRef:'인물',organizationTempRef:'조직',text:'내용',
+      organizationRef:'조직',access:'접근 조건',affiliation:'소속',locks:'제약',notes:'비고',detail:'세부 내용',time:'시점',count:'수량',locked:'잠금 여부' };
+    const statuses = { open:'미해결',active:'진행 중',resolved:'해결됨',closed:'종결됨',pending:'보류 중',unknown:'알 수 없음' };
+    const format = value => Array.isArray(value) ? value.map(format).filter(Boolean).join('; ')
+      : value && typeof value === 'object' ? Object.entries(value).filter(([key])=>!['id','lifecycleId','tempId'].includes(key))
+        .map(([key,item])=>{const text=format(item);return text ? `${fieldLabels[key] || key}: ${text}` : '';}).filter(Boolean).join(' · ')
+      : value == null ? '' : typeof value === 'boolean' ? (value ? '예' : '아니오') : String(value);
+    const unresolved = value => typeof value === 'string' ? /^ce_/.test(value)
+      : Array.isArray(value) ? value.some(unresolved) : value && typeof value === 'object' ? Object.values(value).some(unresolved) : false;
     const add = (axis, entity, index) => {
       if (!entity || typeof entity !== 'object') return;
-      const name = String(entity.name || entity.label || names.get(entity.subjectId) || labels[axis])
+      const name = String(entity.name || entity.label || entity.title || names.get(entity.subjectId) || labels[axis])
         + (axis === 'relationships' && entity.targetId ? ' → ' + (names.get(entity.targetId) || '대상') : '');
       const values = entity.state && typeof entity.state === 'object' ? entity.state : entity;
       for (const [field, value] of Object.entries(values)) {
-        if (/^(?:id|name|label|aliases|kind|type|fieldEvidence|evidence|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
-          || value == null || value === '' || field.startsWith('_')) continue;
+        if (/^(?:id|name|label|aliases|kind|type|lifecycleId|subjectId|targetId|tempId|fieldEvidence|evidence|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
+          || value == null || value === '' || field.startsWith('_') || (field==='title' && entity.title)
+          || Array.isArray(value) && !value.length) continue;
         const shown = display(value);
+        if (unresolved(shown)) continue;
+        const readable = field === 'status' ? statuses[String(shown)] || format(shown) : field === 'resolvedTurn' ? `T${shown}` : format(shown);
+        if (!readable) continue;
         const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : JSON.stringify(shown)}`;
+        const promptText = `${name} — ${fieldLabels[field] || field}: ${readable}`;
         const evidence = entity.fieldEvidence?.[field] || entity.evidence || head.domainStatus?.[axis]?.evidence || null;
         const evidenceKeys = evidence?.schema === 'libra.micro_state_field_evidence.v1'
           ? ['micro:' + evidence.analysisRevisionId + ':' + evidence.claimDigest]
           : evidence?.memoryId && evidence?.revision != null ? array(evidence.assertionIds).map(id => 'canonical:' + evidence.memoryId + ':' + evidence.revision + ':' + id) : [];
-        rows.push({ id: 'state:' + fingerprint(JSON.stringify([axis, entity.id || index, field, value])), family: 'state', axis, text,
+        rows.push({ id: 'state:' + fingerprint(JSON.stringify([axis, entity.id || index, field, value])), family: 'state', axis, text, promptText,
           turn: Number(evidence?.turn || evidence?.sourceTurnRange?.end || head.throughTurn || 0), evidence, evidenceKeys,
           stateStatus: head.responseAuthority?.pending || head.responseAuthority?.current === false ? 'last_known' : 'current' });
       }
@@ -309,7 +327,7 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     return rows;
   };
 
-  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [] } = {}) => {
+  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [], semanticScores = new Map() } = {}) => {
     const evidenceIds = new Set(state.map(row => row.evidence?.memoryId).filter(Boolean));
     const refList = array(refs);
     if (!refList.length) return [];
@@ -330,18 +348,24 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
       const identityVal = identitySignal(queryEntities, textFields, entities);
-      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal;
+      const semanticVal = Math.max(0, Math.min(1, Number(semanticScores.get(ref.key)) || 0));
+      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
       return {
         ref,
         ordinal,
         score: base,
-        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal }
+        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal, semantic: semanticVal }
       };
     });
 
-    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity'], 60, 0.25) : scored;
-    return fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal)
-      .slice(0, limit).map(row => row.ref);
+    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity', 'semantic'], 60, 0.25) : scored;
+    const ranked = fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal);
+    // State anchors can otherwise occupy the entire shortlist, even when an older
+    // foreign-language match has the highest dense relevance. Reserve within the same cap.
+    const dense = ranked.filter(row => row.signals.semantic > 0).sort((a,b) => b.signals.semantic - a.signals.semantic || b.score - a.score)
+      .slice(0, Math.max(0, Math.floor(limit / 2)));
+    const denseKeys = new Set(dense.map(row => row.ref.key));
+    return [...dense, ...ranked.filter(row => !denseKeys.has(row.ref.key)).slice(0, Math.max(0, limit - dense.length))].map(row => row.ref);
   };
 
   const allocationPlan = (query, lensSharePercent = 40) => {
@@ -395,21 +419,22 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const anchorVal = row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0);
       const identityVal = identitySignal(queryEntities, row.text, entities);
       const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal;
+      const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
+      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal }
       };
     });
 
-    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked'], 60, 0.20) : scoredCandidates;
+    const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
     candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map();
     const suppressedEvidenceDuplicates = new Set();
     let usedCharacters = 0;
-    const costOf = row => row.text.length + Math.max(32,
+    const costOf = row => (row.promptText || row.text).length + Math.max(32,
       `[${labels[row.axis]} · ${row.family}${row.turn ? ' · T' + row.turn : ''}${row.stateStatus === 'last_known' ? ' · last_known' : ''}] `.length + 1);
     const add = row => {
       const cost = costOf(row), identity = row.text.normalize('NFKC').trim();

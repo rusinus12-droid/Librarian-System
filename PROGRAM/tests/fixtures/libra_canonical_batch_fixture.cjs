@@ -1,5 +1,5 @@
 'use strict';
-// Shared helpers for the evidence link index suites.
+// Shared canonical batch helpers for source-proof and direct-reader suites.
 //
 // `advance` commits a further five-turn batch whose artifact carries evidence spans for the
 // turns it actually covers. The bundled `fiveMore` always shifts by +5, so it can only drive a
@@ -46,7 +46,7 @@ const addFact = (f, offset, spec) => {
   return fact;
 };
 
-// Rewrite a persisted record in the harness storage, then let the caller re-read the index.
+// Rewrite a persisted record in the harness storage, then let the caller re-read the record.
 const patchRecord = (f, schema, patch) => {
   const found = f.getRecords(schema)[0];
   if (!found) throw new Error(`record ${schema} not found`);
@@ -54,12 +54,4 @@ const patchRecord = (f, schema, patch) => {
   return found.value;
 };
 
-const holderField = (index, name = '은빛 열쇠') => {
-  const entity = index.entities.find(row => row.name === name);
-  if (!entity) return null;
-  return index.current.fields.find(field => field.entityId === entity.id && field.field === 'holderRef') || null;
-};
-
-const entityNamed = (index, name) => index.entities.find(row => row.name === name) || null;
-
-module.exports = { fixture, artifact, advance, addFact, patchRecord, holderField, entityNamed, shiftRefs };
+module.exports = { fixture, artifact, advance, addFact, patchRecord, shiftRefs };

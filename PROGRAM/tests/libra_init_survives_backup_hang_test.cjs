@@ -6,7 +6,7 @@
 // normalizing narrative direction during branch reconcile and returned zero memories.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { fixture } = require('./fixtures/libra_lore_link_index_fixture.cjs');
+const { fixture } = require('./fixtures/libra_host_lore_fixture.cjs');
 
 const replaceInstaller = body => source => {
   const anchor = 'const installLibraPortableMemoryBackup = async () => {';

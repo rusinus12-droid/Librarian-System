@@ -5,6 +5,17 @@ const create = require('../tools/libra_state_memory_engine.cjs');
 const modes = require('../tools/libra_memory_engine_mode.cjs');
 const engine = create({ fingerprint });
 
+test('an older semantic match gets a bounded catalog slot even when State anchors fill the sparse shortlist', () => {
+  const refs=Array.from({length:10},(_,n)=>({key:'doc-'+n,memoryId:'memory-'+n,summary:'기억 '+n,turnRange:{end:n+1}}));
+  const state=refs.slice(2).map(ref=>({evidence:{memoryId:ref.memoryId}}));
+  const sparse=engine.rankCatalog(refs,'auxiliary entrance',state,4);
+  assert.equal(sparse.some(ref=>ref.key==='doc-0'),false);
+  const hybrid=engine.rankCatalog(refs,'auxiliary entrance',state,4,{semanticScores:new Map([['doc-0',1]])});
+  assert.equal(hybrid.length,4);
+  assert.ok(hybrid.some(ref=>ref.key==='doc-0'));
+  assert.ok(hybrid.some(ref=>ref.memoryId!=='memory-0'));
+});
+
 test('lens reserves 40% while the remaining 60% follows the question instead of fixed source shares', () => {
   const rows = ['lens','canonical','micro','state'].flatMap(family => Array.from({ length: 30 }, (_, n) => ({
     id: family + n, family, axis: 'world', text: family + ' 은빛 열쇠 ' + n
@@ -81,7 +92,18 @@ test('State references resolve to names and narrative status survives field proj
     world: [{ id: 'w1', name: '열쇠', state: { holderRef: 'p1' } }], narrative: { threads: [{ id: 't1', title: '약속', status: 'open' }] } });
   assert.ok(rows.some(row => row.text.includes('holderRef: 민아')));
   assert.ok(rows.some(row => row.axis === 'narrative' && row.text.includes('status: open')));
+  assert.ok(rows.some(row => row.promptText.includes('소지자: 민아')));
+  assert.ok(rows.some(row => row.promptText.includes('약속 — 진행 상태: 미해결')));
   assert.ok(rows.every(row => row.turn === 5));
+});
+
+test('State prompt rows omit structural IDs and empty lists while retaining meaningful false/zero and nested rule conditions',()=>{
+ const rows=engine.stateRows({throughTurn:9,world:[{id:'ce_key',name:'열쇠',state:{holderRef:'ce_unknown',ownerRef:'민아',count:0,locked:false,
+  rule:{text:'조용히',exceptions:[{condition:'허가된 공연 중',effect:'예외'}]}}}],narrative:{threads:[{id:'ce_thread',lifecycleId:'ce_lifecycle',title:'반환 약속',status:'resolved',participants:[],resolvedTurn:8}]}});
+ const prompt=rows.map(row=>row.promptText).join('\n');
+ assert.doesNotMatch(prompt,/lifecycleId|ce_|participants|\[\]/);
+ assert.match(prompt,/소유자: 민아/);assert.match(prompt,/수량: 0/);assert.match(prompt,/잠금 여부: 아니오/);
+ assert.match(prompt,/허가된 공연 중/);assert.match(prompt,/반환 약속 — 진행 상태: 해결됨/);assert.match(prompt,/종결 기록 턴: T8/);
 });
 
 test('State evidence locators outrank recency when choosing bounded existing records', () => {

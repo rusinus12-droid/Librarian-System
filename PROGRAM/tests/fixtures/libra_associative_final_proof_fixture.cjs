@@ -4,7 +4,7 @@
 // and earns dense relevance from its detail section, outside that shortlist.
 const assert = require('node:assert/strict');
 const { fixture, artifact } = require('./libra_unified_runtime_fixture.cjs');
-const { shiftRefs } = require('./libra_evidence_link_index_fixture.cjs');
+const { shiftRefs } = require('./libra_canonical_batch_fixture.cjs');
 const source = require('./unified_vertical_source.json');
 const REQUEST = '예전 은빛 열쇠';
 const GRAPH_FACT = '예비 출입문은 안전 점검 중이다.';
@@ -85,8 +85,7 @@ async function seedSnapshot() {
 async function finalProofFixture(snapshot, graph = true, options = {}) {
   const counts = { query: 0, document: 0 };
   const f = await fixture({ snapshot, transformSource: options.transformSource,
-    args: { evidence_link_index_enabled: String(graph), associative_recall_enabled: String(graph),
-      lore_link_index_enabled: 'false' }, host: { ...embeddingHost(counts), ...options.host } });
+    args: {}, host: { ...embeddingHost(counts), ...options.host } });
   await settings(f);
   return { ...f, counts, graphRef: f.getManifest().memories['6'] };
 }

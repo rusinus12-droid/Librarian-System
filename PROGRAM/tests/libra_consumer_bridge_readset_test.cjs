@@ -16,10 +16,10 @@
 // The suite drives the REAL `buildConsumerReadSet` through the shipped plugin, not a reimplementation:
 // the values are read back off the packet the response path produced.
 const assert = require('node:assert/strict');
-const { fixture } = require('./fixtures/libra_lore_link_index_fixture.cjs');
+const { fixture } = require('./fixtures/libra_host_lore_fixture.cjs');
 
 const results = [];
-const enabled = options => fixture({ ...options, args: { lore_link_index_enabled: 'true', ...options?.args } });
+const enabled = options => fixture(options);
 async function test(name, fn) { const f = await enabled(); try { await fn(f); results.push(name); } finally { await f.r.cleanup(); } }
 const plain = value => JSON.parse(JSON.stringify(value));
 

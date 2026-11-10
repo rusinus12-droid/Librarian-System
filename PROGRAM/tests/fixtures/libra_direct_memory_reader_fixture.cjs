@@ -1,5 +1,5 @@
 'use strict';
-const { fixture: localFixture } = require('./libra_lore_link_index_fixture.cjs');
+const { fixture: localFixture } = require('./libra_host_lore_fixture.cjs');
 const { serverFixture, withLorebook } = require('./libra_server_runtime_fixture.cjs');
 const { waitFor } = require('./libra_vm_harness.cjs');
 const { fixture: baseFixture } = require('./libra_unified_runtime_fixture.cjs');
@@ -55,7 +55,7 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
         if (active.status !== 'verified') throw new Error('direct memory fixture failed to publish a real Micro');
       }
     }
-    f.control.onCall = async () => { throw new Error('direct recall must not invoke a provider'); };
+    f.control.onCall = async () => { throw new Error('direct recall must not invoke a generative model'); };
     return { get f() { return f; }, server, scopeKey, active,
       async restart() {
         const lore = JSON.parse(JSON.stringify(f.character.lorebook)), chat = JSON.parse(JSON.stringify(f.chat));
@@ -66,7 +66,7 @@ async function fixture({ mode = 'plugin_only', minimum = false, transformSource,
         }
         f.character.lorebook = lore;
         if (embeddingFetch) { if (server) server.hooks.externalFetch = embeddingFetch; else f.r.context.risuai.nativeFetch = embeddingFetch; }
-        f.control.onCall = async () => { throw new Error('restarted graph reads must not invoke a provider'); };
+        f.control.onCall = async () => { throw new Error('restarted recall must not invoke a generative model'); };
         // SDK startup can advance its configuration fence during the first
         // owner read. Wait for a fresh successfully validated capture; never
         // weaken the shipped READ_ROUTE_CHANGED guard or reuse its old handle.

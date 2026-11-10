@@ -17,8 +17,15 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
     const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
+    // Dense retrieval is optional. It reads stored vectors; document production never runs here.
+    let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
+    if (frame.semantic && options.semantic !== false && queryText.trim()) {
+      try { semantic = await frame.semantic(queryText); }
+      catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
+    }
+    frame.check();
     const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
-      Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates), { entities });
+      Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates), { entities, semanticScores: semantic.scores });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
@@ -44,7 +51,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     for (const ref of refs) {
       frame.check();
       if (payloadLimited) break;
-      try { keep(await frame.canonical(ref)); }
+      try { keep(await frame.canonical(ref, semantic)); }
       catch (error) { failures.push({ family: 'canonical', key: ref.key, code: error.code || error.message }); }
     }
     for (const turn of turns) {
@@ -60,7 +67,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const sources = loaded.filter(item => chosen.has(item.key));
     const publicItems = selected.items.map(item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
       semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state' : 'recorded_evidence',
-      ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.text, score: item.score,
+      ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.promptText || item.text, score: item.score,
       turn: item.turn || 0, sourceKey: item.sourceKey || frame.stateKey }));
     const generation = fingerprint(JSON.stringify([frame.identity, publicItems]));
     const renderedText = publicItems.map(item => `[${engine.labels[item.axis]} · ${item.family}${item.turn ? ' · T' + item.turn : ''}${item.stateStatus === 'last_known' ? ' · last_known' : ''}] ${item.text}`).join('\n');
@@ -108,6 +115,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       stopReason: complete ? '' : failures.length ? 'source_unavailable' : 'candidate_budget',
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
+        semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
         stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, elapsedMs: now() - startedAt,
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
           microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
@@ -115,7 +123,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
         families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, { units: publicItems.filter(item => item.family === family).length }])) },
-      guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0)).map(item => item.key), complete,
+      guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
       scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turn, end: item.turn } })) });

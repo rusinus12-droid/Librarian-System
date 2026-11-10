@@ -46,8 +46,8 @@ test('recall projects approved Micro State, preserves source-only details, and b
   const authority = f.r.context.__testStateAuthorities.get(execution);
   t.after(() => authority.release());
   const stateRows = execution.bundle.items.filter(row => row.family === 'state');
-  assert.ok(stateRows.some(row => row.text.includes('holderRef: 준호') && row.turn === 6));
-  assert.equal(stateRows.some(row => row.text.includes('holderRef: 민아')), false);
+  assert.ok(stateRows.some(row => row.text.includes('소지자: 준호') && row.turn === 6));
+  assert.equal(stateRows.some(row => row.text.includes('소지자: 민아')), false);
   assert.equal(stateRows.some(row => row.text.includes(promise)), false, 'a source-only promise never becomes approved State');
   assert.equal(execution.diagnostics.stateAsOfTurn, 6);
   assert.equal(execution.diagnostics.headFreshness, 'partial', 'the unapproved narrative candidate remains disclosed');
@@ -63,7 +63,7 @@ test('recall projects approved Micro State, preserves source-only details, and b
   const past = await f.r.api.executeStateMemoryQuery({ ...options('정확한 과거 발언'), queryInput: { queryText: '정확한 과거 발언', asOfTurn: 5 } });
   assert.equal(past.bundle.items.some(row => row.turn > 5), false, 'an earlier query cannot leak projected T6 facts');
   const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: '지금 은빛 열쇠 보유자는 누구야?' }], 'model');
-  assert.ok(messages.some(row => row.role === 'system' && row.content.includes('holderRef: 준호')));
+  assert.ok(messages.some(row => row.role === 'system' && row.content.includes('소지자: 준호')));
   assert.equal(f.r.api.getRuntime().lastMemoryInjectionMeta.finalVerification.status, 'verified');
   const decision = await f.r.api.debugReadCurrentMicroStateAdmission(6, 0);
   const saved = f.r.values.get(decision.decisionKey);

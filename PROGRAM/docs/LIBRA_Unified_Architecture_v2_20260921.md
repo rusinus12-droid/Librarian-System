@@ -810,44 +810,10 @@ Narrative Direction을 preflight에서 한 번만 읽어 delivery snapshot에 �
 전달 경계: send capability/readback basis preflight → snapshot 재검증 →
 물리 `sendChat()` 호출 직후에만 pending receipt 생성.
 
-### 9.5 Evidence Link Index (증거 연결 색인) — Stage 1
+### 9.5 구 연결 색인 제거 (2026-11-11)
 
-정본 사실·scope entity registry·State Head를 **읽어서** 투영한 읽기 전용 색인이다.
-소비자는 아직 없다(Stage 1). 목적은 회상 점수에 개입하는 것이 아니라, 어떤 사실이 어느
-기억·근거에 결속되어 있는지를 재계산 없이 조회할 수 있게 하는 것이다.
-
-| 항목 | 값 |
-|---|---|
-| schema | `libra.evidence_link_index.v1` |
-| buildVersion | `readonly_projection_v1` |
-| 저장 키 | `libra:v1:scope:<scopeKey>:evidence-link-index:v1` |
-| 진입점 | `LibraMemoryCore.getEvidenceLinkIndex()` / `__LIBRA__.getEvidenceLinkIndex()` |
-| opt-in | `//@arg evidence_link_index_enabled` (`true`일 때만 build·저장·timer) |
-| 진단 | `Runtime.lastEvidenceLinkIndexDiagnostics` |
-| 한도 | `EVIDENCE_LINK_INDEX_MEMORY_LIMIT` 512 기억, `EVIDENCE_LINK_INDEX_FACT_LIMIT` 20,000 fact |
-| 갱신 | 커밋 후 `scheduleEvidenceLinkIndexUpgrade` (지연 30초, recall catalog와 동일 패턴) |
-
-**현재와 역사를 분리한다.** 역사는 정본 사실에서만 만든다. 현재 view는 Head의 `fieldEvidence`를
-**인용**할 뿐 재계산하지 않는다. Head는 정본으로 승격되지 않는다(§14.6·§14.7).
-
-**식별자 층.** artifact `tempId`(정본 내부) / registry `ce_*`(해석 결과) / 소비자 `actor_1`
-(프롬프트 노출) 중 색인은 `ce_*`와 `factKey`만 담는다. 해석은 `buildUnifiedStateCandidate`와
-같은 규칙을 **읽기 전용으로** 따른다: override → `splitRetiredNames` → type+nameKey 일치 →
-`matches.length>1` 또는 `mergedIds` 없는 id 재사용은 거부 → 없으면
-`ce_${type}_${stableHash(...)}` 파생. 영속 registry는 절대 변경하지 않는다.
-현재 확정 사실이 참조하지 않는 entity에는 ID를 발급하지 않고 `not_currently_referenced`로 남긴다.
-
-**금지 추론.** clique, 전이적 친구 관계, `dependsOn`을 인과로 해석, 동명 병합, 정본/lore 본문이나
-vector payload 복사, 무제한 dependency 폐포, 역사 fact를 현재 관계로 승격 — 모두 이 색인의
-비대상이다. 값이 같은 이전 fact는 provenance를 바꾸지 않는다(§14.14). `dependsOn`은 값이
-아니라 필드로만 남는다.
-
-**실패 정책.** 파생·재생성 가능하므로 fail-open이다. 저장 실패는 build 결과를 그대로 반환하고
-`status.persisted=false`·`partial=true`·reason `persist_failed`로 알린다. 읽을 수 없는 기억은
-`memory_unavailable`로 표시하고 나머지를 계속 색인하며 `totalMemoryCount`에는 계속 센다.
-부분 색인은 조용히 잘리지 않고 `memory_limit` reason과 `partial`로 드러난다.
-
----
+소비처가 없는 근거·로어 연결 색인의 생성, 저장, 캐시 및 관리 API를 제거했다.
+정본·필드별 근거·승인·세계선 검증은 유지한다. 기존 저장 데이터는 자동 삭제하지 않는다.
 
 ## 10. GUI
 
@@ -952,7 +918,6 @@ forceCurrentScene, storyArc*×7, auto*×4, runDetailRetention, runReceiptRetenti
 
 `runDetailRetention`, `runReceiptRetention`으로 보존량을 제한한다.
 스테이지 추적은 `Runtime.stageTrace`에 기록된다.
-evidence link index의 마지막 build 진단은 `Runtime.lastEvidenceLinkIndexDiagnostics`에 남는다(§9.5).
 이 값은 **읽기 전용 진단**이며 회상·프롬프트·상태에 쓰이지 않는다.
 
 ---

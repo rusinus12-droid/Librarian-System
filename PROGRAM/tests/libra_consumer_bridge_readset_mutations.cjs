@@ -16,7 +16,7 @@ const { spawnSync } = require('node:child_process');
 const PROGRAM = path.resolve(__dirname, '..');
 const PLUGIN = path.join(PROGRAM, 'plugins', 'LIBRA.js');
 const SUITE = path.join(PROGRAM, 'tests', 'libra_consumer_bridge_readset_test.cjs');
-const FIXTURE = path.join(PROGRAM, 'tests', 'fixtures', 'libra_lore_link_index_fixture.cjs');
+const FIXTURE = path.join(PROGRAM, 'tests', 'fixtures', 'libra_host_lore_fixture.cjs');
 const MAX_BUFFER = 64 * 1024 * 1024;
 
 const MUTANTS = [

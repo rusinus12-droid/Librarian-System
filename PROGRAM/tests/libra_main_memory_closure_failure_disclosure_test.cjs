@@ -29,7 +29,7 @@ const run = async () => {
     //
     // The reference that identifies a fact across artifacts is the PAIR (complete cursor,
     // tempFactId) -- `01` section 7.3 via the shipped `statePipelineCursorForRef` and
-    // `evidenceLinkIndexFactKey`. A stored canonical record carries `tempId` + `name` for its
+    // the scope-bound canonical fact key. A stored canonical record carries `tempId` + `name` for its
     // entities (the validator's pick list is exactly
     // `['tempId','name','type','kind','evidenceSpans']`), so the cursor -- not a name and not
     // a bare temp ref -- is what keeps two batches apart. This block only pins the CONTRACT

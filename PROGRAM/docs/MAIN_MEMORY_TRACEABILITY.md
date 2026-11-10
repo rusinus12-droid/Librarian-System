@@ -310,7 +310,7 @@
 | `HME_GRAPH_MODE_PRESETS` (off/light/balanced/deep) | `associative_recall_enabled` opt-in gate | ✅ 더 엄격 |
 | `HME_GRAPH_ONLY_MAX_SCORE 0.58` | `ASSOCIATIVE_RECALL_ADMIT_LIMIT 2` + `MIN_RELEVANCE 0.18` | ✅ bounded |
 | `HME_GRAPH_EDGE_LIMIT_PER_NODE` | `ASSOCIATIVE_RECALL_ENTITY_FANOUT_LIMIT 12` | ✅ |
-| `HME_GRAPH_STALE_EDGE_POLICY` (prune/rebuild) | `loadOrRefreshEvidenceLinkIndex({force,persist})` | ✅ |
+| 구 연결 색인 | 2026-11-11 실행 경로 제거; 기존 저장 데이터 보존 | 폐기 |
 | `bonusCap` (0.10~0.18 가산) | **없음 — 의도적** | ✅ **admitted row 도 같은 gate 통과** |
 
 LIBRA 의 Stage 4 주석이 원본보다 엄격함을 명시한다:

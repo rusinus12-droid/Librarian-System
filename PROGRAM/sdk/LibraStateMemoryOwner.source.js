@@ -1,12 +1,10 @@
     function residentMemoryBudgetSnapshot() {
       const pairBytes = Math.max(0, Number(state.pairRevisionCacheStats?.retainedChars || 0) * 2);
       const verifiedBytes = Math.max(0, Number(state.verifiedReadCacheStats?.bytes || 0));
-      const linkBytes = Math.max(0, Number(state.evidenceLinkIndexCacheBytes || 0))
-        + Math.max(0, Number(state.loreLinkIndexCacheBytes || 0));
       return {
         maxBytes: LIBRA_RESIDENT_MEMORY_MAX_BYTES,
-        totalBytes: pairBytes + verifiedBytes + linkBytes,
-        byCache: { pairRevision: pairBytes, verifiedRead: verifiedBytes, linkIndexes: linkBytes }
+        totalBytes: pairBytes + verifiedBytes,
+        byCache: { pairRevision: pairBytes, verifiedRead: verifiedBytes }
       };
     }
     function evictOldestVerifiedRead() {
@@ -38,31 +36,13 @@
       state.residentBudgetStats.lastEvictionAt = Date.now();
       return true;
     }
-    function evictOldestLinkIndex() {
-      let cache = null, key = null, order = Infinity;
-      for (const candidate of [state.evidenceLinkIndexCache, state.loreLinkIndexCache]) {
-        for (const [candidateKey, index] of candidate) {
-          const candidateOrder = Number(index?.residentOrder || 0);
-          if (candidateOrder < order) { cache = candidate; key = candidateKey; order = candidateOrder; }
-        }
-      }
-      if (!cache) return false;
-      deleteLinkIndexCache(cache, key);
-      state.residentBudgetStats.evictions += 1;
-      state.residentBudgetStats.lastEvictionOwner = cache === state.evidenceLinkIndexCache ? 'evidenceLink' : 'loreLink';
-      state.residentBudgetStats.lastEvictionAt = Date.now();
-      return true;
-    }
     function ensureResidentBudget(requiredBytes, protectedOwner = '') {
       const required = Math.max(0, Number(requiredBytes) || 0);
       while (residentMemoryBudgetSnapshot().totalBytes + required > LIBRA_RESIDENT_MEMORY_MAX_BYTES) {
         if (protectedOwner !== 'verifiedRead' && evictOldestVerifiedRead()) continue;
         if (protectedOwner !== 'pairRevision' && evictOldestPairRevision()) continue;
-        if (protectedOwner !== 'evidenceLink' && protectedOwner !== 'loreLink' && evictOldestLinkIndex()) continue;
         if (protectedOwner === 'verifiedRead' && evictOldestVerifiedRead()) continue;
         if (protectedOwner === 'pairRevision' && evictOldestPairRevision()) continue;
-        if (protectedOwner === 'evidenceLink' && evictOldestLinkIndex()) continue;
-        if (protectedOwner === 'loreLink' && evictOldestLinkIndex()) continue;
         throw new Error('LIBRA_RESIDENT_MEMORY_LIMIT');
       }
       return true;
@@ -89,6 +69,89 @@
         if (!cacheKey.startsWith(string(scopeKey) + '\u0000')) continue;
         if (turn == null) stateMicroIndexes.delete(cacheKey); else cache.turns.delete(Number(turn));
       }
+    };
+    const STATE_SEMANTIC_VECTOR_LIMIT = 128;
+    const STATE_SEMANTIC_VECTOR_BYTES = 8 * 1024 * 1024;
+    const STATE_SEMANTIC_DEADLINE_MS = 2500;
+    const readStateSemanticCandidates = async (context, source, queryText) => {
+      const diagnostics = { status: 'off', queryCached: false, queryRequests: 0, scanned: 0, matched: 0,
+        missing: 0, incompatible: 0, failedReads: 0, limited: false, profileId: '' };
+      const empty = () => ({ scores: new Map(), matches: new Map(), diagnostics });
+      if (!source.semanticAllowed) return empty();
+      const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
+      if (!config.enabled) { diagnostics.status = 'disabled'; return empty(); }
+      if (!(await LibraProviderBridge.validateEmbedding(config)).ok) { diagnostics.status = 'unconfigured'; return empty(); }
+      // The manifest already identifies ready document vectors. No canonical-body scan or
+      // namespace enumeration, and no embedding/rebuild job, is required for this lane.
+      const ready = source.refs.filter(ref => ref.embeddingStatus === 'ready' && /:memory:/.test(ref.key));
+      if (!ready.length) { diagnostics.status = 'no_vectors'; return empty(); }
+      const refs = ready.slice().sort((a,b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0)).slice(0, STATE_SEMANTIC_VECTOR_LIMIT);
+      diagnostics.limited = refs.length < ready.length;
+      diagnostics.total = ready.length;
+      const controller = new AbortController();
+      let readFrame = null, timer;
+      const operation = async () => {
+        const query = await memoryRecallQueryVector(context.scope, queryText, { config }, STATE_SEMANTIC_DEADLINE_MS);
+        if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
+        if (!query) throw Error('LIBRA_SEMANTIC_QUERY_INVALID');
+        diagnostics.profileId = query.profileId; diagnostics.queryCached = query.cached; diagnostics.queryRequests = query.requests;
+        const scanScope = { ...context.scope };
+        readFrame = await openNativeReadFrame(scanScope);
+        if (controller.signal.aborted) { readFrame.close(); throw Error('LIBRA_SEMANTIC_TIMEOUT'); }
+        const matches = new Map(), scores = new Map(); let bytes = 0;
+        for (let offset = 0; offset < refs.length; offset += 16) {
+          if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
+          const part = refs.slice(offset, offset + 16).map(ref => ({ ref,
+            key: ref.key.slice(0, ref.key.lastIndexOf(':memory:')) + `:vector:${ref.memoryId}:r${ref.revision}:${query.profileId}` }));
+          await readFrame.prefetch(part.map(row => row.key));
+          if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
+          const loaded = await Promise.all(part.map(async row => {
+            try {
+              const stored = await storage.getVerifiedJson(row.key, scanScope, null);
+              return { ...row, stored, record: await hydrateProjectionFromLocalStorage(stored) };
+            }
+            catch (_) { diagnostics.failedReads++; return { ...row, record: null }; }
+          }));
+          if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
+          for (const { ref, key: vectorKey, record, stored } of loaded) {
+            diagnostics.scanned++;
+            if (!record) { diagnostics.missing++; continue; }
+            bytes += JSON.stringify(record).length * 2;
+            if (bytes > STATE_SEMANTIC_VECTOR_BYTES) { diagnostics.limited = true; break; }
+            if (record.memoryId !== ref.memoryId || Number(record.revision) !== Number(ref.revision)
+              || !vectorKey.startsWith(`${PREFIX}:scope:${record.scopeKey}:vector:`)
+              || record.profileId !== query.profileId || !vectorEmbeddingSpaceCompatibility(record, config).compatible) {
+              diagnostics.incompatible++; continue;
+            }
+            const entries = [];
+            for (const [section, entry] of Object.entries(normalizeProjectionEntries(record))) {
+              const vector = entry?.vector;
+              if (!Array.isArray(vector) || vector.length !== query.unit.length || vector.some(x => typeof x !== 'number' || !Number.isFinite(x))) continue;
+              const cosine = lensCosine(query.unit, vector);
+              // A positive dense signal is a ranking hint, never a new fact or a source proof.
+              if (cosine !== null && cosine >= 0.42 && cosine <= 1.00001 && entry.textHash) entries.push({ section, textHash: entry.textHash,
+                score: Math.min(1, (cosine - 0.42) / 0.18) });
+            }
+            if (!entries.length) continue;
+            scores.set(ref.key, Math.max(...entries.map(row => row.score)));
+            matches.set(ref.key, { key: vectorKey, record: stored, entries });
+          }
+          if (bytes > STATE_SEMANTIC_VECTOR_BYTES) break;
+        }
+        diagnostics.status = diagnostics.failedReads ? 'partial' : 'ready'; diagnostics.matched = matches.size;
+        return { matches, scores, diagnostics, configDigest: digest(config) };
+      };
+      try {
+        // The hard deadline also handles a host/provider that ignores AbortSignal. Late
+        // completion cannot publish candidates or continue reading another vector batch.
+        return await Promise.race([operation(), new Promise((_, reject) => {
+          timer = setTimeout(() => { controller.abort(); reject(Error('LIBRA_SEMANTIC_TIMEOUT')); }, STATE_SEMANTIC_DEADLINE_MS);
+        })]);
+      } catch (error) {
+        diagnostics.status = controller.signal.aborted ? 'timeout' : 'failed';
+        diagnostics.reason = string(error?.code || error?.message || 'embedding_unavailable');
+        return empty();
+      } finally { clearTimeout(timer); controller.abort(); readFrame?.close(); }
     };
     const getStateMemoryRuntime = () => {
       if (stateMemoryRuntime) return stateMemoryRuntime;
@@ -119,7 +182,8 @@
           pairs.map(pair => [pair.turn, completedTurnRevisionId(pair), sourceDigest([pair])]),
           refs.map(ref => [canonicalReaderRefIdentity(ref), ref.summary, ref.searchText, ref.searchTerms, ref.recallTerms, ref.title]), rawHead, head, stateAuthority, stateProofs, review.saved]));
         return { manifest: active.manifest, head, refs, turns, pairs: active.pairs, worldlineId: resolved.worldlineId, identity, owner: 'libra:' + route[0],
-          rawHead, stateAuthority, stateProofs, stateKey: key.continuityState(scope), settings: await loadMemorySettings(), review, cutoff };
+          rawHead, stateAuthority, stateProofs, stateKey: key.continuityState(scope), settings: await loadMemorySettings(), review, cutoff,
+          semanticAllowed: options.semantic !== false };
       };
       const capture = createLibraStateMemoryCapture({
         async context() {
@@ -135,6 +199,11 @@
           finally { closeStateReadFrame(context); }
         },
         abandon: closeStateReadFrame,
+        async semantic(context, source, query) {
+          const result = await readStateSemanticCandidates(context, source, query);
+          source.semanticAttempt = result.diagnostics.status;
+          return result;
+        },
         async microIndex(context, source) {
           const scope = context.scope, worldline = hostWorldlineIdForScope(scope);
           const cacheKey = string(scope.scopeKey) + '\u0000' + worldline, generation = Number(state.microRestoreGeneration || 0);
@@ -179,7 +248,7 @@
         fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
-        async canonical(context, ref, source) {
+        async canonical(context, ref, source, semantic) {
           const memory = await loadWorldManagerHistoryCanonicalMemory(ref);
           if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory);
           const review = source.review;
@@ -188,7 +257,29 @@
             domain: fact.domain, text: string(fact.text || fact.summary || fact.value || JSON.stringify(fact.values || {})),
             evidenceKeys: ['canonical:' + memory.memoryId + ':' + memory.revision + ':' + fact.assertionId]
           }]);
-          return { rows, proofs: [getConsumedCanonicalProof(memory)].filter(Boolean) };
+          const match = semantic?.matches?.get(ref.key), proofs = [getConsumedCanonicalProof(memory)].filter(Boolean);
+          let assertCurrent;
+          if (match && memory.embedding?.vectorKey === match.key && memory.embedding?.profileId === match.record.profileId) {
+            // A stale/unusable projection cannot make an otherwise verified source unreadable.
+            let projection;
+            try { projection = buildMemoryRetrievalProjection(memory); } catch (_) {}
+            if (projection) {
+              const entries = match.entries.filter(entry => projection.textHashes[entry.section] === entry.textHash);
+              for (const row of rows) {
+                row.semanticScore = Math.max(0, ...entries.filter(entry => entry.section === 'global'
+                  || string(projection.sections[entry.section]).includes(row.text)).map(entry => entry.score));
+              }
+              if (rows.some(row => row.semanticScore > 0)) {
+                proofs.push(stateDecisionConsumptionProof(match.key, match.record));
+                const configDigest = semantic.configDigest;
+                assertCurrent = async () => {
+                  const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
+                  if (!config.enabled || digest(config) !== configDigest) throw Error('LIBRA_SEMANTIC_CONFIG_CHANGED');
+                };
+              }
+            }
+          }
+          return { rows, proofs, assertCurrent };
         },
         async micro(context, source, turn) {
           const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
@@ -208,7 +299,9 @@
           const request = { scope: context.scope };
           const before = await gradiaLensReadSnapshot(request);
           const delivery = before.enabled ? await recallLensMemories(context, { currentText: query }, maxCharacters,
-            { readOnly: true, refreshVectors: false, candidateBudgetChars: maxCharacters, asOfTurn: source.cutoff }) : null;
+            { readOnly: true, refreshVectors: false, semantic: source.semanticAllowed && !['failed','timeout','unconfigured'].includes(source.semanticAttempt),
+              recallMaxChars: source.settings.recallLensMaxChars,
+              candidateBudgetChars: maxCharacters, asOfTurn: source.cutoff }) : null;
           const sourceKey = 'lens_selection:' + before.digest;
           return { key: sourceKey, proofs: [], delivery,
             rows: asArray(delivery?.injectedItems).map(item => ({
@@ -251,6 +344,13 @@
       stateMemoryRuntime = createLibraStateMemoryRuntime({ engine, capture, fingerprint: stateMemoryFingerprint, authorityStore: memoryEvidenceAuthority });
       return stateMemoryRuntime;
     };
-    const executeStateMemoryQuery = (options = {}, guard = null, issuer = null) => getStateMemoryRuntime().query(options, guard, issuer);
+    const executeStateMemoryQuery = async (options = {}, guard = null, issuer = null) => {
+      const result = await getStateMemoryRuntime().query(options, guard, issuer);
+      const semantic = result.diagnostics.semantic;
+      state.lastRecallSemantic = { scopeKey: result.bundle.scopeKey, at: Date.now(), microAdmitted: 0,
+        diagnostics: { ...semantic, status: semantic.status === 'ready' ? 'available' : semantic.status,
+          admittedRepresentations: semantic.selected, reason: semantic.reason || semantic.status } };
+      return result;
+    };
     const releaseStateMemoryQuery = execution => stateMemoryRuntime?.release(execution);
     const inspectResidentMemoryBudget = () => residentMemoryBudgetSnapshot();

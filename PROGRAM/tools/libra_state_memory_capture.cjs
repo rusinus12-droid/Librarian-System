@@ -9,9 +9,9 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
     catch (error) { native.abandon?.(context); throw error; }
     const entities = engine.entityTable(snapshot.head);
     const { manifest, head, refs, turns, worldlineId, identity, owner, stateKey, settings } = snapshot;
-    const canonical = async ref => {
-      const value = await native.canonical(context, ref, snapshot); check();
-      return { key: ref.key, proofs: value.proofs, rows: value.rows.map((row, n) => ({ ...row,
+    const canonical = async (ref, semantic) => {
+      const value = await native.canonical(context, ref, snapshot, semantic); check();
+      return { key: ref.key, proofs: value.proofs, assertCurrent: value.assertCurrent, rows: value.rows.map((row, n) => ({ ...row,
         id: 'canonical:' + native.fingerprint([ref.key, ref.revision, n]), family: 'canonical', axis: engine.axisFor(row.domain),
         sourceKey: ref.key, turn: Number(ref.turnRange?.end || 0) })) };
     };
@@ -31,6 +31,7 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
     } : null;
     return { scope, manifest, head, refs, turns, worldlineId, identity, owner, stateKey, settings,
       stateAuthority: snapshot.stateAuthority, check, canonical, micro, lens,
+      semantic: typeof native.semantic === 'function' ? async query => { const value = await native.semantic(context, snapshot, query); check(); return value; } : null,
       microIndex: typeof native.microIndex === 'function' ? async () => { const value = await native.microIndex(context, snapshot); check(); return value; } : null,
       settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
       abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,

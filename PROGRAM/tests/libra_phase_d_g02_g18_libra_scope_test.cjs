@@ -128,46 +128,7 @@ expectRejectedObservation('G18-empty-recall-rejected', { memories: [] },
     } finally { await snap.cleanup(); }
   }
 
-  // ── G10: delete the physical index, then rebuild after a restart ────────────────────────
-  {
-    const snap = await serverFixture({ mode: 'plugin_only', args: { evidence_link_index_enabled: 'true' } });
-    try {
-      let f = snap.f;
-      await f.run();
-      const ref = firstRefOf(snap);
-      assert.ok(ref?.key, 'G10: fixture must create a canonical row');
-      const canonicalBytesBefore = rawCanonical(snap, ref);
-      // The projection is read-only with respect to canonical records, but its
-      // regenerable index is persisted when the opt-in is enabled.
-      const index = await f.r.api.getEvidenceLinkIndex();
-      const indexKeys = [...snap.local.keys()].filter(k => /:evidence-link-index:v1$/.test(k));
-      assert.equal(index.schema, 'libra.evidence_link_index.v1', 'G10: the opt-in projection returns its declared schema');
-      assert.equal(index.buildVersion, 'readonly_projection_v1', 'G10: source declares this as a read-only projection');
-      assert.ok(index.entities?.length > 0 && index.facts?.length > 0, 'G10: the actual canonical corpus produces projection data');
-      assert.ok(indexKeys.length > 0, 'G10: opt-in read must produce at least one persisted derived index row');
-      for (const key of indexKeys) snap.local.delete(key);
-      assert.equal([...snap.local.keys()].filter(k => /:evidence-link-index:v1$/.test(k)).length, 0,
-        'G10: the real derived index row was deleted');
-      const staleKey = indexKeys[0];
-      snap.local.set(staleKey, JSON.stringify({ ...clone(index), signature: 'stale-signature' }));
-      const staleIndex = JSON.parse(rawLocal(snap, staleKey));
-      assert.equal(staleIndex.signature, 'stale-signature', 'G10: the stale signature is physically present before restart');
-      f = await snap.restart();
-      const rebuilt = await f.r.api.getEvidenceLinkIndex();
-      assert.equal(rebuilt.schema, 'libra.evidence_link_index.v1', 'G10: restart rebuild returns the index schema');
-      assert.notEqual(rebuilt.signature, 'stale-signature', 'G10: stale persisted signature is rejected after restart');
-      assert.ok(rebuilt.facts?.length > 0, 'G10: rebuilt projection recovers facts from canonical data');
-      const persistedRebuild = JSON.parse(rawLocal(snap, staleKey));
-      assert.equal(persistedRebuild.signature, rebuilt.signature, 'G10: rebuilt signature is durably read back');
-      assert.equal(rawCanonical(snap, ref), canonicalBytesBefore, 'G10: index invalidation leaves canonical source bytes unchanged');
-      record('G10', 'Delete a persisted evidence index, inject a stale signature and rebuild after restart',
-        `deleted ${indexKeys.length} real index row(s), rejected stale signature, rebuilt ${rebuilt.facts.length} facts and read the replacement signature back`,
-        'VERIFIED', { optInOpen: true, projectionBuild: index.buildVersion, entityCount: index.entities.length,
-          factCount: index.facts.length, deletedIndexRows: indexKeys.length, staleSignatureWritten: true,
-          staleSignatureRejected: rebuilt.signature !== 'stale-signature', rebuiltFactCount: rebuilt.facts.length,
-          rebuiltSignatureReadback: persistedRebuild.signature === rebuilt.signature, canonicalPreserved: true });
-    } finally { await snap.cleanup(); }
-  }
+  // G10's regenerable link indexes were retired; source preservation is covered by direct reader tests.
 
   // ── G11: source-tracing auto vs off ─────────────────────────────────────────────────────
   {

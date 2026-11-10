@@ -273,7 +273,7 @@ Phase B4 의 48-ref/240-fact 및 취소 경계는 실제 저장된 lifecycle 정
 | 캐시·invalidation | **G02**(같은 ID·길이 편집), **G03**(role/tag 변경), **G06**(축출·재시작) | — |
 | 리비전·세계선 | **G04**(삭제·삽입·롤백·리롤), **G05**(분기·전환) | `libra_dual_worldline_3mode_parity_test` |
 | 저장·복구 | **G07**(모드 변경), **G08**(readback 실패), **G09**(취소 후 늦은 응답) | — |
-| 인덱스 | **G10**(인덱스 삭제·낡은 signature) | `libra_evidence_link_index_*` |
+| 구 연결 색인 | 2026-11-11 제거; 기존 저장 데이터 보존 | `libra_graph_retirement_contract_test.cjs` |
 | 정책 | **G11**(auto/off), **G12**(plugin_only 서버 차단), **G13**(mirror/server_only), **G15**(동료 미설치) | `libra_source_edit_consent_3mode_parity_test` |
 | Compute·GUI | **G14**(Compute 실패·버전), **G16**(GUI 취소·재열기) | — |
 | 불변성 | **G17**(payload 바이트·식별값 보존) | `flashback_*` |
