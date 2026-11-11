@@ -1,10 +1,11 @@
 'use strict';
-// Pure adapter tests: no host, storage, model, listener, or network is available.
+// Owner adapter checks and selected mode changes through an in-process server.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const zlib = require('node:zlib');
+const {fixture,installedSdkVariants} = require('./storage_global_allchat_job_test.cjs');
 const text = value => String(value ?? '');
 const hash32 = value => { let h = 0x811c9dc5; for (const c of text(value).split('')) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193); return h >>> 0; };
 const keyHash = value => hash32(value).toString(36);
@@ -18,10 +19,15 @@ for (const [owner, [file, title]] of Object.entries(names)) {
   const end = source.indexOf(`// END ${title.toUpperCase()} GLOBAL DISCOVERY ADAPTER`, start);
   assert.ok(start >= 0 && end > start, `${owner}: read-only global adapter exists`);
   assert.match(source, new RegExp(`discoverGlobalScopes:\\s*memorySuite${title}DiscoverGlobalScopes`));
-  const sandbox = {TextEncoder,TextDecoder,Response,DecompressionStream,atob,Uint8Array,keyHash,stableHash:keyHash,stableHash64,stableDraftHash};
+  const sandbox = {TextEncoder,TextDecoder,Response,DecompressionStream,atob,Uint8Array,crypto:globalThis.crypto,keyHash,stableHash:keyHash,stableHash64,stableDraftHash,
+    STORAGE_RECONCILIATION_JOURNAL_KEY:'hayaku.v2.storage_reconciliation_journal'};
   vm.createContext(sandbox);
   adapters[owner] = vm.runInContext(`${source.slice(start,end)}\nmemorySuite${title}DiscoverGlobalScopes`, sandbox);
 }
+const libraSource = fs.readFileSync(path.join(__dirname,'..','plugins','LIBRA.js'),'utf8');
+const libraResolver = vm.runInNewContext(libraSource.slice(libraSource.indexOf('function memorySuiteLibraMergeScopeRegistry('),
+  libraSource.indexOf('const memorySuiteLibraRestoreObject'))+'\nmemorySuiteLibraResolveKeyScope');
+const variantFor = owner => installedSdkVariants.find(([namespace])=>namespace===owner);
 const row = (key,value,extra={}) => ({location:'plugin',space:'plugin',key,logicalKey:key,deleted:false,value:typeof value === 'string'?value:JSON.stringify(value),revision:1,digest:'fixture',...extra});
 const host = n => ({characterId:`character_${n}`,chatId:`chat_${n}`,characterName:`Character ${n}`,chatTitle:`Chat ${n}`,characterIndex:n,chatIndex:0});
 const identity = (owner,n) => owner==='libra'?`legacy_index_${n}`:owner==='flashback'?`char:${keyHash(host(n).characterId)}|chat:${keyHash(host(n).chatId)}`:`chat_${stableHash64(`${host(n).characterId}\n${host(n).chatId}`)}`;
@@ -67,6 +73,66 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  // Native registries must be parsed raw and uncapped, never through UI readers.
  const libraRegistry={};for(let i=0;i<337;i++)libraRegistry[`${host(i).characterId}::${host(i).chatId}`]={scopeKey:identity('libra',i),...host(i)};
  let r=await inspect('libra',{records:[row('libra:v1:scope-registry:v1',libraRegistry)]});ok(r);assert.equal(r.scopes.length,337);
+ {
+  const key='libra:v1:scope-registry:v1';
+  const initial=libraRegistry['character_0::chat_0'], device=libraRegistry['character_1::chat_1'], remote=libraRegistry['character_2::chat_2'];
+  const first={'character_0::chat_0':initial}, deviceOnly={'character_1::chat_1':device}, serverOnly={'character_2::chat_2':remote};
+  const catalog={characters:[0,1,2].map(n=>({chaId:host(n).characterId,chats:[{id:host(n).chatId}]}))};
+  const values=new Map([[key,JSON.stringify({...first,...deviceOnly})]]);
+  const f=await fixture(variantFor('libra'),{values,catalog,current:identity('libra',0),adapter:adapters.libra,
+    bridgeOptions:{pluginPrefixes:['libra:v1:'],resolveKeyScope:libraResolver}});
+  const repo=f.app.repositories.libra;
+  const setServer=(value,id)=>repo.mutate({kind:'set',space:'plugin',key,value:JSON.stringify(value),operationId:id});
+  try {
+   setServer({...first,...serverOnly},'registry_legacy_server');
+   await f.bridge.setGlobalMode('server_only');
+   const expected={...first,...deviceOnly,...serverOnly};
+   assert.deepEqual(JSON.parse(repo.get('plugin',key).value),expected);
+   const journalKey='__memory_suite_internal_sync_job_v1__:libra';
+   const journal=JSON.parse(values.get(journalKey));delete journal.fastReplicas;
+   values.set(journalKey,JSON.stringify(journal));await f.bridge.dispose();
+   const cold=await fixture(variantFor('libra'),{app:f.app,values,catalog,current:identity('libra',0),adapter:adapters.libra,
+     bridgeOptions:{pluginPrefixes:['libra:v1:'],resolveKeyScope:libraResolver}});
+   try {
+    assert.equal((await cold.bridge.setGlobalMode('plugin_only')).mode,'plugin_only');
+    assert.deepEqual(JSON.parse(values.get(key)),expected);
+   } finally { await cold.close(); }
+   const route=await libraResolver({key});
+   assert.equal(route.mergeModeTransferValue(JSON.stringify(first),JSON.stringify({'character_0::chat_0':{...initial,scopeKey:'different'}})),null);
+  } finally { await f.close(); }
+ }
+ {
+  const key='libra:v1:scope-registry:v1', identityKey='character_0::chat_0';
+  const device={scopeKey:identity('libra',0),...host(0)}, server={...device,scopeKey:'server_alternate_scope'};
+  const deviceManifest=root('libra',0);
+  const remoteManifest='libra:v1:scope:'+server.scopeKey+':manifest';
+  const remoteManifestValue=JSON.stringify({...JSON.parse(deviceManifest.value),scopeKey:server.scopeKey});
+  const localOnly={'character_1::chat_1':libraRegistry['character_1::chat_1']};
+  const serverOnly={'character_2::chat_2':libraRegistry['character_2::chat_2']};
+  const catalog={characters:[0,1].map(n=>({chaId:host(n).characterId,chats:[{id:host(n).chatId}]}))};
+  const values=new Map([[key,JSON.stringify({[identityKey]:device,...localOnly})],[deviceManifest.key,deviceManifest.value]]);
+  const f=await fixture(variantFor('libra'),{values,catalog,current:device.scopeKey,adapter:adapters.libra,
+    bridgeOptions:{pluginPrefixes:['libra:v1:'],resolveKeyScope:libraResolver}});
+  const repo=f.app.repositories.libra;
+  try {
+   await f.bridge.setGlobalMode('server_only');
+   repo.database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',deviceManifest.key);
+   repo.mutate({kind:'set',space:'plugin',key:remoteManifest,value:remoteManifestValue,operationId:'alternate_libra_manifest'});
+   repo.mutate({kind:'set',space:'plugin',key,value:JSON.stringify({[identityKey]:server,...serverOnly}),operationId:'alternate_libra_registry'});
+   await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),e=>{
+    assert.equal(e.details?.review?.key,key,JSON.stringify(e.details));
+    return e.details.registryConflicts?.some(binding=>binding.plugin===device.scopeKey&&binding.server===server.scopeKey);
+   });
+   const failed=f.bridge.getSyncJob();
+   assert.equal((await f.bridge.retryGlobalModeFailure(failed.jobId,'server')).mode,'plugin_only');
+   assert.deepEqual(JSON.parse(values.get(key)),{[identityKey]:server,...localOnly,...serverOnly});
+   assert.equal(values.get(deviceManifest.key),deviceManifest.value);
+   assert.equal(values.get(remoteManifest),remoteManifestValue);
+   assert.equal(JSON.parse(values.get(f.registryKey)).entries[device.scopeKey].registryAlternateFor,server.scopeKey);
+   const next=await f.bridge.previewGlobalMode('server_only');
+   assert.equal(next.completeKnownScopes,true,JSON.stringify(next.blockers));
+  } finally { await f.close(); }
+ }
  r=await inspect('flashback',{records:[row('vector_rag_memory:scope_registry:v2',{version:2,scopes:Array.from({length:337},(_,i)=>({scopeKey:identity('flashback',i),...host(i)}))})]});ok(r);assert.equal(r.scopes.length,337);
  r=await inspect('flashback',{records:[row('vector_rag_memory:scope_registry:v2',{version:2,scopes:[{}]})]});blocked(r,/registry.*invalid|identity.*invalid/);
  // Existing LIBRA legacy index identities survive host enumeration unchanged.
@@ -231,7 +297,35 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
   const hayakuArchive=scope=>row(hayakuArchiveKey,{...layer,schema:'hayaku.shared_archive.v1',records:[{inheritedViaScopeKey:scope,archiveCanonicalId:'retained-record'}]});
   const hayakuMeta=row(hayakuMetaKey,{...layer,schema:'hayaku.shared_archive_meta.v1',storageKey:hayakuArchiveKey,metaKey:hayakuMetaKey,deltaMemberIds:['retained-record']});
   r=await inspect('hayaku',{records:[root('hayaku',1),hayakuArchive(hk),hayakuMeta]});ok(r);
-  assert.ok(r.records.slice(1).every(entry=>entry.dependencyScopeIds.includes(hk)));
+  assert.ok(r.records.slice(1).every(entry=>entry.dependencyScopeIds.includes(hk)&&entry.retainLocalArchive===true));
+  const originals=[root('hayaku',1),hayakuArchive(hk),hayakuMeta];
+  const f=await fixture(variantFor('hayaku'),{values:new Map(originals.map(entry=>[entry.key,entry.value])),
+    catalog:{characters:[{chaId:host(1).characterId,chats:[{id:host(1).chatId}]}]},current:hk,adapter:adapters.hayaku});
+  try {
+   await f.bridge.setGlobalMode('server_only');
+   const repo=f.app.repositories.hayaku;
+   const remove=repo.database.prepare('DELETE FROM kv WHERE space=? AND key=?');
+   remove.run('plugin',hayakuArchiveKey);remove.run('plugin',hayakuMetaKey);
+   const active=root('hayaku',1,{archiveRef:{archiveId:hayakuArchiveId,storageKey:hayakuArchiveKey,metaKey:hayakuMetaKey}});
+   repo.mutate({kind:'set',space:'plugin',key:active.key,value:active.value,operationId:'active_archive_reference'});
+   await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE'
+     &&error.details.blockers.some(row=>row.code==='hayaku_global_dependency_missing'));
+   assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
+   repo.mutate({kind:'set',space:'plugin',key:active.key,value:originals[0].value,operationId:'drop_archive_reference'});
+   assert.equal((await f.bridge.setGlobalMode('plugin_only')).mode,'plugin_only');
+   for(const entry of originals.slice(1))assert.equal(f.values.get(entry.key),entry.value);
+   assert.equal(repo.get('plugin',hayakuArchiveKey).exists,false);
+   await f.bridge.setGlobalMode('server_only');
+   repo.mutate({kind:'set',space:'plugin',key:active.key,value:active.value,operationId:'referenced_archive_repair'});
+   remove.run('plugin',hayakuArchiveKey);remove.run('plugin',hayakuMetaKey);
+   await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),e=>e.details?.review?.kind==='restore');
+   const firstRepair=f.bridge.getSyncJob();
+   await assert.rejects(()=>f.bridge.retryGlobalModeFailure(firstRepair.jobId,'restore'),
+     e=>e.details?.review?.kind==='restore'&&e.details.review.key!==firstRepair.errorDetails.review.key);
+   const secondRepair=f.bridge.getSyncJob();
+   assert.equal((await f.bridge.retryGlobalModeFailure(secondRepair.jobId,'restore')).mode,'plugin_only');
+   for(const entry of originals.slice(1))assert.equal(repo.get('plugin',entry.key).value,entry.value);
+  } finally { await f.close(); }
   r=await inspect('hayaku',{records:[root('hayaku',1),root('hayaku',2),hayakuArchive(identity('hayaku',2)),hayakuMeta]});blocked(r,/shared_ownership_unresolved/);
  }
 
@@ -532,10 +626,252 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  const fbDeclaredSidecarRoot=root('flashback',10,{commitId:'1declared',count:1,shardCount:1,vectorSidecarCount:1});
  r=await inspect('flashback',{records:[fbDeclaredSidecarRoot]});
  blocked(r,/vector.*dependency.*count|count.*invalid/);
+ for (const kind of ['unreferenced','matching_binding','reordered_object','reordered_server_update','different_binding','wrong_reference']) {
+  const namespace='flashback', scopeKey=identity(namespace,1), commitId='vector_test', shardIndex=0;
+  const scopePrefix='vector_rag_memory:scope:'+keyHash(scopeKey)+':';
+  const vectorKey='vector_rag_memory:local-vector-shard:v1:'+keyHash(scopeKey)+':'+commitId+':0000';
+  const shardKey=scopePrefix+'records:commit:'+commitId+':shard:0000';
+  const vector=(data,recordId='record-1')=>{
+   const items=[{recordId,offset:0,length:1}];
+   const content={scopeKey,commitId,shardIndex,items,data};
+   return {schema:'flashback_memory.local_vector_shard.v1',version:1,...content,itemCount:1,byteLength:4,floatCount:1,
+     digest:keyHash(JSON.stringify(content,null,2))};
+  };
+  const initial=vector('AACAPw=='), remote=vector('AAAAQA==',kind==='different_binding'?'different-record':'record-1');
+  const orderedObject=kind==='reordered_object'||kind==='reordered_server_update';
+  const sortedObject=value=>JSON.parse(JSON.stringify(value,(_key,item)=>item && typeof item==='object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])) : item));
+  const shard=payload=>row(shardKey,{version:2,shard:0,scopeKey,commitId,records:[{id:'record-1',scopeKey,vector:[],
+    vectorRef:{schema:'flashback_memory.local_vector_ref.v1',storageKey:vectorKey,storage:'local',recordId:'record-1',offset:0,length:1,digest:payload.digest}}]});
+  const roots=kind==='unreferenced' ? [root(namespace,1)]
+    : [root(namespace,1,{commitId,shardCount:1,count:1,vectorSidecarCount:1}),shard(initial)];
+  const values=new Map(roots.map(entry=>[entry.key,entry.value]));
+  const device=new Map([[vectorKey,orderedObject?initial:JSON.stringify(initial)]]);
+  const store={getItem:async key=>device.get(key)??null,setItem:async(key,value)=>{device.set(key,value);return true;},
+    removeItem:async key=>{device.delete(key);return true;},keys:async()=>[...device.keys()]};
+  const f=await fixture(variantFor(namespace),{values,catalog:{characters:[{chaId:host(1).characterId,chats:[{id:host(1).chatId}]}]},
+    current:scopeKey,adapter:adapters.flashback,bridgeOptions:{pluginPrefixes:['vector_rag_memory:'],localPrefixes:['vector_rag_memory:']}});
+  try {
+   f.bridge.createLocalStorageProxy(store);
+   await f.bridge.setGlobalMode('server_only');
+   const repo=f.app.repositories.flashback;
+   const replace=(space,key,value)=>{
+    const json=JSON.stringify(value), digest=require('node:crypto').createHash('sha256').update(json).digest('hex');
+    assert.equal(repo.database.prepare('UPDATE kv SET value_json=?, digest=?, revision=revision+1 WHERE space=? AND key=?')
+      .run(json,digest,space,key).changes,1);
+   };
+   const remoteValue=orderedObject?sortedObject(kind==='reordered_object'?initial:remote):JSON.stringify(remote);
+   replace('local',vectorKey,remoteValue);
+   if (['matching_binding','different_binding','reordered_server_update'].includes(kind)) replace('plugin',shardKey,shard(remote).value);
+   const retained=orderedObject?initial:JSON.stringify({...initial,createdAt:'device-side rewrite'});device.set(vectorKey,retained);
+   if (kind==='unreferenced'||kind==='matching_binding'||orderedObject) {
+    assert.equal((await f.bridge.setGlobalMode('plugin_only')).mode,'plugin_only');
+    if (kind==='unreferenced'||kind==='reordered_object') assert.equal(device.get(vectorKey),retained);
+    else assert.equal(JSON.stringify(device.get(vectorKey)),JSON.stringify(remoteValue));
+   } else {
+    await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>
+      error.code==='MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT'&&error.details.key===vectorKey);
+    assert.equal(device.get(vectorKey),retained);
+    assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
+   }
+  } finally { await f.close(); }
+ }
+ for (const kind of ['unreferenced','portable','matching_binding','wrong_profile','wrong_digest']) {
+  const namespace='libra', scopeKey=identity(namespace,1), profileId='profile';
+  const projectionKey=`libra:v1:scope:${scopeKey}:vector:old:r1:${profileId}`;
+  const localKey='libra:v1:local-vector:'+stableDraftHash(projectionKey);
+  const vector=(number,data,profile=profileId)=>{
+   const json=JSON.stringify({semantic:[number]});
+   return {schema:'libra.local_vector_payload.v1',storageKey:projectionKey,localKey,profileId:profile,
+    vectorHash:hash32(json+'\u001f').toString(16).padStart(8,'0')+':'+(json.length+1),keys:['semantic'],lengths:[1],floatCount:1,byteLength:4,data};
+  };
+  const projection=(payload,portable=false)=>{
+   const {storageKey,localKey,vectorHash,keys,lengths,floatCount,byteLength}=payload;
+   return row(projectionKey,{schema:'libra.embedding_projection.v2',scopeKey,profileId,
+    localVectorRef:{schema:'libra.local_vector_ref.v1',storageKey,localKey,vectorHash,keys,lengths,floatCount,byteLength},
+    ...(portable?{vectorPayloadPortable:true,portableVectorPayload:payload}:{})});
+  };
+  const initial=vector(1,'AACAPw=='), remote=vector(2,'AAAAQA==');
+  const retained=JSON.stringify({...initial,createdAt:'device-side rewrite',...(kind==='wrong_profile'?{profileId:'other'}:{})});
+  const roots=[root(namespace,1)];
+  if (kind!=='unreferenced') roots.push(projection(initial,kind==='portable'));
+  const device=new Map([[localKey,JSON.stringify(initial)]]);
+  const store={getItem:async key=>device.get(key)??null,setItem:async(key,value)=>{device.set(key,value);return true;},
+    removeItem:async key=>{device.delete(key);return true;},keys:async()=>[...device.keys()]};
+  const f=await fixture(variantFor(namespace),{values:new Map(roots.map(entry=>[entry.key,entry.value])),
+    catalog:{characters:[{chaId:host(1).characterId,chats:[{id:host(1).chatId}]}]},current:scopeKey,adapter:adapters.libra,
+    bridgeOptions:{pluginPrefixes:['libra:v1:'],localPrefixes:['libra:v1:']}});
+  try {
+   f.bridge.createLocalStorageProxy(store);
+   await f.bridge.setGlobalMode('server_only');
+   const repo=f.app.repositories.libra;
+   repo.mutate({kind:'set',space:'local',key:localKey,value:JSON.stringify(remote),operationId:'update_libra_vector'});
+   if (kind!=='unreferenced') {
+    const target=projection(kind==='wrong_digest'?initial:remote,kind==='portable');
+    repo.mutate({kind:'set',space:'plugin',key:target.key,value:target.value,operationId:'update_libra_projection'});
+    f.values.delete(target.key);
+   }
+   device.set(localKey,retained);
+   if (kind==='wrong_profile'||kind==='wrong_digest') {
+    await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>
+      error.code==='MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT'&&error.details.key===localKey);
+    assert.equal(device.get(localKey),retained);
+    assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
+   } else {
+    assert.equal((await f.bridge.setGlobalMode('plugin_only')).mode,'plugin_only');
+    assert.equal(device.get(localKey),kind==='matching_binding'?JSON.stringify(remote):retained);
+    if (kind==='portable') assert.deepEqual(JSON.parse(f.values.get(projectionKey)).portableVectorPayload,remote);
+   }
+  } finally { await f.close(); }
+ }
+ {
+  const namespace='hayaku', scopeKey=identity(namespace,1), version='hayaku.source_postings.v2';
+  const binding=stableHash64('storage-binding'), sourceDigest=stableHash64('source'), prefix=`hayaku.v2.recall_index.${scopeKey}::${binding}::`;
+  const page=JSON.stringify({schema:'hayaku.recall_posting_page.v1',version,scopeKey,binding,documents:[],postings:[]});
+  const digest=stableHash64(page), pageKey=prefix+'page::'+digest, manifestKey=prefix+'manifest::'+sourceDigest;
+  const manifest={schema:'hayaku.recall_posting_manifest.v1',version,scopeKey,binding,sourceDigest,sourceCount:0,
+    pages:[{key:pageKey,digest,bytes:Buffer.byteLength(page)}]};
+  const journalKey='hayaku.v2.storage_reconciliation_journal';
+  const ledger=root(namespace,1);
+  const journal=serializedHash=>JSON.stringify({schema:'hayaku.storage_reconciliation_journal.v1',version:1,updatedAt:Date.now(),
+    entries:[{id:ledger.key+':'+serializedHash,key:ledger.key,scopeKey,serializedHash,state:'indeterminate'}]});
+  const localJournal=journal('device'), serverJournal=journal('server');
+  const delta=JSON.stringify({schema:'hayaku.capture_raw_delta.v1',scopeKey,binding,packets:[]});
+  const deltaKey=`${journalKey}.capture_delta::${scopeKey}::${binding}::${stableHash64(delta)}`;
+  const values=new Map([[ledger.key,ledger.value],[manifestKey,JSON.stringify(manifest)],[pageKey,page],[journalKey,localJournal],[deltaKey,delta]]);
+  const f=await fixture(variantFor(namespace),{values,adapter:adapters.hayaku,current:scopeKey,
+    catalog:{characters:[{chaId:host(1).characterId,chats:[{id:host(1).chatId}]}]},bridgeOptions:{pluginPrefixes:['hayaku.v2.']}});
+  try {
+   const checked=await inspect(namespace,{records:[ledger,row(manifestKey,manifest),row(pageKey,page),row(pageKey,{}, {location:'server'})]});
+   ok(checked); assert.deepEqual(Array.from(checked.records,entry=>entry.classification),['scope','control','control','scope']);
+   await f.bridge.setGlobalMode('server_only');
+   const repo=f.app.repositories.hayaku;
+   for (const key of [manifestKey,pageKey,journalKey]) assert.equal(repo.get('plugin',key).exists,false);
+   assert.equal(repo.get('plugin',deltaKey).value,delta);
+   const remoteManifest=JSON.stringify({...manifest,sourceCount:1});
+   repo.mutate({kind:'set',space:'plugin',key:manifestKey,value:remoteManifest,operationId:'old_hayaku_index'});
+   repo.mutate({kind:'set',space:'plugin',key:pageKey,value:page,operationId:'old_hayaku_index_page'});
+   repo.mutate({kind:'set',space:'plugin',key:journalKey,value:serverJournal,operationId:'old_hayaku_reconciliation_journal'});
+   f.values.delete(ledger.key);
+   f.values.delete(pageKey);
+   f.values.delete(deltaKey);
+   assert.equal((await f.bridge.setGlobalMode('plugin_only')).mode,'plugin_only');
+   assert.equal(f.values.get(ledger.key),ledger.value);
+   assert.equal(f.values.get(manifestKey),JSON.stringify(manifest));
+   assert.equal(f.values.has(pageKey),false);
+   assert.equal(repo.get('plugin',manifestKey).value,remoteManifest);
+   assert.equal(f.values.get(journalKey),localJournal);
+   assert.equal(repo.get('plugin',journalKey).value,serverJournal);
+   assert.equal(f.values.get(deltaKey),delta);
+  } finally { await f.close(); }
+ }
  // The supplied empty-envelope hashes establish the historical JSON hash codec.
  const actualScope='char:1prphff|chat:1cferkl|persona:48amyh';assert.equal(keyHash(actualScope),'1hxw63t');
  for(const [shard,digest]of [[4,'wycscg'],[5,'1umqef'],[6,'1a5z36u'],[8,'iloit0'],[10,'ii1j15'],[11,'1am0jnu']]) {
   assert.equal(keyHash(JSON.stringify({version:1,storageMode:'bucketed_v1',shard,scopeKey:actualScope,records:[]})),digest);
+ }
+ {
+  const f=await fixture(variantFor('flashback'));
+  let fresh, stop;
+  try {
+   await f.bridge.setGlobalMode('server_only');
+   const preview=await f.bridge.previewGlobalMode('plugin_only');
+   let stopped=false;
+   stop=f.bridge.subscribeSyncJob(job=>{
+    if (!stopped && job?.checkpoints?.A) { stopped=true;void f.bridge.pauseGlobalModeJob(); }
+   });
+   await f.bridge.setGlobalMode('plugin_only',{previewFingerprint:preview.inventoryFingerprint});
+   assert.equal(stopped,true);
+   const key='__memory_suite_internal_sync_job_v1__:flashback';
+   const journal=JSON.parse(f.values.get(key));
+   assert.equal(journal.status,'paused');assert.ok(journal.globalPlan);
+   f.values.set(key,JSON.stringify({...journal,error:'MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'}));
+   await f.bridge.dispose();
+   fresh=await fixture(variantFor('flashback'),{app:f.app,values:f.values});
+   const recovery=await fresh.bridge.recoverModeTransition('plugin');
+   assert.equal(recovery.result.mode,'plugin_only',JSON.stringify({engine:fresh.bridge.getSyncJob()?.engine,status:recovery.result.status,phase:recovery.result.phase,error:recovery.result.error,findings:recovery.findings}));
+   assert.notEqual(fresh.bridge.getSyncJob().jobId,journal.jobId);
+   assert.equal(fresh.bridge.getSyncJob().engine,'fast');
+   assert.equal(await fresh.proxy.getItem('flashback.A'),'A_SOURCE');
+  } finally { stop?.();await fresh?.close();await f.close(); }
+ }
+ {
+  const namespace='flashback', scopeId=identity(namespace,1),
+    prefix='vector_rag_memory:scope:'+keyHash(scopeId)+':';
+  const manifest=root(namespace,1,{commitId:'retained',count:1,shardCount:1});
+  const shard=row(prefix+'records:commit:retained:shard:0000',{version:2,shard:0,scopeKey:scopeId,records:[{id:'retained'}]});
+  const worldline=row(prefix+'turn_worldline:v1',{scopeKey:scopeId,records:[]});
+  const other=root(namespace,2);
+  const originals=[manifest,shard,worldline,other];
+  const values=new Map(originals.map(entry=>[entry.key,entry.value]));
+  const catalog={characters:[1,2].map(n=>({chaId:host(n).characterId,chats:[{id:host(n).chatId}]}))};
+  const bridgeOptions={pluginPrefixes:['vector_rag_memory:']};
+  const f=await fixture(variantFor(namespace),{values,catalog,current:scopeId,adapter:adapters.flashback,bridgeOptions});
+  let fresh,dom;
+  try {
+   await f.bridge.setGlobalMode('server_only');
+   const request=require('./helpers/inprocess-review-transport.cjs')(f.app);
+   const base='http://127.0.0.1:47631';
+   const headers={'X-Memory-Suite-Plugin':'flashback_hayaku_bridge','Content-Type':'application/json'};
+   const boot=await (await request(base+'/bootstrap',{headers})).json();headers.Authorization='Bearer '+boot.token;
+   const post=async (route,body)=>{
+    const res=await request(base+route,{method:'POST',headers,body:JSON.stringify(body)});
+    const payload=await res.json();assert.equal(res.status,200,JSON.stringify(payload));return payload.result;
+   };
+   const reset=await post('/v1/manager/reset/plan',{namespaces:[namespace]});
+   await post('/v1/manager/reset/execute',{planId:reset.id,confirmation:reset.confirmation,withoutBackup:true});
+   await f.bridge.acceptServerReset('empty');
+   const resetChoice=JSON.parse(values.get('memory_suite_reset_choice.v2.flashback'));
+   await f.bridge.dispose();
+   const repo=f.app.repositories.flashback;
+   const injectServerRow=(key,value,deleted=0)=>{
+    const valueJson=JSON.stringify(value), digest=require('node:crypto').createHash('sha256').update(valueJson).digest('hex');
+    repo.database.prepare('INSERT INTO kv(space,key,value_json,deleted,revision,digest,updated_at) VALUES(?,?,?,?,?,?,?)')
+      .run('plugin',key,valueJson,deleted,1,digest,Date.now());
+   };
+   injectServerRow(other.key,other.value);
+   fresh=await fixture(variantFor(namespace),{app:f.app,values,catalog,current:scopeId,adapter:adapters.flashback,bridgeOptions});
+   const isLocalOnly=error=>error.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE'
+     &&error.details.blockers.some(blocker=>blocker.code==='MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD');
+   await assert.rejects(()=>fresh.bridge.setGlobalMode('plugin_only'),isLocalOnly);
+   values.delete(shard.key);
+   await assert.rejects(()=>fresh.bridge.setGlobalMode('plugin_only',{keepResetLocalScopes:resetChoice}),error=>
+     error.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE'&&error.details.blockers.some(blocker=>/dependency_missing/.test(blocker.code)));
+   values.set(shard.key,shard.value);
+   injectServerRow(manifest.key,null,1);
+   await assert.rejects(()=>fresh.bridge.setGlobalMode('plugin_only',{keepResetLocalScopes:resetChoice}),isLocalOnly);
+   repo.database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',manifest.key);
+   let injected=false;
+   const publishDuringCopy=fresh.bridge.subscribeSyncJob(job=>{
+    if(!injected&&job?.status==='running'&&job.phase==='copy'){
+     injected=true;injectServerRow(manifest.key,manifest.value);
+    }
+   });
+   try {
+    await assert.rejects(()=>fresh.bridge.setGlobalMode('plugin_only',{keepResetLocalScopes:resetChoice}),
+      error=>error.code==='MEMORY_SUITE_GLOBAL_SOURCE_CHANGED'&&error.details.key===manifest.key);
+    assert.equal(injected,true);
+   } finally { publishDuringCopy(); }
+   repo.database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',manifest.key);
+   assert.equal((await fresh.bridge.getGlobalMode()).mode,'server_only');
+   dom=require('./helpers/global-allchat-panel-dom.cjs').makePanelDom();
+   await fresh.bridge.mountConnectionPanel(dom.container);
+   await new Promise(resolve=>setTimeout(resolve,25));
+   dom.byAttr('data-url').value=base;
+   for(const input of dom.radios)input.checked=input.value==='plugin_only';
+   const applying=dom.byAttr('data-apply').onclick();
+   const approve=dom.byAttr('data-mode-confirm-approve');
+   for(let attempt=0;attempt<200&&!approve.onclick;attempt++)await new Promise(resolve=>setTimeout(resolve,5));
+   assert.equal(typeof approve.onclick,'function');
+   assert.match(dom.byAttr('data-mode-confirm-text').textContent,/완전한 기기 대화.*함께 사용/);
+   approve.onclick();await applying;
+   assert.equal((await fresh.bridge.getGlobalMode()).mode,'plugin_only',dom.byAttr('data-status').textContent);
+   assert.equal(fresh.bridge.getSyncJob().result.retainedResetScopes,1);
+   for(const entry of originals.slice(0,3)){
+    assert.equal(await fresh.proxy.getItem(entry.key),entry.value);
+    assert.equal(repo.get('plugin',entry.key).exists,false);
+   }
+  } finally { if(dom)dom.root.isConnected=false;await fresh?.close();await f.close(); }
  }
  console.log(`Global owner discovery adapters: PASS (${checks} scenarios)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

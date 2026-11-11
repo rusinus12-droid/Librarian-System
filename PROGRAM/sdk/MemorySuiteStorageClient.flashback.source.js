@@ -367,7 +367,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const syncJobSnapshot = () => {
     if (state.syncJob.current?.engine !== 'fast') return cloneSyncJob(state.syncJob.current);
-    const {fastReplicas,fastCommit,...visible} = state.syncJob.current;
+    const {fastReplicas,fastCommit,fastModeResolutions,fastResolutionPin,fastResetApproval,...visible} = state.syncJob.current;
     return cloneSyncJob(visible);
   };
   const notifySyncJob = () => {
@@ -4336,7 +4336,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     && scopeRoutingEnabled && options.storagePolicy !== 'local_only' && options.storagePolicy !== 'manager_only';
   let globalMigrationContext = null;
   let globalMigrationPreview = null;
-  const globalIssueMetadata = row => Object.fromEntries(['code','location','space','key','detail','manifestState']
+  const globalIssueMetadata = row => Object.fromEntries(['code','location','space','key','scopeId','detail','manifestState']
     .filter(key=>row[key]!=null).map(key=>[key,row[key]]));
   const globalWarningMetadata = value => {
     const warnings=(Array.isArray(value?.warnings)?value.warnings:[])
@@ -4773,6 +4773,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const original=physicalRecords.get(globalRecordIdentity(row));
       if(!original)continue;
       const checked={...original,...(Object.hasOwn(row,'logicalValue')?{logicalValue:row.logicalValue}:{}),...(row.logicalChunks?{logicalChunks:row.logicalChunks}:{}),classification:row.classification,scopeId:String(row.scopeId||''),dependencyScopeIds:row.dependencyScopeIds||[],dependencyKeys:row.dependencyKeys||[],retainDeviceCacheAfterReset:original.location==='device'&&original.space==='local'&&row.retainDeviceCacheAfterReset===true};
+      if (namespace==='flashback' && row.space==='local' && row.vectorTransferBinding) checked.vectorTransferBinding=row.vectorTransferBinding;
+      if (namespace === 'hayaku' && checked.location !== 'server' && row.retainLocalArchive === true) checked.retainLocalArchive = true;
       safeRecords.push(checked);
     }
     const liveLocalKeys=new Set(safeRecords.filter(row=>row.location!=='server'&&!row.deleted).map(row=>JSON.stringify([row.space,row.logicalKey])));
@@ -4787,11 +4789,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(!inventoryOptions.serverManagement&&lacksLocal&&ids.some(id=>scopeModes.get(id)===MODE_PLUGIN_ONLY))
         blockers.push({code:'remote_source_route_unverified',space:row.space,key:row.logicalKey,scopeId:row.scopeId});
     }
+    const retainedResetScopes = new Map();
+    if (namespace === 'flashback' && resetEmpty && target === MODE_PLUGIN_ONLY && !retainValues
+      && owner.completeKnownScopes === true && inventoryOptions.keepResetLocalScopes
+      && globalCanonical(inventoryOptions.keepResetLocalScopes) === globalCanonical(resetEmpty)) {
+      const serverScopes = new Set(safeRecords.filter(row=>row.location==='server'&&row.classification==='scope').map(row=>row.scopeId));
+      for (const row of safeRecords) {
+        if (row.location === 'plugin' && row.space === 'plugin' && row.classification === 'scope' && !row.deleted
+          && row.scopeId && !serverScopes.has(row.scopeId)
+          && /^vector_rag_memory:scope:[^:]+:manifest:v2$/.test(row.logicalKey))
+          retainedResetScopes.set(row.scopeId,row.logicalKey.slice(0,-'manifest:v2'.length));
+      }
+    }
     if(resetEmpty&&target===MODE_PLUGIN_ONLY&&!retainValues){
       const serverKeys=new Set(safeRecords.filter(row=>row.location==='server'&&globalPayloadRecord(row)).map(row=>JSON.stringify([row.space,row.logicalKey])));
       // A pre-reset local-only body would become visible again in plugin mode.
       for(const row of safeRecords){
-        if(row.location!=='server'&&globalPayloadRecord(row)&&!row.deleted&&!row.retainDeviceCacheAfterReset&&!serverKeys.has(JSON.stringify([row.space,row.logicalKey])))
+        if(row.location!=='server'&&globalPayloadRecord(row)&&!row.deleted&&!row.retainDeviceCacheAfterReset
+          && !(row.classification==='scope' && retainedResetScopes.has(row.scopeId))
+          && !serverKeys.has(JSON.stringify([row.space,row.logicalKey])))
           blockers.push({code:'MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD',space:row.space,key:row.logicalKey,scopeId:row.scopeId});
       }
     }
@@ -4799,7 +4815,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       keys:[...new Set(safeRecords.filter(row=>row.classification!=='control').map(row=>globalCanonical([row.space,row.logicalKey,row.classification,row.scopeId,row.dependencyScopeIds])))].sort()};
     const catalogFingerprint=await digestInventory(catalog);
     return {schema:'memory-suite.global-inventory.v1',namespace,targetUrl,targetMode:target,scopes:scoped,records:safeRecords,payloadsByScope,scopeModes,registry,registryCopies,hostScopes,legacyMode,
-      stores,readRecord,physicalRecords,retainValues,resetEmpty,remoteRequired,serverManagement:inventoryOptions.serverManagement===true,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
+      stores,readRecord,physicalRecords,retainValues,resetEmpty,retainedResetScopes,remoteRequired,serverManagement:inventoryOptions.serverManagement===true,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
       blockers,...globalWarningMetadata(owner),completeKnownScopes:owner.completeKnownScopes===true&&blockers.length===0};
   };
   const globalWorkflowSummary = (inventory, job = state.syncJob.current) => {
@@ -4846,6 +4862,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       || rawDetails.includes('server_reset_epoch_mismatch')
       || jobRaw.includes('서버 자료가 초기화 또는 복원되었습니다');
 
+    if (errCode === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE' && rawDetails.includes('MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD')) return {
+      blockerReason:'서버 초기화 이전의 기억이 기기에만 남아 있습니다.',
+      actionRequired:'기기 원본을 보존했습니다. 플러그인 단독으로 전환하기 전에 이 기억을 함께 사용할지, 별도로 보관할지 결정해야 합니다.',
+      remedySteps:['1. 상세 진단의 대화와 저장 키를 확인하세요.','2. 서버에 없는 기기 원본의 보존 방법을 결정하세요.']
+    };
     if(job?.kind==='global_mode'&&!syncJobTerminal(job.status)&&(errCode||hasResetBlocker)){
       const label=globalResumeLabel(job),next=`진행 화면의 [${label}]를 누르세요.`;
       const finish=blockerReason=>({blockerReason,actionRequired:next,remedySteps:['1. 상세 진단과 연결 상태에서 원인 확인',`2. ${next}`]});
@@ -4936,6 +4957,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           '1. 원래 서버 주소(URL) 확인 및 입력',
           '2. 필요 시 [이전 작업 취소] 후 새 서버 주소로 다시 시작'
         ]
+      };
+    }
+    if (errCode === 'MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT' && details?.review?.kind === 'conflict' && job?.operation === 'mode') {
+      return {
+        blockerReason: '기기와 서버의 사본이 달라 선택을 기다리고 있습니다.',
+        actionRequired: '진행 카드에서 [보존할 사본 선택]을 눌러 전환을 계속하세요.',
+        remedySteps: ['1. [보존할 사본 선택] 누르기', '2. 기기 사본 또는 서버 사본 선택']
       };
     }
     if (errCode === 'MEMORY_SUITE_GLOBAL_SOURCE_CHANGED') {
@@ -5449,8 +5477,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     fastProgress({ ...counters, currentSpace:row.space, currentKey:row.logicalKey, currentAction:action });
   };
 
-  const fastDestinationConflict = (row, location) => globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',
-    {space:row.space,key:row.logicalKey || row.key,destinationLocation:location,replicaWitness:'unavailable'});
+  const fastDestinationConflict = (row,location,review) => globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',
+    {space:row.space,key:row.logicalKey || row.key,destinationLocation:location,replicaWitness:'unavailable',...(review ? {review} : {})});
+  const fastReview = (kind,row,remoteKey,localProof,serverProof) =>
+    ({kind,space:row.space,key:row.logicalKey,remoteKey,localProof,serverProof});
+  const fastReviewChoice = (transfer,review) => transfer.resolutions.findLast(entry=>
+    globalCanonical(entry.review)===globalCanonical(review))?.choice;
   const fastServerProof = row => row ? [row.revision, row.digest, row.deleted === true || row.tombstone === true] : null;
   const fastMatchesProof = (proof, value) => proof != null && JSON.stringify(proof) === JSON.stringify(value);
   const fastLocalProof = async value => isNullishStorageValue(value) ? null : await globalDigest([false,value]);
@@ -5458,6 +5490,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const fastReplicaKey = (location,space,key) => globalRecordIdentity({location,space,key});
   const fastCanReplace = (transfer,row,location,key,proof) => transfer.overwrite
     || fastMatchesProof(transfer.replicas.get(fastReplicaKey(location,row.space,key)),proof);
+
+  const inspectFastSourceRepair = async (inventory,transfer,key,space) => {
+    if (!key || inventory.resetEmpty || !inventory.serverPin) return null;
+    const local = inventory.records.filter(row=>row.location!=='server' && globalPayloadRecord(row)
+      && !row.deleted && row.logicalKey===key && (!space || row.space===space));
+    if (local.length!==1) return null;
+    const row = local[0], scope = inventory.scopes.find(item=>globalRecordScopeIds(row).includes(item.scopeId));
+    if (!scope) return null;
+    const previousContext = globalMigrationContext;
+    globalMigrationContext = inventory;
+    try {
+      const route = await globalRouteForRecord(row,scope);
+      const expected = transfer.replicas.get(fastReplicaKey('server',row.space,route.remoteKey));
+      if (!Array.isArray(expected) || !expected[1] || expected[2]) return null;
+      if (inventory.records.some(item=>item.location==='server' && item.space===row.space && item.key===route.remoteKey)) return null;
+      const value = await routeProjectValue(route,await fastReadLocal(inventory,row));
+      if (isNullishStorageValue(value) || await fastContentDigest(value)!==expected[1]) return null;
+      const current = await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});
+      if (current.exists || current.tombstone || current.revision) return null;
+      return {review:fastReview('restore',row,route.remoteKey,row.fingerprint,expected),value};
+    } catch (_) { return null; }
+    finally { globalMigrationContext = previousContext; }
+  };
 
   const fastUpload = async (inventory, plan, counters, failures, batchCapable, transfer) => {
     const serverIndex = new Map();
@@ -5517,19 +5572,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try {
         const route = await globalRouteForRecord(row, scope);
         const raw = await fastReadLocal(inventory, row);
-        const value = isNullishStorageValue(raw) ? null : await routeProjectValue(route, raw);
+        let value = isNullishStorageValue(raw) ? null : await routeProjectValue(route,raw);
         if (isNullishStorageValue(value)) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey});
-        bytes = storageValueBytes(value);
-        const digest = await fastContentDigest(value);
         const remote = serverIndex.get(row.space + '\u0000' + route.remoteKey);
+        let digest = await fastContentDigest(value);
+        const review = remote ? fastReview('conflict',row,route.remoteKey,row.fingerprint,fastServerProof(remote)) : null;
+        const choice = review && fastReviewChoice(transfer,review);
+        if (choice === 'server') {
+          transfer.chosenServer.set(globalRecordIdentity(remote),remote);
+          counters.skipped++;fastCount(counters,row,0,'서버 사본 유지');continue;
+        }
+        const mergeReplica = !choice && !transfer.overwrite && remote && !remote.deleted && route.mergeModeTransferValue;
+        if (mergeReplica && digest !== remote.digest) {
+          const existing = await remoteGet(row.space,route.remoteKey,{allowPluginOnly:true});
+          assertGlobalRemoteRecord(existing,{...remote,space:row.space,key:route.remoteKey});
+          value = await mergeReplica(value,existing.value);
+          if (value == null) throw fastDestinationConflict(row,'server',review);
+          digest = await fastContentDigest(value);
+        }
+        bytes = storageValueBytes(value);
         const sourceIdentity = globalRecordIdentity(row);
         if (remote && remote.deleted !== true && digest && remote.digest === digest) {
           transfer.replicas.set(fastReplicaKey('server',row.space,route.remoteKey),fastServerProof(remote));
           transfer.replicas.set(sourceIdentity,row.fingerprint);
           counters.matched += 1; failures.streak = 0; action = '이미 같음';
         } else {
-          if (remote && !fastCanReplace(transfer,row,'server',route.remoteKey,fastServerProof(remote)))
-            throw fastDestinationConflict(row,'server');
+          if (remote && choice !== 'plugin' && !mergeReplica && !fastCanReplace(transfer,row,'server',route.remoteKey,fastServerProof(remote)))
+            throw fastDestinationConflict(row,'server',review);
           const item = { space:row.space, key:route.remoteKey, logicalKey:row.logicalKey, value, bytes, digest,
             revision:Math.max(0, Number(remote?.revision || 0)), expectedDigest:String(remote?.digest || ''),
             exists:!!remote && remote.deleted !== true, tombstone:!!remote && remote.deleted === true,
@@ -5611,16 +5680,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           entry.localProof = await fastLocalProof(raw);
           if ((local?.fingerprint || null) !== entry.localProof)
             throw fastDestinationConflict(row,fastLocalLocation(row.space));
+          if (!transfer.overwrite && local?.retainDeviceCacheAfterReset) { entry.keepVectorCache=true;continue; }
           const current = local && fastChunked(local) ? await readGlobalLogicalRecord(inventory,local) : raw;
-          entry.matched = !fastChunked(row) && !isNullishStorageValue(current)
-            && await fastContentDigest(await routeProjectValue(entry.route,current)) === row.digest;
+          if (!fastChunked(row) && !isNullishStorageValue(current)) {
+            const projected = await routeProjectValue(entry.route,current);
+            entry.matched = await fastContentDigest(projected) === row.digest;
+            // Imported structured sidecars can have their object fields sorted.
+            // The transport digest still has to match all bytes of that representation.
+            if (!entry.matched && projected && typeof projected === 'object'
+              && row.vectorTransferBinding && row.vectorTransferBinding === local?.vectorTransferBinding) {
+              entry.matched = await globalDigest(projected) === row.digest;
+            }
+          }
           if (!entry.matched && !fastChunked(row)) wanted.push(row.key);
         } catch (error) { entry.error = error; }
       }
       let fetched = { values:{} };
       if (wanted.length) {
         try { fetched = await fastRetry(() => remoteGetMany(space, wanted, { allowPluginOnly:true })); }
-        catch (error) { for (const entry of group) if (!entry.error && !entry.matched && !fastChunked(entry.row)) entry.error = error; }
+        catch (error) { for (const entry of group) if (!entry.error && !entry.matched && !entry.keepVectorCache && !fastChunked(entry.row)) entry.error = error; }
       }
       for (const entry of group) {
         const { row } = entry;
@@ -5628,6 +5706,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         let action = '서버 → 플러그인 복사';
         try {
           if (entry.error) throw entry.error;
+          if (entry.keepVectorCache) {
+            transfer.chosenLocal.push({store:entry.store,key:entry.local.key,proof:entry.localProof,row});
+            counters.skipped++;failures.streak=0;
+            fastCount(counters,row,0,'참조되지 않는 기기 벡터 캐시 유지');continue;
+          }
           if (entry.matched) {
             if (await fastLocalProof(await entry.store.getItem(entry.local.key)) !== entry.localProof)
               throw fastDestinationConflict(row,fastLocalLocation(row.space));
@@ -5645,14 +5728,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const location = fastLocalLocation(row.space);
             if (await fastLocalProof(raw) !== entry.localProof) throw fastDestinationConflict(row,location);
             const current = entry.local && fastChunked(entry.local) ? await readGlobalLogicalRecord(inventory,entry.local) : raw;
-            if (!isNullishStorageValue(current) && jsonComparable(await routeProjectValue(entry.route,current)) === jsonComparable(remoteValue)) {
+            const projected = isNullishStorageValue(current) ? current : await routeProjectValue(entry.route,current);
+            const sameVectorBinding = row.vectorTransferBinding && row.vectorTransferBinding===entry.local?.vectorTransferBinding;
+            if (!isNullishStorageValue(current) && (jsonComparable(projected) === jsonComparable(remoteValue)
+              || (sameVectorBinding && globalCanonical(projected) === globalCanonical(remoteValue)))) {
               counters.matched += 1; failures.streak = 0; action = '이미 같음';
             } else {
-              if (entry.localProof && !fastCanReplace(transfer,row,location,entry.local.key,entry.localProof)
-                && !(inventory.resetEmpty && row.retainDeviceCacheAfterReset && entry.local.retainDeviceCacheAfterReset
-                  && row.vectorCacheStorageKey && row.vectorCacheStorageKey === entry.local.vectorCacheStorageKey))
-                throw fastDestinationConflict(row,location);
-              const merged = await routeMergeValue(entry.route,remoteValue,current);
+              const review = entry.localProof ? fastReview('conflict',row,row.key,entry.localProof,fastServerProof(row)) : null;
+              const choice = review && fastReviewChoice(transfer,review);
+              if (choice === 'plugin') {
+                transfer.chosenLocal.push({store:entry.store,key:entry.local.key,proof:entry.localProof,row});
+                counters.skipped++;fastCount(counters,row,bytes,'기기 사본 유지');continue;
+              }
+              const mergeReplica = !choice && !transfer.overwrite && entry.localProof && entry.route.mergeModeTransferValue;
+              if (entry.localProof && choice !== 'server' && !mergeReplica && !sameVectorBinding && !fastCanReplace(transfer,row,location,entry.local.key,entry.localProof))
+                throw fastDestinationConflict(row,location,review);
+              const merged = mergeReplica ? await mergeReplica(remoteValue,current) : await routeMergeValue(entry.route,remoteValue,current);
+              if (mergeReplica && merged == null) throw fastDestinationConflict(row,location,review);
               if (await fastLocalProof(await entry.store.getItem(entry.local?.key || row.logicalKey)) !== entry.localProof)
                 throw fastDestinationConflict(row,location);
               const writeRaw = entry.local?.key && entry.local.key !== row.logicalKey
@@ -5664,6 +5756,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
               if (undo) undo.appliedProof = nextProof;
               if (!await legacyWriteVerified(entry.store,row.logicalKey,merged)) throw new Error('pluginstorage_restore_failed');
               entry.localProof = nextProof;
+              if (choice) transfer.chosenLocal.push({store:entry.store,key:row.logicalKey,proof:nextProof,row});
               counters.restored += 1; counters.transferredBytes += bytes; failures.streak = 0;
             }
           }
@@ -5684,9 +5777,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           const location = fastLocalLocation(row.space);
           const raw = await store.getItem(local.key);
           const proof = await fastLocalProof(raw);
-          if (proof !== local.fingerprint || !fastCanReplace(transfer,row,location,local.key,proof))
-            throw fastDestinationConflict(row,location);
+          if (proof !== local.fingerprint) throw fastDestinationConflict(row,location);
+          const review = fastReview('conflict',row,row.key,proof,fastServerProof(row));
+          const choice = fastReviewChoice(transfer,review);
           await inventory.readRecord(row);
+          if (choice==='plugin') {
+            transfer.chosenLocal.push({store,key:local.key,proof,row});
+            counters.skipped++;fastCount(counters,row,0,'기기 사본 유지');continue;
+          }
+          if (choice!=='server' && !fastCanReplace(transfer,row,location,local.key,proof))
+            throw fastDestinationConflict(row,location,review);
           const route = await globalRouteForRecord(row, scope);
           if (local.key !== row.logicalKey) throw fastDestinationConflict(row,location);
           const undo = await fastSaveLocalOriginal(transfer,row,store,local.key,raw);
@@ -5727,6 +5827,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (details?.rollbackError) return `저장 경로 복구를 마치지 못했습니다(${details.rollbackError}). 고급 작업에서 자동 복구를 실행해 주세요.`;
     const kept = '저장 위치는 바뀌지 않았고 원본은 그대로입니다.';
     if (code === 'MEMORY_SUITE_TRANSFER_STOPPED') return `중단했습니다. ${kept}`;
+    if (code === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE'
+      && details?.blockers?.some(row=>row.code==='MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD'))
+      return '서버 초기화 이전의 기억이 기기에만 남아 있어 전환을 보류했습니다. 상세 진단에서 대화와 저장 키를 확인하세요.';
     if (code === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE') return `대화 목록 또는 자료 목록을 읽지 못했습니다(${(details?.blockers || []).map(row => row.code).slice(0, 3).join(', ') || '원인 미상'}). ${kept}`;
     if (code === 'MEMORY_SUITE_TRANSFER_INCOMPLETE') return `옮기지 못한 항목이 ${Number(details?.failureCount || 0)}개 있습니다. ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
     if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `지금 서버에 자료가 있는 상태에서는 서버 주소를 바꿀 수 없습니다. 먼저 플러그인 단독으로 전환하세요. ${kept}`;
@@ -5763,9 +5866,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (globalJobRunning) throw transitionBusyError();
     globalJobRunning = true;
     const startedAt = Date.now(), jobId = operationId('global');
-    const counters = { totalItems:0, processedItems:0, processedBytes:0, transferredBytes:0, matched:0, uploaded:0, restored:0, removedByTombstone:0, skipped:0 };
+    const counters = { totalItems:0, processedItems:0, processedBytes:0, transferredBytes:0, matched:0, uploaded:0, restored:0, repaired:0, removedByTombstone:0, skipped:0 };
     const failures = { list:[], streak:0 };
-    const transfer = {overwrite:!publish,replicas:new Map(),jobId,undo:publish && (validateRestore || requireRestoreValidation) ? [] : null};
+    const transfer = {overwrite:!publish,replicas:new Map(),resolutions:[],chosenServer:new Map(),chosenLocal:[],jobId,
+      undo:publish && (validateRestore || requireRestoreValidation) ? [] : null};
     let scopes = [], warnings = { warnings:[], warningCount:0 }, journaled = false;
     let inventory, commitPlan, committed = false, configuredUrl, targetUrl, urlChanged = false;
     const replicaJournal = () => ({pin:inventory?.serverPin,records:[...transfer.replicas]});
@@ -5793,14 +5897,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         operation:publish ? 'mode' : 'copy', scopeId:GLOBAL_SCOPE_ID, sourceMode:effectiveMode, effectiveMode, targetMode:target, requestedMode:target, targetUrl,
         status:'running', phase:'inventory', startedAt, updatedAt:startedAt, lastActivityAt:startedAt, pauseRequested:false, cancelRequested:false,
         discoveredScopes:0, verifiedScopes:0, ...counters, retryCount:0, failures:0, currentKey:'', currentAction:'대화·자료 목록 확인',
+        ...(transferOptions.keepResetLocalScopes ? {fastResetApproval:transferOptions.keepResetLocalScopes} : {}),
         message:publish ? '대화와 자료 목록을 확인하고 있습니다.' : '옮길 자료 목록을 확인하고 있습니다.' };
       state.syncJob.loaded = true;
       notifySyncJob();
       if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE');
       // Nothing is written until the chat list and both sides have been read.
-      inventory = await collectGlobalInventory(target, { url:targetUrl, light:true, requireRemote:forcedSource === 'server' });
+      inventory = await collectGlobalInventory(target,{url:targetUrl,light:true,requireRemote:forcedSource==='server',
+        keepResetLocalScopes:publish ? transferOptions.keepResetLocalScopes : null});
       let hard = fastHardBlockers(inventory);
-      if (hard.length) throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE', { blockers:hard.slice(0, 32).map(globalIssueMetadata) });
+      if (publish && transferOptions.resolutionPin && globalCanonical(transferOptions.resolutionPin) === globalCanonical(inventory.serverPin))
+        transfer.resolutions = transferOptions.resolutions || [];
+      state.syncJob.current.fastModeResolutions = transfer.resolutions;
+      state.syncJob.current.fastResolutionPin = inventory.serverPin;
       if (previous?.fastReplicas?.records && previous.targetUrl === targetUrl
         && globalCanonical(previous.fastReplicas.pin) === globalCanonical(inventory.serverPin))
         transfer.replicas = new Map(previous.fastReplicas.records);
@@ -5808,21 +5917,49 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         for (const [identity,proof] of await globalDestinationWitnesses(previous,inventory))
           transfer.replicas.set(identity,identity.startsWith('server\u0000') ? [proof.revision,proof.digest,false] : proof.fingerprint);
       }
-      await fastSaveJob({fastReplicas:replicaJournal()});
-      journaled = true;
+      state.syncJob.current.fastReplicas = replicaJournal();
+      const checkDiscovery = async ()=>{
+        if (!hard.length) return;
+        const missing = hard.find(row=>row.location==='server' && String(row.code).endsWith('_dependency_missing'));
+        const repair = target===MODE_PLUGIN_ONLY && missing ? await inspectFastSourceRepair(inventory,transfer,missing.detail) : null;
+        throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE',{blockers:hard.slice(0,32).map(globalIssueMetadata),
+          ...(repair ? {review:repair.review} : {})});
+      };
+      const approvedRepair = transfer.resolutions.findLast(entry=>entry.choice==='restore');
+      if (approvedRepair && target===MODE_PLUGIN_ONLY && targetUrl===configuredUrl) {
+        const {review} = approvedRepair;
+        const repair = await inspectFastSourceRepair(inventory,transfer,review.key,review.space);
+        if (repair && fastReviewChoice(transfer,repair.review)==='restore') {
+          await fastSaveJob({});journaled = true;
+          const receipt = await remoteMutate('set',review.space,review.remoteKey,repair.value,{allowPluginOnly:true,expectedRevision:0});
+          if (receipt.superseded || receipt.digest!==review.serverProof[1])
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:review.space,key:review.key,location:'server'});
+          counters.repaired++;
+          transfer.resolutions = transfer.resolutions.filter(entry=>entry!==approvedRepair);
+          state.syncJob.current.fastModeResolutions = transfer.resolutions;
+          inventory = await collectGlobalInventory(target,{url:targetUrl,light:true});
+          hard = fastHardBlockers(inventory);
+        }
+      }
+      await checkDiscovery();
+      if (!journaled) { await fastSaveJob({});journaled = true; }
       if (targetUrl !== configuredUrl) {
         urlChanged = true;
         await persistServerUrl(targetUrl);
-        inventory = await collectGlobalInventory(target, { url:targetUrl, light:true, requireRemote:forcedSource === 'server' });
+        inventory = await collectGlobalInventory(target,{url:targetUrl,light:true,requireRemote:forcedSource==='server',
+        keepResetLocalScopes:publish ? transferOptions.keepResetLocalScopes : null});
         hard = fastHardBlockers(inventory);
         if (hard.length) throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE', { blockers:hard.slice(0, 32).map(globalIssueMetadata) });
       }
       scopes = inventory.scopes;
+      fastProgress({discoveredScopes:scopes.length});
       const recordIssues = inventory.blockers.filter(row => !hard.includes(row));
       const ownerWarnings = globalWarningMetadata(inventory);
       warnings = { warnings:[...ownerWarnings.warnings, ...recordIssues.slice(0, 64).map(globalIssueMetadata)].slice(0, 256),
         warningCount:ownerWarnings.warningCount + recordIssues.length };
       const uploads = new Map(), downloads = new Map(), serverSources = new Map();
+      const sharedServerKeys = new Set(inventory.records.filter(row=>row.location==='server'&&row.classification==='shared')
+        .map(row=>fastReplicaKey('server',row.space,row.logicalKey)));
       for (const scope of scopes) {
         const records = inventory.payloadsByScope.get(scope.scopeId) || [];
         if (!forcedSource && scope.sourceMode === target) {
@@ -5838,8 +5975,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           ? new Set(records.filter(row=>row.location==='server').map(row=>fastReplicaKey('server',row.space,row.logicalKey))) : null;
         for (const row of records) {
           if (remoteKeysForScope && row.location !== 'server' && !row.deleted && !row.retainDeviceCacheAfterReset
-            && !remoteKeysForScope.has(fastReplicaKey('server',row.space,row.logicalKey)))
-            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey,location:'server'});
+            && !(row.retainLocalArchive && !inventory.resetEmpty)
+            && !(row.classification === 'scope' && inventory.retainedResetScopes.has(row.scopeId))
+            && !remoteKeysForScope.has(fastReplicaKey('server',row.space,row.logicalKey))
+            && !(row.classification === 'shared' && sharedServerKeys.has(fastReplicaKey('server',row.space,row.logicalKey))))
+          {
+            const repair = await inspectFastSourceRepair(inventory,transfer,row.logicalKey,row.space);
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey,location:'server',
+              ...(repair ? {review:repair.review} : {})});
+          }
           if ((row.location === 'server') !== fromServer || (row.deleted && !(fromServer && tombstones))) continue;
           const identity = globalRecordIdentity(row), plan = fromServer ? downloads : uploads;
           if (!plan.has(identity)) plan.set(identity,{row,scope});
@@ -5853,11 +5997,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (uploads.size) await fastUpload(inventory,[...uploads.values()],counters,failures,
         state.bootstrap.value?.capabilities?.['conditional-batch.v1'] === true,transfer);
       if (downloads.size) await fastDownload(inventory,[...downloads.values()],counters,failures,transfer);
-      if (serverSources.size) {
+      for (const [identity,row] of transfer.chosenServer) serverSources.set(identity,row);
+      const retainedPrefixes = new Set(inventory.retainedResetScopes.values());
+      const retainedRows = inventory.records.filter(row=>row.location!=='server' && row.classification==='scope'
+        && inventory.retainedResetScopes.has(row.scopeId));
+      for (const row of retainedRows) await inventory.readRecord(row);
+      if (serverSources.size || retainedRows.length) {
         // Check metadata once per space, including digest matches that needed no payload read.
-        for (const space of new Set([...serverSources.values()].map(row=>row.space))) {
+        for (const space of new Set([...serverSources.values(),...retainedRows].map(row=>row.space))) {
           const listing = await remoteKeys(space,'',{allowPluginOnly:true,strictInventory:true});
           const current = new Map(listing.records.map(row=>[row.key,row]));
+          if (retainedRows.length) {
+            const retainedKeys = new Set(retainedRows.filter(row=>row.space===space).map(row=>row.logicalKey));
+            for (const row of listing.records) {
+              const logical = scopedRemoteKeyInfo(row.key).logicalKey;
+              const scopePrefix = logical.match(/^vector_rag_memory:scope:[^:]+:/)?.[0];
+              if (retainedKeys.has(logical) || (scopePrefix && retainedPrefixes.has(scopePrefix)))
+                throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space,key:logical,location:'server'});
+            }
+          }
           for (const row of serverSources.values()) {
             if (row.space === space && !fastMatchesProof(fastServerProof(row),fastServerProof(current.get(row.key))))
               throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space,key:row.logicalKey,location:'server'});
@@ -5877,6 +6035,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           fastStop();
         }
         await finishFastLocalCopies(transfer,false);
+      }
+      for (const selected of transfer.chosenLocal) {
+        if (await fastLocalProof(await selected.store.getItem(selected.key))!==selected.proof)
+          throw fastDestinationConflict(selected.row,fastLocalLocation(selected.row.space));
       }
       let saved = null, publicationPending = '';
       if (publish) {
@@ -5911,7 +6073,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       const result = { scope:globalScopeDescriptor(), operation:publish ? 'mode' : 'copy', mode:publish ? target : effectiveMode, effectiveMode:publish ? target : effectiveMode,
         requestedMode:target, modeLabel:modeLabel(publish ? target : effectiveMode), completeKnownScopes:true, discoveredScopes:scopes.length, verifiedScopes:scopes.length,
-        migrated:scopes.map(scope => scope.scopeId), failed:[], ...counters, ...warnings, ...(saved ? { registry:saved } : {}) };
+        migrated:scopes.map(scope => scope.scopeId), failed:[], retainedResetScopes:inventory.retainedResetScopes.size, ...counters, ...warnings, ...(saved ? { registry:saved } : {}) };
       const { registry:_registry, ...journalResult } = result;
       await fastSaveJob({ status:'completed', phase:'completed', ...counters, fastCommit:null, fastReplicas:replicaJournal(), verifiedScopes:scopes.length, effectiveMode:result.effectiveMode, finishedAt:Date.now(),
         currentKey:'', currentAction:'완료', error:'', result:{ ...journalResult, migrated:undefined, warnings:warnings.warnings.slice(0, 16) },
@@ -5970,6 +6132,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       throw error;
     } finally { globalMigrationContext = null; globalJobRunning = false; }
   };
+  const retryGlobalModeFailure = (jobId,choice) => withModeConfiguration(async()=>{
+    await loadPersistedSyncJob();
+    const job = state.syncJob.current;
+    if (!job || job.jobId !== jobId || job.engine !== 'fast' || job.operation !== 'mode' || job.status !== 'failed')
+      throw globalModeError('MEMORY_SUITE_GLOBAL_REVIEW_EXPIRED');
+    const review = job.errorDetails?.review;
+    if (choice !== 'retry' && !(review?.kind === 'conflict' && ['plugin','server'].includes(choice))
+      && !(review?.kind === 'restore' && choice === 'restore')) throw globalModeError('MEMORY_SUITE_GLOBAL_REVIEW_EXPIRED');
+    const previous = job.fastModeResolutions || [];
+    const resolutions = choice==='retry' ? previous : [...previous.filter(entry=>globalCanonical(entry.review)!==globalCanonical(review)),{review,choice}];
+    return await runFastTransfer(job.targetMode,{url:job.targetUrl,resolutionPin:job.fastResolutionPin,resolutions,
+      keepResetLocalScopes:job.fastResetApproval});
+  });
   const persistGlobalModeAllChats = async (modeValue,operationOptions = {}) => {
     await loadPersistedSyncJob();
     const pending = state.syncJob.current;
@@ -5977,7 +6152,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // own a persisted per-scope plan. Honor that plan instead of replacing it.
     if (operationOptions.previewFingerprint || (pending?.globalPlan && !syncJobTerminal(pending.status)))
       return await persistGlobalModeAllChatsLegacy(modeValue,operationOptions);
-    return await runFastTransfer(modeValue,{url:operationOptions.url});
+    return await runFastTransfer(modeValue,{url:operationOptions.url,keepResetLocalScopes:operationOptions.keepResetLocalScopes});
   };
 
   // Reads what an interrupted or failed mode change left behind, clears it and finishes the change.
@@ -6006,7 +6181,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (state.scopeRouting.transientModes.size) findings.push({ code:'transient_mode', label:`임시 저장 위치 ${state.scopeRouting.transientModes.size}개`, count:state.scopeRouting.transientModes.size });
     return findings;
   };
-  const recoverModeTransition = async direction => {
+  const recoverModeTransition = async (direction,keepResetLocalScopes = null) => {
     const target = [MODE_SERVER_ONLY, 'server'].includes(String(direction || '')) ? MODE_SERVER_ONLY : MODE_PLUGIN_ONLY;
     if (globalJobRunning) throw transitionBusyError();
     const findings = await inspectModeTransitionFaults();
@@ -6014,9 +6189,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     state.scopeRouting.transientModes.clear();
     state.scopeRouting.routeCache.clear();
     const pending = state.syncJob.current;
-    if (pending?.globalPlan && !syncJobTerminal(pending.status) && pending.targetMode !== target)
-      await scopedCancelSyncJobImpl();
-    const result = await persistGlobalModeAllChats(target);
+    const needsFreshInventory = ['MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED','MEMORY_SUITE_GLOBAL_SOURCE_CHANGED'].includes(pending?.error);
+    if (pending?.globalPlan && !syncJobTerminal(pending.status) && (pending.targetMode !== target || needsFreshInventory))
+      await scopedCancelSyncJobImpl({},true);
+    const result = await persistGlobalModeAllChats(target,{keepResetLocalScopes});
     return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:target, findings, result };
   };
   // END FAST MODE TRANSFER v1
@@ -6380,6 +6556,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       scope, scopeId: scope.scopeId || '', scopeLabel: scope.label || '', mode,
       projectValue: typeof raw.projectValue === 'function' ? raw.projectValue : null,
       mergeValue: typeof raw.mergeValue === 'function' ? raw.mergeValue : null,
+      mergeModeTransferValue: typeof raw.mergeModeTransferValue === 'function' ? raw.mergeModeTransferValue : null,
       removeValue: typeof raw.removeValue === 'function' ? raw.removeValue : null,
       scopedContainer: raw.scopedContainer === true,
       // Shared/global infrastructure is never swept or deleted as part of one chat scope.
@@ -8284,7 +8461,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const scopedCancelSyncJob = (...args) => state.syncJob.current?.kind==='global_mode'&&globalJobRunning
     ?scopedCancelSyncJobImpl(...args):withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
-  const scopedCancelSyncJobImpl = async (cancelOptions={}) => {
+  const scopedCancelSyncJobImpl = async (cancelOptions={},modeConfigurationHeld=false) => {
     if(state.syncJob.current?.kind==='global_mode'&&globalJobRunning){
       if (state.syncJob.current.engine === 'fast'
         && (state.syncJob.current.phase === 'commit' || syncJobTerminal(state.syncJob.current.status))) return getSyncJob();
@@ -8320,8 +8497,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       state.syncJob.current.cancelRequested=true;
       state.syncJob.current.pauseRequested=true;
       await globalSaveJob({message:'취소 요청 · 안전한 지점에서 변경된 저장 경로를 복구합니다.'});
-      if(globalJobRunning||modeConfigurationBusy)return getSyncJob();
-      return await withModeConfiguration(async()=>{
+      if(globalJobRunning||(modeConfigurationBusy&&!modeConfigurationHeld))return getSyncJob();
+      const rollback = async()=>{
         try{
           if(cancelOptions.localOnly===true&&!state.syncJob.current.localCancellationIntent){
             if(!globalLocalCancellationNeeded(state.syncJob.current)||!cancelOptions.previewFingerprint)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REVIEW_REQUIRED');
@@ -8355,7 +8532,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           });
           throw error;
         }
-      });
+      };
+      return modeConfigurationHeld ? await rollback() : await withModeConfiguration(rollback);
     }
     updateSyncJob({
       status: 'cancelled',
@@ -9342,7 +9520,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopedMountConnectionPanel = async (container, panelOptions = {}) => {
     const bookTheme = String(panelOptions.theme || '').toLowerCase() === 'book';
     if (!container || typeof container.innerHTML === 'undefined') throw new Error('memory_suite_connection_panel_container_required');
-    const initial = await scopedGetConnectionSettings({ force:true });
+    const initial = await scopedGetConnectionSettings({force:true});
+    const initialResetPreference = namespace==='flashback' ? await readResetPreferenceCandidate() : null;
     const rootId = `memory-suite-scope-connection-${namespace}-${Math.random().toString(36).slice(2,8)}`;
     const esc = value => safeText(value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     container.innerHTML = `<div id="${rootId}" class="mscx-scope-root"><style>
@@ -9357,7 +9536,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
       #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
       #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
-      #${rootId} .mscx-group{display:grid;gap:6px;border:1px solid var(--border,#34425b);border-radius:9px;padding:10px;min-width:0} #${rootId} .mscx-group>b{font-size:13px} #${rootId} .mscx-group>.muted{font-size:12px;line-height:1.55;overflow-wrap:anywhere} #${rootId} .mscx-group.danger{border-color:#c0525f;border-style:solid;background:#3b161c} #${rootId} .mscx-group.danger>b{color:#ffb4bd}
+      #${rootId} .mscx-group{display:grid;gap:6px;border:1px solid var(--border,#34425b);border-radius:9px;padding:10px;min-width:0} #${rootId} .mscx-group>b{font-size:13px} #${rootId} .mscx-group>.muted{font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+      #${rootId} .mscx-group.danger{border-color:var(--danger-line,#c0525f);background:var(--danger-soft,#3b161c);color:var(--danger-ink,#ffb4bd)}
+      #${rootId} .mscx-group.danger>b,#${rootId} .mscx-group.danger>.muted{color:inherit}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -9419,7 +9600,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <pre data-cleanup-errors></pre><div class="actions"><button type="button" data-cleanup-close>닫기</button><button type="button" data-cleanup-stop hidden>중단 요청</button><button type="button" class="danger" data-cleanup-continue disabled>선택한 사본 삭제</button></div>
         </div>
       </section>
-      <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="muted" data-job-workflow style="white-space:pre-wrap;margin:8px 0"></div><div class="muted" data-job-transfer style="white-space:pre-wrap;margin:8px 0"></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-stalled-actions style="display:none;margin-top:6px;gap:8px"><button data-job-retry class="primary" type="button">즉시 재시도</button><button data-job-cancel class="danger" type="button">이전 작업 취소 · 기존 모드 유지</button></div><div class="actions" data-job-terminal-actions style="display:none"><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
+      <div class="job" data-job><b data-job-title>작업 진행 중</b><div class="bar"><i data-job-bar></i></div><div class="grid"><span data-job-phase></span><span data-job-count></span><span data-job-bytes></span><span data-job-time></span><span data-job-retry></span><span data-job-key></span></div><div class="muted" data-job-workflow style="white-space:pre-wrap;margin:8px 0"></div><div class="muted" data-job-transfer style="white-space:pre-wrap;margin:8px 0"></div><div class="result" data-job-result></div><textarea data-job-diagnostics aria-label="저장 이전 상세 진단" readonly style="display:none"></textarea><button data-job-copy type="button">상세 진단 복사</button><div class="actions" data-job-stalled-actions style="display:none;margin-top:6px;gap:8px"><button data-job-retry class="primary" type="button">즉시 재시도</button><button data-job-cancel class="danger" type="button">이전 작업 취소 · 기존 모드 유지</button></div><div class="actions" data-job-terminal-actions style="display:none"><button data-job-resolve type="button" hidden>사본 선택</button><button data-job-recheck type="button" hidden>다시 검사하고 전환</button><button data-job-dismiss type="button">결과 확인 닫기</button></div></div>
     </div>`;
     const root = container.querySelector(`#${rootId}`);
     const q = sel => root.querySelector(sel);
@@ -9464,6 +9645,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     syncModePresentation();
     const formatBytes = bytes => { const n=Math.max(0,Number(bytes||0)); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; if(n<1073741824)return `${(n/1048576).toFixed(1)} MB`; return `${(n/1073741824).toFixed(2)} GB`; };
     let dismissedJobId=state.syncJob.dismissedJobId || (getSyncJob()?.dismissed ? getSyncJob().jobId : ''),terminalRefreshId='';
+    const jobResolutionButtons = job => {
+      const resolve = q('[data-job-resolve]'), retry = q('[data-job-recheck]');
+      const failed = job?.engine==='fast' && job.operation==='mode' && job.status==='failed';
+      const review = failed ? job.errorDetails?.review : null;
+      resolve.hidden = !review || !['conflict','restore'].includes(review.kind);
+      resolve.textContent = review?.kind==='restore' ? '검증된 사본으로 복구' : '보존할 사본 선택';
+      resolve.onclick = resolve.hidden ? null : ()=>reviewModeFailure(job,review);
+      retry.hidden = !failed;
+      retry.onclick = failed ? ()=>continueModeFailure(job,'retry') : null;
+    };
     // One card for every whole-plugin transfer: a mode change, a data move, or a job an older build left unfinished.
     const renderGlobalJob = (card, job) => {
       const fast=job.engine==='fast',terminal=syncJobTerminal(job.status),running=fast&&job.status==='running';
@@ -9499,11 +9690,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         cancelBtn.onclick=async()=>{cancelBtn.disabled=true;try{await scopedCancelSyncJob();setMessage('중단을 요청했습니다. 지금 옮기던 묶음이 끝나면 멈춥니다. 저장 위치는 바뀌지 않습니다.');}catch(error){setMessage(`중단 요청 실패: ${error?.code||error?.message||error}`,'error');}};
       }
       q('[data-job-terminal-actions]').style.display=terminal?'flex':'none';
+      jobResolutionButtons(job);
       const failed=Array.isArray(job.failureDetails)?job.failureDetails:[];
       q('[data-job-result]').style.display=terminal?'block':'none';
       q('[data-job-result]').textContent=terminal?[job.status==='completed'?'완료':job.status==='cancelled'?'중단':'실패',job.message||'',
         job.operation==='copy'?'':`현재 적용 모드: ${modeLabel(job.effectiveMode||job.sourceMode||MODE_PLUGIN_ONLY)}`,
         job.error?`오류: ${job.error}`:'',failed.length?`옮기지 못한 항목\n${failed.slice(0,8).map(row=>`· ${row.key} — ${row.error}`).join('\n')}`:'',
+        ...modeFailureKeys(job),
         job.status==='failed'?'다시 적용하면 이미 옮긴 자료는 건너뜁니다. 계속 실패하면 고급 작업의 [모드 전환 중 자동 복구]를 사용하세요.':'',
         job.result?.warningCount>0?`확인이 필요한 항목 ${job.result.warningCount}건은 건너뛰고 원래 자리에 그대로 두었습니다.`:''].filter(Boolean).join('\n'):'';
       const diagnosticBox=q('[data-job-diagnostics]');
@@ -9528,6 +9721,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         else{setMessage('자동 복사를 사용할 수 없습니다. 아래 진단이 선택되어 있습니다. Ctrl+C 또는 ⌘C로 복사해 주세요.');box.focus();box.select();box.setSelectionRange?.(0,box.value.length);}
       };}
       if(job.kind==='global_mode'){renderGlobalJob(card,job);return;}
+      jobResolutionButtons(null);
       const terminal=syncJobTerminal(job.status),showResult=terminal||job.status==='paused';
       const rollback=globalRollbackView(job),waiting=job.status==='paused'&&job.phase==='recovery_pending';
       const workflow=job.kind==='global_mode'?globalWorkflowView(globalJobWorkflow(job)):null;
@@ -9626,7 +9820,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           global: settings.global && typeof settings.global === 'object' ? settings.global : { set:false, mode:MODE_PLUGIN_ONLY }
         };
         const pending=getSyncJob();
-        if(globalModeEnabled&&(!pending||syncJobTerminal(pending.status))){
+        if(globalModeEnabled&&!q('[data-mode-confirm-approve]').onclick&&(!pending||syncJobTerminal(pending.status))){
           const actual=settings.global?.mode||MODE_PLUGIN_ONLY;
           for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`))input.checked=input.value===actual;
         }
@@ -9671,7 +9865,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // ── 전환 경고 ──────────────────────────────────────────────────────────────────────────────────
     // Each direction states the consequence the user is actually accepting, and a cancelled dialog
     // stops before any write. Returns true to proceed, false to cancel.
-    const confirmModeTransition = async (fromMode, toMode, preview = null) => {
+    const confirmModeTransition = async (fromMode,toMode,preview=null,keepResetLocalScopes=null) => {
       if (fromMode === toMode && !preview) return true;
       let question = '';
       if (fromMode === MODE_PLUGIN_ONLY && toMode === MODE_SERVER_ONLY) {
@@ -9699,7 +9893,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       panel.setAttribute('aria-label',workflow?.title||'저장 위치 전환 확인');
       approve.textContent=workflow?.approve||'동의하고 이전';
       cancel.textContent=(['resume','rollback','local_cancel'].includes(preview?.workflow?.kind)||preview?.workflow?.newCheckRequired)?'닫기 · 미완료 작업 유지':'취소 · 원본 유지';
-      q('[data-mode-confirm-text]').textContent=question;
+      q('[data-mode-confirm-text]').textContent=question+(keepResetLocalScopes?'\n\n서버에 사본이 없는 완전한 기기 대화는 플러그인 단독 모드에서 함께 사용합니다.':'');
       panel.hidden=false;panel.style.display='grid';apply.disabled=true;cancel.focus();
       return await new Promise(resolve=>{
         let settled=false;
@@ -9760,7 +9954,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const transferSummary = result => [`대화 ${Number(result?.discoveredScopes || 0).toLocaleString()}개`,
       `서버로 옮김 ${Number(result?.uploaded || 0).toLocaleString()}건`, `플러그인으로 옮김 ${Number(result?.restored || 0).toLocaleString()}건`,
       `이미 같음 ${Number(result?.matched || 0).toLocaleString()}건`].join(' · ')
+      + (result?.repaired > 0 ? '\n서버 원본 '+result.repaired+'건을 검증된 사본으로 복구했습니다.' : '')
       + (result?.warningCount > 0 ? `\n확인이 필요한 항목 ${result.warningCount}건은 건너뛰고 원래 자리에 그대로 두었습니다.` : '')
+      + (result?.retainedResetScopes > 0 ? '\n기기에만 있던 대화 '+result.retainedResetScopes+'개도 함께 사용합니다.' : '')
       + (result?.serverPublicationPending ? '\n서버 쪽 경로 기록은 다음 연결 때 다시 맞춥니다.' : '');
     const transferBusy = () => {
       if (!globalJobRunning && !modeConfigurationBusy) return false;
@@ -9768,6 +9964,45 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return true;
     };
     const failureText = error => String(error?.userMessage || error?.code || error?.message || error);
+    const modeFailureKeys = job => {
+      if (job.status!=='failed' || job.operation!=='mode') return [];
+      const details = job.errorDetails || {}, rows = Array.isArray(details.blockers) ? details.blockers : [];
+      const keys = [...new Set([details.review?.key || details.key,...rows.flatMap(row=>[row.key,row.detail])]
+        .filter(value=>typeof value==='string' && value.length))].slice(0,8);
+      const missing = job.error==='MEMORY_SUITE_GLOBAL_SOURCE_CHANGED' || rows.some(row=>String(row.code).endsWith('_dependency_missing'));
+      const guidance = !details.review && missing
+        ? ['원본이 비어 있거나 바뀌었습니다. 검증된 백업에서 복원한 뒤 [다시 검사하고 전환]을 누르세요.'] : [];
+      return [...keys.map(key=>'· '+key),...guidance];
+    };
+    let retryingMode = false;
+    const continueModeFailure = async (job,choice) => {
+      if (retryingMode || transferBusy()) return;
+      retryingMode = true;
+      try {
+        setMessage('사본을 다시 확인하고 전환을 이어갑니다.');
+        const result = await retryGlobalModeFailure(job.jobId,choice);
+        await refreshPanelSettings();renderJob(getSyncJob());
+        setMessage('전역 설정 적용 완료 · '+modeLabel(result.mode)+'\n'+transferSummary(result),'good');
+      } catch (error) {
+        await refreshPanelSettings();renderJob(getSyncJob());
+        setMessage('전환을 마치지 못했습니다\n'+failureText(error),'error');
+      } finally { retryingMode = false; }
+    };
+    const reviewModeFailure = async (job,review) => {
+      if (retryingMode || transferBusy()) return;
+      const proofLabel = digest=>String(digest || '').slice(0,12);
+      const key = review.space+' · '+review.key;
+      const restoring = review.kind==='restore';
+      const text = restoring
+        ? key+'\n기기 사본이 이전에 확인한 서버 원본과 일치합니다. 비어 있는 서버 항목만 복구한 뒤 전환을 이어갑니다.'
+        : [key,'기기 사본 지문: '+proofLabel(review.localProof),
+          (review.serverProof?.[2] ? '서버 삭제 기록' : '서버 사본 지문: '+proofLabel(review.serverProof?.[1]))+' · 리비전 '+String(review.serverProof?.[0] || 0),
+          '선택한 내용으로 전환합니다. 전환 대상의 다른 내용은 덮어쓸 수 있습니다. 확인 후 사본이 바뀌면 다시 검토합니다.'].join('\n');
+      const choice = await askDialog({title:restoring?'누락 원본 복구':'전환에 사용할 사본 선택',text,
+        options:restoring ? [{label:'복구하고 전환',value:'restore'}]
+          : [{label:'기기 사본 사용',value:'plugin'},{label:review.serverProof?.[2]?'서버 삭제 기록 적용':'서버 사본 사용',value:'server'}]});
+      if (choice) await continueModeFailure(job,choice);
+    };
 
     q('[data-apply]').onclick = async()=>{
       if(q('[data-apply]').disabled)return;
@@ -9780,13 +10015,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         // A global write is judged against the GLOBAL mode; a scope write against this chat's.
         const fromMode = writeGlobal ? (lastSettings.global?.set === true ? lastSettings.global.mode : MODE_PLUGIN_ONLY) : lastSettings.mode;
         if (writeGlobal && globalModeEnabled && transferBusy()) return;
-        if (!(await confirmModeTransition(fromMode, mode))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
+        const resetPreference = writeGlobal && mode===MODE_PLUGIN_ONLY && fromMode!==mode ? initialResetPreference : null;
+        const keepResetLocalScopes = resetPreference?.choice==='empty' ? resetPreference : null;
+        if (!(await confirmModeTransition(fromMode,mode,null,keepResetLocalScopes))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
         if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
         if (writeGlobal) {
           const button=q('[data-apply]');button.disabled=true;
           try{
             setMessage(globalModeEnabled?'자료를 옮기고 있습니다. 모두 옮긴 뒤에 저장 위치를 바꿉니다.':'전역 설정을 적용하고 있습니다…');
-            const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:targetUrl}));
+            const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:targetUrl,keepResetLocalScopes}));
             await refreshPanelSettings();renderJob(getSyncJob());
             setMessage(globalModeEnabled?`전역 설정 적용 완료 · ${modeLabel(mode)}\n${transferSummary(result)}`:`전역 설정 적용 완료 · ${modeLabel(mode)}`,'good');
           }finally{button.disabled=false;}
@@ -9802,14 +10039,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // 모드 전환 중 자동 복구: 전환 중 발생한 에러를 감지하고 자동으로 해결합니다.
       q('[data-recover]').onclick=async()=>{
         if(transferBusy())return;
+        const keepResetLocalScopes = initialResetPreference?.choice==='empty' ? initialResetPreference : null;
         const choice=await askDialog({title:'모드 전환 중 자동 복구',
-          text:'어느 모드로 전환하던 중이었나요?\n고른 모드로 가는 전환에서 생긴 에러를 찾아 정리하고, 남은 자료를 옮겨 전환을 마칩니다.',
+          text:'어느 모드로 전환하던 중이었나요?\n고른 모드로 가는 전환에서 생긴 에러를 찾아 정리하고, 남은 자료를 옮겨 전환을 마칩니다.'+(keepResetLocalScopes?'\n플러그인 모드를 고르면 서버에 사본이 없는 완전한 기기 대화도 함께 사용합니다.':''),
           options:[{label:'1) 플러그인 모드로 전환 중',value:'plugin'},{label:'2) 서버 모드로 전환 중',value:'server'}]});
         if(!choice){setMessage('자동 복구를 닫았습니다. 아무것도 바꾸지 않았습니다.');return;}
         const button=q('[data-recover]');button.disabled=true;
         try{
           setMessage('전환 중 생긴 에러를 찾고 있습니다…');
-          const report=await withModeConfiguration(()=>recoverModeTransition(choice));
+          const report=await withModeConfiguration(()=>recoverModeTransition(choice,choice==='plugin' ? keepResetLocalScopes : null));
           await refreshPanelSettings();renderJob(getSyncJob());
           setMessage([`자동 복구 완료 · 현재 모드: ${modeLabel(report.targetMode)}`,
             report.findings.length?`해결한 문제 ${report.findings.length}가지\n${report.findings.map(row=>'· '+row.label).join('\n')}`:'감지된 에러는 없었습니다. 저장 위치와 자료를 다시 맞췄습니다.',
@@ -11151,6 +11389,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     previewLocalCancellation,
     pauseGlobalModeJob,
     getGlobalMode: async (force = true) => await readGlobalMode(force),
+    retryGlobalModeFailure,
     setGlobalMode: async (mode, modeOptions = {}) => { requireOperationalMode(mode); return await withModeConfiguration(()=>persistGlobalMode(mode, modeOptions && typeof modeOptions === 'object' ? modeOptions : {})); },
     clearGlobalMode: async () => await withModeConfiguration(()=>clearGlobalMode()),
     listScopeModes: async (force = false) => {
