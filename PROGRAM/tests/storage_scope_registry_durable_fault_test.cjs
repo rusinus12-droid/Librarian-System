@@ -1,7 +1,10 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..');
-const files=['sdk/MemorySuiteStorageClient.source.js','sdk/MemorySuiteStorageClient.libra.source.js',...['Flashback_Memory.js','HAYAKU_Locator_Continuity.js','LIBRA.js','LIA_Persona_Linker.js','RETRACE.js'].map(n=>'plugins/'+n)];
+// LIA_Persona_Linker.js has carried no storage SDK since c4bd7e5d (LIA is local-only).
+const files=['sdk/MemorySuiteStorageClient.source.js','sdk/MemorySuiteStorageClient.libra.source.js',...['Flashback_Memory.js','HAYAKU_Locator_Continuity.js','LIBRA.js','RETRACE.js'].map(n=>'plugins/'+n)];
+// RETRACE embeds a hash-pinned manager-only SDK (tools/lib/sdk_variants.cjs) that predates the backup-follows-primary write.
+const preservedSdk=file=>file==='plugins/RETRACE.js';
 const scope={scopeId:'durable-scope',scopeKey:'durable-scope',available:true};
 const key='__memory_suite_internal_scope_routes_v1__:libra';
 const registry={schema:'memory-suite.scope-routing.v1',entries:{[scope.scopeId]:{...scope,mode:'server_only',updatedAt:1}},updatedAt:1};
@@ -16,7 +19,20 @@ const store=(kind,seed)=>({map:new Map(seed||[]),async getItem(k){if(kind==='rea
   await assert.rejects(()=>b.writeScopeRegistryLocal(registry),/scope_routing_storage_unavailable/);
   assert.notEqual((await b.readScopeMode(scope)).mode,'server_only');count++;
  }
- for(const [pk,dk] of [['ok','false'],['false','ok'],['ok','throw']]){
+ // Since f3f881bf pluginStorage alone decides a routing write; the device copy is an emergency backup.
+ // A failed primary write is reported as failed and must leave no mode behind, not even through the backup.
+ {
+  const plugin=store('false'),device=store('ok'),ctx=vm.createContext({risuai:{pluginStorage:plugin,getLocalPluginStorage:async()=>device},console,setTimeout,clearTimeout,TextEncoder,crypto:globalThis.crypto});
+  const make=vm.runInContext(source+'\ncreateMemorySuiteStorageBridge;',ctx),b=make({namespace:'libra'});
+  await assert.rejects(()=>b.writeScopeRegistryLocal(registry),/scope_routing_storage_unavailable/);
+  if(!preservedSdk(file)){
+   assert.notEqual((await b.readScopeMode(scope)).mode,'server_only',file+': a failed write does not apply in this instance');
+   assert.notEqual((await make({namespace:'libra'}).readScopeMode(scope)).mode,'server_only',file+': nor after a restart through the device backup');
+   assert.equal(device.map.has(key),false,file+': the backup follows only a saved primary copy');
+  }
+  count++;
+ }
+ for(const [pk,dk] of [['ok','false'],['ok','throw']]){
   const plugin=store(pk),device=store(dk),ctx=vm.createContext({risuai:{pluginStorage:plugin,getLocalPluginStorage:async()=>device},console,setTimeout,clearTimeout,TextEncoder,crypto:globalThis.crypto});
   const make=vm.runInContext(source+'\ncreateMemorySuiteStorageBridge;',ctx),b=make({namespace:'libra'});
   await b.writeScopeRegistryLocal(registry);assert.equal((await make({namespace:'libra'}).readScopeMode(scope)).mode,'server_only');count++;

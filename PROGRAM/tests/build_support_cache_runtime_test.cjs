@@ -4,6 +4,9 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const helper=path.resolve(__dirname,'../tools/ensure_build_support.cjs');
+// Same archiver choice as tools/ensure_build_support.cjs: on Windows a bare `tar` may be GNU tar from Git,
+// which reads `C:\...` as a remote host; the system bsdtar handles drive paths.
+const TAR=process.platform==='win32'?(process.env.SystemRoot?path.join(process.env.SystemRoot,'System32','tar.exe'):'tar.exe'):'tar';
 const names=['jsdom','acorn','terser','fake-indexeddb','fixture-child'];
 // The child process require()s the helper by path, and Node resolves symlinks in module
 // paths, so macOS reports /private/var for a tmpdir handed over as /var. Compare the
@@ -23,7 +26,7 @@ function fixture(t){
   fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version:'1.0.0',main:'index.js'}));
   fs.writeFileSync(path.join(dir,'index.js'),name==='jsdom'?"module.exports=require('fixture-child');":"module.exports={ready:true};");
   const tarball=path.join(root,name+'.tgz');
-  const tar=spawnSync('tar',['-czf',tarball,'-C',path.dirname(dir),'package'],{encoding:'utf8'});
+  const tar=spawnSync(TAR,['-czf',tarball,'-C',path.dirname(dir),'package'],{encoding:'utf8'});
   assert.equal(tar.status,0,tar.stderr);
   const hash=crypto.createHash('sha512').update(fs.readFileSync(tarball)).digest();
   const hex=hash.toString('hex');
@@ -35,7 +38,7 @@ function fixture(t){
  const hash=crypto.createHash('sha256').update(lock).digest('hex').slice(0,16);
  const legacy=path.join(temp,'librarian-build-support-'+hash,'node_modules');
  const cachePackages=selected=>{for(const name of selected){const row=tarballs.get(name);fs.mkdirSync(path.dirname(row.cacheFile),{recursive:true});fs.copyFileSync(row.tarball,row.cacheFile);}};
- const unpackLegacy=(selected,base=legacy)=>{for(const name of selected){const dir=path.join(base,name);fs.mkdirSync(dir,{recursive:true});const r=spawnSync('tar',['-xzf',tarballs.get(name).tarball,'-C',dir,'--strip-components=1'],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);}};
+ const unpackLegacy=(selected,base=legacy)=>{for(const name of selected){const dir=path.join(base,name);fs.mkdirSync(dir,{recursive:true});const r=spawnSync(TAR,['-xzf',tarballs.get(name).tarball,'-C',dir,'--strip-components=1'],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);}};
  const run=(options={})=>{
   const code=`let support;try{support=require(${JSON.stringify(path.join(program,'tools/ensure_build_support.cjs'))}).ensureBuildSupportDependencies(${JSON.stringify(options)});}catch(e){console.log(JSON.stringify({error:e.message,nodePath:process.env.NODE_PATH,toolchain:process.env.GRADIA_TOOLCHAIN_ROOT}));process.exit(0);}const loads={};if(support)for(const name of ${JSON.stringify(names.slice(0,4))}){try{loads[name]=require(require.resolve(name,{paths:[support.modulesDir]})).ready===true;}catch(e){loads[name]=e.code;}}console.log(JSON.stringify({support,loads,nodePath:process.env.NODE_PATH,toolchain:process.env.GRADIA_TOOLCHAIN_ROOT}));`;
   const r=spawnSync(process.execPath,['-e',code],{encoding:'utf8',timeout:30000,env:{...process.env,TMPDIR:temp,TMP:temp,TEMP:temp,NODE_PATH:'',GRADIA_TOOLCHAIN_ROOT:'',npm_config_cache:cache,NPM_CONFIG_CACHE:cache}});

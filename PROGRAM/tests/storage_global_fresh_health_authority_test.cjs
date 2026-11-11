@@ -30,7 +30,9 @@ function fixture([namespace,file]){
  await run('malformed import marker blocked',async f=>{f.values.set(f.routeKey,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace,legacyGlobalModeImported:'false',entries:{}}));await assert.rejects(f.read,/HEALTH_ROUTE_UNVERIFIED/);});
  await run('wrong namespace blocked',async f=>{f.values.set(f.routeKey,JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'foreign',entries:{}}));await assert.rejects(f.read,/HEALTH_ROUTE_UNVERIFIED/);});
  await run('empty to explicit local changes witness',async f=>{f.setMode('');const before=await f.read();f.setMode('plugin_only');assert.notEqual((await f.read()).binding,before.binding);});
- await run('device store replacement during read blocked',async f=>{f.setHook(k=>{if(k===f.key)f.host.safeLocalStorage={getItem:async()=>null,setItem:async()=>true};});await assert.rejects(f.read,/HEALTH_ROUTE_CHANGED/);});
+ // Since 0e1c039d: RisuAI API v3 returns a new proxy from every getLocalPluginStorage() call, so the SDK pins the
+ // first device provider per host API. A later provider object is never consulted; the read stays bound to the pinned one.
+ await run('device store replacement during read keeps the pinned provider',async f=>{let replacementReads=0;f.setHook(k=>{if(k===f.key)f.host.safeLocalStorage={getItem:async()=>{replacementReads++;return null;},setItem:async()=>true};});const r=await f.read();assert.equal(r.raw,'exact native bytes');assert.equal(r.mode,'plugin_only');assert.equal(replacementReads,0,'the replacement provider is never read');assert.equal((await f.read()).binding,r.binding);});
  await run('persisted local does not require legacy read',async f=>{f.values.set(f.routeKey,f.route('plugin_only'));delete f.host.getArgument;assert.equal((await f.read()).raw,'exact native bytes');});
  }for(const row of results)console.log(JSON.stringify(row));console.log(JSON.stringify({cases:results.length,passed:results.filter(r=>r.status==='PASS').length}));if(results.some(r=>r.status!=='PASS'))process.exitCode=1;
 })().catch(e=>{console.error(e);process.exitCode=1;});

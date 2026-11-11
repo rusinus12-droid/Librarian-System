@@ -3,13 +3,18 @@ const assert=require('node:assert/strict'),test=require('node:test');
 const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
 const jobKey=namespace=>`__memory_suite_internal_sync_job_v1__:${namespace}`;
+async function applyLegacyPreview(f,target){
+ const preview=await f.bridge.previewGlobalMode(target);
+ assert.equal(preview.completeKnownScopes,true);
+ return await f.bridge.setGlobalMode(target,{previewFingerprint:preview.inventoryFingerprint});
+}
 async function replaced(variant,options={}){
  const original=await fixture(variant);let replacement,active,stop;
  try{
   if(options.remoteScopeMode){const registry=JSON.parse(original.values.get(original.registryKey));Object.assign(registry.entries.B,{mode:options.remoteScopeMode,origin:'user_explicit'});original.values.set(original.registryKey,JSON.stringify(registry));}
   if(options.remoteSource)await original.bridge.setGlobalMode('server_only');
   let requested=false;stop=original.bridge.subscribeSyncJob(job=>{if(!requested&&job?.status!=='completed'&&job?.checkpoints?.A){requested=true;void original.bridge.pauseGlobalModeJob();}});
-  await original.bridge.setGlobalMode(options.remoteSource?'plugin_only':'server_only');stop();await original.bridge.dispose();
+  await applyLegacyPreview(original,options.remoteSource?'plugin_only':'server_only');stop();await original.bridge.dispose();
   replacement=await fixture(variant);
   replacement.app.repositories[variant[0]].mutate({kind:'set',space:'plugin',key:'restored.sentinel',value:'RESTORED_SERVER_DATA',operationId:'restore_fixture'});
   active=await fixture(variant,{app:original.app,values:original.values,transport:replacement.host.nativeFetch,...options.activeOptions});
@@ -112,7 +117,10 @@ for(const variant of variants){
    await assert.rejects(()=>fresh.bridge.previewLocalCancellation(),error=>error.code==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED'
     &&error.details?.reason==='server_source_witness'&&error.details.key===remoteKey&&error.details.space==='plugin'&&error.details.localStatus===localStatus);
    dom=makePanelDom();await fresh.bridge.mountConnectionPanel(dom.container);dom.byAttr('data-url').value='http://127.0.0.1:47631';
-   await dom.byAttr('data-job-retry').onclick();
+   await dom.byAttr('data-recover').onclick();
+   assert.notEqual(typeof dom.byAttr('data-mode-confirm-approve').onclick,'function','a blocked review never asks for consent');
+   assert.match(dom.byAttr('data-status').textContent,/^자동 복구를 마치지 못했습니다\n예전 원본 목록에 서버 저장 키가 있습니다/);
+   assert.equal(fresh.bridge.getSyncJob().status,'paused','the journal stays for a later review');
    const diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
    assert.equal(diagnostic.details.reason,'server_source_witness');assert.equal(diagnostic.details.key,remoteKey);assert.equal(diagnostic.details.localStatus,localStatus);
    assert.match(diagnostic.blockerReason,/서버 저장 키/);assert.match(diagnostic.actionRequired,/기기 원본이 없다는 뜻은 아니며/);
@@ -146,24 +154,31 @@ for(const variant of variants){
    assert.equal(f.replacement.calls.length,calls);
   }finally{await fresh?.close();await f.close();}
  });
- test(`${namespace}: primary recovery button reviews local cancellation and closing keeps the old job`,{timeout:30000},async()=>{
+ test(`${namespace}: automatic recovery reviews local cancellation and closing keeps the old job`,{timeout:30000},async()=>{
   const f=await replaced(variant),dom=makePanelDom();
   try{
    await f.active.bridge.mountConnectionPanel(dom.container);dom.byAttr('data-url').value='http://127.0.0.1:47631';
-   assert.equal(dom.byAttr('data-job-retry').textContent,'기기 원본 확인 후 취소');
-   assert.match(dom.byAttr('data-job-result').textContent,/서버 복원·초기화|DATA 교체/);
+   assert.equal(dom.byAttr('data-job-title').textContent,'끝나지 않은 전환 작업이 남아 있습니다');
+   assert.equal(dom.byAttr('data-job-retry').style.display,'none','the stale card offers no in-card retry');
+   assert.match(dom.byAttr('data-job-workflow').textContent,/서버 DATA가 바뀌어.*\n고급 작업의 \[모드 전환 중 자동 복구\].*현재 서버는 바꾸지 않고/);
    const before=[...f.original.values],calls=f.replacement.calls.length;
-   let running=dom.byAttr('data-job-retry').onclick();
+   let running=dom.byAttr('data-recover').onclick();
    for(let i=0;i<200&&typeof dom.byAttr('data-mode-confirm-approve').onclick!=='function';i++)await new Promise(resolve=>setTimeout(resolve,5));
    assert.equal(dom.byAttr('data-mode-confirm-title').textContent,'새 서버를 보존하고 이전 취소');
    assert.equal(dom.byAttr('data-mode-confirm-approve').textContent,'기기 경로 복구로 취소');
    assert.match(dom.byAttr('data-mode-confirm-text').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
+   assert.notEqual(typeof dom.byAttr('data-ask-a').onclick,'function','a changed server offers no direction choice');
    dom.byAttr('data-mode-confirm-cancel').onclick();await running;
    assert.deepEqual([...f.original.values],before);assert.equal(f.replacement.calls.length,calls);
-   running=dom.byAttr('data-job-retry').onclick();
+   assert.equal(f.active.bridge.getSyncJob().status,'paused');
+   assert.match(dom.byAttr('data-status').textContent,/확인창을 닫았습니다/);
+   running=dom.byAttr('data-recover').onclick();
    for(let i=0;i<200&&typeof dom.byAttr('data-mode-confirm-approve').onclick!=='function';i++)await new Promise(resolve=>setTimeout(resolve,5));
    dom.byAttr('data-mode-confirm-approve').onclick();await running;
    assert.equal(f.active.bridge.getSyncJob().rollbackComplete,true);
+   assert.match(dom.byAttr('data-status').textContent,/^자동 복구 완료 · 이전 작업을 취소하고 원래 기기 저장 경로로 돌아왔습니다/);
+   for(const id of ['A','B'])assert.equal((await f.active.bridge.getScopeMode({scopeId:id})).mode,'plugin_only');
+   assert.equal(await f.active.proxy.getItem(namespace+'.A'),'A_SOURCE','memory I/O works again');
    const diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
    assert.equal(diagnostic.rollbackPublication.status,'skipped_changed_server');
    assert(!Object.hasOwn(diagnostic,'localCancellationIntent'));assert(!Object.hasOwn(diagnostic,'serverPins'));

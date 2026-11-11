@@ -4,6 +4,9 @@ const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
 const busy=()=>new Response(JSON.stringify({ok:false,error:'server_maintenance_in_progress'}),{status:503});
 const finalRead=(f,url,key)=>f?.bridge.getSyncJob()?.phase==='final_verify'&&new URL(url).pathname==='/v1/kv/get'&&new URL(url).searchParams.get('key')===key;
+// Since 09f07fa2 an unapproved setGlobalMode runs the fast engine. These contracts belong to the per-scope plan engine,
+// which older builds left behind and approved full previews still start, so each fresh start passes the approval.
+const approvedStart=async(f,mode)=>{const preview=await f.bridge.previewGlobalMode(mode);return await f.bridge.setGlobalMode(mode,{previewFingerprint:preview.inventoryFingerprint});};
 const catalog110={characters:[{chaId:'one',chats:[{id:'A'}]},{chaId:'two',chats:[{id:'B'},{id:'C'},...Array.from({length:107},(_,i)=>({id:'extra_'+i}))]}]};
 for(const variant of variants){
  const namespace=variant[0],key=namespace+'.A';
@@ -18,7 +21,7 @@ for(const variant of variants){
    }});
    await f.bridge.mountConnectionPanel(dom.container);
    stop=f.bridge.subscribeSyncJob(job=>{if(job?.serverWait?.active)waits.push({job,diagnostic:JSON.parse(dom.byAttr('data-job-diagnostics').value),phase:dom.byAttr('data-job-phase').textContent});});
-   assert.equal((await f.bridge.setGlobalMode('server_only')).completeKnownScopes,true);
+   assert.equal((await approvedStart(f,'server_only')).completeKnownScopes,true);
    assert.equal(reads,3);assert.equal(waits.length,2);
    for(const wait of waits){assert.equal(wait.job.verifiedScopes,110);assert.equal(wait.job.discoveredScopes,110);
     assert.equal(wait.diagnostic.recoveryState,'waiting_server');assert.equal(wait.diagnostic.waitingForUser,false);assert.match(wait.phase,/서버 작업 종료 대기/);}
@@ -35,11 +38,11 @@ for(const variant of variants){
     if(locked&&finalRead(f,url,key)){reads++;return busy();}return base(url,init);
    }});
    await f.bridge.mountConnectionPanel(dom.container);
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_SERVER_MAINTENANCE'&&error.details.readOnly===true&&error.details.retries===5);
+   await assert.rejects(()=>approvedStart(f,'server_only'),error=>error.code==='MEMORY_SUITE_SERVER_MAINTENANCE'&&error.details.readOnly===true&&error.details.retries===5);
    const saved=f.bridge.getSyncJob(),diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
    assert.equal(reads,6);assert.equal(saved.status,'paused');assert.equal(saved.failedPhase,'final_verify');assert.equal(saved.verifiedScopes,3);
    assert.equal(saved.serverWait.active,false);assert.equal(diagnostic.waitingForUser,true);
-   assert.match(diagnostic.blockerReason,/백업·복원·업데이트/);assert.match(diagnostic.actionRequired,/작업이 끝난 뒤.*중단한 이전 재개/);
+   assert.match(diagnostic.blockerReason,/백업·복원·업데이트/);assert.match(diagnostic.actionRequired,/작업이 끝난 뒤.*\[모드 전환 중 자동 복구\]/);
    assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only','global mode remains uncommitted');
    locked=false;assert.equal((await f.bridge.setGlobalMode('server_only')).completeKnownScopes,true);
    assert.equal(f.bridge.getSyncJob().jobId,saved.jobId);assert.equal(f.bridge.getSyncJob().globalPlanDigest,saved.globalPlanDigest);
@@ -51,7 +54,7 @@ for(const variant of variants){
   try{
    f=await fixture(variant,{transportFactory:base=>async(url,init)=>{if(finalRead(f,url,key)){reads++;return busy();}return base(url,init);}});
    stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.serverWait?.active){requested=true;void f.bridge.pauseGlobalModeJob();}});
-   const result=await f.bridge.setGlobalMode('server_only');
+   const result=await approvedStart(f,'server_only');
    assert.equal(result.status,'paused');assert.equal(result.phase,'paused_resumable');assert.equal(result.error,'');assert.equal(result.verifiedScopes,3);
    assert.equal(reads,1);assert.equal(result.serverWait.active,false);assert.equal(f.values.get(key),'A_SOURCE');
   }finally{stop?.();await f?.close();}
@@ -62,7 +65,7 @@ for(const variant of variants){
    f=await fixture(variant,{transportFactory:base=>async(url,init)=>{
     if(finalRead(f,url,key)){reads++;return new Response(JSON.stringify({ok:false,error:'unrelated_failure'}),{status:503});}return base(url,init);
    }});
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.message==='unrelated_failure');
+   await assert.rejects(()=>approvedStart(f,'server_only'),error=>error.message==='unrelated_failure');
    assert.equal(reads,1);assert.equal(f.bridge.getSyncJob().serverWait,null);
   }finally{await f?.close();}
  });
@@ -71,7 +74,7 @@ for(const variant of variants){
   try{
    f=await fixture(variant,{transportFactory:base=>async(url,init)=>{if(finalRead(f,url,key)){reads++;return busy();}return base(url,init);}});
    stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.serverWait?.active){requested=true;void f.bridge.cancelSyncJob();}});
-   const result=await f.bridge.setGlobalMode('server_only');
+   const result=await approvedStart(f,'server_only');
    assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);assert.equal(reads,1);
    assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(key),'A_SOURCE');
    assert.equal(f.app.repositories[namespace].get('plugin',key).value,'A_SOURCE');
@@ -86,7 +89,7 @@ for(const variant of variants){
     if(finalRead(f,url,key))return busy();return base(url,init);
    }});
    stop=f.bridge.subscribeSyncJob(job=>{if(job?.serverWait?.active)useReplacement=true;});
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>/DATA_INSTANCE|CONNECTION_STALE|SERVER_PIN/.test(error.code||error.message));
+   await assert.rejects(()=>approvedStart(f,'server_only'),error=>/DATA_INSTANCE|CONNECTION_STALE|SERVER_PIN/.test(error.code||error.message));
    assert.equal(f.bridge.getSyncJob().status,'paused');assert.notEqual(f.bridge.getSyncJob().error,'MEMORY_SUITE_SERVER_MAINTENANCE');
    assert.deepEqual(replacement.app.repositories[namespace].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),before);
    assert(!replacement.calls.some(row=>row.method!=='GET'),'no mutation reaches the replacement server');
@@ -101,9 +104,9 @@ for(const variant of variants){
    }});
    await f.bridge.mountConnectionPanel(dom.container);
    stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.serverWait?.active){requested=true;void f.bridge.cancelSyncJob();}});
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING');
+   await assert.rejects(()=>approvedStart(f,'server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING');
    const diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
-   assert.match(diagnostic.blockerReason,/백업·복원·업데이트/);assert.match(diagnostic.actionRequired,/작업이 끝난 뒤.*취소 복구 계속/);
+   assert.match(diagnostic.blockerReason,/백업·복원·업데이트/);assert.match(diagnostic.actionRequired,/작업이 끝난 뒤.*\[모드 전환 중 자동 복구\]/);
    assert.equal(f.bridge.getSyncJob().status,'paused');assert.equal(f.values.get(key),'A_SOURCE');
   }finally{stop?.();dom.root.isConnected=false;await f?.close();}
  });
@@ -115,7 +118,7 @@ for(const variant of variants){
     return base(url,init);
    }});
    stop=f.bridge.subscribeSyncJob(job=>{if(job?.serverWait?.active)observed=true;});
-   assert.equal((await f.bridge.setGlobalMode('server_only')).completeKnownScopes,true);
+   assert.equal((await approvedStart(f,'server_only')).completeKnownScopes,true);
    // A backup now only fences writes: the final read is served without a maintenance wait,
    // and the following publication write retries through the short backup window.
    assert.equal((await backupPromise).ok,true);assert.equal(observed,false);assert.equal(f.bridge.getSyncJob().verifiedScopes,3);

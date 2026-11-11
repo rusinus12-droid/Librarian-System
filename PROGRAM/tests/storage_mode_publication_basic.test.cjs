@@ -55,9 +55,13 @@ test('route content tamper, forged qualification and foreign-owner records never
  saved.modePublication.atomicOwnerQualified=false;saved.modePublication.namespace='hayaku';f.values.set(f.key,JSON.stringify(saved));assert.equal((await f.bridge.inspectModePublication()).status,'malformed');
  saved.modePublication.namespace='libra';saved.entries[f.scope.scopeId].mode='server_only';f.values.set(f.key,JSON.stringify(saved));assert.equal((await f.bridge.inspectModePublication()).status,'mismatch');
 }finally{await f.close();}});
-test('divergent real plugin and device record copies remain explicitly conflicting',async()=>{const values=new Map(),device={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{values.set(k,v);return true;}};const f=fixture('libra',null,{device});try{
+// Since f3f881bf pluginStorage alone is the routing record; the device copy is an emergency backup that is read
+// only when the primary copy is absent. A stale backup is therefore not an authority conflict.
+test('a divergent device backup does not override the primary plugin record',async()=>{const values=new Map(),device={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{values.set(k,v);return true;}};const f=fixture('libra',null,{device});try{
  await f.bridge.setScopeMode(f.scope,'plugin_only');const older=values.get(f.key);await f.bridge.setServerUrl('http://127.0.0.1:47630');values.set(f.key,older);
- const before=f.writes.length,view=await f.bridge.inspectModePublication();assert.equal(view.status,'conflict');assert.equal(view.semanticModeEpoch,null);assert.equal(f.writes.length,before);
+ assert.notEqual(f.values.get(f.key),older,'the primary copy holds the newer publication');
+ const before=f.writes.length,view=await f.bridge.inspectModePublication();assert.equal(view.status,'observed');assert.equal(view.publication.reason,'server_url_settled','the newer primary publication is reported');assert.equal(view.semanticModeEpoch,null);assert.equal(f.writes.length,before);
+ const primaryOnly=await f.bridge.inspectModePublication();values.delete(f.key);assert.deepEqual(await f.bridge.inspectModePublication(),primaryOnly,'the backup does not take part while the primary exists');
 }finally{await f.close();}});
 test('rejected mode persistence does not claim a published readback',async()=>{let reject=false;const f=fixture('libra',null,{rejectWrite:()=>reject});try{
  await f.bridge.setScopeMode(f.scope,'plugin_only');const prior=f.values.get(f.key);reject=true;await assert.rejects(()=>f.bridge.setServerUrl('http://127.0.0.1:47630'),/STORAGE_UNAVAILABLE|storage_unavailable/);assert.equal(f.values.get(f.key),prior);
@@ -70,9 +74,11 @@ test('invalid connection URLs are rejected before any diagnostic persistence',as
  await assert.rejects(()=>f.bridge.setServerUrl('https://example.invalid'),e=>e.code==='MEMORY_SUITE_INVALID_SERVER_URL');assert.equal(f.writes.length,0);
 }finally{await f.close();}});
 test('final asynchronous store identity read cannot hide an overlapping configuration change',async()=>{const f=fixture();try{
- await f.bridge.setScopeMode(f.scope,'plugin_only');let reads=0,changed=false;
- f.host.getLocalPluginStorage=async()=>{reads++;if(reads===2&&!changed){changed=true;await f.bridge.setServerUrl('http://127.0.0.1:47630');}return f.store;};
- assert.equal((await f.bridge.inspectModePublication()).status,'changed');
+ // Since 0e1c039d the device provider is pinned per host API (RisuAI v3 returns a new proxy per call), so the
+ // overlapping change is made while the inspection reads the routing record instead of on a provider lookup.
+ await f.bridge.setScopeMode(f.scope,'plugin_only');let changed=false;const read=f.store.getItem.bind(f.store);
+ f.store.getItem=async k=>{const value=await read(k);if(!changed&&k===f.key){changed=true;await f.bridge.setServerUrl('http://127.0.0.1:47630');}return value;};
+ assert.equal((await f.bridge.inspectModePublication()).status,'changed');assert.equal(changed,true);
 }finally{await f.close();}});
 test('malformed registry without a publication is not reported as a valid absent legacy record',async()=>{const f=fixture();try{
  f.values.set(f.key,JSON.stringify({schema:'invented',namespace:'libra',entries:{}}));assert.equal((await f.bridge.inspectModePublication()).status,'malformed');
@@ -104,6 +110,9 @@ test('diagnostic revision exhaustion refuses wrap or default reset',async()=>{co
  await f.bridge.setScopeMode(f.scope,'plugin_only');const saved=f.record();saved.modePublication.revision=Number.MAX_SAFE_INTEGER;const raw=JSON.stringify(saved);f.values.set(f.key,raw);
  await assert.rejects(()=>f.bridge.setServerUrl('http://127.0.0.1:47630'),e=>e.code==='MODE_PUBLICATION_GENERATION_EXHAUSTED');assert.equal(f.values.get(f.key),raw);
 }finally{await f.close();}});
-test('partial physical persistence keeps existing mode behavior but exposes unqualified conflict',async()=>{let reject=false;const values=new Map(),device={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{if(reject)return false;values.set(k,v);return true;}};const f=fixture('libra',null,{device});try{
- await f.bridge.setScopeMode(f.scope,'plugin_only');reject=true;await f.bridge.setServerUrl('http://127.0.0.1:47630');assert.equal(f.record().entries[f.scope.scopeId].mode,'plugin_only');const view=await f.bridge.inspectModePublication();assert.equal(view.status,'conflict');assert.equal(view.semanticModeEpoch,null);
+// Since f3f881bf a rejected device backup write does not fail a saved primary write, and the primary decides the view.
+test('a rejected device backup keeps existing mode behavior and the primary publication',async()=>{let reject=false;const values=new Map(),device={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{if(reject)return false;values.set(k,v);return true;}};const f=fixture('libra',null,{device});try{
+ await f.bridge.setScopeMode(f.scope,'plugin_only');const backup=values.get(f.key);reject=true;await f.bridge.setServerUrl('http://127.0.0.1:47630');assert.equal(f.record().entries[f.scope.scopeId].mode,'plugin_only');
+ assert.equal(values.get(f.key),backup,'the rejected backup keeps its older copy');assert.notEqual(f.values.get(f.key),backup);
+ const view=await f.bridge.inspectModePublication();assert.equal(view.status,'observed');assert.equal(view.publication.reason,'server_url_settled','the saved primary publication is reported');assert.equal(view.semanticModeEpoch,null);
 }finally{await f.close();}});

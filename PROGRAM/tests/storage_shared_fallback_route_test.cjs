@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const root=path.resolve(__dirname,'..');
 const scope={scopeId:'route-a',scopeKey:'route-a',characterId:'character-a',chatId:'chat-a',available:true};
 const cases=[
- {name:'argument-only server fallback',argument:'server_only',registry:{},scopeMode:'server_only',sharedMode:'mirror'},
+ {name:'argument-only server fallback',argument:'server_only',registry:{},scopeMode:'server_only',sharedMode:'mirror',libraSharedMode:'server_only'},
  {name:'plugin-only fallback',argument:'plugin_only',registry:{},scopeMode:'plugin_only',sharedMode:'plugin_only'},
  {name:'consumed legacy argument',argument:'server_only',registry:{legacyGlobalModeImported:true},scopeMode:'plugin_only',sharedMode:'plugin_only'},
  {name:'explicit global plugin-only overrides old argument',argument:'server_only',registry:{entries:{__memory_suite_global__:{scopeId:'__memory_suite_global__',scopeKey:'__memory_suite_global__',global:true,mode:'plugin_only',updatedAt:1}}},scopeMode:'plugin_only',sharedMode:'plugin_only'},
@@ -22,6 +22,9 @@ for(const [namespace,file] of [['libra','MemorySuiteStorageClient.libra.source.j
  const bridge=make({namespace,pluginId:namespace,startupDiagnostics:false,managementButton:false,autoMigratePlugin:false,autoMigrateLocal:false,currentScopeProvider:async()=>scope});
  assert.equal((await bridge.readScopeModeValue(scope)).mode,row.scopeMode);
  const shared=await bridge.normalizeRouteDescriptor({kind:'shared'},'plugin',namespace+'.registry',scope);
- assert.equal(shared.mode,row.sharedMode,'shared infrastructure must follow the same admitted fallback as scoped records');
+ // Since f3d7b1e3 the LIBRA control-plane variant routes shared records by the effective global mode (stored row,
+ // else the legacy argument): a server-only global keeps them server-only, like its scoped records, with no mirror round trip.
+ const sharedMode=namespace==='libra'&&row.libraSharedMode?row.libraSharedMode:row.sharedMode;
+ assert.equal(shared.mode,sharedMode,'shared infrastructure must follow the same admitted fallback as scoped records');
  assert.equal(writes,0);assert.equal(network,0);assert.deepEqual([...values],before);
 });

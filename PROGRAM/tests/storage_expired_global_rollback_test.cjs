@@ -4,6 +4,12 @@ const test = require('node:test');
 const { fixture, variants } = require('./storage_global_allchat_job_test.cjs');
 
 const jobKey = namespace => `__memory_suite_internal_sync_job_v1__:${namespace}`;
+// Since 09f07fa2 an unapproved setGlobalMode runs the fast engine. These contracts belong to the per-scope plan engine,
+// which older builds left behind and approved full previews still start, so each fresh start passes the approval.
+async function approvedStart(f, mode) {
+  const preview = await f.bridge.previewGlobalMode(mode);
+  return await f.bridge.setGlobalMode(mode, { previewFingerprint: preview.inventoryFingerprint });
+}
 async function expiredPartialJob(variant, options = {}) {
   const original = await fixture(variant, options);
   let requested = false;
@@ -14,7 +20,7 @@ async function expiredPartialJob(variant, options = {}) {
     }
   });
   try {
-    assert.equal((await original.bridge.setGlobalMode('server_only')).status, 'paused');
+    assert.equal((await approvedStart(original, 'server_only')).status, 'paused');
     await original.bridge.dispose();
     const job = JSON.parse(original.values.get(jobKey(variant[0])));
     // Reproduce a journal left overnight, rather than bypassing its loader.

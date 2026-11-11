@@ -6,6 +6,8 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 const { create, pause, until, META } = require('./fixtures/libra_gui_memory_dom_host.cjs');
 const { createHandlerFixture } = require('./fixtures/shared_reanalysis_handler_fixture.cjs');
 
@@ -135,11 +137,31 @@ async function openServerPanelNormally(s) {
   await settleOwnerStore(s);
 }
 
+// Since 09f07fa2 the GUI applies a mode through the fast engine, which never leaves a per-scope plan.
+// The interrupted job under test is one an OLDER build left behind, so the snapshot is produced by a
+// throwaway copy of the plugin whose storage bridge is reachable from the test. Only this snapshot step
+// runs the copy; the recovery below runs the unmodified plugin.
+const BRIDGE_DECLARATION = 'const MemorySuiteStorageBridge = createMemorySuiteStorageBridge(';
+const TEST_BRIDGE_GLOBAL = '__memorySuiteTransitionTestBridge';
+function snapshotPluginCopy(pluginPath) {
+  const source = fs.readFileSync(pluginPath, 'utf8');
+  const count = source.split(BRIDGE_DECLARATION).length - 1;
+  assert.equal(count, 1, `${path.basename(pluginPath)}: exactly one owner storage bridge declaration`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'transition-snapshot-'));
+  const copy = path.join(dir, path.basename(pluginPath));
+  fs.writeFileSync(copy, source.replace(BRIDGE_DECLARATION,
+    `const MemorySuiteStorageBridge = globalThis.${TEST_BRIDGE_GLOBAL} = createMemorySuiteStorageBridge(`));
+  return { copy, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
 async function createPausedGlobalTransitionSnapshot(name, kind, pluginPath, handler) {
   const jobKey = `__memory_suite_internal_sync_job_v1__:${owners[name]}`;
   let capturedPausedJob = null;
-  const s = await create(name, kind, {
-    pluginPath,
+  const olderBuild = snapshotPluginCopy(pluginPath);
+  let s;
+  try {
+  s = await create(name, kind, {
+    pluginPath: olderBuild.copy,
     separateLocalStorage: true,
     initialValues: seedOwnerRoots(name),
     args: { memory_suite_server_url: handler.url },
@@ -166,32 +188,15 @@ async function createPausedGlobalTransitionSnapshot(name, kind, pluginPath, hand
       }
     }
   });
-  try {
     await openServerPanelNormally(s);
-    const selectServerMode = () => {
-      const input = s.doc.querySelector('input[value="server_only"]');
-      assert.ok(input, `${name}: server_only radio must exist`);
-      input.checked = true;
-      input.dispatchEvent(new s.dom.window.Event('change', { bubbles: true }));
-    };
-    const approveApply = async () => {
-      selectServerMode();
-      const applyBtn = s.doc.querySelector('[data-apply]');
-      const pending = applyBtn.onclick();
-      await until(
-        () => s.doc.querySelector('[data-mode-confirm-approve]')?.onclick
-          || (s.doc.querySelector('[data-status]')?.textContent || '').includes('inventory_changed_during_preview'),
-        `${name}: migration approval or fresh preview`
-      );
-      const approveBtn = s.doc.querySelector('[data-mode-confirm-approve]');
-      if (approveBtn?.onclick) approveBtn.click();
-      await pending;
-    };
-    await approveApply();
-    if ((s.doc.querySelector('[data-status]')?.textContent || '').includes('inventory_changed_during_preview')) {
-      await settleOwnerStore(s);
-      await approveApply();
-    }
+    const bridge = s.context[TEST_BRIDGE_GLOBAL];
+    assert.ok(bridge && typeof bridge.previewGlobalMode === 'function', `${name}: snapshot copy exposes its storage bridge`);
+    // The older build's approved full-preview migration: the per-scope plan engine.
+    const preview = await bridge.previewGlobalMode('server_only');
+    assert.equal(preview.completeKnownScopes, true, `${name}: the older build sees every scope`);
+    await bridge.setGlobalMode('server_only', { previewFingerprint: preview.inventoryFingerprint })
+      // The SDK reports the simulated journal write failure as an unavailable journal.
+      .catch(error => assert.match(String(error?.code || error?.message || error), /simulated_reload_during_global_transition|MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE/));
     assert.ok(capturedPausedJob, `${name}: must capture in-flight global_mode sync job journal`);
     const stoppedJob = JSON.parse(s.values.get(jobKey));
     assert.equal(stoppedJob.status, 'paused', `${name}: the original migration must actually stop before the reload`);
@@ -201,7 +206,7 @@ async function createPausedGlobalTransitionSnapshot(name, kind, pluginPath, hand
     map.set(jobKey, capturedPausedJob);
     return { entries: [...map.entries()], deviceEntries: [...s.deviceValues.entries()], jobKey };
   } finally {
-    await s.close();
+    try { await s?.close(); } finally { olderBuild.cleanup(); }
   }
 }
 
@@ -348,7 +353,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
 
         if (name === 'Flashback') {
           await until(
-            () => s.doc.querySelector('#flashbackMemorySuiteServerConnectionPanel [data-global-resume]'),
+            () => s.doc.querySelector('#flashbackMemorySuiteServerConnectionPanel [data-job]'),
             'Flashback server recovery panel mounted',
             8000
           );
@@ -367,7 +372,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           );
         } else if (name === 'LIBRA') {
           await until(
-            () => s.doc.querySelector('#libraMemorySuiteServerConnectionPanel [data-global-resume]'),
+            () => s.doc.querySelector('#libraMemorySuiteServerConnectionPanel [data-job]'),
             'LIBRA server recovery panel mounted',
             8000
           );
@@ -384,7 +389,7 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           );
         } else if (name === 'HAYAKU') {
           await until(
-            () => s.doc.querySelector('#hayakuMemorySuiteServerConnectionPanel [data-global-resume]'),
+            () => s.doc.querySelector('#hayakuMemorySuiteServerConnectionPanel [data-job]'),
             'HAYAKU server recovery panel mounted',
             8000
           );
@@ -395,30 +400,33 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
           assert.match(notice.textContent || '', /저장소 이전 대기/, 'HAYAKU transition notice explains storage transition lock');
         }
 
-        // 4. Re-enable server and resume the global transition from the mounted recovery panel, then verify normal screen recovery.
+        // 4. Re-enable server and finish the older build's job through the one recovery action of the
+        //    current design: the stale card points to [모드 전환 중 자동 복구] in the advanced actions.
         allowServer = true;
-        const resumeBtn = s.doc.querySelector('button[data-job-retry]');
-        assert.ok(resumeBtn && typeof resumeBtn.onclick === 'function', `${name} (${kind}): global resume button must be interactive`);
-        assert.equal(resumeBtn.textContent, restoredServer?'기기 원본 확인 후 취소':resumeMigration ? '중단한 이전 재개' : '취소 복구 계속');
-        const jump = s.doc.querySelector('[data-global-resume]');
-        assert.equal(jump.textContent, '진행 화면으로 이동');
-        if (recoveryKind === 'legacy_rollback_resume') {
-          await jump.onclick();
-          assert.equal(s.doc.activeElement, resumeBtn, 'the advanced route focuses the single primary action');
-        }
+        const panelSelector = `#${owners[name]}MemorySuiteServerConnectionPanel`;
+        assert.equal(s.doc.querySelector(`${panelSelector} [data-job-title]`).textContent, '끝나지 않은 전환 작업이 남아 있습니다');
+        assert.equal(s.doc.querySelector(`${panelSelector} [data-job-phase]`).textContent, '현재 단계: 조치 필요');
+        assert.equal(s.doc.querySelector(`${panelSelector} button[data-job-retry]`).style.display, 'none', 'the stale card offers no in-card resume');
+        assert.match(s.doc.querySelector(`${panelSelector} [data-job-workflow]`).textContent,
+          restoredServer ? /서버 DATA가 바뀌어.*\n고급 작업의 \[모드 전환 중 자동 복구\]/ : /고급 작업의 \[모드 전환 중 자동 복구\]/);
+        const recoverBtn = s.doc.querySelector(`${panelSelector} [data-recover]`);
+        assert.ok(recoverBtn && typeof recoverBtn.onclick === 'function', `${name} (${kind}): automatic recovery must be interactive`);
         let resumed=false;
-        const resuming=Promise.resolve(resumeBtn.onclick()).finally(()=>{resumed=true;});
-        await until(()=>resumed||typeof s.doc.querySelector('[data-mode-confirm-approve]')?.onclick==='function', `${name}: resume or recheck consent`, 12000);
-        const approval=s.doc.querySelector('[data-mode-confirm-approve]');
-        if(typeof approval?.onclick==='function'){
-          if(restoredServer){
-            assert.equal(approval.textContent,'기기 경로 복구로 취소');
-            assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
-          }else{
-            assert(resumeMigration,'continuing cancellation must not ask to restart server migration');
-            assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/새 검사|자료가 변경/);
-          }
+        const resuming=Promise.resolve(recoverBtn.onclick()).finally(()=>{resumed=true;});
+        if(restoredServer){
+          // A changed server has no direction to choose; only the reviewed device cancellation applies.
+          await until(()=>resumed||typeof s.doc.querySelector('[data-mode-confirm-approve]')?.onclick==='function', `${name}: local cancellation consent`, 12000);
+          const approval=s.doc.querySelector('[data-mode-confirm-approve]');
+          assert.equal(typeof approval?.onclick,'function',s.doc.querySelector(`${panelSelector} [data-status]`)?.textContent);
+          assert.equal(approval.textContent,'기기 경로 복구로 취소');
+          assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/현재 서버.*변경하지|현재 서버에 자료를 전송/);
           approval.click();
+        }else{
+          await until(()=>resumed||typeof s.doc.querySelector('[data-ask-a]')?.onclick==='function', `${name}: recovery direction popup`, 12000);
+          assert.equal(s.doc.querySelector('[data-ask-a]').textContent,'1) 플러그인 모드로 전환 중');
+          assert.equal(s.doc.querySelector('[data-ask-b]').textContent,'2) 서버 모드로 전환 중');
+          // An interrupted migration was heading to the server; an interrupted cancellation back to the plugin.
+          s.doc.querySelector(resumeMigration ? '[data-ask-b]' : '[data-ask-a]').click();
         }
         await resuming;
         await until(
@@ -427,9 +435,11 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
             if (!rawJob) return false;
             try {
               const parsed = JSON.parse(rawJob);
-              return !resumeMigration
+              return restoredServer
                 ? parsed.status === 'cancelled' && parsed.rollbackComplete === true && !parsed.error
-                : parsed.status === 'completed' && parsed.phase === 'completed';
+                : resumeMigration
+                  ? parsed.status === 'completed' && parsed.phase === 'completed'
+                  : parsed.status === 'completed' && parsed.engine === 'fast' && parsed.targetMode === 'plugin_only';
             } catch (_) {
               return false;
             }
@@ -446,17 +456,17 @@ test('owner GUI resumes through one progress action and recovers legacy and expi
 
         // Memory read must now succeed after transition completion.
         await assertOwnerMemoryReadUnlocked(s, name, kind);
-        if(!resumeMigration){
-          assert.match(s.doc.querySelector('[data-job-title]').textContent,/취소 복구 완료.*100%/);
-          assert.match(s.doc.querySelector('[data-job-time]').textContent,/복구 소요: \d+초/);
-          const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);
-          assert.equal(diagnostics.recoveryState,'complete');
+        const recoveryStatus=s.doc.querySelector(`${panelSelector} [data-status]`).textContent;
+        if(restoredServer){
+          assert.match(recoveryStatus,/^자동 복구 완료 · 이전 작업을 취소하고 원래 기기 저장 경로로 돌아왔습니다/);
+          const diagnostics=JSON.parse(s.doc.querySelector(`${panelSelector} [data-job-diagnostics]`).value);
           assert.equal(diagnostics.rollbackProgress.verifiedScopes,diagnostics.rollbackProgress.totalScopes);
-          if(restoredHandler){
-            assert.equal(diagnostics.rollbackPublication.status,'skipped_changed_server');
-            assert.deepEqual(restoredHandler.app.repositories[owners[name]].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),restoredRows);
-            assert(!restoredHandler.trace.some(row=>row.method!=='GET'),'restored server receives no mutating request');
-          }
+          assert.equal(diagnostics.rollbackPublication.status,'skipped_changed_server');
+          assert.deepEqual(restoredHandler.app.repositories[owners[name]].database.prepare('SELECT * FROM kv ORDER BY space,key').all(),restoredRows);
+          assert(!restoredHandler.trace.some(row=>row.method!=='GET'),'restored server receives no mutating request');
+        }else{
+          assert.match(recoveryStatus,new RegExp(`^자동 복구 완료 · 현재 모드: ${resumeMigration?'서버':'플러그인'} 단독`));
+          assert.match(recoveryStatus,/끝나지 않은 전환 작업/,'the report names the older job it cleared');
         }
         if(recoveryKind==='missing_destination'){
           const job=JSON.parse(s.values.get(snapshot.jobKey));

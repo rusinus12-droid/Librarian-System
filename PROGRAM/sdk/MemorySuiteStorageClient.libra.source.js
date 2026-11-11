@@ -3819,7 +3819,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           }
         } catch (error) { reportStorageFailure('scope.routing.plugin.write', error); }
       }
-      const deviceStore = await rawDeviceStorage().catch(() => null);
+      // The backup follows only a primary copy that was actually saved; otherwise a write reported as
+      // failed would still take effect when a later read restores from the backup.
+      const deviceStore = pluginStore?.setItem && !pluginSuccess ? null : await rawDeviceStorage().catch(() => null);
       if (deviceStore?.setItem) {
         try {
           const result = await deviceStore.setItem(SCOPE_ROUTING_LOCAL_KEY, payload);
@@ -4577,7 +4579,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       storageMode:inventoryOptions.serverManagement?MODE_SERVER_ONLY:undefined};
     const recordValue=async (row,value) => {
       row.fingerprint=await digestInventory([row.deleted,value]);
-      if(retainValues)row.value=value;
+      // Scope registry rows are small settings that scope management edits in place, so they always keep their value.
+      if(retainValues||(options.scopeRegistryKeys||[]).includes(row.logicalKey))row.value=value;
       records.push(row);physicalRecords.set(globalRecordIdentity(row),row);
     };
     if(readOnlyUnfingerprinted)blockers.push({code:'scope_catalog_read_only_crypto_unavailable'});
@@ -4834,7 +4837,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       remedySteps:['1. 상세 진단의 대화와 저장 키를 확인하세요.','2. 서버에 없는 기기 원본의 보존 방법을 결정하세요.']
     };
     if(job?.kind==='global_mode'&&!syncJobTerminal(job.status)&&(errCode||hasResetBlocker)){
-      const label=globalResumeLabel(job),next=`진행 화면의 [${label}]를 누르세요.`;
+      const next='고급 작업의 [모드 전환 중 자동 복구]를 누르세요.';
       const finish=blockerReason=>({blockerReason,actionRequired:next,remedySteps:['1. 상세 진단과 연결 상태에서 원인 확인',`2. ${next}`]});
       if(errCode==='MEMORY_SUITE_LOCAL_CANCEL_REMOTE_SOURCE_REQUIRED')return {
         blockerReason:details?.reason==='original_global_mode'?'이전 시작 당시 전역 설정이 서버를 사용하는 모드였습니다.'
@@ -4849,8 +4852,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         remedySteps:['1. 상세 진단의 오류와 저장 키 확인','2. 원래 기기 기억 또는 원래 서버 DATA에서 부족한 원본 복구']};
       if(globalLocalCancellationNeeded(job))return {
         blockerReason:'서버 복원·초기화 또는 DATA 교체로 이전 작업의 서버 식별 정보가 달라졌습니다.',
-        actionRequired:`진행 화면의 [${label}]에서 기기 원본을 검증하고 취소 방법을 확인하세요. 현재 서버는 변경하지 않습니다.`,
-        remedySteps:[`1. 진행 화면의 [${label}] 선택`,'2. 기기 원본 검증 결과와 현재 서버 보존 안내 확인']};
+        actionRequired:'고급 작업의 [모드 전환 중 자동 복구]에서 기기 원본을 검증하고 취소 방법을 확인하세요. 현재 서버는 변경하지 않습니다.',
+        remedySteps:['1. 고급 작업의 [모드 전환 중 자동 복구] 선택','2. 기기 원본 검증 결과와 현재 서버 보존 안내 확인']};
       if([errCode,details?.cause].some(code=>['server_maintenance_in_progress','maintenance_in_progress','MEMORY_SUITE_SERVER_MAINTENANCE'].includes(code)))return {
         blockerReason:'서버가 백업·복원·업데이트 작업으로 잠겨 있어 작업을 잠시 중단했습니다.',
         actionRequired:`서버 또는 RE:TRACE의 진행 중인 작업이 끝난 뒤 ${next} 진행 기록과 기억 원본은 유지됩니다. ${globalRollbackPending(job)?'원래 저장 경로 복구가 끝나면 취소가 완료됩니다.':'대화 검증이 모두 끝났어도 최종 서버 확인과 전체 설정 적용이 남아 있을 수 있습니다.'}`,
@@ -6168,6 +6171,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     state.scopeRouting.transientModes.clear();
     state.scopeRouting.routeCache.clear();
     const pending = state.syncJob.current;
+    // After an older transition stopped, the server was restored or replaced. The original rollback
+    // cannot be published there; only the reviewed device cancellation finishes it, without writing to it.
+    if (globalLocalCancellationNeeded(pending)) {
+      if (!pending.localCancellationIntent) throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_REVIEW_REQUIRED');
+      const result = await scopedCancelSyncJobImpl({}, true);
+      return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:MODE_PLUGIN_ONLY, findings, result, localCancellation:true };
+    }
     const needsFreshInventory = ['MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED','MEMORY_SUITE_GLOBAL_SOURCE_CHANGED'].includes(pending?.error);
     if (pending?.globalPlan && !syncJobTerminal(pending.status) && (pending.targetMode !== target || needsFreshInventory))
       await scopedCancelSyncJobImpl({},true);
@@ -8447,7 +8457,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             actionRequired:guidance?.actionRequired||null,
             blockerReason:guidance?.blockerReason||null,
             remedySteps:guidance?.remedySteps||null,
-            message:'취소 복구 중단 · 조치 필요. 복구 정보를 보존했습니다. 원인을 확인한 뒤 진행 화면의 복구 버튼을 사용하세요.'
+            message:'취소 복구 중단 · 조치 필요. 복구 정보를 보존했습니다. 원인을 확인한 뒤 고급 작업의 [모드 전환 중 자동 복구]를 사용하세요.'
           });
           throw error;
         }
@@ -9019,6 +9029,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const requireScopeManagement = () => {
     if (!globalModeEnabled || options.scopeManagement !== true) throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_UNSUPPORTED');
   };
+  // Bounded inventories keep only a fingerprint of each value; a retained value is compared directly.
+  const inventoryValueUnchanged = async (row,value) => Object.hasOwn(row,'value')
+    ? globalCanonical(value)===globalCanonical(row.value)
+    : !!row.fingerprint&&await globalDigest([row.deleted,value])===row.fingerprint;
   const scopeDataPlan = (inventory,scope,server = false) => {
     const owned=inventory.records.filter(row=>(server?row.location==='server':row.location!=='server')&&!row.deleted&&row.classification==='scope'&&row.scopeId===scope.scopeId);
     const keys=new Set(owned.flatMap(row=>[row.key,row.logicalKey]));
@@ -9105,7 +9119,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const snapshots=[];
     for(const row of [...artifacts,...owned]){
       const store=inventory.stores[row.space],value=await store.getItem(row.key);
-      if(globalCanonical(value)!==globalCanonical(row.value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+      if(!await inventoryValueUnchanged(row,value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
       snapshots.push({row,store,value});
     }
     try{
@@ -9154,7 +9168,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const edits=[...plan.artifacts,...plan.owned].map(row=>({row,next:null})).concat(plan.registryEdits);
     for(const edit of edits){edit.store=inventory.stores[edit.row.space];edit.before=await edit.store.getItem(edit.row.key);
-      if(globalCanonical(edit.before)!==globalCanonical(edit.row.value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');}
+      if(!await inventoryValueUnchanged(edit.row,edit.before))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');}
     const applied=[];
     try{
       for(const edit of edits){await validate();
@@ -9265,7 +9279,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(scopeRequest.action==='export'){
         if(!catalog.completeKnownScopes||row.mode!==MODE_PLUGIN_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_DATA_EXPORT_BLOCKED');
         const records=inventory.records.filter(item=>item.location!=='server'&&!item.deleted&&globalRecordScopeIds(item).includes(scope.scopeId)&&item.classification!=='control');
-        return {ok:true,schema:'memory-suite.scope-data-backup.v1',namespace,scope,exportedAt:Date.now(),records:records.map(item=>({space:item.space,key:item.key,value:item.value}))};
+        const exported=[];
+        for(const item of records){
+          const value=await inventory.stores[item.space].getItem(item.key);
+          if(!await inventoryValueUnchanged(item,value))throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
+          exported.push({space:item.space,key:item.key,value});
+        }
+        return {ok:true,schema:'memory-suite.scope-data-backup.v1',namespace,scope,exportedAt:Date.now(),records:exported};
       }
       if(!row.canManage)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_CHANGED');
       if(scopeRequest.action==='sync'&&row.mode===MODE_SERVER_ONLY)throw globalModeError('MEMORY_SUITE_SCOPE_MANAGEMENT_LOCAL_SOURCE_REQUIRED');
@@ -9602,21 +9622,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const count=value=>Math.max(0,Number(value||0)).toLocaleString();
       const total=Math.max(0,Number(fast?job.totalItems:job.discoveredScopes)||0),done=Math.min(total,Math.max(0,Number(fast?job.processedItems:job.verifiedScopes)||0));
       const percent=job.status==='completed'?100:total?Math.min(99,Math.round(done/total*100)):0;
-      card.classList.add('show');card.classList.toggle('terminal',terminal);card.classList.toggle('failed',job.status==='failed'||!fast&&!terminal);
-      const stale=!fast&&!terminal;
+      card.classList.add('show');card.classList.toggle('terminal',terminal);// An older build's job is stale only while it waits; automatic recovery runs it and shows its progress.
+      const stale=!fast&&!terminal&&job.status!=='running';
+      card.classList.toggle('failed',job.status==='failed'||stale);
       const subject=job.operation==='copy'?'데이터 이동':'저장 위치 전환';
       q('[data-job-title]').textContent=stale?'끝나지 않은 전환 작업이 남아 있습니다'
         :job.status==='failed'?`${subject}을 마치지 못했습니다`:job.status==='cancelled'?`${subject}을 중단했습니다`
         :`${job.message||(terminal?'작업 결과':'작업 진행 중')}${running||job.status==='completed'?` · ${percent}%`:''}`;
       q('[data-job-bar]').style.width=`${percent}%`;
       q('[data-job-workflow]').textContent=stale
-        ?'이전 버전에서 시작한 전환이 도중에 멈춰 기억 읽기·쓰기가 막혀 있습니다.\n고급 작업의 [모드 전환 중 자동 복구]를 누르고 전환하던 모드를 고르면 자동으로 정리합니다.'
+        ?globalLocalCancellationNeeded(job)
+          ?'이전 버전에서 시작한 전환이 멈춘 뒤 서버 DATA가 바뀌어 기억 읽기·쓰기가 막혀 있습니다.\n고급 작업의 [모드 전환 중 자동 복구]를 누르면 기기 원본을 검증한 뒤, 현재 서버는 바꾸지 않고 원래 기기 저장 경로로 되돌립니다.'
+          :'이전 버전에서 시작한 전환이 도중에 멈춰 기억 읽기·쓰기가 막혀 있습니다.\n고급 작업의 [모드 전환 중 자동 복구]를 누르고 전환하던 모드를 고르면 자동으로 정리합니다.'
         :job.operation==='copy'
           ?`데이터 이동 · ${job.targetMode===MODE_SERVER_ONLY?'플러그인 스토리지 → 서버 스토리지':'서버 스토리지 → 플러그인 스토리지'}\n저장 모드는 바꾸지 않습니다.`
           :`현재 설정: ${modeLabel(job.effectiveMode||job.sourceMode||MODE_PLUGIN_ONLY)} · 목표 설정: ${modeLabel(job.targetMode)}${fast&&!terminal?'\n자료를 모두 옮긴 뒤에 저장 위치를 한 번에 바꿉니다.':''}`;
       q('[data-job-transfer]').textContent=fast?`이미 같음 ${count(job.matched)}건 · 서버로 옮김 ${count(job.uploaded)}건 · 플러그인으로 옮김 ${count(job.restored)}건${Number(job.skipped)?` · 건너뜀 ${count(job.skipped)}건`:''}`:'';
-      const phases={inventory:'대화·자료 목록 확인',copy:'자료 복사',commit:'저장 위치 적용',completed:'완료',interrupted:'도중에 멈춤',failed:'실패',cancelled:'중단'};
-      q('[data-job-phase]').textContent=`현재 단계: ${stale?'조치 필요':phases[job.phase]||job.phase||'준비'}`;
+      const phases={inventory:'대화·자료 목록 확인',copy:'자료 복사',commit:'저장 위치 적용',completed:'완료',interrupted:'도중에 멈춤',failed:'실패',cancelled:'중단',
+        copy_verify:'자료 복사·검증',final_verify:'최종 저장 상태 검증',rollback_routes:'저장 경로 복구'};
+      const phaseLabel=job.serverWait?.active&&job.status==='running'?'서버 작업 종료 대기':phases[job.phase]||job.phase||'준비';
+      q('[data-job-phase]').textContent=`현재 단계: ${stale?'조치 필요':phaseLabel}`;
       q('[data-job-count]').textContent=fast?`대화 ${count(job.discoveredScopes)}개 · 항목 ${count(done)} / ${total||terminal?count(total):'조사 중'}`:`대화 ${count(job.verifiedScopes)} / ${count(job.discoveredScopes)}`;
       q('[data-job-bytes]').textContent=fast?`확인: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`:'';
       q('[data-job-time]').textContent=`경과: ${Math.max(0,Math.floor(((terminal?Number(job.finishedAt||job.updatedAt):Date.now())-Number(job.startedAt||Date.now()))/1000))}초`;
@@ -9976,8 +10001,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     refreshScopeNote();
     if(globalModeEnabled){
       // 모드 전환 중 자동 복구: 전환 중 발생한 에러를 감지하고 자동으로 해결합니다.
+      // The server changed after an older transition stopped: no direction applies. Only a reviewed
+      // cancellation back to the verified device originals can finish it, and the server is never written.
+      const recoverChangedServer=async job=>{
+        const button=q('[data-recover]');button.disabled=true;
+        try{
+          let result;
+          if(!job.localCancellationIntent){
+            setMessage('서버 DATA가 바뀌었습니다. 기기에 남은 이전 원본을 검증하고 있습니다. 현재 서버는 변경하지 않습니다.');
+            const preview=await previewLocalCancellation();
+            if(!await confirmModeTransition(MODE_PLUGIN_ONLY,MODE_PLUGIN_ONLY,preview)){setMessage('확인창을 닫았습니다. 미완료 작업과 현재 서버는 그대로 유지됩니다.');return;}
+            const current=getSyncJob();
+            if(!root.isConnected||current?.jobId!==job.jobId||syncJobTerminal(current?.status))throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED');
+            result=await scopedCancelSyncJob({localOnly:true,previewFingerprint:preview.fingerprint});
+          }else result=await scopedCancelSyncJob();
+          await refreshPanelSettings();renderJob(getSyncJob());
+          if(result?.rollbackComplete)setMessage('자동 복구 완료 · 이전 작업을 취소하고 원래 기기 저장 경로로 돌아왔습니다. 현재 서버는 변경하지 않았습니다.','good');
+          else setMessage('자동 복구를 마치지 못했습니다. 미완료 작업과 현재 서버는 그대로 유지됩니다.','error');
+        }catch(error){
+          const current=getSyncJob();
+          if(String(error.code||'').startsWith('MEMORY_SUITE_LOCAL_CANCEL_')&&current?.kind==='global_mode'&&!syncJobTerminal(current.status)){
+            const changed=['MEMORY_SUITE_JOB_SERVER_PIN_CHANGED','MEMORY_SUITE_DATA_INSTANCE_CHANGED'];
+            const cause=changed.includes(String(job.errorDetails?.cause||''))?job.errorDetails.cause:changed.includes(String(job.error||''))?job.error:changed[0];
+            await globalSaveJob({error:error.code,errorDetails:{...(error.details||{}),cause},status:'paused',phase:'recovery_pending'});
+          }
+          await refreshPanelSettings();renderJob(getSyncJob());
+          const guidance=syncJobActionGuidance(error.code||error.message,error.details,getSyncJob());
+          setMessage(guidance?`자동 복구를 마치지 못했습니다\n${guidance.blockerReason}\n${guidance.actionRequired}`:`자동 복구를 마치지 못했습니다\n${failureText(error)}`,'error');
+        }finally{button.disabled=false;}
+      };
       q('[data-recover]').onclick=async()=>{
         if(transferBusy())return;
+        await loadPersistedSyncJob();
+        const stalled=getSyncJob();
+        if(globalLocalCancellationNeeded(stalled)){await recoverChangedServer(stalled);return;}
         const choice=await askDialog({title:'모드 전환 중 자동 복구',
           text:'어느 모드로 전환하던 중이었나요?\n고른 모드로 가는 전환에서 생긴 에러를 찾아 정리하고, 남은 자료를 옮겨 전환을 마칩니다.',
           options:[{label:'1) 플러그인 모드로 전환 중',value:'plugin'},{label:'2) 서버 모드로 전환 중',value:'server'}]});

@@ -66,6 +66,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'storage_job_user_cancellation_test.cjs',
   STORAGE_MODE_TEST,
   'storage_transition_gui_recovery_test.cjs',
+  'storage_fast_mode_transfer_test.cjs',
   'manifest_minified_declaration_binding_test.cjs',
   'libra_canonical_reasoning_off_length_runtime_test.cjs',
   'libra_recovery_result_gui_runtime_test.cjs',
