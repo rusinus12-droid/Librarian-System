@@ -195,17 +195,20 @@ async function syntheticPortableEnvelope(){
       await page.waitForFunction(value=>document.querySelector('.page[data-page="settings"] [data-product-settings-section]')?.getAttribute('data-product-settings-section')===value,section);
       assert.equal(await settingsPage.locator('[data-product-settings-section]').getAttribute('data-product-settings-section'),section,`settings section ${section} remains reachable`);
       const host=settingsPage.locator(`[data-product-settings-section="${section}"]`);
-      const controls={pipeline:'[data-librarian-analyzer] [data-analyzer-field="maxChars"]',logs:'[data-execution-kind]',references:'[data-reference-settings] [data-reference-controls="modules"]',source_edits:'[data-source-input-controls]',state:'[data-recovery-kinds="maintenance"]',transfer:'[data-configuration-transfer="json"]',general:'[data-diagnostic-field="section"]'};
+      const controls={pipeline:'[data-librarian-analyzer] [data-analyzer-field="timeoutMs"]',logs:'[data-execution-kind]',references:'[data-reference-settings] [data-reference-controls="modules"]',source_edits:'[data-source-input-controls]',state:'[data-recovery-kinds="maintenance"]',transfer:'[data-configuration-transfer="json"]',general:'[data-diagnostic-field="section"]'};
       if(controls[section])await host.locator(controls[section]).first().waitFor();
       if(section==='pipeline'){
-        const input=host.locator('[data-analyzer-field="maxChars"]');await input.fill('19000');await input.dispatchEvent('input');
-        assert.equal(await host.locator('[data-analyzer-reference]').count(),4,'analyzer references preserved');
-        assert.equal(await host.locator('[data-generation-policy="v1"] select').count(),3,'all existing generation policy controls preserved');await host.locator('[data-instruction-settings] > summary').click();assert.equal(await host.locator('[data-instruction-settings] > .fold__body > .field select').count(),2,'existing NSFW/profile selectors remain reachable');assert.ok(await host.locator('[data-instruction-field]').count()>0,'existing individual response instruction controls preserved');
+        // Analysis references moved to the references page; the GRADIA-era response-improvement controls were removed.
+        assert.equal(await host.locator('[data-generation-policy="v1"] select').count(),3,'all existing generation policy controls preserved');
+        assert.equal(await host.locator('[data-instruction-settings] .field select').count(),1,'NSFW mode selector remains reachable');
+        assert.equal(await host.locator('[data-instruction-field]').count(),0,'response-improvement controls retired');
       }
       if(section==='logs')assert.equal(await host.locator('[data-execution-kind]').count(),6,'six real execution receipt kinds remain selectable');
       if(section==='references'){
         await page.evaluate(()=>{__mockupAudit.Gui.moduleCatalogLoadedAt=Date.now();__mockupAudit.Gui.characterLoreCatalogLoadedAt=Date.now();__mockupAudit.Gui.characterLoreCatalogLoading=true;__mockupAudit.Gui.moduleCatalog=[{key:'synthetic-module',name:'Synthetic Module',active:true,loreCount:1,loreEntries:[{key:'synthetic-lore',name:'Synthetic Lore',contentPreview:'Synthetic only'}]}];__mockupAudit.Gui.characterLoreCatalog=[{key:'synthetic-character-lore',name:'Synthetic Character Lore'}];});
         await page.evaluate(()=>__mockupAudit.renderSettingsGui());
+        assert.equal(await host.locator('[data-reference-controls="analysis"] [data-analyzer-reference]').count(),4,'analysis references live on the references page');
+        const limit=host.locator('[data-analyzer-field="maxChars"]');await limit.fill('19000');await limit.dispatchEvent('input');
         const module=host.locator('[data-module-lore-module-toggle="synthetic-module"]');await module.check();
         await page.waitForTimeout(40);
         await host.locator('[data-reference-controls="modules"] .fold > summary').click();

@@ -22,7 +22,7 @@ const {boot,clean}=require('./libra_approved_browser.cjs');
   await page.evaluate(()=>__approved.selectBookSettingsRoomSection('pipeline'));
   const fold=pipeline.locator('[data-librarian-analyzer]');await fold.waitFor();
   assert.equal(await fold.locator('[data-generation-policy]').count(),1);
-  assert.equal(await fold.locator('[data-analyzer-field="maxChars"]').count(),1);
+  assert.equal(await fold.locator('[data-analyzer-field="timeoutMs"]').count(),1);
   await page.evaluate(()=>__approved.saveSettingsRoom());
   await page.waitForFunction(()=>!__approved.Gui.dirty);
   await page.evaluate(()=>__approved.selectBookSettingsRoomSection('agents'));

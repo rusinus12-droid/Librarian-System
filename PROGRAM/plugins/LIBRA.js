@@ -1366,9 +1366,7 @@ function __libraNarrativeStripPatch(value) {
   const CREDENTIAL_BACKUP_VERSION = 1;
   const SETTINGS_UI_ID = 'libra-v1-settings';
   const PIPELINE_WORK_PANEL_ID = 'serial-gradation-agents-for-rp-pipeline-status';
-  const INPUT_ASSIST_RUNTIME_RESPONSE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-  const INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS = 2400;
-  const INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS = 3200;
+  const TERMINAL_SCENE_TAIL_MAX_CHARS = 2400;
   const CANONICAL_REFERENCE_PACKET_SCHEMA = 'libra_reference_packet_v2';
   const REFERENCE_BUDGET_MIGRATION_VERSION = 3;
   const REFERENCE_BUDGET_CUSTOM_MAX_CHARS = 240000;
@@ -1392,8 +1390,6 @@ function __libraNarrativeStripPatch(value) {
 
   const DRAFT_PATCH_BLOCK_MAX_CHARS = 1800;
   const DEFAULT_RECENT_TURNS = 8;
-  const DEFAULT_INPUT_ASSIST_TURNS = 1;
-  const DEFAULT_INPUT_ASSIST_TARGET_CHARS = 'omakase';
   const DEFAULT_MAX_PREVIOUS_STAGE_CHARS = 14000;
   const DEFAULT_MAX_INJECTION_CHARS = 14000;
   const DEFAULT_INJECTION_POSITION = 'before_last_user';
@@ -1472,19 +1468,6 @@ function __libraNarrativeStripPatch(value) {
       meta: '호스트 선별 + 활성화 키 + 의미 검색 → RRF → 적응형 확장'
     })
   });
-  const INPUT_ASSIST_LORE_ACTIVATION_MODES = Object.freeze([UNIFIED_LORE_ACTIVATION_MODE]);
-  const DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE = UNIFIED_LORE_ACTIVATION_MODE;
-  const INPUT_ASSIST_LORE_ACTIVATION_MODE_DEFS = Object.freeze({
-    unified: Object.freeze({
-      label: "LIBRA 메모리 검색과 검증된 근거를 사용합니다.",
-      description: '메인 파이프라인과 동일한 기억 검색을 사용하되 현재 인풋과 직전 응답 종결부를 검색 문맥으로 사용합니다.',
-      meta: '동일 엔진 · Input Assist 문맥'
-    })
-  });
-  const INPUT_ASSIST_LEGACY_MODE_ALIASES = Object.freeze({
-    risu_key: UNIFIED_LORE_ACTIVATION_MODE,
-    libra_extended: UNIFIED_LORE_ACTIVATION_MODE
-  });
   const LORE_JACCARD_ENGINE_VERSION = 'libra_lore_jaccard_v1';
   const LORE_JACCARD_TUNING = Object.freeze({
     fuzzyMatchThreshold: 0.56,
@@ -1517,11 +1500,9 @@ function __libraNarrativeStripPatch(value) {
   const FLOW_EXPORT_VERSION = 1;
     const SETTINGS_CACHE_TTL_MS = 30 * 1000;
   const ARGUMENT_CACHE_TTL_MS = 30 * 1000;
-    const WRITER_STAGE_ID = 'writer_ooc';
   const USER_INTENT_ito_STAGE_ID = 'ito_user_intent';
   const USER_INTENT_OOC_STAGE_ID = 'user_intent_ooc_chat';
 
-  const STORY_ARC_STAGE_ID = 'story_arc';
 
 
 
@@ -1540,19 +1521,10 @@ function __libraNarrativeStripPatch(value) {
 
 
 
-  // Keep the stored key and the old Classic setting readable for existing installs.
-
-
-
-
-  const DEFAULT_RESPONSE_INJECTION_MODE = 'classic';
-  const normalizeResponseInjectionMode = () => 'classic';
-  const DEFAULT_RESPONSE_FAMILY = 'libra';
-  const DEFAULT_LIBRA_RESPONSE_MODE = 'classic';
-
-  const normalizeResponseFamily = () => 'libra';
-  const normalizeLibraResponseMode = () => 'classic';
-  const resolveResponseModeState = value => ({responseFamily:'libra',libraResponseMode:'classic',injectionMode:'classic'});
+  // LIBRA has one response route: the librarian (classic) delivery. The planner and GRADIA
+  // response modes were retired; their old stored keys (response_family, libra_response_mode,
+  // injection_mode) are no longer read or written.
+  const LIBRA_DELIVERY_ROUTE = 'classic';
   const LIVE_TAIL_SCHEMA = 'libra.live_tail.v1';
   const LIVE_TAIL_SOURCE_MODE = 'sanitized_completed_ua';
   const DEFAULT_LIVE_TAIL_MAX_TURNS = 4;
@@ -1566,10 +1538,7 @@ function __libraNarrativeStripPatch(value) {
   const BOOTSTRAP_REFERENCE_CACHE_TTL_MS = 45 * 1000;
   const BOOTSTRAP_REFERENCE_CACHE_MAX = 8;
   const BOOTSTRAP_REFERENCE_TIMEOUT_MS = 2600;
-  const INPUT_ASSIST_STAGE_ID = 'input_assist';
   const LEGACY_USER_DLC_ito_STAGE_ID = 'ito_user_dlc';
-  const WRITER_DEFAULT_REVIEW_INTERVAL_TURNS = 6;
-  const WRITER_DEFAULT_MAX_SOURCE_CHARS = 28000;
 
   // Librarian production policy. Historical identifiers remain readable, never executable.
   const LIBRARIAN_STAGE_ID = 'librarian';
@@ -1639,27 +1608,17 @@ function __libraNarrativeStripPatch(value) {
   });
   const STATE_PROMPT_STAGE_DEFS = Object.freeze([STATE_ENTITY_ADMISSION_PROMPT_STAGE_DEF, ...STATE_STAGE_DEFS]);
   const STATE_PROMPT_STAGE_IDS = Object.freeze(STATE_PROMPT_STAGE_DEFS.map(def => def.id));
-  const INPUT_ASSIST_STAGE_DEF = Object.freeze({
-    id: INPUT_ASSIST_STAGE_ID,
-    label: '인풋 작성 도우미',
-    description: '현재 입력의 핵심 의도와 선택은 유지하면서 선택한 행동 주체에 맞게 입력 전체를 다시 구성합니다.'
-  });
   const USER_INTENT_OOC_STAGE_DEF = Object.freeze({ id: USER_INTENT_OOC_STAGE_ID, label: '기억 지침 OOC', description: 'Prompt Studio에서 OOC 대화로 기억 분석 지침을 만드는 설정 에이전트입니다.' });
-  const STORY_ARC_STAGE_DEF = Object.freeze({ id: STORY_ARC_STAGE_ID, label: 'Story Arc Director', description: '5턴 정본을 바탕으로 현재 서사 상태와 다음 5턴의 비강제 soft route를 관리하는 선택적 정밀화 단계입니다.' });
 
-  const CONFIGURABLE_STAGE_DEFS = Object.freeze([INPUT_ASSIST_STAGE_DEF, ...BEFORE_STAGE_DEFS, USER_INTENT_OOC_STAGE_DEF]);
+  const CONFIGURABLE_STAGE_DEFS = Object.freeze([...BEFORE_STAGE_DEFS, USER_INTENT_OOC_STAGE_DEF]);
   const PERSISTED_AGENT_STAGE_DEFS = Object.freeze([...CONFIGURABLE_STAGE_DEFS, ...LEGACY_MEMORY_STAGE_DEFS, ...STATE_STAGE_DEFS]);
-  const ALL_STAGE_DEFS = Object.freeze([INPUT_ASSIST_STAGE_DEF, USER_INTENT_OOC_STAGE_DEF, STORY_ARC_STAGE_DEF, STATE_ENTITY_ADMISSION_PROMPT_STAGE_DEF, ...BEFORE_STAGE_DEFS, ...LEGACY_MEMORY_STAGE_DEFS, ...STATE_STAGE_DEFS]);
+  const ALL_STAGE_DEFS = Object.freeze([USER_INTENT_OOC_STAGE_DEF, STATE_ENTITY_ADMISSION_PROMPT_STAGE_DEF, ...BEFORE_STAGE_DEFS, ...LEGACY_MEMORY_STAGE_DEFS, ...STATE_STAGE_DEFS]);
   const STAGE_DEF_MAP = Object.freeze(Object.fromEntries(ALL_STAGE_DEFS.map(def => [def.id, def])));
   const defaultEnabledForStage = stageId => (
     (stageId === 'ariadne' || stageId === LIBRARIAN_STAGE_ID)
-    || stageId === INPUT_ASSIST_STAGE_ID
     || stageId === USER_INTENT_OOC_STAGE_ID
     || STATE_STAGE_IDS.includes(stageId)
   );
-  const INPUT_ASSIST_MODES = Object.freeze(['off', 'user_focus', 'npc_focus', 'offscreen_focus', 'random']);
-  const INPUT_ASSIST_SCOPES = Object.freeze(['full_pipeline', 'standalone']);
-  const INPUT_ASSIST_CONFIRMATION_MODES = Object.freeze(['direct', 'confirm']);
 
   const DEFAULT_INTERNAL_DRAFT_LANGUAGE = 'korean';
   const INTERNAL_DRAFT_LANGUAGE_DEFS = Object.freeze({
@@ -1690,14 +1649,7 @@ function __libraNarrativeStripPatch(value) {
     return DEFAULT_INTERNAL_DRAFT_LANGUAGE;
   };
 
-  const INPUT_ASSIST_TARGET_CHAR_IDS = Object.freeze(['300', '500', '800', '1000', 'omakase']);
-  const normalizeInputAssistTargetChars = value => normalizeChoice(
-    String(value ?? DEFAULT_INPUT_ASSIST_TARGET_CHARS).trim().toLowerCase(),
-    INPUT_ASSIST_TARGET_CHAR_IDS,
-    DEFAULT_INPUT_ASSIST_TARGET_CHARS
-  );
-
-  const defaultTurnWindowForStage = stageId => stageId === INPUT_ASSIST_STAGE_ID ? DEFAULT_INPUT_ASSIST_TURNS : DEFAULT_RECENT_TURNS;
+  const defaultTurnWindowForStage = () => DEFAULT_RECENT_TURNS;
   const isDraftPipelineStage = stageId => [LIBRARIAN_STAGE_ID, 'ariadne', 'character_ito', 'world_ito', 'plot_ito'].includes(text(stageId || ''));
   const defaultContextCharsForStage = stageId => isDraftPipelineStage(stageId)
     ? REFERENCE_PROFILE_CAPS.balanced
@@ -1730,14 +1682,6 @@ function __libraNarrativeStripPatch(value) {
       jaccard: UNIFIED_LORE_ACTIVATION_MODE
     };
     return normalizeChoice(aliases[raw] || raw, LORE_ACTIVATION_MODES, DEFAULT_LORE_ACTIVATION_MODE);
-  };
-  const normalizeInputAssistLoreActivationMode = value => {
-    const normalized = normalizeLoreActivationMode(value);
-    return normalizeChoice(
-      normalized === 'libra_extended' ? 'libra_extended' : 'risu_key',
-      INPUT_ASSIST_LORE_ACTIVATION_MODES,
-      DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE
-    );
   };
   const CORE_ito_STAGE_IDS = Object.freeze(['character_ito', 'world_ito', 'plot_ito']);
   const DEFAULT_ito_STAGE_ORDER = Object.freeze(CORE_ito_STAGE_IDS.slice());
@@ -1890,17 +1834,13 @@ function __libraNarrativeStripPatch(value) {
       'Graphic detail is permitted when earned by scene logic; avoid mechanical repetition and keep the prose literary rather than clinical.'
     ])
   });
-  const buildNsfwGuidanceBlock = (settings = {}, phase = 'writing') => {
+  const buildNsfwGuidanceBlock = (settings = {}) => {
     if (settings?.nsfwGuidanceEnabled === false) return '';
     const mode = normalizeNsfwMode(settings?.nsfwMode);
     if (mode === 'off') return '';
-    const phaseLine = phase === 'input_writer'
-      ? 'Apply this mode only to candidate USER inputs within the selected RP or author ownership boundary. Candidates remain proposals, not enacted events or finished assistant scene prose. Preserve source intent and fixed boundaries.'
-      : phase === 'analysis'
-      ? 'In private analysis, convert this mode into evidence-aware portrayal criteria, continuity checks, and concrete rewrite directives. Do not invent an intimate event merely because the mode is active.'
-      : phase === 'patch'
-        ? 'Apply this mode only through domain-relevant edits to the current same-turn draft. It permits suitable treatment, but does not itself create a new intimate event, consent, escalation, or sequel scene.'
-        : 'Apply this mode to the actual prose only when supported by the current scene. It permits suitable treatment, but does not itself create a new intimate event, consent, escalation, or sequel scene.';
+    // LIBRA only injects this into its own canonical analysis; the GRADIA-era writing,
+    // patch and input-writer phase texts were removed.
+    const phaseLine = 'In private analysis, convert this mode into evidence-aware portrayal criteria, continuity checks, and concrete rewrite directives. Do not invent an intimate event merely because the mode is active.'
     return [
       `NSFW GUIDANCE — ${mode.toUpperCase()}:`,
       ...(NSFW_GUIDANCE_LINES_BY_MODE[mode] || NSFW_GUIDANCE_LINES_BY_MODE.direct),
@@ -1908,180 +1848,8 @@ function __libraNarrativeStripPatch(value) {
       'Treat explicit acceptance, refusal, hesitation, discomfort, relationship state, and established boundaries as factual constraints. Never infer consent or the user character’s hidden desire from the selected mode.'
     ].join('\n');
   };
-  const RESPONSE_IMPROVEMENT_PROFILES = Object.freeze(['off', 'recommended', 'all', 'custom']);
-  const DEFAULT_RESPONSE_IMPROVEMENT_PROFILE = 'recommended';
-  const RESPONSE_IMPROVEMENT_CATEGORY_DEFS = Object.freeze({
-    scene: Object.freeze({ label: '장면 구성', description: '장면 실행과 압력·종결 방식을 조정합니다.' }),
-    agency: Object.freeze({ label: '사용자와 모델 행동', description: '사용자가 확정한 행동과 모델이 새로 추가하는 행동을 구분합니다.' }),
-    character: Object.freeze({ label: '캐릭터 표현', description: '인물의 자율성, 여백, 행동 표현을 보강합니다.' }),
-    output: Object.freeze({ label: '출력 품질', description: '화자, 반복, 언어와 장면 밖 문구를 조정합니다.' })
-  });
-  const RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS = Object.freeze({
-    scene_performance: Object.freeze({
-      category: 'scene',
-      label: '장면 배우 실행',
-      description: '판단 과정을 설명하지 않고 대사·행동·감각·반응으로 구현합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'Render every accepted judgment through in-world dialogue, action, sensory detail, timing, and consequence. Never expose planning, a checklist, stage terminology, or the writing process in visible prose.'
-    }),
-    pressure_progression: Object.freeze({
-      category: 'scene',
-      label: '장면 압력 진행',
-      description: '현재 장면 안에서 원인과 반응을 통해 실제 상태를 움직입니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'plot_ito']),
-      instruction: 'Within each planned scene segment, create at least one causally supported change in pressure, distance, knowledge, relationship stance, obligation, or immediate consequence. Do not add an unrelated event merely to create movement.'
-    }),
-    open_ending: Object.freeze({
-      category: 'scene',
-      label: '열린 응답 종결',
-      description: '감정과 관계를 모두 확정하지 않고 사용자가 개입할 여지를 남깁니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'plot_ito', 'final']),
-      instruction: 'End at a meaningful open beat when the scene permits it. Leave the user a real response space without forcing their next action, private feeling, consent, acceptance, or final decision.'
-    }),
-    user_action_respect: Object.freeze({
-      category: 'agency',
-      label: '사용자 행동 존중',
-      description: '사용자가 완료한 행동을 생각·시도·취소로 약화하지 않습니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'Treat an explicit user-authored completed action as enacted current-scene fact. Never downgrade it into thought, intention, attempt, hesitation, cancellation, or non-action.'
-    }),
-    model_initiative_boundary: Object.freeze({
-      category: 'agency',
-      label: '모델 행동 절제',
-      description: '모델이 새로 추가하는 중대 행동과 사용자의 다음 선택을 제한합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'plot_ito', 'final']),
-      instruction: 'For model-authored additions, choose the smallest causally adjacent action that changes current pressure. Do not add a major irreversible act, escalation, confession, betrayal, relocation, or user-character choice unless the supplied scene already requires it.'
-    }),
-    context_embodiment: Object.freeze({
-      category: 'scene',
-      label: '정보를 장면으로 반영',
-      description: '로어·기억·관계를 설명하지 않고 현재 행동과 결과로 변환합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'Use relevant canon, memory, relationship state, and prior consequences as causal pressure on present behavior, dialogue, hesitation, distance, knowledge, objects, and outcomes. Do not recite profiles, summarize memory, or insert facts merely to prove they were read.'
-    }),
-    character_autonomy: Object.freeze({
-      category: 'character',
-      label: '캐릭터 자율성',
-      description: '성격과 관계에 근거한 거부·오해·도전·은폐를 허용합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'Treat characters as autonomous people with their own goals, pride, fear, habits, boundaries, and interests. Agreement, refusal, misunderstanding, challenge, evasion, and withholding must arise from personality, relationship state, knowledge, social risk, and current pressure—not generic compliance or random opposition.'
-    }),
-    profile_flexibility: Object.freeze({
-      category: 'character',
-      label: '프로필 여백',
-      description: '캐릭터 설정을 매 턴 체크리스트처럼 재현하지 않습니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'Use character profiles as interpretive evidence, not a checklist or script. Do not force every job, trope, flaw, trauma, skill, or label into the current turn; allow ordinary behavior, plausible blank space, and context-shaped variation.'
-    }),
-    human_contradiction: Object.freeze({
-      category: 'character',
-      label: '인간적인 모순',
-      description: '필요한 경우 말과 행동 사이의 작은 불일치로 인물을 입체화합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'When it fits the character and moment, use one selective human contradiction between words, timing, attention, or physical behavior. Do not force a tell onto every character or repeat the same mannerism as a formula.'
-    }),
-    dialogue_physicality: Object.freeze({
-      category: 'character',
-      label: '대사와 신체 행동 연결',
-      description: '감정을 해설하기 전에 거리·물건·자세·타이밍으로 표현합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'Let dialogue interact with posture, distance, ongoing tasks, objects, interruption, silence, and response timing before narration explains emotion. Prefer scene-specific physical channels over stock gaze, lip, breath, or trembling reactions.'
-    }),
-    speaker_clarity: Object.freeze({
-      category: 'output',
-      label: '화자 명료성',
-      description: '다인 장면에서 대사 화자와 행동 주체를 분명히 유지합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'In multi-character scenes, keep every speaker, actor, target, observer, and addressee unambiguous. Avoid stacked unattributed dialogue, but do not make every beat dialogue; balance speech with action, silence, gesture, and narration.'
-    }),
-    pattern_variation: Object.freeze({
-      category: 'output',
-      label: '표현 반복 변주',
-      description: '같은 도입·어구·미세 반응 순서를 반복하지 않습니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'plot_ito', 'final']),
-      instruction: 'Vary sentence openings, reaction order, sensory channels, action rhythm, and transition shape when recent prose has already used them. Avoid repeating the same gaze-silence-breath-lip loop or merely restating an unresolved pressure without changing its immediate expression.'
-    }),
-    language_lock: Object.freeze({
-      category: 'output',
-      label: '출력 언어 유지',
-      description: '참고 자료의 언어와 무관하게 현재 대화의 출력 언어를 유지합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'When a FIXED DRAFT LANGUAGE contract is present, keep all newly composed visible prose in that configured language. Otherwise use the predominant language of the latest user request unless the user explicitly asks for another language. Reference material, names, schemas, or foreign dialogue must not cause the surrounding narrative language to drift.'
-    }),
-    meta_preamble_suppression: Object.freeze({
-      category: 'output',
-      label: '메타 서문 억제',
-      description: '“이어가겠습니다” 같은 장면 밖 안내 없이 본문으로 바로 시작합니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'Begin directly with the requested in-world prose. Do not add acknowledgement, apology, capability claims, “I will continue,” a review preface, or any other out-of-scene introduction.'
-    }),
-    profanity_restraint: Object.freeze({
-      category: 'output',
-      label: '욕설 절제',
-      description: '욕설을 상투적인 강조로 반복하지 않고 인물과 상황에 필요할 때만 사용합니다.',
-      recommended: false,
-      stages: Object.freeze(['ariadne', 'character_ito', 'final']),
-      instruction: 'Do not use profanity as generic filler or repetitive emphasis. Use it only when the established voice, relationship, pressure, and moment make it specific and consequential.'
-    }),
-    reasoning_drift_control: Object.freeze({
-      category: 'output',
-      label: '추론 이탈 억제',
-      description: '긴 내부 판단이 작업 목록이나 해설로 노출되는 것을 막습니다.',
-      recommended: true,
-      stages: Object.freeze(['ariadne', 'character_ito', 'world_ito', 'plot_ito', 'final']),
-      instruction: 'Use private reasoning only to execute the requested response. Do not replace RP prose with task decomposition, broad advice, a helpful meta-explanation, moralizing, or a summary of what should be written.'
-    })
-  });
-  const RESPONSE_IMPROVEMENT_INSTRUCTION_IDS = Object.freeze(Object.keys(RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS));
-  const normalizeResponseImprovementProfile = value => normalizeChoice(
-    String(value || '').trim().toLowerCase(),
-    RESPONSE_IMPROVEMENT_PROFILES,
-    DEFAULT_RESPONSE_IMPROVEMENT_PROFILE
-  );
-  const responseImprovementTogglesForProfile = value => {
-    const profile = normalizeResponseImprovementProfile(value);
-    return Object.fromEntries(RESPONSE_IMPROVEMENT_INSTRUCTION_IDS.map(id => [
-      id,
-      profile === 'off'
-        ? false
-        : profile === 'all'
-          ? true
-          : RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id].recommended !== false
-    ]));
-  };
-  const normalizeResponseImprovementToggles = (value, profile = DEFAULT_RESPONSE_IMPROVEMENT_PROFILE) => {
-    let source = value;
-    if (typeof source === 'string') {
-      const body = source.trim();
-      if (!body) source = {};
-      else {
-        try { source = JSON.parse(body); }
-        catch (_) { source = {}; }
-      }
-    }
-    if (!source || typeof source !== 'object' || Array.isArray(source)) source = {};
-    const normalizedProfile = normalizeResponseImprovementProfile(profile);
-    const fallbackProfile = normalizedProfile === 'custom' ? DEFAULT_RESPONSE_IMPROVEMENT_PROFILE : normalizedProfile;
-    const out = responseImprovementTogglesForProfile(fallbackProfile);
-    for (const id of RESPONSE_IMPROVEMENT_INSTRUCTION_IDS) {
-      if (Object.prototype.hasOwnProperty.call(source, id)) out[id] = asBool(source[id], out[id]);
-    }
-    return out;
-  };
+  // The GRADIA-era response-improvement instructions (response_improvement_profile/_toggles) were
+  // never read by LIBRA and were removed; old stored values are ignored.
 
 
 
@@ -2822,8 +2590,6 @@ function __libraNarrativeStripPatch(value) {
     inFlight: false,
     settings: null,
     settingsLoadedAt: 0,
-    inputAssistFastMode: 'unknown',
-    inputAssistFastModeLoadedAt: 0,
     providerPresets: {},
     secretStorage: 'unknown',
     migratedFrom: null,
@@ -2845,7 +2611,7 @@ function __libraNarrativeStripPatch(value) {
     uiLaunchSerial: 0,
     uiLaunchKind: '',
     uiLaunchAt: 0,
-    lastInjectionMode: DEFAULT_RESPONSE_INJECTION_MODE,
+    lastInjectionMode: LIBRA_DELIVERY_ROUTE,
     lastFinalOverlayMeta: null,
     stageTrace: [],
     lastProviderRequest: null,
@@ -2874,20 +2640,7 @@ function __libraNarrativeStripPatch(value) {
     risuEngine: null,
     finalDraft: '',
     finalDraftMeta: null,
-    lastInputAssist: null,
-    lastInputAssistTranslation: null,
-    lastInputAssistContext: null,
     lastMainResponse: null,
-    inputAssistConfirmation: {
-      open: false,
-      requestId: 0,
-      source: '',
-      original: '',
-      expanded: '',
-      regenerating: false,
-      decision: '',
-      selected: ''
-    },
     pipelineWorkStatus: {
       busy: false,
       phase: 'idle',
@@ -2909,8 +2662,6 @@ function __libraNarrativeStripPatch(value) {
     activeLineage: null,
     lastCompletedDraftSet: null,
     analysisLedger: {},
-    writerControl: null,
-    forceWriterRefresh: false,
     userIntentOoc: { targetStage: 'librarian', messages: [], messagesByStage: {}, startedByStage: {}, pendingByStage: {}, summariesByStage: {}, revisionsByStage: {}, busy: false, lastError: '', statusText: '', statusState: 'idle', requestId: 0 },
     requestReuse: { hits: 0, misses: 0, stores: 0, evictions: 0, hostRetryBypasses: 0, lastFingerprint: '', lastReuseAt: 0 },
     hookRuntime: {
@@ -15152,19 +14903,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const source = unwrapVersionedStore(raw, 'settings');
     const aliases = {
       turnWindow: 'turn_window', maxRecentChars: 'max_recent_chars', maxPreviousStageChars: 'max_previous_stage_chars',
-      maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode', injectionMode: 'injection_mode',
-      memoryStateAutoApply: 'memory_state_auto_apply', responseFamily: 'response_family', libraResponseMode: 'libra_response_mode', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
+      maxInjectionChars: 'max_injection_chars', injectionPosition: 'injection_position', failureMode: 'failure_mode',
+      memoryStateAutoApply: 'memory_state_auto_apply', liveContextEnabled: 'live_context_enabled', liveTailMaxTurns: 'live_tail_max_turns', liveTailMaxChars: 'live_tail_max_chars',
       bootstrapReferencesEnabled: 'bootstrap_references_enabled', bootstrapReferenceMaxChars: 'bootstrap_reference_max_chars', classicLiveTailEnabled: 'classic_live_tail_enabled',
       responseLoreEnabled: 'response_lore_enabled', responseLoreStartCount: 'response_lore_start_count', responseLoreMaxItems: 'response_lore_max_items', responseLoreMaxChars: 'response_lore_max_chars',
       risuAuxAllowPlugins: 'risuai_aux_allow_plugins',
       stageTimeoutMs: 'stage_timeout_ms', defaultPresetName: 'default_preset', itoStageOrder: 'ito_stage_order', quickProfile: 'quick_profile', multiPipelineMode: 'multi_pipeline_mode',
       gradationMode: 'gradation_mode', outputMode: 'output_mode', internalDraftLanguage: 'internal_draft_language', builtInStylePreset: 'built_in_style_preset', debugLog: 'debug_log', enableShadowRisuContext: 'shadow_include_risu_context', shadowRisuContextMaxChars: 'shadow_risu_context_max_chars', twoCallAide: 'two_call_ito', targetDraftMinChars: 'target_draft_min_chars', targetDraftMaxChars: 'target_draft_max_chars', guiEnabled: 'enable_gui',
-      inputAssistMode: 'input_assist_mode', inputAssistScope: 'input_assist_scope', inputAssistTargetChars: 'input_assist_target_chars', inputAssistConfirmationMode: 'input_assist_confirmation_mode', inputAssistAlwaysTranslateEnglish: 'input_assist_always_translate_english', inputAssistLoreActivationMode: 'input_assist_lore_activation_mode', informationTransferMode: 'information_transfer_mode',
+      informationTransferMode: 'information_transfer_mode',
       nsfwMode: 'nsfw_mode', nsfwGuidanceEnabled: 'nsfw_guidance_enabled',
-      responseImprovementProfile: 'response_improvement_profile', responseImprovementToggles: 'response_improvement_toggles',
       backendHosting: 'backendHosting', backendHostingMode: 'backend_hosting_mode', backendHostingUrl: 'backend_hosting_url', backendHostingToken: 'backend_hosting_token', backendHostingAutoDetected: 'backend_hosting_auto_detected', backendHostingLastDetectedAt: 'backend_hosting_last_detected_at', backendHostingLastManifest: 'backend_hosting_last_manifest',
-      writerEnabled: 'writer_enabled', writerReviewIntervalTurns: 'writer_review_interval_turns', writerMaxSourceChars: 'writer_max_source_chars',
-      storyArcPresetName: 'story_arc_preset', microPresetName: 'micro_preset', lensPresetName: 'lens_preset',
+      microPresetName: 'micro_preset', lensPresetName: 'lens_preset',
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
       loreActivationMode: 'lore_activation_mode',
       excludedCharacterLoreIds: 'excluded_character_lore_ids',
@@ -15203,9 +14952,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     enabled: fallback.enabled ?? defaultEnabledForStage(stageId),
     preset: compact(fallback.preset ?? fallback.presetName ?? '', 120),
     max_chars: clampInt(fallback.max_chars ?? fallback.maxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, defaultContextCharsForStage(stageId)),
-    turn_window: stageId === INPUT_ASSIST_STAGE_ID
-      ? 1
-      : clampInt(fallback.turn_window ?? fallback.turnWindow, 1, 64, defaultTurnWindowForStage(stageId)),
+    turn_window: clampInt(fallback.turn_window ?? fallback.turnWindow, 1, 64, defaultTurnWindowForStage(stageId)),
     timeout_ms: clampInt(fallback.timeout_ms ?? fallback.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS),
     execution_mode: normalizeChoice(fallback.execution_mode ?? fallback.executionMode ?? defaultExecutionModeForStage(stageId), ['analysis_draft', 'draft_only'], defaultExecutionModeForStage(stageId)),
     risu_refs: normalizeRisuReferences(fallback.risu_refs ?? fallback.risuRefs, defaultRisuReferencesForStage(stageId))
@@ -15217,9 +14964,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       enabled: value?.enabled ?? defaults.enabled,
       preset: compact(value?.preset ?? value?.presetName ?? defaults.preset ?? '', 120),
       max_chars: clampInt(value?.max_chars ?? value?.maxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, defaults.max_chars),
-      turn_window: stageId === INPUT_ASSIST_STAGE_ID
-        ? 1
-        : clampInt(value?.turn_window ?? value?.turnWindow, 1, 64, defaults.turn_window),
+      turn_window: clampInt(value?.turn_window ?? value?.turnWindow, 1, 64, defaults.turn_window),
       timeout_ms: clampInt(value?.timeout_ms ?? value?.timeoutMs, 5000, 300000, defaults.timeout_ms),
       execution_mode: stageId === LIBRARIAN_STAGE_ID ? 'draft_only' : requiresMandatoryStageAnalysis(stageId)
         ? 'analysis_draft'
@@ -15235,9 +14980,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (['preset', 'presetName'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.preset = compact(value.preset ?? value.presetName ?? '', 120);
     if (['max_chars', 'maxChars'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.max_chars = clampInt(value.max_chars ?? value.maxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, defaultContextCharsForStage(stageId));
     if (['turn_window', 'turnWindow'].some(key => Object.prototype.hasOwnProperty.call(value, key))) {
-      out.turn_window = stageId === INPUT_ASSIST_STAGE_ID
-        ? 1
-        : clampInt(value.turn_window ?? value.turnWindow, 1, 64, defaultTurnWindowForStage(stageId));
+      out.turn_window = clampInt(value.turn_window ?? value.turnWindow, 1, 64, defaultTurnWindowForStage(stageId));
     }
     if (['timeout_ms', 'timeoutMs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.timeout_ms = clampInt(value.timeout_ms ?? value.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS);
     if (['execution_mode', 'executionMode'].some(key => Object.prototype.hasOwnProperty.call(value, key))) {
@@ -16342,12 +16085,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       delete settings.backendHosting.backendToken;
       delete settings.backendHosting.backend_hosting_token;
     }
-    const responseModeState = resolveResponseModeState(settings);
-    settings.response_family = responseModeState.responseFamily;
-    settings.libra_response_mode = responseModeState.libraResponseMode;
-
-
-    settings.injection_mode = responseModeState.injectionMode;
+    delete settings.response_family;
+    delete settings.libra_response_mode;
+    delete settings.injection_mode;
     settings.settings_schema_version = SETTINGS_SCHEMA_MIGRATION_VERSION;
     return settings;
   };
@@ -16424,10 +16164,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           throw validationFailure;
         }
       }
-      if (Object.prototype.hasOwnProperty.call(settings, 'input_assist_mode')) {
-        Runtime.inputAssistFastMode = normalizeChoice(settings.input_assist_mode || 'off', INPUT_ASSIST_MODES, 'off');
-        Runtime.inputAssistFastModeLoadedAt = Date.now();
-      }
       Runtime.lastRuntimeSettingsTransaction = {
         ok: true, wrote: true, transactionId, previousSemanticHash, semanticHash: nextSemanticHash,
         changed: previousSemanticHash !== nextSemanticHash, savedAt: envelope.savedAt,
@@ -16482,8 +16218,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       beforeHash,
       semanticHash,
       added,
-      settings,
-      modeState: resolveResponseModeState(settings)
+      settings
     };
   };
   const migrateSettingsSchema = async () => {
@@ -17018,26 +16753,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         risu_refs: Object.prototype.hasOwnProperty.call(existing, 'risu_refs') ? existing.risu_refs : refs
       }, def.id, true);
     }
-    const existingInput = slots?.[INPUT_ASSIST_STAGE_ID] || {};
-    slots[INPUT_ASSIST_STAGE_ID] = normalizeStoredStageSlot({
-      enabled: Object.prototype.hasOwnProperty.call(existingInput, 'enabled')
-        ? existingInput.enabled
-        : normalizeChoice(runtime.input_assist_mode || 'off', INPUT_ASSIST_MODES, 'off') !== 'off',
-      preset: Object.prototype.hasOwnProperty.call(existingInput, 'preset')
-        ? existingInput.preset
-        : compact(await getArgument('input_assist_preset', ''), 120),
-      max_chars: Object.prototype.hasOwnProperty.call(existingInput, 'max_chars')
-        ? existingInput.max_chars
-        : defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID),
-      turn_window: DEFAULT_INPUT_ASSIST_TURNS,
-      timeout_ms: Object.prototype.hasOwnProperty.call(existingInput, 'timeout_ms')
-        ? existingInput.timeout_ms
-        : DEFAULT_STAGE_TIMEOUT_MS,
-      execution_mode: 'draft_only',
-      risu_refs: Object.prototype.hasOwnProperty.call(existingInput, 'risu_refs')
-        ? existingInput.risu_refs
-        : defaultRisuReferencesForStage(INPUT_ASSIST_STAGE_ID)
-    }, INPUT_ASSIST_STAGE_ID, true);
     await writeAgentSlots(slots);
     await writeRuntimeSettings(runtime);
     return slots;
@@ -17132,8 +16847,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const baseResult = {
       version: REFERENCE_BUDGET_MIGRATION_VERSION,
       profileId,
-      inspectedStageIds: stageIds,
-      inputAssistPreserved: true
+      inspectedStageIds: stageIds
     };
     if (!present.length) {
       return {
@@ -17402,7 +17116,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
     Runtime.settings = null;
     Runtime.settingsLoadedAt = 0;
-    Runtime.lastInputAssist = null;
     Runtime.loreContinuity = { scopes: {} };
     clearRequestReuseCache();
     return transaction.ok === true;
@@ -17526,18 +17239,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     });
 
 
-    const inputAssistMode = normalizeChoice(await runtimeCfg('input_assist_mode', 'off'), INPUT_ASSIST_MODES, 'off');
-    const inputAssistScope = normalizeChoice(await runtimeCfg('input_assist_scope', 'full_pipeline'), INPUT_ASSIST_SCOPES, 'full_pipeline');
-    const inputAssistTargetChars = normalizeInputAssistTargetChars(await runtimeCfg('input_assist_target_chars', DEFAULT_INPUT_ASSIST_TARGET_CHARS));
-    const inputAssistConfirmationMode = normalizeChoice(await runtimeCfg('input_assist_confirmation_mode', 'direct'), INPUT_ASSIST_CONFIRMATION_MODES, 'direct');
-    const inputAssistAlwaysTranslateEnglish = asBool(await runtimeCfg('input_assist_always_translate_english', 'false'), false);
-    const inputAssistLoreActivationMode = normalizeInputAssistLoreActivationMode(
-      await runtimeCfg('input_assist_lore_activation_mode', DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE)
-    );
     const informationTransferMode = normalizeChoice(await runtimeCfg('information_transfer_mode', 'draft_only'), INFORMATION_TRANSFER_MODES, 'draft_only');
-    const legacyInjectionMode = normalizeResponseInjectionMode(await runtimeCfg('injection_mode', DEFAULT_RESPONSE_INJECTION_MODE));
-    const responseFamily = normalizeResponseFamily(await runtimeCfg('response_family', ''), legacyInjectionMode);
-    const libraResponseMode = normalizeLibraResponseMode(await runtimeCfg('libra_response_mode', ''), legacyInjectionMode);
     const liveContextEnabled = false; // Retired: completed-turn evidence comes from Micro memory.
     const memoryStateAutoApply = asBool(await runtimeCfg('memory_state_auto_apply', 'true'), true);
     const liveTailMaxTurns = clampInt(await runtimeCfg('live_tail_max_turns', DEFAULT_LIVE_TAIL_MAX_TURNS), 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS);
@@ -17570,18 +17272,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
 
 
-    const injectionMode = responseFamily === 'gradia' ? 'sga' : libraResponseMode;
 
 
     const nsfwMode = normalizeNsfwMode(await runtimeCfg('nsfw_mode', DEFAULT_NSFW_MODE));
     const nsfwGuidanceEnabled = asBool(await runtimeCfg('nsfw_guidance_enabled', 'true'), true);
-    const responseImprovementProfile = normalizeResponseImprovementProfile(
-      await runtimeCfg('response_improvement_profile', DEFAULT_RESPONSE_IMPROVEMENT_PROFILE)
-    );
-    const responseImprovementToggles = normalizeResponseImprovementToggles(
-      await runtimeCfg('response_improvement_toggles', runtimeStored.response_improvement_toggles || {}),
-      responseImprovementProfile
-    );
     const loreActivationMode = normalizeLoreActivationMode(await runtimeCfg('lore_activation_mode', DEFAULT_LORE_ACTIVATION_MODE));
     const builtInStylePreset = normalizeBuiltInStylePreset(await runtimeCfg('built_in_style_preset', 'unified_stylepack'));
     const injectionPosition = normalizeChoice(
@@ -17635,16 +17329,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       gradationMode,
       outputMode,
       internalDraftLanguage,
-      inputAssistMode,
-      inputAssistScope,
-      inputAssistTargetChars,
-      inputAssistConfirmationMode,
-      inputAssistAlwaysTranslateEnglish,
-      inputAssistLoreActivationMode,
       informationTransferMode,
-      responseFamily,
-      libraResponseMode,
-      injectionMode,
       liveContextEnabled,
       memoryStateAutoApply,
       liveTailMaxTurns,
@@ -17661,8 +17346,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       risuAuxAllowPlugins: asBool(await runtimeCfg('risuai_aux_allow_plugins', 'true'), true),
       nsfwMode,
       nsfwGuidanceEnabled,
-      responseImprovementProfile,
-      responseImprovementToggles,
       loreActivationMode,
       builtInStylePreset,
       maxPreviousStageChars: clampInt(await runtimeCfg('max_previous_stage_chars', DEFAULT_MAX_PREVIOUS_STAGE_CHARS), 1000, 60000, DEFAULT_MAX_PREVIOUS_STAGE_CHARS),
@@ -17672,17 +17355,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       defaultPresetName: configuredDefaultPresetName || RISUAI_AUX_PRESET_NAME,
       itoStageOrder: normalizeAideStageOrder(await runtimeCfg('ito_stage_order', DEFAULT_ito_STAGE_ORDER)),
       quickProfile: normalizeChoice(await runtimeCfg('quick_profile', 'balanced'), QUICK_PROFILE_IDS, 'balanced'),
-      writerEnabled: asBool(await runtimeCfg('writer_enabled', 'false'), false),
-      writerReviewIntervalTurns: clampInt(await runtimeCfg('writer_review_interval_turns', WRITER_DEFAULT_REVIEW_INTERVAL_TURNS), 1, 64, WRITER_DEFAULT_REVIEW_INTERVAL_TURNS),
-      writerMaxSourceChars: clampInt(await runtimeCfg('writer_max_source_chars', WRITER_DEFAULT_MAX_SOURCE_CHARS), 6000, 100000, WRITER_DEFAULT_MAX_SOURCE_CHARS),
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(await runtimeCfg('selected_module_lore_ids', runtimeStored.selected_module_lore_ids || [])),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(await runtimeCfg('excluded_module_lore_ids', runtimeStored.excluded_module_lore_ids || [])),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(await runtimeCfg('excluded_character_lore_ids', runtimeStored.excluded_character_lore_ids || [])),
       stagePresetNames: {
-        [STORY_ARC_STAGE_ID]: compact(await runtimeCfg('story_arc_preset', ''), 120),
         [MICRO_PRESET_STAGE_ID]: compact(await runtimeCfg('micro_preset', ''), 120),
         [LENS_PRESET_STAGE_ID]: compact(await runtimeCfg('lens_preset', ''), 120),
-        [INPUT_ASSIST_STAGE_ID]: compact(await slotCfg(INPUT_ASSIST_STAGE_ID, 'preset', 'input_assist_preset', ''), 120),
         ariadne: compact(await slotCfg('ariadne', 'preset', 'ariadne_preset', ''), 120),
         character_ito: compact(await slotCfg('character_ito', 'preset', 'character_ito_preset', ''), 120),
         world_ito: compact(await slotCfg('world_ito', 'preset', 'world_ito_preset', ''), 120),
@@ -17695,7 +17373,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         state_relationship_verifier: compact(await slotCfg('state_relationship_verifier', 'preset', 'state_relationship_verifier_preset', RISUAI_AUX_PRESET_NAME), 120),
         state_world_verifier: compact(await slotCfg('state_world_verifier', 'preset', 'state_world_verifier_preset', RISUAI_AUX_PRESET_NAME), 120),
         state_narrative_verifier: compact(await slotCfg('state_narrative_verifier', 'preset', 'state_narrative_verifier_preset', RISUAI_AUX_PRESET_NAME), 120),
-        [WRITER_STAGE_ID]: compact(await slotCfg(WRITER_STAGE_ID, 'preset', 'writer_preset', ''), 120),
         [USER_INTENT_ito_STAGE_ID]: compact(
           await slotCfg(
             USER_INTENT_ito_STAGE_ID,
@@ -17716,7 +17393,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         ),
       },
       enableShadowAct: asBool(await slotCfg('ariadne', 'enabled', 'enable_ariadne', 'true'), true),
-      enableInputAssist: inputAssistMode !== 'off',
       enableCharacterAide: asBool(await slotCfg('character_ito', 'enabled', 'enable_character_ito', 'false'), false),
       enableWorldAide: asBool(await slotCfg('world_ito', 'enabled', 'enable_world_ito', 'false'), false),
       enablePlotAide: asBool(await slotCfg('plot_ito', 'enabled', 'enable_plot_ito', 'false'), false),
@@ -17745,11 +17421,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for (const def of [...CONFIGURABLE_STAGE_DEFS,...LEGACY_MEMORY_STAGE_DEFS]) {
       settings.stageOptions[def.id] = normalizeAgentSlotRecord(agentSlots?.[def.id] || {}, {
         enabled: def.id === 'ariadne' ? settings.enableShadowAct
-          : def.id === INPUT_ASSIST_STAGE_ID ? settings.enableInputAssist
           : def.id === 'character_ito' ? settings.enableCharacterAide
             : def.id === 'world_ito' ? settings.enableWorldAide
               : def.id === 'plot_ito' ? settings.enablePlotAide
-                : def.id === WRITER_STAGE_ID ? settings.writerEnabled
                   : true,
         preset: settings.stagePresetNames?.[def.id] || '',
         max_chars: defaultContextCharsForStage(def.id),
@@ -18350,8 +18024,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     stripPostprocessForPrivateRecentReading(value)
   ).trim();
 
-  const extractInputAssistTerminalTail = (content, maxChars = INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS) => {
-    const limit = clampInt(maxChars, 600, 6000, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
+  const extractTerminalSceneTail = (content, maxChars = TERMINAL_SCENE_TAIL_MAX_CHARS) => {
+    const limit = clampInt(maxChars, 600, 6000, TERMINAL_SCENE_TAIL_MAX_CHARS);
     const visible = deriveNarrativeContinuityCopy(content)
       .replace(/<GT-(?:CTRL|SEP)\b[^>]*\/?>/gi, ' ')
       .replace(/^\s*<img\b[^>]*>\s*$/gim, ' ')
@@ -18541,9 +18215,9 @@ ${text(paired.leadingAssistant.content || '')}
     const turnWindow = buildCompleteRecentTurnWindow(visibleChatMessages, settings.turnWindow, latestUser);
     const latestAssistantRaw = turnWindow.previousTurnAssistant || '';
     const latestAssistant = deriveNarrativeContinuityCopy(latestAssistantRaw);
-    const terminalVisibleScene = extractInputAssistTerminalTail(
+    const terminalVisibleScene = extractTerminalSceneTail(
       latestAssistantRaw,
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
+      TERMINAL_SCENE_TAIL_MAX_CHARS
     );
     const privatePreviousTurnText = deriveNarrativeContinuityCopy(turnWindow.previousTurnText || '');
     const privateEarlierTurnsText = deriveNarrativeContinuityCopy(turnWindow.earlierTurnsText || '');
@@ -19301,9 +18975,6 @@ ${text(paired.leadingAssistant.content || '')}
 
   const applyActualChatContextToRecent = (recent, chatContext, settings) => {
     if (!recent || chatContext?.available !== true || !Array.isArray(chatContext.messages)) return recent;
-    if (settings?.activeStageName === INPUT_ASSIST_STAGE_ID && recent.inputAssistTerminalOnly === true) {
-      return recent;
-    }
     const messages = chatContext.messages;
     const latestUser = [...messages].reverse().find(item => item.role === 'user')?.content || recent.latestUser || '';
     const turnWindow = buildCompleteRecentTurnWindow(messages, settings?.turnWindow || DEFAULT_RECENT_TURNS, latestUser);
@@ -19312,9 +18983,9 @@ ${text(paired.leadingAssistant.content || '')}
     recent.latestUser = text(latestUser || '');
     recent.latestAssistantRaw = text(latestAssistant || '');
     recent.latestAssistant = deriveNarrativeContinuityCopy(latestAssistant);
-    recent.terminalVisibleScene = extractInputAssistTerminalTail(
+    recent.terminalVisibleScene = extractTerminalSceneTail(
       latestAssistant,
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
+      TERMINAL_SCENE_TAIL_MAX_CHARS
     );
     recent.previousTurnUser = turnWindow.previousTurnUser;
     recent.previousTurnAssistant = deriveNarrativeContinuityCopy(turnWindow.previousTurnAssistant);
@@ -21382,14 +21053,9 @@ function summarizeAgentCbsTag(rawContent) {
     applyActualChatContextToRecent(ragRecent, actualChatContext, settings);
     const loreSettings = character?.loreSettings || character?.lore_settings || {};
     const loreContinuityScope = loreContinuityScopeKey(character, chatInfo.chat);
-    const inputAssistTerminalPath = settings?.activeStageName === INPUT_ASSIST_STAGE_ID
-      && ragRecent?.inputAssistTerminalOnly === true;
-    const loreContinuityActiveIds = inputAssistTerminalPath ? [] : readLoreContinuityIds(loreContinuityScope);
+    const loreContinuityActiveIds = readLoreContinuityIds(loreContinuityScope);
     const mainLoreActivationMode = normalizeLoreActivationMode(settings?.loreActivationMode);
-    const inputAssistLoreActivationMode = normalizeInputAssistLoreActivationMode(settings?.inputAssistLoreActivationMode);
-    const loreActivationMode = inputAssistTerminalPath
-      ? inputAssistLoreActivationMode
-      : mainLoreActivationMode;
+    const loreActivationMode = mainLoreActivationMode;
     // UNIFIED ACTIVATION: collect all three independent evidence signals, then combine them.
     // The retired mode branches selected ONE source; that is the regression the original removed
     // in 0.25.72. Host-selected lore, activation-key evidence and semantic retrieval are
@@ -21403,7 +21069,7 @@ function summarizeAgentCbsTag(rawContent) {
       loreBookToken: clampInt(loreSettings.tokenBudget ?? loreSettings.token_budget ?? Math.ceil((settings.shadowRisuContextMaxChars || DEFAULT_SHARED_LORE_CONTEXT_CHARS) / 3.4), 64, 80000, Math.ceil(DEFAULT_SHARED_LORE_CONTEXT_CHARS / 3.4)),
       loreFullWordMatching: loreSettings.fullWordMatching === true || loreSettings.full_word_matching === true,
       loreRecursiveScanning: loreSettings.recursiveScanning !== false && loreSettings.recursive_scanning !== false,
-      loreContinuityTurns: inputAssistTerminalPath ? 0 : DEFAULT_LORE_CONTINUITY_TURNS,
+      loreContinuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
       loreContinuityActiveIds,
       loreChatVars: cbsContext?.chatVars || {},
       loreGreetingIndex: Number.isInteger(Number(chatInfo.chat?.fmIndex)) ? Number(chatInfo.chat.fmIndex) : -1
@@ -21437,9 +21103,7 @@ function summarizeAgentCbsTag(rawContent) {
       seenUnifiedLore.add(identity);
       activeLore.push(lore);
     }
-    if (!inputAssistTerminalPath) {
-      writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
-    }
+    writeLoreContinuityIds(loreContinuityScope, activeLore, ragRecent.latestUser);
     return {
       routeVersion: RAG_ROUTE_VERSION,
       route: 'plugins.md:getCharacter+getDatabase+getCurrentCharacterIndex+getCurrentChatIndex+getChatFromIndex',
@@ -21462,18 +21126,12 @@ function summarizeAgentCbsTag(rawContent) {
       authorNote,
       loreSettings: {
         activationMode: loreActivationMode,
-        activationModeLabel: inputAssistTerminalPath
-          ? INPUT_ASSIST_LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE
-          : LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || DEFAULT_LORE_ACTIVATION_MODE,
+        activationModeLabel: LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || DEFAULT_LORE_ACTIVATION_MODE,
         // The unified engine collects host-selected, activation-key and semantic evidence
         // together on every turn, so the policy label must describe that rather than one of the
         // retired single-signal modes (none of which is reachable any more).
-        activationPolicy: inputAssistTerminalPath
-          ? 'input_assist_unified_selection'
-          : 'unified_host_key_and_semantic_selection',
+        activationPolicy: 'unified_host_key_and_semantic_selection',
         mainActivationMode: mainLoreActivationMode,
-        inputAssistActivationMode: inputAssistLoreActivationMode,
-        inputAssistSeparatePipeline: inputAssistTerminalPath,
         hostRequestMessageCount: hostLoreSelection.requestMessageCount,
         hostMatchedCandidateCount: hostLoreSelection.matchedCandidateCount,
         hostSelectedCount: hostLoreSelection.selectedCount,
@@ -21481,7 +21139,7 @@ function summarizeAgentCbsTag(rawContent) {
         cbsRenderDropCount: independentRendering.dropped.length,
         preRequestFallback: false,
         activationPolicyVersion: LORE_ACTIVATION_POLICY_VERSION,
-        continuityTurns: inputAssistTerminalPath ? 0 : DEFAULT_LORE_CONTINUITY_TURNS,
+        continuityTurns: DEFAULT_LORE_CONTINUITY_TURNS,
         continuityScope: loreContinuityScope,
         continuityCandidates: loreContinuityActiveIds.length,
         activationRoutes: activeLore.reduce((acc, lore) => {
@@ -22188,7 +21846,7 @@ function summarizeAgentCbsTag(rawContent) {
 
   const promoteLoreCandidatesWithJaccard = (candidates = [], activeLore = [], query = '', options = {}) => {
     const currentQuery = compact(query, 2400).trim();
-    const terminalQuery = compact(options.terminalQuery || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS).trim();
+    const terminalQuery = compact(options.terminalQuery || '', TERMINAL_SCENE_TAIL_MAX_CHARS).trim();
     const existing = new Set((activeLore || []).map(loreContinuityIdentity));
     const maxPromotions = clampInt(options.maxPromotions, 0, 8, 6);
     const chatLength = Math.max(1, Number(options.chatLength || 1));
@@ -23354,7 +23012,7 @@ function summarizeAgentCbsTag(rawContent) {
         requestEndIndex: Number(queryBundle?.inputRequestEndIndex ?? queryBundle?.inputRequestIndex ?? -1),
         tag: text(queryBundle?.inputTag || '')
       };
-      if (text(queryBundle?.sceneText || '')) recent.terminalVisibleScene = extractInputAssistTerminalTail(text(queryBundle.sceneText), INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
+      if (text(queryBundle?.sceneText || '')) recent.terminalVisibleScene = extractTerminalSceneTail(text(queryBundle.sceneText), TERMINAL_SCENE_TAIL_MAX_CHARS);
       if (liveTail?.available) {
         recent.completeTurnsText = text(liveTail.transcript || '');
         recent.text = [recent.completeTurnsText, recent.latestUser].filter(Boolean).join('\n\n');
@@ -23443,11 +23101,7 @@ function summarizeAgentCbsTag(rawContent) {
     const referenceEnabled = !!(refs.authorNote || refs.persona || refs.characterDescription || refs.characterLorebook || refs.moduleLorebook);
     const fixedDraftStage = BEFORE_STAGE_DEFS.some(def => def.id === settings?.activeStageName);
     const enabled = referenceEnabled || fixedDraftStage;
-    const inputAssistTerminalPath = settings?.activeStageName === INPUT_ASSIST_STAGE_ID
-      && recent?.inputAssistTerminalOnly === true;
-    const loreActivationMode = inputAssistTerminalPath
-      ? normalizeInputAssistLoreActivationMode(settings?.inputAssistLoreActivationMode)
-      : normalizeLoreActivationMode(settings?.loreActivationMode);
+    const loreActivationMode = normalizeLoreActivationMode(settings?.loreActivationMode);
     const meta = {
       enabled,
       references: refs,
@@ -23458,7 +23112,6 @@ function summarizeAgentCbsTag(rawContent) {
       activeLore: 0,
       loreActivationMode,
       mainLoreActivationMode: normalizeLoreActivationMode(settings?.loreActivationMode),
-      inputAssistLoreActivationMode: normalizeInputAssistLoreActivationMode(settings?.inputAssistLoreActivationMode),
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings?.selectedModuleLoreIds),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings?.excludedModuleLoreIds),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings?.excludedCharacterLoreIds),
@@ -23469,8 +23122,7 @@ function summarizeAgentCbsTag(rawContent) {
     };
     if (!enabled) return { block: '', meta, snapshot, cbsContext: snapshot?.cbsContext || null };
     const authoritativeCurrentInput = String(
-      recent?.inputAssistLoreQuery
-      || recent?.latestUser
+      recent?.latestUser
       || ''
     ).trim();
     const retrievalRecent = authoritativeCurrentInput && authoritativeCurrentInput !== String(recent?.latestUser || '').trim()
@@ -23490,30 +23142,19 @@ function summarizeAgentCbsTag(rawContent) {
       inheritedByAidesThroughDraft: true
     };
     applyActualChatContextToRecent(recent, source.actualChatContext, settings);
-    recent.terminalVisibleScene = extractInputAssistTerminalTail(
+    recent.terminalVisibleScene = extractTerminalSceneTail(
       recent?.terminalVisibleScene || recent?.latestAssistantRaw || recent?.latestAssistant || '',
-      INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS
+      TERMINAL_SCENE_TAIL_MAX_CHARS
     );
     const { characterInfo, character, chatInfo, persona, candidates } = source;
-    const continuityLedger = inputAssistTerminalPath
-      ? {
-          version: 'libra_input_assist_terminal_tail_v1',
-          boundary: { active: false, kinds: [], source: '' },
-          currentCast: [],
-          previousCast: [],
-          carriedCast: [],
-          introducedCast: [],
-          previousOnlyCast: [],
-          previousEvent: null
-        }
-      : buildRequestContinuityLedger(authoritativeCurrentInput, recent, source);
+    const continuityLedger = buildRequestContinuityLedger(authoritativeCurrentInput, recent, source);
     recent.continuityLedger = continuityLedger;
-    recent.continuityLedgerBlock = inputAssistTerminalPath ? '' : formatRequestContinuityLedger(continuityLedger);
+    recent.continuityLedgerBlock = formatRequestContinuityLedger(continuityLedger);
     const selectedCandidates = (candidates || []).filter(candidate => candidate.sourceType === 'module' ? refs.moduleLorebook : (candidate.sourceType === 'character' || candidate.sourceType === 'chat') ? refs.characterLorebook : false);
     const selectedIds = new Set(selectedCandidates.map(loreContinuityIdentity));
     const baseActiveLore = (source.activeLore || []).filter(lore => selectedIds.has(loreContinuityIdentity(lore)));
     const lorePrimaryQuery = compact(authoritativeCurrentInput || recent?.latestUser || '', 2400);
-    const loreTerminalQuery = compact(recent?.terminalVisibleScene || '', INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
+    const loreTerminalQuery = compact(recent?.terminalVisibleScene || '', TERMINAL_SCENE_TAIL_MAX_CHARS);
     const promoted = applyLoreActivationMode(
       loreActivationMode,
       selectedCandidates,
@@ -23532,7 +23173,7 @@ function summarizeAgentCbsTag(rawContent) {
         ? { ...lore, content: renderRagCbsText(lore.content, source.cbsContext, `lore:${lore.label}`) }
         : lore
     ));
-    if (!inputAssistTerminalPath && source.loreSettings?.continuityScope) {
+    if (source.loreSettings?.continuityScope) {
       writeLoreContinuityIds(source.loreSettings.continuityScope, activeLore, recent?.latestUser || '');
     }
     meta.available = !!(character || source.db || chatInfo?.chat || persona || selectedCandidates.length);
@@ -23589,17 +23230,9 @@ function summarizeAgentCbsTag(rawContent) {
     meta.loreSettings = {
       ...(source.loreSettings || {}),
       activationMode: loreActivationMode,
-      activationModeLabel: inputAssistTerminalPath
-        ? INPUT_ASSIST_LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || loreActivationMode
-        : LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || loreActivationMode,
+      activationModeLabel: LORE_ACTIVATION_MODE_DEFS[loreActivationMode]?.label || loreActivationMode,
       mainActivationMode: normalizeLoreActivationMode(settings?.loreActivationMode),
-      inputAssistActivationMode: normalizeInputAssistLoreActivationMode(settings?.inputAssistLoreActivationMode),
-      inputAssistSeparatePipeline: inputAssistTerminalPath,
-      activationPolicy: source.loreSettings?.activationPolicy || (
-        inputAssistTerminalPath
-          ? 'input_assist_unified_selection'
-          : 'unified_host_key_and_semantic_selection'
-      ),
+      activationPolicy: source.loreSettings?.activationPolicy || 'unified_host_key_and_semantic_selection',
       activationPolicyVersion: LORE_ACTIVATION_POLICY_VERSION,
       activationRoutes: activeLore.reduce((acc, lore) => {
         const route = lore.activationRoute || 'unknown';
@@ -23695,13 +23328,7 @@ function summarizeAgentCbsTag(rawContent) {
     let referencePacketHash = '';
     let referencePacketFallback = false;
     let legacyLorePack = null;
-    const referenceCapacityOptions = inputAssistTerminalPath
-      ? {
-          profileId: 'custom',
-          profileCapChars: INPUT_ASSIST_LORE_CONTEXT_MAX_CHARS,
-          stageNames: [INPUT_ASSIST_STAGE_ID]
-        }
-      : undefined;
+    const referenceCapacityOptions = undefined;
     try {
       const builtReferencePacket = buildCanonicalReferencePacketV2({
         settings,
@@ -23831,7 +23458,7 @@ function summarizeAgentCbsTag(rawContent) {
         loreMode: loreActivationMode,
         sceneAuthority: {
           currentInput: submittedCurrentInput(recent),
-          terminalVisibleScene: text(recent.terminalVisibleScene || '').slice(-INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
+          terminalVisibleScene: text(recent.terminalVisibleScene || '').slice(-TERMINAL_SCENE_TAIL_MAX_CHARS),
           recentCompletedTurns: recent.completeTurnsText || recent.text || '',
           continuityLedger
         },
@@ -24683,7 +24310,7 @@ function summarizeAgentCbsTag(rawContent) {
       loreMode,
       sceneAuthority: {
         currentInput: submittedCurrentInput(recent),
-        terminalVisibleScene: text(recent.terminalVisibleScene || '').slice(-INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
+        terminalVisibleScene: text(recent.terminalVisibleScene || '').slice(-TERMINAL_SCENE_TAIL_MAX_CHARS),
         recentCompletedTurns: recent.completeTurnsText || recent.text || '',
         continuityLedger: input.continuityLedger || recent.continuityLedger || null
       },
@@ -33111,7 +32738,6 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
   const LLM_TASK_STAGE_MAP = Object.freeze({
     librarian: LIBRARIAN_STAGE_ID,
     lens_analysis: 'lens_analysis',
-    [STORY_ARC_STAGE_ID]: STORY_ARC_STAGE_ID,
     ariadne: 'ariadne',
     character_ito: 'character_ito',
     world_ito: 'world_ito',
@@ -33558,9 +33184,7 @@ function createLibraReadonlySourceContext(owner) {
     const STORY_ARC_DESTINATION_SCHEMA = 'libra.story_arc.destination.v1';
     const STORY_ARC_UPDATE_SCHEMA = 'libra.story_arc.update.v1';
         const STORY_ARC_HANDOFF_SEED_SCHEMA = 'libra.story_arc.handoff_seed.v1';
-    const STORY_ARC_UPDATE_MODES = Object.freeze(['derived', 'director']);
     const STORY_ARC_PHASES = Object.freeze(['BASELINE', 'BUILD_UP', 'PEAK', 'AFTERMATH', 'COOLDOWN']);
-    const STORY_ARC_NOVELTY_LEVELS = Object.freeze(['off', 'low', 'medium', 'high']);
     const STORY_ARC_LOCK_TYPES = Object.freeze(['unresolved_conflict','knowledge_reveal','promise','relationship_state','world_state','location_state','identity_state','consequence','sequence','payoff_setup','other']);
     const STORY_ARC_LOCK_STATES = Object.freeze(['active','pending','resolved','transformed','superseded']);
     const STORY_ARC_BEAT_TYPES = Object.freeze(['daily_life','relationship','information','pressure','aftermath','payoff','transition','variation','free']);
@@ -33568,10 +33192,6 @@ function createLibraReadonlySourceContext(owner) {
     const STORY_ARC_MAX_LOCKS = 18;
     const STORY_ARC_MAX_HISTORY = 12;
     const STORY_ARC_MAX_BEATS = 5;
-    const STORY_ARC_DEFAULT_LEDGER_LIMIT = 96;
-    const STORY_ARC_DEFAULT_NARRATIVE_RECALL_TOP_K = 6;
-    const STORY_ARC_DEFAULT_NARRATIVE_RECALL_MIN_SCORE = 0.18;
-    const STORY_ARC_DEFAULT_NARRATIVE_RECALL_MAX_CHARS = 5600;
         const RETRIEVAL_PROJECTION_VERSION = 'libra.retrieval_projection.v2';
     const EMBEDDING_PROJECTION_SCHEMA = 'libra.embedding_projection.v2';
     const EMBEDDING_PROJECTION_LAYOUT_VERSION = 'libra.embedding_projection_layout.v3';
@@ -33727,8 +33347,7 @@ function createLibraReadonlySourceContext(owner) {
       ariadne: 'Ariadne',
       character_ito: '인물 ito',
       world_ito: '세계 ito',
-      plot_ito: '플롯 ito',
-      [STORY_ARC_STAGE_ID]: '서사 방향'
+      plot_ito: '플롯 ito'
     });
     const DEFAULT_SETTINGS = Object.freeze({
       stateMaxItems: 24,
@@ -33748,13 +33367,6 @@ function createLibraReadonlySourceContext(owner) {
       recallRecencyWeight: DEFAULT_RECALL_RECENCY_WEIGHT,
       autoCatchUpEnabled: true,
       autoCatchUpMaxBatches: DEFAULT_AUTO_CATCHUP_MAX_BATCHES,
-      storyArcEnabled: true,
-      storyArcUpdateMode: 'derived',
-      storyArcNoveltyLevel: 'medium',
-      storyArcNarrativeRecallTopK: STORY_ARC_DEFAULT_NARRATIVE_RECALL_TOP_K,
-      storyArcNarrativeRecallMinScore: STORY_ARC_DEFAULT_NARRATIVE_RECALL_MIN_SCORE,
-      storyArcNarrativeRecallMaxChars: STORY_ARC_DEFAULT_NARRATIVE_RECALL_MAX_CHARS,
-      storyArcLedgerLimit: STORY_ARC_DEFAULT_LEDGER_LIMIT,
       stateTrackingMode: 'basic',
       lexicalFallback: true,
       sectionVectors: true,
@@ -33946,9 +33558,7 @@ function createLibraReadonlySourceContext(owner) {
       lastBootstrapReferences: null,
       lastResponseLore: null,
       lastResponseAuthorNote: null,
-      lastStoryArc: null,
       lastContinuityState: null,
-      lastStoryArcUpdate: null,
       lastNarrativeRecall: null,
       storyArcRebuildInFlight: new Map()
     };
@@ -37650,13 +37260,6 @@ function createLibraReadonlySourceContext(owner) {
         recallRecencyWeight: recallBlend.recency,
         autoCatchUpEnabled: true, // always on: missed 5-turn batches are always caught up; the toggle was removed
         autoCatchUpMaxBatches: Math.floor(clamp(source.autoCatchUpMaxBatches, 1, 6, DEFAULT_SETTINGS.autoCatchUpMaxBatches)),
-        storyArcEnabled: source.storyArcEnabled !== false,
-        storyArcUpdateMode: STORY_ARC_UPDATE_MODES.includes(string(source.storyArcUpdateMode || '').toLowerCase()) ? string(source.storyArcUpdateMode).toLowerCase() : DEFAULT_SETTINGS.storyArcUpdateMode,
-        storyArcNoveltyLevel: STORY_ARC_NOVELTY_LEVELS.includes(string(source.storyArcNoveltyLevel || '').toLowerCase()) ? string(source.storyArcNoveltyLevel).toLowerCase() : DEFAULT_SETTINGS.storyArcNoveltyLevel,
-        storyArcNarrativeRecallTopK: Math.floor(clamp(source.storyArcNarrativeRecallTopK, 1, 12, DEFAULT_SETTINGS.storyArcNarrativeRecallTopK)),
-        storyArcNarrativeRecallMinScore: clamp(source.storyArcNarrativeRecallMinScore, 0, 1, DEFAULT_SETTINGS.storyArcNarrativeRecallMinScore),
-        storyArcNarrativeRecallMaxChars: Math.floor(clamp(source.storyArcNarrativeRecallMaxChars, 1000, 12000, DEFAULT_SETTINGS.storyArcNarrativeRecallMaxChars)),
-        storyArcLedgerLimit: Math.floor(clamp(source.storyArcLedgerLimit, 12, 192, DEFAULT_SETTINGS.storyArcLedgerLimit)),
         stateTrackingMode: ['off','basic','refined'].includes(string(source.stateTrackingMode || '').toLowerCase()) ? string(source.stateTrackingMode).toLowerCase() : DEFAULT_SETTINGS.stateTrackingMode,
         candidateLimit: performanceValues.candidateLimit,
         rrfK: Math.floor(clamp(source.rrfK, 1, 200, DEFAULT_SETTINGS.rrfK)),
@@ -46503,7 +46106,7 @@ function createLibraReadonlySourceContext(owner) {
         latestUser: string(last?.user?.text || ''),
         latestAssistant: deriveNarrativeContinuityCopy(latestAssistant),
         latestAssistantRaw: latestAssistant,
-        terminalVisibleScene: extractInputAssistTerminalTail(latestAssistant, INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS),
+        terminalVisibleScene: extractTerminalSceneTail(latestAssistant, TERMINAL_SCENE_TAIL_MAX_CHARS),
         previousTurnUser: string(last?.user?.text || ''),
         previousTurnAssistant: deriveNarrativeContinuityCopy(latestAssistant),
         previousTurnText: last ? transcript([last]) : '',
@@ -48973,72 +48576,8 @@ function createLibraReadonlySourceContext(owner) {
       };
     };
 
-    const storyArcLedgerEntry = (value = {}, index = 0, fallbackTurn = 0) => {
-      const source = typeof value === 'string' ? { purpose: value, semanticGoal: value } : asObject(value);
-      const purpose = compact(source.purpose || source.event || source.summary || source.title || '', 900);
-      const semanticGoal = compact(source.semanticGoal || source.semantic_goal || source.meaning || source.narrativeFunction || source.narrative_function || purpose, 1000);
-      const throughTurn = Math.max(0, Number(source.throughTurn ?? source.through_turn ?? source.turn ?? fallbackTurn) || 0);
-      const status = string(source.status || 'SATISFIED').toUpperCase();
-      const meaningful = [purpose, semanticGoal, throughTurn].join('|');
-      return {
-        id: string(source.id || source.beatId || source.beat_id || '') || `actual-T${throughTurn}-${digest(meaningful).slice(0, 12)}`,
-        status: STORY_ARC_LEDGER_STATUSES.includes(status) ? status : 'SATISFIED',
-        purpose,
-        semanticGoal,
-        throughTurn,
-        evidence: storyArcTextArray(source.evidence || source.support, 8, 520),
-        reason: compact(source.reason || source.explanation || '', 700),
-        importance: ['core','support','optional','payoff'].includes(string(source.importance || '').toLowerCase()) ? string(source.importance).toLowerCase() : 'support',
-        archivedAt: Math.max(0, Number(source.archivedAt || source.archived_at || Date.now()) || Date.now())
-      };
-    };
 
-    const mergeStoryArcLedger = (limit, ...sources) => {
-      const byId = new Map();
-      const order = [];
-      for (const source of sources) {
-        for (const raw of asArray(source)) {
-          const entry = storyArcLedgerEntry(raw, order.length);
-          if (!entry.purpose && !entry.semanticGoal) continue;
-          if (!byId.has(entry.id)) order.push(entry.id);
-          byId.set(entry.id, { ...(byId.get(entry.id) || {}), ...entry });
-        }
-      }
-      return order.map(idValue => byId.get(idValue))
-        .sort((a, b) => Number(a.throughTurn || 0) - Number(b.throughTurn || 0) || Number(a.archivedAt || 0) - Number(b.archivedAt || 0))
-        .slice(-Math.max(12, Number(limit || STORY_ARC_DEFAULT_LEDGER_LIMIT)));
-    };
 
-    const storyArcBeat = (value = {}, index = 0, revision = 1, startTurn = 1) => {
-      const source = typeof value === 'string' ? { purpose: value, semanticGoal: value } : asObject(value);
-      const beatType = string(source.beatType || source.beat_type || source.type || 'free').toLowerCase();
-      const targetTurn = Math.max(startTurn + index, Number(source.targetTurn ?? source.target_turn ?? 0) || 0);
-      const purpose = compact(source.purpose || source.goal || source.summary || source.description || '', 850);
-      const semanticGoal = compact(source.semanticGoal || source.semantic_goal || source.meaning || source.function || purpose, 900);
-      const variationSource = asObject(source.variation);
-      return {
-        id: string(source.id || source.beatId || source.beat_id || '') || `arc-r${revision}-T${targetTurn}`,
-        targetTurn,
-        status: ['PLANNED','ACTIVE','PARTIAL','TRANSFORMED'].includes(string(source.status || '').toUpperCase()) ? string(source.status).toUpperCase() : (index === 0 ? 'ACTIVE' : 'PLANNED'),
-        beatType: STORY_ARC_BEAT_TYPES.includes(beatType) ? beatType : 'free',
-        purpose,
-        semanticGoal,
-        importance: ['core','support','optional','payoff'].includes(string(source.importance || '').toLowerCase()) ? string(source.importance).toLowerCase() : (index === 0 ? 'core' : 'support'),
-        flexibility: ['fixed','firm','adaptive','free'].includes(string(source.flexibility || '').toLowerCase()) ? string(source.flexibility).toLowerCase() : 'adaptive',
-        expectedStateChanges: storyArcTextArray(source.expectedStateChanges ?? source.expected_state_changes, 8, 420),
-        inputSeed: {
-          kind: compact(source.inputSeed?.kind || source.input_seed?.kind || '', 80),
-          preferredActor: compact(source.inputSeed?.preferredActor || source.input_seed?.preferred_actor || '', 160),
-          seed: compact(source.inputSeed?.seed || source.input_seed?.seed || '', 600)
-        },
-        doNotForce: storyArcTextArray(source.doNotForce ?? source.do_not_force, 8, 420),
-        variation: {
-          active: variationSource.active === true,
-          kind: compact(variationSource.kind || 'none', 80) || 'none',
-          rationale: compact(variationSource.rationale || '', 520)
-        }
-      };
-    };
 
     const storyArcContinuity = (value = {}, fallback = {}, throughTurn = 0) => {
       const source = asObject(value);
@@ -49066,89 +48605,13 @@ function createLibraReadonlySourceContext(owner) {
       };
     };
 
-    const normalizeStoryArcSourceRef = ref => ({
-      key: string(ref?.key || ''),
-      memoryId: string(ref?.memoryId || ''),
-      revision: Number(ref?.revision || 0),
-      sourceDigest: string(ref?.sourceDigest || ''),
-      turnRange: clone(ref?.turnRange || null),
-      sessionEpoch: Number(ref?.sessionEpoch || 0),
-      inheritedSessionHistory: ref?.inheritedSessionHistory === true
-    });
 
-    const storyArcSourceRefs = manifest => canonicalContiguousMemoryRefs(manifest, { recallSafe: true, includeInherited: true }).map(normalizeStoryArcSourceRef);
 
-    const storyArcSourceFingerprint = manifest => digest(storyArcSourceRefs(manifest));
 
-    const storyArcRecord = (value = {}, scope = null, manifest = null) => {
-      const source = asObject(value);
-      const sourceRefs = manifest ? storyArcSourceRefs(manifest) : asArray(source.sourceRefs).map(normalizeStoryArcSourceRef);
-      const currentRefs = sourceRefs.filter(ref => ref.inheritedSessionHistory !== true && Number(ref.sessionEpoch || 0) >= 0);
-      const inheritedOnlyRebase = sourceRefs.length > 0 && currentRefs.length === 0;
-      const sourceThroughTurn = Math.max(0, Number(source?.basis?.throughTurn || source.throughTurn || 0) || 0);
-      const throughTurn = inheritedOnlyRebase
-        ? 0
-        : Math.max(sourceThroughTurn, ...currentRefs.map(ref => Number(ref?.turnRange?.end || 0)));
-      const revision = Math.max(1, Number(source.revision || 1) || 1);
-      const continuity = storyArcContinuity(source.continuityState || source.continuity_state, {}, throughTurn);
-      if (inheritedOnlyRebase) {
-        continuity.updatedThroughTurn = 0;
-        continuity.narrativeLocks = asArray(continuity.narrativeLocks).map(lock => ({ ...lock, throughTurn: 0 }));
-      }
-      const destination = storyArcDestination(source.destination || source.arcDestination || source.arc_destination, {});
-      const rawBeats = asArray(source.beats || source.nextBeats || source.next_beats)
-        .slice(0, STORY_ARC_MAX_BEATS)
-        .map((beatValue, index) => storyArcBeat(
-          inheritedOnlyRebase ? { ...asObject(beatValue), id: '', targetTurn: throughTurn + index + 1 } : beatValue,
-          index,
-          revision,
-          throughTurn + 1
-        ))
-        .filter(beatValue => beatValue.purpose || beatValue.semanticGoal || beatValue.inputSeed.seed);
-      while (rawBeats.length < STORY_ARC_MAX_BEATS) {
-        rawBeats.push(storyArcBeat({ purpose: '현재 서사와 사용자 입력이 허용하는 범위에서 다음 인과적 가능성을 열어 둔다.', semanticGoal: '강제하지 않는 빈 soft route 슬롯', beatType: 'free', importance: 'optional' }, rawBeats.length, revision, throughTurn + 1));
-      }
-      rawBeats.forEach((beatValue, index) => { beatValue.status = index === 0 ? 'ACTIVE' : 'PLANNED'; });
-      return {
-        schema: STORY_ARC_SCHEMA,
-        revision,
-        scopeKey: string(source.scopeKey || scope?.scopeKey || ''),
-        sourceFingerprint: string(source.sourceFingerprint || (manifest ? storyArcSourceFingerprint(manifest) : '')),
-        sourceRefs,
-        sourceMemoryId: string(source.sourceMemoryId || ''),
-        sourceRevision: Number(source.sourceRevision || 0),
-        updateMode: STORY_ARC_UPDATE_MODES.includes(string(source.updateMode || '').toLowerCase()) ? string(source.updateMode).toLowerCase() : 'derived',
-        createdAt: Number(source.createdAt || Date.now()),
-        updatedAt: Number(source.updatedAt || Date.now()),
-        basis: {
-          throughTurn,
-          windowStart: inheritedOnlyRebase ? 0 : Math.max(0, Number(source?.basis?.windowStart || Math.max(1, throughTurn - BATCH_SIZE + 1)) || 0),
-          windowEnd: inheritedOnlyRebase ? 0 : Math.max(0, Number(source?.basis?.windowEnd || throughTurn) || 0),
-          nextWindowStart: inheritedOnlyRebase ? 1 : Math.max(1, Number(source?.basis?.nextWindowStart || throughTurn + 1) || throughTurn + 1),
-          nextWindowEnd: inheritedOnlyRebase ? BATCH_SIZE : Math.max(BATCH_SIZE, Number(source?.basis?.nextWindowEnd || throughTurn + BATCH_SIZE) || throughTurn + BATCH_SIZE),
-          canonicalMemoryCount: sourceRefs.length,
-          rebasedFromInheritedHistory: inheritedOnlyRebase
-        },
-        summary: compact(source.summary || continuity.currentNarrativeState || '', 1800),
-        destination,
-        continuityState: continuity,
-        beats: rawBeats,
-        beatLedger: mergeStoryArcLedger(source.ledgerLimit || STORY_ARC_DEFAULT_LEDGER_LIMIT, source.beatLedger || source.beat_ledger),
-        narrativeRecall: source.narrativeRecall ? clone(source.narrativeRecall) : null,
-        lastUpdate: source.lastUpdate ? clone(source.lastUpdate) : null,
-        provenance: source.provenance ? clone(source.provenance) : null
-      };
-    };
 
     // Legacy Story Arc storage is migration/compatibility input only. Current
     // narrative authority lives in Current State Head.narrative; no v3 runtime
     // path may write a second Story Arc database.
-    const loadStoryArc = async (scope, _manifest = null) => {
-      if (!scope?.scopeKey) return null;
-      const raw = await storage.getJson(key.storyArc(scope), null);
-      if (!raw || raw.schema !== STORY_ARC_SCHEMA) return null;
-      return storyArcRecord(raw, scope, null);
-    };
 
     const storyArcCompatibilityProjection = async (scope, source = null, directionValue = null) => {
       if (!scope?.scopeKey) return null;
@@ -49198,48 +48661,6 @@ function createLibraReadonlySourceContext(owner) {
 
 
 
-    const updateStoryArcAfterCommit = async ({ context, manifest, memory, reason = 'canonical_commit' } = {}) => {
-      const scope = context?.scope;
-      if (!scope?.scopeKey) throw new Error('Story Arc compatibility projection requires a scope.');
-      const currentHead = await loadContinuityState(scope, manifest, { requireCurrent: true }).catch(() => null);
-      if (!currentHead?.narrative) {
-        const pending = {
-          schema: STORY_ARC_UPDATE_SCHEMA,
-          ok: true,
-          skipped: true,
-          reason: 'world_manager_narrative_pending',
-          at: Date.now(),
-          mode: 'compatibility',
-          llmCalls: 0,
-          continuityStateAuthority: 'none_pending'
-        };
-        state.lastStoryArc = null;
-        state.lastStoryArcUpdate = clone(pending);
-        return pending;
-      }
-      const projection = await storyArcCompatibilityProjection(scope, currentHead);
-      const update = {
-        schema: STORY_ARC_UPDATE_SCHEMA,
-        ok: true,
-        skipped: true,
-        reason: 'world_manager_narrative_projection_ready',
-        at: Date.now(),
-        mode: 'compatibility',
-        requestedMode: 'compatibility',
-        llmCalls: 0,
-        fallback: false,
-        revision: Number(projection?.revision || 0),
-        throughTurn: Number(projection?.basis?.throughTurn || memory?.turnRange?.end || 0),
-        sourceFingerprint: string(projection?.sourceFingerprint || ''),
-        source: 'current_state_head_narrative',
-        trigger: reason,
-        arc: clone(projection),
-        storyArc: clone(projection)
-      };
-      state.lastStoryArc = clone(projection);
-      state.lastStoryArcUpdate = clone(update);
-      return update;
-    };
 
 
     const rebuildStoryArc = async (options = {}) => {
@@ -49293,7 +48714,7 @@ function createLibraReadonlySourceContext(owner) {
         }
 
         if (!currentHead?.narrative) {
-          const pending = {
+          return {
             schema: STORY_ARC_UPDATE_SCHEMA,
             ok: true,
             skipped: true,
@@ -49307,45 +48728,28 @@ function createLibraReadonlySourceContext(owner) {
             directionSeedWarning,
             stateRebuild: clone(stateRebuild)
           };
-          state.lastStoryArc = null;
-          state.lastStoryArcUpdate = clone(pending);
-          return pending;
         }
-
-        const projection = await storyArcCompatibilityProjection(context.scope, currentHead);
-        const update = {
+        return {
           schema: STORY_ARC_UPDATE_SCHEMA,
           ok: true,
           skipped: true,
-          reason: 'world_manager_narrative_projection_rebuilt',
+          reason: 'world_manager_narrative_ready',
           at: Date.now(),
           mode: 'compatibility',
           requestedMode: 'compatibility',
           llmCalls: 0,
           fallback: false,
           rebuiltWindows: 0,
-          revision: Number(projection?.revision || 0),
-          throughTurn: Number(projection?.basis?.throughTurn || 0),
-          sourceFingerprint: string(projection?.sourceFingerprint || ''),
+          throughTurn: Number(currentHead?.throughTurn || 0),
           directionSeedApplied,
           directionSeedWarning,
-          stateRebuild: clone(stateRebuild),
-          arc: clone(projection)
+          stateRebuild: clone(stateRebuild)
         };
-        state.lastStoryArc = clone(projection);
-        state.lastStoryArcUpdate = clone(update);
-        return update;
       })().finally(() => state.storyArcRebuildInFlight.delete(scopeKey));
       state.storyArcRebuildInFlight.set(scopeKey, task);
       return await task;
     };
 
-    const ensureStoryArcForResponse = async (...__args) => {
-        const narrative = await __libraCompletionGetNarrative(__args);
-        const scopeKey = __libraCompletionScopeFromArgs(__args);
-        const direction = await getNarrativeDirection({scopeKey});
-        return __libraCompletionNarrativeProjection(narrative, direction);
-    };
 
     const setStoryArcDestination = async (patch = {}, options = {}) => {
       const context = options.context || await resolveContext();
@@ -49364,27 +48768,9 @@ function createLibraReadonlySourceContext(owner) {
       const context = options.context || await resolveContext();
       if (!context?.scope?.scopeKey) return false;
       await clearNarrativeDirection({ scopeKey: string(context.scope.scopeKey) });
-      const currentHead = await loadContinuityState(context.scope, null, { requireCurrent: false }).catch(() => null);
-      state.lastStoryArc = currentHead?.narrative
-        ? await storyArcCompatibilityProjection(context.scope, currentHead)
-        : null;
-      state.lastStoryArcUpdate = {
-        schema: STORY_ARC_UPDATE_SCHEMA,
-        ok: true,
-        skipped: true,
-        reason: 'planner_narrative_direction_cleared',
-        at: Date.now(),
-        mode: 'compatibility',
-        llmCalls: 0
-      };
-      if (sameSnapshotScope?.(state.snapshot?.scope, context.scope)) state.snapshot.storyArc = clone(state.lastStoryArc);
       return true;
     };
 
-    const storyArcPromptBlock = (...__args) => {
-        const narrative = __libraCompletionUnwrapNarrative(__args[0]) || __libraCompletionFindNarrativeInArgs(__args);
-        return narrativeStatePromptBlock(narrative, String(__args[1] || 'planner'));
-    };
 
     const updateManifestRunIds = async (scope, manifest, runId, limits) => {
       const previous = asArray(manifest.runIds).slice();
@@ -56836,7 +56222,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // guidance at all — the mode had no effect on the stage that reads the raw text. Placed after the
       // analysis profile and before the exact source, so the evidence contract still outranks it
       // (the block itself says it is a limit on the requested output, not an instruction to invent).
-      const analysisNsfw=buildNsfwGuidanceBlock(runtimeSettings || {}, 'analysis');
+      const analysisNsfw=buildNsfwGuidanceBlock(runtimeSettings || {});
       const system=[unifiedPromptContract(),'[ANALYSIS PROFILE — subordinate to the evidence and output contract]',compiled.profileBody,analysisNsfw,librarianProfileIsCustomized(compiled)?LIBRARIAN_PROFILE_REASSERTION:''].filter(Boolean).join('\n\n');
       const exactSource=['[EXACT FIVE U+A]',...batch.map(p=>'[t'+p.turn+'-u]\n'+p.user.text+'\n\n[t'+p.turn+'-a]\n'+p.assistant.text)].join('\n\n');
       let optionalReference=reference?.block||'',optionalState=JSON.stringify(unifiedStateReadProjection(options.unifiedBasis?.head)||{}),optionalContinuity=continuityCandidates.block||'';
@@ -59294,30 +58680,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
           warn('LIBRA pending live boundary marker cleanup failed open; startup will verify the committed memory again.', pendingBoundaryError);
         }
 
-        // Deprecated Story Arc clients receive a request-local projection of the
-        // authoritative Current Narrative. Projection failure can never roll back,
-        // delete, or rewrite the canonical memory that was just committed.
-        let storyArcUpdate = null;
-        try {
-          storyArcUpdate = await updateStoryArcAfterCommit({ context, manifest, memory, reason: 'canonical_commit' });
-          run.storyArc = clone(storyArcUpdate);
-          await storage.setJson(key.run(context.scope, run.runId), run);
-        } catch (storyArcError) {
-          storyArcUpdate = {
-            schema: STORY_ARC_UPDATE_SCHEMA,
-            ok: false,
-            skipped: false,
-            reason: compact(storyArcError?.message || storyArcError, 700),
-            at: Date.now(),
-            mode: 'compatibility',
-            failSoft: true
-          };
-          state.lastStoryArcUpdate = clone(storyArcUpdate);
-          run.storyArc = clone(storyArcUpdate);
-          run.errors.push({ stage: STORY_ARC_STAGE_ID, message: storyArcUpdate.reason, at: nowIso(), failSoft: true });
-          try { await storage.setJson(key.run(context.scope, run.runId), run); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('libra', 'run.state.write.resume', _e); } catch (__) {} }
-          warn('LIBRA Story Arc post-commit update failed open', storyArcError);
-        }
 
         // Lenses only queue here: their model calls run in the lens queue after this job, so they
         // never hold the canonical job or affect what it committed.
@@ -59336,14 +58698,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
           at: Date.now(), memoryMode: true, stage: canonicalStageName, chars: finalText.length,
           pipelineStatus, failedItoStages: failedItoStages.map(item => item.stage),
           turnRange: clone(memory.turnRange), memoryId: memory.memoryId, revision, runId: run.runId, promptProvenance: clone(promptProvenance),
-          storyArc: clone(storyArcUpdate),
           continuityState: clone(continuityStateUpdate)
         };
-        Runtime.last = { at: Date.now(), ok: true, memoryMode: true, stageCount: completedStageNames.length, skippedStageCount: asArray(pipelineResult?.skippedStages).length, pipelineStatus, failedItoStages: failedItoStages.map(item => item.stage), memoryId: memory.memoryId, revision, turnRange: clone(memory.turnRange), promptProvenance: clone(promptProvenance), storyArc: clone(storyArcUpdate), continuityState: clone(continuityStateUpdate) };
+        Runtime.last = { at: Date.now(), ok: true, memoryMode: true, stageCount: completedStageNames.length, skippedStageCount: asArray(pipelineResult?.skippedStages).length, pipelineStatus, failedItoStages: failedItoStages.map(item => item.stage), memoryId: memory.memoryId, revision, turnRange: clone(memory.turnRange), promptProvenance: clone(promptProvenance), continuityState: clone(continuityStateUpdate) };
         state.lastScan = {
           at: Date.now(), ok: true, partial: pipelineStatus === 'partial', failedItoStages: failedItoStages.map(item => item.stage),
           memoryId: memory.memoryId, revision, turnRange: clone(memory.turnRange), runId: run.runId, promptProvenance: clone(promptProvenance),
-          storyArc: clone(storyArcUpdate), continuityState: clone(continuityStateUpdate)
+          continuityState: clone(continuityStateUpdate)
         };
         const onlyFieldsDropped = artifactValidation.admission?.status === 'partial' && !artifactValidation.admission.rejectedFacts && !artifactValidation.admission.rejectedEntities;
         const completionMessage = onlyFieldsDropped
@@ -62251,9 +61612,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     };
 
     // Legacy API/setting names remain compatible; this now builds the one recent-dialogue context.
-    const buildLiveTailContext = (pairsValue = [], manifestValue = null, settings = {}, routeValue = DEFAULT_RESPONSE_INJECTION_MODE, bindingValue = {}, { publishState = true } = {}) => {
+    const buildLiveTailContext = (pairsValue = [], manifestValue = null, settings = {}, routeValue = LIBRA_DELIVERY_ROUTE, bindingValue = {}, { publishState = true } = {}) => {
       if (state.disposed) return null;
-      const route = normalizeResponseInjectionMode(routeValue);
+      const route = LIBRA_DELIVERY_ROUTE;
       if (!liveTailRouteEnabled(route, settings)) {
         if (publishState) {
           state.lastLiveTail = null;
@@ -62411,7 +61772,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     };
 
     const provideRecentDialogueFromReceipts = ({ receiptSet, manifest = null, settings = {},
-      route = DEFAULT_RESPONSE_INJECTION_MODE, publishState = true } = {}) => {
+      route = LIBRA_DELIVERY_ROUTE, publishState = true } = {}) => {
       const source = asObject(receiptSet);
       const maxTurns = clampInt(settings?.liveTailMaxTurns, 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS);
       const recentTurns = asArray(source.requestedTurns).slice(-maxTurns);
@@ -62534,9 +61895,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       return clone(hit.value);
     };
 
-    const buildBootstrapReferencePack = async ({ messages = [], context = null, queryBundle = {}, manifest = null, settings = {}, routeValue = DEFAULT_RESPONSE_INJECTION_MODE, liveTail = null, sourceSnapshot = null, includeLore = true } = {}) => {
+    const buildBootstrapReferencePack = async ({ messages = [], context = null, queryBundle = {}, manifest = null, settings = {}, routeValue = LIBRA_DELIVERY_ROUTE, liveTail = null, sourceSnapshot = null, includeLore = true } = {}) => {
       if (state.disposed) return null;
-      const route = normalizeResponseInjectionMode(routeValue);
+      const route = LIBRA_DELIVERY_ROUTE;
       const currentCommittedCount = currentCommittedCanonicalRefs(manifest).length;
       {
         state.lastBootstrapReferences = null;
@@ -62602,7 +61963,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             tag: string(queryBundle?.inputTag || '')
           };
           if (string(queryBundle?.sceneText || '')) {
-            recent.terminalVisibleScene = extractInputAssistTerminalTail(string(queryBundle.sceneText), INPUT_ASSIST_TERMINAL_TAIL_MAX_CHARS);
+            recent.terminalVisibleScene = extractTerminalSceneTail(string(queryBundle.sceneText), TERMINAL_SCENE_TAIL_MAX_CHARS);
           }
           if (liveTail?.available) {
             recent.completeTurnsText = string(liveTail.transcript || '');
@@ -62853,406 +62214,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         lastPublication
       };
     };
-    const buildRecallEvidencePacket = (result, queryBundle = {}, routeValue = DEFAULT_RESPONSE_INJECTION_MODE, storyArcValue = null, liveTailValue = null, bootstrapReferenceValue = null, responseLoreValue = null, authorNoteValue = null, continuityStateValue = null, associativeLinksValue = null) => {
-      const route = normalizeResponseInjectionMode(routeValue);
-      const selected = asArray(result?.memories);
-      const layers = { memory: [], entity: [], world: [], narrative: [] };
-      const consumedMicroProofs = asArray(consumedMicroProofsByState.get(continuityStateValue)).slice();
-      const storyArcPrompt = storyArcValue ? storyArcPromptBlock(storyArcValue, ('response_recall')) : '';
-      const responseLoreStageId = ('response_recall');
-      const responseLoreStageView = asObject(responseLoreValue?.stages?.[responseLoreStageId]);
-      const responseLorePrompt = responseLoreStageView?.available ? string(responseLoreStageView.promptBlock || '') : '';
-      const authorNotePrompt = authorNoteValue?.available ? string(authorNoteValue.promptBlock || '') : '';
-      const continuityPrompt = continuityStatePromptBlock(continuityStateValue, liveTailValue);
-      const delivery = {
-        schema: 'libra.current_turn_recall_delivery.v2',
-        route,
-        at: Date.now(),
-        recallAt: Number(result?.at || 0) || 0,
-        scope: clone(asObject(result?.scope)),
-        scopeKey: string(result?.scopeKey || result?.scope?.scopeKey || ''),
-        queryText: string(result?.queryText || result?.query?.currentText || ''),
-        queryType: string(result?.query?.queryType || ''),
-        temporalAnchor: clone(result?.diagnostics?.temporalAnchor || { status: 'not_requested', requestedTurn: 0, candidateCount: 0, reason: '' }),
-        inputSource: string(result?.query?.inputSource || result?.diagnostics?.inputSource || 'none'),
-        inputConfidence: string(result?.query?.inputConfidence || result?.diagnostics?.inputConfidence || 'none'),
-        inputTag: string(result?.query?.inputTag || result?.diagnostics?.inputTag || ''),
-        inputRequestIndex: Number(result?.query?.inputRequestIndex ?? result?.diagnostics?.inputRequestIndex ?? -1),
-        inputRequestEndIndex: Number(result?.query?.inputRequestEndIndex ?? result?.diagnostics?.inputRequestEndIndex ?? -1),
-        selectedMemories: selected.length,
-        sourceMemories: 0,
-        processorMemories: 0,
-        classicMemories: 0,
-        injectedMemories: 0,
-        directRawInjection: false,
-        liveTailUsed: liveTailValue?.available === true,
-        liveTailSourceMode: string(liveTailValue?.sourceMode || ''),
-        liveTailHash: string(liveTailValue?.hash || ''),
-        liveTailBinding: clone(liveTailValue?.binding || null),
-        liveTailPairCount: Number(liveTailValue?.pairCount || 0),
-        liveTailStartTurn: Number(liveTailValue?.startTurn || 0),
-        liveTailEndTurn: Number(liveTailValue?.endTurn || 0),
-        liveTailCanonicalThroughTurn: Number(liveTailValue?.canonicalThroughTurn || 0),
-        liveTailChars: Number(liveTailValue?.chars || 0),
-        liveTailPromptChars: string(liveTailValue?.available ? liveTailValue.transcript : queryBundle?.sceneText || '').length,
-        liveTailPendingBoundaryRescue: liveTailValue?.pendingBoundaryRescue === true,
-        liveTailHistoricalGapTurns: Number(liveTailValue?.uncoveredHistoricalGapTurns || 0),
-        liveTailHistoricalGapStartTurn: Number(liveTailValue?.historicalGapStartTurn || 0),
-        liveTailHistoricalGapEndTurn: Number(liveTailValue?.historicalGapEndTurn || 0),
-        liveTailTruncated: liveTailValue?.truncated === true,
-        liveTailDroppedTurns: asArray(liveTailValue?.droppedTurns).slice(),
-        liveTailKinds: Array.from(new Set(asArray(liveTailValue?.sourcePairs).map(item => string(item?.kind || '')).filter(Boolean))),
-        liveTailSanitizationTransformed: liveTailValue?.sanitizationTransformed === true,
-        liveTailInternalCarrierRemoved: liveTailValue?.internalCarrierRemoved === true,
-        bootstrapReferencesUsed: bootstrapReferenceValue?.available === true,
-        bootstrapReferenceItems: Number(bootstrapReferenceValue?.itemCount || 0),
-        bootstrapReferenceChars: Number(bootstrapReferenceValue?.referenceChars || 0),
-        bootstrapReferencePromptChars: Number(bootstrapReferenceValue?.promptChars || 0),
-        bootstrapReferenceSelectionHash: string(bootstrapReferenceValue?.selectionHash || ''),
-        responseLoreUsed: !!responseLorePrompt,
-        responseLoreEngine: string(responseLoreValue?.engine || ''),
-        responseLoreCandidateCount: Number(responseLoreValue?.candidateCount || 0),
-        responseLoreSelectedCount: Number(responseLoreStageView?.selectedCount || 0),
-        responseLorePromptChars: responseLorePrompt.length,
-        responseLoreMaterialHash: string(responseLoreValue?.materialHash || ''),
-        responseLoreViewHash: string(responseLoreStageView?.viewHash || ''),
-        authorNoteUsed: !!authorNotePrompt,
-        authorNoteSource: string(authorNoteValue?.source || ''),
-        authorNoteHash: string(authorNoteValue?.hash || ''),
-        authorNotePromptChars: authorNotePrompt.length,
-        storyArcUsed: !!storyArcValue,
-        storyArcPromptChars: storyArcPrompt.length,
-        continuityStateUsed: !!continuityPrompt,
-        continuityStateStatus: string(continuityStateValue?.status || ''),
-        continuityStateThroughTurn: Number(continuityStateValue?.throughTurn || 0),
-        continuityStatePromptChars: continuityPrompt.length,
-        classicProvenanceRescueActive: route === 'classic' && result?.diagnostics?.classicProvenanceRescue?.active === true,
-        classicProvenanceRescueReason: (string(result?.diagnostics?.classicProvenanceRescue?.reason || '')),
-        classicProvenanceRescueSelected: (Number(result?.diagnostics?.classicProvenanceRescue?.selected?.length || 0)),
-        classicRawStateInjected: false,
-        classicEvidenceRoleMode: '',
-        latestRelevantMemories: 0,
-        sourceChars: 0,
-        blockChars: 0,
-        dynamicChars: 0,
-        evidenceCharCeiling: Math.max(RECALL_BUDGET_MIN_CHARS, Math.min(RECALL_MAX_CONFIGURABLE_CHARS, Number(result?.effectiveRecallMaxChars || result?.diagnostics?.budgetPlan?.selectedEvidenceBudget || RECALL_BUDGET_MIN_CHARS))),
-        charCeiling: Math.max(RECALL_BUDGET_MIN_CHARS, Math.min(RECALL_MAX_CONFIGURABLE_CHARS, Number(result?.effectiveRecallMaxChars || result?.diagnostics?.budgetPlan?.selectedEvidenceBudget || RECALL_BUDGET_MIN_CHARS))),
-        fixedChars: 0,
-        tokenCeiling: Math.max(0, Number(result?.effectiveRecallMaxTokens || result?.diagnostics?.budgetPlan?.effectiveRecallMaxTokens || 0)),
-        tokenBudgetMode: string(result?.recallTokenBudgetMode || result?.diagnostics?.budgetPlan?.tokenBudgetMode || 'dynamic_cjk_v1'),
-        rows: []
-      };
-
-      // ── T07 cross-artifact closure → the material the consumer actually reads ──
-      // The closure stage finds a LATER fact that closes a slot an earlier selected
-      // memory left open (a promise fulfilled at T40 that the T5 memory still shows as
-      // open). Computing it is not enough: `01` section 11 requires the successor to
-      // reach the response path, so its facts join the `memory` layer here, ahead of the
-      // selected rows. They are appended with their own labels and their own evidence
-      // provenance, and they do NOT replace the selected row -- the older value stays
-      // visible, the later change is simply no longer missing.
-      const closure = asObject(result?.diagnostics?.recallContinuityClosure);
-      // The resolver admits each successor only after its own provenance/link proof.
-      // Incomplete aggregate coverage can coexist with validated historical changes.
-      // Deliver those changes without upgrading the last-known verdict or the
-      // incomplete-coverage warning; an unknown temporal scope still admits none.
-      const closureFacts = ['current', 'last-known'].includes(closure?.currentness)
-        ? asArray(closure?.facts) : [];
-      if (closureFacts.some(fact => string(fact?.text))) {
-        const proofs = consumedClosureProofsByResult.get(result);
-        if (!proofs?.length) throw consumerContractError('CONSUMER_CANONICAL_CLOSURE_PROVENANCE_UNAVAILABLE');
-        consumedMicroProofs.push(...proofs);
-      }
-      for (const closureFact of closureFacts) {
-        const text = string(closureFact?.text || '').trim();
-        if (!text) continue;
-        layers.memory.push({
-          source: `mem_${string(closureFact.memoryId || 'closure')}`,
-          memoryId: string(closureFact.memoryId || ''),
-          memoryKey: string(closureFact.memoryKey || ''),
-          canonicalOriginKey: string(closureFact.canonicalOriginKey || ''),
-          scopeKey: string(closureFact.scopeKey || ''),
-          worldlineId: string(closureFact.worldlineId || 'main'),
-          inheritedSessionHistory: closureFact.inheritedSessionHistory === true,
-          revision: Number(closureFact.revision || 0),
-          section: 'continuity_closure',
-          label: '정본 연결',
-          relevance: 1,
-          text,
-          closure: true,
-          claimKind: string(closureFact.claimKind || ''),
-          factId: string(closureFact.factId || ''),
-          artifactDigest: string(closureFact.artifactDigest || ''),
-          evidenceSpans: clone(asArray(closureFact.evidenceSpans)),
-          // The planner partition splits rows by their TIMELINE POSITION against the
-          // State boundary, so a row without provenance can only ever classify as
-          // historical. A closure's whole purpose is to sit LATER than the value it
-          // closes, so the provenance it was found under travels with it.
-          sessionEpoch: Number(closureFact.sessionEpoch || 0),
-          turnRange: clone(asObject(closureFact.turnRange)),
-          sourceDigest: string(closureFact.sourceDigest || '')
-        });
-        delivery.sourceChars += text.length;
-      }
-      // Preparation is not delivery. The Classic renderer records actual admission.
-      delivery.closureApplied = false;
-      delivery.closureCurrentness = string(closure?.currentness || 'unknown');
-      delivery.closureFacts = layers.memory.filter(row => row.closure).length;
-      delivery.closureInjectedFacts = 0;
-      delivery.closureProjectionOmittedFacts = Math.max(0, Number(closure?.projectionOmittedFacts || 0));
-      delivery.closureSkipReasons = delivery.closureProjectionOmittedFacts ? ['closure_projection_fact_limit'] : [];
-      delivery.closureDeliveryComplete = closure?.closureComplete === true && closure?.projectionComplete !== false;
-
-      for (let index = 0; index < selected.length; index += 1) {
-        const row = asObject(selected[index]);
-        const memory = asObject(row.memory);
-        const allMicroClaims = memory.kind === 'micro' ? asArray(memory.claims) : [];
-        // Every route keeps original Micro material here. Only the actual
-        // Classic renderer has admission and private dependency integration.
-        const visibleMicroClaims = allMicroClaims;
-        const deduplicatedMicroClaims = 0;
-        let sectionRows = asArray(row?.excerpt?.sections);
-        const fallbackText = string(row?.excerpt?.text || row?.text || memory.summary || '');
-        const sections = sectionRows.length
-          ? sectionRows
-          : (fallbackText ? [{ sectionKey: 'global', label: '종합', text: fallbackText }] : []);
-        const usedLayers = new Set();
-        let selectedText = '';
-        for (const section of sections) {
-          const sectionText = string(section?.text || '');
-          if (!sectionText) continue;
-          const layer = recallSectionLayer(section?.sectionKey || 'global');
-          const item = {
-            source: memory.kind === 'micro' ? `Micro T${Number(memory.turnRange?.start || 0)}` : recallTimelineLabel(memory),
-            kind: memory.kind === 'micro' ? 'micro' : 'canonical',
-            memoryId: string(memory.memoryId || ''),
-            revision: Number(memory.revision || 0),
-            sourceReceiptKey: string(memory.sourceReceiptKey || ''),
-            sourceRevisionId: string(memory.sourceRevisionId || ''),
-            analysisRevisionId: string(memory.analysisRevisionId || ''),
-            evidenceAuthority: string(memory.authority || (memory.kind === 'micro' ? 'candidate_only' : 'canonical')),
-            sourceSpans: memory.kind === 'micro' ? clone(visibleMicroClaims.length
-              ? visibleMicroClaims.map(claim => claim.evidence) : allMicroClaims.length ? [] : asArray(memory.sourceSpans)) : [],
-            claimDigests: memory.kind === 'micro' ? visibleMicroClaims.map(digest) : [],
-            sessionEpoch: Number(memory.sessionEpoch || 0),
-            inheritedSessionHistory: memory.inheritedSessionHistory === true,
-            sourceDigest: string(memory.sourceDigest || ''),
-            turnRange: clone(asObject(memory.turnRange)),
-            temporalAnchorStatus: string(result?.diagnostics?.temporalAnchor?.status || 'not_requested'),
-            sourceEvidenceCutoffTurn: Number(result?.diagnostics?.temporalAnchor?.sourceEvidenceCutoffTurn || 0),
-            section: string(section?.sectionKey || 'global'),
-            label: string(section?.label || RETRIEVAL_SECTION_LABELS[section?.sectionKey] || '종합'),
-            relevance: Number(row?.relevance || 0),
-            text: sectionText
-          };
-          layers[layer].push(item);
-          usedLayers.add(layer);
-          selectedText += `${selectedText ? '\n\n' : ''}[${item.label}]\n${item.text}`;
-          delivery.sourceChars += item.text.length;
-        }
-        const processorUsed = usedLayers.size > 0;
-        if (processorUsed) {
-          if (memory.kind === 'micro') {
-            const proof = consumedMicroProofsByMemory.get(memory);
-            if (!proof) throw consumerContractError('CONSUMER_MICRO_PROVENANCE_UNAVAILABLE');
-            consumedMicroProofs.push(proof);
-          } else {
-            const proof = getConsumedCanonicalProof(memory);
-            if (!proof) throw consumerContractError('CONSUMER_CANONICAL_PROVENANCE_UNAVAILABLE');
-            consumedMicroProofs.push(proof);
-          }
-          delivery.sourceMemories += 1;
-          delivery.processorMemories += 1;
-
-
-        }
-
-
-        delivery.rows.push({
-          order: index + 1,
-          key: `${string(memory.memoryId || 'memory')}:r${Number(memory.revision || 0)}`,
-          kind: memory.kind === 'micro' ? 'micro' : 'canonical',
-          memoryId: string(memory.memoryId || ''),
-          memoryKey: string(row?.ref?.key || memory.memoryKey || ''),
-          canonicalOriginKey: memory.kind === 'micro' ? '' : unifiedOriginKey(memory),
-          scopeKey: string(result?.scopeKey || result?.scope?.scopeKey || ''),
-          worldlineId: string(memory.worldlineId || 'main'),
-          sourceDigest: string(memory.sourceDigest || ''),
-          artifactDigest: string(memory.artifactDigest || ''),
-          revision: Number(memory.revision || 0),
-          sourceReceiptKey: string(memory.sourceReceiptKey || ''),
-          sourceRevisionId: string(memory.sourceRevisionId || ''),
-          analysisRevisionId: string(memory.analysisRevisionId || ''),
-          evidenceAuthority: string(memory.authority || (memory.kind === 'micro' ? 'candidate_only' : 'canonical')),
-          sourceSpans: memory.kind === 'micro' ? clone(asArray(memory.sourceSpans)) : [],
-          claimDigests: memory.kind === 'micro' ? clone(asArray(memory.claimDigests)) : [],
-          deduplicatedClaims: deduplicatedMicroClaims,
-          turnRange: clone(asObject(memory.turnRange)),
-          temporalAnchorStatus: string(result?.diagnostics?.temporalAnchor?.status || 'not_requested'),
-          sourceEvidenceCutoffTurn: Number(result?.diagnostics?.temporalAnchor?.sourceEvidenceCutoffTurn || 0),
-          sessionEpoch: Number(memory.sessionEpoch || 0),
-          inheritedSessionHistory: memory.inheritedSessionHistory === true,
-          relevance: Number(row?.relevance || 0),
-          semanticRelevance: Number(row?.semanticRelevance || row?.baseRelevance || 0),
-          recencyScore: Number(row?.recencyScore || 0),
-          blendWeights: clone(asObject(row?.blendWeights)),
-          baseRelevance: Number(row?.baseRelevance || 0),
-          denseScore: Number(row?.denseScore || 0),
-          sparseScore: Number(row?.sparseScore || 0),
-          exactScore: Number(row?.exactScore || 0),
-          temporal: clone(asObject(row?.temporal)),
-          latentReactivated: row?.latentReactivated === true,
-          latentCueSignal: Number(row?.latentCueSignal || 0),
-          channels: asArray(row?.armHits).slice(),
-          forcedReasons: asArray(row?.forcedReasons).slice(),
-          provenanceRescue: row?.provenanceRescue ? clone(row.provenanceRescue) : null,
-          classicEvidenceRole: '',
-          labels: asArray(row?.excerpt?.labels).slice(),
-          selectedText,
-          text: selectedText,
-          processorUsed,
-          classicUsed: false,
-          injected: false,
-          directRawInjection: false,
-          truncated: false,
-          injectionOrder: 0
-        });
-        if(memory.kind==='micro' && networkAbsorbedClaimsByMemory.has(memory)){
-          networkDeliveryClustersByRow.set(delivery.rows.at(-1),{claims:allMicroClaims,eligible:networkAbsorbedClaimsByMemory.get(memory)});
-        }
-      }
-      // Classic consumes delivery.rows, not the layer list. Carry the validated
-      // later fact and its own exact source spans across that boundary, without
-      // changing the selected historical excerpt or manufacturing State prose.
-      for (const item of layers.memory.filter(row => row.closure)) {
-        const alreadySelected = delivery.rows.find(row => classicRecallMemoryIdentity(row) === classicRecallMemoryIdentity(item)
-          && string(row.selectedText).includes(item.text));
-        if (alreadySelected) {
-          alreadySelected.closureFacts = Number(alreadySelected.closureFacts || 0) + 1;
-          continue;
-        }
-        const evidence = asArray(item.evidenceSpans).map(span =>
-          `[SOURCE ${string(span?.ref || '')}] ${string(span?.quote || '')}`).join('\n');
-        const selectedText = [item.text, evidence].filter(Boolean).join('\n');
-        delivery.rows.push({
-          ...clone(item), kind: 'canonical', closure: true, closureFacts: 1,
-          order: delivery.rows.length + 1,
-          key: `${item.memoryId}:r${item.revision}:${item.factId}`,
-          classicEvidenceRole: 'continuity_closure',
-          selectedText, text: selectedText, processorUsed: true,
-          classicUsed: false, injected: false, directRawInjection: false,
-          truncated: false, injectionOrder: 0
-        });
-        delivery.sourceChars += Math.max(0, selectedText.length - item.text.length);
-      }
-      delivery.sourceMemories = new Set(delivery.rows.filter(row => row.processorUsed)
-        .map(classicRecallMemoryIdentity)).size;
-      if (route === 'classic' && delivery.classicProvenanceRescueActive) {
-        let latestRelevantMemories = 0;
-        for (const row of delivery.rows) {
-          if (row.closure) continue;
-          if (row?.provenanceRescue) {
-            row.classicEvidenceRole = 'latest_relevant';
-            latestRelevantMemories += 1;
-          } else {
-            row.classicEvidenceRole = 'historical';
-          }
-        }
-        delivery.classicEvidenceRoleMode = 'canonical_provenance_rescue';
-        delivery.latestRelevantMemories = latestRelevantMemories;
-      }
-      const continuityStateAuthority = continuityStateValue?.responseAuthority
-        ? clone(continuityStateValue.responseAuthority)
-        : responseStateAuthorityForHead(continuityStateValue, [], { exactBasis: false, sourceMode: continuityStateValue ? 'legacy_packet_without_manifest' : 'unavailable' }).authority;
-      const canonicalPriority = recallCanonicalPriorityPartition(layers, continuityStateAuthority);
-      delivery.continuityStateAuthority = string(continuityStateAuthority?.authority || 'unavailable');
-      delivery.continuityStateCurrent = continuityStateAuthority?.current === true;
-      delivery.continuityStatePending = continuityStateAuthority?.pending === true;
-      delivery.continuityStatePendingDomains = asArray(continuityStateAuthority?.pendingDomains).slice();
-      delivery.newerCanonicalItems = Number(canonicalPriority.newerCount || 0);
-      delivery.historicalCanonicalItems = Number(canonicalPriority.historicalCount || 0);
-      delivery.dynamicChars = delivery.sourceChars;
-      delivery.processorInputChars = delivery.sourceChars
-        + Number(delivery.liveTailPromptChars || 0)
-        + Number(delivery.bootstrapReferencePromptChars || 0)
-        + Number(delivery.responseLorePromptChars || 0)
-        + Number(delivery.authorNotePromptChars || 0)
-        + Number(delivery.storyArcPromptChars || 0);
-      delivery.processorInputChars += Number(delivery.continuityStatePromptChars || 0);
-      result.delivery = delivery;
-      return {
-        schema: 'libra.turn_recall_evidence.v1',
-        route,
-        consumed_data_token: registerConsumedDataReadSet(result?.scope || { scopeKey: result?.scopeKey }, consumedMicroProofs, queryBundle?.receiptReadSet, consumedNetworkFramesByResult.get(result)),
-        receipt_read_set: clone(queryBundle?.receiptReadSet || null),
-        temporal_scope: clone(delivery.temporalAnchor),
-        current_input: string(queryBundle?.currentText || result?.queryText || ''),
-        terminal_scene: string(liveTailValue?.available ? liveTailValue.transcript : queryBundle?.sceneText || ''),
-        query_type: string(queryBundle?.queryType || result?.query?.queryType || ''),
-        authority: [
-          'current user input',
-          'recent completed dialogue and resulting scene state',
-          canonicalPriority.newerCount > 0 ? 'committed canonical evidence newer than the last-known State Head' : '',
-          continuityPrompt ? (continuityStateAuthority?.current === true
-            ? 'Ariadne current-state head on the target canonical chain (latest values; not history)'
-            : 'Ariadne last-known current-state head (pending/non-authoritative; not history)') : '',
-          'older recalled canonical evidence',
-          authorNoteValue?.available ? 'Current Chat Author Note (trusted user creative directive; not event evidence)' : '',
-          responseLorePrompt ? 'current-input Unified Lore Material (canon/settings; not proof of current events)' : '',
-          storyArcValue ? 'Story Arc continuity materialized from canonical history (advisory below direct evidence)' : '',
-          bootstrapReferenceValue?.available ? 'bootstrap background references (identity/rules only; not event evidence)' : ''
-        ].filter(Boolean),
-        layers,
-        live_tail: liveTailValue?.available ? clone(liveTailValue) : null,
-        live_tail_prompt: '', // compatibility slot; recent dialogue is delivered once via terminal_scene
-        continuity_state: continuityStateValue ? clone(continuityStateValue) : null,
-        continuity_state_authority: clone(continuityStateAuthority),
-        continuity_state_prompt: continuityPrompt,
-        canonical_priority: clone(canonicalPriority),
-        bootstrap_references: bootstrapReferenceValue?.available ? clone(bootstrapReferenceValue) : null,
-        bootstrap_reference_prompt: bootstrapReferenceValue?.available ? string(bootstrapReferenceValue.promptBlock || '') : '',
-        lore_material: responseLoreValue?.available ? clone(responseLoreValue) : null,
-        lore_prompt: responseLorePrompt,
-        // Carries the lore ids the associative link view passed through. Null until the observation stage
-        // produces it; the consumer read set turns these into bridge dependencies (research note §7-6).
-        associative_links: associativeLinksValue ? clone(associativeLinksValue) : null,
-        author_note: authorNoteValue?.available ? clone(authorNoteValue) : null,
-        author_note_prompt: authorNotePrompt,
-        story_arc: storyArcValue ? clone(storyArcValue) : null,
-        story_arc_prompt: storyArcPrompt,
-        source_summary: {
-          selected_memories: selected.length,
-          selected_canonical_memories: selected.filter(row => row?.memory?.kind !== 'micro').length,
-          selected_micro_memories: selected.filter(row => row?.memory?.kind === 'micro').length,
-          processor_memories: delivery.processorMemories,
-          memory_items: layers.memory.length,
-          entity_items: layers.entity.length,
-          world_items: layers.world.length,
-          narrative_items: layers.narrative.length,
-          source_chars: delivery.sourceChars,
-          // Keep the canonical cursor for authority metadata even when recent
-          // dialogue expansion is disabled or the completed dialogue is empty.
-          canonical_through_turn: Number(liveTailValue?.canonicalThroughTurn ??
-            (isReadableUnifiedEngineVersion(continuityStateValue?.unifiedApplied?.engineVersion)
-              && continuityStateAuthority?.current === true ? continuityStateValue.throughTurn : 0)),
-          live_tail_pairs: Number(liveTailValue?.pairCount || 0),
-          live_tail_chars: Number(liveTailValue?.chars || 0),
-          live_tail_prompt_chars: string(liveTailValue?.available ? liveTailValue.transcript : queryBundle?.sceneText || '').length,
-          live_tail_historical_gap_turns: Number(liveTailValue?.uncoveredHistoricalGapTurns || 0),
-          bootstrap_reference_items: Number(bootstrapReferenceValue?.itemCount || 0),
-          bootstrap_reference_chars: Number(bootstrapReferenceValue?.referenceChars || 0),
-          bootstrap_reference_prompt_chars: Number(bootstrapReferenceValue?.promptChars || 0),
-          response_lore_items: Number(responseLoreStageView?.selectedCount || 0),
-          response_lore_prompt_chars: responseLorePrompt.length,
-          response_lore_material_hash: string(responseLoreValue?.materialHash || ''),
-          author_note_prompt_chars: authorNotePrompt.length,
-          author_note_hash: string(authorNoteValue?.hash || ''),
-          story_arc_prompt_chars: storyArcPrompt.length,
-          continuity_state_prompt_chars: continuityPrompt.length,
-          processor_input_chars: delivery.processorInputChars
-        }
-      };
-    };
 
     const buildReadOnlyResponseManifest = async (contextValue, pairsValue, manifestValue) => {
       const context = asObject(contextValue);
@@ -63499,7 +62460,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       Runtime.lastClassicInjectionMeta = null;
       Runtime.lastLiveTail = null;
       Runtime.lastBootstrapReferences = null;
-      Runtime.lastInjectionMode = DEFAULT_RESPONSE_INJECTION_MODE;
+      Runtime.lastInjectionMode = LIBRA_DELIVERY_ROUTE;
       state.lastRecall = null;
 
 
@@ -63985,8 +62946,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         let responseView=await readUnifiedWorldlineView(context.scope,requestManifest,completedPairs);
         requestManifest=responseView.manifest;
         const responseBoundary = await captureUnifiedResponseBoundary(context);
-        const runtimeSettings = await loadSettings().catch(() => Runtime.settings || { injectionMode: DEFAULT_RESPONSE_INJECTION_MODE });
-        const injectionMode = normalizeResponseInjectionMode(runtimeSettings?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
+        const runtimeSettings = await loadSettings().catch(() => Runtime.settings || {});
+        const injectionMode = LIBRA_DELIVERY_ROUTE;
         const recentDialogue = await runRecallStep(guard, 'before_receipt_dialogue',
           () => readRecentDialogueForResponse({ context, pairs: responseView.pairs, manifest: requestManifest,
             settings: runtimeSettings, route: injectionMode, boundary: responseBoundary,
@@ -64417,9 +63378,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             currentStateView: previousView?.head ? { ...previousView, authority: { ...asObject(previousView.authority), current: false, pending: true } } : null };
           try { options.onProvisional(state.snapshot); } catch (_) {}
         }
-        const storyArc = continuityState?.narrative
-          ? await storyArcCompatibilityProjection(context.scope, continuityState).catch(() => null)
-          : null;
         const detailLimit = (await loadMemorySettings()).runDetailRetention;
         const memoryRefs = listMemoryRefs(manifest);
         const runIds = manifest.runIds.slice(0, detailLimit);
@@ -64454,7 +63412,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const memories = memorySlots.filter(Boolean);
         const runs = runSlots.filter(Boolean);
         const nextSnapshot = {
-          scope: clone(context.scope), hostLineage: MemorySuiteHostLineage.inspect(context.character, context.chat), manifest: clone(manifest), storyArc: storyArc ? clone(storyArc) : null,
+          scope: clone(context.scope), hostLineage: MemorySuiteHostLineage.inspect(context.character, context.chat), manifest: clone(manifest),
           continuityState: continuityState ? clone(continuityState) : null, currentStateView: null, pairs: clone(pairs), memories, runs,
           totals: { memories: memoryRefs.length, runs: runIds.length },
           refreshedAt: Date.now(), error: ''
@@ -65623,9 +64581,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       Runtime.lastResponseMaterialSource = null;
       if (sameSnapshotScope(state.snapshot?.scope, context.scope)) state.snapshot.storyArc = null;
       if (sameSnapshotScope(state.snapshot?.scope, context.scope)) state.snapshot.continuityState = null;
-      if (string(state.lastStoryArc?.scopeKey || '') === scopeKey) state.lastStoryArc = null;
-      if (string(state.lastContinuityState?.scopeKey || '') === scopeKey) state.lastContinuityState = null;
-      state.lastStoryArcUpdate = { schema: STORY_ARC_UPDATE_SCHEMA, ok: true, skipped: true, reason: 'scope_deleted', at: Date.now(), scopeKey };
       state.lastNarrativeRecall = null;
       await refreshSnapshot(context, {
         cloneResult: false,
@@ -66526,8 +65481,6 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         continuityRebuildPending = true;
         warnings.push({ stage: 'state_pipeline_v3', message: stateRebuild.reason });
       }
-      try { await updateStoryArcAfterCommit({ context, manifest, memory: candidate, reason: 'canonical_variant_adopted' }); }
-      catch (error) { warnings.push({ stage: 'story_arc', message: compact(error?.message || error, 700) }); }
       await refreshSnapshot(context, { suppressGuiSchedule: true, limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS });
       return await updateCanonicalJob(context.scope, { state: warnings.length ? 'completed_with_warnings' : 'completed', phase: continuityRebuildPending || warnings.length ? 'rebuild_pending' : 'complete', result: { decision: 'adopt', variantId: found.variant.variantId, warnings, continuityStateAuthority, continuityRebuildPending, stateRebuild: clone(stateRebuild) }, message: continuityRebuildPending || warnings.length ? '후보를 채택했습니다. 정본은 확정되었고 일부 파생 뷰는 재시도가 필요합니다.' : '후보를 새 활성 정본으로 채택했습니다.' });
       });
@@ -73724,7 +72677,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       waitForMemorySuiteComputeIdle: async () => ({ status: 'retired', engine: 'unified', operations: [] }),
       disposeMemorySuiteCompute: async () => {},
        buildLiveTailContext, readCompletedReceiptSet, provideRecentDialogueFromReceipts,
-       liveTailBindingForManifest, liveTailDiagnosticSnapshot, buildBootstrapReferencePack, buildRecallEvidencePacket, buildReadOnlyResponseManifest, loadContinuityState, loadContinuityStateForResponse, continuityStatePromptBlock,
+       liveTailBindingForManifest, liveTailDiagnosticSnapshot, buildBootstrapReferencePack, buildReadOnlyResponseManifest, loadContinuityState, loadContinuityStateForResponse, continuityStatePromptBlock,
       recallCanonicalPriorityPartition,
       classicProvenanceRescueEligibility, classicCanonicalProvenanceRescueFromHead, buildClassicCanonicalProvenanceRescue,
       debugNormalizeContinuityStateHead: (value, scopeValue, manifestValue = null, optionsValue = {}) => clone(normalizeContinuityStateHead(value, scopeValue, manifestValue, optionsValue)),
@@ -73808,7 +72761,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         return clone({ budget: canonicalProviderBudgetSnapshot(budget), errors });
       },
-      loadStoryArc, rebuildStoryArc, setStoryArcDestination, clearStoryArc, ensureStoryArcForResponse, storyArcPromptBlock,
+      rebuildStoryArc, setStoryArcDestination, clearStoryArc,
       refreshSnapshot, exportCurrentScope, retraceCapabilities, inspectForRetrace, prepareSessionHandoff, adoptSessionHandoff, verifySessionHandoff, rollbackLensSessionHandoff, resolveTargetContextForHandoff, waitForTargetContextForHandoff, resolveStableScopeKey, ensureNativeChatCopyAdopted, locateNativeChatCopySource, deleteCurrentScope, retryFailed,
       listEmbeddingProviders: () => EmbeddingProviderRegistry.list(),
       getSnapshot: () => clone(state.snapshot),
@@ -73914,10 +72867,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         });
       },
       getLastRecall: () => clone(state.lastRecall),
-      getStoryArc: () => clone(state.snapshot?.storyArc || state.lastStoryArc || null),
       getContinuityState: () => clone(state.snapshot?.currentStateView
         ? state.snapshot.currentStateView.head : state.snapshot?.continuityState || state.lastContinuityState || null),
-      getLastStoryArcUpdate: () => clone(state.lastStoryArcUpdate || null),
       getLastNarrativeRecall: () => clone(state.lastNarrativeRecall || null),
       getLastLiveTail: () => clone(state.lastLiveTail || Runtime.lastLiveTail || null),
       getLastBootstrapReferences: () => clone(state.lastBootstrapReferences || Runtime.lastBootstrapReferences || null),
@@ -74093,7 +73044,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     agentHubSection: 'memory',
     executionLogSection: 'memory',
     customHubSection: 'memory',
-    convenienceHubSection: 'input_writer',
     narrativeHubSection: 'current',
     libraDraftSection: 'mode',
     worldManagerSelectedCharacterId: '',
@@ -74175,9 +73125,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     storyArcHubSection: 'current',
     referenceHubSection: 'modules',
     connectionHubSection: 'providers',
-    settingsHubSection: 'input_writer',
+    settingsHubSection: 'memory_settings',
     generalSettingsSection: 'memory_settings',
-    promptInjectionSection: 'sga',
     selectedPreset: RISUAI_AUX_PRESET_NAME,
     selectedPrompt: 'librarian',
     selectedResultStage: 'ariadne',
@@ -74631,10 +73580,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const refreshGuiRuntimeIndicators = () => {
     try {
       if (!Gui.root) return;
-      const inputOnlyActive = Runtime.hookStatus?.input === true
-        && Gui.state?.runtime?.inputAssistMode !== 'off'
-        && Gui.state?.runtime?.inputAssistScope === 'standalone';
-      const hookActive = Runtime.hookStatus?.beforeRequest === true || inputOnlyActive;
+      const hookActive = Runtime.hookStatus?.beforeRequest === true;
       const permissionDenied = Runtime.hookStatus?.replacerPermission === 'denied';
       const liveText = !hookActive ? (permissionDenied ? '권한 필요' : '비활성') : Runtime.inFlight ? '실행 중' : '활성';
       Gui.root.querySelectorAll('[data-runtime-live]').forEach(node => { node.textContent = liveText; });
@@ -74763,20 +73709,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     gradationMode: settings.gradationMode,
     outputMode: settings.outputMode,
     internalDraftLanguage: normalizeInternalDraftLanguage(settings.internalDraftLanguage),
-    inputAssistMode: normalizeChoice(settings.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off'),
-    inputAssistScope: normalizeChoice(settings.inputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
-    inputAssistTargetChars: normalizeInputAssistTargetChars(settings.inputAssistTargetChars),
-    inputAssistConfirmationMode: normalizeChoice(settings.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
-    inputAssistAlwaysTranslateEnglish: settings.inputAssistAlwaysTranslateEnglish === true,
-    inputAssistLoreActivationMode: normalizeInputAssistLoreActivationMode(settings.inputAssistLoreActivationMode),
     informationTransferMode: normalizeChoice(settings.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only'),
     nsfwMode: normalizeNsfwMode(settings.nsfwMode),
     nsfwGuidanceEnabled: settings.nsfwGuidanceEnabled !== false,
-    responseImprovementProfile: normalizeResponseImprovementProfile(settings.responseImprovementProfile),
-    responseImprovementToggles: normalizeResponseImprovementToggles(
-      settings.responseImprovementToggles,
-      settings.responseImprovementProfile
-    ),
     loreActivationMode: normalizeLoreActivationMode(settings.loreActivationMode),
     builtInStylePreset: normalizeBuiltInStylePreset(settings.builtInStylePreset),
     maxPreviousStageChars: settings.maxPreviousStageChars,
@@ -74784,9 +73719,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     injectionPosition: settings.injectionPosition,
     failureMode: settings.failureMode,
     memoryStateAutoApply: settings.memoryStateAutoApply !== false,
-    responseFamily: normalizeResponseFamily(settings.responseFamily, settings.injectionMode),
-    libraResponseMode: normalizeLibraResponseMode(settings.libraResponseMode, settings.injectionMode),
-    injectionMode: resolveResponseModeState(settings).injectionMode,
     liveContextEnabled: false,
     liveTailMaxTurns: clampInt(settings.liveTailMaxTurns, 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS),
     liveTailMaxChars: clampInt(settings.liveTailMaxChars, LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS),
@@ -74799,14 +73731,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     responseLoreMaxChars: clampInt(settings.responseLoreMaxChars, MIN_RESPONSE_LORE_CHARS, MAX_RESPONSE_LORE_CHARS, DEFAULT_RESPONSE_LORE_MAX_CHARS),
     risuAuxAllowPlugins: settings.risuAuxAllowPlugins === true,
     defaultPresetName: settings.defaultPresetName,
-    storyArcPresetName: settings.stagePresetNames?.[STORY_ARC_STAGE_ID] || '',
     microPresetName: settings.stagePresetNames?.[MICRO_PRESET_STAGE_ID] || '',
     lensPresetName: settings.stagePresetNames?.[LENS_PRESET_STAGE_ID] || '',
     itoStageOrder: normalizeAideStageOrder(settings.itoStageOrder),
     quickProfile: normalizeChoice(settings.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
-    writerEnabled: settings.writerEnabled !== false,
-    writerReviewIntervalTurns: settings.writerReviewIntervalTurns || WRITER_DEFAULT_REVIEW_INTERVAL_TURNS,
-    writerMaxSourceChars: settings.writerMaxSourceChars || WRITER_DEFAULT_MAX_SOURCE_CHARS,
     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
@@ -74864,7 +73792,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const guiAgentsFromSettings = settings => ({
     librarian: guiSlotFromSettings(settings, LIBRARIAN_STAGE_ID, settings.enableLibrarian),
-    [INPUT_ASSIST_STAGE_ID]: guiSlotFromSettings(settings, INPUT_ASSIST_STAGE_ID, settings.enableInputAssist),
     ariadne: guiSlotFromSettings(settings, 'ariadne', settings.enableShadowAct),
     character_ito: guiSlotFromSettings(settings, 'character_ito', settings.enableCharacterAide),
     world_ito: guiSlotFromSettings(settings, 'world_ito', settings.enableWorldAide),
@@ -74915,7 +73842,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         module_lorebook: slot.risuRefs.moduleLorebook
       }
     };
-    if (stageId === INPUT_ASSIST_STAGE_ID) delete stored.turn_window;
     if (CORE_ito_STAGE_IDS.includes(stageId)) delete stored.risu_refs;
     return stored;
   };
@@ -75002,11 +73928,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const applyGuiSettingsState = (settings, options = {}) => {
     if (!settings) return Gui.state;
     if (options.preserveDirty === true && Gui.dirty && Gui.state) return Gui.state;
-    const previousFamily = Gui.state?.runtime?.responseFamily;
     Gui.state = stateFromSettings(settings);
-    if (previousFamily !== Gui.state?.runtime?.responseFamily) {
-      for (const region of ['header', 'body']) Gui.invalidations.add(region);
-    }
     normalizeGuiSelectionAfterStateLoad();
     Gui.stateLoadedAt = Date.now();
     if (typeof options.basisHash === 'string') Gui.settingsBasisHash = options.basisHash;
@@ -75221,7 +74143,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const embeddingDraft = LibraMemoryCore.getEmbeddingSettings();
     const embeddingChanged = previousEmbed && settingsSemanticHash(previousEmbed) !== settingsSemanticHash(embeddingDraft);
     const runtime = state.runtime || {};
-    const responseModeState = resolveResponseModeState(runtime);
     const backendConfig = normalizeBackendHostingConfig(runtime.backendHosting || {});
     const runtimeRecord = {
         librarian_config_review: safeClone(runtime.librarianConfigReview || null),
@@ -75232,20 +74153,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         internal_draft_language: normalizeInternalDraftLanguage(runtime.internalDraftLanguage),
         generation_policy: MemorySuiteExecutionContract.normalizeGenerationPolicy(runtime.generationPolicy),
         response_consumer_policy: normalizeResponseConsumerPolicy(runtime.responseConsumerPolicy || {}),
-        input_assist_mode: normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off'),
-        input_assist_scope: normalizeChoice(runtime.inputAssistScope || 'full_pipeline', INPUT_ASSIST_SCOPES, 'full_pipeline'),
-        input_assist_target_chars: normalizeInputAssistTargetChars(runtime.inputAssistTargetChars),
-        input_assist_confirmation_mode: normalizeChoice(runtime.inputAssistConfirmationMode || 'direct', INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
-        input_assist_always_translate_english: String(runtime.inputAssistAlwaysTranslateEnglish === true),
-        input_assist_lore_activation_mode: normalizeInputAssistLoreActivationMode(runtime.inputAssistLoreActivationMode),
         information_transfer_mode: normalizeChoice(runtime.informationTransferMode || 'draft_only', INFORMATION_TRANSFER_MODES, 'draft_only'),
         nsfw_mode: normalizeNsfwMode(runtime.nsfwMode),
         nsfw_guidance_enabled: String(runtime.nsfwGuidanceEnabled !== false),
-        response_improvement_profile: normalizeResponseImprovementProfile(runtime.responseImprovementProfile),
-        response_improvement_toggles: JSON.stringify(normalizeResponseImprovementToggles(
-          runtime.responseImprovementToggles,
-          runtime.responseImprovementProfile
-        )),
         lore_activation_mode: normalizeLoreActivationMode(runtime.loreActivationMode),
         built_in_style_preset: normalizeBuiltInStylePreset(runtime.builtInStylePreset),
         max_previous_stage_chars: String(runtime.maxPreviousStageChars),
@@ -75253,9 +74163,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         injection_position: runtime.injectionPosition,
         failure_mode: runtime.failureMode,
         memory_state_auto_apply: String(runtime.memoryStateAutoApply !== false),
-        response_family: responseModeState.responseFamily,
-        libra_response_mode: responseModeState.libraResponseMode,
-        injection_mode: responseModeState.injectionMode,
         live_context_enabled: 'false',
         live_tail_max_turns: String(clampInt(runtime.liveTailMaxTurns, 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS)),
         live_tail_max_chars: String(clampInt(runtime.liveTailMaxChars, LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS)),
@@ -75273,14 +74180,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         state_catch_up_concurrency: String(clampInt(runtime.stateTracking?.catchUpConcurrency, 1, 4, 4)),
         risuai_aux_allow_plugins: String(runtime.risuAuxAllowPlugins === true),
         default_preset: runtime.defaultPresetName,
-        story_arc_preset: String(runtime.storyArcPresetName || ''),
         micro_preset: String(runtime.microPresetName || ''),
         lens_preset: String(runtime.lensPresetName || ''),
         ito_stage_order: normalizeAideStageOrder(runtime.itoStageOrder),
         quick_profile: normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
-        writer_enabled: String(runtime.writerEnabled !== false),
-        writer_review_interval_turns: String(runtime.writerReviewIntervalTurns || WRITER_DEFAULT_REVIEW_INTERVAL_TURNS),
-        writer_max_source_chars: String(runtime.writerMaxSourceChars || WRITER_DEFAULT_MAX_SOURCE_CHARS),
         selected_module_lore_ids: JSON.stringify(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),
         excluded_module_lore_ids: JSON.stringify(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds)),
         excluded_character_lore_ids: JSON.stringify(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds)),
@@ -75505,8 +74408,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Runtime.lastMemoryInjectionMeta = null;
     Runtime.lastFinalOverlayMeta = null;
     Runtime.loreContinuity = { scopes: {} };
-    Runtime.writerControl = null;
-    Runtime.forceWriterRefresh = false;
     Runtime.userIntentOoc = { targetStage: 'librarian', messages: [], messagesByStage: {}, summariesByStage: {}, revisionsByStage: {}, busy: false, lastError: '', statusText: '', statusState: 'idle', requestId: Number(Runtime.userIntentOoc?.requestId || 0) + 1 };
     Gui.state = null;
     Gui.dirty = false;
@@ -76404,7 +75305,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   ];
 
   const RUNTIME_PRESET_KEY_BY_STAGE = Object.freeze({
-    [STORY_ARC_STAGE_ID]: 'storyArcPresetName',
     [MICRO_PRESET_STAGE_ID]: 'microPresetName',
     [LENS_PRESET_STAGE_ID]: 'lensPresetName',
 
@@ -76508,19 +75408,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const latestTraceForStage = (stageId) => {
-    const traces = Runtime.stageTrace;
-    for (let i = (traces || []).length - 1; i >= 0; i -= 1) {
-      if (traces[i]?.stage === stageId) return traces[i];
-    }
-    return null;
-  };
-
-  const resultText = (value, max = 1000) => {
-    const body = text(value || '').replace(/\r\n/g, '\n').replace(/\n{4,}/g, '\n\n\n').trim();
-    if (!max || body.length <= max) return body;
-    return body.slice(0, Math.max(0, max - 24)).trimEnd() + '\n...[truncated]';
-  };
 
   const formatElapsedBrief = (ms) => {
     const n = Number(ms);
@@ -76553,109 +75440,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return { label: '실패', className: 'danger', elapsed, title: reason || '최근 실행이 실패했습니다.' };
   };
 
-  const traceBadgeNode = (info) => guiEl('span', { class: `badge ${info.className}`, title: info.title || '' }, [
-    guiEl('span', { text: info.label }),
-    info.elapsed ? guiEl('span', { class: 'hint', text: info.elapsed }) : null
-  ]);
-
-  const resultLineNode = (label, value, options = {}) => {
-    const max = Object.prototype.hasOwnProperty.call(options, 'max') ? options.max : 900;
-    const body = resultText(value, max);
-    if (!body) return null;
-    return guiEl('div', { class: `setting${options.wide ? ' wide' : ''}` }, [
-      guiEl('span', { class: 'setting__name', text: label }),
-      guiEl('div', { class: options.code ? 'code' : 'setting__desc', text: body })
-    ]);
-  };
-
-  const resultListText = (items) => {
-    if (!items) return '';
-    if (!Array.isArray(items)) return typeof items === 'object' ? JSON.stringify(items, null, 2) : text(items);
-    return items.map((item, index) => {
-      if (item == null) return '';
-      if (typeof item === 'string') return `- ${item}`;
-      if (typeof item !== 'object') return `- ${text(item)}`;
-      const body = [item.type || item.kind || `#${index + 1}`, item.reason || item.summary || item.evidence || '', item.change || item.fix || item.note || ''].filter(Boolean).join(' | ');
-      return `- ${body}`;
-    }).filter(Boolean).join('\n');
-  };
 
 
-  const traceJsonForDisplay = (def, trace, parsed) => {
-    const base = {
-      stage: def.id,
-      label: def.label,
-      ok: trace.ok,
-      reason: trace.reason || parsed?.reason || '',
-      elapsedMs: trace.elapsedMs || 0,
-      provider: trace.provider || '',
-      presetName: trace.presetName || '',
-      model: trace.model || ''
-    };
-    const values = parsed?.analysisOnly ? {
-      summary: parsed.summary || parsed.analysis?.summary || '',
-      constraints: parsed.constraints || parsed.analysis?.constraints || [],
-      risks: parsed.risks || parsed.analysis?.risks || [],
-      notes: parsed.notes || parsed.draft?.notes || [],
-      handoff: parsed.handoff || ''
-    } : {
-      analysis: parsed?.analysis || {},
-      edits: parsed?.edits || [],
-      change_log: parsed?.change_log || [],
-      draft: parsed?.draft || {},
-      final_overlay: parsed?.final_overlay || null
-    };
-    return JSON.stringify({ status: base, values }, null, 2);
-  };
-
-  const buildStageResultPanel = (def, trace, options = {}) => {
-    const isAnalysisOnly = !!options.isAnalysisOnly;
-    const statusInfo = traceStateInfo(trace, options);
-    const parsed = trace?.parsed || trace?.fallbackStage || {};
-    const providerLine = trace ? [trace.provider, trace.presetName, trace.model].filter(Boolean).join(' / ') : '';
-    const rows = [];
-    if (trace) {
-      rows.push(resultLineNode('호출', providerLine || '(provider 기록 없음)', { max: 520 }));
-      const memoryFailure = trace.memoryMode && trace.ok === false ? (trace.failureDiagnostic || libraMemoryFailureDiagnostic(trace.reason || parsed.reason || '', {stage:trace.stage})) : null;
-      rows.push(resultLineNode(memoryFailure ? '진단' : '사유', memoryFailure ? `${memoryFailure.title} · ${memoryFailure.message}` : trace.reason || parsed.reason || '', { max: 520 }));
-      if (isAnalysisOnly || parsed.analysisOnly) {
-        rows.push(resultLineNode('분석 요약', parsed.summary || parsed.analysis?.summary || '', { max: 900 }));
-        rows.push(resultLineNode('제약 값', resultListText(parsed.constraints || parsed.analysis?.constraints), { max: 1200, code: true }));
-        rows.push(resultLineNode('리스크 값', resultListText(parsed.risks || parsed.analysis?.risks), { max: 1200, code: true }));
-        rows.push(resultLineNode('노트', resultListText(parsed.notes || parsed.draft?.notes), { max: 1200, code: true }));
-        rows.push(resultLineNode('다음 작성 전달', parsed.handoff || '', { max: 1200, code: true }));
-      } else {
-        const analysis = parsed.analysis || {};
-        const draftText = parsed.final_overlay?.final_rp_draft || parsed.draft?.rp_text || parsed.rp_text || '';
-        rows.push(resultLineNode('분석 요약', analysis.summary || '', { max: 700 }));
-        rows.push(resultLineNode('제약 값', resultListText(analysis.constraints), { max: 1100, code: true }));
-        rows.push(resultLineNode('리스크 값', resultListText(analysis.risks), { max: 1100, code: true }));
-        rows.push(resultLineNode('수정 로그', resultListText(parsed.change_log?.length ? parsed.change_log : parsed.edits), { max: 1100, code: true }));
-        rows.push(resultLineNode('초안 결과', draftText, { max: 0, code: true, wide: true }));
-      }
-    }
-    return guiEl('aside', { class: 'card' }, [
-      guiEl('div', { class: 'split' }, [
-        guiEl('span', { class: 'card__title', text: '최근 결과' }),
-        traceBadgeNode(statusInfo)
-      ]),
-      guiEl('div', { class: 'stack' }, trace
-        ? rows
-        : [guiEl('div', { class: 'empty', text: statusInfo.className === 'run' ? '실행 중입니다. 결과가 기록되면 자동으로 갱신됩니다.' : '아직 이 단계의 실행 기록이 없습니다.' })]),
-      trace ? guiEl('details', {}, [
-        guiEl('summary', { text: '실제 값 JSON' }),
-        guiEl('div', { class: 'code', text: resultText(traceJsonForDisplay(def, trace, parsed), 0) })
-      ]) : null
-    ]);
-  };
 
 
-  const executionResultTracesForStage = stageId =>
-    (Runtime.stageTrace || []).filter(trace => trace?.stage === stageId);
 
 
-  const GUI_RESULT_INLINE_CHAR_LIMIT = 48000;
-  const GUI_RESULT_PREVIEW_CHAR_LIMIT = 12000;
+
+
+
 
 
 
@@ -77787,26 +76580,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     renderSettingsGui();
   };
 
-  const applyResponseImprovementProfileToGui = profileId => {
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const profile = normalizeResponseImprovementProfile(profileId);
-    runtime.responseImprovementProfile = profile;
-    if (profile !== 'custom') runtime.responseImprovementToggles = responseImprovementTogglesForProfile(profile);
-    markGuiDirty();
-    renderSettingsGui();
-  };
-
-  const applyResponseImprovementToggleToGui = (instructionId, enabled) => {
-    if (!RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[instructionId]) return;
-    const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    const currentProfile = normalizeResponseImprovementProfile(runtime.responseImprovementProfile);
-    const toggles = normalizeResponseImprovementToggles(runtime.responseImprovementToggles, currentProfile);
-    toggles[instructionId] = enabled === true;
-    runtime.responseImprovementToggles = toggles;
-    runtime.responseImprovementProfile = 'custom';
-    markGuiDirty();
-    renderSettingsGui();
-  };
 
 
 
@@ -77835,44 +76608,40 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'렌즈 스튜디오에서 보기',onClick:()=>{lensStudioState().view='create';openApprovedPromptDialog();}})])
     ]);
   };
+  // Only the NSFW mode reaches LIBRA: canonical analysis adds it as portrayal criteria
+  // (buildNsfwGuidanceBlock(...,'analysis')). The old writing/response-improvement controls were
+  // GRADIA-era leftovers with no LIBRA consumer and were removed from the screen.
   const buildApprovedInstructionFields = () => {
-    const runtime=Gui.state.runtime||(Gui.state.runtime={}),profile=normalizeResponseImprovementProfile(runtime.responseImprovementProfile),toggles=normalizeResponseImprovementToggles(runtime.responseImprovementToggles,profile),mode=normalizeNsfwMode(runtime.nsfwMode);
-    const controls=[fieldNode('NSFW 지침 주입',checkboxNode(runtime.nsfwGuidanceEnabled!==false,'사용',applyNsfwGuidanceEnabledToGui)),fieldNode('NSFW 모드',selectNode(mode,Object.entries(NSFW_MODE_DEFS).map(([key,def])=>[key,def.label]),applyNsfwModeToGui)),fieldNode('응답 개선 지시 프로필',selectNode(profile,[['off','사용 안 함'],['recommended','권장 설정'],['all','전체 활성화'],['custom','직접 선택']],applyResponseImprovementProfileToGui))];
-    for(const [categoryId,category] of Object.entries(RESPONSE_IMPROVEMENT_CATEGORY_DEFS))controls.push(guiEl('details',{class:'fold'},[guiEl('summary',{text:category.label}),guiEl('div',{class:'fold__body stack'},[guiEl('p',{class:'hint',text:category.description}),...RESPONSE_IMPROVEMENT_INSTRUCTION_IDS.filter(id=>RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id].category===categoryId).map(id=>{const def=RESPONSE_IMPROVEMENT_INSTRUCTION_DEFS[id],check=checkboxNode(!!toggles[id],'이 지시 사용',value=>applyResponseImprovementToggleToGui(id,value));check.querySelector('input').dataset.instructionField=id;return fieldNode(def.label,check,def.description);})])]));
-    controls.push(guiEl('details',{class:'fold'},[guiEl('summary',{text:'현재 작성 지침 미리보기'}),guiEl('div',{class:'fold__body'},[guiEl('textarea',{class:'textarea',readonly:true,value:buildNsfwGuidanceBlock({nsfwMode:mode,nsfwGuidanceEnabled:runtime.nsfwGuidanceEnabled!==false},'writing')||'현재 지침 주입이 꺼져 있습니다.'})])]));
-    return guiEl('details',{class:'fold',dataset:{instructionSettings:'true'}},[guiEl('summary',{text:'기존 작성 지침 · 내부 응답 개선'}),guiEl('div',{class:'fold__body stack'},controls)]);
+    const runtime=Gui.state.runtime||(Gui.state.runtime={}),mode=normalizeNsfwMode(runtime.nsfwMode);
+    return guiEl('section',{class:'libra-field-group',dataset:{instructionSettings:'true'}},[
+      guiEl('h4',{class:'libra-field-group__title',text:'성인 장면 분석 지침 (NSFW)'}),
+      guiEl('div',{class:'stack'},[
+        fieldNode('지침 사용',checkboxNode(runtime.nsfwGuidanceEnabled!==false,'기억 분석에 NSFW 지침 넣기',applyNsfwGuidanceEnabledToGui),'성인 장면이 있는 대화를 분석할 때, 원문에 있는 내용만 근거로 수위를 판단하도록 돕는 지침입니다. 장면을 지어내지 않습니다.'),
+        fieldNode('NSFW 모드',selectNode(mode,Object.entries(NSFW_MODE_DEFS).map(([key,def])=>[key,def.label]),applyNsfwModeToGui),'끄면(OFF) 지침을 넣지 않습니다.')
+      ])
+    ]);
   };
   const buildLibrarianAnalyzerPanel = (compactView=false, advancedOnly=false) => {
     if(!Gui.state)return guiEl('p',{class:'hint',text:'Librarian 설정을 읽는 중입니다.'});
     const agents=Gui.state.agents||(Gui.state.agents={}),settings=Runtime.settings||{};
     const slot=agents.librarian||(agents.librarian=guiSlotFromSettings(settings,LIBRARIAN_STAGE_ID,settings.enableLibrarian));
     slot.turnWindow=5;slot.executionMode='draft_only';slot.risuRefs=normalizeRisuReferences(slot.risuRefs,defaultRisuReferencesForStage(LIBRARIAN_STAGE_ID));
-    const prompt=Gui.state.prompts.librarian||(Gui.state.prompts.librarian={mode:'builtin',customPrompt:'',extraPrompt:''});
     const change=fn=>value=>{fn(value);markGuiDirty();};
     const analyzerField=(key,label,control,note='')=>{control.dataset.analyzerField=key;return fieldNode(label,control,note);};
     return guiEl('div',{class:'stack',dataset:{librarianAnalyzer:'single',memoryStage:LIBRARIAN_STAGE_ID}},[
       guiEl('div',{class:'card'},[
         guiEl('div',{class:'card__head'},[
-          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석 상세 설정'}),guiEl('p',{class:'card__desc',text:`분석 한도 · 참고 자료 · 분야별 지침. 사용 여부와 AI 연결은 AI 연결 설정의 기능별 AI 연결에서 정합니다 (실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}${slot.enabled===false?' · 꺼짐':''}).`})]),
+          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석 상세 설정'}),guiEl('p',{class:'card__desc',text:`분석 요청 길이·재시도와 성인 장면 지침을 정합니다. 사용 여부와 AI 연결은 AI 연결 설정, 함께 읽을 자료는 참고 자료에서 정합니다 (실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}${slot.enabled===false?' · 꺼짐':''}).`})]),
           guiEl('button',{class:'btn btn--sm',type:'button',text:'AI 연결 설정',onClick:()=>selectBookSettingsRoomSection('ai')})
         ]),
         guiEl('div',{class:'stack'},[
-          guiEl('div',{class:'grid g2'},[
-            analyzerField('maxChars','참고 자료 상한',inputNode(slot.maxChars,change(value=>{slot.maxChars=Number(value);}),{type:'number',min:1000,max:REFERENCE_BUDGET_CUSTOM_MAX_CHARS})),
-            analyzerField('timeoutMs','최대 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),change(value=>{slot.timeoutMs=Math.max(5,Number(value)||5)*1000;}),{type:'number',min:5,max:300}))
+          buildGenerationPolicyPanel([
+            analyzerField('timeoutMs','응답 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),change(value=>{slot.timeoutMs=Math.max(5,Number(value)||5)*1000;}),{type:'number',min:5,max:300}),'한 번의 분석 요청이 이 시간 안에 끝나지 않으면 실패로 처리합니다. 느린 모델이면 늘리세요.')
           ]),
-          guiEl('div',{class:'grid g2'},[['persona','페르소나'],['characterDescription','캐릭터 설명'],['characterLorebook','캐릭터 로어북'],['moduleLorebook','선택 모듈 로어북']].map(([key,label])=>{
-            const node=checkboxNode(slot.risuRefs[key]===true,label,change(value=>{slot.risuRefs[key]=value;}));node.querySelector('input').dataset.analyzerReference=key;return node;
-          })),
-          guiEl('div',{class:'note',dataset:{analyzerField:'customPrompt'}},[guiEl('p',{text:'기억 분석 지침은 고정되어 있어 여기서 바꾸지 않습니다. 원하는 관점은 “맞춤 기억 렌즈”로 따로 기록하세요. 정본 기억과 현재 상태는 그대로 유지됩니다.'}),prompt.customPrompt?guiEl('p',{class:'hint',text:'이전에 적어 둔 추가 지침은 보관되어 있으며 렌즈 스튜디오에서 렌즈로 옮길 수 있습니다.'}):null].filter(Boolean)),
-          ...LIBRARIAN_PROMPT_LENSES.map(row=>guiEl('div',{class:'note'},[guiEl('b',{text:row.label}),guiEl('p',{text:row.text})])),
-          buildGenerationPolicyPanel(),
           buildApprovedInstructionFields(),
-          buildLibrarianConfigurationReviewPanel(),
-          buildStageResultPanel(STAGE_DEF_MAP.librarian,latestTraceForStage(LIBRARIAN_STAGE_ID),{enabled:slot.enabled!==false,isLiteSkip:false})
+          buildLibrarianConfigurationReviewPanel()
         ])
-      ]),
-      guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--primary',type:'button',text:Gui.dirty?'Librarian 설정 저장':'저장됨',disabled:!Gui.dirty,dataset:{librarianSave:'true',guiSaveLabel:'Librarian 설정 저장'},onClick:async()=>{try{await saveGuiState();await renderSettingsGui();guiSetStatus('Librarian 설정을 저장했습니다.');}catch(error){guiSetStatus(String(error.message||error),true);}}})])
+      ])
     ]);
   };
 
@@ -77952,12 +76721,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const normalized = normalizeRuntimeRecord(raw);
     const pick = (snake, camel, fallback) => normalized[snake] ?? raw?.[camel] ?? fallback;
     const importedHas = (snake, camel) => Object.prototype.hasOwnProperty.call(normalized, snake) || Object.prototype.hasOwnProperty.call(raw || {}, camel);
-    const hasLegacyInjection = importedHas('injection_mode', 'injectionMode');
-    const importedResponseMode = resolveResponseModeState({
-      response_family: pick('response_family', 'responseFamily', hasLegacyInjection ? '' : current.responseFamily),
-      libra_response_mode: pick('libra_response_mode', 'libraResponseMode', hasLegacyInjection ? '' : current.libraResponseMode),
-      injection_mode: pick('injection_mode', 'injectionMode', current.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE)
-    });
     return {
       ...current,
       mode: normalizeChoice(pick('mode', 'mode', current.mode) === 'full' ? 'normal' : pick('mode', 'mode', current.mode), ['off', 'lite', 'normal'], 'normal'),
@@ -77969,12 +76732,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ),
       generationPolicy:MemorySuiteExecutionContract.normalizeGenerationPolicy(pick('generation_policy','generationPolicy',current.generationPolicy||{})),
       responseConsumerPolicy:normalizeResponseConsumerPolicy(pick('response_consumer_policy','responseConsumerPolicy',current.responseConsumerPolicy||{})),
-      inputAssistMode: normalizeChoice(pick('input_assist_mode', 'inputAssistMode', current.inputAssistMode || 'off'), INPUT_ASSIST_MODES, 'off'),
-      inputAssistScope: normalizeChoice(pick('input_assist_scope', 'inputAssistScope', current.inputAssistScope || 'full_pipeline'), INPUT_ASSIST_SCOPES, 'full_pipeline'),
-      inputAssistTargetChars: normalizeInputAssistTargetChars(pick('input_assist_target_chars', 'inputAssistTargetChars', current.inputAssistTargetChars || DEFAULT_INPUT_ASSIST_TARGET_CHARS)),
-      inputAssistConfirmationMode: normalizeChoice(pick('input_assist_confirmation_mode', 'inputAssistConfirmationMode', current.inputAssistConfirmationMode || 'direct'), INPUT_ASSIST_CONFIRMATION_MODES, 'direct'),
-      inputAssistAlwaysTranslateEnglish: asBool(pick('input_assist_always_translate_english', 'inputAssistAlwaysTranslateEnglish', current.inputAssistAlwaysTranslateEnglish), false),
-      inputAssistLoreActivationMode: normalizeInputAssistLoreActivationMode(pick('input_assist_lore_activation_mode', 'inputAssistLoreActivationMode', current.inputAssistLoreActivationMode || DEFAULT_INPUT_ASSIST_LORE_ACTIVATION_MODE)),
       informationTransferMode: normalizeChoice(pick('information_transfer_mode', 'informationTransferMode', current.informationTransferMode || 'draft_only'), INFORMATION_TRANSFER_MODES, 'draft_only'),
       responseLoreEnabled: asBool(pick('response_lore_enabled', 'responseLoreEnabled', current.responseLoreEnabled), current.responseLoreEnabled !== false),
       responseLoreStartCount: clampInt(pick('response_lore_start_count', 'responseLoreStartCount', current.responseLoreStartCount), MIN_RESPONSE_LORE_START_COUNT, MAX_RESPONSE_LORE_ITEMS, DEFAULT_RESPONSE_LORE_START_COUNT),
@@ -77983,13 +76740,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       risuAuxAllowPlugins: asBool(pick('risuai_aux_allow_plugins', 'risuAuxAllowPlugins', current.risuAuxAllowPlugins), current.risuAuxAllowPlugins === true),
       nsfwMode: normalizeNsfwMode(pick('nsfw_mode', 'nsfwMode', current.nsfwMode || DEFAULT_NSFW_MODE)),
       nsfwGuidanceEnabled: asBool(pick('nsfw_guidance_enabled', 'nsfwGuidanceEnabled', current.nsfwGuidanceEnabled), current.nsfwGuidanceEnabled !== false),
-      responseImprovementProfile: normalizeResponseImprovementProfile(
-        pick('response_improvement_profile', 'responseImprovementProfile', current.responseImprovementProfile || DEFAULT_RESPONSE_IMPROVEMENT_PROFILE)
-      ),
-      responseImprovementToggles: normalizeResponseImprovementToggles(
-        pick('response_improvement_toggles', 'responseImprovementToggles', current.responseImprovementToggles || {}),
-        pick('response_improvement_profile', 'responseImprovementProfile', current.responseImprovementProfile || DEFAULT_RESPONSE_IMPROVEMENT_PROFILE)
-      ),
       loreActivationMode: normalizeLoreActivationMode(pick('lore_activation_mode', 'loreActivationMode', current.loreActivationMode || DEFAULT_LORE_ACTIVATION_MODE)),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(pick('excluded_character_lore_ids', 'excludedCharacterLoreIds', current.excludedCharacterLoreIds || [])),
       builtInStylePreset: normalizeBuiltInStylePreset(pick('built_in_style_preset', 'builtInStylePreset', current.builtInStylePreset || 'unified_stylepack')),
@@ -77997,9 +76747,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       maxInjectionChars: Number(pick('max_injection_chars', 'maxInjectionChars', current.maxInjectionChars)),
       injectionPosition: pick('injection_position', 'injectionPosition', current.injectionPosition),
       failureMode: pick('failure_mode', 'failureMode', current.failureMode),
-      responseFamily: importedResponseMode.responseFamily,
-      libraResponseMode: importedResponseMode.libraResponseMode,
-      injectionMode: importedResponseMode.injectionMode,
       liveContextEnabled: asBool(pick('live_context_enabled', 'liveContextEnabled', current.liveContextEnabled), current.liveContextEnabled !== false),
       liveTailMaxTurns: clampInt(pick('live_tail_max_turns', 'liveTailMaxTurns', current.liveTailMaxTurns || DEFAULT_LIVE_TAIL_MAX_TURNS), 1, 4, DEFAULT_LIVE_TAIL_MAX_TURNS),
       liveTailMaxChars: clampInt(pick('live_tail_max_chars', 'liveTailMaxChars', current.liveTailMaxChars || DEFAULT_LIVE_TAIL_MAX_CHARS), LIVE_TAIL_MIN_CHARS, LIVE_TAIL_MAX_CHARS, DEFAULT_LIVE_TAIL_MAX_CHARS),
@@ -78007,12 +76754,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       bootstrapReferenceMaxChars: clampInt(pick('bootstrap_reference_max_chars', 'bootstrapReferenceMaxChars', current.bootstrapReferenceMaxChars || DEFAULT_BOOTSTRAP_REFERENCE_MAX_CHARS), BOOTSTRAP_REFERENCE_MIN_CHARS, BOOTSTRAP_REFERENCE_MAX_CHARS, DEFAULT_BOOTSTRAP_REFERENCE_MAX_CHARS),
       classicLiveTailEnabled: asBool(pick('classic_live_tail_enabled', 'classicLiveTailEnabled', current.classicLiveTailEnabled), current.classicLiveTailEnabled === true),
       defaultPresetName: pick('default_preset', 'defaultPresetName', current.defaultPresetName || RISUAI_AUX_PRESET_NAME),
-      storyArcPresetName: compact(pick('story_arc_preset', 'storyArcPresetName', current.storyArcPresetName || ''), 120),
       microPresetName: compact(pick('micro_preset', 'microPresetName', current.microPresetName || ''), 120),
       lensPresetName: compact(pick('lens_preset', 'lensPresetName', current.lensPresetName || ''), 120),
-      writerEnabled: asBool(pick('writer_enabled', 'writerEnabled', current.writerEnabled !== false), true),
-      writerReviewIntervalTurns: Number(pick('writer_review_interval_turns', 'writerReviewIntervalTurns', current.writerReviewIntervalTurns || WRITER_DEFAULT_REVIEW_INTERVAL_TURNS)),
-      writerMaxSourceChars: Number(pick('writer_max_source_chars', 'writerMaxSourceChars', current.writerMaxSourceChars || WRITER_DEFAULT_MAX_SOURCE_CHARS)),
       targetDraftMinChars: Number(pick('target_draft_min_chars', 'targetDraftMinChars', current.targetDraftMinChars || DEFAULT_TARGET_DRAFT_MIN_CHARS)),
       targetDraftMaxChars: Number(pick('target_draft_max_chars', 'targetDraftMaxChars', current.targetDraftMaxChars || DEFAULT_TARGET_DRAFT_MAX_CHARS)),
       backendHosting: normalizeBackendHostingConfig({
@@ -78286,8 +77029,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     lastMemoryScanSchedule: LibraMemoryCore.state.lastScanSchedule ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScanSchedule)) : null,
     lastMemoryScheduledScanResult: LibraMemoryCore.state.lastScheduledScanResult ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScheduledScanResult)) : null,
     lastMemoryScan: LibraMemoryCore.state.lastScan ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastScan)) : null,
-    storyArc: LibraMemoryCore.getStoryArc(),
-    lastStoryArcUpdate: LibraMemoryCore.getLastStoryArcUpdate(),
     lastNarrativeRecall: LibraMemoryCore.getLastNarrativeRecall(),
     storyArcRebuildInFlight: LibraMemoryCore.state.storyArcRebuildInFlight?.size || 0,
     lastMemoryRecallRuntime: LibraMemoryCore.state.lastRecallRuntime ? JSON.parse(JSON.stringify(LibraMemoryCore.state.lastRecallRuntime)) : null,
@@ -78321,7 +77062,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       token: Runtime.settings.backendHosting.token ? '[REDACTED]' : ''
     } : null,
     lastInjection: Runtime.lastInjection,
-    lastInjectionMode: Runtime.lastInjectionMode || DEFAULT_RESPONSE_INJECTION_MODE,
+    lastInjectionMode: Runtime.lastInjectionMode || LIBRA_DELIVERY_ROUTE,
     lastMemoryRecallViewer: Runtime.lastMemoryRecallViewer ? JSON.parse(JSON.stringify(Runtime.lastMemoryRecallViewer)) : null,
     lastMemoryInjectionMeta: Runtime.lastMemoryInjectionMeta ? JSON.parse(JSON.stringify(Runtime.lastMemoryInjectionMeta)) : null,
     lastClassicInjectionMeta: Runtime.lastClassicInjectionMeta ? JSON.parse(JSON.stringify(Runtime.lastClassicInjectionMeta)) : null,
@@ -78334,37 +77075,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     finalDraftMeta: Runtime.finalDraftMeta,
     finalDraft: Runtime.finalDraft || '',
     finalDraftPreview: compactMiddle(Runtime.finalDraft || '', 2000),
-    lastInputAssist: Runtime.lastInputAssist ? {
-      at: Runtime.lastInputAssist.at,
-      ok: Runtime.lastInputAssist.ok,
-      reason: Runtime.lastInputAssist.reason,
-      skipped: Runtime.lastInputAssist.skipped === true,
-      bypassed: Runtime.lastInputAssist.bypassed === true,
-      existingTurnKind: Runtime.lastInputAssist.existingTurnKind || '',
-      existingAssistantAfter: Runtime.lastInputAssist.existingAssistantAfter === true,
-      chatSource: Runtime.lastInputAssist.chatSource || '',
-      requestedMode: Runtime.lastInputAssist.requestedMode,
-      effectiveMode: Runtime.lastInputAssist.effectiveMode,
-      scope: Runtime.lastInputAssist.scope,
-      targetChars: Runtime.lastInputAssist.targetChars,
-      outputChars: Runtime.lastInputAssist.outputChars,
-      initialCompletionStatus: Runtime.lastInputAssist.initialCompletionStatus || null,
-      completionStatus: Runtime.lastInputAssist.completionStatus || null,
-      recentTurns: Runtime.lastInputAssist.recentTurns || 0,
-      deliveryFallback: Runtime.lastInputAssist.deliveryFallback === true,
-      deliveryFallbackReason: Runtime.lastInputAssist.deliveryFallbackReason || '',
-      autoTranslatedEnglish: Runtime.lastInputAssist.autoTranslatedEnglish === true,
-      deliveryTranslationFailed: Runtime.lastInputAssist.deliveryTranslationFailed === true,
-      deliveryTranslationError: Runtime.lastInputAssist.deliveryTranslationError || '',
-      originalPreview: compact(Runtime.lastInputAssist.original, 1200),
-      rewrittenPreview: compact(Runtime.lastInputAssist.rewritten, 2400)
-    } : null,
     pipelineWorkStatus: JSON.parse(JSON.stringify(Runtime.pipelineWorkStatus || null)),
     analysisLedger: Runtime.analysisLedger,
-    writerControl: Runtime.writerControl ? {
-      ...Runtime.writerControl,
-      snapshot: Runtime.writerControl.snapshot ? { route: Runtime.writerControl.snapshot.route, chatSource: Runtime.writerControl.snapshot.chatInfo?.source || '', characterSource: Runtime.writerControl.snapshot.characterInfo?.source || '' } : null
-    } : null,
     stageTrace: Runtime.stageTrace.slice(-32)
   });
 
@@ -78547,16 +77259,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const PROMPT_INJECTION_SECTION_IDS = Object.freeze(['sga', 'planner', 'recall']);
-  const normalizePromptInjectionSection = value => PROMPT_INJECTION_SECTION_IDS.includes(String(value || '').trim())
-    ? String(value || '').trim()
-    : 'sga';
 
   const LIBRA_MEMORY_PIPELINE_STAGES = Object.freeze([LIBRARIAN_STAGE_ID]);
   const LIBRA_PROMPT_HUB_SECTIONS = Object.freeze(['settings', 'ooc', 'injection']);
   const LIBRA_REFERENCE_HUB_SECTIONS = Object.freeze(['modules', 'character_lore_exclusions', 'response_materials']);
   const LIBRA_CONNECTION_HUB_SECTIONS = Object.freeze(['providers', 'embedding']);
-  const LIBRA_SETTINGS_HUB_SECTIONS = Object.freeze(['input_writer', 'memory_settings', 'transfer', 'debug']);
+  const LIBRA_SETTINGS_HUB_SECTIONS = Object.freeze(['memory_settings', 'transfer', 'debug']);
   const SHARED_SIDEBAR_PAGE_REGISTRY = Object.freeze([
     Object.freeze({ id: 'memory', label: '기억', icon: '◫', group: '기억과 세계' }),
     Object.freeze({ id: 'characters', label: '인물', icon: '♙', group: '기억과 세계' }),
@@ -78651,7 +77359,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (target.narrativeHubSection) Gui.narrativeHubSection = target.narrativeHubSection;
 
     if (target.libraDraftSection) Gui.libraDraftSection = normalizeHubChoice(target.libraDraftSection, LIBRA_DRAFT_SECTIONS, 'mode');
-    if (target.promptInjectionSection) Gui.promptInjectionSection = normalizePromptInjectionSection(target.promptInjectionSection);
     if (target.referenceHubSection) Gui.referenceHubSection = normalizeHubChoice(target.referenceHubSection, LIBRA_REFERENCE_HUB_SECTIONS, 'modules');
     if (target.connectionHubSection) Gui.connectionHubSection = normalizeHubChoice(target.connectionHubSection, LIBRA_CONNECTION_HUB_SECTIONS, 'providers');
     if (target.settingsHubSection) Gui.settingsHubSection = normalizeHubChoice(target.settingsHubSection, SHARED_SETTINGS_HUB_SECTIONS, 'memory');
@@ -78851,23 +77558,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const buildGenerationPolicyPanel = () => {
+  // Live canonical-analysis request policy (output budget, one truncation retry, streaming).
+  const buildGenerationPolicyPanel = (extraFields = []) => {
     const runtime=Gui.state.runtime;
     const policy=Object.assign(runtime.generationPolicy||{},MemorySuiteExecutionContract.normalizeGenerationPolicy(runtime.generationPolicy));
     runtime.generationPolicy=policy;
     const status=guiEl('div',{class:'hint',style:{whiteSpace:'pre-line',overflowWrap:'anywhere'}});
-    const policyLabel=value=>value.enabled?'LIBRA 권장 한도 사용':'프리셋 설정 사용';
-    const retryLabel=value=>value.extraCalls===1?'출력이 잘리면 최대 1회 다시 요청':'추가 요청 없음';
-    const previewText=()=>{const p=MemorySuiteExecutionContract.generationPolicyPreview(Runtime.settings?.generationPolicy,policy);return `저장된 설정: ${policyLabel(p.previous)} · ${retryLabel(p.previous)}\n변경 후: ${policyLabel(p.next)} · ${retryLabel(p.next)}\n작업 전체 한도: 최대 요청 ${p.maxPhysicalCalls}회 · 출력 ${p.next.aggregateOutput}토큰 · 입력 ${p.next.aggregateInput}토큰 · 재요청 판단 ${p.next.wallMs/1000}초\n${p.changed?'아직 저장하지 않은 변경사항입니다.':'현재 저장된 설정과 같습니다.'}`;};
+    const policyLabel=value=>value.enabled?'LIBRA 권장 길이':'프리셋 길이';
+    const retryLabel=value=>value.extraCalls===1?'잘리면 1회 재요청':'재요청 없음';
+    const previewText=()=>{const p=MemorySuiteExecutionContract.generationPolicyPreview(Runtime.settings?.generationPolicy,policy);return `${p.changed?'저장 전 변경':'현재 저장값'}: ${policyLabel(p.next)} · ${retryLabel(p.next)}${p.changed?` (저장값: ${policyLabel(p.previous)} · ${retryLabel(p.previous)})`:''}
+5턴 분석 한 번에 최대 요청 ${p.maxPhysicalCalls}회 · 응답 최대 ${p.next.aggregateOutput.toLocaleString('ko-KR')}토큰`;};
     status.dataset.generationPolicyPreview='true';
     status.refreshGenerationPolicyPreview=()=>{status.textContent=previewText();};
     const refresh=()=>{Gui.state.runtime.generationPolicy=policy;status.textContent=previewText();markGuiDirty();};
     const panel=guiEl('div',{class:'stack',dataset:{generationPolicy:'v1'}},[
-      guiEl('h3',{text:'정본 분석 요청 한도'}),
-      fieldNode('출력 한도 계산 방식',selectNode(policy.enabled?'1':'0',[['0','프리셋 설정 사용'],['1','LIBRA 권장 한도 사용']],v=>{policy.enabled=v==='1';refresh();}),'LIBRA 권장 한도는 최초 요청에 최대 65,536토큰을 배정합니다. 프리셋·모델·남은 컨텍스트 한도가 더 작으면 그 값을 사용합니다.'),
-      fieldNode('출력이 잘렸을 때',selectNode(String(policy.extraCalls),[['0','다시 요청하지 않음'],['1','최대 1회 다시 요청']],v=>{policy.extraCalls=Number(v);refresh();}),'직접 API가 출력 한도 때문에 응답을 끝냈고 더 큰 한도를 실제로 사용할 수 있을 때만 같은 원문으로 다시 요청합니다. 두 번째 요청은 최대 98,304토큰이며 OtherAx에는 적용하지 않습니다.'),
-      fieldNode('직접 API 스트림',selectNode(policy.streaming?'1':'0',[['0','사용 안 함'],['1','종료 이벤트 검증 수신']],v=>{policy.streaming=v==='1';refresh();}),'프리셋 스트림 설정도 켜져 있어야 합니다. OtherAx는 호스트 설정을 따릅니다.'),
-      status,guiEl('div',{class:'hint',text:'이 설정은 출력 한도와 추가 요청 여부만 바꿉니다. 분석 모델과 프롬프트는 바꾸지 않으며, 저장 시 실제 저장값을 다시 읽어 확인합니다.'})]);
+      guiEl('h3',{text:'분석 요청 · 응답 길이'}),
+      fieldNode('분석 응답 최대 길이',selectNode(policy.enabled?'1':'0',[['1','LIBRA 권장 (최대 65,536토큰)'],['0','연결 프리셋의 최대 출력 토큰 사용']],v=>{policy.enabled=v==='1';refresh();}),'5턴을 분석한 정본 기억은 길어서, 응답이 도중에 잘리면 그 구간 기억이 저장되지 않습니다. 보통은 LIBRA 권장이 안전합니다. 모델이나 남은 컨텍스트 한도가 더 작으면 자동으로 그 값을 씁니다.'),
+      fieldNode('응답이 잘리면 다시 요청',selectNode(String(policy.extraCalls),[['0','다시 요청하지 않음'],['1','한 번 더 요청 (요청 1회 추가)']],v=>{policy.extraCalls=Number(v);refresh();}),'직접 연결한 API에서 길이 한도 때문에 응답이 잘렸을 때만, 더 큰 길이(최대 98,304토큰)로 같은 5턴을 한 번 더 보냅니다. 비용이 늘 수 있습니다. RisuAI 보조 모델에는 적용되지 않습니다.'),
+      fieldNode('응답을 스트리밍으로 받기',selectNode(policy.streaming?'1':'0',[['0','사용 안 함'],['1','사용 (끝까지 받았는지 확인)']],v=>{policy.streaming=v==='1';refresh();}),'응답이 오래 걸려 연결이 중간에 끊기는 경우에 도움이 됩니다. 연결 프리셋에서도 스트리밍이 켜져 있어야 하며, RisuAI 보조 모델은 RisuAI 설정을 따릅니다.'),
+      ...extraFields,
+      status]);
     status.textContent=previewText();
     return panel;
   };
@@ -78922,7 +77632,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (hideWhenEmpty) return null;
       return guiEl('div', { class: "card stack" }, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'hint', text: '현재 채팅에서는 아직 실행된 LIBRA 리콜이 없습니다.' })]);
     }
-    const route = normalizeResponseInjectionMode(delivery.route || Runtime.lastInjectionMode || Gui.state?.runtime?.injectionMode || DEFAULT_RESPONSE_INJECTION_MODE);
+    const route = LIBRA_DELIVERY_ROUTE;
     const routeDef = LIBRA_RESPONSE_MODE_UI[route];
     const rows = libraGuiArray(delivery.rows);
     const rowUsed = row => row.classicUsed === true || row.injected === true;
@@ -79804,7 +78514,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const profileBody = sections.filter(item => item.text).map(item => `[${item.label}]\n${item.text}`).join('\n\n');
     const customized = !!addendum || Object.values(overrides).some(value => normalizePromptSectionOverride(value).mode !== 'inherit');
     const compiled = { profileBody, provenance: { profileName: customized ? 'draft' : PROMPT_PROFILE_DEFAULT_NAME, customAddendumApplied: !!addendum } };
-    const nsfw = buildNsfwGuidanceBlock(Gui.state?.runtime || {}, 'analysis');
+    const nsfw = buildNsfwGuidanceBlock(Gui.state?.runtime || {});
     return {
       contract: LibraMemoryCore.librarianPromptContract(),
       profileBody,
@@ -81002,6 +79712,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return guiEl('div',{class:'stack',dataset:{referenceSettings:'current'}},[
       guiEl('div',{class:'card stack'},[
         guiEl('div',{},[guiEl('h2',{class:'card__title',text:'참고 자료'}),guiEl('p',{class:'card__desc',text:'분석과 리콜에 함께 읽을 자료만 켭니다.'})]),
+        // Librarian reference policy (stageOptions.librarian.risu_refs / max_chars), moved here from
+        // the analyzer page: it decides which RisuAI material the 5-turn analysis reads as background.
+        (()=>{
+          const agents=Gui.state.agents||(Gui.state.agents={}),loaded=Runtime.settings||{};
+          const slot=agents.librarian||(agents.librarian=guiSlotFromSettings(loaded,LIBRARIAN_STAGE_ID,loaded.enableLibrarian));
+          slot.risuRefs=normalizeRisuReferences(slot.risuRefs,defaultRisuReferencesForStage(LIBRARIAN_STAGE_ID));
+          const limit=inputNode(slot.maxChars,value=>{slot.maxChars=Number(value);markGuiDirty();},{type:'number',min:1000,max:REFERENCE_BUDGET_CUSTOM_MAX_CHARS});
+          limit.dataset.analyzerField='maxChars';
+          return guiEl('section',{class:'libra-field-group',dataset:{referenceControls:'analysis'}},[
+            guiEl('h4',{class:'libra-field-group__title',text:'기억 분석에 함께 읽을 자료'}),
+            guiEl('p',{class:'hint',text:'5턴 기억 분석이 대화 원문과 함께 배경으로 읽는 자료입니다. 배경일 뿐이며, 새 사건의 근거는 항상 대화 원문입니다.'}),
+            guiEl('div',{class:'grid g2'},[['persona','페르소나'],['characterDescription','캐릭터 설명'],['characterLorebook','캐릭터 로어북'],['moduleLorebook','선택한 모듈 로어북']].map(([key,label])=>{
+              const node=checkboxNode(slot.risuRefs[key]===true,label,value=>{slot.risuRefs[key]=value;markGuiDirty();});node.querySelector('input').dataset.analyzerReference=key;return node;
+            })),
+            fieldNode('함께 읽는 자료 최대 글자 수',limit,'페르소나·캐릭터·로어북을 합쳐 이 글자 수까지만 분석 요청에 넣습니다. 크게 잡을수록 요청이 길어집니다.')
+          ]);
+        })(),
         group('modules','모듈 로어북',`활성 모듈 ${modules.length}개 · 선택 ${selected.size}개. 체크한 모듈의 로어만 읽습니다.`,[
           button('목록 새로고침',()=>void refreshModuleLoreCatalog(true)),
           button('전체 선택',()=>{runtime.selectedModuleLoreIds=modules.map(item=>item.key);runtime.excludedModuleLoreIds=[...excludedModules].filter(key=>!modules.some(item=>guiAsArray(item.loreEntries).some(entry=>entry.key===key)));mark();}),
@@ -84766,7 +83493,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const BOOK_NATIVE_SETTINGS_SECTIONS = Object.freeze([
     Object.freeze({id:'scopes',group:'settings',no:'10',label:'스코프 데이터 관리',note:'저장 자료 · 고아 데이터 · 빈 목록',eyebrow:'SCOPE DATA'}),
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'분석할 내용',note:'선택 사항 · 분석 입력 규칙',eyebrow:'ANALYSIS INPUT' }),
-    Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
+    Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '분석 자료 · 모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
     Object.freeze({ id: 'state', group: 'settings', no: '04', label: '현재 상태 적용', note: '로컬 적용 · 추가 호출 0회', eyebrow: 'STATE TRACKING' }),
     Object.freeze({ id: 'server', group: 'settings', no: '05', label: '서버 · 저장', note: 'Storage · Compute', eyebrow: 'STORAGE & COMPUTE' }),
@@ -89521,7 +88248,7 @@ advanced
       const context = options.context || await LibraMemoryCore.resolveContext();
       return safeClone(await LibraMemoryCore.recoverPendingLiveBoundaryAtStartup(context, { schedule: options.schedule === true }));
     },
-    debugBuildLiveTailContext(pairs = [], manifest = null, settings = {}, route = DEFAULT_RESPONSE_INJECTION_MODE, binding = {}) {
+    debugBuildLiveTailContext(pairs = [], manifest = null, settings = {}, route = LIBRA_DELIVERY_ROUTE, binding = {}) {
       return safeClone(LibraMemoryCore.buildLiveTailContext(pairs, manifest, settings, route, binding));
     },
     debugLiveTailDiagnosticSnapshot(value = null) {
@@ -89557,13 +88284,9 @@ advanced
     async refreshLensVectors(options = {}) { return safeClone(await LibraMemoryCore.refreshLensVectors(options)); },
     evaluateLensCandidateItems(candidates = [], lens = {}, turnPairs = [], subjects = {}) { return safeClone(LibraMemoryCore.evaluateLensCandidateItems(candidates, lens, turnPairs, subjects)); },
     async getStoryArc(options = {}) {
-      if (options?.scopeKey) {
-        const narrative = await __libraCompletionGetNarrative([options]);
-        const direction = await getNarrativeDirection(options);
-        return safeClone(__libraCompletionNarrativeProjection(narrative, direction));
-      }
-      const snapshot = await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
-      return safeClone(snapshot.storyArc || LibraMemoryCore.getStoryArc());
+      const narrative = await __libraCompletionGetNarrative([options]);
+      const direction = await getNarrativeDirection(options);
+      return safeClone(__libraCompletionNarrativeProjection(narrative, direction));
     },
     async rebuildStoryArc(options = '') {
       if (options && typeof options === 'object' && options.scopeKey) {
@@ -89571,12 +88294,12 @@ advanced
         if (typeof rebuild === 'function') await rebuild(options);
         return await publicApi.getStoryArc(options);
       }
-      const forceMode = ['derived', 'director'].includes(String(options || '').toLowerCase()) ? String(options).toLowerCase() : '';
-      return safeClone(await LibraMemoryCore.rebuildStoryArc({ reason: 'public_manual_rebuild', forceMode }));
+      // The adapter rebuilds State when the narrative is missing; the arc itself is projected on demand.
+      const update = await LibraMemoryCore.rebuildStoryArc({ reason: 'public_manual_rebuild' });
+      return safeClone({ ...update, arc: await publicApi.getStoryArc() });
     },
     async setStoryArcDestination(value = {}, options = {}) { return safeClone(await setNarrativeDirection(value, options)); },
     async clearStoryArc(options = {}) { return safeClone(await clearNarrativeDirection(options)); },
-    getLastStoryArcUpdate() { return safeClone(LibraMemoryCore.getLastStoryArcUpdate()); },
     getLastNarrativeRecall() { return safeClone(LibraMemoryCore.getLastNarrativeRecall()); },
     getLastProtectedProductTransfer() { return safeClone(Runtime.lastProtectedProductTransfer || null); },
     debugMicroFrontier(delivery = {}, publication = null, index = null) { return safeClone(LibraMemoryCore.debugMicroFrontier(delivery, publication, index)); },
@@ -89683,7 +88406,6 @@ advanced
     async debugPersistPromptStudioOoc(target = {}, appendText = '', options = {}) {
       return safeClone(await persistPromptStudioOocMaterialized(target, appendText, options));
     },
-    debugResolveResponseModeState(value = {}) { return safeClone(resolveResponseModeState(value)); },
     debugPlanSettingsSchemaMigration(value = {}) { return safeClone(planSettingsSchemaMigration(value)); },
     async debugMigrateSettingsSchema() { return safeClone(await migrateSettingsSchema()); },
     async debugReadRuntimeSettings() {
@@ -89760,9 +88482,7 @@ advanced
         enableLibrarian: settings.enableLibrarian,
         librarianPolicy: settings.librarianPolicy,
         librarianCompatibility: settings.librarianCompatibility,
-        responseFamily: settings.responseFamily,
-        libraResponseMode: settings.libraResponseMode,
-        generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),injectionMode: settings.injectionMode,
+        generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),
         liveContext: {
           enabled: settings.liveContextEnabled !== false,
           maxTurns: Number(settings.liveTailMaxTurns || DEFAULT_LIVE_TAIL_MAX_TURNS),
@@ -89786,7 +88506,6 @@ advanced
       const agents = await readAgentSlots();
       if(owns('enableLibrarian')){if(typeof source.enableLibrarian!=='boolean')throw new Error('LIBRARIAN_CONFIG_ENABLED_INVALID');const effective=await loadSettings();agents.librarian={...effective.stageOptions.librarian,enabled:source.enableLibrarian};}
       const specialStageRuntimeKeys = {
-        [STORY_ARC_STAGE_ID]: 'story_arc_preset',
         [MICRO_PRESET_STAGE_ID]: 'micro_preset',
         [LENS_PRESET_STAGE_ID]: 'lens_preset',
 
@@ -89795,14 +88514,6 @@ advanced
       let agentsChanged = false;
       if (owns('defaultPresetName')) runtimePatch.default_preset = String(source.defaultPresetName ?? '');
       if (owns('risuAuxAllowPlugins')) runtimePatch.risuai_aux_allow_plugins = String(source.risuAuxAllowPlugins === true);
-      if (owns('injectionMode')) {
-        const legacyMode = normalizeResponseInjectionMode(source.injectionMode);
-        runtimePatch.injection_mode = legacyMode;
-        if (!owns('responseFamily')) runtimePatch.response_family = legacyMode === 'sga' ? 'gradia' : 'libra';
-        if (legacyMode !== 'sga' && !owns('libraResponseMode')) runtimePatch.libra_response_mode = legacyMode;
-      }
-      if (owns('responseFamily')) runtimePatch.response_family = normalizeResponseFamily(source.responseFamily, source.injectionMode);
-      if (owns('libraResponseMode')) runtimePatch.libra_response_mode = normalizeLibraResponseMode(source.libraResponseMode, source.injectionMode);
       if(owns('generationPolicy'))runtimePatch.generation_policy=MemorySuiteExecutionContract.normalizeGenerationPolicy(source.generationPolicy);
       if(owns('responseConsumerPolicy')){const policy=normalizeResponseConsumerPolicy(source.responseConsumerPolicy);if(policy.unsupported)throw consumerContractError('CONSUMER_POLICY_UNSUPPORTED');runtimePatch.response_consumer_policy=policy;}
 
@@ -89826,7 +88537,7 @@ advanced
         for (const [stageId, runtimeKey] of Object.entries(specialStageRuntimeKeys)) {
           if (Object.prototype.hasOwnProperty.call(source.stagePresetNames, stageId)) runtimePatch[runtimeKey] = String(source.stagePresetNames[stageId] ?? '');
         }
-        for (const stageId of ['ariadne', 'character_ito', 'world_ito', 'plot_ito', INPUT_ASSIST_STAGE_ID]) {
+        for (const stageId of ['ariadne', 'character_ito', 'world_ito', 'plot_ito']) {
           if (!Object.prototype.hasOwnProperty.call(source.stagePresetNames, stageId)) continue;
           agents[stageId] = { ...(agents[stageId] || {}), preset: String(source.stagePresetNames[stageId] ?? '') };
           agentsChanged = true;
@@ -89837,14 +88548,7 @@ advanced
         ? source.providerPresets
         : {};
       if (Object.keys(runtimePatch).length) {
-        const nextRuntime = { ...runtime, ...runtimePatch };
-        const responseModeState = resolveResponseModeState(nextRuntime);
-        structuredPayload.runtime = {
-          ...nextRuntime,
-          response_family: responseModeState.responseFamily,
-          libra_response_mode: responseModeState.libraResponseMode,
-          injection_mode: responseModeState.injectionMode
-        };
+        structuredPayload.runtime = { ...runtime, ...runtimePatch };
       }
       if (agentsChanged) structuredPayload.agents = agents;
       const hasStructuredChanges = owns('providerPresets') || Object.keys(runtimePatch).length > 0 || agentsChanged;
@@ -89862,9 +88566,7 @@ advanced
       clearRequestReuseCache();
       const settings = await loadSettings();
       return redactPublicSecrets(safeClone({
-        responseFamily: settings.responseFamily,
-        libraResponseMode: settings.libraResponseMode,
-        generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),injectionMode: settings.injectionMode,
+        generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),
         liveContext: { enabled: settings.liveContextEnabled !== false, maxTurns: Number(settings.liveTailMaxTurns || DEFAULT_LIVE_TAIL_MAX_TURNS), maxChars: Number(settings.liveTailMaxChars || DEFAULT_LIVE_TAIL_MAX_CHARS), bootstrapReferencesEnabled: settings.bootstrapReferencesEnabled !== false, bootstrapMaxChars: Number(settings.bootstrapReferenceMaxChars || DEFAULT_BOOTSTRAP_REFERENCE_MAX_CHARS), classicEnabled: settings.classicLiveTailEnabled === true },
         defaultPresetName: settings.defaultPresetName,
         risuAuxAllowPlugins: settings.risuAuxAllowPlugins === true,
@@ -89880,7 +88582,7 @@ advanced
       Runtime.settings = null;
       Runtime.settingsLoadedAt = 0;
       const settings = await loadSettings();
-      return redactPublicSecrets(safeClone({ responseFamily: settings.responseFamily, libraResponseMode: settings.libraResponseMode, generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),injectionMode: settings.injectionMode, liveContext: { enabled: settings.liveContextEnabled !== false, maxTurns: Number(settings.liveTailMaxTurns || DEFAULT_LIVE_TAIL_MAX_TURNS), maxChars: Number(settings.liveTailMaxChars || DEFAULT_LIVE_TAIL_MAX_CHARS), bootstrapReferencesEnabled: settings.bootstrapReferencesEnabled !== false, bootstrapMaxChars: Number(settings.bootstrapReferenceMaxChars || DEFAULT_BOOTSTRAP_REFERENCE_MAX_CHARS), classicEnabled: settings.classicLiveTailEnabled === true }, defaultPresetName: settings.defaultPresetName, stagePresetNames: settings.stagePresetNames, providerPresets: settings.presets, embedding: await LibraMemoryCore.loadEmbeddingSettings() }));
+      return redactPublicSecrets(safeClone({ generationPolicy:safeClone(settings.generationPolicy),responseConsumerPolicy:safeClone(settings.responseConsumerPolicy),injectionMode: settings.injectionMode, liveContext: { enabled: settings.liveContextEnabled !== false, maxTurns: Number(settings.liveTailMaxTurns || DEFAULT_LIVE_TAIL_MAX_TURNS), maxChars: Number(settings.liveTailMaxChars || DEFAULT_LIVE_TAIL_MAX_CHARS), bootstrapReferencesEnabled: settings.bootstrapReferencesEnabled !== false, bootstrapMaxChars: Number(settings.bootstrapReferenceMaxChars || DEFAULT_BOOTSTRAP_REFERENCE_MAX_CHARS), classicEnabled: settings.classicLiveTailEnabled === true }, defaultPresetName: settings.defaultPresetName, stagePresetNames: settings.stagePresetNames, providerPresets: settings.presets, embedding: await LibraMemoryCore.loadEmbeddingSettings() }));
     },
     async testLibraLlmProvider(target = 'ariadne') { return await LibraProviderBridge.testLlm(target); },
     async testRisuAuxiliaryCall(options = {}) { return await LibraProviderBridge.testRisuAuxiliary(options); },
@@ -90144,7 +88846,6 @@ advanced
     return false;
   };
 
-  const INPUT_ASSIST_FAST_MODE_TTL_MS = 30 * 1000;
 
 
   try {
@@ -90476,20 +89177,7 @@ advanced
       try { await setPipelineWorkPanel(''); await PipelineWorkPanel.dispose(); } catch (_) {}
       Runtime.hookStatus.unload = false;
       Runtime.loreContinuity = { scopes: {} };
-      Runtime.writerControl = null;
-      Runtime.forceWriterRefresh = false;
       Runtime.lastMainResponse = null;
-      Runtime.lastInputAssistTranslation = null;
-      Runtime.inputAssistConfirmation = {
-        open: false,
-        requestId: Number(Runtime.inputAssistConfirmation?.requestId || 0) + 1,
-        source: '',
-        original: '',
-        expanded: '',
-        regenerating: false,
-        decision: '',
-        selected: ''
-      };
       Gui.confirmationVisible = false;
 
       Runtime.pipelineWorkStatus = {

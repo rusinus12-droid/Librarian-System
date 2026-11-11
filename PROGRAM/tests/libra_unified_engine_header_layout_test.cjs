@@ -59,7 +59,7 @@ for (const call of ['beginUnifiedMigration(', 'recoverPendingStateTrackingJourna
 const cardHead = between("guiEl('div',{class:'card__head'},[\n          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석 상세 설정'})", "guiEl('div',{class:'stack'},[");
 assert.match(cardHead, /guiEl\('h2',\{class:'card__title',text:'기억 분석 상세 설정'\}\)/,
   'the section title must remain the only heading in this card');
-assert.match(cardHead, /guiEl\('p',\{class:'card__desc',text:`분석 한도/,
+assert.match(cardHead, /guiEl\('p',\{class:'card__desc',text:`분석 요청 길이/,
   'the explanatory line uses the description role so it is not a second identical heading');
 assert.equal((cardHead.match(/guiEl\('h[1-6]'/g) || []).length, 1,
   'the card must expose exactly one heading, not two competing ones');

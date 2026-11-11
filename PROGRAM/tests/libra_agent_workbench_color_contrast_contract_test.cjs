@@ -25,16 +25,8 @@ const sliceBetween = (start, end, label) => {
   return source.slice(at, to);
 };
 
-const row = sliceBetween('const resultLineNode = (label, value, options = {}) => {', '\n  };\n', 'stage result row builder');
-
-assert.ok(row.includes("class: `setting${options.wide ? ' wide' : ''}`"), 'stage result row keeps the themed setting class');
-assert.ok(row.includes("class: 'setting__name'"), 'stage result label uses the themed label class');
-assert.ok(row.includes("class: options.code ? 'code' : 'setting__desc'"), 'stage result keeps distinct value/code surfaces');
-assert.ok(!theme.hasLiteralColour(row), 'stage result row markup carries no literal colour');
-
-const panel = sliceBetween('const buildStageResultPanel', 'const executionResultTracesForStage', 'stage result panel');
-assert.ok(panel.includes("rows.push(resultLineNode('호출'"), 'stage result keeps semantic labels');
-assert.ok(panel.includes("text: '실제 값 JSON'"), 'stage result keeps the raw JSON disclosure');
+// The per-stage "최근 결과" panel and its row builder were removed from the analyzer page
+// (settings cleanup 2026-11-11); the shared .setting surfaces below still carry no literal colour.
 
 const tokens = theme.productTokens('libra');
 for (const selector of ['.setting', '.setting__desc']) {

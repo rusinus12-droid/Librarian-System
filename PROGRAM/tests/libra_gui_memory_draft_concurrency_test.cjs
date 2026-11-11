@@ -59,15 +59,13 @@ async function using(options,fn){const s=await boot(options);try{await fn(s);ass
  await test('room and analyzer save controls share one transaction and lock revert while saving',async()=>{
    let active=false,entered=false,release;const gate=new Promise(resolve=>{release=resolve});
    return using({beforeWrite:async k=>{if(active&&k==='libra:v1:runtime-settings'){active=false;entered=true;await gate;}}},async s=>{
-     await save(s);edit(s,17);await goSettings(s,'pipeline');
-     const details=s.doc.querySelector('.page[data-page="settings"] details.fold');if(details)details.open=true;
-     const maxChars=field(s,'참고 자료 상한');maxChars.value='9000';maxChars.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
+     await save(s);edit(s,17);await goSettings(s,'references');
+     const maxChars=field(s,'함께 읽는 자료 최대 글자 수');maxChars.value='9000';maxChars.dispatchEvent(new s.dom.window.Event('input',{bubbles:true}));
      const before=s.writes.filter(w=>w.key==='libra:v1:settings-transaction-journal').length;
      active=true;s.doc.querySelector('[data-settings-room-save]').click();await until(()=>entered,'runtime gate entered');
      try {
        assert.equal(s.doc.querySelector('[data-settings-room-revert]').disabled,true,'revert control is locked during an in-flight room save');
-       assert.equal(s.doc.querySelector('[data-librarian-save="true"]').disabled,true,'analyzer save control is locked during an in-flight room save');
-       s.doc.querySelector('[data-librarian-save="true"]').dispatchEvent(new s.dom.window.MouseEvent('click',{bubbles:true}));await pause(100);
+       s.doc.querySelector('[data-settings-room-save]').click();await pause(100);
        assert.equal(s.writes.filter(w=>w.key==='libra:v1:settings-transaction-journal').length-before,1,'one shared transaction journal');
        assert.equal(s.doc.querySelector('[data-settings-room-revert]').disabled,true);
      } finally {release();await settled(s);}

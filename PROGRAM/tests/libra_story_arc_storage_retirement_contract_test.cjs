@@ -21,52 +21,35 @@ const between = (start, end) => {
 assert.match(source, /const STORY_ARC_COMPATIBILITY_SCHEMA = 'libra\.story_arc\.compatibility_projection\.v2'/,
   'Current Narrative compatibility projection schema is missing');
 
-const storageRegion = between(
-  'const loadStoryArc = async',
-  'const storyArcCompatibilityProjection ='
-);
-assert.match(storageRegion, /storage\.getJson\(key\.storyArc\(scope\), null\)/,
-  'legacy Story Arc migration reader must remain available');
-assert.doesNotMatch(storageRegion, /storage\.setJson\(key\.storyArc|storage\.remove\(key\.storyArc/,
-  'Story Arc storage region still has an active write/delete path');
+// Settings cleanup 2026-11-11: the in-memory Story Arc projection after each commit, the snapshot
+// copy and the zero-caller legacy loader were retired. The one-time migration reads the legacy
+// key itself; the projection now only carries a saved direction across copy/handoff/import and
+// is computed on demand by the public API.
 assert.equal((source.match(/storage\.setJson\(key\.storyArc\(/g) || []).length, 0,
   'runtime still writes the legacy Story Arc database');
 assert.equal((source.match(/storage\.remove\(key\.storyArc\(/g) || []).length, 0,
   'runtime still deletes legacy Story Arc outside explicit whole-scope cleanup');
-assert.equal((source.match(/key\.storyArc\(/g) || []).length, 1,
-  'legacy Story Arc key must be referenced only by the read-only migration loader');
-assert.equal((source.match(/\bloadStoryArc\s*\(/g) || []).length, 0,
-  'legacy Story Arc loader still has an active runtime call site');
-assert.equal((source.match(/\bsaveStoryArc\s*\(/g) || []).length, 0,
-  'legacy Story Arc saver still has an active runtime call site');
-
-const updateRegion = between(
-  'const updateStoryArcAfterCommit = async',
-  'const rebuildStoryArc = async'
-);
-assert.match(updateRegion, /loadContinuityState/,
-  'post-commit compatibility refresh must read Current State Head');
-assert.match(updateRegion, /storyArcCompatibilityProjection/,
-  'post-commit compatibility refresh must project Current Narrative');
-assert.doesNotMatch(updateRegion, /loadStoryArc|saveStoryArc|deriveStoryArcFromCanonicalHistory|refineStoryArcWithDirector|storage\./,
-  'post-commit path still owns or rebuilds a second Story Arc database');
+assert.equal((source.match(/key\.storyArc\(/g) || []).length, 0,
+  'no runtime path reads the legacy Story Arc key; the migration owns it');
+for (const retired of ['loadStoryArc', 'saveStoryArc', 'updateStoryArcAfterCommit', 'ensureStoryArcForResponse', 'storyArcPromptBlock'])
+  assert.equal((source.match(new RegExp(`\b${retired}\b`, 'g')) || []).length, 0, `${retired} is retired`);
 
 const rebuildRegion = between(
   'const rebuildStoryArc = async',
-  'const ensureStoryArcForResponse = async'
+  'const setStoryArcDestination = async'
 );
 assert.match(rebuildRegion, /rebuildCurrentStateForWorldline/,
   'deprecated rebuild adapter must delegate to Current State rebuild');
-assert.match(rebuildRegion, /storyArcCompatibilityProjection/,
-  'deprecated rebuild adapter must return a Current Narrative projection');
 assert.match(rebuildRegion, /setNarrativeDirection/,
   'legacy destination seed must migrate into Narrative Direction');
 assert.doesNotMatch(rebuildRegion, /loadStoryArc|saveStoryArc|deriveStoryArcFromCanonicalHistory|refineStoryArcWithDirector|storyArcEnabled|key\.storyArc/,
   'deprecated rebuild adapter still revives legacy Story Arc authority');
+assert.match(between('    async rebuildStoryArc(options', '    async setStoryArcDestination('), /arc: await publicApi\.getStoryArc\(\)/,
+  'public rebuild still returns a Current Narrative projection');
 
 const directionRegion = between(
   'const setStoryArcDestination = async',
-  'const storyArcPromptBlock ='
+  'const updateManifestRunIds = async'
 );
 assert.match(directionRegion, /setNarrativeDirection/,
   'legacy destination setter must delegate to Narrative Direction');
@@ -81,10 +64,8 @@ const snapshotRegion = between(
 );
 assert.match(snapshotRegion, /loadContinuityState/,
   'snapshot must read Current State Head');
-assert.match(snapshotRegion, /storyArcCompatibilityProjection/,
-  'snapshot must derive the compatibility projection from Current Narrative');
-assert.doesNotMatch(snapshotRegion, /loadStoryArc\s*\(/,
-  'snapshot still reads legacy Story Arc as current authority');
+assert.doesNotMatch(snapshotRegion, /storyArcCompatibilityProjection|loadStoryArc\s*\(/,
+  'snapshot no longer carries a Story Arc copy');
 
 const portableRollback = between(
   'const capturePortableStateDerivedRollback = async',
@@ -119,10 +100,6 @@ assert.match(migrationRegion, /legacy_preserved_current_narrative_kept/,
 assert.doesNotMatch(migrationRegion, /removeItem|removePluginStorage|story-arc[^\n]*=\s*null/,
   'migration must leave legacy source data untouched');
 
-const responseProjection = between('const ensureStoryArcForResponse = async', 'const setStoryArcDestination = async');
-assert.match(responseProjection,/__libraCompletionGetNarrative/,'compatibility response reads Current Narrative');
-assert.match(responseProjection,/__libraCompletionNarrativeProjection/,'compatibility response derives its read-only projection');
-assert.doesNotMatch(responseProjection,/loadStoryArc|saveStoryArc|storage\.setJson/,'response projection never resurrects legacy storage authority');
 
 const mainPublicApi = between(
   'const publicApi = Object.freeze({',
