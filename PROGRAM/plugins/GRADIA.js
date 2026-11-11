@@ -2197,6 +2197,7 @@
     return UNIFIED_LORE_ACTIVATION_MODE;
   };
   const CORE_AIDE_STAGE_IDS = Object.freeze(['aide_character', 'aide_world', 'aide_plot']);
+  const supportsMandatoryAnalysisRecovery = stage => stage === 'shadow_act' || CORE_AIDE_STAGE_IDS.includes(stage);
   const DEFAULT_AIDE_STAGE_ORDER = Object.freeze(CORE_AIDE_STAGE_IDS.slice());
   const AIDE_STAGE_ALIAS_MAP = Object.freeze({
     character: 'aide_character', char: 'aide_character', aide_character: 'aide_character',
@@ -4575,7 +4576,7 @@ ${BIANCA_PERSONA_TEXT}`;
         await this.assertCurrent();
         if (recovery === 'analysis') {
           if (phase !== 'analysis' || normalizeMultiPipelineMode(settings.multiPipelineMode) !== 'heavyweight'
-            || !CORE_AIDE_STAGE_IDS.includes(stage) || !this.calls.has(`${stage}:analysis`)
+            || !supportsMandatoryAnalysisRecovery(stage) || !this.calls.has(`${stage}:analysis`)
             || this.analysisRecoveries.has(stage)) throw this.fail('LIB_READ_RETRY_DISABLED');
           // Re-analyze the same input and draft using a compact contract, never the
           // rejected output. The immutable packet is re-admitted at dispatch as usual.
@@ -20164,6 +20165,11 @@ ${passage.text || ''}`, 420));
       ? { reason: jsonCompletion.reason || 'json_incomplete', unreported: true }
       : null;
     const lengthLimit = providerLengthLimitInfo(result.finishReason) || unreportedJsonTruncation;
+    if (telemetryAttempt) {
+      telemetryAttempt.finishReason = compact(result.finishReason || '', 80);
+      telemetryAttempt.outputChars = text(result.content).length;
+      telemetryAttempt.incompleteReason = lengthLimit?.reason || (!result.content ? 'empty' : '');
+    }
     if (evidenceRun) {
       await evidenceRun.assertCurrent({ coalesce: true });
       if (result.content && lengthLimit && !lengthLimit.unreported && !options.lengthLimitRetry && !options.evidenceLengthRetry && !options.evidenceAnalysisRetry) {
@@ -20193,9 +20199,13 @@ ${passage.text || ''}`, 420));
         }
       }
       if (lengthLimit || !result.content) {
-        // Discard incomplete output. A heavyweight AIDE caller may request one compact
-        // mandatory analysis; other failures keep its previous draft. SHADOW fails closed.
-        if (!CORE_AIDE_STAGE_IDS.includes(stageName)) throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
+        // Mandatory analysis may recover once from the original evidence. An
+        // incomplete SHADOW draft still cannot be adopted or repaired here.
+        if (!CORE_AIDE_STAGE_IDS.includes(stageName)
+          && !(stageName === 'shadow_act' && options.promptPhase === 'analysis'
+            && normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight')) {
+          throw evidenceRun.fail('LIB_READ_MODEL_INCOMPLETE');
+        }
         finishTelemetryLogicalCall(telemetryLogicalCallId, 'failed_truncated');
         return {
           ok: false,
@@ -26012,7 +26022,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (evidenceRun) {
       await evidenceRun.assertCurrent({ coalesce: true });
       if (normalizeMultiPipelineMode(settings.multiPipelineMode) !== 'heavyweight'
-        || !CORE_AIDE_STAGE_IDS.includes(stageName) || evidenceRun.analysisRecoveries.has(stageName)) {
+        || !supportsMandatoryAnalysisRecovery(stageName) || evidenceRun.analysisRecoveries.has(stageName)) {
         // Preserve the real provider/contract failure when no recovery is authorized.
         return {result:initialResult,analysis:null,
           system:initialResult?.effectiveSystemPrompt || prompts.system,
@@ -37823,13 +37833,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const refreshOwners = () => {
       if (ownerRefresh) return ownerRefresh;
       if (disposed || state !== 'connected' || readSource !== 'plugin_ipc' || !bridge?.describe) return Promise.resolve(status());
+      const activeBridge = bridge;
+      const activeGeneration = generation;
       ownerRefresh = (async () => {
         try {
           const native = await readLibPluginNativeIdentity();
-          const resolved = await bridge.describe(native, readOwners);
+          if (activeGeneration !== generation) return status();
+          const resolved = await activeBridge.describe(native, readOwners);
+          if (activeGeneration !== generation) return status();
           scopeBundle = resolved; scope = resolved.scope; unavailable = { ...resolved.unavailable };
           ownerRefreshError = null;
         } catch (error) {
+          if (activeGeneration !== generation) return status();
           ownerRefreshError = Object.freeze({
             code: String(error?.code || 'LIB_READ_OWNER_REFRESH_FAILED'),
             message: String(error?.message || error || 'owner refresh failed').slice(0, 512),
@@ -38189,18 +38204,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   let libOwnerSelectionReader = null;
   const libOwnerReader = () => (libOwnerSelectionReader ||= createGradiaPluginRead({ role: 'reader', primitives: createGradiaReadPrimitives(), runHints: libOwnerRunHints,
     describeTimeoutMs: 3000, timeoutMs: LIB_OWNER_DEADLINE_MS, api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) }));
-  // A plugin that did not answer is not asked again for a short duration, scoped by chat.
+  // Briefly back off transport failures, scoped by chat.
   const libOwnerAbsentUntil = new Map();
   const selectLibOwnerRecall = async (owner, scope, queryText, signal, hints = {}) => {
     const scopeKey = scope?.scopeKey || scope?.chatId || '';
     const cacheKey = `${owner}:${scopeKey}`;
-    if (Date.now() < (libOwnerAbsentUntil.get(cacheKey) || 0)) return { absent: true, code: 'LIB_READ_IPC_UNAVAILABLE' };
-    const conn = typeof LibReadConnection !== 'undefined' && typeof LibReadConnection.status === 'function' ? LibReadConnection.status() : null;
-    if (conn?.unavailable?.[owner]) {
-      await LibReadConnection.refreshOwners?.();
-      const refreshed = LibReadConnection.status();
-      if (refreshed?.unavailable?.[owner]) return { absent: true, code: refreshed.unavailable[owner] };
-    }
+    const previous = libOwnerAbsentUntil.get(cacheKey);
+    if (previous && Date.now() < previous.until) return { absent: true, code: previous.code };
+    libOwnerAbsentUntil.delete(cacheKey);
     let answer;
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
@@ -38210,11 +38221,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       noteLibOwnerLost(owner, code);
       return { absent: true, code };
     }
-    if (answer.absent) {
-      const ttl = answer.code === 'LIB_READ_TIMEOUT' ? 5000 : 60000;
-      libOwnerAbsentUntil.set(cacheKey, Date.now() + ttl);
-    } else {
-      libOwnerAbsentUntil.delete(cacheKey);
+    if (answer.absent && ['LIB_READ_TIMEOUT', 'LIB_READ_IPC_UNAVAILABLE'].includes(answer.code)) {
+      libOwnerAbsentUntil.set(cacheKey, { until: Date.now() + 5000, code: answer.code });
+      if (libOwnerAbsentUntil.size > 64) libOwnerAbsentUntil.delete(libOwnerAbsentUntil.keys().next().value);
+    }
+    if (!answer.absent && LibReadConnection.status().unavailable?.[owner]) {
+      void LibReadConnection.refreshOwners();
     }
     return answer;
   };

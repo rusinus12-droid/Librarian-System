@@ -14,13 +14,16 @@ test('final delivery GUI uses only the current receipt and never promotes select
   const u=f.context.__deliveryUi,scopeKey='synthetic-scope';
   u.LibraMemoryCore.state.snapshot={scope:{scopeKey},manifest:{activeWorldlineId:'branch-a'}};
   u.Gui.app=document.querySelector('.app');u.Gui.visible=true;u.Gui.openSerial=1;
-  const receipt={scopeKey,worldlineId:'branch-a',at:1,route:'classic',blockChars:5,
+  const block='<literal>전체 주입 본문</literal>';
+  const receipt={scopeKey,worldlineId:'branch-a',at:1,route:'classic',blockChars:block.length,responseContextRequestId:'request-a',
    finalVerification:{status:'verified',modelDispatchEligible:true},rows:[
     {family:'canonical',worldlineId:'parent-worldline',turnRange:{start:1,end:5},revision:2,text:'<literal>canonical</literal>',injected:true},
     {family:'micro',turnRange:{start:6,end:6},text:'Micro receipt text',injected:true},
     {family:'canonical',text:'selected but never delivered',classicUsed:true,injected:false}]};
   const reads=f.storageReads.length,writes=f.storageWrites.length;
   u.Runtime.lastMemoryRecallViewer=structuredClone(receipt);
+  u.Runtime.lastInjection=block;
+  u.Runtime.lastMemoryInjectionMeta={scopeKey,responseContextRequestId:receipt.responseContextRequestId};
   let view=u.bookFinalDeliveryView();assert.equal(view.status,'verified');assert.equal(view.rows.length,2,'candidate-only row is excluded');
   assert.equal(view.rows[0].worldlineId,'parent-worldline','verified inherited evidence is retained');
   let notes=u.buildBookDeliveryNotes(view);
@@ -28,6 +31,14 @@ test('final delivery GUI uses only the current receipt and never promotes select
   assert.match(notes.textContent,/현재 턴과 다를 수 있습니다/);assert.ok(notes.querySelector('.anno--final'));
   u.openBookFinalEvidenceDialog();const overlay=document.querySelector('[data-final-evidence]');assert.ok(overlay);
   assert.equal(overlay.querySelectorAll('[data-evidence-family]').length,2);
+  const full=overlay.querySelector('[data-final-injection-body]');assert.ok(full);
+  full.open=true;full.dispatchEvent(new dom.window.Event('toggle'));
+  await Promise.resolve();
+  assert.equal(full.querySelector('.evidence-text').textContent,block);
+  assert.equal(full.querySelector('literal'),null);
+  u.Runtime.lastMemoryInjectionMeta.responseContextRequestId='another-request';
+  overlay.libraRefreshState();
+  assert.equal(overlay.querySelector('[data-final-injection-body]'),null,'same-scope text from another request is excluded');
   const detail=overlay.querySelector('[data-evidence-family] details');detail.open=true;detail.dispatchEvent(new dom.window.Event('toggle'));
   await Promise.resolve();assert.equal(detail.querySelector('.evidence-text').textContent,receipt.rows[0].text);assert.equal(detail.querySelector('literal'),null,'excerpt is inert text');
   u.LibraMemoryCore.state.snapshot.scope.scopeKey='other-scope';overlay.libraRefreshState();assert.equal(overlay.isConnected,false);

@@ -39446,26 +39446,34 @@ function createLibraReadonlySourceContext(owner) {
       // A pre-existing receipt with a lost work journal remains unknown.
       const mainCompletion=captureSource==='completed_pair_reconcile'
         && freshMainAfterRequestPair(context,pair,options.mainAfterRequestBoundary);
+      let microPlanRefusal = '';
       // Keyed to this turn's revision: the worker reports it only for the same
       // receipt, so a later turn never inherits an earlier turn's refusal.
       const noteMicroPlanRefusal = reason => {
-        state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, captureSource, reason: string(reason) };
+        microPlanRefusal = string(reason);
+        state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, captureSource, reason: microPlanRefusal };
       };
       if (!priorReceipt && (captureSource === 'risu_chat_output' || mainCompletion) && options.admitMicroPlan === true
         && options.microPlanBoundary) {
         if (state.lastMicroPlanRefusal?.scopeKey === scope.scopeKey && Number(state.lastMicroPlanRefusal?.turn) === Number(turn)) state.lastMicroPlanRefusal = null;
         try {
           const claim={scope,identity:receiptRecoveryIdentity(context,pair),boundary:options.microPlanBoundary};
-          if ((await validateReceiptRecoveryClaim(claim)).status === 'current') {
+          const initialPermit = await validateReceiptRecoveryClaim(claim);
+          if (initialPermit.status === 'current') {
             const workKey=key.microWork(scope,worldlineId,sessionEpoch,turn,revisionId,microProducerVersion);
             const captureKey=key.completedTurnCapture(scope,worldlineId,sessionEpoch,turn,revisionId);
             const [priorWork,priorCapture,priorMicroHead]=await Promise.all([
               storage.getVerifiedJson(workKey,scope,null),storage.getVerifiedJson(captureKey,scope,null),
               storage.getVerifiedJson(key.microMemoryHead(scope,worldlineId,sessionEpoch,turn),scope,null)]);
-            if (!priorWork && !priorCapture && storedHead?.revisionId !== revisionId
-              && priorMicroHead?.sourceRevisionId !== revisionId
-              && (await validateReceiptRecoveryClaim(claim)).status === 'current'
-              && (!mainCompletion||freshMainAfterRequestPair(context,pair,options.mainAfterRequestBoundary))) {
+            const existingPlan = priorWork || priorCapture ? 'plan_work_already_present'
+              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId
+                ? 'plan_revision_already_published' : '';
+            const finalPermit = existingPlan ? null : await validateReceiptRecoveryClaim(claim);
+            if (existingPlan) noteMicroPlanRefusal(existingPlan);
+            else if (finalPermit.status !== 'current') noteMicroPlanRefusal('plan_final_' + finalPermit.reason);
+            else if (mainCompletion && !freshMainAfterRequestPair(finalPermit.context,finalPermit.pair,options.mainAfterRequestBoundary)) {
+              noteMicroPlanRefusal('plan_main_completion_changed');
+            } else {
               const reservedAt=Date.now();
               await storage.setVerifiedJson(workKey,{
                 schema:'libra.micro_work.v1',scopeKey:scope.scopeKey,worldlineId,sessionEpoch,turn,
@@ -39478,10 +39486,8 @@ function createLibraReadonlySourceContext(owner) {
                 logicalAttempts:1,physicalAttemptsUsed:0,attemptHistory:[],
                 reservedAt,leaseExpiresAt:reservedAt+45000,result:null
               },scope);
-            } else noteMicroPlanRefusal(priorWork || priorCapture ? 'plan_work_already_present'
-              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId ? 'plan_revision_already_published'
-              : 'plan_boundary_changed');
-          } else noteMicroPlanRefusal('plan_recovery_claim_stale');
+            }
+          } else noteMicroPlanRefusal('plan_initial_' + initialPermit.reason);
         } catch (error) {
           /* Receipt persistence continues; unproved Micro remains unknown. */
           noteMicroPlanRefusal('plan_reservation_failed:' + string(error?.code || error?.message || 'error').slice(0, 80));
@@ -39535,6 +39541,7 @@ function createLibraReadonlySourceContext(owner) {
         catch (error) { inventoryError = compact(error?.message || error, 300); }
       }
       return { status: 'verified', duplicate: false, revisionId, receiptKey, headKey, captureSource,
+        microPlanRefusal,
         captureStatus, captureError, inventoryStatus, inventoryError, rawDurable: true, rawPacketRef: raw.rawPacketRef,
         rawVariantChanged:attachment?.rawVariantChanged===true };
     };
@@ -45675,12 +45682,15 @@ function createLibraReadonlySourceContext(owner) {
     const fieldLabels = { holderRef:'소지자',ownerRef:'소유자',locationRef:'위치',parentRef:'상위 장소',managerRef:'관리 주체',containerRef:'보관 위치',
       appearance:'외형',background:'배경',personality:'성격',speech:'말투',habits:'습관',abilities:'능력',goals:'목표',emotions:'감정',mood:'기분',
       knowledge:'알고 있는 내용',preferences:'선호',boundaries:'경계',affiliations:'소속',condition:'상태',doorStatus:'문 상태',value:'내용',
-      summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',
+      summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',interpretation:'해석',momentum:'서사 흐름',
       scopeRef:'적용 대상',exceptions:'예외',effect:'효과',personTempRef:'인물',organizationTempRef:'조직',text:'내용',
       organizationRef:'조직',access:'접근 조건',affiliation:'소속',locks:'제약',notes:'비고',detail:'세부 내용',time:'시점',count:'수량',locked:'잠금 여부' };
     const statuses = { open:'미해결',active:'진행 중',resolved:'해결됨',closed:'종결됨',pending:'보류 중',unknown:'알 수 없음' };
+    const metadata = new Set(['evidenceSpans','evidenceRefs','firstTurn','lastTurn','identityEvidence','aliasEvidence',
+      'fieldEvidence','fieldCandidates','clearedFieldEvidence','fieldCorrectionProvenance','clearedFieldCorrectionProvenance',
+      'microProjection','responseAuthority','correctionProvenance','basis','sourceDigest','schema','worldlineId']);
     const format = value => Array.isArray(value) ? value.map(format).filter(Boolean).join('; ')
-      : value && typeof value === 'object' ? Object.entries(value).filter(([key])=>!['id','lifecycleId','tempId'].includes(key))
+      : value && typeof value === 'object' ? Object.entries(value).filter(([key])=>!metadata.has(key) && !['id','lifecycleId','tempId'].includes(key))
         .map(([key,item])=>{const text=format(item);return text ? `${fieldLabels[key] || key}: ${text}` : '';}).filter(Boolean).join(' · ')
       : value == null ? '' : typeof value === 'boolean' ? (value ? '예' : '아니오') : String(value);
     const unresolved = value => typeof value === 'string' ? /^ce_/.test(value)
@@ -45691,27 +45701,28 @@ function createLibraReadonlySourceContext(owner) {
         + (axis === 'relationships' && entity.targetId ? ' → ' + (names.get(entity.targetId) || '대상') : '');
       const values = entity.state && typeof entity.state === 'object' ? entity.state : entity;
       for (const [field, value] of Object.entries(values)) {
-        if (/^(?:id|name|label|aliases|kind|type|lifecycleId|subjectId|targetId|tempId|fieldEvidence|evidence|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
-          || value == null || value === '' || field.startsWith('_') || (field==='title' && entity.title)
+        if (/^(?:id|name|label|aliases|kind|type|lifecycleId|subjectId|targetId|tempId|fieldEvidence|evidence|evidenceSpans|evidenceRefs|firstTurn|lastTurn|identityEvidence|aliasEvidence|fieldCandidates|clearedFieldEvidence|fieldCorrectionProvenance|clearedFieldCorrectionProvenance|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
+          || metadata.has(field) || value == null || value === '' || field.startsWith('_') || (field==='title' && entity.title)
           || Array.isArray(value) && !value.length) continue;
         const shown = display(value);
         if (unresolved(shown)) continue;
         const readable = field === 'status' ? statuses[String(shown)] || format(shown) : field === 'resolvedTurn' ? `T${shown}` : format(shown);
         if (!readable) continue;
-        const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : JSON.stringify(shown)}`;
+        const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : readable}`;
         const promptText = `${name} — ${fieldLabels[field] || field}: ${readable}`;
         const evidence = entity.fieldEvidence?.[field] || entity.evidence || head.domainStatus?.[axis]?.evidence || null;
         const evidenceKeys = evidence?.schema === 'libra.micro_state_field_evidence.v1'
           ? ['micro:' + evidence.analysisRevisionId + ':' + evidence.claimDigest]
           : evidence?.memoryId && evidence?.revision != null ? array(evidence.assertionIds).map(id => 'canonical:' + evidence.memoryId + ':' + evidence.revision + ':' + id) : [];
         rows.push({ id: 'state:' + fingerprint(JSON.stringify([axis, entity.id || index, field, value])), family: 'state', axis, text, promptText,
-          turn: Number(evidence?.turn || evidence?.sourceTurnRange?.end || head.throughTurn || 0), evidence, evidenceKeys,
+          turn: Number(evidence?.turn || evidence?.sourceTurnRange?.end || head.throughTurn || 0), evidence, evidenceKeys, factText: readable,
           stateStatus: head.responseAuthority?.pending || head.responseAuthority?.current === false ? 'last_known' : 'current' });
       }
     };
     for (const axis of axes.slice(0, 3)) array(head[axis]).forEach((entity, index) => add(axis, entity, index));
     if (head.narrative) {
       for (const [field, value] of Object.entries(head.narrative)) {
+        if (metadata.has(field)) continue;
         if (Array.isArray(value)) value.forEach((entity, index) => add('narrative', typeof entity === 'object' ? entity : { [field]: entity }, field + index));
         else if (typeof value === 'string' && !/^(schema|status|updatedAt|worldlineId)$/.test(field)) add('narrative', { [field]: value }, field);
       }
@@ -45808,11 +45819,12 @@ function createLibraReadonlySourceContext(owner) {
       const exactVal = q ? exactSignal(row.text, q) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
-      const anchorVal = row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0);
       const identityVal = identitySignal(queryEntities, row.text, entities);
       const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
+      const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
+      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,
@@ -45823,7 +45835,7 @@ function createLibraReadonlySourceContext(owner) {
     const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
     candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
-    const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map();
+    const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map(), contextLensGroups = new Set();
     const suppressedEvidenceDuplicates = new Set();
     let usedCharacters = 0;
     const costOf = row => (row.promptText || row.text).length + Math.max(32,
@@ -45831,12 +45843,25 @@ function createLibraReadonlySourceContext(owner) {
     const add = row => {
       const cost = costOf(row), identity = row.text.normalize('NFKC').trim();
       if (seen.has(row.id) || textSeen.has(identity) || selected.length >= maxItems || usedCharacters + cost > maxCharacters) return false;
+      // Keep scene continuity, but one weak note per lens/person is enough.
+      // Question matches retain the full lens reservation and are ranked first.
+      const contextOnly = row.family === 'lens' && row.lensItem?.floorPassed === false;
+      const contextGroup = contextOnly ? JSON.stringify([row.lensItem.lensId, row.lensItem.groupKey || row.lensItem.people]) : null;
+      if (contextOnly && contextLensGroups.has(contextGroup)) return false;
+      if (!['history','detail'].includes(plan?.intent) && array(row.evidenceKeys).length) {
+        const fact = normalize(row.factText || row.promptText || row.text).trim();
+        if (selected.some(previous => array(previous.evidenceKeys).some(key => row.evidenceKeys.includes(key))
+          && normalize(previous.factText || previous.promptText || previous.text).trim() === fact)) {
+          suppressedEvidenceDuplicates.add(row.id); return false;
+        }
+      }
       // Current-state answers can avoid repeating the same source assertion.
       // History and detail answers retain source statements, even if State used them.
       if (plan?.intent === 'current' && array(row.evidenceKeys).length && row.evidenceKeys.every(key => evidenceSeen.has(key) && evidenceSeen.get(key) !== row.family)) {
         suppressedEvidenceDuplicates.add(row.id); return false;
       }
       seen.add(row.id); textSeen.add(identity); selected.push(row); usedCharacters += cost;
+      if (contextOnly) contextLensGroups.add(contextGroup);
       for (const key of array(row.evidenceKeys)) evidenceSeen.set(key, row.family);
       return true;
     };
@@ -45844,7 +45869,8 @@ function createLibraReadonlySourceContext(owner) {
     const familyAllocation = {};
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
-      if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b) || b.score - a.score;
+      if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
+        || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
       return plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score;
     }) : candidates;
     const groups = plan ? [{ key: 'lens', weight: plan.lensSharePercent, items: Math.round(maxItems * plan.lensSharePercent / 100) },
@@ -45940,10 +45966,15 @@ function createLibraReadonlySourceContext(owner) {
   // and abandoned on every failure, so no frame outlives its query.
   const query = async (options = {}, guard = null, issuer = null) => {
     const startedAt = now(), frame = await capture(options, guard);
-    try { return await run(options, issuer, frame, startedAt); }
+    try { return await run(options, issuer, frame, startedAt, now() - startedAt); }
     catch (error) { frame.abandon?.(); throw error; }
   };
-  const run = async (options, issuer, frame, startedAt) => {
+  const run = async (options, issuer, frame, startedAt, snapshotMs) => {
+    const timings = { snapshotMs };
+    const timed = async (phase, operation) => {
+      const start = now();
+      try { return await operation(); } finally { timings[phase] = (timings[phase] || 0) + now() - start; }
+    };
     const queryText = String(options.queryInput?.queryText || options.queryText || '');
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
@@ -45955,7 +45986,7 @@ function createLibraReadonlySourceContext(owner) {
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      try { semantic = await frame.semantic(queryText); }
+      try { semantic = await timed('semanticMs', () => frame.semantic(queryText)); }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
     frame.check();
@@ -45966,7 +45997,7 @@ function createLibraReadonlySourceContext(owner) {
     // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
     let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
     if (frame.microIndex) {
-      try { microIndex = await frame.microIndex(); }
+      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
       catch (error) { microIndexError = String(error.code || error.message || error); }
     }
     frame.check();
@@ -45980,19 +46011,19 @@ function createLibraReadonlySourceContext(owner) {
     };
     let lensSource = null;
     if (frame.lens) {
-      try { lensSource = await frame.lens(queryText, maxCharacters); keep(lensSource); }
+      try { lensSource = await timed('lensMs', () => frame.lens(queryText, maxCharacters)); keep(lensSource); }
       catch (error) { failures.push({ family: 'lens', code: error.code || error.message }); }
     }
     for (const ref of refs) {
       frame.check();
       if (payloadLimited) break;
-      try { keep(await frame.canonical(ref, semantic)); }
+      try { keep(await timed('canonicalMs', () => frame.canonical(ref, semantic))); }
       catch (error) { failures.push({ family: 'canonical', key: ref.key, code: error.code || error.message }); }
     }
     for (const turn of turns) {
       frame.check();
       if (payloadLimited) break;
-      try { const item = await frame.micro(turn); if (item) keep(item); }
+      try { const item = await timed('microMs', () => frame.micro(turn)); if (item) keep(item); }
       catch (error) { failures.push({ family: 'micro', turn, code: error.code || error.message }); }
     }
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
@@ -46001,7 +46032,8 @@ function createLibraReadonlySourceContext(owner) {
     const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
     const sources = loaded.filter(item => chosen.has(item.key));
     const publicItems = selected.items.map(item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
-      semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state' : 'recorded_evidence',
+      semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state'
+        : item.family === 'micro' && item.analysisStatus === 'minimum_source_bound' ? 'source_only' : 'recorded_evidence',
       ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.promptText || item.text, score: item.score,
       turn: item.turn || 0, sourceKey: item.sourceKey || frame.stateKey }));
     const generation = fingerprint(JSON.stringify([frame.identity, publicItems]));
@@ -46020,7 +46052,7 @@ function createLibraReadonlySourceContext(owner) {
     const validatePacket = async input => {
       if (closed || now() - startedAt > 600000) fail('LIBRA_STATE_SELECTION_CLOSED');
       if (input !== packet || fingerprint(JSON.stringify(input)) !== packetDigest) fail('LIBRA_STATE_PACKET_CHANGED');
-      frame.check(); await frame.assertCurrent(readSet);
+      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet));
       for (const source of sources) if (source.assertCurrent) await source.assertCurrent();
       if (receipt && issuer.verifyReceipt?.(receipt) !== true) fail('LIBRA_STATE_RECEIPT_CHANGED');
       frame.check();
@@ -46051,13 +46083,17 @@ function createLibraReadonlySourceContext(owner) {
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
-        stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, elapsedMs: now() - startedAt,
+        stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, timings, elapsedMs: now() - startedAt,
+        stateAuthority: frame.stateAuthority || null,
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
           microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
           microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
-        families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, { units: publicItems.filter(item => item.family === family).length }])) },
+        families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, {
+          units: publicItems.filter(item => item.family === family).length,
+          ...(family === 'state' ? { reasons: [...new Set((frame.head?.microProjection?.pendingClaims || [])
+            .map(row => row.reason).filter(Boolean))] } : {}) }])) },
       guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
@@ -46068,6 +46104,7 @@ function createLibraReadonlySourceContext(owner) {
       const shared = frame.settle ? await frame.settle() !== false : null;
       if (shared === false) await validatePacket(packet);
       result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      result.diagnostics.elapsedMs = now() - startedAt;
       return result;
     }
     catch (error) { release(); throw error; }
@@ -51339,6 +51376,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         receipt.turn,receipt.revisionId].join(':');
       const inFlight = microInvocationsInFlight.has(workKey) || (work?.phase === 'invoking' && Number(work?.leaseExpiresAt || 0) > Date.now());
       const status=reason?'unknown':state.microJobs.has(jobKey)?(inFlight?'running':'queued'):microStageStatusFromWork(work,published);
+      if (!reason && status === 'unknown' && !work) reason = 'micro_work_missing';
       return {receiptRef:active.receiptKey,revisionId:receipt.revisionId,sourceDigest:receipt.sourceDigest,
         turn:receipt.turn,status,reason,attemptId:string(work?.attemptId||''),
         logicalAttempts:Number(work?.logicalAttempts||0),physicalAttemptsUsed:Number(work?.physicalAttemptsUsed||0),
@@ -51883,7 +51921,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const refusal=state.lastMicroPlanRefusal?.scopeKey===receipt.scopeKey
           &&Number(state.lastMicroPlanRefusal?.turn)===Number(turn)
           &&string(state.lastMicroPlanRefusal?.revisionId)===string(receipt.revisionId)?state.lastMicroPlanRefusal:null;
-        if(options.manual!==true)return {status:'unknown',reason:'micro_work_missing',
+        if(options.manual!==true)return {status:'unknown',reason:'micro_work_missing',recoveryAction:'source_reanalysis_required',
           planRefusal:string(refusal?.reason||''),planRefusedAt:Number(refusal?.at||0)};
         const reservedAt=Date.now();
         work={schema:'libra.micro_work.v1',scopeKey:receipt.scopeKey,worldlineId,sessionEpoch,turn,
@@ -51902,7 +51940,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const unprovenPlan = work.status==='reserved' && work.phase==='planned'
         && !microPlannedWithoutInvocation(work);
       if (unprovenPlan && options.manual!==true)
-        return {status:'unknown',reason:'micro_plan_unproven'};
+        return {status:'unknown',reason:'micro_plan_unproven',recoveryAction:'manual_retry_required',
+          planUnprovenReason: work.planRuntimeToken !== state.microRuntimeToken ? 'runtime_changed'
+            : Number(work.planRestoreGeneration) !== Number(state.microRestoreGeneration || 0) ? 'restore_generation_changed'
+            : 'invocation_history_unproven'};
       if (!newlyReserved && work.status === 'reserved' && !work.result
         && !['planned','retry_planned','manual_planned'].includes(work.phase)) {
         if (!Number.isFinite(Number(work.leaseExpiresAt))) {
@@ -52184,7 +52225,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,registry};
     };
     const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
-      const context=await resolveContext();if(context.scope.scopeKey!==scope.scopeKey)return view;
+      const candidateContext = options.context || (options.readOnly === true ? options.context : null);
+      const context = candidateContext && string(candidateContext?.scope?.scopeKey || '') === string(scope.scopeKey || '')
+        ? candidateContext : await resolveContext();
+      if(context.scope.scopeKey!==scope.scopeKey)return view;
       const catalog=options.reviewCatalog||await collectMemoryReviews({...context,scope},manifest,view),head=view.head?clone(view.head):null;
       if(!head)return {...view,memoryReview:{rows:catalog.rows,unavailable:catalog.unavailable}};
       const proofs=asArray(consumedMicroProofsByState.get(view.authority||view.head)).slice();
@@ -52824,12 +52868,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (current.status !== 'verified' || current.record.analysisRevisionId !== active.record.analysisRevisionId) {
         return { status: 'stale_source', reason: 'micro_changed_after_admission' };
       }
-      const currentContext = await resolveContext();
+      const currentContext = readOnly && options.context && string(options.context?.scope?.scopeKey || '') === string(scope.scopeKey || '')
+        ? options.context : await resolveContext();
       if (currentContext.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed_after_admission' };
-      const currentManifest = await loadManifest(scope, buildPairs(currentContext.chat, scope.scopeKey).length);
-      const currentRawHead = await storage.getVerifiedJson(key.continuityState(scope), scope, null);
-      const currentRegistry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
-      const currentWorldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
+      const currentManifest = readOnly && options.manifest ? options.manifest
+        : await loadManifest(scope, buildPairs(currentContext.chat, scope.scopeKey).length);
+      const currentRawHead = readOnly && rawHead !== undefined ? rawHead
+        : await storage.getVerifiedJson(key.continuityState(scope), scope, null);
+      const currentRegistry = readOnly && storedRegistry !== undefined ? storedRegistry
+        : await storage.getVerifiedJson(key.entityRegistry(scope), scope, null);
+      const currentWorldlineMeta = readOnly && stateWorldlineMeta ? stateWorldlineMeta
+        : await loadStateWorldlineMeta(scope, { strict: true });
       const currentLine = asObject(currentWorldlineMeta.worldlines?.[logicalWorldlineId]);
       const lineIdentity = row => ({ id: string(row.id || ''),
         parentId: row.parentId == null ? null : string(row.parentId),
@@ -52914,7 +52963,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // One pending domain must not discard admitted changes in another ready
       // domain. Keep the overall pending authority and verify each domain below.
       if (!genesis && (!base.head || base.authority?.exactBasis !== true)) return canonicalView;
-      const context = await resolveContext();
+      const candidateContext = options.context || (options.readOnly === true ? options.context : null);
+      const context = candidateContext && string(candidateContext?.scope?.scopeKey || '') === string(scope.scopeKey || '')
+        ? candidateContext : await resolveContext();
       if (string(context.scope?.scopeKey || '') !== string(scope.scopeKey || '')) return canonicalView;
       const worldlineMeta = await loadStateWorldlineMeta(scope, { strict: true });
       const reviewPolicy=await readMemoryReviewPolicy(scope,string(worldlineMeta.activeWorldlineId||'main'));
@@ -52952,7 +53003,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }).filter(turn => turn > 0 && turn <= canonicalThroughTurn))].sort((a, b) => a - b) : [];
         for (const turn of overlapTurns) {
           let active;
-          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
+          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
@@ -53167,7 +53218,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         let active;
-        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs }); }
+        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
         catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
         if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
           pendingClaims.push({ turn, reason: active.reason || active.status });
@@ -59614,7 +59665,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (state.microJobs.has(jobKey)) return state.microJobs.get(jobKey);
       if (state.microJobs.size >= MICRO_QUEUE_CAPACITY) {
         const result = { status: 'never_started', reason: 'micro_queue_capacity' };
-        state.lastMicroPublication = { at: Date.now(), turn, revisionId, ...result };
+        state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
         return Promise.resolve(result);
       }
       const previous = state.microQueues.get(scope.scopeKey) || Promise.resolve();
@@ -59644,6 +59695,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
               queueWaitMs: Math.max(0, startedAt - queuedAt) },
             status: string(result?.status || 'pending'), reason: string(result?.reason || ''),
+            ...(result?.recoveryAction ? { recoveryAction: string(result.recoveryAction) } : {}),
+            ...(result?.planUnprovenReason ? { planUnprovenReason: string(result.planUnprovenReason) } : {}),
             ...(result?.planRefusal ? { planRefusal: string(result.planRefusal) } : {}),
             personInventoryStatus: string(result?.personInventoryStatus || ''),
             personInventoryError: string(result?.personInventoryError || ''),
@@ -59656,7 +59709,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           return result;
         }).catch(error => {
           const result = { status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
-          state.lastMicroPublication = { at: Date.now(), turn, revisionId, ...result };
+          state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
           state.lastMicroPublication.queueMetrics = { queuedAt, startedAt, finishedAt: Date.now(),
             queueWaitMs: Math.max(0, startedAt - queuedAt) };
           return result;
@@ -60161,8 +60214,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }).catch(()=>null);
         return clone(state.lastOutputCapture);
       }
+      let microPlanReason = '';
       try { recoveryBoundary=await captureReceiptRecoveryBoundary(context,pair); }
-      catch (_) { /* The normal producer still reports its own storage result. */ }
+      catch (error) {
+        microPlanReason = 'plan_boundary_read_failed:' + compact(error?.code || error?.message || error, 120);
+      }
       const turnKey = [context.scope.scopeKey, string(pair.user.chatId || ''), String(messageIndex)].join(':');
       const contentHash = completedTurnRevisionId(pair);
       const previous = state.outputTurnRevisions.get(turnKey);
@@ -60217,7 +60273,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       while (state.outputTurnRevisions.size > 256) state.outputTurnRevisions.delete(state.outputTurnRevisions.keys().next().value);
       try {
         const persisted = await enqueueOutputReceipt(context,pair,
-          {deferInventory:true,admitMicroPlan:true,microPlanBoundary:recoveryBoundary});
+          {deferInventory:true,admitMicroPlan:true,microPlanBoundary:recoveryBoundary,microPlanReason});
         capture.receiptStatus = persisted.status;
         capture.rawDurable = persisted.rawDurable === true;
         capture.rawPacketRef = persisted.rawPacketRef || null;
@@ -60229,9 +60285,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         capture.captureError = persisted.captureError;
         capture.inventoryStatus = persisted.inventoryStatus;
         capture.inventoryError = persisted.inventoryError;
+        if (persisted.microPlanRefusal) capture.microPlanRefusal = persisted.microPlanRefusal;
         if (persisted.status === 'verified') {
-          void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
+          const microJob = scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
             0, pair.turn, persisted.revisionId,{prepareInventory:true});
+          void microJob.then(result => {
+            capture.microOutcome = {
+              status: string(result?.status || 'unknown'),
+              reason: string(result?.reason || ''),
+              analysisStatus: string(result?.record?.analysisStatus || ''),
+              recoveryAction: string(result?.recoveryAction || '')
+            };
+          });
           capture.microStatus = state.microJobs.has([context.scope.scopeKey,hostWorldlineIdForScope(context.scope),
             0,pair.turn,persisted.revisionId].join(':')) ? 'scheduled' : 'deferred';
           if (capture.microStatus === 'deferred') capture.microDeferredReason = microDeferredReasonForScope(context.scope);
@@ -62494,12 +62559,12 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     // producer's last outcome is carried through so a caller can tell "not yet" from "not at all".
     const microFrontierFromDelivery = (deliveryValue, publicationValue = null, indexValue = null) => {
       const delivery = asObject(deliveryValue);
-      const rows = asArray(delivery.rows).filter(row => asObject(row).kind === 'micro');
+      const rows = asArray(delivery.rows).filter(row => asObject(row).family === 'micro' || asObject(row).kind === 'micro');
       // Unified rows mark a source-span-only Micro with semanticRole 'source_only'; the historical
       // evidenceAuthority field is still honoured for older rows.
       const isSourceOnly = row => asObject(row).evidenceAuthority === 'source_only' || asObject(row).semanticRole === 'source_only';
       const turnsOf = rowsValue => [...new Set(rowsValue
-        .map(row => Number(asObject(row).turnRange?.end ?? asObject(row).turnRange?.start ?? 0))
+        .map(row => Number(asObject(row).turnRange?.end ?? asObject(row).turnRange?.start ?? asObject(row).turn ?? 0))
         .filter(turn => Number.isInteger(turn) && turn > 0))].sort((a, b) => a - b);
       // Prefer the durable index (every enumerated Micro head for the scope) over the rows this one
       // query selected: selection is query-dependent, so a row-derived frontier would report an empty
@@ -63806,6 +63871,10 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         if (requestOwner !== latestRecallPublicationOwner) return messages;
         const finalMessages = block ? injectSystemMessage(messages, block, { injectionPosition: position,
           currentTurnResolution: resolveCurrentTurnEvidence(messages) }) : messages;
+        const inserted = Boolean(block) && finalMessages.some(message =>
+          message.role === 'system' && message.content === block && !messages.includes(message));
+        if (block && !inserted) throw new Error('LIBRA_CLASSIC_INJECTION_NOT_INSERTED');
+        const finalVerification = { ...verified, modelDispatchEligible: inserted };
         const rows = authority.displayRows.map(row => ({ ...row, classicUsed: true, injected: Boolean(block) }));
         // One line per lane so a recalled turn answers "did every memory kind take
         // part" without cross-referencing the graph, the lens delivery and the
@@ -63837,31 +63906,41 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const delivery = { schema: 'libra.unified_classic_delivery.v1', route: 'classic',
           at: Date.now(), scope: clone(context.scope), worldlineId: string(requestManifest?.activeWorldlineId || 'main'),
           scopeKey: context.scope.scopeKey, queryText: queryBundle.currentText, rows,
-          microFrontier: microFrontierFromDelivery({ rows }, state.lastMicroPublication, null),
+          microFrontier: microFrontierFromDelivery({ rows }, state.lastMicroPublication?.scopeKey === context.scope.scopeKey ? state.lastMicroPublication : null, null),
           selectedMemories: rows.length, responseContextRequestId: responseContext.requestId,
           responseContextDigest: responseContext.contextDigest, laneCoverage,
           ...(familyInventory ? { familyInventory } : {}),
+          recallDiagnostics: { timings: clone(execution?.diagnostics?.timings || {}),
+            stateAuthority: clone(execution?.diagnostics?.stateAuthority || null),
+            allocationPlan: clone(execution?.diagnostics?.allocationPlan || null),
+            familyAllocation: clone(execution?.diagnostics?.familyAllocation || null),
+            suppressedEvidenceDuplicates: Number(execution?.diagnostics?.suppressedEvidenceDuplicates || 0) },
           servedEngine: 'state_first', injectedMemories: block ? packet.admittedNodeIds.length : 0,
-          dynamicChars: packet.characterLength, blockChars: block.length, finalVerification: verified,
+          dynamicChars: packet.characterLength, blockChars: block.length, finalVerification,
           liveTailInjected: false, liveTailChars: 0,
           lensRecall: lensRecall ? {
             ...clone(lensRecall),
             injected: useLensBlock,
             usedChars: useLensBlock ? Number(lensRecall.usedChars || 0) : 0
           } : null,
-          sourceTurnAccounting: countMemorySuiteSourceTurns({ owner: 'libra', units: !block ? [] : null }) };
+          // Display rows carry ordinal turns, not original message/revision identity.
+          // Account every emitted unit without inventing original identities from T<n>.
+          sourceTurnAccounting: countMemorySuiteSourceTurns({ owner: 'libra', units: !block ? [] : rows.map(row => ({
+            lane: row.family, emittedText: row.text, attributionComplete: false, contributors: []
+          })) }) };
         state.lastRecallRuntime = recallGuardSnapshot(guard);
         result.diagnostics.recallRuntime = clone(state.lastRecallRuntime);
         result.delivery = delivery; state.lastRecall = result;
         Runtime.lastMemoryRecall = clone(result); Runtime.lastMemoryRecallViewer = clone(delivery);
-        Runtime.lastMemoryInjectionMeta = { at: Date.now(), requestType: normalizeRequestType(type),
+        Runtime.lastMemoryInjectionMeta = { at: delivery.at, requestType: normalizeRequestType(type),
+          responseContextRequestId: delivery.responseContextRequestId,
           route: 'classic', servedEngine: 'state_first', role: 'system', position,
           scope: clone(context.scope), scopeKey: string(context.scope?.scopeKey || ''),
           chars: block.length, selectedMemories: packet.admittedNodeIds.length,
           injectedMemories: delivery.injectedMemories, injected: Boolean(block),
           lensInjectedCount: useLensBlock ? asArray(lensRecall?.injectedItems).length : 0,
           lensUsedChars: useLensBlock ? Number(lensRecall?.usedChars || 0) : 0,
-          finalVerification: clone(verified), sourceTurnAccounting: clone(delivery.sourceTurnAccounting) };
+          finalVerification: clone(finalVerification), sourceTurnAccounting: clone(delivery.sourceTurnAccounting) };
         Runtime.lastClassicInjectionMeta = clone(Runtime.lastMemoryInjectionMeta);
         Runtime.lastInjection = block; scheduleGuiTraceRefresh();
         selectionTransferred = true;
@@ -67689,7 +67768,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // A current Head cannot answer an earlier cutoff. The native response
         // reader handles active worldline cutoffs and approved Micro projections.
         const projected = Number.isFinite(cutoff) && cutoff < pairs.length ? null
-          : await loadContinuityStateForResponse(scope, active.manifest);
+          : await loadContinuityStateForResponse(scope, active.manifest, { context });
         let head = projected?.head || null;
         const stateAuthority = projected?.authority || null;
         const stateProofs = asArray(consumedMicroProofsByState.get(projected?.authority || projected?.head)).slice();
@@ -67805,16 +67884,19 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         },
         async micro(context, source, turn) {
           const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
-          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs });
+          // The enclosing selection validates its captured context and source proofs
+          // again before delivery; avoid another host context read for every candidate.
+          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true });
           if (active.status !== 'verified') return null;
           const memory = microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey);
           if (!memory) throw Error('LIBRA_STATE_MICRO_INVALID');
           const review = source.review;
           const rows = asArray(active.record.claims).flatMap((claim, index) => memoryReviewDecision(review, 'micro', active.record, index) === 'rejected' ? [] : [{
             text: claim.text, domain: claim.changeKind === 'relation' ? 'relationship' : ['person','character'].includes(claim.changeKind) ? 'character' : claim.changeKind === 'world' ? 'world' : 'narrative',
-            evidenceKeys: ['micro:' + active.record.analysisRevisionId + ':' + digest(claim)]
+            evidenceKeys: ['micro:' + active.record.analysisRevisionId + ':' + digest(claim)],
+            analysisStatus: active.record.analysisStatus
           }]);
-          if (!rows.length && active.record.analysisStatus === 'minimum_source_bound') rows.push({ text: memory.summary, domain: 'narrative' });
+          if (!rows.length && active.record.analysisStatus === 'minimum_source_bound') rows.push({ text: memory.summary, domain: 'narrative', analysisStatus: 'minimum_source_bound' });
           return { key: active.recordKey, rows, proofs: [activeMicroConsumptionProof(active)] };
         },
         async lens(context, source, query, maxCharacters) {
@@ -84080,7 +84162,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const state=bookReceiptRecoveryState(),scope=LibraMemoryCore.peekSnapshot()?.scope;
     if(!scope || !state.scopeKey || scope.scopeKey!==state.scopeKey
       || row?.scopeKey!==state.scopeKey)return Promise.resolve(null);
-    if(kind!=='receipt'&&kind!=='micro_publish'&&kind!=='micro_retry')return typeof showLibraSourceReanalysisDrawer==='function'?showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:row.scopeKey,startTurn:Number(row.turn),endTurn:Number(row.turn)}):null;
+    if (kind === 'micro_reanalyze') {
+      return showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:row.scopeKey,startTurn:Number(row.turn),endTurn:Number(row.turn)});
+    }
+    if (kind !== 'receipt' && kind !== 'micro_publish') return Promise.resolve(null);
     const actionKey=kind+':'+Number(row?.turn||0);
     if(state.busy[actionKey])return state.busy[actionKey];
     const key=state.scopeKey;
@@ -84088,12 +84173,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         const result=kind==='receipt'
           ? await LibraMemoryCore.recheckReceiptRecovery({scope,turn:row.turn})
-          : kind==='micro_publish'
-          ? await LibraMemoryCore.repairMicroPublication({
+          : await LibraMemoryCore.repairMicroPublication({
             scope,receiptRef:row.receiptRef,revision:row.revisionId,digest:row.sourceDigest,
-            expectedGeneration:Number(LibraMemoryCore.state.worldManagerRuntimeMetaGeneration||0)})
-          : await LibraMemoryCore.retryMicroAnalysis({
-            scope,turn:row.turn,receiptRef:row.receiptRef,revision:row.revisionId,digest:row.sourceDigest,
             expectedGeneration:Number(LibraMemoryCore.state.worldManagerRuntimeMetaGeneration||0)});
         if(bookReceiptRecoveryScopeKey()!==key || Gui.receiptDesk!==state)return result;
         await loadBookReceiptRecoveryStatus(true);
@@ -84140,20 +84221,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]);
     };
     const microCard=row=>{
-      const kind=row.status==='never_started'?'micro_resume'
-        :row.status==='publish_ready'?'micro_publish':'micro_retry';
+      const kind=row.status==='publish_ready'?'micro_publish':'micro_reanalyze';
       const busy=!!state.busy[kind+':'+row.turn];
       const retryable=['never_started','failed','unknown'].includes(row.status);
       return guiEl('div',{class:"note",dataset:{microTurn:String(row.turn),microStatus:row.status}},[
         guiEl('strong',{text:`T${row.turn} Micro 분석 `}),
         guiEl('span',{text:microLabel[row.status]||row.status}),
+        row.reason==='micro_work_missing'?guiEl('small',{text:'원문 저장 완료 · 분석 실행 기록 없음'}):null,
         retryable?guiEl('small',{text:'모델 호출 비용이 발생할 수 있음'}):null,
         row.status==='unknown'?guiEl('small',{text:'이전 호출 결과가 불명확하여 중복 비용이 발생할 수 있음'}):null,
         retryable||row.status==='queued'||row.status==='publish_ready'?guiEl('button',{type:'button',disabled:busy||row.status==='queued',
           text:row.status==='publish_ready'?(busy?'발행 확인 중':'Micro 발행 다시 확인')
             :busy||row.status==='queued'?'분석 진행 중'
             :'Micro 분석 다시 시도',
-          onClick:()=>void openApprovedRecoveryDialog('micro',row)}):null
+          onClick:()=>void (kind==='micro_publish'
+            ? openApprovedRecoveryDialog('micro',row)
+            : runBookReceiptRecoveryAction(kind,row))}):null
       ]);
     };
     const snapshot=LibraMemoryCore.peekSnapshot();
@@ -86120,7 +86203,7 @@ advanced
           const current=bookReceiptRecoveryState();const rows=kind==='receipt'?guiAsArray(current.status?.receiptStages):guiAsArray(current.status?.microJobs);
           const same=rows.find(item=>recoveryRowIdentity(kind,item)===selected.key);
           if(current.scopeKey!==binding.scopeKey||!same||same.status!==selected.row.status)throw new Error('복구 작업의 상태나 대상이 바뀌었습니다. 다시 읽어 확인하세요.');
-          const action=kind==='receipt'?'receipt':same.status==='publish_ready'?'micro_publish':'micro_retry';
+          const action=kind==='receipt'?'receipt':'micro_publish';
           const result=await runBookReceiptRecoveryAction(action,same);
           if(!valid())return;
           const presentation=bookRecoveryResult(kind,result);outcome=presentation.outcome;status.textContent=presentation.message;
@@ -87011,8 +87094,10 @@ advanced
       && delivery.finalVerification?.modelDispatchEligible === true;
     const status = delivery.error || delivery.failOpen ? 'failed' : delivery.skipped ? 'skipped'
       : verified ? 'verified' : 'unconfirmed';
-    return {status,binding,delivery,rows:status === 'verified' ? rows.filter(row => row.injected === true) : [],
-      lensRows:status === 'verified' && delivery.lensRecall?.injected === true ? libraGuiArray(delivery.lensRecall.injectedItems) : []};
+    const lensRows = status === 'verified' && delivery.lensRecall?.injected === true
+      ? libraGuiArray(delivery.lensRecall.injectedItems) : [];
+    return {status,binding,delivery,rows:status === 'verified'
+      ? rows.filter(row => row.injected === true && (!lensRows.length || (row.family || row.kind) !== 'lens')) : [],lensRows};
   };
 
   const buildBookDeliveryNotes = view => {
@@ -87083,8 +87168,10 @@ advanced
       }
       if (!rows.length && !lensInjected.length) content.append(guiEl('p',{text:delivery.liveTailInjected ? '검색 기억 없이 최근 완료 대화만 전달했습니다.' : '전달된 기억 근거가 없습니다.'}));
       const block = typeof Runtime.lastInjection === 'string' ? Runtime.lastInjection : '';
-      const metaScope = Runtime.lastMemoryInjectionMeta?.scopeKey;
-      if (block && metaScope === delivery.scopeKey && block.length === Number(delivery.blockChars)) content.append(guiLazyDetails({class:'fold'},guiEl('summary',{text:'전체 전달 본문 보기'}),() => [guiEl('div',{class:'fold__body'},[guiEl('div',{class:'evidence-text',text:block})])]));
+      const injectionMeta = Runtime.lastMemoryInjectionMeta;
+      if (block && injectionMeta?.scopeKey === delivery.scopeKey
+        && delivery.responseContextRequestId && injectionMeta.responseContextRequestId === delivery.responseContextRequestId
+        && block.length === Number(delivery.blockChars)) content.append(guiLazyDetails({class:'fold',dataset:{finalInjectionBody:'true'}},guiEl('summary',{text:'전체 전달 본문 보기'}),() => [guiEl('div',{class:'fold__body'},[guiEl('div',{class:'evidence-text',text:block})])]));
     };
     overlay.libraRefreshState();overlay.addEventListener('click',event=>{if(event.target===overlay)close();});
     Gui.app.append(overlay);bindApprovedOverlayKeyboard(overlay,close);return true;

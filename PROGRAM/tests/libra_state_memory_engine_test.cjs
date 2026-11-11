@@ -5,6 +5,49 @@ const create = require('../tools/libra_state_memory_engine.cjs');
 const modes = require('../tools/libra_memory_engine_mode.cjs');
 const engine = create({ fingerprint });
 
+test('narrative metadata never becomes a fact or a nested prompt fragment', () => {
+  const evidence = { memoryId:'m', revision:1, assertionIds:['a'], turn:4 };
+  const rows = engine.stateRows({ throughTurn:5, narrative: {
+    evidenceSpans:[{ref:'t1-a',quote:'structural quote'}],
+    threads:[{id:'thread',title:'연락',summary:'예주에게 연락할지 고민한다.',firstTurn:1,lastTurn:4,
+      evidenceSpans:[{ref:'t1-a',quote:'structural quote'}],evidence,
+      notes:{text:'아직 결정하지 않았다.',firstTurn:1,evidenceRefs:['ref']} }]
+  } });
+  assert.ok(rows.some(row => row.promptText.includes('예주에게 연락')));
+  assert.ok(rows.every(row => !/firstTurn|lastTurn|evidenceSpans|evidenceRefs|structural quote/.test(row.text + row.promptText)));
+  assert.equal(rows.find(row => row.factText.includes('예주')).evidence, evidence);
+});
+
+test('unrelated State authority cannot outrank a directly matching Micro', () => {
+  const result = engine.select({ rows:[
+    {id:'old',family:'state',axis:'narrative',text:'낡은 시계는 멈췄다.'},
+    {id:'match',family:'micro',axis:'narrative',text:'예주 연락처를 골랐다.'}
+  ],query:'예주 연락처',maxItems:1,minimumPerAxis:0,plan:engine.allocationPlan('예주 연락처') });
+  assert.equal(result.items[0].id,'match');
+});
+
+test('lens question matches precede bounded scene notes without deleting distinct people', () => {
+  const note=(id,group,floorPassed,text)=>({id,family:'lens',axis:'characters',text,
+    lensItem:{lensId:'health',groupKey:group,floorPassed}});
+  const rows=[note('weak1','a',false,'민아의 상태'),note('weak2','a',false,'민아의 지난 상태'),
+    note('other','b',false,'준호의 상태'),note('match','a',true,'연락처는 예주에게 있다.')];
+  const result=engine.select({rows,query:'예주 연락처',maxItems:8,plan:engine.allocationPlan('예주 연락처')});
+  assert.equal(result.items[0].id,'match');
+  assert.equal(result.items.filter(row=>row.lensItem.groupKey==='a' && !row.lensItem.floorPassed).length,1);
+  assert.ok(result.items.some(row=>row.id==='other'));
+});
+
+test('mixed questions suppress exact facts only with shared evidence; history keeps source wording', () => {
+  const rows=[{id:'state',family:'state',axis:'narrative',text:'연락 — 요약: 예주에게 연락한다.',factText:'예주에게 연락한다.',evidenceKeys:['fact']},
+    {id:'copy',family:'canonical',axis:'narrative',text:'예주에게 연락한다.',evidenceKeys:['fact']},
+    {id:'distinct',family:'micro',axis:'narrative',text:'예주에게 연락한다.',evidenceKeys:['other']}];
+  const result=engine.select({rows,query:'예주 연락',plan:engine.allocationPlan('예주 연락')});
+  assert.equal(result.items.filter(row=>row.id==='state'||row.id==='copy').length,1);
+  assert.ok(result.items.some(row=>row.id==='distinct'));
+  const history=engine.select({rows:rows.slice(0,2),query:'예전 연락 경위',plan:engine.allocationPlan('예전 연락 경위')});
+  assert.equal(history.items.length,2);
+});
+
 test('an older semantic match gets a bounded catalog slot even when State anchors fill the sparse shortlist', () => {
   const refs=Array.from({length:10},(_,n)=>({key:'doc-'+n,memoryId:'memory-'+n,summary:'기억 '+n,turnRange:{end:n+1}}));
   const state=refs.slice(2).map(ref=>({evidence:{memoryId:ref.memoryId}}));

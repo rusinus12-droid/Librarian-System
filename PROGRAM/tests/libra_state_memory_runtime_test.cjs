@@ -5,6 +5,23 @@ const createReader = require('../tools/libra_gradia_unified_read.cjs');
 const createBus = require('./fixtures/libra_gradia_read_bus.cjs');
 const options = { queryInput: { queryText: '은빛 열쇠' }, consumerPolicy: { maxCharacters: 8000, maxUnits: 24 } };
 
+test('source-bound Micro remains source_only and pending State reasons reach diagnostics', async () => {
+  const engine=require('../tools/libra_state_memory_engine.cjs')({fingerprint:value=>value}),store=new Map();
+  const frame={head:{throughTurn:1,microProjection:{pendingClaims:[{turn:1,reason:'analysis_pending'}]}},
+    refs:[],turns:[1],settings:{},identity:'snapshot',owner:'libra',scope:{scopeKey:'scope'},worldlineId:'main',stateKey:'state',
+    stateAuthority:{current:false,pending:true},check(){},
+    async micro(){return {key:'micro',proofs:[],rows:[{id:'raw',family:'micro',axis:'world',turn:1,sourceKey:'micro',
+      text:'도서관 규칙',analysisStatus:'minimum_source_bound'}]};},
+    register(){return 'token';},async assertCurrent(){},release(){} };
+  const runtime=require('../tools/libra_state_memory_runtime.cjs')({engine,capture:async()=>frame,fingerprint:value=>value,authorityStore:store});
+  const result=await runtime.query({queryText:'도서관 규칙'});
+  assert.equal(result.bundle.items[0].semanticRole,'source_only');
+  assert.equal(store.get(result).displayRows[0].semanticRole,'source_only');
+  assert.deepEqual(result.diagnostics.families.state.reasons,['analysis_pending']);
+  assert.equal(result.diagnostics.stateAuthority.pending,true);
+  runtime.release(result);
+});
+
 test('real lens records participate in direct recall and Classic delivery without a second append', async t => {
   const { lensFixture } = require('./fixtures/libra_lens_handoff_fixture.cjs');
   const f = await lensFixture(); t.after(() => f.close());
@@ -55,6 +72,16 @@ for (const mode of ['plugin_only', 'server_only', 'mirror']) test(`${mode}: exis
   const output = await x.f.control.hooks.beforeRequest([{ role: 'user', content: '은빛 열쇠는 누가 보관해?' }], 'model');
   assert.ok(output.length > 1); assert.equal(api.getRuntime().lastMemoryInjectionMeta.servedEngine, 'state_first');
   assert.equal(api.getRuntime().lastMemoryInjectionMeta.finalVerification.status, 'verified');
+  const viewer=api.getLastMemoryRecallViewer();
+  assert.equal(viewer.finalVerification.modelDispatchEligible,true);
+  assert.equal(api.getRuntime().lastMemoryInjectionMeta.responseContextRequestId,viewer.responseContextRequestId);
+  assert.ok(viewer.microFrontier.lastKnownTurn > 0, 'family-based Micro rows expose their frontier');
+  assert.equal(viewer.sourceTurnAccounting.emittedUnits, viewer.rows.length);
+  assert.equal(viewer.sourceTurnAccounting.completeUniqueOriginalTurns, null, 'ordinals cannot prove original identities');
+  assert.ok(viewer.sourceTurnAccounting.lanes.some(lane => lane.lane === 'micro'));
+  assert.ok(Number.isFinite(viewer.recallDiagnostics.timings.snapshotMs));
+  assert.ok(Number.isFinite(viewer.recallDiagnostics.timings.verificationMs));
+  assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight,40);
 });
 test('GRADIA owner receipts bind direct selections and reject a changed native Micro source', async t => {
   const bus = createBus(), x = await fixture({ mode: 'server_only', pauseAutomaticAnalysis: true, hostOverrides: bus.api('libra') });

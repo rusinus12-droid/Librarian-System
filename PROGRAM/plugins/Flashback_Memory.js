@@ -1880,6 +1880,7 @@ const PLUGIN_VERSION = '1.3.26';
     requestDecisionSeq: 0,
     lastRequestDecision: null,
     lastRecall: null,
+    lastRecallByScope: new Map(),
     lastCapture: null,
     lastImport: null,
     lastClone: null,
@@ -2156,11 +2157,14 @@ const PLUGIN_VERSION = '1.3.26';
 
   const applyCurrentScope = (scope = {}) => {
     const previousScopeKey = Runtime.currentScope?.scopeKey || '';
+    if (previousScopeKey !== (scope.scopeKey || '')) {
+      const previousRecall = Runtime.lastRecallByScope.get(scope.scopeKey);
+      Runtime.lastRecall = previousRecall ? { ...previousRecall } : null;
+    }
     if (previousScopeKey && previousScopeKey !== scope.scopeKey) {
       flashbackArchiveRecovery.clear();
       abortEmbeddingJobs('chat_changed');
       Runtime.previousScope = Runtime.currentScope ? { ...Runtime.currentScope } : null;
-      Runtime.lastRecall = null;
       Runtime.lastCapture = null;
       Runtime.pendingTurn = null;
       Runtime.pendingTurns = [];
@@ -3196,6 +3200,9 @@ const PLUGIN_VERSION = '1.3.26';
   const clearRuntimeScopeState = (scopeKey) => {
     const key = text(scopeKey || '');
     if (!key) return;
+    Runtime.lastRecallByScope.delete(key);
+    if (Runtime.lastRecall?.scopeKey === key) Runtime.lastRecall = null;
+    if (Runtime.lastRecallDelivery?.scopeKey === key) Runtime.lastRecallDelivery = null;
     Runtime.chatMonitorByScope.delete(key);
     invalidateRecallCache();
     for (const signature of Array.from(Runtime.driftDismissed.keys())) {
@@ -27429,7 +27436,9 @@ const MemorySuiteSnapshotCache = (() => {
       await saveTurnWorldline(scope.scopeKey, emptyTurnWorldline(scope.scopeKey));
       await saveScopeRecords(scope, protectedRecords, settings, scope);
     });
-    Runtime.lastRecall = null;
+    Runtime.lastRecallByScope.delete(scope.scopeKey);
+    if (Runtime.lastRecall?.scopeKey === scope.scopeKey) Runtime.lastRecall = null;
+    if (Runtime.lastRecallDelivery?.scopeKey === scope.scopeKey) Runtime.lastRecallDelivery = null;
     Runtime.lastImport = {
       at: Date.now(),
       imported: 0,
@@ -36672,10 +36681,14 @@ const MemorySuiteHealthRecovery = (() => {
       sourceTurnAccounting:flashbackFinalSourceTurnAccounting(recall,plan,hookReturn.dynamicBlock),
       selected:(plan?.fragments||[]).filter(f=>!f.state).map(f=>({id:f.id,sourceKey:f.sourceKey})),
       fragments:plan?.fragments||[],requirements:plan?.requirements||[],pipeline,settingsHash:stableHash(JSON.stringify(Runtime.settings||{}))};
-    if(Runtime.lastRecall){Runtime.lastRecall.delivery={stage:'returned_to_hook',delivered:Runtime.lastRecallDelivery.selected.length,
+    if(Runtime.lastRecall?.scopeKey === recall.scopeKey){Runtime.lastRecall.delivery={stage:'returned_to_hook',delivered:Runtime.lastRecallDelivery.selected.length,
       returnedFragments:Runtime.lastRecallDelivery.selected.length,pipeline,
       sourceTurnAccounting:Runtime.lastRecallDelivery.sourceTurnAccounting,
-      requirements:plan?.requirements||[],discarded:plan?.discarded||[]};}
+      requirements:plan?.requirements||[],discarded:plan?.discarded||[]};
+      Runtime.lastRecallByScope.delete(recall.scopeKey);
+      Runtime.lastRecallByScope.set(recall.scopeKey, { ...Runtime.lastRecall });
+      if (Runtime.lastRecallByScope.size > 4) Runtime.lastRecallByScope.delete(Runtime.lastRecallByScope.keys().next().value);
+    }
     refreshLastRecallPanel();
     return true;
   };
@@ -53066,7 +53079,8 @@ ${cleanedText}`, 80),
       worldline,
       records: Number(snapshot.stats?.recordTotal || 0) || 0,
       stats: snapshot.stats,
-      lastRecall: Runtime.lastRecall,
+      lastRecall: Runtime.lastRecall?.scopeKey === scope.scopeKey
+        ? Runtime.lastRecall : Runtime.lastRecallByScope.get(scope.scopeKey) || null,
       cacheSafety: cloneRuntimeValue(Runtime.cacheSafety, {}),
       snapshotDerivedCache: { ...flashbackSnapshotCache.stats(), physicalReaders: flashbackPhysicalReaders, maxPhysicalReaders: FLASHBACK_PHYSICAL_READ_MAX, uncachedProjection: { ...flashbackUncachedProjectionStats } },
       lastCapture: Runtime.lastCapture,

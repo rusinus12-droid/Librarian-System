@@ -529,9 +529,32 @@ test('plugin mode: a stalled stage request times out and is resent once by the t
  const start=Date.now();const r=await f.run();assert.equal(r.ok,true);assert.ok(Date.now()-start<10000);assert.equal(f.prompts.length,5);
  assert.ok(!JSON.stringify(f.prompts).includes('EVIDENCE_SENTINEL'));
 });
-test('an evidence response that claims stop but is truncated is not retried',async()=>{
- const f=await fixture({mode:'heavyweight',modelContent:(n,body,content)=>n===1?content.slice(0,40):content});f.settings.failureMode='soft';
- await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');assert.equal(f.prompts.length,1);
+test('a truncated SHADOW analysis recovers once before drafting and retains response diagnostics',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n===1?content.slice(0,40):content});
+ const r=await f.run();
+ try {
+  assert.equal(r.ok,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,9);
+  assert.ok(compactAnalysisBody(f.prompts[1]));
+  assert.equal(JSON.stringify(f.prompts[1]).split('EVIDENCE_SENTINEL').length-1,1);
+ } finally { r.closeEvidence(); }
+ const [initial,retry]=f.host.plugin.getRuntime().callTelemetry.attempts;
+ assert.equal(initial.finishReason,'stop');
+ assert.equal(initial.outputChars,40);
+ assert.ok(initial.incompleteReason);
+ assert.equal(retry.retryKind,'analysis_compact');
+});
+test('a failed SHADOW recovery stops before draft and AIDE dispatch',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n<=2?content.slice(0,40):content});
+ f.settings.failureMode='soft';
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_DRAFT_UNAVAILABLE');
+ assert.equal(f.prompts.length,2);
+});
+test('a truncated lightweight SHADOW draft still stops without a resend',async()=>{
+ const f=await fixture({mode:'lightweight',finish:()=> 'length',modelContent:()=>''});
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');
+ assert.equal(f.prompts.length,1);
 });
 test('an unusable evidence AIDE patch keeps the previous draft without a resend',async()=>{
  for(const mode of ['lightweight','heavyweight'])for(const broken of [content=>content.slice(0,40),()=>'{broken patch',()=>'{"unrelated":true}']){
@@ -544,6 +567,26 @@ test('an unusable evidence AIDE patch keeps the previous draft without a resend'
 
 const compactAnalysisBody=body=>body.messages.some(m=>typeof m.content==='string'&&m.content.includes('Repair a failed mandatory private RP analysis response from the compact evidence only.'));
 const primaryAideAnalysis=body=>body.messages.some(m=>typeof m.content==='string'&&/Run aide_\w+ analysis now/.test(m.content));
+
+test('an owner that becomes available after startup can answer before status refresh finishes',async()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../../plugins/GRADIA.js'),'utf8');
+ const start=source.indexOf('  const libOwnerAbsentUntil = ');
+ const end=source.indexOf('\n  const LibReadConsumer =',start);
+ assert.ok(start>=0 && end>start);
+ let calls=0, refreshes=0;
+ const select=require('node:vm').runInNewContext(source.slice(start,end)+'\nselectLibOwnerRecall',{
+  libOwnerReader:()=>({select:async()=>++calls===1
+   ? {absent:true,code:'LIB_READ_SCOPE_UNAVAILABLE'} : {content:'ready'}}),
+  LibReadConnection:{
+   status:()=>({unavailable:{flashback:'LIB_READ_OWNER_UNAVAILABLE'}}),
+   refreshOwners:()=>{refreshes++;return new Promise(()=>{});}
+  }
+ });
+ const scope={chatId:'chat-1'};
+ assert.equal((await select('flashback',scope,'query')).code,'LIB_READ_SCOPE_UNAVAILABLE');
+ assert.equal((await select('flashback',scope,'query')).content,'ready');
+ assert.equal(refreshes,1);
+});
 
 test('truncated world and plot mandatory analyses recover independently after SHADOW length expansion',async()=>{
  const f=await fixture({mode:'heavyweight',transform:source=>source.replace('const publicApi = Object.freeze({','const publicApi = Object.freeze({ __testTelemetry:()=>Runtime.callTelemetry,'),finish:n=>n===1?'length':'stop',modelContent:(n,body,content)=>

@@ -167,7 +167,7 @@
         // A current Head cannot answer an earlier cutoff. The native response
         // reader handles active worldline cutoffs and approved Micro projections.
         const projected = Number.isFinite(cutoff) && cutoff < pairs.length ? null
-          : await loadContinuityStateForResponse(scope, active.manifest);
+          : await loadContinuityStateForResponse(scope, active.manifest, { context });
         let head = projected?.head || null;
         const stateAuthority = projected?.authority || null;
         const stateProofs = asArray(consumedMicroProofsByState.get(projected?.authority || projected?.head)).slice();
@@ -283,16 +283,19 @@
         },
         async micro(context, source, turn) {
           const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
-          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs });
+          // The enclosing selection validates its captured context and source proofs
+          // again before delivery; avoid another host context read for every candidate.
+          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true });
           if (active.status !== 'verified') return null;
           const memory = microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey);
           if (!memory) throw Error('LIBRA_STATE_MICRO_INVALID');
           const review = source.review;
           const rows = asArray(active.record.claims).flatMap((claim, index) => memoryReviewDecision(review, 'micro', active.record, index) === 'rejected' ? [] : [{
             text: claim.text, domain: claim.changeKind === 'relation' ? 'relationship' : ['person','character'].includes(claim.changeKind) ? 'character' : claim.changeKind === 'world' ? 'world' : 'narrative',
-            evidenceKeys: ['micro:' + active.record.analysisRevisionId + ':' + digest(claim)]
+            evidenceKeys: ['micro:' + active.record.analysisRevisionId + ':' + digest(claim)],
+            analysisStatus: active.record.analysisStatus
           }]);
-          if (!rows.length && active.record.analysisStatus === 'minimum_source_bound') rows.push({ text: memory.summary, domain: 'narrative' });
+          if (!rows.length && active.record.analysisStatus === 'minimum_source_bound') rows.push({ text: memory.summary, domain: 'narrative', analysisStatus: 'minimum_source_bound' });
           return { key: active.recordKey, rows, proofs: [activeMicroConsumptionProof(active)] };
         },
         async lens(context, source, query, maxCharacters) {

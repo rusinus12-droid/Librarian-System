@@ -283,12 +283,15 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const fieldLabels = { holderRef:'소지자',ownerRef:'소유자',locationRef:'위치',parentRef:'상위 장소',managerRef:'관리 주체',containerRef:'보관 위치',
       appearance:'외형',background:'배경',personality:'성격',speech:'말투',habits:'습관',abilities:'능력',goals:'목표',emotions:'감정',mood:'기분',
       knowledge:'알고 있는 내용',preferences:'선호',boundaries:'경계',affiliations:'소속',condition:'상태',doorStatus:'문 상태',value:'내용',
-      summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',
+      summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',interpretation:'해석',momentum:'서사 흐름',
       scopeRef:'적용 대상',exceptions:'예외',effect:'효과',personTempRef:'인물',organizationTempRef:'조직',text:'내용',
       organizationRef:'조직',access:'접근 조건',affiliation:'소속',locks:'제약',notes:'비고',detail:'세부 내용',time:'시점',count:'수량',locked:'잠금 여부' };
     const statuses = { open:'미해결',active:'진행 중',resolved:'해결됨',closed:'종결됨',pending:'보류 중',unknown:'알 수 없음' };
+    const metadata = new Set(['evidenceSpans','evidenceRefs','firstTurn','lastTurn','identityEvidence','aliasEvidence',
+      'fieldEvidence','fieldCandidates','clearedFieldEvidence','fieldCorrectionProvenance','clearedFieldCorrectionProvenance',
+      'microProjection','responseAuthority','correctionProvenance','basis','sourceDigest','schema','worldlineId']);
     const format = value => Array.isArray(value) ? value.map(format).filter(Boolean).join('; ')
-      : value && typeof value === 'object' ? Object.entries(value).filter(([key])=>!['id','lifecycleId','tempId'].includes(key))
+      : value && typeof value === 'object' ? Object.entries(value).filter(([key])=>!metadata.has(key) && !['id','lifecycleId','tempId'].includes(key))
         .map(([key,item])=>{const text=format(item);return text ? `${fieldLabels[key] || key}: ${text}` : '';}).filter(Boolean).join(' · ')
       : value == null ? '' : typeof value === 'boolean' ? (value ? '예' : '아니오') : String(value);
     const unresolved = value => typeof value === 'string' ? /^ce_/.test(value)
@@ -299,27 +302,28 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
         + (axis === 'relationships' && entity.targetId ? ' → ' + (names.get(entity.targetId) || '대상') : '');
       const values = entity.state && typeof entity.state === 'object' ? entity.state : entity;
       for (const [field, value] of Object.entries(values)) {
-        if (/^(?:id|name|label|aliases|kind|type|lifecycleId|subjectId|targetId|tempId|fieldEvidence|evidence|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
-          || value == null || value === '' || field.startsWith('_') || (field==='title' && entity.title)
+        if (/^(?:id|name|label|aliases|kind|type|lifecycleId|subjectId|targetId|tempId|fieldEvidence|evidence|evidenceSpans|evidenceRefs|firstTurn|lastTurn|identityEvidence|aliasEvidence|fieldCandidates|clearedFieldEvidence|fieldCorrectionProvenance|clearedFieldCorrectionProvenance|correctionProvenance|updatedAt|createdAt|responseAuthority|domainStatus|basis|sourceDigest|worldlineId|schema|throughTurn|throughSessionEpoch)$/.test(field)
+          || metadata.has(field) || value == null || value === '' || field.startsWith('_') || (field==='title' && entity.title)
           || Array.isArray(value) && !value.length) continue;
         const shown = display(value);
         if (unresolved(shown)) continue;
         const readable = field === 'status' ? statuses[String(shown)] || format(shown) : field === 'resolvedTurn' ? `T${shown}` : format(shown);
         if (!readable) continue;
-        const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : JSON.stringify(shown)}`;
+        const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : readable}`;
         const promptText = `${name} — ${fieldLabels[field] || field}: ${readable}`;
         const evidence = entity.fieldEvidence?.[field] || entity.evidence || head.domainStatus?.[axis]?.evidence || null;
         const evidenceKeys = evidence?.schema === 'libra.micro_state_field_evidence.v1'
           ? ['micro:' + evidence.analysisRevisionId + ':' + evidence.claimDigest]
           : evidence?.memoryId && evidence?.revision != null ? array(evidence.assertionIds).map(id => 'canonical:' + evidence.memoryId + ':' + evidence.revision + ':' + id) : [];
         rows.push({ id: 'state:' + fingerprint(JSON.stringify([axis, entity.id || index, field, value])), family: 'state', axis, text, promptText,
-          turn: Number(evidence?.turn || evidence?.sourceTurnRange?.end || head.throughTurn || 0), evidence, evidenceKeys,
+          turn: Number(evidence?.turn || evidence?.sourceTurnRange?.end || head.throughTurn || 0), evidence, evidenceKeys, factText: readable,
           stateStatus: head.responseAuthority?.pending || head.responseAuthority?.current === false ? 'last_known' : 'current' });
       }
     };
     for (const axis of axes.slice(0, 3)) array(head[axis]).forEach((entity, index) => add(axis, entity, index));
     if (head.narrative) {
       for (const [field, value] of Object.entries(head.narrative)) {
+        if (metadata.has(field)) continue;
         if (Array.isArray(value)) value.forEach((entity, index) => add('narrative', typeof entity === 'object' ? entity : { [field]: entity }, field + index));
         else if (typeof value === 'string' && !/^(schema|status|updatedAt|worldlineId)$/.test(field)) add('narrative', { [field]: value }, field);
       }
@@ -416,11 +420,12 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const exactVal = q ? exactSignal(row.text, q) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
-      const anchorVal = row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0);
       const identityVal = identitySignal(queryEntities, row.text, entities);
       const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
+      const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
+      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,
@@ -431,7 +436,7 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
     candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
-    const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map();
+    const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map(), contextLensGroups = new Set();
     const suppressedEvidenceDuplicates = new Set();
     let usedCharacters = 0;
     const costOf = row => (row.promptText || row.text).length + Math.max(32,
@@ -439,12 +444,25 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const add = row => {
       const cost = costOf(row), identity = row.text.normalize('NFKC').trim();
       if (seen.has(row.id) || textSeen.has(identity) || selected.length >= maxItems || usedCharacters + cost > maxCharacters) return false;
+      // Keep scene continuity, but one weak note per lens/person is enough.
+      // Question matches retain the full lens reservation and are ranked first.
+      const contextOnly = row.family === 'lens' && row.lensItem?.floorPassed === false;
+      const contextGroup = contextOnly ? JSON.stringify([row.lensItem.lensId, row.lensItem.groupKey || row.lensItem.people]) : null;
+      if (contextOnly && contextLensGroups.has(contextGroup)) return false;
+      if (!['history','detail'].includes(plan?.intent) && array(row.evidenceKeys).length) {
+        const fact = normalize(row.factText || row.promptText || row.text).trim();
+        if (selected.some(previous => array(previous.evidenceKeys).some(key => row.evidenceKeys.includes(key))
+          && normalize(previous.factText || previous.promptText || previous.text).trim() === fact)) {
+          suppressedEvidenceDuplicates.add(row.id); return false;
+        }
+      }
       // Current-state answers can avoid repeating the same source assertion.
       // History and detail answers retain source statements, even if State used them.
       if (plan?.intent === 'current' && array(row.evidenceKeys).length && row.evidenceKeys.every(key => evidenceSeen.has(key) && evidenceSeen.get(key) !== row.family)) {
         suppressedEvidenceDuplicates.add(row.id); return false;
       }
       seen.add(row.id); textSeen.add(identity); selected.push(row); usedCharacters += cost;
+      if (contextOnly) contextLensGroups.add(contextGroup);
       for (const key of array(row.evidenceKeys)) evidenceSeen.set(key, row.family);
       return true;
     };
@@ -452,7 +470,8 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const familyAllocation = {};
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
-      if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b) || b.score - a.score;
+      if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
+        || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
       return plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score;
     }) : candidates;
     const groups = plan ? [{ key: 'lens', weight: plan.lensSharePercent, items: Math.round(maxItems * plan.lensSharePercent / 100) },

@@ -5,10 +5,15 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
   // and abandoned on every failure, so no frame outlives its query.
   const query = async (options = {}, guard = null, issuer = null) => {
     const startedAt = now(), frame = await capture(options, guard);
-    try { return await run(options, issuer, frame, startedAt); }
+    try { return await run(options, issuer, frame, startedAt, now() - startedAt); }
     catch (error) { frame.abandon?.(); throw error; }
   };
-  const run = async (options, issuer, frame, startedAt) => {
+  const run = async (options, issuer, frame, startedAt, snapshotMs) => {
+    const timings = { snapshotMs };
+    const timed = async (phase, operation) => {
+      const start = now();
+      try { return await operation(); } finally { timings[phase] = (timings[phase] || 0) + now() - start; }
+    };
     const queryText = String(options.queryInput?.queryText || options.queryText || '');
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
@@ -20,7 +25,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      try { semantic = await frame.semantic(queryText); }
+      try { semantic = await timed('semanticMs', () => frame.semantic(queryText)); }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
     frame.check();
@@ -31,7 +36,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
     let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
     if (frame.microIndex) {
-      try { microIndex = await frame.microIndex(); }
+      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
       catch (error) { microIndexError = String(error.code || error.message || error); }
     }
     frame.check();
@@ -45,19 +50,19 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     };
     let lensSource = null;
     if (frame.lens) {
-      try { lensSource = await frame.lens(queryText, maxCharacters); keep(lensSource); }
+      try { lensSource = await timed('lensMs', () => frame.lens(queryText, maxCharacters)); keep(lensSource); }
       catch (error) { failures.push({ family: 'lens', code: error.code || error.message }); }
     }
     for (const ref of refs) {
       frame.check();
       if (payloadLimited) break;
-      try { keep(await frame.canonical(ref, semantic)); }
+      try { keep(await timed('canonicalMs', () => frame.canonical(ref, semantic))); }
       catch (error) { failures.push({ family: 'canonical', key: ref.key, code: error.code || error.message }); }
     }
     for (const turn of turns) {
       frame.check();
       if (payloadLimited) break;
-      try { const item = await frame.micro(turn); if (item) keep(item); }
+      try { const item = await timed('microMs', () => frame.micro(turn)); if (item) keep(item); }
       catch (error) { failures.push({ family: 'micro', turn, code: error.code || error.message }); }
     }
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
@@ -66,7 +71,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
     const sources = loaded.filter(item => chosen.has(item.key));
     const publicItems = selected.items.map(item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
-      semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state' : 'recorded_evidence',
+      semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state'
+        : item.family === 'micro' && item.analysisStatus === 'minimum_source_bound' ? 'source_only' : 'recorded_evidence',
       ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.promptText || item.text, score: item.score,
       turn: item.turn || 0, sourceKey: item.sourceKey || frame.stateKey }));
     const generation = fingerprint(JSON.stringify([frame.identity, publicItems]));
@@ -85,7 +91,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const validatePacket = async input => {
       if (closed || now() - startedAt > 600000) fail('LIBRA_STATE_SELECTION_CLOSED');
       if (input !== packet || fingerprint(JSON.stringify(input)) !== packetDigest) fail('LIBRA_STATE_PACKET_CHANGED');
-      frame.check(); await frame.assertCurrent(readSet);
+      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet));
       for (const source of sources) if (source.assertCurrent) await source.assertCurrent();
       if (receipt && issuer.verifyReceipt?.(receipt) !== true) fail('LIBRA_STATE_RECEIPT_CHANGED');
       frame.check();
@@ -116,13 +122,17 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
-        stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, elapsedMs: now() - startedAt,
+        stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, timings, elapsedMs: now() - startedAt,
+        stateAuthority: frame.stateAuthority || null,
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
           microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
           microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
-        families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, { units: publicItems.filter(item => item.family === family).length }])) },
+        families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, {
+          units: publicItems.filter(item => item.family === family).length,
+          ...(family === 'state' ? { reasons: [...new Set((frame.head?.microProjection?.pendingClaims || [])
+            .map(row => row.reason).filter(Boolean))] } : {}) }])) },
       guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
@@ -133,6 +143,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       const shared = frame.settle ? await frame.settle() !== false : null;
       if (shared === false) await validatePacket(packet);
       result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      result.diagnostics.elapsedMs = now() - startedAt;
       return result;
     }
     catch (error) { release(); throw error; }
