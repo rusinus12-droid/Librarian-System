@@ -293,3 +293,15 @@ test('history questions bring the source statement behind a matching State field
   assert.equal(source.scoreBreakdown.linked, 1);
   assert.ok(!noise || source.score > noise.score);
 });
+
+test('candidate reads scale with the delivery budget and keep the configured caps at the standard budget', () => {
+  const at = (query, maxItems, caps = {}) => { const plan = engine.allocationPlan(query, 40, { maxItems, ...caps }); return [plan.canonicalCandidates, plan.microCandidates]; };
+  assert.deepEqual(at('열쇠의 과거 경위', 24), [16, 6]);
+  assert.deepEqual(at('열쇠 이야기', 24), [8, 8]);
+  assert.deepEqual(at('정확한 발언', 24), [4, 12]);
+  assert.deepEqual(at('열쇠 이야기', 16), [8, 8], 'a compact budget never reads fewer than the standard share');
+  assert.deepEqual(at('열쇠 이야기', 40), [14, 14]);
+  assert.deepEqual(at('열쇠 이야기', 64), [22, 22]);
+  assert.deepEqual(at('열쇠의 과거 경위', 64, { canonicalCap: 64 }), [64, 16], 'hard ceilings stay at 64 canonical and 32 Micro');
+  assert.deepEqual(at('정확한 발언', 64, { microCap: 32 }), [11, 32]);
+});

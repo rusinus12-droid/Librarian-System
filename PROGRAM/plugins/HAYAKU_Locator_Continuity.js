@@ -36920,19 +36920,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       [staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal],
       cap
     );
-    const policySignals = objectish(baseRecallPolicy?.signals) ? baseRecallPolicy.signals : {};
-    const broadSecondaryEvidenceHint = policySignals.packetRecoveryActive === true
-      || policySignals.timelineIntent === true
-      || policySignals.explicitComplexIntent === true;
     const presetKey = hayakuRecallPresetOf(settings);
     const preset = HAYAKU_RECALL_PRESETS[presetKey];
     const targetBudget = Number(preset?.targetBudgetChars) || RECALL_DATA_BUDGETS.standard;
     const tierSequence = recallCapProvided
       ? [{ tier: 'explicit', targetChars: recallBudgetRequestedChars }]
       : [
-          { tier: 'standard', targetChars: Math.max(RECALL_DATA_BUDGETS.standard, Math.floor(targetBudget * 0.45)) },
-          { tier: 'precision', targetChars: Math.max(RECALL_DATA_BUDGETS.precision, Math.floor(targetBudget * 0.75)) },
-          { tier: 'extended', targetChars: Math.max(RECALL_DATA_BUDGETS.extended, targetBudget) }
+          // The chosen preset is the ceiling of every step: a small preset is never widened
+          // past its own budget, and a large one can be filled when evidence was selected for it.
+          { tier: 'standard', targetChars: Math.min(targetBudget, Math.max(RECALL_DATA_BUDGETS.standard, Math.floor(targetBudget * 0.45))) },
+          { tier: 'precision', targetChars: Math.min(targetBudget, Math.max(RECALL_DATA_BUDGETS.precision, Math.floor(targetBudget * 0.75))) },
+          { tier: 'extended', targetChars: targetBudget }
         ];
     let memoryBudgetChars = 0;
     let memoryContextResult = emptyPacketCoreMemoryResult(selectedRowKeys);
@@ -36998,17 +36996,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
       if (recallCapProvided) break;
       if (tier.tier === 'standard') {
-        // Normal narrative input remains at 3k unless evidence selected by the
-        // retrieval engine actually fails to fit. Optional leftovers never expand.
-        if (!pressure.needsPrecisionExpansion || appliedCap < tier.targetChars) break;
+        // The first step is a probe. Any evidence the retrieval engine selected that
+        // did not fit moves to the next step, up to the preset budget.
+        if (!(pressure.totalDroppedCount > 0) || appliedCap < tier.targetChars) break;
         continue;
       }
       if (tier.tier === 'precision') {
-        // 6k is exceptional: hard required evidence still does not fit, or broad
-        // timeline/recovery evidence remains important after the 4.5k pass.
-        const needsExtended = pressure.hardDroppedCount > 0
-          || (pressure.importantDroppedCount > 0 && broadSecondaryEvidenceHint);
-        if (!needsExtended || appliedCap < tier.targetChars) break;
+        if (!(pressure.totalDroppedCount > 0) || appliedCap < tier.targetChars) break;
         continue;
       }
       break;

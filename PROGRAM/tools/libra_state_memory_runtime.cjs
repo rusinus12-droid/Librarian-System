@@ -18,7 +18,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
     const maxItems = Math.floor(Number(policy.maxUnits ?? frame.settings.stateMaxItems ?? 24));
-    const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40);
+    const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40, { maxItems,
+      canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12 });
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
     const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
@@ -30,7 +31,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     }
     frame.check();
     const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
-      Math.min(frame.settings.stateCanonicalCandidates || 16, plan.canonicalCandidates), { entities, semanticScores: semantic.scores });
+      plan.canonicalCandidates, { entities, semanticScores: semantic.scores });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
@@ -41,7 +42,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     }
     frame.check();
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
-      limit: Math.min(frame.settings.stateMicroCandidates || 12, plan.microCandidates) });
+      limit: plan.microCandidates });
     const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;

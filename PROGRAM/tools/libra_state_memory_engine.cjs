@@ -372,7 +372,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     return [...dense, ...ranked.filter(row => !denseKeys.has(row.ref.key)).slice(0, Math.max(0, limit - dense.length))].map(row => row.ref);
   };
 
-  const allocationPlan = (query, lensSharePercent = 40) => {
+  // Candidate reads follow the delivery budget: at the standard budget (24 items) they equal
+  // the configured caps, and a wider budget reads proportionally more so it can be filled.
+  const allocationPlan = (query, lensSharePercent = 40, { maxItems = 24, canonicalCap = 16, microCap = 12 } = {}) => {
     if (!Number.isInteger(lensSharePercent) || lensSharePercent < 0 || lensSharePercent > 100) throw Error('LIBRA_MEMORY_WEIGHTS_INVALID');
     const q = normalize(query);
     const detail = /정확|그대로|원문|인용|뭐라고|무슨\s*말|대사|말투|수량|몇\s*개|\b(?:exact|verbatim|quote)\b/u.test(q);
@@ -380,9 +382,11 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const current = /지금|현재|어디|상태|보유자|소유자|누가.*(?:보관|가지|갖고|들고)|\b(?:current|now|where|holder|owner)\b/u.test(q);
     const intent = detail ? 'detail' : history ? 'history' : current ? 'current' : 'mixed';
     const order = intent === 'detail' ? ['micro','canonical','state'] : intent === 'history' ? ['canonical','micro','state'] : ['state','canonical','micro'];
+    const scale = Math.min(4, Math.max(1, (Number(maxItems) || 24) / 24));
     return { mode: 'query_adaptive', lensSharePercent, evidenceSharePercent: 100 - lensSharePercent, intent, order,
-      canonicalCandidates: intent === 'history' ? 16 : intent === 'mixed' ? 8 : 4,
-      microCandidates: intent === 'detail' ? 12 : intent === 'mixed' ? 8 : 6 };
+      budgetScale: Number(scale.toFixed(2)),
+      canonicalCandidates: Math.min(64, Math.ceil((intent === 'history' ? 1 : intent === 'mixed' ? 0.5 : 0.25) * canonicalCap * scale)),
+      microCandidates: Math.min(32, Math.ceil((intent === 'detail' ? 1 : intent === 'mixed' ? 2 / 3 : 0.5) * microCap * scale)) };
   };
   const select = ({ rows = [], query = '', maxCharacters = 8000, maxItems = 24, minimumPerAxis = 2, plan = null, entities = [] } = {}) => {
     if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 32 || maxCharacters > 100000
