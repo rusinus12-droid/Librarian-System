@@ -40711,7 +40711,7 @@ function createLibraReadonlySourceContext(owner) {
       return manifest;
     };
 
-    const saveManifest = async (scope, manifest) => {
+    const saveManifest = async (scope, manifest, write = null) => {
       if(unavailableManifestKeys.has(key.manifest(scope)) || manifest[MANIFEST_STORAGE_BASIS]?.unavailable===true){
         const error=new Error('manifest publication refused: durable reload unavailable after rejected canonical admission');
         error.code='LIBRA_COMMIT_CONFLICT';error.storageMutationRejected=true;error.storageMutationKey=key.manifest(scope);throw error;
@@ -40761,7 +40761,8 @@ function createLibraReadonlySourceContext(owner) {
         try { delete manifest[MANIFEST_STORAGE_BASIS]; } catch (_) {}
       }
       manifestWriteRevisions.set(manifestKey, manifestRevisionOf(manifestKey) + 1);
-      await storage.setJson(manifestKey, manifest);
+      if (write) await write(manifestKey, manifest);
+      else await storage.setJson(manifestKey, manifest);
       return manifest;
     };
 
@@ -44595,6 +44596,8 @@ function createLibraReadonlySourceContext(owner) {
       const manifest = options.manifest && typeof options.manifest === 'object'
         ? options.manifest
         : await loadManifest(context.scope, pairs.length);
+      const previousServerIdentity = unifiedServerManifestIdentity(manifest);
+      const previousManifestUpdatedAt = manifest.updatedAt;
       const starts = completeBatchStarts(pairs);
       const startSet = new Set(starts.map(Number));
       const scopeKey = string(context?.scope?.scopeKey || manifest?.scopeKey || '');
@@ -44782,7 +44785,10 @@ function createLibraReadonlySourceContext(owner) {
       if (branchGuardChanged) nextGuard.updatedAt = nowIso();
       manifest.branchGuard = nextGuard;
       const contiguousFrontier = refreshCanonicalFrontiers(manifest, pairs.length);
-      if (changed || branchGuardChanged) await saveManifest(context.scope, manifest);
+      if (changed || branchGuardChanged) await saveManifest(context.scope, manifest,
+        changed && previousServerIdentity !== unifiedServerManifestIdentity(manifest)
+          ? (manifestKey, next) => saveUnifiedServerBranchManifest(context, pairs, manifestKey, next, previousServerIdentity, previousManifestUpdatedAt)
+          : null);
       let stateRebuild = null;
       let continuityStateAuthority = 'unchanged';
       let continuityRebuildPending = false;
@@ -55569,6 +55575,53 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // sparse legacy migration, rollback-view and mirror retain their own guards.
     const unifiedServerManifestIdentity = manifest => digest(fullContinuityRefs(manifest||{}).map(ref=>({cursor:statePipelineCursorForRef(ref,'main'),sourceEvidenceRef:ref.sourceEvidenceRef||null})));
     const unifiedServerActiveKey = scope => `${key.entityRegistry(scope)}:unified-active:v1`;
+    const isUnifiedServerActiveDescriptor = (descriptor, scope) =>
+      descriptor?.schema === 'libra.unified_server_active.v1'
+      && descriptor.scopeKey === scope.scopeKey && descriptor.worldlineId === 'main';
+    const isCanonicalBranchDeactivation = ref => ref?.status === 'inactive'
+      && ['rollback_or_incomplete_batch', 'reroll_or_branch_digest_changed'].includes(ref.inactiveReason);
+    // Older branch audits could persist inactive refs without updating the descriptor.
+    // Restore their membership only in a temporary projection to prove the old hash.
+    const provesUnifiedServerBranchDeactivation = (manifest, descriptor) => {
+      let restored = false;
+      const memories = Object.fromEntries(Object.entries(asObject(manifest?.memories)).map(([start, ref]) => {
+        if (!isCanonicalBranchDeactivation(ref) || !ref.key) return [start, ref];
+        restored = true;
+        return [start, { ...ref, status: 'committed' }];
+      }));
+      return restored && unifiedServerManifestIdentity({ ...manifest, memories }) === descriptor.manifestIdentity;
+    };
+    const unifiedServerDescriptorForManifest = (scope, manifest, source) => ({
+      schema: 'libra.unified_server_active.v1', scopeKey: scope.scopeKey, worldlineId: 'main',
+      manifestIdentity: unifiedServerManifestIdentity(manifest), createdAt: nowIso(), source
+    });
+    const saveUnifiedServerBranchManifest = async (context, pairs, manifestKey, next, previousIdentity, previousUpdatedAt) => {
+      const mode = await MemorySuiteStorageBridge.getMode();
+      if (mode === 'plugin_only') return storage.setJson(manifestKey, next);
+      unifiedAssert(mode === 'server_only' || mode === 'mirror', 'UNIFIED_BACKEND_NOT_SUPPORTED');
+      const scope = context.scope, activeKey = unifiedServerActiveKey(scope), metaKey = key.stateWorldlineMeta(scope);
+      const [before, active, meta] = await Promise.all([manifestKey, activeKey, metaKey].map(k => storage.getVerifiedJson(k, scope, null)));
+      unifiedAssert(before?.updatedAt === previousUpdatedAt && unifiedServerManifestIdentity(before) === previousIdentity,
+        'UNIFIED_BRANCH_MANIFEST_CHANGED');
+      unifiedAssert(!active || ((!meta || meta.activeWorldlineId === 'main') && isUnifiedServerActiveDescriptor(active, scope)
+        && (active.manifestIdentity === previousIdentity || provesUnifiedServerBranchDeactivation(before, active))),
+        'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH');
+      const conditions = [{ key: metaKey, expected: unifiedServerExpected(meta) }];
+      const mutations = [{ key: manifestKey, kind: 'set', expected: unifiedServerExpected(before), value: JSON.stringify(next) }];
+      if (active) mutations.push({ key: activeKey, kind: 'set', expected: unifiedServerExpected(active),
+        value: JSON.stringify(unifiedServerDescriptorForManifest(scope, next, 'branch_reconcile')) });
+      else conditions.push({ key: activeKey, expected: { exists: false } });
+      const prepared = await MemorySuiteStorageBridge.prepareConditionalBatch({
+        conditions, mutations
+      });
+      const live = await resolveContext();
+      unifiedAssert(!state.disposed && !state.deletingScopes.has(scope.scopeKey)
+        && live.scope.scopeKey === scope.scopeKey
+        && sourceDigest(buildPairs(live.chat, scope.scopeKey)) === sourceDigest(pairs), 'UNIFIED_BRANCH_SOURCE_CHANGED');
+      const receipt = await commitVerifiedConditionalBatch(prepared);
+      unifiedAssert(receipt.endToEndVerified === true, 'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
+      noteMemorySourceWrite(manifestKey);
+    };
     const verifiedPortablePredecessorServerLineage = async (scope, manifest) => {
       const archiveRef = normalizeLibraArchiveRef(manifest?.archiveRef);
       if (!archiveRef || manifest?.nativeChatCopy) return false;
@@ -55658,22 +55711,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // v4 memories. Bind that imported manifest with CAS before new analysis;
       // status inspection reports this need without mutating data.
       const activationRequired=!active && fullContinuityRefs(durableManifest||{}).length>0;
-      if(activationRequired && initializeImported){
+      const branchRepairRequired=isUnifiedServerActiveDescriptor(active, context.scope)
+        && active.manifestIdentity !== unifiedServerManifestIdentity(durableManifest)
+        && provesUnifiedServerBranchDeactivation(durableManifest, active);
+      if((activationRequired || branchRepairRequired) && initializeImported){
         // Same intent, same correction: every durable ref must be a TYPED record.
         const durableUnreadableRefs = unifiedUnreadableRefs(durableManifest);
         unifiedAssert(!durableUnreadableRefs.length,
           `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${unifiedUnreadableRefsDetail(durableUnreadableRefs)}`);
-        const descriptor={schema:'libra.unified_server_active.v1',scopeKey:context.scope.scopeKey,worldlineId:'main',manifestIdentity:unifiedServerManifestIdentity(durableManifest),createdAt:nowIso(),source:'verified_storage_mode_import'};
+        const descriptor=unifiedServerDescriptorForManifest(context.scope, durableManifest,
+          branchRepairRequired ? 'verified_branch_deactivation' : 'verified_storage_mode_import');
         const conditions=[{key:key.manifest(context.scope),expected:{exists:true,value:JSON.stringify(durableManifest)}}];
         for(const k of unifiedServerReadKeys(context.scope)){
-          const before=await storage.getJson(k,null);conditions.push({key:k,expected:before==null?{exists:false}:{exists:true,value:JSON.stringify(before)}});
+          const before=k===key.stateWorldlineMeta(context.scope)?meta:await storage.getJson(k,null);
+          conditions.push({key:k,expected:unifiedServerExpected(before)});
         }
-        const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:unifiedServerActiveKey(context.scope),kind:'set',expected:{exists:false},value:JSON.stringify(descriptor)}]});
+        const prepared=await MemorySuiteStorageBridge.prepareConditionalBatch({conditions,mutations:[{key:unifiedServerActiveKey(context.scope),kind:'set',expected:unifiedServerExpected(active),value:JSON.stringify(descriptor)}]});
+        const current=await resolveContext();
+        unifiedAssert(!state.disposed && !state.deletingScopes.has(context.scope.scopeKey)
+          && current.scope.scopeKey===context.scope.scopeKey && digest(prepared.boundary)===digest(boundary),'UNIFIED_SCOPE_CHANGED');
         const receipt=await commitVerifiedConditionalBatch(prepared);
         unifiedAssert(receipt.endToEndVerified===true,'UNIFIED_SERVER_COMMIT_NOT_VERIFIED');
         active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       }
-      unifiedAssert((!active && (!fullContinuityRefs(durableManifest||{}).length || activationRequired&&!initializeImported)) || active?.schema==='libra.unified_server_active.v1' && active.scopeKey===context.scope.scopeKey && active.manifestIdentity===unifiedServerManifestIdentity(durableManifest),'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH');
+      unifiedAssert((!active && (!fullContinuityRefs(durableManifest||{}).length || activationRequired&&!initializeImported)) || isUnifiedServerActiveDescriptor(active, context.scope) && active.manifestIdentity===unifiedServerManifestIdentity(durableManifest),'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH');
       if(activationRequired&&!initializeImported)return {...boundary,activationRequired:true};
       return boundary;
     };
@@ -55756,7 +55817,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const serverActiveReadSet=serverBackend?await MemorySuiteStorageBridge.captureConditionalReadSet([unifiedServerActiveKey(context.scope)]):null;
       const serverActiveDescriptor=serverBackend?await storage.getJson(unifiedServerActiveKey(context.scope),null):null;
       const branchRef=memoryRefForStart(manifest,batch[0].turn);
-      const branchReplay=branchRef?.status==='inactive'&&branchRef.inactiveReason==='reroll_or_branch_digest_changed'
+      // An incomplete rollback may be followed by a different completed batch
+      // in the same slot. Replay it as a new revision of that branch.
+      const branchReplay=isCanonicalBranchDeactivation(branchRef)
         && branchRef.sourceDigest!==sourceDigest(batch);
       if(branchReplay){
         const pairs=buildPairs(context.chat,context.scope.scopeKey);
@@ -58104,7 +58167,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         // Bind a newly transferred server scope before capturing the replay read
         // set. The commit helper may initialize this descriptor when absent; doing
         // that after capture makes the transaction reject its own active-key CAS.
+        const descriptorCheckStartedAt=nowIso();
         const serverBackend=await requireUnifiedStorageBackend(context,manifest,persist===true);
+        if (persist && serverBackend) {
+          // Descriptor validation and State coverage are independent. Keep the
+          // newer Head if the verified replay prefix still falls short of it.
+          try {
+            await resolveStateReplayErrors(context.scope, {
+              worldlineId:activeId, code:'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH',
+              checkedSince:descriptorCheckStartedAt
+            });
+          } catch (error) { warn('LIBRA descriptor error resolution readback failed',error); }
+        }
         const serverReadSet=serverBackend?await MemorySuiteStorageBridge.captureConditionalReadSet([hkey,rkey,jkey,mkey,ckey,cacheKey,unifiedServerActiveKey(context.scope),key.stateWorldlineMeta(context.scope)]):null;
         const keys=[hkey,rkey,jkey,mkey,ckey,cacheKey],before=new Map();for(const k of keys)before.set(k,await storage.getJson(k,null));
         const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)),manifestDigest=(serverBackend?unifiedServerManifestIdentity:unifiedManifestIdentity)(manifest);
@@ -69734,19 +69808,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       existing.schema=STATE_REPLAY_ERROR_SCHEMA; existing.scopeKey=string(scope.scopeKey); existing.records=[...asArray(existing.records),rec].slice(-64); existing.updatedAt=nowIso();
       await storage.setJson(keyName,existing); await assertStateStoredValue(keyName,existing,'STATE_REPLAY_ERROR_READBACK_FAILED'); touchWorldManagerRuntimeMeta(); return rec;
     };
-    const resolveStateReplayErrors = async (scope,{worldlineId='',replayFingerprint='',throughTurn=0,at=''}={}) => {
+    const resolveStateReplayErrors = async (scope,{worldlineId='',replayFingerprint='',throughTurn=0,at='',code='',checkedSince=''}={}) => {
       const keyName=key.stateReplayErrors(scope); const existing=await storage.getJson(keyName,null);
       if (existing==null) return {resolved:0};
       if (existing.schema!==STATE_REPLAY_ERROR_SCHEMA || string(existing.scopeKey||'')!==string(scope.scopeKey)) throw stateCorrectionFailure('WORLD_MANAGER_REPLAY_ERROR_STORE_INVALID');
       const resolvedAt=string(at||nowIso()); let resolved=0;
       existing.records=asArray(existing.records).map(row=>{
-        if (row?.resolvedAt) return row;
+        if (row?.resolvedAt || (code && row?.code!==code)) return row;
         const errorContext=asObject(row?.context); const errorWorldline=string(errorContext.worldlineId||'');
         const rollbackIncomplete=errorContext.rollbackIncomplete===true || /ROLLBACK_INCOMPLETE/.test(string(row?.code||''));
-        const resolvedAtMs=Date.parse(resolvedAt); const errorAtMs=Date.parse(string(row?.at||''));
-        if (rollbackIncomplete || !errorWorldline || errorWorldline!==string(worldlineId||'') || !Number.isFinite(resolvedAtMs) || !Number.isFinite(errorAtMs) || resolvedAtMs<=errorAtMs) return row;
+        const cutoffMs=Date.parse(checkedSince||resolvedAt); const errorAtMs=Date.parse(string(row?.at||''));
+        if (rollbackIncomplete || !errorWorldline || errorWorldline!==string(worldlineId||'') || !Number.isFinite(cutoffMs) || !Number.isFinite(errorAtMs) || cutoffMs<=errorAtMs) return row;
         resolved+=1;
-        return {...clone(row),resolvedAt,resolution:{worldlineId:string(worldlineId||''),replayFingerprint:string(replayFingerprint||''),throughTurn:Number(throughTurn||0)}};
+        const resolution=code ? {worldlineId, reason:'server_descriptor_verified'}
+          : {worldlineId:string(worldlineId||''),replayFingerprint:string(replayFingerprint||''),throughTurn:Number(throughTurn||0)};
+        return {...clone(row),resolvedAt,resolution};
       });
       if (!resolved) return {resolved:0};
       existing.updatedAt=resolvedAt; await storage.setJson(keyName,existing); await assertStateStoredValue(keyName,existing,'STATE_REPLAY_ERROR_RESOLUTION_READBACK_FAILED'); touchWorldManagerRuntimeMeta();

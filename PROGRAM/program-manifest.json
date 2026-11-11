@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "0.5.1",
-  "generatedAt": "2026-11-11T02:41:04.659Z",
+  "generatedAt": "2026-11-11T07:01:25.390Z",
   "server": {
     "version": "0.5.1",
     "protocol": {
@@ -3832,7 +3832,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "e04ee0ec64fa7b8e943fc24077f724c33b18675009242785ed9a81f791c0dc4e",
+      "sha256": "8b8eccc855e3164632a77610f15cd678728ded132506af508cb27afb1f72eda5",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4248,8 +4248,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "c3dd08d4496b9930c84c52241ee74b446312cff63c675e1d829bb0411cb179f7",
-      "bytes": 6489888
+      "sha256": "e21a2dfb5107c6cf5b25fd1f7e946ade665a7dc4572c68f0afd3ba76cd2e1ca8",
+      "bytes": 6495259
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -9950,6 +9950,10 @@
     "tests/libra_unified_retention_v1_test.cjs": {
       "sha256": "94929f1312272230295eb3883f24e51ef295797c3ea2e96311d23db9443187bd",
       "bytes": 5286
+    },
+    "tests/libra_unified_server_active_descriptor_test.cjs": {
+      "sha256": "9d5a005186c087a4256de33276b1bb0aa1e46d1daa1bafeef40cd55548abfd3e",
+      "bytes": 8970
     },
     "tests/libra_unified_server_handoff_fail_closed_test.cjs": {
       "sha256": "4fdbc4df6f88f1e4830f42a30b50b0bf293733ee7af467a4a24e40bbc33cba7b",
