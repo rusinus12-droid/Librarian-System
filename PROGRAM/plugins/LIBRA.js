@@ -78266,16 +78266,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
 
-  const buildStateMemoryPanel = ({card,field,settings,patch}) => card('State 중심 기억 검색', '인물·관계·세계·서사에서 기본 자료를 확보하고 기존 정본과 Micro를 직접 검색합니다.', [
-    ...[['stateMinimumPerAxis','축별 기본 항목 수',1,8],['stateMaxItems','전체 최대 항목 수',4,128],
-      ['stateCanonicalCandidates','한 번에 읽을 정본 후보 수',4,64],['stateMicroCandidates','한 번에 읽을 Micro 후보 수',4,32]]
-      .map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:1,value:settings[key],
-        dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)})}))),
-    field('렌즈 기본 비중 (%)',guiEl('input',{class:'input',type:'number',min:0,max:100,step:1,value:settings.recallLensSharePercent,
-      dataset:{memorySetting:'recallLensSharePercent'},onInput:event=>patch({recallLensSharePercent:Number(event.target.value)})})),
-    guiEl('p',{class:'hint',text:`렌즈 ${settings.recallLensSharePercent}% · 공통 근거 ${100-settings.recallLensSharePercent}%. 공통 근거는 현재 상태 질문에서 State, 과거 경위에서 정본, 정확한 발언·세부 질문에서 Micro를 우선합니다. State에는 승인된 Micro 변경을 반영하며 미확정 값은 last_known으로 표시합니다. 남는 예산은 공유하고 로어는 직접 전달하지 않습니다.`}),
-    guiEl('pre',{class:'code',text:JSON.stringify(LibraMemoryCore.getLastRecall()?.unifiedExecution?.diagnostics||{},null,2)})
-  ]);
   const buildDebugTab = () => {
     MemorySuiteStorageBridge.scheduleDiagnosticsRefresh(0);
     const stageLabel = (id) => id === 'beforeRequest'
@@ -78365,8 +78355,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
           return guiEl('div', { class: 'card', dataset: { recallDiagnostics: 'true', recallDiagnosticsState: String(view.state) } }, [
             guiEl('h3', { text: '읽은 경로 · 시점 · 미독' }), ...rows,
-            guiEl('div', { class: 'hint', text: 'State 네 축의 기본 자료와 기존 기록을 직접 검색합니다. 후보 상한에 도달한 검색은 부분 탐색으로 표시합니다.' }),
-            guiEl('button', { class: 'btn', type: 'button', dataset: { openStateMemory: 'true' }, text: 'State 검색 설정', onClick: () => selectBookSettingsRoomSection('state-memory') })]);
+            guiEl('div', { class: 'hint', text: 'State 네 축의 기본 자료와 기존 기록을 직접 검색합니다. 후보 상한에 도달한 검색은 부분 탐색으로 표시합니다.' })]);
         })(),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '마지막 Provider 호출' }), guiEl('div', { class: 'code', text: JSON.stringify({ request: Runtime.lastProviderRequest, response: Runtime.lastProviderResponse, error: Runtime.lastProviderError, backendBridge: Runtime.lastBackendBridge, promptCache: PromptCacheRuntime.last }, null, 2) || '(아직 provider 호출 기록 없음)' })]),
         guiEl('div', { class: 'card' }, [guiEl('h3', { text: '최근 경고' }), guiEl('div', { class: 'code', text: JSON.stringify(Runtime.warnings.slice(-20), null, 2) })]),
@@ -84663,7 +84652,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'분석할 내용',note:'선택 사항 · 분석 입력 규칙',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
-    Object.freeze({ id: 'state-memory', group: 'settings', no: '03S', label: 'State 기억 검색', note: '축별 기본 확보 · 기존 기록 직접 검색', eyebrow: 'STATE MEMORY' }),
     Object.freeze({ id: 'state', group: 'settings', no: '04', label: '현재 상태 적용', note: '로컬 적용 · 추가 호출 0회', eyebrow: 'STATE TRACKING' }),
     Object.freeze({ id: 'server', group: 'settings', no: '05', label: '서버 · 저장', note: 'Storage · Compute', eyebrow: 'STORAGE & COMPUTE' }),
     Object.freeze({ id: 'ai', group: 'settings', no: 'C1', label: 'AI 연결', note: '모델 · 제공자 · 연결 프리셋', eyebrow: 'AI CONNECTION' }),
@@ -84847,9 +84835,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const performanceFields=new Set(['stateMaxItems','recallMaxChars']);
       const patch=value=>{const custom=Object.keys(value).some(key=>performanceFields.has(key));Gui.memorySettingsDraft=LibraMemoryCore.normalizeMemorySettings({...Gui.memorySettingsDraft,...value,...(custom?{performancePreset:'custom'}:{})});markGuiDirty();};
       const memoryToggle=(key,label)=>setting(label,'',toggle(settings[key]!==false,label,value=>patch({[key]:value})));
-      if(sectionId==='state-memory')return buildStateMemoryPanel({card,field,settings,patch});
-      const inputs=[['stateMaxItems','검색 최대 근거 수',4,128,1]];
-      const currentInputs=inputs.map(([key,label,min,max,step])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})})));
+      const inputs=[
+        ['stateMaxItems','검색 최대 근거 수',4,128],
+        ['stateMinimumPerAxis','State 축별 기본 항목 수',1,8],
+        ['stateCanonicalCandidates','한 번에 읽을 정본 후보 수',4,64],
+        ['stateMicroCandidates','한 번에 읽을 Micro 후보 수',4,32]
+      ];
+      const currentInputs=inputs.map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})})));
       const extraDetails=[
 guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'기억 전환 · 상태 재시도 · 저장 상세'}),()=>guiEl('div',{class:'fold__body stack'},[
           guiEl('div',{class:'cluster'},[
@@ -84861,8 +84853,7 @@ guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary'
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
         ])),
 guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
-          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기'),
-          setting('State 검색','축별 기본 확보량과 후보 읽기 상한을 설정합니다.',routeButton('State 검색 설정','state-memory'))
+          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
         ])])
 ];
       const budgetPresets = LibraMemoryCore.getRecallBudgetPresets();
@@ -84906,7 +84897,6 @@ guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 �
 ])
       ]);
       return guiEl('div',{class:'stack',dataset:{settingsCategory:'mem',settingsReadback:'LibraMemoryCore'}},[
-card('State 중심 기억 검색','네 축의 기본 자료를 확보하고 기존 정본과 Micro에서 관련 근거를 찾습니다.',[]),
 card('리콜 예산','전체 검색 예산과 렌즈 메모리 예산을 함께 조절합니다.',[budgetPresetButtons]),
 buildLibraClassicPanel({compact:true}),
 guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[
@@ -87459,7 +87449,7 @@ advanced
     const items = BOOK_NATIVE_SETTINGS_SECTIONS;
     const groups = [
       { id:'ai', label:'AI 연결', note:'생성 AI · 임베딩', icon:'cpu', sections:['ai','embedding'] },
-      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','state-memory','pipeline','logs'] },
+      { id:'mem', label:'기억과 검색', note:'성능 · 최근 대화 · 분석기', icon:'shelf', sections:['memory','pipeline','logs'] },
       { id:'ref', label:'참고 자료', note:'로어 · 분석 입력 규칙', icon:'book', sections:['references','source_edits'] },
       { id:'store', label:'저장과 백업', note:'스코프 · 백업 · 데이터 이동', icon:'db', sections:['scopes','recovery','transfer'] },
       { id:'adv', label:'복구 · 진단', note:'상태 · 교정 · 재구축', icon:'wrench', sections:['state','general'] }
