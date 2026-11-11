@@ -68,7 +68,7 @@ for (const variant of variants) {
       assert.equal(preview.completeKnownScopes,true);
       assert.equal(discoveryPasses-before.discoveryPasses,1,'preview classifies the inventory once');
       assert.equal(singlePayloadReads-before.singlePayloadReads,0,'preview classifies normal remote payloads through bounded get-many');
-      await f.bridge.setGlobalMode('plugin_only',{previewFingerprint:preview.inventoryFingerprint});
+      await f.bridge.setGlobalMode('plugin_only');
       for (const [key,value] of bodies) assert.equal(f.values.get(key),value);
       assert.ok(scopedReads >= bodies.size * 2);
       assert.ok(boundedBatches > 0);
@@ -143,22 +143,22 @@ for (const variant of variants) test(`${variant[0]} can resume post-reset restor
       assert.equal(cache.get(cacheKey),'PRESERVED_VECTOR_CACHE');
       matchingCacheBinding=true;
     }
-    await assert.rejects(()=>cold.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_SCOPE_RESTORE_INCOMPLETE');
+    await assert.rejects(()=>cold.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_TRANSFER_INCOMPLETE'
+      &&error.details.failures.some(row=>row.key===key));
     const pending = cold.bridge.getSyncJob();
-    assert.equal(pending.status,'paused');
+    assert.equal(pending.status,'failed');
+    assert.equal((await cold.bridge.getGlobalMode()).mode,'server_only');
+    assert.equal(JSON.parse(f.values.get('memory_suite_reset_choice.v2.'+namespace)).choice,'empty');
     assert.equal(pending.verifiedScopes,0);
     await cold.close();
-    const journalKey = '__memory_suite_internal_sync_job_v1__:'+namespace;
-    const legacyJournal = JSON.parse(f.values.get(journalKey));
-    delete legacyJournal.resetRestorePreference;
-    f.values.set(journalKey,JSON.stringify(legacyJournal));
     cold = await reopen();
     const result = await cold.bridge.setGlobalMode('plugin_only');
     assert.equal(result.verifiedScopes,3);
     assert.equal((await cold.bridge.getScopeMode({scopeId:'A'})).mode,'plugin_only');
     assert.equal(await cold.proxy.getItem(key),'AFTER_RESET');
     assert.equal(repository.get('plugin',key).value,'AFTER_RESET');
-    assert.equal(cold.bridge.getSyncJob().jobId,pending.jobId);
+    assert.notEqual(cold.bridge.getSyncJob().jobId,pending.jobId);
+    assert.equal(repository.get('plugin',localOnly).exists,false);
     assert.equal(JSON.parse(f.values.get('memory_suite_reset_choice.v2.'+namespace)).choice,'restored');
     if (ownerHasDeviceVectors) {
       assert.equal(cache.get(cacheKey),namespace==='libra'?'SERVER_VECTOR_CACHE':'PRESERVED_VECTOR_CACHE');

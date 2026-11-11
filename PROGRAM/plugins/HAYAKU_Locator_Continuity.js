@@ -3275,12 +3275,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!value || typeof value !== 'object') return null;
     try { return JSON.parse(JSON.stringify(value)); } catch (_) { return { ...value }; }
   };
+  const syncJobSnapshot = () => {
+    if (state.syncJob.current?.engine !== 'fast') return cloneSyncJob(state.syncJob.current);
+    const {fastReplicas,fastCommit,...visible} = state.syncJob.current;
+    return cloneSyncJob(visible);
+  };
   const notifySyncJob = () => {
     if (state.syncJob.current?.kind === 'global_mode' && syncJobTerminal(state.syncJob.current.status) && modeConfigurationBusy) {
       deferredGlobalTerminalNotification = true;
       return;
     }
-    const snapshot = cloneSyncJob(state.syncJob.current);
+    const snapshot = syncJobSnapshot();
     for (const listener of Array.from(state.syncJob.listeners)) {
       try { listener(snapshot); } catch (_) {}
     }
@@ -3378,11 +3383,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // A panel opened during the final journal write must wait for the same
     // durable completion event as subscribers registered before migration.
     if (!(state.syncJob.current?.kind === 'global_mode' && syncJobTerminal(state.syncJob.current.status) && modeConfigurationBusy)) {
-      try { listener(cloneSyncJob(state.syncJob.current)); } catch (_) {}
+      try { listener(syncJobSnapshot()); } catch (_) {}
     }
     return () => state.syncJob.listeners.delete(listener);
   };
-  const getSyncJob = () => cloneSyncJob(state.syncJob.current);
+  const getSyncJob = syncJobSnapshot;
   const loadPersistedSyncJob = async () => {
     if (state.syncJob.loadPending) return await state.syncJob.loadPending;
     if (state.syncJob.loaded) return getSyncJob();
@@ -3403,6 +3408,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (!parsed || parsed.schema !== SYNC_JOB_SCHEMA || parsed.namespace !== namespace) throw new Error('journal_contract_unavailable');
         const age = Date.now() - Math.max(0, Number(parsed.updatedAt || parsed.startedAt || 0) || 0);
         if (age > SYNC_JOB_RESUME_TTL_MS && syncJobTerminal(parsed.status)) { state.syncJob.loaded = true; return null; }
+        if (!syncJobTerminal(parsed.status) && parsed.engine === 'fast' && !parsed.fastCommit) {
+          // The one-pass transfer switches nothing until it has finished, so an
+          // interrupted run is simply over: the source side is still in use.
+          Object.assign(parsed, { status:'failed', phase:'interrupted', error:'MEMORY_SUITE_TRANSFER_INTERRUPTED', nextRetryAt:0, finishedAt:Number(parsed.updatedAt || Date.now()),
+            message:'저장 위치 전환이 도중에 멈췄습니다. 저장 위치는 바뀌지 않았고 원본은 그대로입니다. 설정 적용을 다시 누르면 이미 옮긴 자료는 건너뜁니다.' });
+        }
         if (!syncJobTerminal(parsed.status)) {
           if (age > SYNC_JOB_RESUME_TTL_MS) parsed.resumeExpired = true;
           parsed.status = 'paused';
@@ -4303,12 +4314,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const requestMode = normalizeMode(requestOptions.storageMode || transientMode || registeredMode || state.config.mode || MODE_PLUGIN_ONLY);
     const resetEpoch=Number(connection.resetEpochs?.[namespace]||0);
     const isManagerOperation = managerOnly || route.startsWith('/v1/manager/') || requestOptions.extraHeaders?.['X-Memory-Suite-Manager'] === 'retrace';
-    if(resetEpoch && !isManagerOperation){
-      const choice=await readResetChoice(connection);
-      const serverOnlyPass = requestMode === MODE_SERVER_ONLY && !choice && !resetReloadRequired;
-      if(!serverOnlyPass && (resetReloadRequired || choice?.epoch!==resetEpoch || choice?.url!==(connection.requestedUrl||connection.url))){
-        throw new Error('서버 자료가 초기화 또는 복원되었습니다. 서버 연결 설정에서 서버 자료 사용 또는 로컬 기억 다시 업로드를 선택한 뒤 RisuAI를 새로고침하세요.');
-      }
+    // A reset or restored server needs no separate choice: the saved storage mode
+    // alone decides which side is read and written.
+    if(resetEpoch && !isManagerOperation && resetReloadRequired){
+      throw new Error('서버 자료 사용 방법을 바꿨습니다. RisuAI를 새로고침한 뒤 사용하세요.');
     }
     const init = {
       method,
@@ -5044,7 +5053,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (result.failures.length === 0 && options.pruneUntracked === true) {
       for (const key of pruneKeys) {
-        let action = '추적되지 않은 로컬 값 정리';
+        let action = '추적되지 않은 플러그인 값 정리';
         try {
           report('prune_local', { currentAction: action, currentKey: key });
           await captureOriginal(key);
@@ -5288,7 +5297,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       report('connection_ready', { currentAction: '서버 연결 확인 완료', message: `Librarian System ${connectionTest.serverVersion || '-'} 연결됨` });
 
       if (targetUrl !== original.url && original.mode === MODE_SERVER_ONLY) {
-        report('restore_before_url_change', { currentAction: '기존 서버 데이터 로컬 복구', message: '서버 주소 변경 전에 현재 서버 DATA를 pluginStorage로 안전하게 복구합니다.' });
+        report('restore_before_url_change', { currentAction: '기존 서버 데이터 플러그인 복구', message: '서버 주소 변경 전에 현재 서버 DATA를 pluginStorage로 안전하게 복구합니다.' });
         restoredBeforeUrlChange = await restoreAllLegacyFromServer({ pruneUntracked: true, requireFullCoverage: true, onProgress });
         if (!restoredBeforeUrlChange.ok) throw new Error(`memory_suite_restore_before_url_change_failed:${restoredBeforeUrlChange.failures.length}`);
       }
@@ -5947,7 +5956,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       seed_new_server: '새 서버 기준선 생성', mode_transition: '저장 모드 전환 준비',
       integrity_before: '서버 무결성 확인', inventory: '데이터 조사 중', inventory_complete: '데이터 조사 완료',
       sync_local: 'pluginStorage → 서버 동기화', restore_missing_local: '서버 → pluginStorage 보충',
-      restore_before_url_change: '기존 서버 데이터 복구', prune_local: '로컬 정리', restore_values: '서버 데이터 복구',
+      restore_before_url_change: '기존 서버 데이터 복구', prune_local: '플러그인 정리', restore_values: '서버 데이터 복구',
       restore_tombstones: '삭제 상태 복구', integrity_after: '최종 무결성 확인', space_complete: '저장소 동기화 완료',
       space_incomplete: '동기화 확인 필요', configuration_complete: '설정 적용 완료', configuration_rollback: '이전 설정 복구',
       waiting_for_server: '서버 재연결 대기', completed: '완료', failed: '실패'
@@ -7489,7 +7498,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const localRegistry=mergeScopeRegistries(...registries);
     const legacyMode=normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY));
     const resetCandidate=await readResetPreferenceCandidate();
-    const remoteRequired=resetCandidate?.choice==='empty'&&resetCandidate.url===targetUrl || urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
+    const remoteRequired=inventoryOptions.requireRemote===true || resetCandidate?.choice==='empty'&&resetCandidate.url===targetUrl || urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
       || registryCopies.some(copy=>copy.raw != null && Object.values(globalReadRegistry(copy.raw,copy.location,[]).entries).some(row=>!isRemovedScopeRow(row)&&normalizeMode(row.mode)!==MODE_PLUGIN_ONLY))
       || registries.some(registry=>registry.globalMigrationRemoteHistory===true)
       || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0);
@@ -7504,6 +7513,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           const consume=async () => {
             if(!pending.length)return;
             const group={space,keys:pending.map(item=>item.key),bytes};
+            if(inventoryOptions.light===true){
+              // The listing already identifies each server record by revision and digest.
+              for(const expected of pending){
+                if(expected.key===SCOPE_ROUTING_SERVER_KEY){
+                  const row=await remoteGet(space,expected.key,readOptions);
+                  if(row.exists){registryCopies.push({location:'server',raw:row.value});registries.push(globalReadRegistry(row.value,'server',blockers));}
+                }else{
+                  expected.fingerprint='server:'+expected.revision+':'+expected.digest;
+                  records.push(expected);physicalRecords.set(globalRecordIdentity(expected),expected);
+                  remoteGroups.set(globalRecordIdentity(expected),group);
+                }
+              }
+              pending=[];bytes=0;return;
+            }
             const batch=await remoteGetMany(space,group.keys,readOptions);
             for(const expected of pending){
               const row=batch.values[expected.key];
@@ -7709,8 +7732,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         remedySteps:['1. 이전을 시작했던 서버의 실행 상태와 주소 확인',`2. ${next}`]
       };
       if(hasResetBlocker)return {blockerReason:'서버 초기화 또는 복원이 감지되어 자료 사용 방법을 먼저 선택해야 합니다.',
-        actionRequired:`고급 작업에서 서버 자료 사용 또는 로컬 기억 업로드를 선택하고 새로고침한 뒤 ${next}`,
-        remedySteps:['1. 고급 작업의 서버 초기화·복원 이후 선택에서 자료 사용 방법 선택','2. RisuAI 새로고침',`3. ${next}`]};
+        actionRequired:`고급 작업의 [모드 전환 중 자동 복구]에서 전환하던 모드를 고르세요.`,
+        remedySteps:['1. 고급 작업의 [모드 전환 중 자동 복구] 선택','2. 전환하던 모드 선택']};
       if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(errCode))return {
         blockerReason:'자료와 대화 목록을 다시 확인해야 합니다.',actionRequired:`${next} 추가 확인창이 나오면 내용을 확인해 승인하면 됩니다.`,
         remedySteps:[`1. ${next}`,'2. 재검사 결과 확인 및 승인 · 기존에 일치하는 자료는 재전송하지 않음']};
@@ -7733,11 +7756,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (hasResetBlocker) {
         return {
           blockerReason: '서버 자료 복원 또는 초기화가 감지되어 데이터 덮어쓰기 방지 잠금이 활성화되었습니다.',
-          actionRequired: '고급 작업 메뉴에서 [서버 자료 사용] 또는 [로컬 기억 다시 업로드]를 선택한 뒤 브라우저를 새로고침(F5)하고 재개하세요.',
+          actionRequired: '고급 작업의 [모드 전환 중 자동 복구]에서 전환하던 모드를 고르세요.',
           remedySteps: [
             '1. 로컬 Librarian 서버가 켜져 있는지 확인',
             '2. 플러그인 설정 > [고급 작업] 메뉴 열기',
-            '3. [서버 자료 사용 · 로컬 업로드 안 함] (권장) 또는 [초기화 후 로컬 기억 다시 업로드] 클릭',
+            '3. 고급 작업의 [모드 전환 중 자동 복구]에서 전환하던 모드 선택',
             '4. RisuAI 브라우저 창 새로고침 (F5)',
             '5. 다시 [고급 작업] > [미완료 전체 이전 재개] 클릭'
           ]
@@ -7775,7 +7798,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     if (errCode === 'MEMORY_SUITE_GLOBAL_SOURCE_CHANGED') {
       return {
-        blockerReason: '이전 준비 중 로컬 대화 기록에 변경사항이 발생했습니다.',
+        blockerReason: '이전 준비 중 플러그인 대화 기록에 변경사항이 발생했습니다.',
         actionRequired: 'RisuAI를 새로고침하고 전체 이전 설정을 다시 적용하세요.',
         remedySteps: [
           '1. 브라우저 새로고침(F5)',
@@ -7786,11 +7809,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (errCode.startsWith('MEMORY_SUITE_GLOBAL_ROLLBACK_')) {
       return {
         blockerReason: '취소 중 이전 저장 경로 복구 검증에 실패했습니다.',
-        actionRequired: '원본 데이터는 안전하게 보존되어 있습니다. [고급 작업] > [전체 이전 관리] > [이전 작업 취소 · 기존 경로 복구]를 다시 클릭하거나 브라우저 새로고침(F5) 후 재시도하세요.',
+        actionRequired: '원본 데이터는 안전하게 보존되어 있습니다. [고급 작업] > [모드 전환 중 자동 복구]를 누르고 전환하던 모드를 고르세요.',
         remedySteps: [
           '1. [상세 진단 복사]로 오류 상세 정보 확인',
           '2. RisuAI 브라우저 새로고침(F5)',
-          '3. [고급 작업] > [전체 이전 관리] > [이전 작업 취소 · 기존 경로 복구] 다시 클릭'
+          '3. [고급 작업] > [모드 전환 중 자동 복구]에서 전환하던 모드 선택'
         ]
       };
     }
@@ -8206,7 +8229,658 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       error.job=getSyncJob();throw error;
     }finally{globalMigrationContext=null;globalJobRunning=false;}
   };
-  const persistGlobalModeAllChats = async (modeValue,operationOptions={}) => {
+  // BEGIN FAST MODE TRANSFER v1
+  // The saved mode names the side that holds a chat's memory. A transfer reads
+  // the chat list once, copies each chat's records from that side to the other,
+  // compares by content digest instead of reading values back, and switches the
+  // routes only after every record is across. A stopped or failed run therefore
+  // leaves the source in use, and running it again skips what already matches.
+  // One megabyte per request keeps the values held in memory small on phones and webviews.
+  const FAST_BATCH_ITEMS = 48, FAST_BATCH_BYTES = 1024 * 1024, FAST_ATTEMPTS = 4, FAST_FAILURE_LIMIT = 3;
+  // Problems of a single record: that record stays where it is and the rest moves.
+  const FAST_RECORD_ISSUES = new Set(['remote_key_ownership_unknown','remote_source_route_unverified','MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD',
+    'owner_record_unclassified','owner_record_scope_unverified','owner_record_coverage_incomplete','physical_value_unreadable','device_store_unavailable']);
+  const fastHardBlockers = inventory => inventory.blockers.filter(row =>
+    row.code === 'MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD' || !FAST_RECORD_ISSUES.has(String(row?.code || '')));
+  // Same digest the server stores for a value, so equal content needs no transfer.
+  const fastContentDigest = async value => {
+    let text;
+    try { text = JSON.stringify(value); } catch (_) { return ''; }
+    if (typeof text !== 'string' || typeof globalThis.crypto?.subtle?.digest !== 'function') return '';
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  };
+  const fastStop = () => {
+    if (lifecycle.disposed) throw connectionStaleError();
+    if (state.syncJob.current?.pauseRequested === true) throw globalModeError('MEMORY_SUITE_TRANSFER_STOPPED');
+  };
+  let fastNotifiedAt = 0;
+  const fastProgress = (patch, force = false) => {
+    const job = state.syncJob.current;
+    if (!job || job.engine !== 'fast') return;
+    const now = Date.now();
+    Object.assign(job, patch, { updatedAt:now, lastActivityAt:now });
+    if (force || now - fastNotifiedAt >= 250) { fastNotifiedAt = now; notifySyncJob(); }
+  };
+  const fastSaveJob = async patch => {
+    const previous = state.syncJob.current;
+    try { return await globalSaveJob(patch); }
+    catch (error) {
+      state.syncJob.current = previous;
+      throw error;
+    }
+  };
+  const fastRetry = async work => {
+    let last = null;
+    for (let attempt = 0; attempt < FAST_ATTEMPTS; attempt++) {
+      fastStop();
+      try { return await work(); }
+      catch (error) {
+        last = error;
+        const status = Number(error?.status || 0);
+        if ((status >= 400 && status < 500 && status !== 408 && status !== 429) || error?.storageMutationRejected === true
+          || String(error?.code || '').startsWith('MEMORY_SUITE_TRANSFER_') || lifecycle.disposed) throw error;
+        if (attempt === FAST_ATTEMPTS - 1) break;
+        if (state.syncJob.current) state.syncJob.current.retryCount = Number(state.syncJob.current.retryCount || 0) + 1;
+        await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1) * (attempt + 1)));
+        try { await bootstrap(true, true); } catch (_) {}
+      }
+    }
+    throw last;
+  };
+  const fastFail = (failures, row, error) => {
+    if (String(error?.code || '').startsWith('MEMORY_SUITE_TRANSFER_') || lifecycle.disposed
+      || ['MEMORY_SUITE_CONNECTION_STALE','MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',
+        'MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED'].includes(error?.code)) throw error;
+    failures.list.push({ space:String(row.space || ''), key:String(row.logicalKey || row.key || ''), error:compact(error?.code || error?.message || error, 240) });
+    failures.streak += 1;
+    // The same fault on consecutive records means the connection or the store is gone.
+    if (failures.streak >= FAST_FAILURE_LIMIT) throw error;
+  };
+  const fastChunked = row => !!row.logicalChunks?.length || Object.hasOwn(row, 'logicalValue');
+  const fastReadLocal = async (inventory,row) => {
+    const raw = await inventory.readRecord(row);
+    return fastChunked(row) ? await readGlobalLogicalRecord(inventory,row) : raw;
+  };
+  const fastCount = (counters, row, bytes, action) => {
+    counters.processedItems += 1; counters.processedBytes += bytes;
+    fastProgress({ ...counters, currentSpace:row.space, currentKey:row.logicalKey, currentAction:action });
+  };
+
+  const fastDestinationConflict = (row, location) => globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',
+    {space:row.space,key:row.logicalKey || row.key,destinationLocation:location,replicaWitness:'unavailable'});
+  const fastServerProof = row => row ? [row.revision, row.digest, row.deleted === true || row.tombstone === true] : null;
+  const fastMatchesProof = (proof, value) => proof != null && JSON.stringify(proof) === JSON.stringify(value);
+  const fastLocalProof = async value => isNullishStorageValue(value) ? null : await globalDigest([false,value]);
+  const fastLocalLocation = space => space === 'plugin' ? 'plugin' : 'device';
+  const fastReplicaKey = (location,space,key) => globalRecordIdentity({location,space,key});
+  const fastCanReplace = (transfer,row,location,key,proof) => transfer.overwrite
+    || fastMatchesProof(transfer.replicas.get(fastReplicaKey(location,row.space,key)),proof);
+
+  const fastUpload = async (inventory, plan, counters, failures, batchCapable, transfer) => {
+    const serverIndex = new Map();
+    for (const row of inventory.records) if (row.location === 'server') serverIndex.set(row.space + '\u0000' + row.key, row);
+    let batch = [], batchBytes = 0, batchAlias = '';
+    const settle = (item, receipt = null) => {
+      counters.uploaded += 1; counters.transferredBytes += item.bytes; failures.streak = 0;
+      const remote = { revision:receipt.revision, digest:receipt.digest, deleted:false };
+      serverIndex.set(item.space + '\u0000' + item.key, remote);
+      transfer.replicas.set(fastReplicaKey('server',item.space,item.key),fastServerProof(remote));
+      transfer.replicas.set(item.sourceIdentity,item.sourceFingerprint);
+    };
+    const single = async item => {
+      try {
+        const receipt = await fastRetry(() => remoteMutate('set',item.space,item.key,item.value,
+          {allowPluginOnly:true,expectedRevision:item.revision}));
+        if (receipt.superseded || (item.digest && receipt.digest !== item.digest)) throw fastDestinationConflict(item,'server');
+        settle(item,receipt);
+      } catch (error) {
+        if (error?.status === 409) throw fastDestinationConflict(item,'server');
+        fastFail(failures,item,error);
+      }
+    };
+    const flush = async () => {
+      if (!batch.length) return;
+      const items = batch, alias = batchAlias;
+      batch = []; batchBytes = 0; batchAlias = '';
+      const body = { namespace, operationId:operationId('transfer'), mutations:items.map(item => ({ kind:'set', space:item.space, key:item.key, value:item.value,
+        expectedRevision:item.revision, expectedDigest:item.expectedDigest, expectedExists:item.exists, expectedTombstone:item.tombstone })) };
+      const send = async () => (await request('POST', '/v1/kv/batch',
+        alias ? { ...body, fence:await usableFlashbackFence(items[0].key) } : body, { allowPluginOnly:true }))?.result || null;
+      let receipt = null, fallback = false;
+      try { receipt = await fastRetry(() => alias ? withFlashbackWriter(items[0].key, send, { forceServer:true }) : send()); }
+      catch (error) {
+        const status = Number(error?.status || 0);
+        if (status === 409) throw fastDestinationConflict(items[0],'server');
+        // An older server or a refused body can still use a revision-conditional single write.
+        if (![404,405,413,501].includes(status)) {
+          for (const item of items) failures.list.push({ space:item.space, key:item.logicalKey, error:compact(error?.code || error?.message || error, 240) });
+          failures.streak += 1;
+          if (failures.streak >= FAST_FAILURE_LIMIT || String(error?.code || '').startsWith('MEMORY_SUITE_TRANSFER_') || lifecycle.disposed) throw error;
+          return;
+        }
+        fallback = true;
+      }
+      const receipts = new Map((Array.isArray(receipt?.receipts) ? receipt.receipts : []).map(row => [row.space + '\u0000' + row.key, row]));
+      for (const item of items) {
+        const row = receipts.get(item.space + '\u0000' + item.key);
+        if (receipt?.durable === true && receipt.verified === true && row?.kind === 'set' && (!item.digest || row.digest === item.digest)) settle(item, row);
+        else if (fallback) await single(item);
+        else throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{space:item.space,key:item.logicalKey});
+      }
+    };
+    for (const { row, scope } of plan) {
+      fastStop();
+      let bytes = 0, action = '플러그인 → 서버 복사';
+      try {
+        const route = await globalRouteForRecord(row, scope);
+        const raw = await fastReadLocal(inventory, row);
+        const value = isNullishStorageValue(raw) ? null : await routeProjectValue(route, raw);
+        if (isNullishStorageValue(value)) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey});
+        bytes = storageValueBytes(value);
+        const digest = await fastContentDigest(value);
+        const remote = serverIndex.get(row.space + '\u0000' + route.remoteKey);
+        const sourceIdentity = globalRecordIdentity(row);
+        if (remote && remote.deleted !== true && digest && remote.digest === digest) {
+          transfer.replicas.set(fastReplicaKey('server',row.space,route.remoteKey),fastServerProof(remote));
+          transfer.replicas.set(sourceIdentity,row.fingerprint);
+          counters.matched += 1; failures.streak = 0; action = '이미 같음';
+        } else {
+          if (remote && !fastCanReplace(transfer,row,'server',route.remoteKey,fastServerProof(remote)))
+            throw fastDestinationConflict(row,'server');
+          const item = { space:row.space, key:route.remoteKey, logicalKey:row.logicalKey, value, bytes, digest,
+            revision:Math.max(0, Number(remote?.revision || 0)), expectedDigest:String(remote?.digest || ''),
+            exists:!!remote && remote.deleted !== true, tombstone:!!remote && remote.deleted === true,
+            sourceIdentity, sourceFingerprint:row.fingerprint };
+          if (!batchCapable || bytes > FAST_BATCH_BYTES) { await flush(); await single(item); }
+          else {
+            const alias = typeof flashbackWriterAlias === 'function' ? flashbackWriterAlias(item.key) : '';
+            if (batch.length && (alias !== batchAlias || batch.length >= FAST_BATCH_ITEMS || batchBytes + bytes > FAST_BATCH_BYTES)) await flush();
+            batch.push(item); batchBytes += bytes; batchAlias = alias;
+          }
+        }
+      } catch (error) { action = '실패'; fastFail(failures, row, error); }
+      fastCount(counters, row, bytes, action);
+    }
+    await flush();
+  };
+
+  const fastSaveLocalOriginal = async (transfer,row,store,key,raw) => {
+    if (!transfer.undo) return;
+    const backup = isNullishStorageValue(raw) ? null : SYNC_JOB_STORAGE_KEY+':restore:'+transfer.jobId+':'+transfer.undo.length;
+    if (backup && !await legacyWriteVerified(store,backup,raw))
+      throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE',{space:row.space,key});
+    const identity = fastReplicaKey(fastLocalLocation(row.space),row.space,key);
+    const entry = {store,key,backup,identity,proof:await fastLocalProof(raw),previous:transfer.replicas.get(identity)};
+    transfer.undo.push(entry);
+    return entry;
+  };
+
+  const finishFastLocalCopies = async (transfer,rollback) => {
+    for (const entry of [...transfer.undo].reverse()) {
+      if (rollback) {
+        const current = await fastLocalProof(await entry.store.getItem(entry.key));
+        if (current === entry.proof) continue;
+        if (current !== entry.appliedProof) throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_ROUTE_CONFLICT',{key:entry.key});
+        if (entry.backup) {
+          const raw = await entry.store.getItem(entry.backup);
+          if (await fastLocalProof(raw) !== entry.proof || !await legacyWriteVerified(entry.store,entry.key,raw))
+            throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{key:entry.key});
+        } else if (!await legacyRemoveVerified(entry.store,entry.key)) {
+          throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{key:entry.key});
+        }
+        if (entry.previous == null) transfer.replicas.delete(entry.identity);
+        else transfer.replicas.set(entry.identity,entry.previous);
+      }
+    }
+    for (const {store,backup} of transfer.undo) if (backup) await legacyRemoveVerified(store,backup).catch(()=>false);
+    transfer.undo.length = 0;
+  };
+
+  const fastDownload = async (inventory, plan, counters, failures, transfer) => {
+    const localIndex = new Map();
+    for (const row of inventory.records) if (row.location !== 'server' && !row.artifact && !row.deleted) localIndex.set(row.space + '\u0000' + row.logicalKey, row);
+    const readCurrent = async (store,local) => fastChunked(local) ? await readGlobalLogicalRecord(inventory,local) : await store.getItem(local.key);
+    const storeFor = row => {
+      const store = inventory.stores[row.space];
+      if (typeof store?.getItem !== 'function' || typeof store?.setItem !== 'function') throw globalModeError('MEMORY_SUITE_RESTORE_ADAPTER_UNAVAILABLE', { space:row.space });
+      return store;
+    };
+    const live = plan.filter(entry => !entry.row.deleted).sort((a, b) => a.row.space === b.row.space ? 0 : a.row.space < b.row.space ? -1 : 1);
+    for (let cursor = 0; cursor < live.length;) {
+      fastStop();
+      const space = live[cursor].row.space, group = [];
+      let groupBytes = 0;
+      while (cursor < live.length && live[cursor].row.space === space && group.length < FAST_BATCH_ITEMS) {
+        const size = Math.max(0, Number(live[cursor].row.valueBytes) || 0);
+        if (group.length && groupBytes + size > FAST_BATCH_BYTES) break;
+        group.push(live[cursor]); groupBytes += size; cursor += 1;
+      }
+      // Decide from the local copy first: a record that already matches is never downloaded.
+      const wanted = [];
+      for (const entry of group) {
+        const { row, scope } = entry;
+        try {
+          entry.store = storeFor(row);
+          entry.route = await globalRouteForRecord(row, scope);
+          const local = localIndex.get(row.space + '\u0000' + row.logicalKey);
+          entry.local = local;
+          const raw = await entry.store.getItem(local?.key || row.logicalKey);
+          entry.localProof = await fastLocalProof(raw);
+          if ((local?.fingerprint || null) !== entry.localProof)
+            throw fastDestinationConflict(row,fastLocalLocation(row.space));
+          const current = local && fastChunked(local) ? await readGlobalLogicalRecord(inventory,local) : raw;
+          entry.matched = !fastChunked(row) && !isNullishStorageValue(current)
+            && await fastContentDigest(await routeProjectValue(entry.route,current)) === row.digest;
+          if (!entry.matched && !fastChunked(row)) wanted.push(row.key);
+        } catch (error) { entry.error = error; }
+      }
+      let fetched = { values:{} };
+      if (wanted.length) {
+        try { fetched = await fastRetry(() => remoteGetMany(space, wanted, { allowPluginOnly:true })); }
+        catch (error) { for (const entry of group) if (!entry.error && !entry.matched && !fastChunked(entry.row)) entry.error = error; }
+      }
+      for (const entry of group) {
+        const { row } = entry;
+        const bytes = Math.max(0, Number(row.valueBytes) || 0);
+        let action = '서버 → 플러그인 복사';
+        try {
+          if (entry.error) throw entry.error;
+          if (entry.matched) {
+            if (await fastLocalProof(await entry.store.getItem(entry.local.key)) !== entry.localProof)
+              throw fastDestinationConflict(row,fastLocalLocation(row.space));
+            counters.matched += 1; failures.streak = 0; action = '이미 같음';
+          }
+          else {
+            let remoteValue;
+            if (fastChunked(row)) remoteValue = await readGlobalLogicalRecord(inventory, row);
+            else {
+              const got = fetched.values[row.key];
+              assertGlobalRemoteRecord(got,row);
+              remoteValue = got.value;
+            }
+            const raw = await entry.store.getItem(entry.local?.key || row.logicalKey);
+            const location = fastLocalLocation(row.space);
+            if (await fastLocalProof(raw) !== entry.localProof) throw fastDestinationConflict(row,location);
+            const current = entry.local && fastChunked(entry.local) ? await readGlobalLogicalRecord(inventory,entry.local) : raw;
+            if (!isNullishStorageValue(current) && jsonComparable(await routeProjectValue(entry.route,current)) === jsonComparable(remoteValue)) {
+              counters.matched += 1; failures.streak = 0; action = '이미 같음';
+            } else {
+              if (entry.localProof && !fastCanReplace(transfer,row,location,entry.local.key,entry.localProof)
+                && !(inventory.resetEmpty && row.retainDeviceCacheAfterReset && entry.local.retainDeviceCacheAfterReset
+                  && row.vectorCacheStorageKey && row.vectorCacheStorageKey === entry.local.vectorCacheStorageKey))
+                throw fastDestinationConflict(row,location);
+              const merged = await routeMergeValue(entry.route,remoteValue,current);
+              if (await fastLocalProof(await entry.store.getItem(entry.local?.key || row.logicalKey)) !== entry.localProof)
+                throw fastDestinationConflict(row,location);
+              const writeRaw = entry.local?.key && entry.local.key !== row.logicalKey
+                ? await entry.store.getItem(row.logicalKey) : raw;
+              if (entry.local?.key && entry.local.key !== row.logicalKey && !isNullishStorageValue(writeRaw))
+                throw fastDestinationConflict(row,location);
+              const undo = await fastSaveLocalOriginal(transfer,row,entry.store,row.logicalKey,writeRaw);
+              const nextProof = await fastLocalProof(merged);
+              if (undo) undo.appliedProof = nextProof;
+              if (!await legacyWriteVerified(entry.store,row.logicalKey,merged)) throw new Error('pluginstorage_restore_failed');
+              entry.localProof = nextProof;
+              counters.restored += 1; counters.transferredBytes += bytes; failures.streak = 0;
+            }
+          }
+          transfer.replicas.set(globalRecordIdentity(row),fastServerProof(row));
+          transfer.replicas.set(fastReplicaKey(fastLocalLocation(row.space),row.space,
+            action === '서버 → 플러그인 복사' ? row.logicalKey : entry.local?.key || row.logicalKey),entry.localProof);
+        } catch (error) { action = '실패'; fastFail(failures, row, error); }
+        fastCount(counters, row, bytes, action);
+      }
+    }
+    // A record the server deleted is removed from the plugin copy of a chat that lived on the server.
+    for (const { row, scope } of plan.filter(entry => entry.row.deleted)) {
+      fastStop();
+      let action = '서버 삭제 반영';
+      try {
+        const store = storeFor(row), local = localIndex.get(row.space + '\u0000' + row.logicalKey);
+        if (local && !isNullishStorageValue(await store.getItem(local.key))) {
+          const location = fastLocalLocation(row.space);
+          const raw = await store.getItem(local.key);
+          const proof = await fastLocalProof(raw);
+          if (proof !== local.fingerprint || !fastCanReplace(transfer,row,location,local.key,proof))
+            throw fastDestinationConflict(row,location);
+          await inventory.readRecord(row);
+          const route = await globalRouteForRecord(row, scope);
+          if (local.key !== row.logicalKey) throw fastDestinationConflict(row,location);
+          const undo = await fastSaveLocalOriginal(transfer,row,store,local.key,raw);
+          const removed = await routeRemoveLocal(route,async()=>await readCurrent(store,local),
+            async next=>{
+              if (undo) undo.appliedProof = await fastLocalProof(next);
+              return await legacyWriteVerified(store,row.logicalKey,next);
+            },async()=>{
+              if (undo) undo.appliedProof = null;
+              return await legacyRemoveVerified(store,row.logicalKey);
+            });
+          if (!removed) throw new Error('pluginstorage_tombstone_apply_failed');
+          counters.removedByTombstone += 1;
+          transfer.replicas.delete(globalRecordIdentity(local));
+        } else action = '이미 없음';
+        transfer.replicas.set(globalRecordIdentity(row),fastServerProof(row));
+        failures.streak = 0;
+      } catch (error) { action = '실패'; fastFail(failures, row, error); }
+      fastCount(counters, row, 0, action);
+    }
+  };
+
+  // A route journal left by an unfinished publication to another target would refuse every later publication.
+  const fastClearStaleRouteJournal = async (scope, target) => {
+    const store = rawPluginStorage(), key = `__memory_suite_internal_server_route_v1__:${namespace}:${encodeURIComponent(scope.scopeId)}`;
+    if (typeof store?.getItem !== 'function' || typeof store?.removeItem !== 'function') return false;
+    const raw = await store.getItem(key);
+    if (raw == null) return false;
+    let saved = null;
+    try { saved = typeof raw === 'string' ? JSON.parse(raw) : null; } catch (_) {}
+    const connection = serverRouteConnection();
+    if (saved?.body?.target?.mode === target && saved.namespace === namespace
+      && (!connection || (saved.dataInstanceId === connection.dataInstanceId && saved.url === connection.url))) return false;
+    await store.removeItem(key);
+    return true;
+  };
+  const fastFailureMessage = (code, details) => {
+    if (details?.rollbackError) return `저장 경로 복구를 마치지 못했습니다(${details.rollbackError}). 고급 작업에서 자동 복구를 실행해 주세요.`;
+    const kept = '저장 위치는 바뀌지 않았고 원본은 그대로입니다.';
+    if (code === 'MEMORY_SUITE_TRANSFER_STOPPED') return `중단했습니다. ${kept}`;
+    if (code === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE') return `대화 목록 또는 자료 목록을 읽지 못했습니다(${(details?.blockers || []).map(row => row.code).slice(0, 3).join(', ') || '원인 미상'}). ${kept}`;
+    if (code === 'MEMORY_SUITE_TRANSFER_INCOMPLETE') return `옮기지 못한 항목이 ${Number(details?.failureCount || 0)}개 있습니다. ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
+    if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `지금 서버에 자료가 있는 상태에서는 서버 주소를 바꿀 수 없습니다. 먼저 플러그인 단독으로 전환하세요. ${kept}`;
+    if (/SERVER_UNAVAILABLE|fetch|network|timeout|ECONN/i.test(code)) return `서버에 연결하지 못했습니다. 서버 실행 여부와 주소를 확인하세요. ${kept}`;
+    return `전환을 마치지 못했습니다(${code}). ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
+  };
+
+  const rollbackFastCommit = async (jobId,plan) => {
+    const registry = parseScopeRegistry(await loadScopeRegistry(true,false));
+    let changed = false;
+    for (const [scopeId,original] of plan.routes) {
+      const current = registry.entries[scopeId];
+      if (current?.globalMigrationJobId !== jobId) continue;
+      registry.entries[scopeId] = { ...(original || {...current,removed:true}),
+        updatedAt:Math.max(Date.now(),Number(current.updatedAt || 0)+1) };
+      changed = true;
+    }
+    if (changed) await writeScopeRegistryLocal(registry,{reason:'global_allchat_rollback',phase:'settled'});
+    if (plan.resetEmpty) await withResetPreferenceCommit(async()=>{
+      const restored = {...plan.resetEmpty,choice:'restored'};
+      if (globalCanonical(await readResetPreferenceCandidate()) !== globalCanonical(restored)) return;
+      if (!await legacyWriteVerified(rawPluginStorage(),resetChoiceKey,JSON.stringify(plan.resetEmpty)))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+      await readResetChoice();
+    });
+  };
+
+  // publish:true  → move every chat that is not yet on the target side, then switch the mode.
+  // publish:false → copy every chat from `source` to the other side and leave the mode alone.
+  const runFastTransfer = async (targetValue, transferOptions = {}) => {
+    const target = requireOperationalMode(targetValue);
+    const publish = transferOptions.publish !== false;
+    const forcedSource = publish ? '' : (transferOptions.source === 'server' ? 'server' : 'plugin');
+    if (globalJobRunning) throw transitionBusyError();
+    globalJobRunning = true;
+    const startedAt = Date.now(), jobId = operationId('global');
+    const counters = { totalItems:0, processedItems:0, processedBytes:0, transferredBytes:0, matched:0, uploaded:0, restored:0, removedByTombstone:0, skipped:0 };
+    const failures = { list:[], streak:0 };
+    const transfer = {overwrite:!publish,replicas:new Map(),jobId,undo:publish && (validateRestore || requireRestoreValidation) ? [] : null};
+    let scopes = [], warnings = { warnings:[], warningCount:0 }, journaled = false;
+    let inventory, commitPlan, committed = false, configuredUrl, targetUrl, urlChanged = false;
+    const replicaJournal = () => ({pin:inventory?.serverPin,records:[...transfer.replicas]});
+    try {
+      await loadPersistedSyncJob();
+      do { await Promise.allSettled([...ownerIOWork]); if (typeof whenFlashbackWritersIdle === 'function') await whenFlashbackWritersIdle(); await Promise.allSettled([...mutationTails.values()]); }
+      while (ownerIOWork.size || mutationTails.size);
+      modeConfigurationFrozen = true;
+      let previous = state.syncJob.current;
+      if (!previous) {
+        // The UI expires completed jobs; replica evidence remains valid for the same DATA.
+        const raw = await state.legacy.plugin?.getItem(SYNC_JOB_STORAGE_KEY);
+        const saved = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (saved?.schema === SYNC_JOB_SCHEMA && saved.namespace === namespace) previous = saved;
+      }
+      if (previous?.fastCommit) await rollbackFastCommit(previous.jobId,previous.fastCommit);
+      configuredUrl = await configuredServerUrlNow();
+      targetUrl = normalizeServerUrl(transferOptions.url || configuredUrl);
+      // An explicit run always gets a fresh connection; an earlier outage must not fail it in advance.
+      sharedBootstrapFailures.delete(targetUrl); sharedBootstrapFailures.delete(configuredUrl);
+      const registryBefore = parseScopeRegistry(await loadScopeRegistry(true, false));
+      const effectiveMode = normalizeMode(liveGlobalRow(registryBefore)?.mode || MODE_PLUGIN_ONLY);
+      state.syncJob.dismissedJobId = '';
+      state.syncJob.current = { schema:SYNC_JOB_SCHEMA, namespace, pluginId, pluginVersion, jobId, id:jobId, kind:'global_mode', engine:'fast',
+        operation:publish ? 'mode' : 'copy', scopeId:GLOBAL_SCOPE_ID, sourceMode:effectiveMode, effectiveMode, targetMode:target, requestedMode:target, targetUrl,
+        status:'running', phase:'inventory', startedAt, updatedAt:startedAt, lastActivityAt:startedAt, pauseRequested:false, cancelRequested:false,
+        discoveredScopes:0, verifiedScopes:0, ...counters, retryCount:0, failures:0, currentKey:'', currentAction:'대화·자료 목록 확인',
+        message:publish ? '대화와 자료 목록을 확인하고 있습니다.' : '옮길 자료 목록을 확인하고 있습니다.' };
+      state.syncJob.loaded = true;
+      notifySyncJob();
+      if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE');
+      // Nothing is written until the chat list and both sides have been read.
+      inventory = await collectGlobalInventory(target, { url:targetUrl, light:true, requireRemote:forcedSource === 'server' });
+      let hard = fastHardBlockers(inventory);
+      if (hard.length) throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE', { blockers:hard.slice(0, 32).map(globalIssueMetadata) });
+      if (previous?.fastReplicas?.records && previous.targetUrl === targetUrl
+        && globalCanonical(previous.fastReplicas.pin) === globalCanonical(inventory.serverPin))
+        transfer.replicas = new Map(previous.fastReplicas.records);
+      else if (publish && previous?.globalPlan) {
+        for (const [identity,proof] of await globalDestinationWitnesses(previous,inventory))
+          transfer.replicas.set(identity,identity.startsWith('server\u0000') ? [proof.revision,proof.digest,false] : proof.fingerprint);
+      }
+      await fastSaveJob({fastReplicas:replicaJournal()});
+      journaled = true;
+      if (targetUrl !== configuredUrl) {
+        urlChanged = true;
+        await persistServerUrl(targetUrl);
+        inventory = await collectGlobalInventory(target, { url:targetUrl, light:true, requireRemote:forcedSource === 'server' });
+        hard = fastHardBlockers(inventory);
+        if (hard.length) throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE', { blockers:hard.slice(0, 32).map(globalIssueMetadata) });
+      }
+      scopes = inventory.scopes;
+      const recordIssues = inventory.blockers.filter(row => !hard.includes(row));
+      const ownerWarnings = globalWarningMetadata(inventory);
+      warnings = { warnings:[...ownerWarnings.warnings, ...recordIssues.slice(0, 64).map(globalIssueMetadata)].slice(0, 256),
+        warningCount:ownerWarnings.warningCount + recordIssues.length };
+      const uploads = new Map(), downloads = new Map(), serverSources = new Map();
+      for (const scope of scopes) {
+        const records = inventory.payloadsByScope.get(scope.scopeId) || [];
+        if (!forcedSource && scope.sourceMode === target) {
+          if (target === MODE_SERVER_ONLY) for (const row of records) {
+            if (row.location === 'server') serverSources.set(globalRecordIdentity(row),row);
+          }
+          continue;
+        }
+        const fromServer = forcedSource ? forcedSource === 'server' : target === MODE_PLUGIN_ONLY;
+        // Deletions follow only a chat whose memory really lived on the server.
+        const tombstones = !forcedSource && scope.sourceMode === MODE_SERVER_ONLY;
+        const remoteKeysForScope = fromServer && !forcedSource
+          ? new Set(records.filter(row=>row.location==='server').map(row=>fastReplicaKey('server',row.space,row.logicalKey))) : null;
+        for (const row of records) {
+          if (remoteKeysForScope && row.location !== 'server' && !row.deleted && !row.retainDeviceCacheAfterReset
+            && !remoteKeysForScope.has(fastReplicaKey('server',row.space,row.logicalKey)))
+            throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey,location:'server'});
+          if ((row.location === 'server') !== fromServer || (row.deleted && !(fromServer && tombstones))) continue;
+          const identity = globalRecordIdentity(row), plan = fromServer ? downloads : uploads;
+          if (!plan.has(identity)) plan.set(identity,{row,scope});
+          if (fromServer) serverSources.set(identity,row);
+        }
+      }
+      counters.totalItems = uploads.size + downloads.size;
+      fastProgress({ phase:'copy', discoveredScopes:scopes.length, ...counters, currentAction:'자료 복사',
+        message:counters.totalItems ? '자료를 옮기고 있습니다.' : '옮길 자료가 없습니다.' }, true);
+      globalMigrationContext = inventory;
+      if (uploads.size) await fastUpload(inventory,[...uploads.values()],counters,failures,
+        state.bootstrap.value?.capabilities?.['conditional-batch.v1'] === true,transfer);
+      if (downloads.size) await fastDownload(inventory,[...downloads.values()],counters,failures,transfer);
+      if (serverSources.size) {
+        // Check metadata once per space, including digest matches that needed no payload read.
+        for (const space of new Set([...serverSources.values()].map(row=>row.space))) {
+          const listing = await remoteKeys(space,'',{allowPluginOnly:true,strictInventory:true});
+          const current = new Map(listing.records.map(row=>[row.key,row]));
+          for (const row of serverSources.values()) {
+            if (row.space === space && !fastMatchesProof(fastServerProof(row),fastServerProof(current.get(row.key))))
+              throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space,key:row.logicalKey,location:'server'});
+          }
+        }
+      }
+      fastStop();
+      if (failures.list.length) throw globalModeError('MEMORY_SUITE_TRANSFER_INCOMPLETE', { failures:failures.list.slice(0, 32), failureCount:failures.list.length });
+      if (transfer.undo && downloads.size) {
+        for (const scope of scopes) {
+          const candidates = (inventory.payloadsByScope.get(scope.scopeId) || [])
+            .filter(row=>!row.deleted && downloads.has(globalRecordIdentity(row)));
+          if (!candidates.some(row=>row.classification==='scope')) continue;
+          await runRestoreValidator({namespace,pluginId,pluginVersion,scope,space:'all',phase:'complete',
+            serverCandidates:candidates.map(row=>restoreCandidateSummary({...row,remoteKey:row.key,kind:row.classification,dependency:row.classification==='shared'})),
+            readback:async (space,key)=>await readCleanupLocalValue(inventory.stores[space==='local'?'local':'plugin'],String(key||''),undefined,true)});
+          fastStop();
+        }
+        await finishFastLocalCopies(transfer,false);
+      }
+      let saved = null, publicationPending = '';
+      if (publish) {
+        fastProgress({ phase:'commit', ...counters, currentKey:'', currentAction:'저장 위치 적용', message:'자료를 모두 옮겼습니다. 저장 위치를 바꾸고 있습니다.' }, true);
+        const registry = parseScopeRegistry(await loadScopeRegistry(true,false));
+        commitPlan = {routes:[...scopes,globalScopeDescriptor()].map(({scopeId})=>[scopeId,registry.entries[scopeId] || null]),
+          resetEmpty:target === MODE_PLUGIN_ONLY ? inventory.resetEmpty : null};
+        await fastSaveJob({fastCommit:commitPlan});
+        for (const scope of scopes) {
+          const old = registry.entries[scope.scopeId] || {};
+          const next = { ...old, ...scope, mode:target, origin:'inherited', pendingTargetMode:null, globalMigrationJobId:jobId,
+            updatedAt:Math.max(Date.now(), Number(old.updatedAt || 0) + 1), source:'global_allchat_verified' };
+          delete next.recoveryRequired; delete next.recoveryState; delete next.recoveryReason;
+          registry.entries[scope.scopeId] = next;
+        }
+        const oldGlobal = registry.entries[GLOBAL_SCOPE_ID] || {};
+        registry.entries[GLOBAL_SCOPE_ID] = { ...globalScopeDescriptor(), mode:target, origin:'user_explicit', globalMigrationJobId:jobId,
+          updatedAt:Math.max(Date.now(), Number(oldGlobal.updatedAt || 0) + 1), source:'global_allchat_verified' };
+        registry.legacyGlobalModeImported = true; registry.globalMigrationRemoteHistory = inventory.remoteRequired;
+        if (commitPlan.resetEmpty) {
+          await withResetPreferenceCommit(async()=>{
+            const original = commitPlan.resetEmpty;
+            if (globalCanonical(await readResetPreferenceCandidate()) !== globalCanonical(original))
+              throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+            const restoredResetChoice = {...original,choice:'restored'};
+            if (!await legacyWriteVerified(rawPluginStorage(),resetChoiceKey,JSON.stringify(restoredResetChoice))
+              || globalCanonical(await readResetChoice()) !== globalCanonical(restoredResetChoice))
+              throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+          });
+        }
+        saved = await writeScopeRegistryLocal(registry,{reason:'global_allchat_verified',phase:'settled'});
+      }
+      const result = { scope:globalScopeDescriptor(), operation:publish ? 'mode' : 'copy', mode:publish ? target : effectiveMode, effectiveMode:publish ? target : effectiveMode,
+        requestedMode:target, modeLabel:modeLabel(publish ? target : effectiveMode), completeKnownScopes:true, discoveredScopes:scopes.length, verifiedScopes:scopes.length,
+        migrated:scopes.map(scope => scope.scopeId), failed:[], ...counters, ...warnings, ...(saved ? { registry:saved } : {}) };
+      const { registry:_registry, ...journalResult } = result;
+      await fastSaveJob({ status:'completed', phase:'completed', ...counters, fastCommit:null, fastReplicas:replicaJournal(), verifiedScopes:scopes.length, effectiveMode:result.effectiveMode, finishedAt:Date.now(),
+        currentKey:'', currentAction:'완료', error:'', result:{ ...journalResult, migrated:undefined, warnings:warnings.warnings.slice(0, 16) },
+        message:publish ? `저장 위치를 ${modeLabel(target)}(으)로 바꿨습니다.` : '데이터 이동을 마쳤습니다.' });
+      committed = true;
+      if (publish) {
+        if (inventory.remoteRequired) {
+          try {
+            for (const scope of [...scopes,globalScopeDescriptor()]) {
+              await fastClearStaleRouteJournal(scope,target);
+              await publishPreparedServerMode(await prepareServerModePublication(scope,target,isGlobalScopeId(scope.scopeId) ? 'global' : 'inherited'));
+            }
+            if (!await synchronizeScopeRegistryToServer(saved)) publicationPending = 'scope_route_server_pending';
+          } catch (error) {
+            publicationPending = String(error?.code || error?.message || 'publication_pending');
+          }
+        }
+        for (const scope of scopes) state.scopeRouting.transientModes.delete(scope.scopeId);
+        if (commitPlan.resetEmpty) resetReloadRequired = false;
+        state.config = { ...state.config, mode:target, at:target === MODE_PLUGIN_ONLY ? 0 : Date.now() };
+        state.scopeRouting.routeCache.clear();
+      }
+      if (publicationPending) result.serverPublicationPending = publicationPending;
+      return result;
+    } catch (error) {
+      let rollbackError;
+      if (transfer.undo?.length) {
+        try { await finishFastLocalCopies(transfer,true); }
+        catch (failure) { rollbackError = String(failure?.code || failure?.message || failure); }
+      }
+      if (commitPlan && !committed) {
+        try { await rollbackFastCommit(jobId,commitPlan); }
+        catch (failure) { rollbackError ||= String(failure?.code || failure?.message || failure); }
+      }
+      if (urlChanged && !committed) {
+        try { await persistServerUrl(configuredUrl); }
+        catch (failure) { rollbackError ||= String(failure?.code || failure?.message || failure); }
+      }
+      const code = String(error?.code || error?.message || error), stopped = code === 'MEMORY_SUITE_TRANSFER_STOPPED' && !rollbackError;
+      const details = { ...(error?.details && typeof error.details === 'object' ? error.details : {}),
+        ...(error?.validation ? {validation:error.validation} : {}),
+        ...(failures.list.length ? { failures:failures.list.slice(0, 32), failureCount:failures.list.length } : {}),
+        ...(rollbackError ? {rollbackError} : {}) };
+      if (state.syncJob.current?.jobId === jobId) {
+        const patch = { status:rollbackError ? 'paused' : stopped ? 'cancelled' : 'failed',
+          phase:rollbackError ? 'recovery_pending' : stopped ? 'cancelled' : 'failed', fastCommit:rollbackError ? commitPlan : null, ...counters,
+          error:stopped ? '' : code, errorDetails:compactRestoreEvidence(details), failures:failures.list.length, failureDetails:failures.list.slice(0, 32),
+          finishedAt:Date.now(), currentAction:stopped ? '중단' : '실패', message:fastFailureMessage(code, details) };
+        if (journaled) {
+          try { await fastSaveJob({...patch,fastReplicas:replicaJournal()}); }
+          catch (_) { Object.assign(state.syncJob.current,patch); notifySyncJob(); }
+        } else { Object.assign(state.syncJob.current,patch,{updatedAt:Date.now(),lastActivityAt:Date.now()}); notifySyncJob(); }
+      }
+      error.job = getSyncJob();
+      if (!error.userMessage) error.userMessage = fastFailureMessage(code, details);
+      throw error;
+    } finally { globalMigrationContext = null; globalJobRunning = false; }
+  };
+  const persistGlobalModeAllChats = async (modeValue,operationOptions = {}) => {
+    await loadPersistedSyncJob();
+    const pending = state.syncJob.current;
+    // Older callers may supply an approved full-inventory fingerprint or already
+    // own a persisted per-scope plan. Honor that plan instead of replacing it.
+    if (operationOptions.previewFingerprint || (pending?.globalPlan && !syncJobTerminal(pending.status)))
+      return await persistGlobalModeAllChatsLegacy(modeValue,operationOptions);
+    return await runFastTransfer(modeValue,{url:operationOptions.url});
+  };
+
+  // Reads what an interrupted or failed mode change left behind, clears it and finishes the change.
+  const inspectModeTransitionFaults = async () => {
+    const findings = [];
+    let job = null;
+    try { await loadPersistedSyncJob(); job = getSyncJob(); }
+    catch (_) { findings.push({ code:'journal_unreadable', label:'작업 기록을 읽을 수 없어 기억 읽기·쓰기가 막힌 상태' }); }
+    if (job?.kind === 'global_mode' && !syncJobTerminal(job.status)) findings.push({ code:'job_stalled', label:`끝나지 않은 전환 작업${job.error ? ` (${job.error})` : ''}` });
+    else if (job?.kind === 'global_mode' && job.status === 'failed') findings.push({ code:'job_failed', label:`실패한 전환 작업${job.error ? ` (${job.error})` : ''}` });
+    let registry = null;
+    try { registry = parseScopeRegistry(await loadScopeRegistry(true, false)); }
+    catch (_) { findings.push({ code:'registry_unreadable', label:'저장 위치 기록을 읽을 수 없음' }); }
+    const rows = registry ? Object.values(registry.entries).filter(row => !isRemovedScopeRow(row) && !isGlobalScopeId(row.scopeId)) : [];
+    const count = (code, label, list) => { if (list.length) findings.push({ code, label:`${label} ${list.length}개`, count:list.length }); };
+    count('route_pending', '전환 도중에 멈춘 대화', rows.filter(row => row.origin === 'transition_pending' || row.pendingTargetMode));
+    count('route_mirror', '미러 상태로 남은 대화', rows.filter(row => normalizeMode(row.mode) === MODE_MIRROR));
+    count('recovery_lock', '복구 필수 잠금이 걸린 대화', rows.filter(row => row.recoveryRequired));
+    const globalMode = registry ? normalizeMode(liveGlobalRow(registry)?.mode || MODE_PLUGIN_ONLY) : MODE_PLUGIN_ONLY;
+    count('route_mixed', '전역 설정과 저장 위치가 다른 대화', rows.filter(row => normalizeMode(row.mode) !== globalMode && normalizeMode(row.mode) !== MODE_MIRROR));
+    try {
+      const store = rawPluginStorage(), keys = typeof store?.keys === 'function' ? await store.keys() : [];
+      count('route_journal', '끝나지 않은 서버 경로 기록', (Array.isArray(keys) ? keys : []).filter(key => String(key).startsWith(`__memory_suite_internal_server_route_v1__:${namespace}:`)));
+      if (await store?.getItem?.(resetChoiceKey) != null) findings.push({ code:'reset_choice', label:'예전 서버 초기화·복원 선택이 저장 위치를 덮어쓰는 상태' });
+    } catch (_) {}
+    if (state.scopeRouting.transientModes.size) findings.push({ code:'transient_mode', label:`임시 저장 위치 ${state.scopeRouting.transientModes.size}개`, count:state.scopeRouting.transientModes.size });
+    return findings;
+  };
+  const recoverModeTransition = async direction => {
+    const target = [MODE_SERVER_ONLY, 'server'].includes(String(direction || '')) ? MODE_SERVER_ONLY : MODE_PLUGIN_ONLY;
+    if (globalJobRunning) throw transitionBusyError();
+    const findings = await inspectModeTransitionFaults();
+    if (state.syncJob.retryTimer) { clearLifecycleTimeout(state.syncJob.retryTimer); state.syncJob.retryTimer = null; }
+    state.scopeRouting.transientModes.clear();
+    state.scopeRouting.routeCache.clear();
+    const pending = state.syncJob.current;
+    if (pending?.globalPlan && !syncJobTerminal(pending.status) && pending.targetMode !== target)
+      await scopedCancelSyncJobImpl();
+    const result = await persistGlobalModeAllChats(target);
+    return { schema:'memory-suite.mode-transition-recovery.v1', namespace, targetMode:target, findings, result };
+  };
+  // END FAST MODE TRANSFER v1
+
+  // Compatibility entry point for admitted per-scope plans and approved full previews.
+  const persistGlobalModeAllChatsLegacy = async (modeValue,operationOptions={}) => {
     const target=requireOperationalMode(modeValue);
     await loadPersistedSyncJob();
     const pending=getSyncJob();
@@ -9430,7 +10104,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const scopedSynchronizeSpace = async (legacy, space = 'plugin', syncOptions = {}) => {
     const scope = normalizeScopeDescriptor(syncOptions.scope || await resolveCurrentScope(true));
-    if((await qualifyResetChoiceForScope(scope))?.choice==='empty')throw new Error('서버 자료 사용 모드에서는 기존 로컬 기억을 자동 업로드하지 않습니다. 로컬 기억 다시 업로드를 명시적으로 선택하세요.');
+    if((await qualifyResetChoiceForScope(scope))?.choice==='empty')throw new Error('서버 자료 사용 모드에서는 기존 플러그인 기억을 자동 업로드하지 않습니다. 플러그인 기억 다시 업로드를 명시적으로 선택하세요.');
     if (!legacy) throw new Error('memory_suite_pluginstorage_unavailable');
     if (!scope.scopeId) throw new Error('memory_suite_current_scope_unavailable');
     const onProgress = typeof syncOptions.onProgress === 'function' ? syncOptions.onProgress : null;
@@ -9523,7 +10197,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           if (remote.exists === true && jsonComparable(remote.value) === jsonComparable(projected)) { result.matched += 1; action = '일치 확인'; }
           else if (flashbackWriterAlias(row.route.remoteKey) && remote.exists === true) {
             result.conflicts.push({ key:row.key, remoteKey:row.route.remoteKey, reason:'flashback_server_canonical_mismatch', localPreserved:true, serverPreserved:true });
-            action = '서버 정본과 로컬 차이 보존 · 복구 확인 필요';
+            action = '서버 정본과 플러그인 차이 보존 · 복구 확인 필요';
           }
           else if (remote.tombstone === true && syncOptions.resurrectTombstones !== true && !replaceReplica) {
             if (!dryRun && syncOptions.allowOverwrite !== false && syncOptions.restoreMissingLocal === true) {
@@ -10448,16 +11122,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return job;
   };
   const scopedResumePendingSyncJob = (...args) => withOwnerOperation({kind:'job_admission',operation:'scopedResumePendingSyncJob'}, () => scopedResumePendingSyncJobImpl(...args));
-  const scopedResumePendingSyncJobImpl = async () => {
+  const scopedResumePendingSyncJobImpl = async ({legacy = false} = {}) => {
     if (state.syncJob.creating) return getSyncJob();
     await loadPersistedSyncJob();
     const job = getSyncJob();
     if (!job || syncJobTerminal(job.status) || state.syncJob.promise) return job;
-    if(job.kind==='global_mode'){
-      if(globalLocalCancellationNeeded(job)&&!job.localCancellationIntent)return job;
-      if(globalRollbackPending(job))return await scopedCancelSyncJobImpl();
-      // A changed inventory needs explicit in-panel review before a new plan.
-      if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(job.error))return job;
+    if (job.kind === 'global_mode') {
+      if (!legacy || !job.globalPlan || (globalLocalCancellationNeeded(job) && !job.localCancellationIntent)) return job;
+      if (globalRollbackPending(job)) return await scopedCancelSyncJobImpl();
+      if (['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(job.error)) return job;
       await globalSaveJob({pauseRequested:false,cancelRequested:false});
       void withModeConfiguration(()=>runGlobalModeJob(state.syncJob.current)).catch(()=>{});
       return getSyncJob();
@@ -10470,7 +11143,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopedCancelSyncJob = (...args) => state.syncJob.current?.kind==='global_mode'&&globalJobRunning
     ?scopedCancelSyncJobImpl(...args):withOwnerOperation({kind:'job_admission',operation:'scopedCancelSyncJob'}, () => scopedCancelSyncJobImpl(...args));
   const scopedCancelSyncJobImpl = async (cancelOptions={}) => {
-    if(state.syncJob.current?.kind==='global_mode'&&globalJobRunning){state.syncJob.current.cancelRequested=true;state.syncJob.current.pauseRequested=true;notifySyncJob();return getSyncJob();}
+    if(state.syncJob.current?.kind==='global_mode'&&globalJobRunning){
+      if (state.syncJob.current.engine === 'fast'
+        && (state.syncJob.current.phase === 'commit' || syncJobTerminal(state.syncJob.current.status))) return getSyncJob();
+      // A listener may ask again from inside the notification; one request is enough.
+      const requested=state.syncJob.current.pauseRequested===true;
+      state.syncJob.current.cancelRequested=true;state.syncJob.current.pauseRequested=true;
+      if(!requested)notifySyncJob();
+      return getSyncJob();
+    }
     if (state.syncJob.retryTimer) {
       clearLifecycleTimeout(state.syncJob.retryTimer);
       state.syncJob.retryTimer = null;
@@ -10620,8 +11301,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return val;
   };
 
-  const readCleanupLocalValue = async (legacy, key, rawValue) => {
-    const raw = await legacyRead(legacy, key);
+  const readCleanupLocalValue = async (legacy, key, rawValue, physical = false) => {
+    const raw = physical ? await legacy?.getItem?.(key) : await legacyRead(legacy, key);
     const manifest = normalizeJsonVal(raw);
     if (namespace !== 'libra' || manifest?.__libraChunkedStorageV1 !== true) return raw;
     // The registered legacy store may be the raw host adapter. Compare the
@@ -10940,7 +11621,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       const unpreserved=deleting.filter(item=>item.status!=='matched').length;
       q('[data-cleanup-ack-row]').hidden=unpreserved===0;
-      q('[data-cleanup-continue]').disabled=deleting.length===0||unpreserved>0&&!q('[data-cleanup-ack]').checked;
+      q('[data-cleanup-continue]').disabled=deleting.length===0||unpreserved>0&&!q('[data-cleanup-ack]').checked||String(q('[data-cleanup-typed]').value||'').trim()!=='삭제';
       q('[data-cleanup-continue]').textContent=`선택한 ${deleting.length}개 사본 삭제`;
       q('[data-cleanup-summary]').textContent=`전체 ${review.checked}개 · 일치 ${review.candidates.length}개 · 확인 필요 ${review.failures.length}개 · 삭제 선택 ${deleting.length}개${unpreserved?` (서버 미보존 ${unpreserved}개 포함)`:''}`;
     };
@@ -10962,27 +11643,27 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const message=`정리 완료 · ${result.deletedItems}개 항목 삭제 · ${result.kept}개 보존 · ${result.excluded}개 제외${result.backupIds.length?`\n서버 삭제 전 백업: ${result.backupIds.join(', ')}`:''}`;
         q('[data-cleanup-summary]').textContent=message;setMessage(message,'good');review=null;
         await refreshPanelSettings();
-      }catch(error){finishError(error);}finally{setBusy(false);q('[data-delete]').textContent='중복 pluginStorage 전체 삭제';q('[data-cleanup-close]').focus?.();}
+      }catch(error){finishError(error);}finally{setBusy(false);q('[data-cleanup-typed]').value='';q('[data-cleanup-close]').focus?.();}
     };
     const open=async(direction='local')=>{
       if(busy)return;
       previousFocus=root.ownerDocument?.activeElement;review=null;controller=new AbortController();
-      dialog.hidden=false;dialog.style.display='flex';q('[data-cleanup-ack]').checked=false;
+      dialog.hidden=false;dialog.style.display='flex';q('[data-cleanup-ack]').checked=false;q('[data-cleanup-typed]').value='';
       q('[data-cleanup-errors]').textContent='';q('[data-cleanup-items]').innerHTML='';q('[data-cleanup-items]').hidden=false;
-      q('[data-cleanup-title]').textContent=direction==='server'?'이동 완료한 서버 사본 정리':'기기의 중복 플러그인 데이터 정리';
+      q('[data-cleanup-title]').textContent=direction==='server'?'데이터 정리 · 서버 스토리지':'데이터 정리 · 플러그인 스토리지';
       q('[data-cleanup-summary]').textContent='사본을 비교하고 있습니다. 확인이 끝나면 항목별로 보존·제외·삭제를 선택하세요.';
       setBusy(true);q('[data-cleanup-stop]').focus?.();
       try{
         review=await withModeConfiguration(()=>inspectDuplicateCleanup({direction,signal:controller.signal,onProgress:progress}));
-        q('[data-cleanup-items]').innerHTML=review.items.map((item,index)=>`<article class="mscx-cleanup-item"><div><b>${esc(item.label)} · ${esc(item.dataLabel)}</b><small>${esc(labels[item.reason]||item.reason)} · ${esc(item.space==='local'?'기기 저장소':'플러그인 저장소')} · 기기 ${item.localSize??'미확인'}자 / 서버 ${item.remoteSize??'미확인'}자</small><details><summary>저장 키 확인</summary><code>${esc(item.key)}</code>${item.error?`<p>${esc(item.error)}</p>`:''}</details></div><label>처리<select data-cleanup-choice="${index}" ${item.canDelete?'':'disabled'} aria-label="${esc(item.label)} 처리"><option value="keep" ${item.status==='matched'?'':'selected'}>사본 보존</option><option value="exclude">이번 정리에서 제외</option><option value="delete" ${item.status==='matched'?'selected':''} ${item.canDelete?'':'disabled'}>${item.status==='matched'?'중복 사본 삭제':'로컬 사본 삭제'}</option></select></label></article>`).join('')||'<p>정리할 사본이 없습니다.</p>';
-        q('[data-delete]').textContent='검증 완료 · 선택 검토 후 삭제';
+        q('[data-cleanup-items]').innerHTML=review.items.map((item,index)=>`<article class="mscx-cleanup-item"><div><b>${esc(item.label)} · ${esc(item.dataLabel)}</b><small>${esc(labels[item.reason]||item.reason)} · ${esc(item.space==='local'?'기기 저장소':'플러그인 저장소')} · 기기 ${item.localSize??'미확인'}자 / 서버 ${item.remoteSize??'미확인'}자</small><details><summary>저장 키 확인</summary><code>${esc(item.key)}</code>${item.error?`<p>${esc(item.error)}</p>`:''}</details></div><label>처리<select data-cleanup-choice="${index}" ${item.canDelete?'':'disabled'} aria-label="${esc(item.label)} 처리"><option value="keep" ${item.status==='matched'?'':'selected'}>사본 보존</option><option value="exclude">이번 정리에서 제외</option><option value="delete" ${item.status==='matched'?'selected':''} ${item.canDelete?'':'disabled'}>${item.status==='matched'?'중복 사본 삭제':'플러그인 사본 삭제'}</option></select></label></article>`).join('')||'<p>정리할 사본이 없습니다.</p>';
       }catch(error){finishError(error);}finally{setBusy(false);syncChoices();q(q('[data-cleanup-continue]').disabled?'[data-cleanup-close]':'[data-cleanup-continue]').focus?.();}
     };
     q('[data-cleanup-items]').addEventListener?.('change',()=>{q('[data-cleanup-ack]').checked=false;syncChoices();});
     q('[data-cleanup-ack]').onchange=syncChoices;
+    q('[data-cleanup-typed]').oninput=syncChoices;
     q('[data-cleanup-continue]').onclick=execute;
     q('[data-cleanup-stop]').onclick=()=>{controller?.abort();q('[data-cleanup-phase]').textContent='중단 요청됨 · 현재 항목 처리가 끝나면 멈춥니다.';};
-    q('[data-cleanup-close]').onclick=()=>{if(busy)return;review=null;dialog.hidden=true;dialog.style.display='none';q('[data-delete]').textContent='중복 pluginStorage 전체 삭제';(previousFocus?.isConnected?previousFocus:q('[data-delete]'))?.focus?.();};
+    q('[data-cleanup-close]').onclick=()=>{if(busy)return;review=null;dialog.hidden=true;dialog.style.display='none';(previousFocus?.isConnected?previousFocus:q('[data-delete]'))?.focus?.();};
     dialog.addEventListener?.('keydown',event=>{
       if(event.key==='Escape'){event.preventDefault();if(busy)q('[data-cleanup-stop]').onclick();else q('[data-cleanup-close]').onclick();}
       if(event.key==='Tab'){
@@ -11172,7 +11853,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       rows.push({scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName||'',chatTitle:scope.chatTitle||'',label:scope.label||scope.scopeKey,
         detached:!!(scope.canonicalCharacterId||scope.characterId)&&!!(scope.canonicalChatId||scope.chatId)&&!inventory.hostScopes.some(host=>(scope.canonicalCharacterId||scope.characterId)===host.characterId&&(scope.canonicalChatId||scope.chatId)===host.chatId),current:current?.scopeId===scope.scopeId,mode:scope.sourceMode,modeLabel:modeLabel(scope.sourceMode),
         recordCount:keys.length,ownedRecordCount:new Set(owned.map(row=>row.logicalKey)).size,ownedLocalRecords:owned.filter(row=>row.location!=='server').length,localRecords:live.filter(row=>row.location!=='server').length,serverRecords:live.filter(row=>row.location==='server').length,
-        locations,keys,issues,fingerprint,dataSummary,dataMetrics,canDelete,canDeleteLocal,canDeleteServer,canDeleteBoth,localReferenced:plan.referenced,serverReferenced:serverPlan.referenced,localDataPresent:localPresent,serverDataPresent:serverPresent,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 로컬 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 로컬 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
+        locations,keys,issues,fingerprint,dataSummary,dataMetrics,canDelete,canDeleteLocal,canDeleteServer,canDeleteBoth,localReferenced:plan.referenced,serverReferenced:serverPlan.referenced,localDataPresent:localPresent,serverDataPresent:serverPresent,deleteBlockedReason:canDelete?'':current?.scopeId===scope.scopeId?'현재 채팅은 삭제 대상에서 제외됩니다.':scope.sourceMode!==MODE_PLUGIN_ONLY||activeMode!==MODE_PLUGIN_ONLY?'플러그인 단독 모드에서만 플러그인 자료를 정리합니다.':!scope.characterId||!scope.chatId?'원본 캐릭터·채팅 식별 미확인':plan.referenced?'다른 자료에서 참조 중':!inventory.completeKnownScopes?'전체 목록·참조 검사가 완료되지 않았습니다.':'정리할 플러그인 자료가 없습니다.',registryEntries:plan.registryEdits.reduce((n,edit)=>n+edit.removed,0),referenced:plan.referenced,serverChecked:inventory.remoteRequired&&!!inventory.serverPin&&general.length===0,canManage:!!current?.scopeId&&owned.length>0&&issues.length===0&&general.length===0});
     }
     const unresolved=inventory.records.filter(row=>globalPayloadRecord(row)&&!globalRecordScopeIds(row).some(Boolean))
       .map(row=>({key:row.logicalKey,space:row.space,location:row.location,issues:blockers.filter(issue=>issue.key===row.key||issue.key===row.logicalKey)}));
@@ -11389,11 +12070,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       [data-scope-manager] tr[data-selectable=false] td[data-scope-select-cell]{cursor:help}
       [data-scope-manager] .scope-data-state{display:inline-block;padding:3px 6px;border:1px solid var(--border2,#b6ad9d);border-radius:12px;font-size:11px}
       </style><h3>스코프 데이터 관리</h3>
-      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</p>
+      <p class="scope-data-note">삭제·정리는 실행 전에 대상과 참조 관계를 다시 검사합니다. 확인할 수 없는 자료는 보존합니다. 저장 모드와 별개로 플러그인 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</p>
       <p class="scope-data-note" data-scope-readonly hidden role="status">이 화면은 보안 연결이 아니어서 목록 보기만 가능합니다. 브라우저가 암호화 기능(WebCrypto)을 제공하지 않아 삭제·백업 대상을 안전하게 확인할 수 없습니다. https 또는 localhost 주소로 접속하면 선택할 수 있습니다.</p>
       <select data-scope-filter aria-label="스코프 분류"><option value="all">전체</option><option value="memory">기억 저장소</option><option value="empty">빈 목록 · 정리 후보</option><option value="detached">고아 데이터</option><option value="issues">확인 필요</option><option value="server_only">서버 관리 대상</option></select>
-      <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 로컬 데이터 백업</button><label>삭제 대상 <select data-scope-delete-target aria-label="스코프 삭제 대상"><option value="local">로컬 데이터 삭제</option><option value="server">서버 데이터 삭제</option><option value="both">둘 다 삭제</option></select></label><button type="button" data-scope-action="delete">선택 삭제</button></div>
-      <div class="actions"><button type="button" data-scope-refresh>새로고침</button><button type="button" data-scope-inspect>목록 상태 검사</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="prune">선택 항목 로컬 정리</button><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><span class="muted" data-scope-selection>선택 0개</span></div>
+      <div class="actions"><input data-scope-search type="search" aria-label="스코프 검색" placeholder="캐릭터 / 채팅 이름 · 스코프 키로 찾기"><button type="button" data-scope-action="export">선택 플러그인 데이터 백업</button><label>삭제 대상 <select data-scope-delete-target aria-label="스코프 삭제 대상"><option value="local">플러그인 데이터 삭제</option><option value="server">서버 데이터 삭제</option><option value="both">둘 다 삭제</option></select></label><button type="button" data-scope-action="delete">선택 삭제</button></div>
+      <div class="actions"><button type="button" data-scope-refresh>새로고침</button><button type="button" data-scope-inspect>목록 상태 검사</button><button type="button" data-scope-pick="empty">빈 목록 선택</button><button type="button" data-scope-action="prune">선택 항목 플러그인 정리</button><button type="button" data-scope-pick="orphan">고아 데이터 선택</button><span class="muted" data-scope-selection>선택 0개</span></div>
       <p class="muted" data-scope-summary role="status" aria-live="polite">목록을 확인하고 있습니다…</p>
       <div data-scope-confirm hidden style="display:none" role="alertdialog" aria-label="선택 스코프 작업 확인"><p data-scope-confirm-text></p><label data-scope-delete-ack-row hidden><input type="checkbox" data-scope-delete-ack> 필요한 데이터를 백업했으며 선택 자료의 영구 삭제에 동의합니다.</label><div class="actions"><button type="button" data-scope-cancel>취소</button><button type="button" data-scope-approve>확인하고 실행</button></div></div>
       <div data-scope-result role="status" aria-live="polite"></div>
@@ -11413,7 +12094,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Like Flashback's scope cleanup: any non-current, non-server scope can be ticked; the safety checks run
     // when an action is started and say which rows were skipped and why.
     const deleteTarget=()=>q('[data-scope-delete-target]').value;
-    const targetLabel=()=>({local:'로컬 데이터 삭제',server:'서버 데이터 삭제',both:'둘 다 삭제'})[deleteTarget()];
+    const targetLabel=()=>({local:'플러그인 데이터 삭제',server:'서버 데이터 삭제',both:'둘 다 삭제'})[deleteTarget()];
     const canDeleteSelected=row=>!row.current&&!row.unavailable&&catalog?.completeKnownScopes&&({local:row.canDeleteLocal,server:row.canDeleteServer,both:row.canDeleteBoth})[deleteTarget()];
     const actionable=row=>!row.current&&(row.canDeleteLocal||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
     const selectable=row=>!row.current&&!row.unavailable&&(canDeleteSelected(row)||deleteTarget()==='local'&&(row.mode===MODE_PLUGIN_ONLY||row.localRecords>0||row.registryEntries>0))&&!readOnlyCrypto();
@@ -11448,7 +12129,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}" data-selectable="${why?'false':'true'}">
         <td data-scope-select-cell ${why?`title="${esc(why)}" data-scope-why="${esc(why)}"`:''}><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택${why?' · '+esc(why):''}" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
         <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>${note?`<small class="scope-data-reason" data-scope-reason>${esc(note)}</small>`:''}
-        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>로컬 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
+        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>플러그인 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
         <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!canDeleteSelected(row)?'disabled':''}>삭제</button></td></tr>`;
       }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
       q('[data-scope-more]').hidden=rows.length<=limit;
@@ -11495,7 +12176,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const skipText=skipped.map(row=>row.label+' · '+skipReason(row)).join('\n');
       if(!rows.length){q('[data-scope-result]').textContent='실행할 수 있는 스코프가 없습니다.\n'+skipText;q('[data-scope-result]').style.whiteSpace='pre-wrap';return;}
       q('[data-scope-delete-ack-row]').hidden=!destructive;q('[data-scope-delete-ack]').checked=false;q('[data-scope-approve]').disabled=destructive;
-      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n${action==='delete'?targetLabel()+' · '+({local:'로컬 데이터만 삭제하며 서버 데이터는 유지합니다.',server:'서버 백업 후 서버 데이터만 삭제합니다. 기존 로컬 데이터는 유지하며 로컬 복구는 하지 않습니다.',both:'서버 백업 후 서버와 로컬 데이터를 모두 삭제합니다. 한쪽만 실패하면 부분 완료로 표시합니다.'})[chosenTarget]:'로컬 정리 또는 백업을 실행합니다.'} 저장 모드는 바꾸지 않습니다. 현재 채팅은 변경하지 않습니다.${skipped.length?`\n\n제외 ${skipped.length}개 (보존)\n${skipText}`:''}`;
+      busy=true;render();q('[data-scope-confirm-text]').textContent=`${button.textContent} · ${rows.length}개\n${rows.map(row=>row.label+' · '+row.scopeKey).join('\n')}\n${action==='delete'?targetLabel()+' · '+({local:'플러그인 데이터만 삭제하며 서버 데이터는 유지합니다.',server:'서버 백업 후 서버 데이터만 삭제합니다. 기존 플러그인 데이터는 유지하며 플러그인 복구는 하지 않습니다.',both:'서버 백업 후 서버와 플러그인 데이터를 모두 삭제합니다. 한쪽만 실패하면 부분 완료로 표시합니다.'})[chosenTarget]:'플러그인 정리 또는 백업을 실행합니다.'} 저장 모드는 바꾸지 않습니다. 현재 채팅은 변경하지 않습니다.${skipped.length?`\n\n제외 ${skipped.length}개 (보존)\n${skipText}`:''}`;
       q('[data-scope-confirm]').hidden=false;q('[data-scope-confirm]').style.display='block';q('[data-scope-confirm-text]').style.whiteSpace='pre-wrap';q('[data-scope-cancel]').focus();
       let monitor=null;const accepted=await new Promise(resolve=>{confirmation=resolve;monitor=setInterval(()=>{if(!root.isConnected)finishConfirmation(false);},200);try{monitor?.unref?.();}catch(_){}});clearInterval(monitor);
       try{if(!accepted||!root.isConnected)return;let completed=0;const summaries=[];
@@ -11506,10 +12187,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);
             const link=root.ownerDocument.createElement('a');link.href=url;link.download=namespace+'-scope-backup-'+Date.now()+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
           }
-          if(action==='delete')summaries.push(row.label+' · '+(result.local?'로컬 '+result.local.deleted+'개 삭제':'로컬 유지')+' / '+(result.server?'서버 '+result.server.deleted+'개 삭제':'서버 유지'));
+          if(action==='delete')summaries.push(row.label+' · '+(result.local?'플러그인 '+result.local.deleted+'개 삭제':'플러그인 유지')+' / '+(result.server?'서버 '+result.server.deleted+'개 삭제':'서버 유지'));
           completed++;selected.delete(row.scopeId);if(!root.isConnected)break;}
         if(root.isConnected){q('[data-scope-result]').textContent=`완료 ${completed}/${rows.length}개${summaries.length?'\n'+summaries.join('\n'):''}${skipped.length?` · 제외 ${skipped.length}개\n${skipText}`:''}`;q('[data-scope-result]').style.whiteSpace='pre-wrap';}
-      }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.deletionResult?.partial?'부분 완료: 서버 삭제 완료 / 로컬 삭제 실패 · ':''}${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 로컬 변경을 원래대로 복구했습니다.':''}`;}
+      }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.deletionResult?.partial?'부분 완료: 서버 삭제 완료 / 플러그인 삭제 실패 · ':''}${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 플러그인 변경을 원래대로 복구했습니다.':''}`;}
       finally{busy=false;if(root.isConnected)await refresh();}
     };
     await refresh();return true;
@@ -11534,7 +12215,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       #${rootId} .scopetoggle button[aria-pressed="true"] small{color:#cdd9f2}
       #${rootId} .scopetoggle button:only-child{grid-column:1/-1}
       #${rootId} .mscx-advanced{border:1px solid #34425b;border-radius:10px;padding:0 12px} #${rootId} .mscx-advanced>summary{cursor:pointer;padding:11px 0;font-weight:700;font-size:13px} #${rootId} .mscx-advanced>summary small{font-weight:400;color:#9eacc3;margin-left:6px} #${rootId} .mscx-advanced-body{display:grid;gap:8px;padding-bottom:12px}
-      #${rootId} .mscx-group{display:grid;gap:6px;border:1px solid var(--border,#34425b);border-radius:9px;padding:10px;min-width:0} #${rootId} .mscx-group>b{font-size:13px} #${rootId} .mscx-group>.muted{font-size:12px;line-height:1.55;overflow-wrap:anywhere} #${rootId} .mscx-group.danger{border-color:#b77c71;border-style:dashed}
+      #${rootId} .mscx-group{display:grid;gap:6px;border:1px solid var(--border,#34425b);border-radius:9px;padding:10px;min-width:0} #${rootId} .mscx-group>b{font-size:13px} #${rootId} .mscx-group>.muted{font-size:12px;line-height:1.55;overflow-wrap:anywhere} #${rootId} .mscx-group.danger{border-color:#c0525f;border-style:solid;background:#3b161c} #${rootId} .mscx-group.danger>b{color:#ffb4bd}
       #${rootId} .scopeunset{border-color:#f0b65c;background:#241d10}
       #${rootId} .modes{display:grid;gap:8px} #${rootId} label.mode{display:flex;gap:9px;align-items:flex-start;border:1px solid #34425b;border-radius:10px;padding:10px;cursor:pointer}
       #${rootId} input[type=text],#${rootId} input[type=password]{width:100%;padding:10px 11px;border-radius:9px;border:1px solid #465a79;background:#0b1321;color:#fff}
@@ -11564,16 +12245,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <div class="actions"><button type="button" data-mode-confirm-cancel>취소 · 원본 유지</button><button type="button" class="primary" data-mode-confirm-approve>동의하고 이전</button></div>
         </section>
         <details class="mscx-advanced"><summary>고급 작업 <small>상황별 관리 도구</small></summary><div class="mscx-advanced-body"><div class="muted">평소에는 쓰지 않아도 됩니다. 지금 겪는 상황과 맞는 항목만 사용하세요.</div>
-        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="migration"><b>🚚 전체 이전 관리</b><div class="muted">언제: 저장 위치 전체 이전이 진행 중이거나 중간에 멈췄을 때<br>· 중단·보존: 진행 중인 이전을 안전하게 멈춥니다. 원본은 그대로 남습니다.<br>· 재개: 진행 화면의 [중단한 이전 재개] 버튼을 사용합니다. 취소 복구는 [취소 복구 계속]으로 표시됩니다.<br>· 취소·경로 복구: 이미 바뀐 저장 경로를 이전 설정으로 돌립니다. 원본과 서버 사본은 지우지 않습니다.</div><div class="actions"><button data-global-pause>전체 이전 중단·보존</button><button data-global-resume>진행 화면으로 이동</button><button data-global-cancel class="danger" disabled>이전 작업 취소 · 기존 경로 복구</button></div></section>' : ''}
-        <section class="mscx-group" data-advanced-group="restore"><b>🛟 기기 기억 복구</b><div class="muted">언제: 이 기기(RisuAI pluginStorage)의 기억이 사라지거나 손상됐을 때. 서버에 보존된 정본으로 현재 스코프를 되살립니다.</div><div class="actions"><button data-restore>서버 → pluginStorage 복구</button></div></section>
-        <section class="mscx-group" data-advanced-group="reset"><b>♻️ 서버 초기화·복원 이후 선택</b><div class="muted">언제: "서버 자료가 초기화 또는 복원되었습니다" 안내가 떴을 때만 사용합니다. 둘 중 하나를 고른 뒤 RisuAI를 새로고침하세요.<br>· 서버 자료 사용(권장): 복원된 서버 기억을 그대로 씁니다.<br>· 로컬 기억 다시 업로드: 이 기기의 기억으로 서버를 다시 채웁니다.</div><div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div></section>
-        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="server-cleanup"><b>📦 플러그인으로 이동한 서버 사본 정리</b><div class="muted">먼저 플러그인 단독을 선택하고 설정 적용으로 전체 자료 이동을 완료하세요. 이동 후 플러그인 사본과 일치하는 서버 자료를 확인하고 삭제합니다. 삭제 전 서버 백업을 만듭니다.</div><div class="actions"><button type="button" data-server-delete>이동 완료한 서버 사본 검토 · 삭제</button></div></section>' : ''}
-        <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 기기 저장 공간 정리 · 주의</b><div class="muted">${globalModeEnabled ? '언제: 서버 단독으로 옮긴 뒤 이 기기에 남은 중복 pluginStorage 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.' : '언제: 현재 스코프를 서버 단독으로 옮긴 뒤 이 기기의 중복 사본을 지우고 싶을 때. 서버 보존을 먼저 검증하고, 한 번 더 눌러야 삭제됩니다.'}</div><div class="actions"><button class="danger" data-delete>${globalModeEnabled ? '중복 pluginStorage 전체 삭제' : '현재 스코프 pluginStorage 삭제'}</button></div></section></div></details><div class="status"><div data-current-mode></div><div data-status>서버 상태를 확인할 수 있습니다.</div></div>
+        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="recover"><b>🛠️ 모드 전환 중 자동 복구</b><div class="muted">모드 전환 중 발생한 에러를 감지하고 자동으로 해결합니다.</div><div class="actions"><button type="button" data-recover>모드 전환 중 자동 복구</button></div></section>' : ''}
+        ${globalModeEnabled ? '<section class="mscx-group" data-advanced-group="move"><b>📦 데이터 이동</b><div class="muted">저장 모드는 그대로 두고, 고른 스토리지로 반대쪽 자료를 복사합니다. 같은 항목은 옮겨 오는 내용으로 덮어씁니다.</div><div class="actions"><button type="button" data-move-plugin>1. 플러그인 스토리지</button><button type="button" data-move-server>2. 서버 스토리지</button></div></section>' : '<section class="mscx-group" data-advanced-group="move"><b>📦 데이터 이동</b><div class="muted">현재 스코프의 서버 자료를 플러그인 스토리지로 복사합니다.</div><div class="actions"><button type="button" data-restore>1. 플러그인 스토리지</button></div></section>'}
+        <section class="mscx-group danger" data-advanced-group="cleanup"><b>🗑️ 데이터 정리 · 주의</b><div class="muted">고른 스토리지의 자료를 삭제합니다. 데이터 이동이 완료된 후 나머지 한쪽의 데이터를 삭제할 때도 쓰입니다. 확인창에서 「삭제」를 입력해야 삭제됩니다.</div><div class="actions"><button type="button" class="danger" data-delete>1. 플러그인 스토리지</button>${globalModeEnabled ? '<button type="button" class="danger" data-server-delete>2. 서버 스토리지</button>' : ''}</div></section></div></details><div class="status"><div data-current-mode></div><div data-status>서버 상태를 확인할 수 있습니다.</div></div>
+        <section data-ask hidden role="alertdialog" aria-modal="true" aria-label="확인" style="display:none;position:fixed;inset:0;z-index:2147483000;background:#0009;align-items:center;justify-content:center;padding:12px">
+          <div data-ask-box style="background:${bookTheme?'#fffaf2':'#111a2a'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #8190a5;border-radius:16px;padding:20px;width:min(520px,100%);max-height:94vh;overflow:auto;display:grid;gap:12px;box-sizing:border-box">
+            <b data-ask-title style="font-size:16px"></b><p data-ask-text style="margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6"></p>
+            <label data-ask-typed-row style="display:none;gap:6px;font-size:13px"><span data-ask-typed-label></span><input type="text" data-ask-typed autocomplete="off" style="width:100%;padding:10px 11px;border-radius:9px;border:1px solid #b3463a;background:${bookTheme?'#fffaf2':'#0b1321'};color:inherit;box-sizing:border-box"></label>
+            <div style="display:grid;gap:8px"><button type="button" data-ask-a style="padding:11px 14px;border:1px solid #8190a5;border-radius:9px;color:inherit;background:${bookTheme?'#f5ebdc':'#172236'};cursor:pointer;font:inherit;font-weight:700;text-align:left"></button><button type="button" data-ask-b style="padding:11px 14px;border:1px solid #8190a5;border-radius:9px;color:inherit;background:${bookTheme?'#f5ebdc':'#172236'};cursor:pointer;font:inherit;font-weight:700;text-align:left"></button><button type="button" data-ask-cancel style="padding:11px 14px;border:1px solid #8190a5;border-radius:9px;color:inherit;background:${bookTheme?'#f5ebdc':'#172236'};cursor:pointer;font:inherit;font-weight:400;text-align:left">닫기</button></div>
+          </div>
+        </section>
         <details data-preview-diagnostics hidden><summary>이전 검사 상세 · 대화 본문과 API 키 제외</summary><textarea data-preview-diagnostics-text aria-label="이전 검사 상세" readonly style="width:100%;min-height:180px"></textarea></details>
       </div>
       <section id="${rootId}-cleanup" data-cleanup-dialog hidden role="dialog" aria-modal="true" aria-label="사본 정리 진행" style="display:none;position:fixed;inset:0;z-index:2147483000;background:#0009;align-items:center;justify-content:center;padding:12px">
         <style>
-          #${rootId}-cleanup .mscx-cleanup-box{background:${bookTheme?'#fffaf2':'#111a2a'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #8190a5;border-radius:16px;padding:20px;width:min(900px,100%);max-height:94vh;overflow:auto;display:grid;gap:12px;box-sizing:border-box}
+          #${rootId}-cleanup .mscx-cleanup-box{background:${bookTheme?'#fffaf2':'#111a2a'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #b3463a;border-top:8px solid #b3463a;border-radius:16px;padding:20px;width:min(900px,100%);max-height:94vh;overflow:auto;display:grid;gap:12px;box-sizing:border-box}
           #${rootId}-cleanup .mscx-cleanup-item{display:flex;align-items:start;justify-content:space-between;gap:16px;border-top:1px solid #8190a566;padding:12px 0;min-width:0}
           #${rootId}-cleanup .mscx-cleanup-item>div{min-width:0;flex:1;overflow-wrap:anywhere} #${rootId}-cleanup .mscx-cleanup-item small{display:block;margin:6px 0}
           #${rootId}-cleanup .mscx-cleanup-item select{max-width:100%;padding:8px;background:${bookTheme?'#fffaf2':'#172236'};color:${bookTheme?'#392b20':'#e8eefc'};font-family:system-ui,sans-serif;border:1px solid #8190a5;border-radius:8px}
@@ -11586,7 +12272,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           <b data-cleanup-phase role="status" aria-live="polite"></b><progress data-cleanup-progress max="1" value="0"></progress>
           <div data-cleanup-count></div><small data-cleanup-current></small><p data-cleanup-summary></p>
           <p class="muted">보존·제외한 항목은 이번 작업에서 삭제하지 않습니다. 일치하는 사본만 삭제 대상으로 기본 선택됩니다. 서버 자료는 보존한 대화에서 참조하는 자료도 함께 보존됩니다.</p>
-          <div data-cleanup-items></div><label data-cleanup-ack-row hidden><input type="checkbox" data-cleanup-ack> 서버에 보존되지 않은 로컬 사본도 삭제하도록 직접 선택했으며, 해당 기기 자료가 사라지는 데 동의합니다.</label>
+          <div data-cleanup-items></div><label data-cleanup-ack-row hidden><input type="checkbox" data-cleanup-ack> 서버에 보존되지 않은 플러그인 사본도 삭제하도록 직접 선택했으며, 해당 기기 자료가 사라지는 데 동의합니다.</label>
+          <label data-cleanup-typed-row style="display:grid;gap:6px">삭제하려면 아래 칸에 「삭제」를 입력하세요.<input type="text" data-cleanup-typed autocomplete="off" placeholder="삭제" aria-label="삭제 확인 입력" style="padding:10px 11px;border-radius:9px;border:1px solid #b3463a;background:transparent;color:inherit;box-sizing:border-box;max-width:240px"></label>
           <pre data-cleanup-errors></pre><div class="actions"><button type="button" data-cleanup-close>닫기</button><button type="button" data-cleanup-stop hidden>중단 요청</button><button type="button" class="danger" data-cleanup-continue disabled>선택한 사본 삭제</button></div>
         </div>
       </section>
@@ -11634,18 +12321,71 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const input of root.querySelectorAll(`input[name="${rootId}-mode"]`)) input.addEventListener('change',syncModePresentation);
     syncModePresentation();
     const formatBytes = bytes => { const n=Math.max(0,Number(bytes||0)); if(n<1024)return `${n} B`; if(n<1048576)return `${(n/1024).toFixed(1)} KB`; if(n<1073741824)return `${(n/1048576).toFixed(1)} MB`; return `${(n/1073741824).toFixed(2)} GB`; };
-    let dismissedJobId=state.syncJob.dismissedJobId || (getSyncJob()?.dismissed ? getSyncJob().jobId : ''),terminalRefreshId='',manualResumePromise=null;
+    let dismissedJobId=state.syncJob.dismissedJobId || (getSyncJob()?.dismissed ? getSyncJob().jobId : ''),terminalRefreshId='';
+    // One card for every whole-plugin transfer: a mode change, a data move, or a job an older build left unfinished.
+    const renderGlobalJob = (card, job) => {
+      const fast=job.engine==='fast',terminal=syncJobTerminal(job.status),running=fast&&job.status==='running';
+      const count=value=>Math.max(0,Number(value||0)).toLocaleString();
+      const total=Math.max(0,Number(fast?job.totalItems:job.discoveredScopes)||0),done=Math.min(total,Math.max(0,Number(fast?job.processedItems:job.verifiedScopes)||0));
+      const percent=job.status==='completed'?100:total?Math.min(99,Math.round(done/total*100)):0;
+      card.classList.add('show');card.classList.toggle('terminal',terminal);card.classList.toggle('failed',job.status==='failed'||!fast&&!terminal);
+      const stale=!fast&&!terminal;
+      const subject=job.operation==='copy'?'데이터 이동':'저장 위치 전환';
+      q('[data-job-title]').textContent=stale?'끝나지 않은 전환 작업이 남아 있습니다'
+        :job.status==='failed'?`${subject}을 마치지 못했습니다`:job.status==='cancelled'?`${subject}을 중단했습니다`
+        :`${job.message||(terminal?'작업 결과':'작업 진행 중')}${running||job.status==='completed'?` · ${percent}%`:''}`;
+      q('[data-job-bar]').style.width=`${percent}%`;
+      q('[data-job-workflow]').textContent=stale
+        ?'이전 버전에서 시작한 전환이 도중에 멈춰 기억 읽기·쓰기가 막혀 있습니다.\n고급 작업의 [모드 전환 중 자동 복구]를 누르고 전환하던 모드를 고르면 자동으로 정리합니다.'
+        :job.operation==='copy'
+          ?`데이터 이동 · ${job.targetMode===MODE_SERVER_ONLY?'플러그인 스토리지 → 서버 스토리지':'서버 스토리지 → 플러그인 스토리지'}\n저장 모드는 바꾸지 않습니다.`
+          :`현재 설정: ${modeLabel(job.effectiveMode||job.sourceMode||MODE_PLUGIN_ONLY)} · 목표 설정: ${modeLabel(job.targetMode)}${fast&&!terminal?'\n자료를 모두 옮긴 뒤에 저장 위치를 한 번에 바꿉니다.':''}`;
+      q('[data-job-transfer]').textContent=fast?`이미 같음 ${count(job.matched)}건 · 서버로 옮김 ${count(job.uploaded)}건 · 플러그인으로 옮김 ${count(job.restored)}건${Number(job.skipped)?` · 건너뜀 ${count(job.skipped)}건`:''}`:'';
+      const phases={inventory:'대화·자료 목록 확인',copy:'자료 복사',commit:'저장 위치 적용',completed:'완료',interrupted:'도중에 멈춤',failed:'실패',cancelled:'중단'};
+      q('[data-job-phase]').textContent=`현재 단계: ${stale?'조치 필요':phases[job.phase]||job.phase||'준비'}`;
+      q('[data-job-count]').textContent=fast?`대화 ${count(job.discoveredScopes)}개 · 항목 ${count(done)} / ${total||terminal?count(total):'조사 중'}`:`대화 ${count(job.verifiedScopes)} / ${count(job.discoveredScopes)}`;
+      q('[data-job-bytes]').textContent=fast?`확인: ${formatBytes(job.processedBytes)} · 전송: ${formatBytes(job.transferredBytes)}`:'';
+      q('[data-job-time]').textContent=`경과: ${Math.max(0,Math.floor(((terminal?Number(job.finishedAt||job.updatedAt):Date.now())-Number(job.startedAt||Date.now()))/1000))}초`;
+      q('[data-job-retry]').textContent=`재시도 ${Number(job.retryCount||0)} · 실패 ${Number(job.failures||0)}`;
+      q('[data-job-key]').textContent=`현재: ${job.currentKey||job.currentAction||'-'}`;
+      const stalledActions=q('[data-job-stalled-actions]'),retryBtn=q('button[data-job-retry]'),cancelBtn=q('button[data-job-cancel]');
+      if(stalledActions)stalledActions.style.display=running?'flex':'none';
+      if(retryBtn)retryBtn.style.display='none';
+      if(cancelBtn){
+        cancelBtn.style.display='';cancelBtn.textContent='전환 중단 · 원본 유지';cancelBtn.disabled=job.pauseRequested===true||job.phase==='commit';
+        delete cancelBtn.dataset.bound;
+        cancelBtn.onclick=async()=>{cancelBtn.disabled=true;try{await scopedCancelSyncJob();setMessage('중단을 요청했습니다. 지금 옮기던 묶음이 끝나면 멈춥니다. 저장 위치는 바뀌지 않습니다.');}catch(error){setMessage(`중단 요청 실패: ${error?.code||error?.message||error}`,'error');}};
+      }
+      q('[data-job-terminal-actions]').style.display=terminal?'flex':'none';
+      const failed=Array.isArray(job.failureDetails)?job.failureDetails:[];
+      q('[data-job-result]').style.display=terminal?'block':'none';
+      q('[data-job-result]').textContent=terminal?[job.status==='completed'?'완료':job.status==='cancelled'?'중단':'실패',job.message||'',
+        job.operation==='copy'?'':`현재 적용 모드: ${modeLabel(job.effectiveMode||job.sourceMode||MODE_PLUGIN_ONLY)}`,
+        job.error?`오류: ${job.error}`:'',failed.length?`옮기지 못한 항목\n${failed.slice(0,8).map(row=>`· ${row.key} — ${row.error}`).join('\n')}`:'',
+        job.status==='failed'?'다시 적용하면 이미 옮긴 자료는 건너뜁니다. 계속 실패하면 고급 작업의 [모드 전환 중 자동 복구]를 사용하세요.':'',
+        job.result?.warningCount>0?`확인이 필요한 항목 ${job.result.warningCount}건은 건너뛰고 원래 자리에 그대로 두었습니다.`:''].filter(Boolean).join('\n'):'';
+      const diagnosticBox=q('[data-job-diagnostics]');
+      if(diagnosticBox){
+        if(diagnosticBox.ownerDocument?.activeElement!==diagnosticBox)diagnosticBox.value=JSON.stringify(panelJobDiagnostics(job),null,2);
+        diagnosticBox.style.display=job.status==='failed'||stale||diagnosticBox.dataset.revealed==='1'?'block':'none';
+      }
+      if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void refreshPanelSettings();},0);}
+    };
     const renderJob = job => {
       const card=q('[data-job]');
-      if(globalModeEnabled){
-        q('[data-global-cancel]').disabled=job?.kind!=='global_mode'||syncJobTerminal(job.status);
-        const pendingGlobal=job?.kind==='global_mode'&&!syncJobTerminal(job.status);
-        q('[data-global-resume]').textContent='진행 화면으로 이동';q('[data-global-resume]').disabled=!pendingGlobal;
-        q('[data-apply]').textContent=pendingGlobal?'진행 화면으로 이동':'설정 적용';
-        q('[data-global-cancel]').textContent=globalRollbackPending(job)?'취소 복구 진행 화면 보기':'이전 작업 취소 · 기존 경로 복구';
-        q('[data-global-cancel]').disabled=q('[data-global-cancel]').disabled||!!manualResumePromise;
-      }
+      if(globalModeEnabled)q('[data-apply]').textContent=job?.engine==='fast'&&job.status==='running'?'전환 진행 중…':'설정 적용';
       if (!job || (job.kind !== 'global_mode' && job.scopeId !== initial.scopeId) || job.jobId === dismissedJobId || job.jobId === state.syncJob.dismissedJobId || job.dismissed === true) { card.classList.remove('show','terminal','failed'); return; }
+      const copyButton=q('[data-job-copy]');
+      if(copyButton&&!copyButton.dataset.bound){copyButton.dataset.bound='1';copyButton.onclick=async()=>{
+        const box=q('[data-job-diagnostics]');if(!box)return;
+        box.value=JSON.stringify(panelJobDiagnostics(getSyncJob()),null,2);box.dataset.revealed='1';box.style.display='block';
+        let copied=false;
+        try{if(typeof navigator!=='undefined'&&navigator.clipboard?.writeText){await navigator.clipboard.writeText(box.value);copied=true;}}catch(_){}
+        if(!copied){try{box.focus();box.select();box.setSelectionRange?.(0,box.value.length);copied=(box.ownerDocument||document).execCommand?.('copy')===true;}catch(_){}}
+        if(copied)setMessage('상세 진단을 복사했습니다.','good');
+        else{setMessage('자동 복사를 사용할 수 없습니다. 아래 진단이 선택되어 있습니다. Ctrl+C 또는 ⌘C로 복사해 주세요.');box.focus();box.select();box.setSelectionRange?.(0,box.value.length);}
+      };}
+      if(job.kind==='global_mode'){renderGlobalJob(card,job);return;}
       const terminal=syncJobTerminal(job.status),showResult=terminal||job.status==='paused';
       const rollback=globalRollbackView(job),waiting=job.status==='paused'&&job.phase==='recovery_pending';
       const workflow=job.kind==='global_mode'?globalWorkflowView(globalJobWorkflow(job)):null;
@@ -11671,11 +12411,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         stalledActions.style.display = (isPaused || isFailed) ? 'flex' : 'none';
       }
       const retryBtn = q('button[data-job-retry]');
-      if(retryBtn){retryBtn.textContent=job.kind==='global_mode'?globalResumeLabel(job):'즉시 재시도';if(job.kind==='global_mode')retryBtn.disabled=!!manualResumePromise;}
+      if(retryBtn){retryBtn.textContent='즉시 재시도';retryBtn.style.display='';}
       if (retryBtn && !retryBtn.dataset.bound) {
         retryBtn.dataset.bound = '1';
         retryBtn.onclick = async () => {
-          if(getSyncJob()?.kind==='global_mode')return await resumeFromPanel();
           retryBtn.disabled = true;
           setMessage('작업 재시도를 시작합니다…');
           try {
@@ -11688,7 +12427,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         };
       }
       const cancelBtn = q('button[data-job-cancel]');
-      if(cancelBtn){cancelBtn.textContent=job.kind==='global_mode'?'이전 작업 취소 · 기존 경로 복구':'이전 작업 취소 · 기존 모드 유지';cancelBtn.style.display=globalRollbackPending(job)?'none':'';if(job.kind==='global_mode')cancelBtn.disabled=!!manualResumePromise;}
+      if(cancelBtn){cancelBtn.textContent='이전 작업 취소 · 기존 모드 유지';cancelBtn.style.display='';cancelBtn.disabled=false;}
       if (cancelBtn && !cancelBtn.dataset.bound) {
         cancelBtn.dataset.bound = '1';
         cancelBtn.onclick = async () => {
@@ -11719,21 +12458,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(diagnosticBox.ownerDocument?.activeElement!==diagnosticBox)diagnosticBox.value=diagnosticText;
         diagnosticBox.style.display=showResult||diagnosticBox.dataset.revealed==='1'?'block':'none';
       }
-      const copyButton=q('[data-job-copy]');
-      if(copyButton&&!copyButton.dataset.bound){copyButton.dataset.bound='1';copyButton.onclick=async()=>{
-        const box=q('[data-job-diagnostics]');if(!box)return;
-        box.value=JSON.stringify(panelJobDiagnostics(getSyncJob()),null,2);box.dataset.revealed='1';box.style.display='block';
-        let copied=false;
-        try{if(typeof navigator!=='undefined'&&navigator.clipboard?.writeText){await navigator.clipboard.writeText(box.value);copied=true;}}catch(_){}
-        if(!copied){try{box.focus();box.select();box.setSelectionRange?.(0,box.value.length);copied=(box.ownerDocument||document).execCommand?.('copy')===true;}catch(_){}}
-        if(copied)setMessage('상세 진단을 복사했습니다.','good');
-        else{setMessage('자동 복사를 사용할 수 없습니다. 아래 진단이 선택되어 있습니다. Ctrl+C 또는 ⌘C로 복사해 주세요.');box.focus();box.select();box.setSelectionRange?.(0,box.value.length);}
-      };}
       if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void refreshPanelSettings();},0);}
     };
-    for(const [selector,choice] of [['[data-reset-empty]','empty'],['[data-reset-upload]','upload']]){
-      q(selector).onclick=async()=>{try{await acceptServerReset(choice);setMessage('선택을 저장했습니다. 기존 실행의 재업로드를 막기 위해 RisuAI를 새로고침한 뒤 사용하세요.','good');}catch(error){setMessage(error.message,'error');}};
-    }
     q('[data-test]').onclick = async()=>{ setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}`,storageResult.ok?'good':'error'); };
     // ── 적용 범위 (전역 / 스코프별) ────────────────────────────────────────────────────────────────
     // `scopeTarget` is declared before the handlers below read it; the panel also refreshes through a
@@ -11772,10 +12498,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const refreshScopeNote = () => {
       if (!scopeNoteNode) return;
       if(globalModeEnabled){
-        const pending=getSyncJob();
-        scopeNoteNode.textContent=globalRollbackPending(pending)?'이전 취소 · 원래 저장 경로 복구 중입니다. 서버 사본은 보존됩니다.':pending?.kind==='global_mode'&&!syncJobTerminal(pending.status)
-          ? `현재 전체 설정: ${modeLabel(lastSettings.global?.mode||MODE_PLUGIN_ONLY)} · 목표: ${modeLabel(pending.targetMode)} · 전체 검증 전이라 전환은 아직 미완료입니다.`
-          : '전역 단일 설정 · 이 플러그인의 모든 대화를 확인합니다. 기존 서버 자료가 있으면 비교 후 일치 항목의 재전송을 건너뜁니다.';
+        scopeNoteNode.textContent='전역 단일 설정 · 이 플러그인의 모든 대화에 적용됩니다. 설정을 적용하면 자료를 모두 옮긴 뒤 저장 위치를 바꾸며, 이미 같은 자료는 다시 보내지 않습니다.';
         return;
       }
       if (scopeTarget === 'global') {
@@ -11817,7 +12540,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else if (fromMode === MODE_MIRROR && toMode === MODE_PLUGIN_ONLY) {
         question = '미러에서 플러그인 단독으로 전환합니다.\n\n서버에만 있는 자료까지 pluginStorage에 복원하고 재조회합니다.\n검증이 끝나면 서버 없이 동작합니다. 보관된 서버 자료는 이 설정으로 삭제하지 않습니다.\n\n괜찮으시겠습니까?';
       } else if (fromMode === MODE_MIRROR && toMode === MODE_SERVER_ONLY) {
-        question = '미러에서 서버 단독으로 전환합니다.\n\n전환이 끝나면 pluginStorage는 사용하지 않고 서버 DATA를 정본으로 사용합니다.\n로컬 사본은 복구용으로 보존되며 정본으로 사용하지 않습니다.\n\n괜찮으시겠습니까?';
+        question = '미러에서 서버 단독으로 전환합니다.\n\n전환이 끝나면 pluginStorage는 사용하지 않고 서버 DATA를 정본으로 사용합니다.\n플러그인 사본은 복구용으로 보존되며 정본으로 사용하지 않습니다.\n\n괜찮으시겠습니까?';
       } else {
         question = '저장 모드를 전환합니다. 계속하시겠습니까?';
       }
@@ -11845,151 +12568,157 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       });
     };
 
-    const showPendingJob = () => {
-      const job=getSyncJob();
-      focusSyncJobPanel(root);
-      setMessage(job?.kind==='global_mode'&&!syncJobTerminal(job.status)
-        ? `미완료 작업은 진행 화면의 [${globalResumeLabel(job)}]에서 계속합니다.`
-        : '현재 재개할 미완료 작업이 없습니다.');
+    // ── 확인 팝업 ──────────────────────────────────────────────────────────────────────────────────
+    // One popup serves every advanced action. It leaves the panel for <body> so a transformed
+    // ancestor cannot clip it, and it never defaults to approval.
+    const askNode = q('[data-ask]');
+    const aq = selector => askNode.querySelector?.(selector) || q(selector);
+    try { if (root.ownerDocument?.body?.appendChild && askNode.parentNode) root.ownerDocument.body.appendChild(askNode); } catch (_) {}
+    let askSettle = null;
+    const askDialog = ({ title, text, options = [], typedWord = '', typedLabel = '' }) => {
+      if (askSettle) askSettle(null);
+      const previousFocus = root.ownerDocument?.activeElement || null;
+      aq('[data-ask-title]').textContent = String(title || '확인');
+      aq('[data-ask-text]').textContent = String(text || '');
+      askNode.setAttribute?.('aria-label', String(title || '확인'));
+      const typed = aq('[data-ask-typed]'), typedRow = aq('[data-ask-typed-row]');
+      typed.value = '';
+      typedRow.style.display = typedWord ? 'grid' : 'none';
+      aq('[data-ask-typed-label]').textContent = typedWord ? (typedLabel || `계속하려면 아래 칸에 「${typedWord}」를 입력하세요.`) : '';
+      typed.placeholder = typedWord;
+      const buttons = [aq('[data-ask-a]'), aq('[data-ask-b]')];
+      const allowed = () => !typedWord || String(typed.value || '').trim() === typedWord;
+      const refresh = () => buttons.forEach((button, index) => { button.disabled = !options[index] || !allowed(); button.style.opacity = button.disabled ? '.5' : '1'; });
+      buttons.forEach((button, index) => {
+        const option = options[index];
+        button.style.display = option ? '' : 'none';
+        button.textContent = option ? String(option.label) : '';
+        button.style.borderColor = option?.danger ? '#b3463a' : '#8190a5';
+      });
+      typed.oninput = refresh; refresh();
+      askNode.hidden = false; askNode.style.display = 'flex';
+      return new Promise(resolve => {
+        let settled = false;
+        const finish = value => {
+          if (settled) return; settled = true; askSettle = null;
+          clearInterval(detached);
+          askNode.hidden = true; askNode.style.display = 'none';
+          buttons.forEach(button => { button.onclick = null; }); aq('[data-ask-cancel]').onclick = null; askNode.onkeydown = null; typed.oninput = null;
+          try { (previousFocus?.isConnected ? previousFocus : null)?.focus?.(); } catch (_) {}
+          resolve(value);
+        };
+        askSettle = finish;
+        const detached = setInterval(() => { if (root.isConnected === false) finish(null); }, 200); try { detached?.unref?.(); } catch (_) {}
+        buttons.forEach((button, index) => { button.onclick = () => { if (options[index] && allowed()) finish(options[index].value); }; });
+        aq('[data-ask-cancel]').onclick = () => finish(null);
+        askNode.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); finish(null); } };
+        try { (typedWord ? typed : aq('[data-ask-cancel]')).focus?.(); } catch (_) {}
+      });
     };
-    const resumeFromPanel = () => {
-      if(manualResumePromise)return manualResumePromise;
-      const operation=(async()=>{
-        try{
-          await loadPersistedSyncJob();const job=getSyncJob();
-          if(job?.kind!=='global_mode'||syncJobTerminal(job.status)){showPendingJob();return job;}
-          if(globalJobRunning||modeConfigurationBusy){setMessage('이전이 진행 중입니다. 이 진행 화면에서 상태를 확인하세요.');return job;}
-          const label=globalResumeLabel(job);
-          if(normalizeServerUrl(q('[data-url]').value)!==job.targetUrl)throw globalModeError('MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');
-          setMessage(`[${label}] · 기록된 작업과 서버를 확인하고 있습니다…`);
-          let result;
-          if(globalLocalCancellationNeeded(job)&&!job.localCancellationIntent){
-            setMessage('기기에 남은 이전 원본을 검증하고 있습니다. 현재 서버는 변경하지 않습니다.');
-            const preview=await previewLocalCancellation();
-            if(!await confirmModeTransition(MODE_PLUGIN_ONLY,MODE_PLUGIN_ONLY,preview)){setMessage('확인창을 닫았습니다. 미완료 작업과 현재 서버는 유지됩니다.');return getSyncJob();}
-            if(!root.isConnected||getSyncJob()?.jobId!==job.jobId||syncJobTerminal(getSyncJob()?.status)||normalizeServerUrl(q('[data-url]').value)!==job.targetUrl)throw globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED');
-            result=await scopedCancelSyncJob({localOnly:true,previewFingerprint:preview.fingerprint});
-          }
-          else if(globalRollbackPending(job))result=await scopedCancelSyncJob();
-          else{
-            // Every explicit resume gets a fresh connection, including after an
-            // offline startup. The admitted server pin still guards all writes.
-            await bootstrap(true,true);
-            const options={url:job.targetUrl};
-            let reviewNeeded=false;
-            if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(job.error)){
-              const inventory=await collectGlobalInventory(job.targetMode,{url:job.targetUrl});
-              try{await assertGlobalPlanCurrent(job,inventory,true);}
-              catch(error){if(['MEMORY_SUITE_GLOBAL_SOURCE_CHANGED','MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED'].includes(error.code))reviewNeeded=true;else throw error;}
-            }
-            if(reviewNeeded){
-              const preview=await previewGlobalMode(job.targetMode,{url:job.targetUrl});
-              if(!preview.completeKnownScopes){
-                q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,blockers:preview.blockers.map(globalIssueMetadata),...globalWarningMetadata(preview)},null,2);
-                q('[data-preview-diagnostics]').hidden=false;
-                setMessage(`재검사 보류 · 미해결 ${preview.blockers.length}개. 상세 진단에서 원인을 확인한 뒤 진행 화면의 [${label}]를 사용하세요.`,'error');return getSyncJob();
-              }
-              const selection=JSON.stringify([q('[data-url]').value,selectedMode()]);
-              if(!await confirmModeTransition(lastSettings.global?.mode||MODE_PLUGIN_ONLY,job.targetMode,preview)){
-                setMessage('확인창을 닫았습니다. 기존 미완료 작업은 유지됩니다.');return getSyncJob();
-              }
-              if(!root.isConnected||selection!==JSON.stringify([q('[data-url]').value,selectedMode()])||getSyncJob()?.jobId!==job.jobId||syncJobTerminal(getSyncJob()?.status)){
-                setMessage(`확인 중 대상이나 작업이 바뀌었습니다. 진행 화면의 [${label}]에서 다시 확인하세요.`,'error');return getSyncJob();
-              }
-              Object.assign(options,{previewFingerprint:preview.inventoryFingerprint,refreshInventory:true});
-            }
-            result=await withModeConfiguration(()=>persistGlobalModeAllChats(job.targetMode,options));
-          }
-          await refreshPanelSettings();renderJob(getSyncJob());
-          setMessage(result?.rollbackComplete?'취소 복구 완료 · 이전 저장 경로로 돌아왔습니다. 서버 사본은 보존했습니다.':result?.completeKnownScopes?'중단된 이전을 재개하여 전체 검증을 완료했습니다.':`미완료 작업을 보존했습니다. 진행 화면의 [${globalResumeLabel(getSyncJob())}]에서 계속할 수 있습니다.`,result?.rollbackComplete||result?.completeKnownScopes?'good':'');
-          return result;
-        }catch(error){
-          if(String(error.code||'').startsWith('MEMORY_SUITE_LOCAL_CANCEL_')&&getSyncJob()?.kind==='global_mode'&&!syncJobTerminal(getSyncJob().status)){
-            await globalSaveJob({error:error.code,errorDetails:{...error.details,cause:'MEMORY_SUITE_JOB_SERVER_PIN_CHANGED'},status:'paused',phase:'recovery_pending'});
-            renderJob(getSyncJob());
-          }
-          const job=getSyncJob(),guidance=syncJobActionGuidance(error.code||error.message,error.details,job);
-          setMessage(guidance?`${guidance.blockerReason}\n${guidance.actionRequired}`:`재개 보류 · ${error.code||error.message}`,'error');
-          return job;
-        }
-      })();
-      manualResumePromise=operation;renderJob(getSyncJob());
-      const finish=()=>{manualResumePromise=null;if(root.isConnected)renderJob(getSyncJob());};
-      operation.then(finish,finish);
-      return operation;
+    const transferSummary = result => [`대화 ${Number(result?.discoveredScopes || 0).toLocaleString()}개`,
+      `서버로 옮김 ${Number(result?.uploaded || 0).toLocaleString()}건`, `플러그인으로 옮김 ${Number(result?.restored || 0).toLocaleString()}건`,
+      `이미 같음 ${Number(result?.matched || 0).toLocaleString()}건`].join(' · ')
+      + (result?.warningCount > 0 ? `\n확인이 필요한 항목 ${result.warningCount}건은 건너뛰고 원래 자리에 그대로 두었습니다.` : '')
+      + (result?.serverPublicationPending ? '\n서버 쪽 경로 기록은 다음 연결 때 다시 맞춥니다.' : '');
+    const transferBusy = () => {
+      if (!globalJobRunning && !modeConfigurationBusy) return false;
+      setMessage('다른 저장 작업이 진행 중입니다. 끝난 뒤 다시 시도하세요.');
+      return true;
     };
+    const failureText = error => String(error?.userMessage || error?.code || error?.message || error);
+
     q('[data-apply]').onclick = async()=>{
       if(q('[data-apply]').disabled)return;
-      const pending=getSyncJob();
-      if(globalModeEnabled&&pending?.kind==='global_mode'&&!syncJobTerminal(pending.status)){showPendingJob();return;}
       const targetUrl=q('[data-url]').value;
       const mode=root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value;
       const selectionCurrent=()=>root.isConnected!==false&&q('[data-url]').value===targetUrl&&root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value===mode;
       if (!mode) { setMessage('단독 모드를 선택해 전환을 완료해 주세요.','error'); return; }
       const writeGlobal = scopeTarget === 'global';
       try{
-        const writeLabel = writeGlobal ? '전역' : '현재 스코프';
         // A global write is judged against the GLOBAL mode; a scope write against this chat's.
         const fromMode = writeGlobal ? (lastSettings.global?.set === true ? lastSettings.global.mode : MODE_PLUGIN_ONLY) : lastSettings.mode;
-        if (!writeGlobal && !(await confirmModeTransition(fromMode, mode))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
+        if (writeGlobal && globalModeEnabled && transferBusy()) return;
+        if (!(await confirmModeTransition(fromMode, mode))) { setMessage('전환을 취소했습니다. 저장 모드는 그대로입니다.','good'); return; }
+        if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
         if (writeGlobal) {
           const button=q('[data-apply]');button.disabled=true;
           try{
-            q('[data-preview-diagnostics]').hidden=true;
-            setMessage('전체 대화와 보존 자료를 확인하고 있습니다…');
-            const preview=await previewGlobalMode(mode,{url:q('[data-url]').value});
-            if(!preview.completeKnownScopes||preview.warningCount>0){
-              q('[data-preview-diagnostics-text]').value=JSON.stringify({schema:'memory-suite.migration-preview-diagnostics.v1',namespace,discoveredScopes:preview.discoveredScopes,
-                blockers:preview.blockers.map(globalIssueMetadata),...globalWarningMetadata(preview)},null,2);
-              q('[data-preview-diagnostics]').hidden=false;
-            }
-            if(!preview.completeKnownScopes){
-              renderJob(getSyncJob());
-              setMessage(`새 이전 검사에서 미해결 항목이 발견되었습니다. 발견 ${preview.discoveredScopes}개 · 미해결 ${preview.blockers.length}개\n이 검사로 저장 설정은 변경되지 않았습니다.\n${preview.blockers.slice(0,16).map(row=>[row.code,row.location,row.space,row.key,row.detail].filter(Boolean).join(' · ')).join('\n')}`,'error');return;}
-            if(!(await confirmModeTransition(fromMode,mode,preview))){setMessage(['resume','rollback'].includes(preview.workflow?.kind)?'확인창을 닫았습니다. 기존 미완료 작업은 유지됩니다.':'이번 이전 신청을 취소했습니다. 원본과 저장 경로는 그대로입니다.','good');return;}
-            if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
-            setMessage([preview.workflow?globalWorkflowView(preview.workflow).title+'\n'+globalWorkflowView(preview.workflow).detail:'',`전체 ${preview.discoveredScopes}개 대화 · 과거 개별 경로 ${preview.legacyOverrides}개\n${q('[data-url]').value}\n복사·재조회 검증 후 전역 설정을 적용합니다.`,globalWarningText(preview)].filter(Boolean).join('\n'));
-            const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:q('[data-url]').value,previewFingerprint:preview.inventoryFingerprint,refreshInventory:true}));
+            setMessage(globalModeEnabled?'자료를 옮기고 있습니다. 모두 옮긴 뒤에 저장 위치를 바꿉니다.':'전역 설정을 적용하고 있습니다…');
+            const result=await withModeConfiguration(()=>persistGlobalMode(mode,{source:'user_global_setting',url:targetUrl}));
             await refreshPanelSettings();renderJob(getSyncJob());
-            if(result.completeKnownScopes===true)setMessage([`전역 설정 적용 완료 · ${modeLabel(mode)}\n전체 ${result.verifiedScopes}/${result.discoveredScopes}개 대화 검증 완료. 새 대화도 이 설정을 따릅니다.`,globalWarningText(result)].filter(Boolean).join('\n'),'good');
-            else setMessage('미완료 · 원본과 현재 경로를 보존했습니다. 이어서 진행할 수 있습니다.','error');
-            return;
+            setMessage(globalModeEnabled?`전역 설정 적용 완료 · ${modeLabel(mode)}\n${transferSummary(result)}`:`전역 설정 적용 완료 · ${modeLabel(mode)}`,'good');
           }finally{button.disabled=false;}
+          return;
         }
-        if(!selectionCurrent()){setMessage('확인 중 대상 설정이 바뀌었습니다. 다시 적용해 주세요.','error');return;}
         if (mode === lastSettings.mode && normalizeServerUrl(q('[data-url]').value) === initial.url) { setMessage('변경할 설정이 없습니다.','good'); return; }
         const job=await scopedStartConnectionConfigurationJob({mode,url:q('[data-url]').value,scope:initial.scope});
         setMessage('설정 적용과 현재 스코프 초기 동기화를 시작했습니다.'); renderJob(job);
-      }catch(error){setMessage(`설정 적용 시작 실패\n${error?.userMessage||error?.message||error}`,'error');}
+      }catch(error){await refreshPanelSettings();renderJob(getSyncJob());setMessage(`설정 적용 실패\n${failureText(error)}`,'error');}
     };
-    if(globalModeEnabled){
-      q('[data-global-cancel]').onclick=async()=>{if(globalRollbackPending(getSyncJob())){showPendingJob();return;}const button=q('[data-global-cancel]');button.disabled=true;try{const result=await scopedCancelSyncJob();await refreshPanelSettings();renderJob(getSyncJob());setMessage(result?.rollbackComplete?'이전 작업을 취소하고 저장 경로를 이전 설정으로 복구했습니다. 원본과 서버 사본은 보존했습니다.':'취소를 요청했습니다. 현재 스코프 처리가 끝나면 저장 경로를 복구합니다.','good');}catch(error){renderJob(getSyncJob());setMessage(`경로 복구 보류: ${error.code||error.message}`,'error');}};
-      q('[data-global-pause]').onclick=async()=>{try{await pauseGlobalModeJob();setMessage('중단을 요청했습니다. 진행 중인 복사 검증을 마친 뒤 원본과 현재 경로를 보존합니다.');renderJob(getSyncJob());}catch(error){setMessage(error.code || error.message,'error');}};
-      q('[data-global-resume]').onclick=showPendingJob;
-    }
     refreshScopeNote();
-    q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프 복구를 시작했습니다.');renderJob(job);}catch(error){setMessage(`복구 시작 실패\n${error?.userMessage||error?.message||error}`,'error');} };
+    if(globalModeEnabled){
+      // 모드 전환 중 자동 복구: 전환 중 발생한 에러를 감지하고 자동으로 해결합니다.
+      q('[data-recover]').onclick=async()=>{
+        if(transferBusy())return;
+        const choice=await askDialog({title:'모드 전환 중 자동 복구',
+          text:'어느 모드로 전환하던 중이었나요?\n고른 모드로 가는 전환에서 생긴 에러를 찾아 정리하고, 남은 자료를 옮겨 전환을 마칩니다.',
+          options:[{label:'1) 플러그인 모드로 전환 중',value:'plugin'},{label:'2) 서버 모드로 전환 중',value:'server'}]});
+        if(!choice){setMessage('자동 복구를 닫았습니다. 아무것도 바꾸지 않았습니다.');return;}
+        const button=q('[data-recover]');button.disabled=true;
+        try{
+          setMessage('전환 중 생긴 에러를 찾고 있습니다…');
+          const report=await withModeConfiguration(()=>recoverModeTransition(choice));
+          await refreshPanelSettings();renderJob(getSyncJob());
+          setMessage([`자동 복구 완료 · 현재 모드: ${modeLabel(report.targetMode)}`,
+            report.findings.length?`해결한 문제 ${report.findings.length}가지\n${report.findings.map(row=>'· '+row.label).join('\n')}`:'감지된 에러는 없었습니다. 저장 위치와 자료를 다시 맞췄습니다.',
+            transferSummary(report.result)].join('\n'),'good');
+        }catch(error){await refreshPanelSettings();renderJob(getSyncJob());setMessage(`자동 복구를 마치지 못했습니다\n${failureText(error)}`,'error');}
+        finally{button.disabled=false;}
+      };
+      // 데이터 이동: 저장 모드는 그대로 두고 자료만 복사합니다.
+      const moveData=async side=>{
+        if(transferBusy())return;
+        const toServer=side==='server',activeMode=lastSettings.global?.mode||MODE_PLUGIN_ONLY;
+        const overwritesActive=toServer?activeMode===MODE_SERVER_ONLY:activeMode===MODE_PLUGIN_ONLY;
+        const from=toServer?'플러그인 스토리지':'서버 스토리지',to=toServer?'서버 스토리지':'플러그인 스토리지';
+        const choice=await askDialog({title:`데이터 이동 · ${to}`,
+          text:`${from}의 자료를 ${to}(으)로 복사합니다. 저장 모드는 바뀌지 않습니다.\n같은 항목이 ${to}에 있으면 ${from}의 내용으로 덮어씁니다.${overwritesActive?`\n\n주의: 지금 사용 중인 저장 위치가 ${to}입니다. 사용 중인 기억이 ${from}의 내용으로 바뀝니다.`:''}`,
+          options:[{label:`${to}(으)로 이동 시작`,value:'go',danger:overwritesActive}]});
+        if(choice!=='go'){setMessage('데이터 이동을 닫았습니다. 아무것도 바꾸지 않았습니다.');return;}
+        const buttons=[q('[data-move-plugin]'),q('[data-move-server]')];buttons.forEach(button=>{button.disabled=true;});
+        try{
+          setMessage(`${from} → ${to} 자료를 옮기고 있습니다…`);
+          const result=await withModeConfiguration(()=>runFastTransfer(toServer?MODE_SERVER_ONLY:MODE_PLUGIN_ONLY,{publish:false,source:toServer?'plugin':'server'}));
+          renderJob(getSyncJob());
+          setMessage(`데이터 이동 완료 · ${from} → ${to}\n${transferSummary(result)}`,'good');
+        }catch(error){renderJob(getSyncJob());setMessage(`데이터 이동을 마치지 못했습니다\n${failureText(error)}`,'error');}
+        finally{buttons.forEach(button=>{button.disabled=false;});}
+      };
+      q('[data-move-plugin]').onclick=()=>moveData('plugin');
+      q('[data-move-server]').onclick=()=>moveData('server');
+    }else{
+      q('[data-restore]').onclick = async()=>{ try{const job=await scopedStartRestoreJob({scope:initial.scope});setMessage('현재 스코프의 서버 자료를 플러그인 스토리지로 옮기기 시작했습니다.');renderJob(job);}catch(error){setMessage(`데이터 이동 시작 실패\n${failureText(error)}`,'error');} };
+    }
+    // 데이터 정리: 데이터 이동이 완료된 후 나머지 한쪽의 데이터를 삭제할 때도 쓰입니다.
     const cleanupDialog=globalModeEnabled?bindDuplicateCleanupDialog(root,{setMessage,refreshPanelSettings}):null;
     if(globalModeEnabled)q('[data-server-delete]').onclick=()=>cleanupDialog.open('server');
-    let armedUntil=0;
     q('[data-delete]').onclick=async()=>{
-      if(globalModeEnabled)return cleanupDialog.hasReview()?await cleanupDialog.execute():await cleanupDialog.open('local');
+      if(globalModeEnabled)return await cleanupDialog.open('local');
       const button=q('[data-delete]');button.disabled=true;
       try{
-        if(Date.now()>armedUntil){
-          await assertRecoveryActionAllowed(initial.scope,'delete_pluginstorage');
-          const checked=await scopedVerifyPreservation(state.legacy.plugin,{scope:initial.scope});
-          armedUntil=Date.now()+30000;button.textContent='검증 완료 · 다시 눌러 삭제';
-          setMessage(`보존 검증 완료 · ${checked.checked}개\n30초 안에 다시 누르면 현재 스코프의 payload만 삭제합니다.`,'good');return;
-        }
-        armedUntil=0;
+        await assertRecoveryActionAllowed(initial.scope,'delete_pluginstorage');
+        const checked=await scopedVerifyPreservation(state.legacy.plugin,{scope:initial.scope});
+        const choice=await askDialog({title:'데이터 정리 · 플러그인 스토리지',
+          text:`현재 스코프의 플러그인 스토리지 자료 ${checked.checked}개를 삭제합니다. 서버에 같은 자료가 있는지 확인했습니다.\n삭제한 자료는 되돌릴 수 없습니다.`,
+          typedWord:'삭제',options:[{label:'플러그인 스토리지 자료 삭제',value:'delete',danger:true}]});
+        if(choice!=='delete'){setMessage('데이터 정리를 닫았습니다. 아무것도 삭제하지 않았습니다.');return;}
         const result=await scopedDeletePluginStorageAfterVerification({scope:initial.scope});
-        button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`,'good');
-      }catch(error){armedUntil=0;button.textContent='현재 스코프 pluginStorage 삭제';setMessage(`삭제 차단\n${error?.userMessage||error?.message||error}`,'error');}
+        setMessage(`삭제 완료 · ${result.deleted}개\n현재 스코프는 서버 단독입니다.`,'good');
+      }catch(error){setMessage(`삭제 차단\n${failureText(error)}`,'error');}
       finally{button.disabled=false;}
     };
     q('[data-job-dismiss]').onclick=()=>{const job=getSyncJob();if(job&&syncJobTerminal(job.status)){dismissedJobId=job.jobId;state.syncJob.dismissedJobId=job.jobId;try{updateSyncJob({dismissed:true},{persist:'immediate'});}catch(_){}renderJob(job);}};
-    const unsubscribe=subscribeSyncJob(renderJob); const tick=setInterval(()=>{if(!root.isConnected){clearInterval(tick);unsubscribe();return;}renderJob(getSyncJob());},1000); try{tick?.unref?.();}catch(_){}
+    const unsubscribe=subscribeSyncJob(renderJob); const tick=setInterval(()=>{if(!root.isConnected){clearInterval(tick);unsubscribe();try{askSettle?.(null);askNode.remove?.();}catch(_){}return;}renderJob(getSyncJob());},1000); try{tick?.unref?.();}catch(_){}
     await scopedResumePendingSyncJob().catch(()=>null); renderJob(getSyncJob());
     return true;
   };
@@ -13189,7 +13918,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     startSynchronizationJob: scopedStartSynchronizationJob,
     startConnectionConfigurationJob: scopedStartConnectionConfigurationJob,
     startRestoreJob: scopedStartRestoreJob,
-    resumePendingSyncJob: scopedResumePendingSyncJob,
+    resumePendingSyncJob: () => scopedResumePendingSyncJob({legacy:true}),
     cancelSyncJob: scopedCancelSyncJob,
     waitForSyncJob: scopedWaitForSyncJob,
     getSyncJob,
@@ -13238,6 +13967,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // Other consumers preserve their legacy behavior. `getGlobalMode` reports the saved choice
     // (`set:false` means no governance, which is the pre-global behaviour).
     previewGlobalMode,
+    recoverModeTransition: direction => withModeConfiguration(()=>recoverModeTransition(direction)),
+    inspectModeTransitionFaults,
+    moveAllData: side => withModeConfiguration(()=>runFastTransfer(side === 'server' ? MODE_SERVER_ONLY : MODE_PLUGIN_ONLY, { publish:false, source:side === 'server' ? 'plugin' : 'server' })),
     previewLocalCancellation,
     pauseGlobalModeJob,
     getGlobalMode: async (force = true) => await readGlobalMode(force),

@@ -2,11 +2,16 @@
 const assert=require('node:assert/strict'),test=require('node:test');
 const {fixture, installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
+async function applyLegacyPreview(f,target){
+ const preview=await f.bridge.previewGlobalMode(target);
+ assert.equal(preview.completeKnownScopes,true);
+ return await f.bridge.setGlobalMode(target,{previewFingerprint:preview.inventoryFingerprint});
+}
 async function paused(variant,sourceA){
  const f=await fixture(variant);let requested=false;
  if(sourceA!==undefined)f.values.set(variant[0]+'.A',sourceA);
  const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
- try{await f.bridge.setGlobalMode('server_only');assert.equal(f.bridge.getSyncJob().status,'paused');}
+ try{await applyLegacyPreview(f,'server_only');assert.equal(f.bridge.getSyncJob().status,'paused');}
  finally{stop();await f.bridge.dispose();}
  return f;
 }
@@ -61,6 +66,22 @@ for(const variant of variants){
    assert.equal(f.values.get(key),'A_SOURCE');
    assert.ok(error,'the interrupted transfer is reported as a failure');
   }finally{await f.close();}
+ });
+ test(namespace+': digest matches still require current server metadata before a mode switch',async()=>{
+  const f=await fixture(variant);
+  let removed=false,unsubscribe;
+  try{
+   await f.bridge.setGlobalMode('server_only');
+   unsubscribe=f.bridge.subscribeSyncJob(job=>{
+    if(removed||job?.targetMode!=='plugin_only'||job.phase!=='copy')return;
+    removed=true;
+    f.app.repositories[namespace].database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',key);
+   });
+   await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_SOURCE_CHANGED');
+   assert.equal(removed,true);
+   assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
+   assert.equal(f.values.get(key),'A_SOURCE');
+  }finally{unsubscribe?.();await f.close();}
  });
  test(`${namespace}: the local representation is compared through its server projection`,async()=>{
   const bridgeOptions={resolveKeyScope:async({key:logicalKey})=>({
@@ -152,11 +173,12 @@ for(const variant of variants){
   const f=await fixture(variant);let stop;
   try{
    await f.bridge.setGlobalMode('server_only');let removed=false;
-   stop=f.bridge.subscribeSyncJob(job=>{if(!removed&&job?.status==='running'&&job.currentScopeId==='A'){
+   stop=f.bridge.subscribeSyncJob(job=>{if(!removed&&job?.engine==='fast'&&job.phase==='copy'){
     removed=true;f.app.repositories[namespace].database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',key);
    }});
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED'
-    &&error.details?.reason==='destination_missing'&&error.details.sourceMode==='server_only'&&error.details.repairable===false);
+   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_SOURCE_CHANGED'
+    &&error.details?.key===key&&error.details.location==='server');
+   assert.equal(removed,true);
    assert.equal(f.app.repositories[namespace].get('plugin',key).exists,false);assert.equal(f.values.get(key),'A_SOURCE');
   }finally{stop?.();await f.close();}
  });
@@ -207,7 +229,7 @@ for(const variant of variants){
   try{
    f.bridge.createLocalStorageProxy(device);let requested=false;
    stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
-   await f.bridge.setGlobalMode('server_only');stop();
+   await applyLegacyPreview(f,'server_only');stop();
    const repository=f.app.repositories[namespace];assert.equal(repository.get('plugin',key).value,'A_SOURCE');assert.equal(repository.get('local',key).value,'LOCAL_SPACE_SOURCE');
    repository.database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('local',key);
    await f.bridge.dispose();const writes=[];

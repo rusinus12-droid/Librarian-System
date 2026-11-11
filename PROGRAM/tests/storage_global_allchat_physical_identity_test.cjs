@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+const {fixture,installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 (async()=>{const failures=[];for(const v of variants){
- let failValidation=false;
+ let failValidation=false,sawRestoredValue=false;
  const adapter=async({hostScopes,records,readRecord})=>{
   const classified=[];
   for(const row of records)classified.push({...row,classification:'scope',scopeId:row.logicalKey.slice(v[0].length+1),
@@ -10,7 +10,7 @@ const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
   return {scopes:hostScopes.map(s=>({...s,scopeId:s.chatId,scopeKey:s.chatId,aliases:Array.from({length:31},(_,i)=>s.chatId+'_alias_'+i)})),
    records:classified,blockers:[],completeKnownScopes:true};
  };
- const f=await fixture(v,{adapter,bridgeOptions:{validateRestore:async ctx=>{if(failValidation&&ctx.phase==='complete')throw Error('INJECT_SEMANTIC_RESTORE_FAILURE');return {ok:true};}}});
+ const f=await fixture(v,{adapter,bridgeOptions:{validateRestore:async ctx=>{if(failValidation&&ctx.phase==='complete'){sawRestoredValue=(await ctx.readback('plugin',v[0]+'.A'))==='SERVER_ADVANCED';throw Error('INJECT_SEMANTIC_RESTORE_FAILURE');}return {ok:true};}}});
  try{
   f.values.set(v[0]+'.A','PHYSICAL_ENVELOPE');await f.bridge.setGlobalMode('server_only');
   const row=JSON.parse(f.values.get(f.registryKey)).entries.A;
@@ -19,7 +19,11 @@ const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
   console.log('PASS '+v[0]+' strict owner identity and aliases');
  }catch(error){failures.push(v[0]+' identity: '+error.message);}
  try{
-  failValidation=true;await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'));
+  await f.proxy.setItem(v[0]+'.A','SERVER_ADVANCED');
+  failValidation=true;await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_RESTORE_SEMANTIC_VALIDATION_FAILED');
+  assert.equal(sawRestoredValue,true,'semantic validation inspects the newly restored value');
+  assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
+  assert.equal(f.app.repositories[v[0]].get('plugin',v[0]+'.A').value,'SERVER_ADVANCED');
   assert.equal(f.values.get(v[0]+'.A'),'PHYSICAL_ENVELOPE','rollback restores exact raw physical bytes, not logical hydration');
   console.log('PASS '+v[0]+' physical restore rollback');
  }catch(error){failures.push(v[0]+' rollback: '+error.message);}finally{await f.close();}

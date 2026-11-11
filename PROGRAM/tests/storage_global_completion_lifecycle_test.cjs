@@ -46,7 +46,8 @@ for(const variant of variants){
   }finally{stop();lateStop?.();await f.close();}
  });
  test(namespace+' rejected completion write never announces success',async()=>{
-  const f=await fixture(variant,{writeFault:async(key,value)=>{if(key===jobKey&&JSON.parse(value).status==='completed')throw Error('completion_write_denied');}});
+  let denyCompletion=true;
+  const f=await fixture(variant,{writeFault:async(key,value)=>{if(denyCompletion&&key===jobKey&&JSON.parse(value).status==='completed')throw Error('completion_write_denied');}});
   const completed=[];const stop=f.bridge.subscribeSyncJob(job=>{if(job?.status==='completed')completed.push(job);});
   try{
    await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');
@@ -54,7 +55,38 @@ for(const variant of variants){
    assert.equal(completed.length,0);
    assert.notEqual(f.bridge.getSyncJob().status,'completed');
    assert.notEqual(JSON.parse(f.values.get(jobKey)).status,'completed');
+   assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');
+   assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'plugin_only');
+   assert.equal(f.app.repositories[namespace].get('plugin','__memory_suite_scope_routes_v1__:'+namespace).exists,false);
+   assert.equal(await f.proxy.getItem(namespace+'.A'),'A_SOURCE');
+   denyCompletion=false;
+   const retry=await f.bridge.setGlobalMode('server_only');
+   assert.equal(retry.matched,2,'retry reuses the copies written before the failed commit');
+   assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
   }finally{stop();await f.close();}
+ });
+ test(namespace+' interrupted cutover restores the original route before reapplying',async()=>{
+  let crashValues;
+  const original=await fixture(variant,{writeFault:async(key,value)=>{
+   if(key===jobKey&&JSON.parse(value).status==='completed'){
+    crashValues=new Map(original.values);
+    throw Error('simulated_exit_before_completion_record');
+   }
+  }});
+  let fresh;
+  try{
+   await assert.rejects(()=>original.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');
+   const interrupted=JSON.parse(crashValues.get(jobKey));
+   assert.ok(interrupted.fastCommit,'the rollback plan is durable before a route change');
+   assert.equal(JSON.parse(crashValues.get(original.registryKey)).entries.__memory_suite_global__.mode,'server_only');
+   fresh=await fixture(variant,{app:original.app,values:crashValues});
+   await assert.rejects(()=>fresh.proxy.getItem(namespace+'.A'),error=>error.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');
+   const result=await fresh.bridge.setGlobalMode('plugin_only');
+   assert.equal(result.mode,'plugin_only');
+   assert.equal(await fresh.proxy.getItem(namespace+'.A'),'A_SOURCE');
+   assert.equal(original.app.repositories[namespace].get('plugin',namespace+'.A').value,'A_SOURCE');
+   assert.equal(JSON.parse(crashValues.get(jobKey)).fastCommit,null);
+  }finally{await fresh?.close();await original.close();}
  });
  test(namespace+' global display and diagnostic copy distinguish completed work from a new blocked inspection',async()=>{
   let blocked=false;

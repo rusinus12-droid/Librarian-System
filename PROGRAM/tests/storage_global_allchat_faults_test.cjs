@@ -3,34 +3,43 @@ const assert=require('node:assert/strict');
 const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 const clone=x=>JSON.parse(JSON.stringify(x));
 const journalKey=ns=>`__memory_suite_internal_sync_job_v1__:${ns}`;
+// These cases exercise the checkpoint journal kept for previously admitted migrations.
+// The default batch engine is covered by storage_fast_mode_transfer_test.cjs.
+async function applyLegacy(f,mode,options={}){
+ const pending=f.bridge.getSyncJob();
+ if(options.previewFingerprint || (pending?.globalPlan && ['queued','running','paused'].includes(pending.status)))
+  return await f.bridge.setGlobalMode(mode,options);
+ const preview=await f.bridge.previewGlobalMode(mode,options);
+ return await f.bridge.setGlobalMode(mode,{...options,previewFingerprint:preview.inventoryFingerprint});
+}
 const tests=[];function test(name,fn){tests.push([name,fn]);}
 test('same-mode legacy server verifies authoritative source without comparing retained stale backup',async v=>{
- const f=await fixture(v);try{await f.bridge.setGlobalMode('server_only');await f.proxy.setItem(v[0]+'.A','NEW_SERVER');
+ const f=await fixture(v);try{await applyLegacy(f,'server_only');await f.proxy.setItem(v[0]+'.A','NEW_SERVER');
  const registry=JSON.parse(f.values.get(f.registryKey));registry.entries.A.origin='user_explicit';registry.entries.A.updatedAt++;f.values.set(f.registryKey,JSON.stringify(registry));
- const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.completeKnownScopes,true);assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).explicit,false);
+ const result=await applyLegacy(f,'server_only');assert.equal(result.completeKnownScopes,true);assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).explicit,false);
  }finally{await f.close();}
 });
 test('reverse covers inactive server-only values and preserves authoritative server',async v=>{
- const f=await fixture(v);try{await f.bridge.setGlobalMode('server_only');f.values.delete(v[0]+'.B');
- const result=await f.bridge.setGlobalMode('plugin_only');assert.equal(result.completeKnownScopes,true);assert.equal(f.values.get(v[0]+'.B'),'B_SOURCE');
+ const f=await fixture(v);try{await applyLegacy(f,'server_only');f.values.delete(v[0]+'.B');
+ const result=await applyLegacy(f,'plugin_only');assert.equal(result.completeKnownScopes,true);assert.equal(f.values.get(v[0]+'.B'),'B_SOURCE');
  const before=f.calls.length;assert.equal(await f.proxy.getItem(v[0]+'.B'),'B_SOURCE');await new Promise(r=>setTimeout(r,20));assert.equal(f.calls.length,before,'plugin-only completion has no background reconnect');
  }finally{await f.close();}
 });
 test('source drift after preview rejects before payload or routing mutation',async v=>{
- const f=await fixture(v);try{const p=await f.bridge.previewGlobalMode('server_only');f.values.set(v[0]+'.B','CHANGED');const before=[...f.values];await assert.rejects(()=>f.bridge.setGlobalMode('server_only',{previewFingerprint:p.inventoryFingerprint}),e=>e.code==='MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');assert.deepEqual([...f.values],before);}finally{await f.close();}
+ const f=await fixture(v);try{const p=await f.bridge.previewGlobalMode('server_only');f.values.set(v[0]+'.B','CHANGED');const before=[...f.values];await assert.rejects(()=>applyLegacy(f,'server_only',{previewFingerprint:p.inventoryFingerprint}),e=>e.code==='MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');assert.deepEqual([...f.values],before);}finally{await f.close();}
 });
 test('journal failure before copy leaves payload and routes intact',async v=>{
- const f=await fixture(v,{writeFault:async k=>{if(k===journalKey(v[0]))throw Error('synthetic_journal_fault');}});try{const before=[...f.values];await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');assert.deepEqual([...f.values],before);assert(!f.calls.some(c=>c.path==='/v1/kv/set'));}finally{await f.close();}
+ const f=await fixture(v,{writeFault:async k=>{if(k===journalKey(v[0]))throw Error('synthetic_journal_fault');}});try{const before=[...f.values];await assert.rejects(()=>applyLegacy(f,'server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');assert.deepEqual([...f.values],before);assert(!f.calls.some(c=>c.path==='/v1/kv/set'));}finally{await f.close();}
 });
 test('route-before-checkpoint crash resumes from another selected chat',async v=>{
  let injected=false;const f=await fixture(v,{writeFault:async(k,value)=>{if(k===journalKey(v[0])){const j=JSON.parse(value);if(!injected&&j.checkpoints?.A){injected=true;throw Error('synthetic_crash_after_route');}}}});
- let fresh;try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');assert.equal(f.bridge.getSyncJob().status,'paused');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');await f.bridge.dispose();
- fresh=await fixture(v,{app:f.app,values:f.values,current:'C'});const result=await fresh.bridge.setGlobalMode('server_only');assert.equal(result.completeKnownScopes,true);assert.equal(fresh.bridge.getSyncJob().status,'completed');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');
+ let fresh;try{await assert.rejects(()=>applyLegacy(f,'server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');assert.equal(f.bridge.getSyncJob().status,'paused');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');await f.bridge.dispose();
+ fresh=await fixture(v,{app:f.app,values:f.values,current:'C'});const result=await applyLegacy(fresh,'server_only');assert.equal(result.completeKnownScopes,true);assert.equal(fresh.bridge.getSyncJob().status,'completed');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');
  }finally{if(fresh)await fresh.close();await f.close();}
 });
 test('aggregate pending job blocks newly selected chat owner writes',async v=>{
  let injected=false;const f=await fixture(v,{writeFault:async(k,value)=>{if(k===journalKey(v[0])&&!injected&&JSON.parse(value).checkpoints?.A){injected=true;throw Error('synthetic_pause');}}});
- try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));f.setCurrent('C');await assert.rejects(()=>f.proxy.setItem(v[0]+'.C','BAD_FALLBACK'),e=>e.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');assert.equal(f.values.has(v[0]+'.C'),false);}finally{await f.close();}
+ try{await assert.rejects(()=>applyLegacy(f,'server_only'));f.setCurrent('C');await assert.rejects(()=>f.proxy.setItem(v[0]+'.C','BAD_FALLBACK'),e=>e.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');assert.equal(f.values.has(v[0]+'.C'),false);}finally{await f.close();}
 });
 test('denied null partial duplicate host catalog blocks read-only',async v=>{
  for(const catalog of [null,{}, {characters:[{chaId:'c'}]},{characters:[{chaId:'c',chats:[{id:'a'},{id:'a'}]}]}]){
@@ -47,23 +56,23 @@ test('321-plus host catalog is complete without registry cap',async v=>{
 });
 test('copy-before-route crash preserves old global and resumes idempotently',async v=>{
  let fail=true;const f=await fixture(v,{writeFault:async(k,value)=>{if(fail&&k===`__memory_suite_internal_scope_routes_v1__:${v[0]}`){const r=JSON.parse(value);if(r.entries?.A?.globalMigrationJobId&&r.entries.A.mode==='server_only')throw Error('route_write_fault');}}});
- try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');fail=false;const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.completeKnownScopes,true);}finally{await f.close();}
+ try{await assert.rejects(()=>applyLegacy(f,'server_only'));assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');fail=false;const result=await applyLegacy(f,'server_only');assert.equal(result.completeKnownScopes,true);}finally{await f.close();}
 });
 test('global-local-commit before publication failure remains recoverable',async v=>{
  let rejectGlobal=true;const f=await fixture(v,{transportFactory:base=>async(url,init={})=>{const body=init.body?JSON.parse(init.body):{};if(rejectGlobal&&String(url).endsWith('/v1/kv/set')&&body.key===`__memory_suite_scope_routes_v1__:${v[0]}`)return new Response(JSON.stringify({ok:false,error:'synthetic_global_publication_failure'}),{status:503});return await base(url,init);}});
- try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));assert.equal(f.bridge.getSyncJob().status,'paused');assert.equal(f.bridge.getSyncJob().phase,'commit_pending');await assert.rejects(()=>f.proxy.setItem(v[0]+'.C','BAD'),e=>e.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');rejectGlobal=false;const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.completeKnownScopes,true);}finally{await f.close();}
+ try{await assert.rejects(()=>applyLegacy(f,'server_only'));assert.equal(f.bridge.getSyncJob().status,'paused');assert.equal(f.bridge.getSyncJob().phase,'commit_pending');await assert.rejects(()=>f.proxy.setItem(v[0]+'.C','BAD'),e=>e.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');rejectGlobal=false;const result=await applyLegacy(f,'server_only');assert.equal(result.completeKnownScopes,true);}finally{await f.close();}
 });
 test('cancel-before-copy leaves source routes unchanged',async v=>{
  const f=await fixture(v);let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.status==='queued'){requested=true;void f.bridge.pauseGlobalModeJob();}});
- try{const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.status,'cancelled');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert(!f.calls.some(c=>c.path==='/v1/kv/set'));}finally{stop();await f.close();}
+ try{const result=await applyLegacy(f,'server_only');assert.equal(result.status,'cancelled');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert(!f.calls.some(c=>c.path==='/v1/kv/set'));}finally{stop();await f.close();}
 });
 test('safe-point pause preserves actual migrated routes and resume data',async v=>{
  const f=await fixture(v);let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
- try{const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.status,'paused');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'plugin_only');const completed=await f.bridge.setGlobalMode('server_only');assert.equal(completed.completeKnownScopes,true);}finally{stop();await f.close();}
+ try{const result=await applyLegacy(f,'server_only');assert.equal(result.status,'paused');assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'plugin_only');const completed=await applyLegacy(f,'server_only');assert.equal(completed.completeKnownScopes,true);}finally{stop();await f.close();}
 });
 test('cancel after a verified scope restores the original routes and keeps source data',async v=>{
  const f=await fixture(v);let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.cancelSyncJob();}});
- try{const before=JSON.parse(f.values.get(f.registryKey));const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);
+ try{const before=JSON.parse(f.values.get(f.registryKey));const result=await applyLegacy(f,'server_only');assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);
   const after=JSON.parse(f.values.get(f.registryKey));for(const id of ['A','B']){assert.equal(after.entries[id].mode,before.entries[id].mode);assert.equal(after.entries[id].origin,before.entries[id].origin);assert.equal(after.entries[id].globalMigrationJobId,undefined,'migration marker is removed from restored routes');}
   assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'plugin_only');
   assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert.equal(f.values.get(v[0]+'.B'),'B_SOURCE');
@@ -71,7 +80,7 @@ test('cancel after a verified scope restores the original routes and keeps sourc
 });
 test('cancel a paused partial migration rolls its routes back',async v=>{
  let injected=false;const f=await fixture(v,{writeFault:async(k,value)=>{if(k===journalKey(v[0])&&!injected&&JSON.parse(value).checkpoints?.A){injected=true;throw Error('synthetic_pause_before_checkpoint');}}});
- try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');
+ try{await assert.rejects(()=>applyLegacy(f,'server_only'));assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');
   const result=await f.bridge.cancelSyncJob();assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);
   assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'B'})).mode,'plugin_only');
   assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');assert.equal(f.values.get(v[0]+'.B'),'B_SOURCE');
@@ -79,7 +88,7 @@ test('cancel a paused partial migration rolls its routes back',async v=>{
 });
 test('cancel restores implicit chat inheritance and subsequent writes stay local',async v=>{
  const f=await fixture(v);let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.C){requested=true;void f.bridge.cancelSyncJob();}});
- try{f.values.set(v[0]+'.C','C_SOURCE');const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.rollbackComplete,true);
+ try{f.values.set(v[0]+'.C','C_SOURCE');const result=await applyLegacy(f,'server_only');assert.equal(result.rollbackComplete,true);
   assert.equal((await f.bridge.getScopeMode({scopeId:'C'})).mode,'plugin_only');assert.equal((await f.bridge.getScopeMode({scopeId:'NEW'})).mode,'plugin_only');
   f.setCurrent('C');const calls=f.calls.length;await f.proxy.setItem(v[0]+'.C','LOCAL_AFTER_CANCEL');assert.equal(await f.proxy.getItem(v[0]+'.C'),'LOCAL_AFTER_CANCEL');assert.equal(f.values.get(v[0]+'.C'),'LOCAL_AFTER_CANCEL');assert.equal(f.calls.length,calls,'restored plugin-only reads and writes never reconnect');
  }finally{stop();await f.close();}
@@ -88,7 +97,7 @@ test('cancel after final publication failure restores the global route and new c
  for(const hadGlobalEntry of [true,false]){
   let rejectGlobal=true;const f=await fixture(v,{transportFactory:base=>async(url,init={})=>{const body=init.body?JSON.parse(init.body):{};if(rejectGlobal&&String(url).endsWith('/v1/kv/set')&&body.key===`__memory_suite_scope_routes_v1__:${v[0]}`)return new Response(JSON.stringify({ok:false,error:'synthetic_publication_failure'}),{status:503});return base(url,init);}});
   try{if(!hadGlobalEntry){const registry=JSON.parse(f.values.get(f.registryKey));delete registry.entries.__memory_suite_global__;f.values.set(f.registryKey,JSON.stringify(registry));}
-   await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));assert.equal(f.bridge.getSyncJob().phase,'commit_pending');assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');rejectGlobal=false;
+   await assert.rejects(()=>applyLegacy(f,'server_only'));assert.equal(f.bridge.getSyncJob().phase,'commit_pending');assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');rejectGlobal=false;
    const result=await f.bridge.cancelSyncJob();assert.equal(result.status,'cancelled');assert.equal(result.rollbackComplete,true);assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');
    for(const id of ['A','B','C','NEW'])assert.equal((await f.bridge.getScopeMode({scopeId:id})).mode,'plugin_only',id+' recovers the original effective mode');
    f.setCurrent('NEW');const calls=f.calls.length;await f.proxy.setItem(v[0]+'.NEW','NEW_LOCAL');assert.equal(f.values.get(v[0]+'.NEW'),'NEW_LOCAL');assert.equal(f.calls.length,calls);
@@ -98,25 +107,25 @@ test('cancel after final publication failure restores the global route and new c
 test('rollback publication failure retains the recovery journal and retry completes rollback',async v=>{
  let fail=false;const f=await fixture(v,{transportFactory:base=>async(url,init={})=>{const body=init.body?JSON.parse(init.body):{};if(fail&&String(url).endsWith('/v1/kv/set')&&body.key===`__memory_suite_scope_routes_v1__:${v[0]}`)return new Response(JSON.stringify({ok:false,error:'synthetic_rollback_publication_failure'}),{status:503});return base(url,init);}});
  let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
- try{assert.equal((await f.bridge.setGlobalMode('server_only')).status,'paused');fail=true;await assert.rejects(()=>f.bridge.cancelSyncJob());const job=JSON.parse(f.values.get(journalKey(v[0])));assert.equal(job.status,'paused');assert.notEqual(job.rollbackComplete,true);
+ try{assert.equal((await applyLegacy(f,'server_only')).status,'paused');fail=true;await assert.rejects(()=>f.bridge.cancelSyncJob());const job=JSON.parse(f.values.get(journalKey(v[0])));assert.equal(job.status,'paused');assert.notEqual(job.rollbackComplete,true);
   await assert.rejects(()=>f.proxy.setItem(v[0]+'.A','BLOCKED'),e=>e.code==='MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS');fail=false;assert.equal((await f.bridge.cancelSyncJob()).rollbackComplete,true);assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');assert.equal(f.values.get(v[0]+'.A'),'A_SOURCE');
  }finally{stop();await f.close();}
 });
 test('malformed owner discovery and incomplete record coverage block',async v=>{
- const f=await fixture(v,{adapter:async()=>({scopes:[],records:[],blockers:[{code:'unknown_manifest_schema'}],completeKnownScopes:false})});try{const before=[...f.values];await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');assert.deepEqual([...f.values],before);}finally{await f.close();}
+ const f=await fixture(v,{adapter:async()=>({scopes:[],records:[],blockers:[{code:'unknown_manifest_schema'}],completeKnownScopes:false})});try{const before=[...f.values];await assert.rejects(()=>applyLegacy(f,'server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');assert.deepEqual([...f.values],before);}finally{await f.close();}
 });
 test('credential and unrelated namespace records never enter migration',async v=>{
- const f=await fixture(v,{bridgeOptions:{excludedContains:['embedding_secret']}});try{f.values.set(v[0]+'.embedding_secret','SYNTHETIC_SECRET');f.values.set('other_namespace.payload','OTHER');const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.completeKnownScopes,true);const rows=f.app.repositories[v[0]].database.prepare('SELECT key FROM kv').all();assert(!rows.some(r=>/embedding_secret|other_namespace/.test(r.key)));assert.equal(f.values.get('other_namespace.payload'),'OTHER');}finally{await f.close();}
+ const f=await fixture(v,{bridgeOptions:{excludedContains:['embedding_secret']}});try{f.values.set(v[0]+'.embedding_secret','SYNTHETIC_SECRET');f.values.set('other_namespace.payload','OTHER');const result=await applyLegacy(f,'server_only');assert.equal(result.completeKnownScopes,true);const rows=f.app.repositories[v[0]].database.prepare('SELECT key FROM kv').all();assert(!rows.some(r=>/embedding_secret|other_namespace/.test(r.key)));assert.equal(f.values.get('other_namespace.payload'),'OTHER');}finally{await f.close();}
 });
 test('unavailable remote source fails before changing global route',async v=>{
- const f=await fixture(v,{transport:async()=>{throw Error('synthetic_connection_unavailable');}});try{const before=[...f.values];await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');assert.deepEqual([...f.values],before);}finally{await f.close();}
+ const f=await fixture(v,{transport:async()=>{throw Error('synthetic_connection_unavailable');}});try{const before=[...f.values];await assert.rejects(()=>applyLegacy(f,'server_only'),e=>e.code==='MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');assert.deepEqual([...f.values],before);}finally{await f.close();}
 });
 test('aggregate pin tampering and changed URL cannot silently resume',async v=>{
  let injected=false;const f=await fixture(v,{writeFault:async(k,value)=>{if(k===journalKey(v[0])&&!injected&&JSON.parse(value).checkpoints?.A){injected=true;throw Error('pause_pin_fixture');}}});
- try{await assert.rejects(()=>f.bridge.setGlobalMode('server_only'));await assert.rejects(()=>f.bridge.setGlobalMode('server_only',{url:'http://127.0.0.1:47632'}),e=>e.code==='MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');const j=JSON.parse(f.values.get(journalKey(v[0])));j.globalPlan.scopes[0].sourceMode='server_only';f.values.set(journalKey(v[0]),JSON.stringify(j));await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),e=>e.code==='MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');}finally{await f.close();}
+ try{await assert.rejects(()=>applyLegacy(f,'server_only'));await assert.rejects(()=>applyLegacy(f,'server_only',{url:'http://127.0.0.1:47632'}),e=>e.code==='MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');const j=JSON.parse(f.values.get(journalKey(v[0])));j.globalPlan.scopes[0].sourceMode='server_only';f.values.set(journalKey(v[0]),JSON.stringify(j));await assert.rejects(()=>applyLegacy(f,'server_only'),e=>e.code==='MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');}finally{await f.close();}
 });
 test('valid detached scope is migrated without selecting it',async v=>{
- const f=await fixture(v,{current:''});try{const reg=JSON.parse(f.values.get(f.registryKey));reg.entries.D={scopeId:'D',scopeKey:'D',characterId:'removed-character',chatId:'removed-chat',mode:'plugin_only',origin:'user_explicit'};f.values.set(f.registryKey,JSON.stringify(reg));f.values.set(v[0]+'.D','DETACHED');const result=await f.bridge.setGlobalMode('server_only');assert.equal(result.discoveredScopes,4);assert.equal(result.verifiedScopes,4);assert.equal((await f.bridge.getScopeMode({scopeId:'D'})).mode,'server_only');assert.equal(f.values.get(v[0]+'.D'),'DETACHED');}finally{await f.close();}
+ const f=await fixture(v,{current:''});try{const reg=JSON.parse(f.values.get(f.registryKey));reg.entries.D={scopeId:'D',scopeKey:'D',characterId:'removed-character',chatId:'removed-chat',mode:'plugin_only',origin:'user_explicit'};f.values.set(f.registryKey,JSON.stringify(reg));f.values.set(v[0]+'.D','DETACHED');const result=await applyLegacy(f,'server_only');assert.equal(result.discoveredScopes,4);assert.equal(result.verifiedScopes,4);assert.equal((await f.bridge.getScopeMode({scopeId:'D'})).mode,'server_only');assert.equal(f.values.get(v[0]+'.D'),'DETACHED');}finally{await f.close();}
 });
 test('cancel with non-registry scopes correctly tombstones routes and succeeds readback',async v=>{
  const f=await fixture(v);
@@ -125,7 +134,7 @@ test('cancel with non-registry scopes correctly tombstones routes and succeeds r
  f.values.set(f.registryKey,JSON.stringify(reg));
  let requested=false;const stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.cancelSyncJob();}});
  try{
-  const result=await f.bridge.setGlobalMode('server_only');
+  const result=await applyLegacy(f,'server_only');
   assert.equal(result.status,'cancelled');
   assert.equal(result.rollbackComplete,true);
   assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');
@@ -144,7 +153,7 @@ test('removed server routes use the same local source in discovery and ordinary 
   f.values.set(f.registryKey,JSON.stringify(registry));f.values.set(v[0]+'.C','C_LOCAL');
   assert.equal((await f.bridge.getScopeMode({scopeId:'C'})).mode,'plugin_only');
   let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
-  await f.bridge.setGlobalMode('server_only');
+  await applyLegacy(f,'server_only');
   assert.equal(f.bridge.getSyncJob().globalPlan.scopes.find(s=>s.scopeId==='C').sourceMode,'plugin_only');
   const result=await f.bridge.cancelSyncJob();assert.equal(result.rollbackComplete,true);
   const calls=f.calls.length;await f.proxy.setItem(v[0]+'.C','C_AFTER_CANCEL');assert.equal(f.values.get(v[0]+'.C'),'C_AFTER_CANCEL');assert.equal(f.calls.length,calls);
@@ -158,7 +167,7 @@ test('legacy rollback retry verifies saved settings with obsolete or missing sou
    if(legacyForm==='removed_route')registry.entries.C={scopeId:'C',scopeKey:'C',characterId:'two',chatId:'C',mode:'server_only',origin:'transition_pending',removed:true,source:'global_allchat_cancel_rollback',updatedAt:1};
    f.values.set(f.registryKey,JSON.stringify(registry));f.values.set(v[0]+'.C','C_LOCAL');
    let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
-   await f.bridge.setGlobalMode('server_only');await f.bridge.dispose();
+   await applyLegacy(f,'server_only');await f.bridge.dispose();
    // A valid historical journal produced by the old discovery rule. Its digest
    // binds that old plan; recovery must not rewrite the plan to make it pass.
    const job=JSON.parse(f.values.get(journalKey(v[0])));delete job.globalPlan.legacyMode;
@@ -170,7 +179,7 @@ test('legacy rollback retry verifies saved settings with obsolete or missing sou
    if(legacyForm==='missing_rollback_flags'){delete job.cancelRequested;delete job.failedPhase;}
    f.values.set(journalKey(v[0]),JSON.stringify(job));
    fresh=await fixture(v,{app:f.app,values:f.values,current:'B'});
-   const result=action==='setGlobalMode'?await fresh.bridge.setGlobalMode('server_only'):await fresh.bridge[action]();
+   const result=action==='setGlobalMode'?await applyLegacy(fresh,'server_only'):await fresh.bridge[action]();
    assert.equal(result.status,'cancelled',action);assert.equal(result.rollbackComplete,true,action);
    const saved=JSON.parse(f.values.get(journalKey(v[0])));assert.deepEqual(saved.globalPlan,job.globalPlan);assert.equal(saved.globalPlanDigest,job.globalPlanDigest);
    assert.equal(saved.error,'');assert.equal(saved.failedPhase,'');assert.equal(saved.errorDetails,null);
@@ -184,7 +193,7 @@ test('rollback refuses a modified plan without changing any route',async v=>{
  const f=await fixture(v);let stop,fresh;
  try{
   let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
-  await f.bridge.setGlobalMode('server_only');await f.bridge.dispose();
+  await applyLegacy(f,'server_only');await f.bridge.dispose();
   const job=JSON.parse(f.values.get(journalKey(v[0])));job.globalPlan.scopes[0].sourceMode='mirror';f.values.set(journalKey(v[0]),JSON.stringify(job));
   const before=f.values.get(f.registryKey);fresh=await fixture(v,{app:f.app,values:f.values});
   await assert.rejects(()=>fresh.bridge.cancelSyncJob(),e=>e.code==='MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');assert.equal(f.values.get(f.registryKey),before);
@@ -196,7 +205,7 @@ test('rollback reconnect refuses a replacement server before publishing routes',
  const f=await fixture(v,{transportFactory:base=>(...args)=>(replacementTransport||base)(...args)});let stop,replacement;
  try{
   let requested=false;stop=f.bridge.subscribeSyncJob(job=>{if(!requested&&job?.checkpoints?.A){requested=true;void f.bridge.pauseGlobalModeJob();}});
-  await f.bridge.setGlobalMode('server_only');
+  await applyLegacy(f,'server_only');
   replacement=await fixture(v);replacementTransport=replacement.host.nativeFetch;
   await assert.rejects(()=>f.bridge.cancelSyncJob(),e=>e.code==='MEMORY_SUITE_GLOBAL_ROLLBACK_PUBLICATION_PENDING'&&/DATA_INSTANCE|SERVER_PIN|binding/i.test(e.details?.cause));
   assert(!replacement.calls.some(c=>c.path==='/v1/kv/set'),'no routes are sent to the replacement server');

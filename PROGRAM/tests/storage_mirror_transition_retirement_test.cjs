@@ -179,7 +179,7 @@ async function run(){
    try {
     const inventory=await pendingBridge.previewGlobalMode('server_only');assert.equal(inventory.completeKnownScopes,true);assert.equal(inventory.discoveredScopes,3);assert.deepEqual(inventory.blockers,[]);assert.equal(uploadFaultHits,0);
     // AGGREGATE_REAL_UPLOAD_FAULT: preserve the failed payload copy, not missing-discovery refusal.
-    let uploadFailure;await assert.rejects(()=>pendingBridge.setGlobalMode('server_only'),e=>{uploadFailure=e;return e.code==='MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE'&&uploadFaultHits>0;});
+    let uploadFailure;await assert.rejects(()=>pendingBridge.setGlobalMode('server_only',{previewFingerprint:inventory.inventoryFingerprint}),e=>{uploadFailure=e;return e.code==='MEMORY_SUITE_SCOPE_SYNC_INCOMPLETE'&&uploadFaultHits>0;});
     assert.equal(uploadFailure.result.failures.length,1);assert.equal(uploadFailure.result.failures[0].key,pendingKey);
     assert.ok(uploadFaultHits>0,'the injected pending payload upload must actually be attempted');
     const job=JSON.parse(pendingValues.get(jobKey));assert.equal(job.kind,'global_mode');assert.equal(job.status,'paused');assert.equal(job.phase,'recovery_pending');assert.equal(job.targetMode,'server_only');assert.equal(job.discoveredScopes,3);
