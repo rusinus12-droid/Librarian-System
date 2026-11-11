@@ -173,7 +173,9 @@ const runPlugin = async initialObjects => {
   const analyzerStart = source.indexOf('const buildLibrarianAnalyzerPanel = (compactView=false, advancedOnly=false) => {');
   assert.ok(analyzerStart >= 0, 'Librarian analyzer stage detail is present');
   const analyzer = source.slice(analyzerStart, source.indexOf('\n  const ', analyzerStart + 10));
-  assert.ok(analyzer.includes("text:'Librarian 기억 분석'}") && analyzer.includes("checkboxNode(slot.enabled!==false,'사용',change(value=>{slot.enabled=value;}))"), 'the dedicated stage detail exposes the Librarian enable switch');
+  // The Librarian on/off switch and model binding live under AI connection > feature bindings.
+  assert.ok(analyzer.includes("text:'기억 분석 상세 설정'"), 'the dedicated stage detail keeps the analyzer limits');
+  assert.ok(source.includes("bindingRow('librarian','Librarian 기억 분석'") && source.includes("checkboxNode(librarianSlot.enabled!==false,'Librarian 기억 분석 사용'"), 'AI connection exposes the Librarian enable switch');
   assert.match(source, /Object\.freeze\(\{ id: 'memory', label: '기억', icon: '◫', group: '기억과 세계' \}\)/, 'desktop sidebar exposes the shared Memory page');
   assert.ok(source.includes('SHARED_SIDEBAR_PAGE_REGISTRY.map(page => Object.freeze({'), 'mobile navigation derives from the same shared page registry');
   const memoryGateStart = source.indexOf('const memoryStageEnabledForSettings =');

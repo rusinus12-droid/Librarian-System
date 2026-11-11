@@ -44,21 +44,22 @@ assert.match(clusterRule, /display:flex/, 'the shared .cluster action row must s
 assert.match(clusterRule, /flex-wrap:wrap/, 'narrow screens wrap the action row instead of squeezing it');
 assert.match(clusterRule, /align-items:center/, 'controls and their inline status sit vertically centred on the row');
 
-// ── the engine maintenance actions share ONE action row, not stacked blocks ─────────────────────
-const maintenance = between("guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}}", "guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'})");
-const actionRow = maintenance.slice(maintenance.indexOf("guiEl('div',{class:'cluster'},["));
-assert.ok(maintenance.includes("guiEl('div',{class:'cluster'},["), 'engine maintenance actions are grouped in a .cluster row');
+// ── engine repairs run inside the one-stop check; the settings fold keeps only the scope delete ─
+const maintenance = between("guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}}", 'const budgetPresets = LibraMemoryCore.getRecallBudgetPresets();');
 for (const label of ['기존 기억 보존 전환', '통합 상태 적용 재시도', '통합 임베딩 후처리 재시도']) {
-  assert.ok(actionRow.includes(`text:'${label}'`), `engine action must live in the shared row: ${label}`);
+  assert.ok(!maintenance.includes(`text:'${label}'`), `repair button moved into the one-stop check: ${label}`);
 }
-assert.equal((actionRow.match(/guiEl\('button',\{class:'btn btn--sm'/g) || []).length, 3,
-  'the three engine actions are sibling buttons of the same row');
+assert.equal((maintenance.match(/guiEl\('button'/g) || []).length, 1, 'only the destructive scope delete stays in the fold');
+const oneStop = between('  const runLibraMemoryMaintenance = async', '  const maintenanceProgressBindingKey =');
+for (const call of ['beginUnifiedMigration(', 'recoverPendingStateTrackingJournal(', 'flushUnifiedDerivedVectors(', 'recheckReceiptRecovery(', 'repairMicroPublication(', 'collectUnifiedRetention(']) {
+  assert.ok(oneStop.includes(call), `one-stop recovery runs ${call}`);
+}
 
 // ── the analyzer card gives its two lines a hierarchy instead of two identical headings ────────
-const cardHead = between("guiEl('div',{class:'card__head'},[\n          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석기'})", "guiEl('div',{class:'setting'}");
-assert.match(cardHead, /guiEl\('h2',\{class:'card__title',text:'기억 분석기'\}\)/,
+const cardHead = between("guiEl('div',{class:'card__head'},[\n          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석 상세 설정'})", "guiEl('div',{class:'stack'},[");
+assert.match(cardHead, /guiEl\('h2',\{class:'card__title',text:'기억 분석 상세 설정'\}\)/,
   'the section title must remain the only heading in this card');
-assert.match(cardHead, /guiEl\('p',\{class:'card__desc',text:'완료된 5턴/,
+assert.match(cardHead, /guiEl\('p',\{class:'card__desc',text:`분석 한도/,
   'the explanatory line uses the description role so it is not a second identical heading');
 assert.equal((cardHead.match(/guiEl\('h[1-6]'/g) || []).length, 1,
   'the card must expose exactly one heading, not two competing ones');
@@ -70,4 +71,4 @@ assert.match(titleRule, /font:700 /, 'the title is visually weighted');
 assert.match(descRule, /color:var\(--text2\)/, 'the description is visually subordinate to the title');
 
 console.log(JSON.stringify({ test: 'libra_unified_engine_header_layout', ok: true }));
-console.log('PASS 기억 분석기: engine actions share one action row and the card has a single heading');
+console.log('PASS 기억 분석: repairs run in the one-stop check and the detail card has a single heading');

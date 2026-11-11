@@ -35,14 +35,14 @@ assert.match(source, /const SHARED_EXECUTION_LOG_SECTIONS = Object\.freeze\(\['m
 
 // The retired shared pipeline shell no longer follows the World Manager overlay;
 // the overlay now ends where the operational-health settings builders begin.
-const overlay = between('const worldManagerSnapshotView =', 'const stateTrackingSettingsForGui =');
+const overlay = between('const worldManagerSnapshotView =', 'const operationalScopeKey =');
 const snapshotGetter = between('const worldManagerSnapshotView =', 'const worldManagerDomainCopy =');
 const synchronousDomainBuilders = [
   between('const buildWorldManagerCharactersCurrentPanel =', 'const buildWorldManagerRelationshipsCurrentPanel ='),
   between('const buildWorldManagerRelationshipsCurrentPanel =', 'const buildWorldManagerWorldCurrentPanel ='),
   between('const buildWorldManagerWorldCurrentPanel =', 'const resetWorldManagerPagedView ='),
   between('const buildWorldManagerCharactersPanel =', 'const buildWorldManagerNarrativeCurrentPanel ='),
-  between('const buildWorldManagerNarrativeCurrentPanel =', 'const stateTrackingSettingsForGui =')
+  between('const buildWorldManagerNarrativeCurrentPanel =', 'const operationalScopeKey =')
 ].join('\n');
 const firstRenderBoundaries = [snapshotGetter, synchronousDomainBuilders].join('\n');
 assert.match(snapshotGetter, /LibraMemoryCore\.peekSnapshot\(\)/);

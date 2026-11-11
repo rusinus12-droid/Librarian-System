@@ -31,7 +31,9 @@ assert.match(providerGui,/configuredDefaultName=normalizeProviderPresetBindingNa
 assert.match(providerGui,/providers\[configuredDefaultName\][\s\S]*providers\[RISUAI_AUX_PRESET_NAME\][\s\S]*names\[0\]/,'missing saved names retain the established fallback');
 assert.doesNotMatch(providerGui,/providers\.default|\? 'default'/,'reserved default row stays retired');
 assert.match(providerGui,/selectNode\(effectiveDefaultName,names\.map\(name=>\[name,presetDisplayName\(name\)\]\),next=>\{runtime\.defaultPresetName=next;markGuiDirty\(\);queueGuiRender\(0\)/,'selection uses saved names and participates in draft/save');
-assert.match(providerGui,/단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다/);
+assert.match(providerGui,/기능별 AI 연결에서 전역 기본 모델 사용으로 둔 모든 기능이 이 연결을 씁니다/);
+for(const id of ['librarian','micro','lens'])assert.ok(providerGui.includes(`bindingRow('${id}'`),'feature binding '+id+' sits under the global default');
+assert.ok(providerGui.includes("[['',`전역 기본 모델 사용 ("),'feature bindings default to the global default model');
 assert.doesNotMatch(providerGui,/LIBRA·GRADIA 초안, 인풋 작성기/,'retired consumers are not advertised');
 assert.match(providerGui,/defaultPresetMissing[\s\S]*현재 연결로 정리[\s\S]*markGuiDirty\(\)/,'stale binding has explicit repair, never silent overwrite');
 const selectHelper = between('const selectNode =', 'const checkboxNode =');

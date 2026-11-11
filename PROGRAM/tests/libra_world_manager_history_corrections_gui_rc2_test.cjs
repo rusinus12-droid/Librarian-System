@@ -27,7 +27,7 @@ for (const field of [
   'worldManagerCanonicalMemoryFocus'
 ]) assert.match(guiState, new RegExp(`${field}:`), `missing shared Commit 4 GUI state: ${field}`);
 
-const overlay = between('const worldManagerSnapshotView =', 'const stateTrackingSettingsForGui =');
+const overlay = between('const worldManagerSnapshotView =', 'const operationalScopeKey =');
 for (const helper of [
   'buildWorldManagerHistoryCorrectionsPanel',
   'loadWorldManagerHistoryPage',

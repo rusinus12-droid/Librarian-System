@@ -15,7 +15,7 @@ const receipts=part(source,'  const executionReceiptCacheKey =','  const deleteF
 const dom={guiAsObject:obj,guiAsArray:arr,text,guiEl:el,libraStatusBadge:(value,tone)=>el('badge',{text:value,tone}),guiLazyDetails:(attrs,summary,body)=>el('details',attrs,[summary,...body()]),fieldNode:(label,field)=>el('field',{text:label},[field]),selectNode:(value,options,onChange)=>el('select',{value,options,onChange}),guiSetStatus:()=>{},queueGuiNavigationRender:()=>{},libraFormatTime:x=>String(x),guiSnapshotLimits:()=>({})};
 // The State panel now renders its selects with the production optionNodes helper; load it verbatim.
 dom.optionNodes=vm.runInNewContext(part(source,'  const optionNodes = (items, selected) => items.map(item => {','\n  const inputNode =')+';optionNodes',{guiEl:el,String,Array});
-const results=[];
+const results=[],retired=[];
 async function check(name,fn){await fn();results.push(name);}
 const drain=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 function fixture({failure='',unbound=false}={}){
@@ -70,31 +70,26 @@ function fixture({failure='',unbound=false}={}){
   const core={BATCH_SIZE:5,resolveContext:async()=>({scope:{scopeKey:scope}}),rebuildCurrentStateForWorldline:operation,setStateWorldline:operation,rollbackStateWorldline:operation,refreshSnapshot:async()=>({scope:{scopeKey:readback==='scope'?'other':scope},continuityState:{...head,...(readback==='worldline'?{worldlineId:'wrong'}:{}),...(readback==='basis'?{basis:{replayFingerprint:'stale'}}:{})}})};
   // Panel actions now confirm through the approved in-app dialog and re-render via the navigation queue.
   const confirms=[];
-  const api=boot(replay,{...dom,Gui,LibraMemoryCore:core,operationalScopeKey:()=>scope,ensureOperationalDiagnostics:()=>cached,operationalReadError:e=>e.message,confirm:()=>true,confirmApprovedOperation:async(message,options)=>{confirms.push({message,options});return true;},queueGuiNavigationRender:()=>{},refreshOperationalDiagnostics:async()=>{diag++;},guiSetStatus:(...v)=>statuses.push(v)},'({run:runStateReplayMaintenance,build:buildStateReplayMaintenancePanel})');
+  const api=boot(replay,{...dom,Gui,LibraMemoryCore:core,operationalScopeKey:()=>scope,ensureOperationalDiagnostics:()=>cached,operationalReadError:e=>e.message,confirm:()=>true,confirmApprovedOperation:async(message,options)=>{confirms.push({message,options});return true;},queueGuiNavigationRender:()=>{},refreshOperationalDiagnostics:async()=>{diag++;},guiSetStatus:(...v)=>statuses.push(v)},'({run:runStateReplayMaintenance})');
   // Actions are fire-and-forget (onClick:()=>void execute(...)); settle the real operation before asserting.
   const press=async button=>{button.onClick();await drain();for(let i=0;i<50&&Gui.worldManagerRuntimeMetaRebuilding;i++)await drain();assert(!Gui.worldManagerRuntimeMetaRebuilding,'operation settled');};
   return {api,Gui,statuses,confirms,press,scope:s=>{scope=s;},stats:()=>({calls,diag})};
  }
  for(const outcome of ['restored','incomplete'])await check(`State ${outcome} failure is not a success notice`,async()=>{
-  // The panel's direct rebuild button moved to the recovery dialog; the worldline switch action runs the same guarded replay.
-  const f=replayFixture({outcome}),nodes=walk(f.api.build());nodes.find(x=>x.tag==='select').onChange({target:{value:'alternate'}});const button=walk(f.api.build()).find(x=>x.text==='선택한 분기로 전환');assert(!button.disabled);await f.press(button);assert.equal(f.confirms.length,1);assert.equal(f.stats().calls,1);assert(f.statuses.at(-1)[1]);assert(!f.statuses.some(x=>x[0]==='현재 상태 재생과 readback을 확인했습니다.'));assert.equal(f.stats().diag,0);
+  // The manual switch/rollback panel was retired; the one-stop check calls the same guarded replay.
+  const f=replayFixture({outcome});await assert.rejects(f.api.run({kind:'set',scopeKey:'s',worldlineId:'main'}),outcome==='restored'?/이전 상태 복원됨/:/rollback 불완전/);assert.equal(f.stats().calls,1);assert.equal(f.stats().diag,0);
  });
  for(const readback of ['scope','worldline','basis'])await check(`State successful API with ${readback} mismatch fails readback`,async()=>{
   const f=replayFixture({readback});await assert.rejects(f.api.run({kind:'rebuild',scopeKey:'s',worldlineId:'main'}),/STATE_MAINTENANCE_/);assert.equal(f.stats().diag,0);
  });
  await check('State successful durable readback produces completion',async()=>{
-  const f=replayFixture(),nodes=walk(f.api.build());nodes.find(x=>x.tag==='select').onChange({target:{value:'alternate'}});const button=walk(f.api.build()).find(x=>x.text==='선택한 분기로 전환');await f.press(button);assert.equal(f.stats().calls,1);assert.equal(f.stats().diag,1);assert(f.statuses.some(x=>x[0]==='현재 상태 재생과 readback을 확인했습니다.'));assert(!f.statuses.at(-1)[1]);
+  const f=replayFixture();const result=await f.api.run({kind:'set',scopeKey:'s',worldlineId:'main'});assert.equal(result.ok,true);assert.equal(f.stats().calls,1);assert.equal(f.stats().diag,1);
  });
- await check('Worldline rollback button changes locally without a page remount',async()=>{
-  // The approved panel validates the boundary when the action runs (not by toggling disabled) and confirms the target turn.
-  const f=replayFixture(),nodes=walk(f.api.build()),input=nodes.find(x=>x.type==='number'),button=nodes.find(x=>x.text==='변경 내용 확인');assert(!button.disabled);
-  for(const value of ['','0','7','NaN','-5','10.5','9007199254740995']){input.onInput({target:{value}});await f.press(button);assert.equal(f.stats().calls,0,value);assert.equal(f.confirms.length,0,value);assert.deepEqual(f.statuses.at(-1),['저장이 완료된 T5 · T10 · T15 경계를 선택하세요.',true,true],value);}
-  input.onInput({target:{value:'10'}});await f.press(button);assert.equal(f.stats().calls,1);assert.equal(f.confirms.length,1);assert(f.confirms[0].message.includes('T10'));assert.equal(f.statuses.at(-1)[0],'현재 상태 재생과 readback을 확인했습니다.');
- });
- await check('Worldline selection enables switch immediately',async()=>{
-  // Selection is committed to Gui state and the panel re-renders through the navigation queue.
-  const f=replayFixture(),nodes=walk(f.api.build()),select=nodes.find(x=>x.tag==='select');assert(nodes.find(x=>x.text==='선택한 분기로 전환').disabled);select.onChange({target:{value:'alternate'}});assert.equal(f.Gui.worldlineTargetId,'alternate');const button=walk(f.api.build()).find(x=>x.text==='선택한 분기로 전환');assert(!button.disabled);await f.press(button);assert.equal(f.stats().calls,1);assert.equal(f.confirms[0].options.target,'s · alternate');
- });
+ // Retired with the manual worldline switch / rollback panel (settings cleanup 2026-11-11): the
+ // rollback button and worldline selector no longer exist. A leftover rollback anchor is released
+ // by the one-stop check through the same runStateReplayMaintenance guard tested above.
+ retired.push({name:'Worldline rollback button changes locally without a page remount',reason:'manual rollback panel retired; one-stop check releases anchors'});
+ retired.push({name:'Worldline selection enables switch immediately',reason:'worldline selector retired; native branches own forks'});
  await check('State command refuses a changed scope before writes',async()=>{
   const f=replayFixture();f.scope('changed');await assert.rejects(f.api.run({kind:'rebuild',scopeKey:'s',worldlineId:'main'}),/SCOPE_CHANGED/);assert.equal(f.stats().calls,0);
  });
@@ -121,5 +116,5 @@ function fixture({failure='',unbound=false}={}){
  }
  await check('receipt page discards an in-flight scope change',async()=>{const f=receiptFixture();const p=f.funcs.load('memory');await drain();f.switchScope('other');f.funcs.ensure();f.release();await p;assert.equal(f.Gui.executionReceiptPages.memory,undefined);});
  await check('receipt error is stored for explicit retry, cleared on new scope',async()=>{const f=receiptFixture();f.fail();await f.funcs.load('memory');assert.equal(f.Gui.executionReceiptErrors.memory,'receipt failed');f.switchScope('other');f.funcs.ensure();assert.equal(f.Gui.executionReceiptErrors.memory,undefined);});
- console.log(JSON.stringify({test:'suite_libra_operational_fault_test',passed:results.length,cases:results}));
+ console.log(JSON.stringify({test:'suite_libra_operational_fault_test',passed:results.length,cases:results,notApplicable:retired}));
 })().catch(e=>{console.error(e);process.exitCode=1;});

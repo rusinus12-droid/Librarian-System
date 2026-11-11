@@ -1573,6 +1573,9 @@ function __libraNarrativeStripPatch(value) {
 
   // Librarian production policy. Historical identifiers remain readable, never executable.
   const LIBRARIAN_STAGE_ID = 'librarian';
+  // Per-feature model bindings. Empty means "use the global default connection".
+  const MICRO_PRESET_STAGE_ID = 'micro_memory';
+  const LENS_PRESET_STAGE_ID = 'lens_analysis';
   const LIBRARIAN_ENGINE_VERSION = 'libra.unified.v2';
   const READABLE_UNIFIED_ENGINE_VERSIONS = Object.freeze(['libra.unified.v1', LIBRARIAN_ENGINE_VERSION]);
   const isReadableUnifiedEngineVersion = value => READABLE_UNIFIED_ENGINE_VERSIONS.includes(value);
@@ -15161,7 +15164,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       responseImprovementProfile: 'response_improvement_profile', responseImprovementToggles: 'response_improvement_toggles',
       backendHosting: 'backendHosting', backendHostingMode: 'backend_hosting_mode', backendHostingUrl: 'backend_hosting_url', backendHostingToken: 'backend_hosting_token', backendHostingAutoDetected: 'backend_hosting_auto_detected', backendHostingLastDetectedAt: 'backend_hosting_last_detected_at', backendHostingLastManifest: 'backend_hosting_last_manifest',
       writerEnabled: 'writer_enabled', writerReviewIntervalTurns: 'writer_review_interval_turns', writerMaxSourceChars: 'writer_max_source_chars',
-      storyArcPresetName: 'story_arc_preset',
+      storyArcPresetName: 'story_arc_preset', microPresetName: 'micro_preset', lensPresetName: 'lens_preset',
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
       loreActivationMode: 'lore_activation_mode',
       excludedCharacterLoreIds: 'excluded_character_lore_ids',
@@ -17677,6 +17680,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(await runtimeCfg('excluded_character_lore_ids', runtimeStored.excluded_character_lore_ids || [])),
       stagePresetNames: {
         [STORY_ARC_STAGE_ID]: compact(await runtimeCfg('story_arc_preset', ''), 120),
+        [MICRO_PRESET_STAGE_ID]: compact(await runtimeCfg('micro_preset', ''), 120),
+        [LENS_PRESET_STAGE_ID]: compact(await runtimeCfg('lens_preset', ''), 120),
         [INPUT_ASSIST_STAGE_ID]: compact(await slotCfg(INPUT_ASSIST_STAGE_ID, 'preset', 'input_assist_preset', ''), 120),
         ariadne: compact(await slotCfg('ariadne', 'preset', 'ariadne_preset', ''), 120),
         character_ito: compact(await slotCfg('character_ito', 'preset', 'character_ito_preset', ''), 120),
@@ -17836,6 +17841,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const orphaned = !!requestedName && !settings.presets?.[requestedName];
     return { name, requestedName, orphaned, presetId: text(settings.presets?.[name]?.preset_id || ''), preset: sanitizePreset(settings.presets?.[name] || settings.presets?.[RISUAI_AUX_PRESET_NAME] || {}) };
   };
+
+  // Micro runs on the Librarian route but has its own binding; empty uses the global default.
+  const microPresetNameForSettings = settings => normalizeProviderPresetBindingName(settings?.stagePresetNames?.[MICRO_PRESET_STAGE_ID] || settings?.defaultPresetName || '');
 
   const stageExecutionOptions = (settings, stageName) => {
     const raw = settings?.stageOptions?.[stageName] || {};
@@ -37622,7 +37630,7 @@ function createLibraReadonlySourceContext(owner) {
         autoAnalyze: source.autoAnalyze !== false,
         autoRetry: source.autoRetry !== false,
         lexicalFallback: source.lexicalFallback !== false,
-        sectionVectors: source.sectionVectors !== false,
+        sectionVectors: true, // always on: the toggle was removed; a stored false must not disable section vectors forever
         evidenceGate: source.evidenceGate !== false,
         mmrEnabled: source.mmrEnabled !== false,
         forceCurrentScene: source.forceCurrentScene !== false,
@@ -37640,7 +37648,7 @@ function createLibraReadonlySourceContext(owner) {
         recallQueryMessages: Math.floor(clamp(recallQueryMessagesSource, 1, 20, DEFAULT_SETTINGS.recallQueryMessages)),
         recallSimilarityWeight: recallBlend.similarity,
         recallRecencyWeight: recallBlend.recency,
-        autoCatchUpEnabled: source.autoCatchUpEnabled !== false,
+        autoCatchUpEnabled: true, // always on: missed 5-turn batches are always caught up; the toggle was removed
         autoCatchUpMaxBatches: Math.floor(clamp(source.autoCatchUpMaxBatches, 1, 6, DEFAULT_SETTINGS.autoCatchUpMaxBatches)),
         storyArcEnabled: source.storyArcEnabled !== false,
         storyArcUpdateMode: STORY_ARC_UPDATE_MODES.includes(string(source.storyArcUpdateMode || '').toLowerCase()) ? string(source.storyArcUpdateMode).toLowerCase() : DEFAULT_SETTINGS.storyArcUpdateMode,
@@ -51165,7 +51173,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       let result;
       try {
         result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID, systemPrompt, userPrompt, {
-          taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal,
+          taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal, presetName: microPresetNameForSettings(settings),
           maxTokens: 16384, reasoningBudgetCapTokens: 4096, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
           extraCalls: maxPhysicalAttempts - 1, maxCorrectiveRetries: maxPhysicalAttempts - 1,
           jsonMode: true, structuredTask: true,
@@ -51175,7 +51183,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (providerOutputWasTruncated(result) && firstRequests < maxPhysicalAttempts && Date.now() < deadlineAt) {
           const retry = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID,
             systemPrompt + '\nRETRY: the previous response repeated claims and exhausted output. Extract each distinct supported fact ONCE, omit duplicate paraphrases, and close the JSON. Do not impose a top-N or omit independent facts.', userPrompt, {
-              taskKind:'micro_memory',taskSettingsSnapshot:settings,signal,maxTokens:16384,reasoningBudgetCapTokens:4096,
+              taskKind:'micro_memory',taskSettingsSnapshot:settings,signal,presetName:microPresetNameForSettings(settings),maxTokens:16384,reasoningBudgetCapTokens:4096,
               timeoutMs:MICRO_PROVIDER_TIMEOUT_MS,deadlineAt,extraCalls:0,maxCorrectiveRetries:0,jsonMode:true,structuredTask:true,
               forceNonStreaming:true,disablePromptCache:true,temp:0
             });
@@ -72286,12 +72294,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return { systemPrompt, userPrompt };
     };
 
-    // An empty lens connection uses the canonical (Librarian) connection, as the editor says.
+    // A lens's own connection wins; otherwise the lens binding under AI connection settings,
+    // which itself defaults to the global default connection.
     const resolveLensPresetName = async lens => {
       const explicit = normalizeProviderPresetBindingName(lens?.connection?.presetName || '');
       if (explicit) return explicit;
       const settings = await loadSettings().catch(() => null);
-      return normalizeProviderPresetBindingName(settings?.stagePresetNames?.[LIBRARIAN_STAGE_ID] || '');
+      return normalizeProviderPresetBindingName(settings?.stagePresetNames?.[LENS_PRESET_STAGE_ID] || settings?.defaultPresetName || '');
     };
 
     const callLensProvider = async ({ systemPrompt, userPrompt, presetName, maxTokens, temperature, signal = null, label = 'LIBRA lens' }) => {
@@ -74715,6 +74724,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     risuAuxAllowPlugins: settings.risuAuxAllowPlugins === true,
     defaultPresetName: settings.defaultPresetName,
     storyArcPresetName: settings.stagePresetNames?.[STORY_ARC_STAGE_ID] || '',
+    microPresetName: settings.stagePresetNames?.[MICRO_PRESET_STAGE_ID] || '',
+    lensPresetName: settings.stagePresetNames?.[LENS_PRESET_STAGE_ID] || '',
     itoStageOrder: normalizeAideStageOrder(settings.itoStageOrder),
     quickProfile: normalizeChoice(settings.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
     writerEnabled: settings.writerEnabled !== false,
@@ -75187,6 +75198,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         risuai_aux_allow_plugins: String(runtime.risuAuxAllowPlugins === true),
         default_preset: runtime.defaultPresetName,
         story_arc_preset: String(runtime.storyArcPresetName || ''),
+        micro_preset: String(runtime.microPresetName || ''),
+        lens_preset: String(runtime.lensPresetName || ''),
         ito_stage_order: normalizeAideStageOrder(runtime.itoStageOrder),
         quick_profile: normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
         writer_enabled: String(runtime.writerEnabled !== false),
@@ -75488,7 +75501,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const LIBRA_APPROVED_PROMPT_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-prompt\" aria-hidden=\"true\"><div class=\"dialog dialog--wide\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dps-t\"><div class=\"eyebrow\">Prompt Studio</div><h2 id=\"dps-t\">분석기 · 지침</h2><div class=\"field\"><label for=\"ps-an\">분석기</label><select class=\"select\" id=\"ps-an\" data-no-track><option>기본 기억 분석기</option></select></div><div class=\"field\" style=\"margin-top:10px\"><label for=\"ps-in\">지침</label><textarea class=\"textarea\" id=\"ps-in\" rows=\"5\" data-no-track aria-describedby=\"ps-state\">완료된 5턴의 사건·관계·세계 변화를 사실만 기록한다. (표본)</textarea><span class=\"hint\" id=\"ps-state\">저장된 지침입니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>닫기</button><button class=\"btn\" id=\"ps-default\">기본값 채우기</button><button class=\"btn btn--primary\" id=\"ps-save\" data-close data-act=\"prompt-save\" data-toast=\"지침을 저장했습니다. (시안)\">저장</button></div></div></div>";
   const LIBRA_APPROVED_CORRECTION_DIALOG_HTML = "<div class=\"overlay\" id=\"dlg-correct\" data-require=\"target\" aria-hidden=\"true\"><div class=\"dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"dco-t\"><div class=\"eyebrow\">Correction</div><h2 id=\"dco-t\">교정 · <span data-fill=\"target\">M-25 · 북쪽 정원의 기록실</span></h2><p class=\"muted\" style=\"font-size:13px\">정본 원문은 바뀌지 않습니다. 교정은 별도 항목으로 기록되고 적용·재검토·휴면·대체·삭제 상태를 가집니다. 관계 교정은 <b>주체 → 대상</b> 방향을 고정합니다.</p><div class=\"field\"><label for=\"co-in\">교정 내용</label><textarea class=\"textarea\" id=\"co-in\" rows=\"3\" data-no-track data-fill=\"text\" aria-describedby=\"co-hint\">M-25 ‘북쪽 정원의 기록실’ 교정: </textarea><span class=\"hint\" id=\"co-hint\">교정할 내용을 적어야 기록할 수 있습니다.</span></div><div class=\"dialog__actions\"><button class=\"btn\" data-close data-autofocus>취소</button><button class=\"btn btn--primary\" id=\"co-go\" data-close data-act=\"corr-add\" data-toast=\"‘{target}’ 교정을 기록하고 상태 반영을 확인했습니다. (시안)\">교정 기록</button></div></div></div>";
 
-  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 데이터 이동</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>복구 · 진단</b><small>상태 · 교정 · 재구축</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
+  const LIBRA_APPROVED_SETTINGS_LAYOUT_HTML = "<div class=\"settings-layout\">\n      <div class=\"setnav\" role=\"tablist\" data-subtabs=\"set\">\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ai\"><i data-i=\"cpu\"></i><b>AI 연결</b><small>생성 AI · 임베딩</small></button>\n        <button role=\"tab\" aria-selected=\"true\" data-subtab=\"mem\"><i data-i=\"shelf\"></i><b>기억과 검색</b><small>성능 · 최근 대화 · 분석기</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\"><i data-i=\"book\"></i><b>참고 자료</b><small>로어 · 분석 입력 규칙</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"store\"><i data-i=\"db\"></i><b>저장과 백업</b><small>스코프 · 백업 · 데이터 이동</small></button>\n        <button role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\"><i data-i=\"wrench\"></i><b>복구 · 진단</b><small>상태 점검 · 실행 기록 · 진단</small></button>\n      </div>\n      <div class=\"stack\"></div>\n    </div>";
   // SVG path data only for the mockup icons; no suite.js behavior is loaded.
   const LIBRA_APPROVED_ICON_PATHS = {"home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "grid": "<rect x=\"4\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"4\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"4\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"13\" y=\"13\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "shelf": "<path d=\"M5 4h3v16H5zM10 4h3v16h-3z\"/><path d=\"m15.2 5.2 2.8-.8 3.2 14.6-2.8.8z\"/>", "user": "<circle cx=\"12\" cy=\"8\" r=\"3.6\"/><path d=\"M5 20c.6-3.7 3.4-5.6 7-5.6s6.4 1.9 7 5.6\"/>", "users": "<circle cx=\"9\" cy=\"8.5\" r=\"3.2\"/><circle cx=\"17\" cy=\"9.5\" r=\"2.5\"/><path d=\"M3 19c.5-3.3 3-5 6-5s5.5 1.7 6 5M16 14.2c2.6 0 4.5 1.4 5 4.3\"/>", "globe": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M3.5 12h17M12 3.5c2.6 2.5 3.8 5.3 3.8 8.5S14.6 18 12 20.5C9.4 18 8.2 15.2 8.2 12S9.4 6 12 3.5z\"/>", "timeline": "<path d=\"M5 6h9M5 12h14M5 18h7\"/><circle cx=\"17\" cy=\"6\" r=\"2\"/><circle cx=\"9\" cy=\"18\" r=\"2\"/>", "gear": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19 12a7 7 0 0 0-.1-1.3l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.2-1.3L14 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .9.1 1.3l-2 1.5 2 3.4 2.3-.9a7 7 0 0 0 2.2 1.3L10 21h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.3.9 2-3.4-2-1.5c.1-.4.1-.9.1-1.3z\"/>", "sliders": "<path d=\"M4 7h9M17 7h3M4 17h3M11 17h9\"/><circle cx=\"15\" cy=\"7\" r=\"2\"/><circle cx=\"9\" cy=\"17\" r=\"2\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 11v5M12 8v.1\"/>", "x": "<path d=\"m6 6 12 12M18 6 6 18\"/>", "more": "<circle cx=\"5.5\" cy=\"12\" r=\"1.2\"/><circle cx=\"12\" cy=\"12\" r=\"1.2\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.2\"/>", "refresh": "<path d=\"M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "save": "<path d=\"M5 4h11l3 3v13H5z\"/><path d=\"M8 4v5h7V4M8 20v-6h8v6\"/>", "db": "<ellipse cx=\"12\" cy=\"6\" rx=\"7.5\" ry=\"3\"/><path d=\"M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6\"/>", "server": "<rect x=\"3.5\" y=\"4\" width=\"17\" height=\"6.5\" rx=\"2\"/><rect x=\"3.5\" y=\"13.5\" width=\"17\" height=\"6.5\" rx=\"2\"/><path d=\"M7.5 7.2v.1M7.5 16.8v.1\"/>", "link": "<path d=\"M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1\"/><path d=\"M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1\"/>", "shield": "<path d=\"M12 3.5 5 6v5.5c0 4.2 2.9 7.3 7 9 4.1-1.7 7-4.8 7-9V6z\"/><path d=\"m9 12 2.2 2.2L15.2 10\"/>", "bolt": "<path d=\"M13 3 5 13.5h6L10 21l9-11h-6z\"/>", "film": "<rect x=\"4\" y=\"5\" width=\"16\" height=\"14\" rx=\"2\"/><path d=\"M8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "pen": "<path d=\"m15 5 4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z\"/>", "image": "<rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\"/><circle cx=\"9\" cy=\"10\" r=\"1.8\"/><path d=\"m4 17 5-4.5 3.5 3L16 12l4.5 5\"/>", "sync": "<path d=\"M19 8a7.5 7.5 0 0 0-13-1.5L4 9m0-4.5V9h4.5M5 16a7.5 7.5 0 0 0 13 1.5L20 15m0 4.5V15h-4.5\"/>", "chat": "<path d=\"M4 5h16v11H9.5L4.5 20z\"/><path d=\"M8 9h8M8 12.5h5\"/>", "arrow": "<path d=\"m9 5 7 7-7 7\"/>", "back": "<path d=\"m15 5-7 7 7 7\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "trash": "<path d=\"M5 7h14M10 7V4.5h4V7M7 7l.8 12.5h8.4L17 7\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "route": "<circle cx=\"6\" cy=\"17\" r=\"2.2\"/><circle cx=\"18\" cy=\"7\" r=\"2.2\"/><path d=\"M8.2 17H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.8\"/>", "pin": "<path d=\"m14 4 6 6-3 1-4 4-1 4-2.5-2.5L5 20l3.5-3.5L6 14l4-1 4-4z\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "flag": "<path d=\"M6 21V4M6 5h11l-2 4 2 4H6\"/>", "eye": "<path d=\"M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z\"/><circle cx=\"12\" cy=\"12\" r=\"2.8\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "bookmark": "<path d=\"M7 4h10v16l-5-3.5L7 20z\"/>", "lamp": "<path d=\"M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.7.6 1 1.3 1 2.1h5c0-.8.3-1.5 1-2.1A6 6 0 0 0 12 3z\"/>"};
   // Exact approved LIBRA app structure; its demo handlers/data are never loaded.
@@ -75718,6 +75731,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-reader__head h2{margin:0}',
     '.lens-reader__head .deck{margin:8px 0 0}','.lens-reader .detail-pane>.stack{gap:20px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
     '.lens-items{gap:18px}',
+    // Micro reader: turn rail rows with a two-line preview and a status badge; State summary bar.
+    '.micro-turn{align-items:flex-start;min-height:52px}','.micro-turn__body{display:grid;gap:2px;flex:1 1 auto;min-width:0}','.micro-turn__body b{font:750 13.5px/1.35 var(--font-sans);min-width:0;padding:0;background:none;text-align:left}',
+    '.micro-turn__body small{color:var(--text3);font:500 12px/1.45 var(--font-sans);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}','.micro-turn>.badge{flex:none}',
+    '.micro-state-bar{display:grid;gap:8px;padding:14px 16px;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--inset-bg,var(--surface2))}','.micro-state-bar.is-pending{background:var(--warn-soft);border-color:var(--warn-line)}',
+    '.micro-state-bar h3{margin:0;font:750 13.5px/1.45 var(--font-sans)}','.micro-state-bar p{margin:0;font-size:12.5px;line-height:1.6}','.micro-claim.is-uncertain{border-style:dashed}','.micro-reader__body .lens-basis{font-size:12.5px}',
     // Memory model rows (maintenance overlay): label and provider text stack in one column, the
     // controls take their own column and move below the text when the box is narrow.
     '.memory-model-summary{display:grid;container-type:inline-size;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-sm);background:var(--surface);overflow:hidden}',
@@ -76311,6 +76329,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
   const RUNTIME_PRESET_KEY_BY_STAGE = Object.freeze({
     [STORY_ARC_STAGE_ID]: 'storyArcPresetName',
+    [MICRO_PRESET_STAGE_ID]: 'microPresetName',
+    [LENS_PRESET_STAGE_ID]: 'lensPresetName',
 
   });
 
@@ -77757,18 +77777,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return guiEl('div',{class:'stack',dataset:{librarianAnalyzer:'single',memoryStage:LIBRARIAN_STAGE_ID}},[
       guiEl('div',{class:'card'},[
         guiEl('div',{class:'card__head'},[
-          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석기'}),guiEl('p',{class:'card__desc',text:'완료된 5턴의 사건·인물·관계·세계·서사를 한 번에 기록합니다. 분석 지침은 고정이며, 원하는 관점은 맞춤 기억 렌즈로 추가합니다.'})]),
-          guiEl('button',{class:'btn btn--sm',type:'button',text:'렌즈 스튜디오 열기',onClick:()=>openApprovedPromptDialog()})
+          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'기억 분석 상세 설정'}),guiEl('p',{class:'card__desc',text:`분석 한도 · 참고 자료 · 분야별 지침. 사용 여부와 AI 연결은 AI 연결 설정의 기능별 AI 연결에서 정합니다 (실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}${slot.enabled===false?' · 꺼짐':''}).`})]),
+          guiEl('button',{class:'btn btn--sm',type:'button',text:'AI 연결 설정',onClick:()=>selectBookSettingsRoomSection('ai')})
         ]),
-        guiEl('div',{class:'setting'},[
-          guiEl('div',{},[guiEl('div',{class:'setting__name',text:'Librarian 기억 분석'}),guiEl('div',{class:'setting__desc',text:'완료된 5 U+A · 정상 기억 생성 LLM 1회 · 로컬 상태 적용 추가 호출 0회'})]),
-          checkboxNode(slot.enabled!==false,'사용',change(value=>{slot.enabled=value;}))
-        ]),
-        analyzerField('presetName','AI 연결',selectNode(slot.presetName||'',presetChoicesFromState(true),change(value=>{slot.presetName=value;slot.preset=value;})),`실제 사용: ${resolvedPresetNameForStage(LIBRARIAN_STAGE_ID)}`)
-      ]),
-      guiEl('details',{class:'fold'},[
-        guiEl('summary',{},['기억 분석 상세 설정 ',guiEl('span',{class:'hint',text:'분석 한도 · 참고 자료 · 분야별 지침'})]),
-        guiEl('div',{class:'fold__body stack'},[
+        guiEl('div',{class:'stack'},[
           guiEl('div',{class:'grid g2'},[
             analyzerField('maxChars','참고 자료 상한',inputNode(slot.maxChars,change(value=>{slot.maxChars=Number(value);}),{type:'number',min:1000,max:REFERENCE_BUDGET_CUSTOM_MAX_CHARS})),
             analyzerField('timeoutMs','최대 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),change(value=>{slot.timeoutMs=Math.max(5,Number(value)||5)*1000;}),{type:'number',min:5,max:300}))
@@ -77920,6 +77932,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       classicLiveTailEnabled: asBool(pick('classic_live_tail_enabled', 'classicLiveTailEnabled', current.classicLiveTailEnabled), current.classicLiveTailEnabled === true),
       defaultPresetName: pick('default_preset', 'defaultPresetName', current.defaultPresetName || RISUAI_AUX_PRESET_NAME),
       storyArcPresetName: compact(pick('story_arc_preset', 'storyArcPresetName', current.storyArcPresetName || ''), 120),
+      microPresetName: compact(pick('micro_preset', 'microPresetName', current.microPresetName || ''), 120),
+      lensPresetName: compact(pick('lens_preset', 'lensPresetName', current.lensPresetName || ''), 120),
       writerEnabled: asBool(pick('writer_enabled', 'writerEnabled', current.writerEnabled !== false), true),
       writerReviewIntervalTurns: Number(pick('writer_review_interval_turns', 'writerReviewIntervalTurns', current.writerReviewIntervalTurns || WRITER_DEFAULT_REVIEW_INTERVAL_TURNS)),
       writerMaxSourceChars: Number(pick('writer_max_source_chars', 'writerMaxSourceChars', current.writerMaxSourceChars || WRITER_DEFAULT_MAX_SOURCE_CHARS)),
@@ -78755,38 +78769,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     classic: Object.freeze({ label: '사서 모드', badge: '원문 근거', description: '현재 리콜 엔진이 선택한 실제 발췌를 재가공 없이 시간순으로 전달합니다.', calls: '추가 LLM 0회' }),
 
   });
-  const LIBRA_DELIVERY_FAMILY_LABELS = Object.freeze({ canonical: '정본', micro: '미크로', state: '상태', lore: '로어', lens: '렌즈(비정본)' });
-  const buildLibraClassicPanel = (options = {}) => {
-    const compactView = options.compact === true;
-    const recall = LibraMemoryCore.getLastRecall();
-    const delivery = libraGuiObject(recall?.delivery || Runtime.lastMemoryRecallViewer);
-    const active = libraGuiText(delivery.route || Runtime.lastInjectionMode) === 'classic';
-    const count = Number(delivery.classicMemories || delivery.injectedMemories || 0);
-    const chars = Number(delivery.classicChars || delivery.blockChars || Runtime.lastClassicInjectionMeta?.chars || 0);
-    // Which memory families actually reached the request (canonical/micro/state/lore/lens), so a lore-only delivery is visible at a glance.
-    const familyCounts = new Map();
-    for (const memory of [...(Array.isArray(recall?.memories) ? recall.memories : []), ...(Array.isArray(recall?.payload?.memories) ? recall.payload.memories : [])]) {
-      const family = libraGuiText(memory?.family || memory?.memory?.family || '');
-      if (family) familyCounts.set(family, (familyCounts.get(family) || 0) + 1);
-    }
-    const familyRows = [...familyCounts.entries()].sort((a, b) => b[1] - a[1]);
-    return guiEl('div', { class: 'card delivery-card' }, [
-      guiEl('div', { class: 'split' }, [
-        guiEl('div', {}, [
-          guiEl('h3', { text: '이번 턴 사서 모드 전달' }),
-          guiEl('div', { class: 'hint', text: active && delivery.at ? `${libraFormatTime(delivery.at)} · 추가 LLM 호출 없음` : '현재 선택된 리콜 발췌를 그대로 전달하는 경로입니다.' })
-        ]),
-        libraStatusBadge(active ? (count ? '직접 전달 완료' : '선택된 기억 없음') : '대기', active && count ? 'good' : '')
-      ]),
-      guiEl('div', { class: 'hint', text: "LIBRA 메모리 검색과 검증된 근거를 사용합니다." }),
-      active ? guiEl('div', { class: 'delivery-metrics' }, [
-        ['직접 전달 기억', `${count}개`], ['전달 문자', `${chars.toLocaleString('ko-KR')}자`], ['추가 LLM', '0회']
-      ].map(([label, value]) => guiEl('div', { class: 'delivery-metric' }, [guiEl('span', { text: label }), guiEl('strong', { text: value })]))) : null,
-      active && familyRows.length ? guiEl('div', { class: 'delivery-families', 'aria-label': '기억 종류별 전달' },
-        familyRows.map(([family, n]) => guiEl('span', { class: `delivery-family delivery-family--${family}`, text: `${LIBRA_DELIVERY_FAMILY_LABELS[family] || family} ${n}` }))) : null,
-      compactView && active ? guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn', type: 'button', text: '실제 전달 근거 보기', onClick: () => libraGuiNavigate('recall') })]) : null
-    ]);
-  };
 
 
 
@@ -79603,20 +79585,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const buildLibraServerScopeHealthPanel = () => {
-    const output=guiEl('pre',{class:'hint',id:'libraServerScopeHealthResult',style:{whiteSpace:'pre-wrap',overflowWrap:'anywhere'},text:'읽기 전용 검사입니다. 기억·원문·비교 기준을 변경하거나 자동 재분석하지 않습니다.'});
-    let last=null;
-    const inspect=guiEl('button',{class:'btn',type:'button',id:'libraServerScopeHealthInspect',text:'현재 서버 scope 건강 검사',onClick:async()=>{
-      inspect.disabled=true;copy.disabled=true;output.textContent='현재 채팅의 서버 기록을 검사 중입니다. 아직 정상으로 확정하지 않았습니다.';
-      try{last=await LibraMemoryCore.getServerScopeHealth();output.textContent=JSON.stringify(last,null,2);copy.disabled=false;}
-      catch(error){last=null;output.textContent='검사 미완료: '+string(error?.message||error)+'\nDATA를 삭제하지 말고 저장 연결과 진단을 확인하세요.';}
-      finally{inspect.disabled=false;}
-    }});
-    const copy=guiEl('button',{class:'btn',type:'button',disabled:true,text:'건강 검사 진단 복사',onClick:async()=>{
-      if(!last)return;const text=JSON.stringify(last,null,2);try{await navigator.clipboard.writeText(text);}catch(_){guiSetStatus('복사 권한이 없습니다. 아래 진단 텍스트를 선택해 복사해 주세요.');}
-    }});
-    return guiEl('div',{class:'card'},[guiEl('h3',{text:'서버 기억 상태 진단'}),guiEl('div',{class:'cluster'},[inspect,copy]),output,guiEl('div',{class:'hint',text:'미완료 TX와 Head/Registry의 불일치를 관찰합니다. 검사 정상은 원문·벡터·모델 의미까지 전부 검증했다는 뜻이 아닙니다. 자동 초기화나 자동 수리를 수행하지 않습니다.'})]);
-  };
 
 
 
@@ -80938,9 +80906,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const excludedCharacters=new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));
     const modules=guiAsArray(Gui.moduleCatalog).filter(item=>item.active&&item.loreCount>0),characters=guiAsArray(Gui.characterLoreCatalog);
     const mark=()=>{markGuiDirty();void renderSettingsGui();};
-    const choose=kind=>{Gui.referenceEditSection=kind;Gui.app?.querySelectorAll('[data-reference-controls]').forEach(node=>{node.open=node.dataset.referenceControls===kind;});if(kind==='modules')void refreshModuleLoreCatalog(false);if(kind==='characters')void refreshCharacterLoreCatalog(false);void renderSettingsGui();};
     const button=(label,action)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,onClick:action});
-    const row=(label,desc,action)=>guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:label}),guiEl('div',{class:'setting__desc',text:desc})]),action]);
     const changeModule=(item,value)=>{
       const next=new Set(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),excluded=new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));
       [item.key,...guiAsArray(item.aliases)].forEach(key=>next.delete(key));if(value)next.add(item.key);
@@ -80949,35 +80915,44 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const changeEntry=(key,value)=>{const next=new Set(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds));value?next.delete(key):next.add(key);runtime.excludedModuleLoreIds=[...next];mark();};
     const changeCharacter=(key,value)=>{const next=new Set(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds));value?next.add(key):next.delete(key);runtime.excludedCharacterLoreIds=[...next];mark();};
     const fold=(id,title,builder)=>guiLazyDetails({class:'fold',open:Gui.referenceEditSection===id,dataset:{referenceControls:id}},guiEl('summary',{text:title}),()=>guiEl('div',{class:'fold__body stack'},builder()));
+    // One card holds both lorebooks: summary, bulk actions and the item list sit together.
+    // Catalogs load on first view; an error stops the automatic retry until a manual refresh.
+    if(!Gui.moduleCatalogLoadedAt&&!Gui.moduleCatalogLoading&&!Gui.moduleCatalogError)void refreshModuleLoreCatalog(false);
+    if(!Gui.characterLoreCatalogLoadedAt&&!Gui.characterLoreCatalogLoading&&!Gui.characterLoreCatalogError)void refreshCharacterLoreCatalog(false);
+    const group=(id,title,summary,actions,body)=>guiEl('section',{class:'libra-field-group',dataset:{referenceControls:id}},[
+      guiEl('h4',{class:'libra-field-group__title',text:title}),guiEl('p',{class:'hint',text:summary}),
+      guiEl('div',{class:'cluster'},actions),...body
+    ]);
     return guiEl('div',{class:'stack',dataset:{referenceSettings:'current'}},[
-      guiEl('div',{class:'card'},[
-        guiEl('h2',{class:'card__title',text:'참고 자료'}),guiEl('p',{class:'card__desc',text:'분석과 리콜에 함께 읽을 자료만 켭니다.'}),
-        row('모듈 로어북',`활성 모듈 ${modules.length}개 · 선택 ${selected.size}개`,button('선택…',()=>choose('modules'))),
-        row('캐릭터 로어북',`제외한 항목 ${excludedCharacters.size}개`,button('제외 관리…',()=>choose('characters')))
-      ]),
-      fold('modules','모듈 · 로어 선택',()=>[
-        guiEl('div',{class:'cluster'},[
-          button('모듈 목록 새로고침',()=>void refreshModuleLoreCatalog(true)),
-          button('활성 모듈 전체 선택',()=>{runtime.selectedModuleLoreIds=modules.map(item=>item.key);runtime.excludedModuleLoreIds=[...excludedModules].filter(key=>!modules.some(item=>guiAsArray(item.loreEntries).some(entry=>entry.key===key)));mark();}),
-          button('모듈 선택 전체 해제',()=>{runtime.selectedModuleLoreIds=[];mark();})
+      guiEl('div',{class:'card stack'},[
+        guiEl('div',{},[guiEl('h2',{class:'card__title',text:'참고 자료'}),guiEl('p',{class:'card__desc',text:'분석과 리콜에 함께 읽을 자료만 켭니다.'})]),
+        group('modules','모듈 로어북',`활성 모듈 ${modules.length}개 · 선택 ${selected.size}개. 체크한 모듈의 로어만 읽습니다.`,[
+          button('목록 새로고침',()=>void refreshModuleLoreCatalog(true)),
+          button('전체 선택',()=>{runtime.selectedModuleLoreIds=modules.map(item=>item.key);runtime.excludedModuleLoreIds=[...excludedModules].filter(key=>!modules.some(item=>guiAsArray(item.loreEntries).some(entry=>entry.key===key)));mark();}),
+          button('전체 해제',()=>{runtime.selectedModuleLoreIds=[];mark();})
+        ],[
+          Gui.moduleCatalogError?guiEl('p',{class:'note note--danger',text:Gui.moduleCatalogError}):null,
+          ...modules.map(item=>{
+            const checked=selected.has(item.key)||guiAsArray(item.aliases).some(key=>selected.has(key));
+            return guiEl('div',{class:'stack stack--sm'},[
+              guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked,dataset:{moduleLoreModuleToggle:item.key},onChange:event=>changeModule(item,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:`로어 ${item.loreCount}개 · ${item.description||''}`})])]),
+              guiEl('details',{class:'fold'},[guiEl('summary',{text:`${item.name} 내부 로어`}),guiEl('div',{class:'fold__body stack'},[
+                guiEl('div',{class:'cluster'},[button('로어 전체 선택',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.delete(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();}),button('로어 전체 해제',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.add(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();})]),
+                ...guiAsArray(item.loreEntries).map(entry=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',disabled:!checked,checked:checked&&!excludedModules.has(entry.key),dataset:{moduleLoreEntryToggle:entry.key},onChange:event=>changeEntry(entry.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:entry.name}),guiEl('small',{class:'hint',text:[entry.activationKey,entry.position,entry.contentPreview].filter(Boolean).join(' · ')})])]))
+              ])])
+            ]);
+          }),
+          modules.length?null:guiEl('p',{class:'hint',text:Gui.moduleCatalogLoading?'목록을 읽는 중입니다.':'활성 로어 모듈이 없습니다.'})
         ]),
-        Gui.moduleCatalogError?guiEl('p',{class:'note note--danger',text:Gui.moduleCatalogError}):null,
-        ...modules.map(item=>{
-          const checked=selected.has(item.key)||guiAsArray(item.aliases).some(key=>selected.has(key));
-          return guiEl('div',{class:'stack stack--sm'},[
-            guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked,dataset:{moduleLoreModuleToggle:item.key},onChange:event=>changeModule(item,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:`로어 ${item.loreCount}개 · ${item.description||''}`})])]),
-            guiEl('details',{class:'fold'},[guiEl('summary',{text:`${item.name} 내부 로어`}),guiEl('div',{class:'fold__body stack'},[
-              guiEl('div',{class:'cluster'},[button('로어 전체 선택',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.delete(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();}),button('로어 전체 해제',()=>{for(const entry of guiAsArray(item.loreEntries))excludedModules.add(entry.key);runtime.excludedModuleLoreIds=[...excludedModules];mark();})]),
-              ...guiAsArray(item.loreEntries).map(entry=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',disabled:!checked,checked:checked&&!excludedModules.has(entry.key),dataset:{moduleLoreEntryToggle:entry.key},onChange:event=>changeEntry(entry.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:entry.name}),guiEl('small',{class:'hint',text:[entry.activationKey,entry.position,entry.contentPreview].filter(Boolean).join(' · ')})])]))
-            ])])
-          ]);
-        }),
-        modules.length?null:guiEl('p',{class:'hint',text:Gui.moduleCatalogLoading?'목록을 읽는 중입니다.':'활성 로어 모듈이 없습니다.'})
-      ]),
-      fold('characters','캐릭터 로어북 제외',()=>[
-        guiEl('div',{class:'cluster'},[button('목록 새로고침',()=>void refreshCharacterLoreCatalog(true)),button('현재 캐릭터 전체 배제',()=>{runtime.excludedCharacterLoreIds=[...new Set([...excludedCharacters,...characters.map(item=>item.key)])];mark();}),button('현재 캐릭터 배제 해제',()=>{runtime.excludedCharacterLoreIds=[...excludedCharacters].filter(key=>!characters.some(item=>item.key===key));mark();})]),
-        Gui.characterLoreCatalogError?guiEl('p',{class:'note note--danger',text:Gui.characterLoreCatalogError}):null,
-        ...characters.slice(0,guiListLimit('characterLore')).map(item=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:excludedCharacters.has(item.key),dataset:{characterLoreExclude:item.key},onChange:event=>changeCharacter(item.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:[item.activationKey,item.contentPreview].filter(Boolean).join(' · ')})])])),guiLoadMoreControl('characterLore',characters.length,'로어북')
+        group('characters','캐릭터 로어북',`제외한 항목 ${excludedCharacters.size}개. 체크한 항목은 분석과 리콜에서 뺍니다.`,[
+          button('목록 새로고침',()=>void refreshCharacterLoreCatalog(true)),
+          button('현재 캐릭터 전체 배제',()=>{runtime.excludedCharacterLoreIds=[...new Set([...excludedCharacters,...characters.map(item=>item.key)])];mark();}),
+          button('현재 캐릭터 배제 해제',()=>{runtime.excludedCharacterLoreIds=[...excludedCharacters].filter(key=>!characters.some(item=>item.key===key));mark();})
+        ],[
+          Gui.characterLoreCatalogError?guiEl('p',{class:'note note--danger',text:Gui.characterLoreCatalogError}):null,
+          ...characters.slice(0,guiListLimit('characterLore')).map(item=>guiEl('label',{class:'check'},[guiEl('input',{type:'checkbox',checked:excludedCharacters.has(item.key),dataset:{characterLoreExclude:item.key},onChange:event=>changeCharacter(item.key,event.target.checked)}),guiEl('span',{},[guiEl('b',{text:item.name}),guiEl('small',{class:'hint',text:[item.activationKey,item.contentPreview].filter(Boolean).join(' · ')})])])),
+          characters.length?guiLoadMoreControl('characterLore',characters.length,'로어북'):guiEl('p',{class:'hint',text:Gui.characterLoreCatalogLoading?'목록을 읽는 중입니다.':'현재 캐릭터에 로어북 항목이 없습니다.'})
+        ])
       ]),
       fold('materials','통합 로어 · 작가노트 상세',()=>[
         checkboxNode(runtime.responseLoreEnabled!==false,'응답에 로어 참고 자료 사용',value=>{runtime.responseLoreEnabled=value;markGuiDirty();}),
@@ -81783,18 +81758,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return overlay;
   };
 
-  // Keep scoped maintenance forms stable across background body refreshes.
-  // The identity manager owns its form directly and never borrows cached nodes.
-  const guiUnifiedScopedReviewForm = (kind,identity,build) => {
-    const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
-    if(!scopeKey)return build();
-    const openSerial=Number(Gui.openSerial||0);
-    if(!Gui.unifiedSixthForms||Gui.unifiedSixthForms.scopeKey!==scopeKey||Gui.unifiedSixthForms.openSerial!==openSerial)
-      Gui.unifiedSixthForms={scopeKey,openSerial,forms:{}};
-    const old=Gui.unifiedSixthForms.forms[kind];
-    if(old&&old.identity===identity)return old.node;
-    const node=build();Gui.unifiedSixthForms.forms[kind]={identity,node};return node;
-  };
   const createWorldManagerIdentitySplitForm = (domain,row,view,initialNames=[],onComplete=null,isCurrent=()=>true) => {
     if(!worldManagerIsUnified(view)||domain!=='characters')return null;
       let preview=null,busy=false,page=0;const assignments=new Map(),targets=[{key:'person_1',name:text(initialNames[0]||''),aliases:[]},{key:'person_2',name:text(initialNames[1]||''),aliases:[]}];
@@ -81860,25 +81823,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       renderTargets();queueMicrotask(()=>void loadPreview());return guiEl('div',{dataset:{worldIdentitySplit:domain},style:{display:'grid',gap:'16px',minWidth:'0'}},[status,targetFields,guiEl('div',{class:'cluster'},[add,review]),facts,paging,apply]);
   };
 
-  const buildUnifiedRetentionPanel = () => guiUnifiedScopedReviewForm('retention','current',createUnifiedRetentionPanel);
-  const createUnifiedRetentionPanel = () => guiLazyDetails({class:'fold',dataset:{unifiedRetention:'true'}},guiEl('summary',{text:'보관 자료 점검·임시 자료 정리'}),()=>{
-    let preview=null,busy=false;const selected=new Set();
-    const status=guiEl('div',{class:'hint',text:'정본·원문 증거·아카이브는 삭제하지 않습니다. 7일이 지난 미참조 임시 스냅샷만 명시 선택으로 정리합니다.'});
-    const rows=guiEl('div',{class:'stack stack--sm'});
-    const review=guiEl('button',{type:'button',class:'btn',text:'보관 참조 점검',onClick:async()=>{
-      if(busy)return;busy=true;review.disabled=true;apply.disabled=true;
-      try{preview=await globalThis.__LIBRA__.previewMemoryRetention();selected.clear();rows.replaceChildren();const eligible=preview.rows.filter(r=>r.lifecycle==='GC_ELIGIBLE');
-        status.textContent=`확인 ${preview.scannedKeys}/${preview.totalKeys}개 · 보호/보존 ${preview.rows.length-eligible.length}개 · 정리 가능 ${eligible.length}개${preview.complete?'':' · 조회 미완료: 삭제 차단'}`;
-        for(const row of eligible){const check=guiEl('input',{type:'checkbox',disabled:!preview.complete,'aria-label':`임시 자료 ${row.key} 선택`,dataset:{retentionKey:row.key},onChange:e=>{if(e.target.checked&&selected.size>=64){e.target.checked=false;return;}if(e.target.checked)selected.add(row.key);else selected.delete(row.key);apply.disabled=!selected.size;}});rows.appendChild(guiEl('label',{class:'check'},[check,guiEl('span',{text:`${row.key}\n${row.createdAt} · ${row.bytes.toLocaleString()} bytes`})]));}
-      }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
-    }});
-    const apply=guiEl('button',{class:'btn',type:'button',text:'선택한 임시 자료 삭제',disabled:true,onClick:async()=>{
-      if(busy||!preview||!selected.size)return;busy=true;apply.disabled=true;review.disabled=true;
-      try{const out=await globalThis.__LIBRA__.collectMemoryRetention({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,selectedKeys:[...selected]});status.textContent=`임시 자료 ${out.removed}개 삭제 · ${out.retained}개 보존 · 정본/원문/아카이브 삭제 0개`;rows.replaceChildren();selected.clear();preview=null;}
-      catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
-    }});
-    return guiEl('div',{class:'fold__body stack'},[status,guiEl('div',{class:'cluster'},[review,apply]),rows]);
-  });
 
   const buildWorldManagerCorrectionEditor = (domain, row, view, renderInDialog = false) => {
     const keyValue=worldManagerDraftKey(domain,row); const draft=Gui.worldManagerEditDraft?.key===keyValue?Gui.worldManagerEditDraft:null;
@@ -82489,14 +82433,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
 
 
-  const stateTrackingSettingsForGui = () => {
-    const runtimeSettings = guiAsObject(Gui.state?.runtime?.stateTracking);
-    if (Object.keys(runtimeSettings).length) return runtimeSettings;
-    const loadedSettings = guiAsObject(Runtime.settings?.stateTracking);
-    if (Object.keys(loadedSettings).length) return loadedSettings;
-    try { return guiAsObject(LibraMemoryCore.getSettings?.()?.stateTracking); }
-    catch (_) { return {}; }
-  };
 
 
 
@@ -82784,33 +82720,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     await refreshOperationalDiagnostics({ force: true });
     return result;
   };
-  const buildStateReplayMaintenancePanel = () => {
-    const cached=ensureOperationalDiagnostics(),wm=guiAsObject(cached.worldManager),meta=guiAsObject(cached.worldlineMeta);
-    const scopeKey=text(cached.scopeKey||''),activeId=text(meta.activeWorldlineId||wm.worldline?.activeWorldlineId||'main');
-    const lines=guiAsObject(meta.worldlines),ids=Object.keys(lines),ready=!!scopeKey&&scopeKey===operationalScopeKey()&&ids.length>0&&(!cached.fieldStatus||cached.fieldStatus.worldlineMeta==='ready');
-    if(!ids.includes(Gui.worldlineTargetId))Gui.worldlineTargetId=activeId;
-    const valid=value=>Number.isSafeInteger(Number(value))&&Number(value)>0&&Number(value)%LibraMemoryCore.BATCH_SIZE===0;
-    const execute=async(kind,id,turn=null)=>{
-      if(!ready||Gui.worldManagerRuntimeMetaRebuilding)return;
-      if(kind==='rollback'&&!valid(turn)){guiSetStatus('저장이 완료된 T5 · T10 · T15 경계를 선택하세요.',true,true);return;}
-      if(!(await confirmApprovedOperation(kind==='rollback'?`${id} 분기를 T${turn} 상태로 되돌릴까요? 이후 기억 원문은 보존되고 이후 교정은 휴면 상태가 됩니다.`:kind==='set'?`${id} 분기로 전환하고 현재 상태를 다시 구성할까요?`:'저장된 기억과 교정으로 현재 상태를 다시 구성할까요?',{title:'상태 작업 확인',target:`${scopeKey} · ${id}`,validate:()=>scopeKey===operationalScopeKey()})))return;
-      Gui.worldManagerRuntimeMetaRebuilding=true;queueGuiNavigationRender();
-      try{await runStateReplayMaintenance({kind,scopeKey,worldlineId:id,throughTurn:turn});guiSetStatus('현재 상태 재생과 readback을 확인했습니다.');}
-      catch(error){guiSetStatus(operationalReadError(error),true,true);}
-      finally{Gui.worldManagerRuntimeMetaRebuilding=false;queueGuiNavigationRender();}
-    };
-    const action=(label,fn,disabled=false)=>guiEl('button',{class:'btn btn--sm',type:'button',text:label,disabled:disabled||Gui.worldManagerRuntimeMetaRebuilding,onClick:fn});
-    return guiEl('div',{class:'stack',dataset:{stateReplayMaintenance:'v515'}},[
-      guiEl('details',{class:'fold'},[guiEl('summary',{text:'대화 분기 · 이전 시점 상세'}),guiEl('div',{class:'fold__body stack'},[
-        fieldNode('대화 분기',guiEl('select',{class:'select',value:Gui.worldlineTargetId,dataset:{stateMaintenanceField:'worldline'},onChange:event=>{Gui.worldlineTargetId=event.target.value;queueGuiNavigationRender();}},optionNodes(ids.map(id=>[id,`${id}${id===activeId?' · 현재':''}`]),Gui.worldlineTargetId))),
-        fieldNode('현재 반영 기준',guiEl('input',{class:'input',disabled:true,value:lines[activeId]?.cutoffTurn==null?'저장된 최신 기억까지':`T${lines[activeId].cutoffTurn}`})),
-        action('선택한 분기로 전환',()=>void execute('set',Gui.worldlineTargetId),!ready||Gui.worldlineTargetId===activeId),
-        fieldNode('반영할 마지막 턴',guiEl('input',{class:'input',type:'number',min:5,step:5,value:Gui.worldlineRollbackTurn,dataset:{stateMaintenanceField:'throughTurn'},onInput:event=>{Gui.worldlineRollbackTurn=event.target.value;}}),'저장이 완료된 5턴 경계만 선택합니다. 이후 기억 원문은 보존됩니다.'),
-        action('변경 내용 확인',()=>void execute('rollback',activeId,Number(Gui.worldlineRollbackTurn)),!ready)
-      ])]),
-      action(Gui.operationalDiagnosticsLoading?'상태 확인 중…':'상태 확인',()=>void refreshOperationalDiagnostics({force:true}),Gui.operationalDiagnosticsLoading)
-    ]);
-  };
 
   const buildStateTrackingAvailabilityPanel = (surface='pipeline') => {
     const view=worldManagerSnapshotView(),snapshot=LibraMemoryCore.peekSnapshot()||{},embedding=LibraMemoryCore.getEmbeddingRebuildState();
@@ -82824,8 +82733,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       guiEl('p',{class:'hint',text:'세 상태는 서로 독립적입니다. 현재 상태 적용은 추가 AI 호출 0회로 실행됩니다.'}),
       buildApprovedRecoveryActions(),
-      buildStateReplayMaintenancePanel(),
-      guiLazyDetails({class:'fold'},guiEl('summary',{text:'이전 상태 분석 설정 · 읽기 전용'}),()=>guiEl('div',{class:'fold__body'},[guiEl('pre',{text:JSON.stringify(stateTrackingSettingsForGui(),null,2)})]))
     ]);
   };
 
@@ -83728,55 +83635,117 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     canonical_state_basis_unavailable:'상태를 적용할 정본 근거가 아직 없습니다. 먼저 정본 기억을 확인하세요.',
     independent_verifier_required:'이 변화에는 별도 검증이 필요합니다. 현재 상태에 자동으로 적용하지 않았습니다.'
   }[reason] || '현재 근거로 상태 승인을 확인하지 못했습니다. 정본과 원문을 확인한 뒤 다시 적용하세요.');
+  // Micro reader. Same parts as the lens reader (rail filters, lens-item cards, lens-quote), so the
+  // three memory shelves read alike. Each record shows what kind of change it is, who did it, how
+  // certain it is, which State field it would change and whether State took it.
+  const MICRO_KIND_LABELS = Object.freeze({event:'사건',person:'인물',relation:'관계',world:'세계',thread:'서사',correction:'교정'});
+  const MICRO_TEMPORAL_LABELS = Object.freeze({current:'현재',historical:'과거',hypothetical:'가정',uncertain:'시점 불확실'});
+  const MICRO_DOMAIN_LABELS = Object.freeze({character:'인물',relationship:'관계',world:'세계',narrative:'서사'});
+  const microDecisionBadge = decision => !decision ? null
+    : decision.disposition==='absorbed' ? libraStatusBadge('정본·교정에 반영','info')
+      : decision.status==='admitted' ? libraStatusBadge('상태 반영','good')
+        : decision.status==='superseded' ? libraStatusBadge('이후 변경으로 대체','info')
+          : decision.status==='rejected' ? libraStatusBadge('반영 거부','danger')
+            : libraStatusBadge('상태 보류','warn');
+  const microReaderTurnBadge = row => row?.status === 'verified'
+    ? row.analysisStatus === 'minimum_source_bound' ? libraStatusBadge('원문만','warn') : libraStatusBadge('완료','good')
+    : libraStatusBadge(row?.status === 'missing' ? '없음' : '확인 필요', row?.status === 'missing' ? '' : 'warn');
   const buildMicroStateAdmissionPanel = (current, turn) => {
     const admission=current?.admission;
-    if(admission?.status==='loading')return guiEl('section',{class:'note',role:'status','aria-live':'polite',dataset:{microStateAdmission:'loading'}},[
+    if(admission?.status==='loading')return guiEl('section',{class:'micro-state-bar',role:'status','aria-live':'polite',dataset:{microStateAdmission:'loading'}},[
       guiEl('h3',{text:'현재 상태 · 반영 확인 중'}),
-      guiEl('p',{text:'저장된 Micro 본문은 확인했습니다. 현재 State 반영 여부를 확인하고 있습니다.'})]);
-    if(!admission || admission.status!=='verified')return guiEl('div',{class:'note note--warn',dataset:{microStateAdmission:'unavailable'}},[
-      guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'})]);
+      guiEl('p',{class:'hint',text:'저장된 Micro 본문은 확인했습니다. 현재 State 반영 여부를 확인하고 있습니다.'})]);
+    if(!admission || admission.status!=='verified')return guiEl('section',{class:'micro-state-bar is-pending',dataset:{microStateAdmission:'unavailable'}},[
+      guiEl('p',{text:'분석은 저장됐지만 현재 상태 승인을 확인하지 못했습니다.'}),
+      guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'상태 승인 다시 확인',onClick:()=>void loadMicroReaderDetail(turn)})])]);
     const decisions=guiAsArray(admission.decisions),pending=decisions.filter(row=>!['admitted','superseded','rejected'].includes(row.status));
     const rejected=decisions.filter(row=>row.status==='rejected');
     const absorbed=decisions.filter(row=>row.disposition==='absorbed'),replaced=decisions.filter(row=>row.status==='superseded');
-    return guiEl('section',{class:pending.length?'note note--warn':'note',dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
+    const claimCount=guiAsArray(current?.record?.claims).length;
+    // Pending reasons sit on their own record card; only reasons without a card are listed here.
+    const orphanPending=pending.filter(row=>!(Number(row.claimIndex)>=0&&Number(row.claimIndex)<claimCount));
+    return guiEl('section',{class:`micro-state-bar${pending.length?' is-pending':''}`,dataset:{microStateAdmission:pending.length?'pending':'ready'}},[
       guiEl('h3',{text:`현재 상태 · 반영 ${decisions.filter(row=>row.status==='admitted'&&row.disposition!=='absorbed').length}개${absorbed.length?` · 정본·교정에 반영 ${absorbed.length}개`:''}${replaced.length?` · 이후 변경으로 대체 ${replaced.length}개`:''} · 보류 ${pending.length}개`}),
+      !decisions.length?guiEl('p',{class:'hint',text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):guiEl('p',{class:'hint',text:pending.length
+        ?'보류된 기록의 사유는 각 기록 아래에 있습니다. 자동 반영 검토에서 반영하거나 제외할 수 있습니다.'
+        :'상태에 적용할 변화는 모두 처리됐습니다.'}),
       rejected.length?guiEl('p',{class:'hint',text:`반영 거부 ${rejected.length}개 · 기억 검색과 상태 반영에서 제외했습니다.`}):null,
-      !decisions.length?guiEl('p',{text:'이 턴에는 상태에 적용할 변화가 없습니다.'}):null,
-      ...[...absorbed,...replaced].map(row=>guiEl('p',{dataset:{microStateDisposition:row.disposition},
+      ...[...absorbed,...replaced].map(row=>guiEl('p',{class:'hint',dataset:{microStateDisposition:row.disposition},
         text:`기록 ${Number(row.claimIndex)+1} · ${row.disposition==='absorbed'?'현재 정본·교정에 반영돼 있습니다.':'이후 정본·교정으로 대체됐습니다.'}`})),
-      ...pending.map(row=>guiEl('p',{dataset:{microStatePendingReason:row.reason},text:`기록 ${Number(row.claimIndex)+1} · ${microStatePendingLabel(row.reason)}`})),
+      ...orphanPending.map(row=>guiEl('p',{dataset:{microStatePendingReason:row.reason},text:`기록 ${Number(row.claimIndex)+1} · ${microStatePendingLabel(row.reason)}`})),
       decisions.length?guiEl('div',{class:'cluster'},[
-        guiEl('button',{class:'btn btn--sm',type:'button',text:`T${turn} 자동 반영 검토`,dataset:{microStateReview:String(turn)},onClick:()=>openMemoryReviewDialog({turn:Number(turn)})}),
+        guiEl('button',{class:`btn btn--sm${pending.length?' btn--primary':''}`,type:'button',text:`T${turn} 자동 반영 검토`,dataset:{microStateReview:String(turn)},onClick:()=>openMemoryReviewDialog({turn:Number(turn)})}),
         pending.length?guiEl('button',{class:'btn btn--sm',type:'button',text:'정본 상태 확인',onClick:()=>bookNavigate('desk')}):null,
         pending.length?guiEl('button',{class:'btn btn--sm',type:'button',text:'상태 승인 다시 확인',onClick:()=>void loadMicroReaderDetail(turn)}):null
       ]):null
     ]);
   };
+  const microClaimCard = (claim, index, decision) => {
+    const intent=guiAsObject(claim?.stateIntent),evidence=guiAsObject(claim?.evidence);
+    const kind=text(claim?.changeKind||''),actor=text(claim?.actor||'').trim(),target=text(claim?.target||'').trim();
+    const intentTarget=guiAsObject(intent.target);
+    const targetName=text(intentTarget.entityName||[intentTarget.subjectName,intentTarget.targetName].filter(Boolean).join(' → ')||(intentTarget.scope?'현재 서사':''));
+    const change=intent.domain?[MICRO_DOMAIN_LABELS[intent.domain]||intent.domain,targetName,intent.field?worldManagerArticleFieldLabel(intent.field):'']
+      .filter(Boolean).join(' · ')+(intent.operation==='clear'?' → 해제':intent.value!==undefined&&intent.value!==''?` → ${typeof intent.value==='string'?intent.value:JSON.stringify(intent.value)}`:''):'';
+    const pendingReason=decision&&!['admitted','superseded','rejected'].includes(decision.status)?decision.reason:'';
+    return guiEl('article',{class:`lens-item micro-claim${claim?.certainty==='uncertain'?' is-uncertain':''}`,dataset:{microReaderClaim:String(index),microClaimKind:kind||'other'}},[
+      guiEl('div',{class:'lens-item__head'},[
+        guiEl('div',{class:'lens-item__meta'},[
+          guiEl('span',{class:'lens-meta',text:`기록 ${index+1}`}),
+          guiEl('span',{class:'lens-chip',text:MICRO_KIND_LABELS[kind]||'기록'}),
+          actor||target?guiEl('span',{class:'lens-label',text:[actor,target].filter(Boolean).join(' → ')}):null,
+          claim?.temporalRole&&claim.temporalRole!=='current'?guiEl('span',{class:'lens-meta',text:MICRO_TEMPORAL_LABELS[claim.temporalRole]||text(claim.temporalRole)}):null
+        ]),
+        guiEl('div',{class:'cluster lens-item__badges'},[
+          claim?.certainty==='uncertain'?libraStatusBadge('불확실','warn'):null,
+          claim?.epistemicStatus==='reported'?libraStatusBadge('전언','info'):null,
+          microDecisionBadge(decision)
+        ].filter(Boolean))
+      ]),
+      guiEl('p',{class:'lens-item__text',text:text(claim?.text||'')}),
+      change?guiEl('div',{class:'lens-extra',dataset:{microStateIntent:text(intent.domain)}},[guiEl('span',{class:'lens-extra__pair'},[guiEl('b',{text:'상태 변경 '}),document.createTextNode(change)])]):null,
+      evidence.exactQuote?guiEl('blockquote',{class:'lens-quote'},[
+        guiEl('span',{text:`“${text(evidence.exactQuote)}”`}),
+        guiEl('small',{text:`${evidence.role==='assistant'?'AI 응답':'사용자'}${evidence.messageId?` · ${text(evidence.messageId)}`:''}`})]):null,
+      pendingReason?guiEl('p',{class:'lens-basis',dataset:{microStatePendingReason:pendingReason},text:microStatePendingLabel(pendingReason)}):null
+    ]);
+  };
   const buildBookMicroReaderProjection = () => {
     const reader = ensureMicroReaderPage();
     const retry = () => void loadMicroReaderPage(false);
-    const rail = guiEl('aside', {class: 'rail', 'aria-label': 'Micro 기억 목록'}, [
-      guiEl('div', {class: 'rail__search'}, [guiEl('strong', {text: '턴별 Micro'}),
-        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: retry}),
-        guiEl('button', {class:'btn btn--sm',type:'button',text:'재분석',dataset:{microReaderReanalysis:'true'},disabled:!reader.scopeKey||!reader.totalTurns,onClick:()=>void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:reader.scopeKey,...(reader.selectedTurn?{startTurn:reader.selectedTurn,endTurn:reader.selectedTurn}:{})})})]),
-      guiEl('p', {class: 'hint', text: '최신 턴부터 · 20턴씩 표시'}),
+    const verifiedCount = reader.items.filter(row => row.status === 'verified').length;
+    const rail = guiEl('aside', {class: 'rail lens-rail micro-rail', 'aria-label': 'Micro 기억 목록'}, [
+      guiEl('div', {class: 'lens-rail__head'}, [
+        guiEl('strong', {text: '턴별 Micro'}),
+        guiEl('div', {class: 'cluster'}, [
+          guiEl('button', {class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: retry}),
+          guiEl('button', {class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{microReaderReanalysis:'true'},disabled:!reader.scopeKey||!reader.totalTurns,onClick:()=>void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:reader.scopeKey,...(reader.selectedTurn?{startTurn:reader.selectedTurn,endTurn:reader.selectedTurn}:{})})})
+        ])
+      ]),
       reader.error ? guiEl('div', {class: 'note note--danger', role: 'alert'}, [
         guiEl('p', {text: `목록을 읽지 못했습니다. ${reader.items.length ? '마지막으로 확인한 목록을 표시합니다. ' : ''}${reader.error}`}),
         guiEl('button', {class: 'btn btn--sm', type: 'button', text: '목록 다시 읽기', onClick: retry})]) : null,
-      guiEl('div', {class: 'rail__list'}, reader.items.length ? reader.items.map(row => guiEl('button', {
-        class: `chapter${reader.selectedTurn === row.turn ? ' is-on' : ''}`, type: 'button',
-        'aria-current': reader.selectedTurn === row.turn ? 'true' : null,
-        dataset: {microReaderTurn: String(row.turn), microReaderStatus: row.status},
-        onClick: () => void loadMicroReaderDetail(row.turn, reader)
-      }, [guiEl('b', {text: `T${row.turn} · ${microReaderStatusLabel(row)}`}),
-        row.summary ? guiEl('small', {text: row.summary}) : null])) : [guiEl('div', {class: 'empty',
-          text: reader.loading ? 'Micro 목록을 읽는 중입니다.' : reader.loaded ? '아직 완료된 턴이 없습니다.' : 'Micro 목록을 준비하고 있습니다.'})]),
+      guiEl('div', {class: 'lens-rail__section'}, [
+        guiEl('span', {class: 'lens-rail__label', text: reader.loaded ? `최신 턴부터 · ${reader.items.length}/${reader.totalTurns}턴 · 저장 확인 ${verifiedCount}개` : '최신 턴부터'}),
+        guiEl('div', {class: 'lens-filter micro-turns', role: 'list'}, reader.items.length ? reader.items.map(row => guiEl('button', {
+          class: `lens-filter__item micro-turn chapter${reader.selectedTurn === row.turn ? ' is-on' : ''}`, type: 'button', role: 'listitem',
+          'aria-pressed': String(reader.selectedTurn === row.turn), 'aria-current': reader.selectedTurn === row.turn ? 'true' : null,
+          title: microReaderStatusLabel(row),
+          dataset: {microReaderTurn: String(row.turn), microReaderStatus: row.status},
+          onClick: () => void loadMicroReaderDetail(row.turn, reader)
+        }, [guiEl('div', {class: 'micro-turn__body'}, [guiEl('b', {text: `T${row.turn}`}),
+            guiEl('small', {text: row.summary || microReaderStatusLabel(row)})]),
+          microReaderTurnBadge(row)])) : [guiEl('div', {class: 'empty',
+            text: reader.loading ? 'Micro 목록을 읽는 중입니다.' : reader.loaded ? '아직 완료된 턴이 없습니다.' : 'Micro 목록을 준비하고 있습니다.'})])
+      ]),
       reader.hasMore ? guiEl('button', {class: 'btn btn--sm', type: 'button', text: '이전 턴 더 보기',
-        disabled: reader.loading, onClick: () => void loadMicroReaderPage(true)}) : null,
-      reader.loaded ? guiEl('p', {class: 'hint', text: `${reader.items.length} / ${reader.totalTurns}턴 표시 · 저장 확인 ${reader.items.filter(row => row.status === 'verified').length}개`}) : null
-    ]);
+        disabled: reader.loading, onClick: () => void loadMicroReaderPage(true)}) : null
+    ].filter(Boolean));
     const current = reader.detail, record = current?.record;
     const note = (title, message) => guiEl('div', {class: 'empty'}, [guiEl('b', {text: title}), guiEl('p', {text: message})]);
+    const turnHead = (turn, deck, badge) => guiEl('div', {class: 'lens-reader__head'}, [
+      guiEl('div', {}, [guiEl('div', {class: 'eyebrow', text: `MICRO · T${turn}`}), guiEl('h2', {text: `T${turn}의 Micro 기억`}),
+        deck ? guiEl('p', {class: 'deck', text: deck}) : null]), badge]);
     let content;
     if (reader.detailLoading) content = note('Micro를 읽는 중입니다', `T${reader.selectedTurn}의 저장된 기록을 확인합니다.`);
     else if (reader.detailError) content = guiEl('div', {class: 'stack', role: 'alert'}, [
@@ -83784,30 +83753,45 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         text: 'Micro 다시 읽기', onClick: () => void loadMicroReaderDetail(reader.selectedTurn, reader)})]);
     else if (!current) content = note('Micro 기억', '목록에서 확인할 턴을 선택하세요.');
     else if (!record) content = guiEl('div', {class: 'stack'}, [
-      note(`T${reader.selectedTurn} · ${microReaderStatusLabel(current)}`, current.status === 'missing'
+      turnHead(reader.selectedTurn, '', microReaderTurnBadge(current)),
+      note(microReaderStatusLabel(current), current.status === 'missing'
         ? '이 턴에 저장된 Micro가 없습니다.' : current.status === 'stale_source'
           ? '원문이 변경되어 이전 Micro 본문을 표시하지 않습니다.' : '현재 원문과 일치하는 저장 기록을 확인하지 못했습니다.'),
-      guiEl('button', {class: 'btn btn--sm', type: 'button', text: '다시 확인',
-        onClick: () => void loadMicroReaderDetail(reader.selectedTurn, reader)})]);
+      guiEl('div', {class: 'cluster'}, [
+        guiEl('button', {class: 'btn btn--sm', type: 'button', text: '다시 확인', onClick: () => void loadMicroReaderDetail(reader.selectedTurn, reader)}),
+        guiEl('button', {class: 'btn btn--sm btn--primary', type: 'button', text: `T${reader.selectedTurn} 재분석`, disabled: !reader.scopeKey,
+          onClick: () => void showLibraSourceReanalysisDrawer({kind: 'micro', scopeKey: reader.scopeKey, startTurn: reader.selectedTurn, endTurn: reader.selectedTurn})})])]);
     else {
       const sourceOnly = record.analysisStatus === 'minimum_source_bound';
-      const quote = evidence => guiEl('blockquote', {}, [
-        guiEl('p', {text: `“${text(evidence?.exactQuote || '')}”`}),
-        guiEl('div', {class: 'muted', text: `${evidence?.role === 'assistant' ? 'AI 응답' : '사용자'} · ${text(evidence?.messageId || '')}`})]);
-      content = guiEl('div', {class: 'stack'}, [
-        guiEl('div', {class: 'eyebrow', text: `MICRO · T${record.turn}`}),
-        guiEl('h2', {text: `T${record.turn}의 Micro 기억`}),
-        guiEl('p', {class: 'deck', text: microReaderStatusLabel({status: 'verified', analysisStatus: record.analysisStatus})}),
+      const claims = guiAsArray(record.claims);
+      const decisions = new Map(guiAsArray(current.admission?.status === 'verified' ? current.admission.decisions : []).map(row => [Number(row.claimIndex), row]));
+      const kinds = [...new Set(claims.map(claim => text(claim?.changeKind || '') || 'other'))];
+      const filter = kinds.includes(reader.kindFilter) ? reader.kindFilter : 'all';
+      const shown = claims.map((claim, index) => [claim, index]).filter(([claim]) => filter === 'all' || (text(claim?.changeKind || '') || 'other') === filter);
+      const excerpt = guiAsObject(record.excerpt);
+      content = guiEl('div', {class: 'stack micro-reader__body'}, [
+        turnHead(record.turn, sourceOnly ? microReaderStatusLabel({status: 'verified', analysisStatus: record.analysisStatus})
+          : `기록 ${claims.length}개 · ${microReaderStatusLabel({status: 'verified', analysisStatus: record.analysisStatus})}`,
+          sourceOnly ? libraStatusBadge('원문만 보관', 'warn') : libraStatusBadge('분석 완료', 'good')),
         !sourceOnly ? buildMicroStateAdmissionPanel(current, record.turn) : null,
-        sourceOnly ? guiEl('div', {class: 'note note--warn'}, [guiEl('p', {
-          text: '분석이 완료되지 않아 원문만 보관된 기록입니다.'}), quote(record.excerpt)])
-          : guiEl('div', {class: 'stack'}, guiAsArray(record.claims).map((claim, index) => guiEl('section', {
-            class: 'note', dataset: {microReaderClaim: String(index)}
-          }, [guiEl('h3', {text: `기록 ${index + 1}`}), guiEl('p', {text: text(claim.text)}), quote(claim.evidence)]))),
-        guiEl('p', {class: 'muted', text: '턴별 추출 기록입니다. 현재 상태에는 근거 검증과 상태 승인을 통과한 변화만 반영됩니다.'})
+        sourceOnly ? guiEl('div', {class: 'stack'}, [
+          guiEl('div', {class: 'note note--warn'}, [guiEl('p', {text: '분석이 완료되지 않아 원문만 보관된 기록입니다. 재분석하면 이 턴의 Micro 기록을 만듭니다.'})]),
+          excerpt.exactQuote ? guiEl('blockquote', {class: 'lens-quote'}, [guiEl('span', {text: `“${text(excerpt.exactQuote)}”`}),
+            guiEl('small', {text: `${excerpt.role === 'assistant' ? 'AI 응답' : '사용자'}${excerpt.messageId ? ` · ${text(excerpt.messageId)}` : ''}`})]) : null,
+          guiEl('div', {class: 'cluster'}, [guiEl('button', {class: 'btn btn--sm btn--primary', type: 'button', text: `T${record.turn} 재분석`, disabled: !reader.scopeKey,
+            onClick: () => void showLibraSourceReanalysisDrawer({kind: 'micro', scopeKey: reader.scopeKey, startTurn: record.turn, endTurn: record.turn})})])
+        ]) : guiEl('div', {class: 'stack'}, [
+          kinds.length > 1 ? guiEl('div', {class: 'lens-people', role: 'group', 'aria-label': '기록 종류'}, [['all', '전체', claims.length],
+            ...kinds.map(kind => [kind, MICRO_KIND_LABELS[kind] || '기타', claims.filter(claim => (text(claim?.changeKind || '') || 'other') === kind).length])]
+            .map(([id, label, count]) => guiEl('button', {type: 'button', class: 'lens-person', 'aria-pressed': String(filter === id), dataset: {microKindFilter: id},
+              onClick: () => { reader.kindFilter = id; queueGuiNavigationRender(); }}, [guiEl('span', {text: label}), guiEl('b', {text: String(count)})]))) : null,
+          claims.length ? guiEl('div', {class: 'stack lens-items'}, shown.map(([claim, index]) => microClaimCard(claim, index, decisions.get(index))))
+            : guiEl('div', {class: 'empty'}, [guiEl('b', {text: '추출된 기록이 없습니다'}), guiEl('p', {text: '이 턴에서 기억할 변화가 발견되지 않았습니다.'})])
+        ]),
+        guiEl('p', {class: 'hint', text: '턴별 추출 기록입니다. 현재 상태에는 근거 검증과 상태 승인을 통과한 변화만 반영됩니다.'})
       ]);
     }
-    return guiEl('div', {class: 'grid g-side', dataset: {microReader: 'true'}}, [rail,
+    return guiEl('div', {class: 'grid g-side lens-reader micro-reader', dataset: {microReader: 'true'}}, [rail,
       guiEl('article', {class: 'sheet-page detail-pane', style: {overflowWrap: 'anywhere', minWidth: '0'}, dataset: {microReaderDetail: String(reader.selectedTurn || ''),
         analysisStatus: text(record?.analysisStatus || '')}}, [content])]);
   };
@@ -84898,19 +84882,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ['stateMicroCandidates','한 번에 읽을 Micro 후보 수',4,32]
       ];
       const currentInputs=inputs.map(([key,label,min,max])=>field(label,guiEl('input',{class:'input',type:'number',min,max,step:1,value:settings[key],dataset:{memorySetting:key},onInput:event=>patch({[key]:Number(event.target.value)}),onChange:event=>patch({[key]:Number(event.target.value)})})));
+      // Repairs (legacy cutover, State journal retry, vector post-processing, retention cleanup,
+      // server health) run inside the one-stop check; only the destructive scope delete stays here.
       const extraDetails=[
-guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'기억 전환 · 상태 재시도 · 저장 상세'}),()=>guiEl('div',{class:'fold__body stack'},[
-          guiEl('div',{class:'cluster'},[
-            guiEl('button',{class:'btn btn--sm',type:'button',text:'기존 기억 보존 전환',onClick:async()=>{try{const preview=await LibraMemoryCore.previewUnifiedMigration();if(!preview.legacyRefs.length){guiSetStatus('전환할 구형 정본이 없습니다.');return;}if(!(await confirmApprovedOperation(`구형 정본 ${preview.legacyRefs.length}개를 보존하고 새 통합 분석을 이어갈까요? 이전 원문 증거가 없는 구간 ${preview.missingEvidenceKeys.length}개. 자동 재분석은 하지 않습니다.`,{title:'기존 기억 보존 전환',target:preview.scopeKey,validate:()=>canonicalReaderBinding().scopeKey===preview.scopeKey})))return;await LibraMemoryCore.beginUnifiedMigration({expectedScopeKey:preview.scopeKey,previewDigest:preview.previewDigest,mode:'preserve_legacy_readonly',acknowledgedMissingKeys:preview.missingEvidenceKeys});guiSetStatus('전환 경계를 저장했습니다.');}catch(error){guiSetStatus(String(error.message||error),true);}}}),
-            guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 상태 적용 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(),{force:true,unifiedOnly:true});guiSetStatus(`상태 재시도 ${result.recovered||0}개 완료 · ${result.remaining||0}개 보류`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}}),
-            guiEl('button',{class:'btn btn--sm',type:'button',text:'통합 임베딩 후처리 재시도',onClick:async()=>{try{const result=await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(),{retry:true});guiSetStatus(`임베딩 ${result.completed||0}/${result.attempted||0} 처리`,!result.ok);}catch(error){guiSetStatus(String(error.message||error),true);}}})
-          ]),
-          buildUnifiedRetentionPanel(),buildLibraServerScopeHealthPanel(),
+guiLazyDetails({class:'fold',dataset:{memoryMaintenance:'true'}},guiEl('summary',{text:'현재 채팅 데이터 삭제'}),()=>guiEl('div',{class:'fold__body stack'},[
+          guiEl('p',{class:'hint',text:'현재 채팅의 LIBRA 메모리·벡터·실행 기록을 지웁니다. 누락·불일치 복구는 현재 상태 적용의 원스톱 상태 점검을 쓰세요.'}),
           guiEl('button',{class:'btn btn--danger btn--sm',type:'button',text:'현재 채팅 LIBRA 데이터 삭제',onClick:async()=>{const deletionBinding=canonicalReaderBinding();if(!(await confirmApprovedOperation('현재 채팅의 LIBRA 메모리·벡터·실행 기록을 모두 삭제할까요?',{title:'현재 채팅 데이터 삭제',target:deletionBinding.scopeKey})))return;try{const result=await LibraMemoryCore.deleteCurrentScope({expectedScopeKey:deletionBinding.scopeKey,suppressGuiSchedule:true,snapshotLimits:guiSnapshotLimits(),trackGuiLimits:true});if(result?.reloadRequired){guiSetStatus('서버 자료를 삭제하고 백업을 보존했습니다. RisuAI를 새로고침해 주세요.',false,true);return;}await renderSettingsGui();}catch(error){guiSetStatus(String(error.message||error),true,true);}}})
-        ])),
-guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 작동 상세'}),guiEl('div',{class:'fold__body stack'},[
-          memoryToggle('enabled','새 LIBRA 사용'),memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석'),memoryToggle('sectionVectors','영역별 임베딩 투영'),memoryToggle('autoCatchUpEnabled','활성 세션의 누락 5턴 자동 따라잡기')
-        ])])
+        ]))
 ];
       const budgetPresets = LibraMemoryCore.getRecallBudgetPresets();
       const activeBudgetPreset = settings.recallLensBudgetMode === 'custom' ? 'custom'
@@ -84953,12 +84931,15 @@ guiEl('details',{class:'fold'},[guiEl('summary',{text:'기억 분석 · 검색 �
 ])
       ]);
       return guiEl('div',{class:'stack',dataset:{settingsCategory:'mem',settingsReadback:'LibraMemoryCore'}},[
+// Section vectors and missed-batch catch-up are always on (normalizeMemorySettings), so only
+// the two switches a user may really want to flip are shown, at the top.
+card('기억 작동','LIBRA 기억을 쓰는지, AI 응답이 저장될 때마다 5턴 분석을 자동으로 이어가는지 정합니다.',[
+  guiEl('div',{class:'stack',dataset:{memoryOperationToggles:'true'}},[
+    memoryToggle('enabled','LIBRA 기억 사용'),
+    memoryToggle('autoAnalyze','AI 응답 저장 후 자동 분석')
+  ])
+]),
 card('리콜 예산','전체 검색 예산과 렌즈 메모리 예산을 함께 조절합니다.',[budgetPresetButtons]),
-buildLibraClassicPanel({compact:true}),
-guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[
-          guiEl('div',{},[guiEl('h2',{class:'card__title',text:'맞춤 기억 렌즈'}),guiEl('p',{class:'card__desc',text:'원하는 관점(떡밥, 감정선, 말투 등)으로 대화를 따로 읽어 메모를 모읍니다. 정본 기억 분석기는 고정되어 있어 바뀌지 않습니다.'})]),
-          guiEl('button',{class:'btn btn--sm',type:'button',dataset:{open:'dlg-prompt'},text:'렌즈 스튜디오 열기',onClick:()=>openApprovedPromptDialog()})
-        ])]),
 advanced
 ]);
     }
@@ -85049,12 +85030,33 @@ advanced
       const effectiveDefaultName=providers[configuredDefaultName]?configuredDefaultName:providers[RISUAI_AUX_PRESET_NAME]?RISUAI_AUX_PRESET_NAME:names[0]||'';
       const defaultName=effectiveDefaultName,defaultPresetMissing=configuredDefaultName!==effectiveDefaultName;
       const orphanBindings=[...(configuredDefaultName&&!providers[configuredDefaultName]?[{stage:'전역 기본',name:configuredDefaultName}]:[]),...PERSISTED_AGENT_STAGE_DEFS.filter(def=>!LEGACY_MEMORY_STAGE_DEFS.some(legacy=>legacy.id===def.id)).map(def=>({stage:def.label||def.id,name:text(Gui.state.agents?.[def.id]?.presetName||'')})).filter(row=>row.name&&!providers[row.name])];
-      const defaultPanel=guiEl('details',{class:'fold',dataset:{defaultConnectionSettings:'true'}},[guiEl('summary',{text:'전역 기본 AI 연결'}),guiEl('div',{class:'fold__body stack'},[
-        field('기본 AI 연결',selectNode(effectiveDefaultName,names.map(name=>[name,presetDisplayName(name)]),next=>{runtime.defaultPresetName=next;markGuiDirty();queueGuiRender(0);}),'단계별 AI 연결에서 전역 기본 연결을 사용하도록 둔 모든 기능이 공유하는 폴백입니다.'),
+      // Feature bindings sit under the global default: Librarian analysis, Micro and lenses each
+      // pick a preset, and an empty choice follows the global default connection above.
+      const librarianSlot=(Gui.state.agents||(Gui.state.agents={})).librarian||(Gui.state.agents.librarian=guiSlotFromSettings(Runtime.settings||{},LIBRARIAN_STAGE_ID,(Runtime.settings||{}).enableLibrarian));
+      for(const [stage,name] of [['미크로 기억',runtime.microPresetName],['맞춤 기억 렌즈',runtime.lensPresetName]])if(text(name||'')&&!providers[name])orphanBindings.push({stage,name});
+      const bindingChoices=[['',`전역 기본 모델 사용 (${effectiveDefaultName?presetDisplayName(effectiveDefaultName):'미설정'})`],...names.map(name=>[name,presetDisplayName(name)])];
+      const bindingNote=(value,purpose)=>`${purpose} · 실제 사용: ${presetDisplayName(providers[value]?value:effectiveDefaultName)||'없음'}`;
+      const bindingRow=(id,label,value,onChange,purpose,extra=[])=>guiEl('div',{class:'stack stack--sm',dataset:{featureBinding:id}},[
+        field(label,selectNode(value||'',bindingChoices,next=>{onChange(next);markGuiDirty();queueGuiRender(0);}),bindingNote(value,purpose)),...extra
+      ]);
+      const featureBindings=guiEl('section',{class:'libra-field-group',dataset:{featureBindings:'true'}},[
+        guiEl('h4',{class:'libra-field-group__title',text:'기능별 AI 연결'}),
+        guiEl('div',{class:'stack'},[
+          bindingRow('librarian','Librarian 기억 분석',librarianSlot.presetName,next=>{librarianSlot.presetName=next;librarianSlot.preset=next;},'완료된 5턴의 사건·인물·관계·세계·서사 정본 분석 · 기억 생성 LLM 1회 · 상태 적용 추가 호출 0회',[
+            checkboxNode(librarianSlot.enabled!==false,'Librarian 기억 분석 사용',value=>{librarianSlot.enabled=value;markGuiDirty();})
+          ]),
+          bindingRow('micro','미크로 기억',runtime.microPresetName,next=>{runtime.microPresetName=next;},'매 턴 원문 관찰과 현재 상태 후보'),
+          bindingRow('lens','맞춤 기억 렌즈',runtime.lensPresetName,next=>{runtime.lensPresetName=next;},'렌즈 분석 · 렌즈마다 따로 지정한 연결이 있으면 그 연결 우선',[
+            guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',dataset:{open:'dlg-prompt'},text:'렌즈 스튜디오 열기',onClick:()=>openApprovedPromptDialog()})])
+          ])
+        ])
+      ]);
+      const defaultPanel=guiEl('section',{class:'stack',dataset:{defaultConnectionSettings:'true'}},[guiEl('section',{class:'libra-field-group'},[guiEl('h4',{class:'libra-field-group__title',text:'전역 기본 AI 연결'}),guiEl('div',{class:'stack'},[
+        field('기본 AI 연결',selectNode(effectiveDefaultName,names.map(name=>[name,presetDisplayName(name)]),next=>{runtime.defaultPresetName=next;markGuiDirty();queueGuiRender(0);}),'기능별 AI 연결에서 전역 기본 모델 사용으로 둔 모든 기능이 이 연결을 씁니다.'),
         guiEl('p',{class:'hint',text:effectiveDefaultName?`${presetDisplayName(effectiveDefaultName)} · ${providerDisplayLabel(providers[effectiveDefaultName]?.provider)} · ${presetModelDisplay(providers[effectiveDefaultName]||{})}`:'사용 가능한 기본 연결이 없습니다.'}),
         orphanBindings.length?guiEl('div',{class:'note note--warn',dataset:{orphanPresetBindings:String(orphanBindings.length)}},[guiEl('b',{text:`고아 AI 연결 ${orphanBindings.length}개`}),guiEl('p',{text:orphanBindings.map(row=>`${row.stage}: ${row.name}`).join(' · ')}),guiEl('p',{text:'실행 중 사용 가능한 폴백을 사용할 수 있지만 저장된 이름을 자동으로 덮어쓰지는 않습니다.'})]):null,
         defaultPresetMissing?guiEl('div',{class:'note'},[guiEl('p',{text:`저장된 기본 연결 '${configuredDefaultName}'을 찾을 수 없어 '${effectiveDefaultName}'을 사용 중입니다.`}),guiEl('button',{class:'btn btn--sm',type:'button',text:'현재 연결로 정리',disabled:!effectiveDefaultName,onClick:()=>{runtime.defaultPresetName=effectiveDefaultName;markGuiDirty();void renderSettingsGui();}})]):null
-      ])]);
+      ])]),featureBindings]);
       if(!names.includes(Gui.selectedPreset))Gui.selectedPreset=names[0]||'';
       const preset=providers[Gui.selectedPreset]||null;
       const presetField=(key,label,options={})=>field(label,guiEl(options.tag==='textarea'?'textarea':'input',{class:options.tag==='textarea'?'textarea':options.tag==='select'?'select':'input',type:options.type||'text',value:options.value??preset?.[key]??'',placeholder:options.placeholder||'',min:options.min,max:options.max,step:options.step,dataset:{providerField:key},onInput:event=>{if(!preset)return;preset[key]=options.type==='number'?Number(event.target.value):event.target.value;if(key==='model'||key==='max_tokens')preset[key]=event.target.value;markGuiDirty();}}),options.note||'');
@@ -85092,12 +85094,11 @@ advanced
           guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
           guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})])]),
           guiEl('div',{class:'libra-preset-detail'},[editPanel])]),defaultPanel
-        ]),
-        card('임베딩','모델 공간과 연결 상태는 저장된 임베딩 설정에서 확인합니다.',[routeButton('임베딩 연결 설정…','embedding')])
+        ])
       ]);
     }
     if(groupId==='ref')return guiEl('div',{class:'stack',dataset:{settingsCategory:'ref'}},[
-      card('참고 자료','현재 저장된 로어·작가 노트 설정으로 이동합니다.',[guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:'모듈 로어북'}),guiEl('div',{class:'setting__desc',text:'현재 채팅에서 선택한 실제 모듈 목록을 읽습니다.'})]),routeButton('선택…','references')]),guiEl('div',{class:'setting'},[guiEl('div',{},[guiEl('div',{class:'setting__name',text:'캐릭터 로어북'}),guiEl('div',{class:'setting__desc',text:'현재 저장된 제외 항목을 관리합니다.'})]),routeButton('제외 관리…','references')])]),
+      card('참고 자료','모듈 로어북 선택과 캐릭터 로어북 제외를 한 화면에서 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('참고 자료 설정…','references')])]),
       card('분석 입력 규칙','현행 분석 입력 필터를 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('분석할 내용 설정…','source_edits')])])
     ]);
     if(groupId==='store')return guiEl('div',{class:'stack',dataset:{settingsCategory:'store'}},[
@@ -85116,7 +85117,7 @@ advanced
       ]),
       guiEl('p',{class:'hint',text:'세 상태는 서로 독립적이며, 진단은 데이터를 변경하지 않습니다.'}),
       card('상태 자동 반영','정본과 Micro에서 보류된 항목을 조건 없이 상태에 넣습니다. 상태에는 현재 값이 우선합니다. 과거 내용은 후보로만 남고, 불확실·조건부 내용은 빈 칸에만 표시를 달고 들어가며 이미 있는 값을 바꾸거나 지우지 않습니다. 끄면 영구 승인한 항목만 상태에 들어갑니다.',[runtimeToggle('memoryStateAutoApply','보류된 항목을 상태에 자동 반영')]),
-      card('복구 · 진단','기존 확인·복구 조건과 대상 보호를 사용합니다.',[guiEl('div',{class:'cluster'},[routeButton('현재 상태 적용…','state'),routeButton('교정 관리…','general'),routeButton('분기 · 재구축…','recovery'),routeButton('실행 기록…','logs')])])
+      card('복구 · 진단','원스톱 상태 점검이 누락·지연·불일치를 찾아 한 번에 복구합니다.',[guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()}),routeButton('실행 기록…','logs')])])
     ]);
   };
 
@@ -85383,6 +85384,9 @@ advanced
     if(!pending.length)list.appendChild(guiEl('p',{class:'muted',text:'현재 항목에서 해결할 수 있는 보류 근거가 없습니다.'}));
     overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>overlay.remove()}),apply);overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
+  const libraReceiptRepairEligible = (row, scopeKey) => row?.scopeKey === scopeKey
+    && ['missing', 'failed', 'pending_write', 'queued', 'paused', 'unavailable'].includes(row.status)
+    && row.reason !== 'journal_read_unavailable';
   const inspectLibraMemoryMaintenance = async () => {
     const context = await LibraMemoryCore.resolveContext().catch(() => ({ scope: {} }));
     const scopeKey = text(context?.scope?.scopeKey || '');
@@ -85441,6 +85445,36 @@ advanced
       } catch (_) {}
     }
 
+    // Folded-in repairs that used to be separate buttons. Each probe is read-only and best-effort.
+    // A rollback anchor left by the retired manual rollback keeps State frozen at an older boundary.
+    let activeWorldlineId = 'main', stateCutoffTurn = null;
+    try {
+      const meta = scopeKey ? await LibraMemoryCore.loadStateWorldlineMeta(context.scope) : null;
+      activeWorldlineId = text(meta?.activeWorldlineId || 'main');
+      const cutoff = meta?.worldlines?.[activeWorldlineId]?.cutoffTurn;
+      if (cutoff != null && Number.isFinite(Number(cutoff))) stateCutoffTurn = Number(cutoff);
+    } catch (_) {}
+    // Pre-unified canonical memory that was never cut over (local storage only).
+    let legacyMigration = null;
+    if (!isServer && scopeKey) {
+      try {
+        const preview = await LibraMemoryCore.previewUnifiedMigration();
+        if (preview?.scopeKey === scopeKey && guiAsArray(preview.legacyRefs).length) {
+          legacyMigration = { count: preview.legacyRefs.length, missingEvidence: guiAsArray(preview.missingEvidenceKeys).length };
+        }
+      } catch (_) {}
+    }
+    // Source receipts and Micro publications that the per-turn views would otherwise repair one by one.
+    let receiptRepairs = 0, microPublishPending = 0;
+    try {
+      const receiptScope = LibraMemoryCore.peekSnapshot()?.scope || context.scope;
+      const status = scopeKey ? await LibraMemoryCore.getReceiptRecoveryStatus({ scope: receiptScope }) : null;
+      if (status?.scopeKey === scopeKey) {
+        receiptRepairs = guiAsArray(status.receiptStages).filter(row => libraReceiptRepairEligible(row, scopeKey)).length;
+        microPublishPending = guiAsArray(status.microJobs).filter(row => row?.scopeKey === scopeKey && row.status === 'publish_ready').length;
+      }
+    } catch (_) {}
+
     const issues = [];
     const coldStartNeeded = savedRanges.length === 0 && completeBatches > 0;
     if (coldStartNeeded) {
@@ -85455,6 +85489,10 @@ advanced
     if (serverPendingTx > 0) issues.push({ code: 'SERVER_PENDING_TX', count: serverPendingTx, text: `미완료 서버 트랜잭션 ${serverPendingTx}건` });
     if (serverMissingRefs > 0) issues.push({ code: 'SERVER_MISSING_CANONICAL_REFS', count: serverMissingRefs, text: `서버 정본 참조 누락 ${serverMissingRefs}건` });
     if (derivedNeedRefresh) issues.push({ code: 'DERIVED_CACHE_STALE', count: 1, text: '기억 읽기 캐시 갱신 필요' });
+    if (stateCutoffTurn != null) issues.push({ code: 'STATE_CUTOFF_ACTIVE', count: 1, text: `현재 상태가 이전 시점 T${stateCutoffTurn}에 고정됨` });
+    if (legacyMigration) issues.push({ code: 'LEGACY_MEMORY_MIGRATION', count: legacyMigration.count, text: `기존 구형 정본 ${legacyMigration.count}개 보존 전환 필요` });
+    if (receiptRepairs > 0) issues.push({ code: 'RECEIPT_RECOVERY_PENDING', count: receiptRepairs, text: `원문 저장 영수증 확인 필요 ${receiptRepairs}턴` });
+    if (microPublishPending > 0) issues.push({ code: 'MICRO_PUBLISH_PENDING', count: microPublishPending, text: `Micro 발행 확인 필요 ${microPublishPending}턴` });
 
     const healthy = issues.length === 0;
 
@@ -85486,6 +85524,11 @@ advanced
       serverMissingRefs,
       serverReplayErrors,
       derivedNeedRefresh,
+      activeWorldlineId,
+      stateCutoffTurn,
+      legacyMigration,
+      receiptRepairs,
+      microPublishPending,
       issues,
       coldStartNeeded,
       ranges,
@@ -85538,8 +85581,11 @@ advanced
       ['정본 누락·실패 (5턴)', plan.coldStartNeeded ? '콜드스타트에 포함' : calls.canonical ? `${calls.canonical}개 구간` : '없음'],
       ['미크로 누락 (1턴)', !targets ? '확인 불가' : targets.micro.error ? '확인 실패' : !targets.micro.enabled ? 'Micro 꺼짐' : calls.micro ? `${calls.micro}턴` : '없음'],
       ['렌즈 누락 (구간)', !targets ? '확인 불가' : targets.lensError ? '확인 실패' : !lensRows.length ? '자동 분석 렌즈 없음' : calls.lens ? lensRows.filter(row => row.ranges.length).map(row => `${row.name} ${row.ranges.length}개`).join(' · ') : '없음'],
-      ['상태 재생', plan.stateLagging ? `T${plan.stateThroughTurn} → 최신 정본 (모델 호출 0회)` : '최신'],
-      ['재임베딩', plan.embedSummary?.state !== 'ready' ? '임베딩 미설정 · 건너뜀' : plan.vectorFailed > 0 ? `실패 ${plan.vectorFailed}건 재생성` : plan.vectorPending > 0 ? `대기 ${plan.vectorPending}건` : '새로 저장된 기억만 갱신']
+      ['원문 영수증 · Micro 발행', plan.receiptRepairs || plan.microPublishPending ? [plan.receiptRepairs ? `영수증 ${plan.receiptRepairs}턴` : '', plan.microPublishPending ? `발행 ${plan.microPublishPending}턴` : ''].filter(Boolean).join(' · ') + ' (모델 호출 0회)' : '정상'],
+      ['기존 기억 전환', plan.legacyMigration ? `구형 정본 ${plan.legacyMigration.count}개 보존 전환${plan.legacyMigration.missingEvidence ? ` · 원문 증거 없는 구간 ${plan.legacyMigration.missingEvidence}개` : ''}` : '필요 없음'],
+      ['상태 재생', plan.stateCutoffTurn != null ? `T${plan.stateCutoffTurn} 고정 해제 → 최신 정본 (모델 호출 0회)` : plan.stateLagging ? `T${plan.stateThroughTurn} → 최신 정본 (모델 호출 0회)` : '최신 · 보류된 적용만 재시도'],
+      ['재임베딩', plan.embedSummary?.state !== 'ready' ? '임베딩 미설정 · 건너뜀' : plan.vectorFailed > 0 ? `실패 ${plan.vectorFailed}건 재생성` : plan.vectorPending > 0 ? `대기 ${plan.vectorPending}건` : '새로 저장된 기억만 갱신'],
+      ['캐시 · 임시 자료', plan.isServer ? '기억 읽기 캐시 갱신' : '기억 읽기 캐시 갱신 · 7일 지난 미참조 임시 자료 정리']
     ];
   };
 
@@ -85628,7 +85674,58 @@ advanced
       const rows = actionsTaken.slice(from);
       progress(step, !rows.length ? 'skipped' : rows.some(row => row.includes('경고')) ? 'warn' : 'done', rows.length ? '' : idle);
     };
+
+    // 0. 원문 저장 영수증 · Micro 발행 · 기존 기억 전환 (모델 호출 0회). Canonical and Micro recovery
+    // below read the source receipts, so these run first.
+    progress('source', 'running');
+    const sourceActionsBefore = actionsTaken.length;
+    if (preflight.legacyMigration) {
+      try {
+        const preview = await LibraMemoryCore.previewUnifiedMigration();
+        if (preview?.scopeKey !== scopeKey) throw new Error('점검한 채팅 범위가 변경되었습니다. 다시 점검해 주세요.');
+        if (guiAsArray(preview.legacyRefs).length) {
+          await LibraMemoryCore.beginUnifiedMigration({ expectedScopeKey: scopeKey, previewDigest: preview.previewDigest,
+            mode: 'preserve_legacy_readonly', acknowledgedMissingKeys: guiAsArray(preview.missingEvidenceKeys) });
+          actionsTaken.push(`기존 구형 정본 ${preview.legacyRefs.length}개 보존 전환 완료 (읽기 전용 보존 · 자동 재분석 없음)`);
+        }
+      } catch (err) {
+        actionsTaken.push(`기존 기억 전환 경고: ${err.message || err}`);
+      }
+    }
+    if (preflight.receiptRepairs > 0 || preflight.microPublishPending > 0) {
+      try {
+        await assertScope();
+        const receiptScope = LibraMemoryCore.peekSnapshot()?.scope || context.scope;
+        const status = await LibraMemoryCore.getReceiptRecoveryStatus({ scope: receiptScope });
+        if (status?.scopeKey !== scopeKey) throw new Error('점검한 채팅 범위가 변경되었습니다. 다시 점검해 주세요.');
+        const receipts = guiAsArray(status.receiptStages).filter(row => libraReceiptRepairEligible(row, scopeKey));
+        const publishes = guiAsArray(status.microJobs).filter(row => row?.scopeKey === scopeKey && row.status === 'publish_ready');
+        let receiptOk = 0, publishOk = 0;
+        for (const row of receipts) {
+          progress('source', 'running', `원문 영수증 T${Number(row.turn || 0)} 확인 중`);
+          const result = await LibraMemoryCore.recheckReceiptRecovery({ scope: receiptScope, turn: row.turn }).catch(error => ({ status: 'unavailable', reason: String(error?.message || error) }));
+          if (result?.status === 'verified') receiptOk += 1;
+        }
+        for (const row of publishes) {
+          progress('source', 'running', `Micro 발행 T${Number(row.turn || 0)} 확인 중`);
+          const result = await LibraMemoryCore.repairMicroPublication({ scope: receiptScope, receiptRef: row.receiptRef, revision: row.revisionId, digest: row.sourceDigest,
+            expectedGeneration: Number(LibraMemoryCore.state.worldManagerRuntimeMetaGeneration || 0) }).catch(error => ({ status: 'unavailable', reason: String(error?.message || error) }));
+          if (result?.status === 'verified') publishOk += 1;
+        }
+        if (receipts.length) actionsTaken.push(receiptOk === receipts.length
+          ? `원문 저장 영수증 ${receiptOk}턴 확인 완료 (모델 호출 0회)`
+          : `원문 영수증 복구 경고: ${receipts.length}턴 중 ${receiptOk}턴만 확인됨`);
+        if (publishes.length) actionsTaken.push(publishOk === publishes.length
+          ? `Micro 발행 ${publishOk}턴 확인 완료 (모델 호출 0회)`
+          : `Micro 발행 확인 경고: ${publishes.length}턴 중 ${publishOk}턴만 확인됨`);
+        if (Gui.receiptDesk?.scopeKey === scopeKey) void loadBookReceiptRecoveryStatus(true);
+      } catch (err) {
+        actionsTaken.push(`원문 영수증 복구 경고: ${err.message || err}`);
+      }
+    }
+    stepResult('source', sourceActionsBefore, '확인할 항목 없음');
     progress('canonical', 'running');
+    const canonicalActionsBefore = actionsTaken.length;
 
     // 1. 상황별 정본 기억 생성 및 복구 (수동 콜드스타트 / 누락 복구 / 실패 재분석)
     if (preflight.savedRangesCount === 0 && preflight.completeBatches > 0) {
@@ -85709,7 +85806,7 @@ advanced
       }
     }
 
-    stepResult('canonical', 0, '누락 없음');
+    stepResult('canonical', canonicalActionsBefore, '누락 없음');
     // 원터치 전체 복구: 정본 다음에 미크로(1턴)·렌즈(주기 구간) 누락을 같은 재분석 경로로 복구한다.
     if (options.auxiliary === true) await runLibraAuxiliaryRecovery(actionsTaken, progress);
 
@@ -85729,7 +85826,31 @@ advanced
 
     const stateActionsBefore = actionsTaken.length;
     let stateReplayed = false;
-    if (effectiveLagging) {
+    // A leftover rollback anchor: re-open the active line at the latest canonical (replay included).
+    if (preflight.stateCutoffTurn != null) {
+      progress('state', 'running', `이전 시점 T${preflight.stateCutoffTurn} 고정 해제 중 · 모델 호출 없음`);
+      try {
+        await runStateReplayMaintenance({ kind: 'set', scopeKey, worldlineId: text(preflight.activeWorldlineId || activeWorldlineId) });
+        stateReplayed = true;
+        actionsTaken.push(`이전 시점 T${preflight.stateCutoffTurn} 고정 해제 · 최신 정본으로 상태 재구성 (추가 모델 호출 0회)`);
+      } catch (err) {
+        actionsTaken.push(`이전 시점 고정 해제 경고: ${err.message || err}`);
+      }
+    }
+    // State applications left pending by an interrupted run (former "통합 상태 적용 재시도").
+    try {
+      const journal = await LibraMemoryCore.recoverPendingStateTrackingJournal(await LibraMemoryCore.resolveContext(), { force: true, unifiedOnly: true });
+      if (Number(journal?.attempted || 0) > 0) {
+        actionsTaken.push(journal.ok === true
+          ? `보류된 상태 적용 ${Number(journal.recovered || 0)}개 재시도 완료`
+          : `보류된 상태 적용 경고: ${Number(journal.recovered || 0)}개 완료 · ${Number(journal.pending || 0)}개 보류`);
+      } else if (journal?.ok === false && journal.reason && journal.reason !== 'scope_unavailable') {
+        actionsTaken.push(`보류된 상태 적용 경고: ${journal.reason}`);
+      }
+    } catch (err) {
+      actionsTaken.push(`보류된 상태 적용 경고: ${err.message || err}`);
+    }
+    if (effectiveLagging && !stateReplayed) {
       progress('state', 'running', `T${effectiveStateThrough} → T${effectiveLastCommitted} 다시 구성 중 · 모델 호출 없음`);
       try {
         await runStateReplayMaintenance({
@@ -85764,6 +85885,20 @@ advanced
     } catch (err) {
       actionsTaken.push(`캐시 갱신 경고: ${err.message || err}`);
     }
+    // Unreferenced temporary snapshots older than seven days (former "보관 자료 점검·임시 자료 정리").
+    // Canonical, source evidence and archives are never eligible; local storage only.
+    if (!preflight.isServer) {
+      try {
+        const retention = await LibraMemoryCore.previewUnifiedRetention();
+        const eligible = guiAsArray(retention?.rows).filter(row => row.lifecycle === 'GC_ELIGIBLE').map(row => row.key).slice(0, 64);
+        if (retention?.complete && retention.scopeKey === scopeKey && eligible.length) {
+          const out = await LibraMemoryCore.collectUnifiedRetention({ expectedScopeKey: scopeKey, previewDigest: retention.previewDigest, selectedKeys: eligible });
+          actionsTaken.push(`7일 지난 미참조 임시 자료 ${Number(out?.removed || 0)}개 정리 (정본·원문·아카이브 삭제 0개)`);
+        }
+      } catch (err) {
+        actionsTaken.push(`임시 자료 정리 경고: ${err.message || err}`);
+      }
+    }
     stepResult('cache', cacheActionsBefore, '정상');
     progress('embedding', 'running');
     const embeddingActionsBefore = actionsTaken.length;
@@ -85776,6 +85911,17 @@ advanced
 
     if (curEmbedSummary?.state === 'ready') {
       await assertScope();
+      // Section vectors of saved memories still pending or failed (former "통합 임베딩 후처리 재시도").
+      try {
+        progress('embedding', 'running', '저장된 기억의 영역별 벡터 확인 중');
+        const flushed = await LibraMemoryCore.flushUnifiedDerivedVectors(await LibraMemoryCore.resolveContext(), { retry: true });
+        const attempted = Number(flushed?.attempted || 0);
+        if (attempted > 0) actionsTaken.push(flushed.ok === false
+          ? `임베딩 후처리 경고: ${Number(flushed.completed || 0)}/${attempted}개 처리`
+          : `임베딩 후처리 ${Number(flushed.completed || 0)}/${attempted}개 처리 완료`);
+      } catch (err) {
+        actionsTaken.push(`임베딩 후처리 경고: ${err.message || err}`);
+      }
       if (effectiveVectorFailed > 0) {
         try {
           await LibraMemoryCore.retryFailedEmbeddingRebuild();
@@ -86007,7 +86153,10 @@ advanced
         ['실패한 5턴 구간', p.failedRangesCount > 0 ? `${p.failedRangesCount}개 구간 실패 (원문 재분석 가능)` : '실패 구간 없음'],
         ['상태 추적 파이프라인', p.stateLagging ? `T${p.lastCommittedTurn} 상태로 자동 재정렬 필요 (추가 AI 호출 0회)` : '최신 정본까지 완전히 반영됨'],
         ['임베딩 모델 및 준비도', p.embedSummary.text],
-        ['파생 캐시 무결성', p.derivedNeedRefresh ? '기억 읽기 캐시 갱신 필요' : '정상 (캐시 일치)']
+        ['파생 캐시 무결성', p.derivedNeedRefresh ? '기억 읽기 캐시 갱신 필요' : '정상 (캐시 일치)'],
+        ['현재 상태 기준', p.stateCutoffTurn != null ? `이전 시점 T${p.stateCutoffTurn}에 고정됨 (해제 가능)` : '최신 정본 기준'],
+        ['원문 저장 영수증', p.receiptRepairs || p.microPublishPending ? `영수증 ${p.receiptRepairs}턴 · Micro 발행 ${p.microPublishPending}턴 확인 필요` : '정상'],
+        ['기존 기억 전환', p.legacyMigration ? `구형 정본 ${p.legacyMigration.count}개 전환 필요` : '필요 없음']
       ];
       if (p.isServer) {
         detailRows.push(['서버 트랜잭션 무결성', p.serverPendingTx > 0 ? `미완료 TX ${p.serverPendingTx}건 감지` : '정상 (미완료 TX 0건)']);
@@ -86055,6 +86204,18 @@ advanced
           }
         }));
       }
+      // The former standalone "서버 기억 상태 진단" card: the plan already carries the server health read.
+      manualButtons.push(guiEl('button', {
+        class: 'btn btn--sm',
+        type: 'button',
+        dataset: { maintenanceCopyDiagnostics: 'true' },
+        text: '점검 결과 복사',
+        onClick: async () => {
+          const report = JSON.stringify({ ...p, ranges: undefined, savedRanges: undefined, missingRanges: undefined, failedRanges: undefined }, null, 2);
+          try { await navigator.clipboard.writeText(report); guiSetStatus('점검 결과를 복사했습니다.'); }
+          catch (_) { guiSetStatus('복사 권한이 없습니다. 브라우저 클립보드 권한을 확인하세요.', true); }
+        }
+      }));
       const manualToolsBox = guiEl('div', {
         class: 'maintenance-box',
         dataset: { maintenanceManualTools: 'true' },
@@ -86091,7 +86252,7 @@ advanced
           const rows = libraFullRecoveryRows(p, targets);
           const calls = libraFullRecoveryCalls(p, targets);
           const confirmed = await confirmApprovedOperation(
-            '콜드스타트·정본(5턴) 누락 복구, 미크로(1턴) 누락 복구, 렌즈(주기 구간) 누락 복구, 상태 재생, 재임베딩을 차례로 실행합니다. 성공한 구간만 저장하고 실패한 구간의 기존 기억은 유지합니다.',
+            '원문 영수증·Micro 발행 확인과 기존 기억 전환, 콜드스타트·정본(5턴) 누락 복구, 미크로(1턴) 누락 복구, 렌즈(주기 구간) 누락 복구, 상태 재생(이전 시점 고정 해제와 보류된 적용 재시도 포함), 캐시·임시 자료 정리, 재임베딩을 차례로 실행합니다. 성공한 구간만 저장하고 실패한 구간의 기존 기억은 유지합니다.',
             {
               title: '자동 복구 실행', kind: '콜드스타트 · 누락 복구 · 재임베딩', actionLabel: '자동 복구 시작',
               target: rows.map(([label, value]) => `${label} ${value}`).join(' · '),
@@ -86128,8 +86289,8 @@ advanced
     }
 
     function renderFullProgress() {
-      const labels = { canonical: '정본 기억 (콜드스타트 · 5턴 누락·실패 복구)', micro: '미크로 기억 (1턴 누락 복구)', lens: '렌즈 기억 (주기 구간 누락 복구)', state: '현재 상태 재생', cache: '기억 읽기 캐시 갱신', embedding: '재임베딩', verify: '최종 점검 · 화면 갱신' };
-      const shortLabels = { canonical: '정본', micro: '미크로', lens: '렌즈', state: '상태', cache: '캐시', embedding: '임베딩', verify: '최종 점검' };
+      const labels = { source: '원문 영수증 · Micro 발행 · 기존 기억 전환', canonical: '정본 기억 (콜드스타트 · 5턴 누락·실패 복구)', micro: '미크로 기억 (1턴 누락 복구)', lens: '렌즈 기억 (주기 구간 누락 복구)', state: '현재 상태 재생', cache: '기억 읽기 캐시 갱신', embedding: '재임베딩', verify: '최종 점검 · 화면 갱신' };
+      const shortLabels = { source: '원문', canonical: '정본', micro: '미크로', lens: '렌즈', state: '상태', cache: '캐시', embedding: '임베딩', verify: '최종 점검' };
       const statusText = { pending: '대기', running: '진행 중', done: '완료', skipped: '건너뜀', warn: '확인 필요' };
       const icons = { pending: '○', running: '◐', done: '✓', skipped: '–', warn: '!' };
       const rows = new Map(Object.keys(labels).map(step => {
@@ -86353,12 +86514,12 @@ advanced
     };
   };
   const openApprovedRecoveryDialog = async (kind,row=null) => {
-    if(kind==='correction')return openApprovedCorrectionsDialog();
     const binding=canonicalReaderBinding(),bindingKey=canonicalReaderBindingKey(binding);
     Gui.app?.querySelector('#dlg-recover')?.remove();
     if(kind==='micro'&&row?.status!=='publish_ready')return showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:row?.scopeKey,...(row?.turn?{startTurn:Number(row.turn),endTurn:Number(row.turn)}:{})});
     const overlay=createApprovedRecoveryOverlay('dlg-recover');overlay.dataset.recoveryKind=kind;overlay.dataset.recoveryScope=binding.scopeKey;overlay.dataset.recoveryWorldline=binding.worldlineId;
-    const defs={state:['현재 상태 다시 적용','상태 반영','모델 호출 0회 · 저장된 정본과 교정으로 현재 상태를 다시 구성합니다.'],rebuild:['5턴 경계로 rollback 후 상태 재구축','분기 · 재구축','모델 호출 0회 · 선택한 정본 5턴 경계 이후의 상태를 되돌립니다. 기억 원문은 보존합니다.'],receipt:['원문 저장 영수증 복구','영수증 복구','모델 호출 0회 · 영수증과 일치하는 원문 저장을 다시 확인합니다.'],micro:['Micro 발행 확인','Micro 발행 확인','모델 호출 0회 · 저장된 분석 결과의 발행을 다시 확인합니다.']};
+    // Per-row repair from the worldline/receipt views. Whole-scope state re-apply and rollback live in the one-stop check.
+    const defs={receipt:['원문 저장 영수증 복구','영수증 복구','모델 호출 0회 · 영수증과 일치하는 원문 저장을 다시 확인합니다.'],micro:['Micro 발행 확인','Micro 발행 확인','모델 호출 0회 · 저장된 분석 결과의 발행을 다시 확인합니다.']};
     if(!defs[kind])return false;
     const [title,label,impact]=defs[kind];overlay.querySelector('#drc-t').textContent=title;overlay.querySelector('[data-fill="kind"]').textContent=label;overlay.querySelector('[data-fill="impact"]').textContent=impact;
     overlay.querySelector('[data-fill="cost"]').textContent='모델 호출 0회';
@@ -86369,10 +86530,10 @@ advanced
     const close=()=>{if(busy)return;closed=true;overlay.remove();document.removeEventListener('keydown',escape,true);};
     const escape=event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();}};
     const selector=overlay.querySelector('#rb-bound'),field=overlay.querySelector('[data-variant="rebuild"]');
-    field.hidden=kind==='state';field.querySelector('label').textContent=kind==='rebuild'?'되돌릴 5턴 경계':'복구할 실제 작업';
+    field.querySelector('label').textContent='복구할 실제 작업';
     const update=()=>{
       selected=options.find(item=>item.key===selector.value)||null;
-      execute.disabled=busy||!binding.scopeKey||(kind!=='state'&&!selected);
+      execute.disabled=busy||!binding.scopeKey||!selected;
       overlay.dataset.recoveryTarget=selected?.key||binding.worldlineId;
       if(kind==='micro'&&selected)overlay.querySelector('[data-fill="cost"]').textContent='발행 확인 · 모델 호출 0회';
     };
@@ -86381,18 +86542,13 @@ advanced
       if(!valid()||overlay.dataset.recoveryTarget!==(selected?.key||binding.worldlineId)){status.textContent='채팅·분기·scope 또는 작업 대상이 바뀌었습니다. 다시 열어 확인하세요.';execute.disabled=true;return;}
       busy=true;execute.disabled=true;let outcome='completed';const finishJob=openApprovedRecoveryJob(kind,title,binding);
       try{
-        if(kind==='state'||kind==='rebuild'){
-          await runStateReplayMaintenance({kind:kind==='state'?'rebuild':'rollback',scopeKey:binding.scopeKey,worldlineId:binding.worldlineId,throughTurn:kind==='rebuild'?selected.turn:null});
-          status.textContent='현재 상태 재생과 readback을 확인했습니다.';
-        }else{
-          const current=bookReceiptRecoveryState();const rows=kind==='receipt'?guiAsArray(current.status?.receiptStages):guiAsArray(current.status?.microJobs);
-          const same=rows.find(item=>recoveryRowIdentity(kind,item)===selected.key);
-          if(current.scopeKey!==binding.scopeKey||!same||same.status!==selected.row.status)throw new Error('복구 작업의 상태나 대상이 바뀌었습니다. 다시 읽어 확인하세요.');
-          const action=kind==='receipt'?'receipt':'micro_publish';
-          const result=await runBookReceiptRecoveryAction(action,same);
-          if(!valid())return;
-          const presentation=bookRecoveryResult(kind,result);outcome=presentation.outcome;status.textContent=presentation.message;
-        }
+        const current=bookReceiptRecoveryState();const rows=kind==='receipt'?guiAsArray(current.status?.receiptStages):guiAsArray(current.status?.microJobs);
+        const same=rows.find(item=>recoveryRowIdentity(kind,item)===selected.key);
+        if(current.scopeKey!==binding.scopeKey||!same||same.status!==selected.row.status)throw new Error('복구 작업의 상태나 대상이 바뀌었습니다. 다시 읽어 확인하세요.');
+        const action=kind==='receipt'?'receipt':'micro_publish';
+        const result=await runBookReceiptRecoveryAction(action,same);
+        if(!valid())return;
+        const presentation=bookRecoveryResult(kind,result);outcome=presentation.outcome;status.textContent=presentation.message;
         finishJob(status.textContent,outcome);execute.hidden=true;
       }catch(error){status.textContent=String(error.message||error);finishJob(status.textContent,true);}finally{busy=false;if(!execute.hidden)update();}
     }});
@@ -86405,14 +86561,10 @@ advanced
         const state=bookReceiptRecoveryState(),rows=kind==='receipt'?guiAsArray(state.status?.receiptStages):guiAsArray(state.status?.microJobs);
         const eligible=item=>item.scopeKey===binding.scopeKey&&(kind==='receipt'?['missing','failed','pending_write','queued','paused','unavailable'].includes(item.status)&&item.reason!=='journal_read_unavailable':item.status==='publish_ready');
         options=rows.filter(eligible).filter(item=>!row||recoveryRowIdentity(kind,item)===recoveryRowIdentity(kind,row)).map(item=>({key:recoveryRowIdentity(kind,item),row:cloneJson(item),label:`T${Number(item.turn||0)} · ${item.status}`}));
-      }else if(kind==='rebuild'){
-        const snap=LibraMemoryCore.peekSnapshot()||{};options=Object.values(snap.manifest?.memories||{}).filter(item=>item.status==='committed'&&Number(item.turnRange?.end)>0&&Number(item.turnRange?.end)%LibraMemoryCore.BATCH_SIZE===0).map(item=>({key:String(item.turnRange.end),turn:Number(item.turnRange.end),label:`T${item.turnRange.end}까지`}));
-        options=[...new Map(options.map(item=>[item.key,item])).values()].sort((a,b)=>b.turn-a.turn);
       }
       selector.replaceChildren(...optionNodes([['','실제 대상을 선택하세요'],...options.map(item=>[item.key,item.label])],''));
       if(row&&options.length===1)selector.value=options[0].key;
-      overlay.querySelector('#rb-hint').textContent=kind==='rebuild'?'저장이 완료된 5턴 경계만 선택할 수 있습니다.':options.length?'기록된 상태와 scope가 일치하는 작업만 표시합니다.':'현재 범위에 복구할 수 있는 작업이 없습니다.';
-      if(kind==='state'&&!Object.values(LibraMemoryCore.peekSnapshot()?.manifest?.memories||{}).some(item=>item.status==='committed'))throw new Error('반영할 저장된 정본 기억이 없습니다.');
+      overlay.querySelector('#rb-hint').textContent=options.length?'기록된 상태와 scope가 일치하는 작업만 표시합니다.':'현재 범위에 복구할 수 있는 작업이 없습니다.';
       update();
     }catch(error){status.textContent=String(error.message||error);execute.disabled=true;}
     return overlay;
@@ -86426,15 +86578,17 @@ advanced
     overlay.addEventListener('click',event=>{if(event.target===overlay){overlay.remove();return;}if(event.target.closest('button:not([data-corrections-close])')&&(canonicalReaderBindingKey(canonicalReaderBinding())!==canonicalReaderBindingKey(binding)||overlay.dataset.correctionsScope!==binding.scopeKey||overlay.dataset.correctionsWorldline!==binding.worldlineId)){event.preventDefault();event.stopImmediatePropagation();overlay.querySelector('#corr-list').replaceChildren(guiEl('p',{class:'note note--danger',text:'채팅 또는 scope가 바뀌었습니다. 다시 열어 확인하세요.'}));}},true);
     Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
-  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'four'}},[
+  // Re-apply, receipt repair, Micro publish, rollback-anchor release, legacy cutover, State journal
+  // retry and vector post-processing all run inside the one-stop check; corrections stay in the
+  // people/world/story manage views ('교정 기록').
+  const buildApprovedRecoveryActions = () => guiEl('div',{class:'stack',dataset:{recoveryKinds:'maintenance'}},[
     guiEl('div',{class:'act-card'},[
       guiEl('div',{},[
         guiEl('b',{text:'⚡ 원스톱 상태 점검 및 자동 복구'}),
-        guiEl('small',{text:'정본 연속성 · 상태 반영 · 임베딩 · 캐시 무결성을 일괄 점검하고 원클릭으로 자동 복구합니다.'})
+        guiEl('small',{text:'정본·미크로·렌즈 누락, 현재 상태 반영, 원문 저장 영수증, 이전 시점 고정, 기존 기억 전환, 임베딩, 캐시와 임시 자료를 한 번에 점검하고 필요한 것만 복구합니다.'})
       ]),
       guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'점검 및 복구…',dataset:{recoveryKind:'maintenance'},onClick:()=>void openLibraMemoryMaintenanceDialog()})
-    ]),
-    ...[['state','현재 상태 다시 적용','저장된 정본을 현재 상태에 반영합니다. 정본은 바뀌지 않습니다.'],['correction','교정 관리','적용 중 · 재검토 · 휴면 · 대체 · 삭제 상태를 확인합니다.'],['rebuild','분기 · 재구축','저장이 완료된 5턴 경계로 상태를 되돌립니다. 원문은 보존합니다.'],['receipt','원문 저장 영수증 복구','실제 영수증과 일치하는 원문 저장을 확인합니다. 모델 호출 0회입니다.']].map(([kind,title,description])=>guiEl('div',{class:'act-card'},[guiEl('div',{},[guiEl('b',{text:title}),guiEl('small',{text:description})]),guiEl('button',{class:kind==='micro'?'btn btn--sm btn--danger':'btn btn--sm',type:'button',text:kind==='correction'?'교정 목록 열기':'실행…',dataset:{recoveryKind:kind},onClick:()=>void openApprovedRecoveryDialog(kind)})]))
+    ])
   ]);
 
   const createApprovedMockupApp = () => {
@@ -87073,7 +87227,7 @@ advanced
           '인용만: 원문에서 그대로 옮긴 문장이 있는 항목만 저장합니다. 해석 허용: 인용이 없어도 근거 턴과 한 줄 근거가 있으면 “해석”으로 저장하고, 회상할 때 해석이라고 표시합니다.'),
         guiEl('div', { class: 'grid g2' }, [
           lensField('실행 주기', lensSelect(lensCadenceValue(normalized), LENS_CADENCE_CHOICES, value => set('cadence', lensCadenceFromValue(value)))),
-          lensField('AI 연결', lensSelect(draft.connection?.presetName || '', [['', '정본 분석과 같은 연결'], ...presets.map(name => [name, presetDisplayName(name)])], value => set('connection.presetName', value)), '값싼 모델을 따로 지정해도 됩니다.')
+          lensField('AI 연결', lensSelect(draft.connection?.presetName || '', [['', 'AI 연결 설정의 렌즈 연결'], ...presets.map(name => [name, presetDisplayName(name)])], value => set('connection.presetName', value)), '비워 두면 AI 연결 설정에서 렌즈에 배속한 연결을 씁니다. 이 렌즈만 값싼 모델을 따로 지정해도 됩니다.')
         ]),
         lensToggle(draft.trackTime === true, '원문에 적힌 시점을 함께 기록', value => set('trackTime', value), '원문에 없으면 추측하지 않고 시점 불명으로 표시합니다. 날짜 계산은 하지 않습니다.'),
         lensToggle(draft.trackSubject === true, '등장인물별로 구분해 기록', value => set('trackSubject', value), '한 렌즈가 여러 인물을 함께 추적합니다. 원문에 이름이 있을 때만 인물로 기록하고, 누구의 일인지 불분명하면 인물 불명으로 둡니다.'),
@@ -88014,7 +88168,6 @@ advanced
         else if (id === 'drawer-versions') { Gui.worldManagerCanonicalMemoryFocus = null;void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start||0)); }
         else if (id === 'drawer-evidence') bookSelectMemorySection('context');
         else if(id==='dialog-state')openApprovedStateDialog();
-        else if (id === 'dlg-recover') void openApprovedRecoveryDialog('state');
         else if(id==='dlg-corr-life')openApprovedCorrectionsDialog();
         else if(id==='dlg-restore-mode')selectBookExternalSettings('recovery');
         else if (id === 'dlg-prompt') openApprovedPromptDialog();
@@ -89558,6 +89711,8 @@ advanced
       if(owns('enableLibrarian')){if(typeof source.enableLibrarian!=='boolean')throw new Error('LIBRARIAN_CONFIG_ENABLED_INVALID');const effective=await loadSettings();agents.librarian={...effective.stageOptions.librarian,enabled:source.enableLibrarian};}
       const specialStageRuntimeKeys = {
         [STORY_ARC_STAGE_ID]: 'story_arc_preset',
+        [MICRO_PRESET_STAGE_ID]: 'micro_preset',
+        [LENS_PRESET_STAGE_ID]: 'lens_preset',
 
       };
       const runtimePatch = {};

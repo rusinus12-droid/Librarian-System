@@ -19,7 +19,7 @@ const between = (start, end) => {
 };
 const countMatches = (value, pattern) => (value.match(pattern) || []).length;
 
-const correctionOverlay = between('const worldManagerSnapshotView =', 'const stateTrackingSettingsForGui =');
+const correctionOverlay = between('const worldManagerSnapshotView =', 'const operationalScopeKey =');
 const requestBlock = between('const worldManagerCorrectionRequest =', 'const worldManagerHeadHasCorrection =');
 const saveBlock = between('const saveWorldManagerCorrectionDraft =', 'const buildWorldManagerCorrectionEditor =');
 const editorBlock = between('const buildWorldManagerCorrectionEditor =', 'const buildWorldManagerRecordBrowser =');

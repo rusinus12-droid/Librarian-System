@@ -40,7 +40,7 @@ assert.match(stateRun, /Promise\.allSettled|\.catch\s*\(/,
   'Narrative failure must not block other state domains or canonical commit');
 
 assert.match(source, /text: '현재까지 실제로 성립한 이야기'/);
-const narrativeUi=between('const buildWorldManagerNarrativePanel =','const stateTrackingSettingsForGui =');
+const narrativeUi=between('const buildWorldManagerNarrativePanel =','const operationalScopeKey =');
 assert.match(narrativeUi,/buildWorldManagerNarrativeCurrentPanel/);
 assert.doesNotMatch(narrativeUi,/buildLibraHubTabs|buildWorldManagerHistoryCorrectionsPanel/,'Narrative details must be unified without diagnostics');
 assert.match(source, /async getWorldManagerNarrative\(\)/);

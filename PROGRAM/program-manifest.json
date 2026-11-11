@@ -3832,7 +3832,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "e84c5f65868d22332d54073d8e6e5170cfeacc31c4c70a725a10e1cc1f8c8648",
+      "sha256": "e04ee0ec64fa7b8e943fc24077f724c33b18675009242785ed9a81f791c0dc4e",
       "bytes": 11835
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4248,8 +4248,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "af05f9ea195b315ad2d4f737fc6123e2cfa9eca9fde007ca8317f92b70e4ecc8",
-      "bytes": 6481560
+      "sha256": "c3dd08d4496b9930c84c52241ee74b446312cff63c675e1d829bb0411cb179f7",
+      "bytes": 6489888
     },
     "plugins/RETRACE.js": {
       "sha256": "291a6930bc5f456d3b0361c024118662c8b73ed67da7caeec2419ce272bb968b",
@@ -4832,8 +4832,8 @@
       "bytes": 2712
     },
     "tests/browser/libra_gui_task_layout_browser_test.cjs": {
-      "sha256": "b855493e13df5ee7142103fffda1e8bb73069b05fc59275e49f1f96d6a08ed02",
-      "bytes": 6255
+      "sha256": "0a93e48cbf012a241dca4396e6cda45914f0eb766272f02ca7d4fde58496911c",
+      "bytes": 6253
     },
     "tests/browser/libra_header_mode_authority_browser_test.cjs": {
       "sha256": "9778991e7418090eab03405ec331d9d680724e7bdf925c443c765f59d3bb223b",
@@ -4852,8 +4852,8 @@
       "bytes": 5800
     },
     "tests/browser/libra_input_writer_nsfw_model_test.cjs": {
-      "sha256": "a4f3f5eb6f46647bca7d95b0392f683eb68a9018fb74709d9c68deff84655d09",
-      "bytes": 4012
+      "sha256": "e19ac119fc2fdff37e55d0ff5935626f9ce1e2c8aa78b026473342ffc0ce22d0",
+      "bytes": 3938
     },
     "tests/browser/libra_lens_handoff_browser_test.cjs": {
       "sha256": "5472172b90a553b2b1380fdbc15f2ae77038a174c77d74d696c3f8935552b62b",
@@ -4904,8 +4904,8 @@
       "bytes": 2437
     },
     "tests/browser/libra_mockup_adoption_browser_test.cjs": {
-      "sha256": "2ae2ee623ea53a6e132038e4465c6bac2c8d0bb1bbe2497a4f5b82301eea9161",
-      "bytes": 36543
+      "sha256": "7f183d2415c731d8a4216264b2e9f5e6f3c7fb6594484e327c38e98563641c24",
+      "bytes": 36608
     },
     "tests/browser/libra_narrative_almanac_browser_test.cjs": {
       "sha256": "d997375b944a7fade31710f55785eb7892ae62e4b81844a594e95eff7f10cc6e",
@@ -4964,8 +4964,8 @@
       "bytes": 11790
     },
     "tests/browser/libra_workbench_consolidation_browser_test.cjs": {
-      "sha256": "a1d6f2461d275df2c2a72baadcd6661a412e4cfb43406450cde7ddcb17bee314",
-      "bytes": 2027
+      "sha256": "eb0f722ac5293a6eeeb8d358921df338be42f1a111f084ad351293b6ab0189a3",
+      "bytes": 2333
     },
     "tests/browser/libra_world_atlas_browser_test.cjs": {
       "sha256": "752ae2c59f5ba7a1c461993c9e1327525481ff31dbbf074562b68427ceb924bf",
@@ -7972,8 +7972,8 @@
       "bytes": 15076
     },
     "tests/libra_ariadne_only_defaults_test.cjs": {
-      "sha256": "7a1f0d48558dea245d2bf6116c8d25a3698ac4b3592ce6b0965c0e8e4e8fba46",
-      "bytes": 11299
+      "sha256": "bd1e2bf857190a08a466748d012d80013793987eb245707c73db1970a1566086",
+      "bytes": 11516
     },
     "tests/libra_associative_final_proof_test.cjs": {
       "sha256": "69cd4ed95e4cc914054b055a6cb102d23de0db8e08ab70c08d1f8ca94dda902d",
@@ -8028,8 +8028,8 @@
       "bytes": 4916
     },
     "tests/libra_book_ux_1to1_contract_test.cjs": {
-      "sha256": "b1473f1611e0bf3aacc454bcb163abc73b2154a1748bdeb3fa1a3325395075c6",
-      "bytes": 3546
+      "sha256": "4df1990126708d03d284056939a316478a7b0587b241c3eed56fa994a740a784",
+      "bytes": 3839
     },
     "tests/libra_book_ux_v511_native_drawer_contract_test.cjs": {
       "sha256": "53b5cf7b750e5b8fc73a81505cbbad6a67aa9428fd2c322f7b4f4c0e153e3e0a",
@@ -8404,8 +8404,8 @@
       "bytes": 3215
     },
     "tests/libra_global_default_provider_gui_contract_test.cjs": {
-      "sha256": "d26e334e7c13b2cdce6529890fa70b97c744057d1114af2a6d7585c83920e2cb",
-      "bytes": 6280
+      "sha256": "17932080bd591c368f93913f1d51c1e28e27545457a32547cc5a6f58410da294",
+      "bytes": 6551
     },
     "tests/libra_gradia_capture_during_scan_test.cjs": {
       "sha256": "24c7614b01e9b66e41c154babd6a716a3865aa67ee063f08ac43335aac3d880f",
@@ -9268,8 +9268,8 @@
       "bytes": 6140
     },
     "tests/libra_prompt_injection_navigation_test.cjs": {
-      "sha256": "1d03dcff98caddb011de7b9da8f384c7e6f6e8eb4411813f5b50a68962389106",
-      "bytes": 3949
+      "sha256": "bca1584c1465359b86829f42ef8cecda806b1e3d7be9ad33118b085649abc192",
+      "bytes": 4152
     },
     "tests/libra_prompt_persistence_transaction_runtime_test.cjs": {
       "sha256": "a43e4ff9e1fa5bd9057eb78b35a1b217e74e9661da0fa2960b6cf7f482f5f547",
@@ -9420,8 +9420,8 @@
       "bytes": 11733
     },
     "tests/libra_reading_desk_controls_contract_test.cjs": {
-      "sha256": "ffa3e1915a04773b2c66821571860b711f86881a31bb2f6965c2870679179c1f",
-      "bytes": 3300
+      "sha256": "cd5bf1a4acc191b8f2736485e10a835ae57204c69e98595a1c93842d4789699b",
+      "bytes": 3403
     },
     "tests/libra_reanalysis_artifact_runtime_test.cjs": {
       "sha256": "b0ecb7e60eeebc391ea325c247c33bc8c7f02601f01832fb5423a29ca9c23c7f",
@@ -9624,8 +9624,8 @@
       "bytes": 3484
     },
     "tests/libra_run_provenance_polish_rc2_test.cjs": {
-      "sha256": "00b5eff0485b5c832d244e0b2a06380d370305357200026ed59e9d3f65dd52d8",
-      "bytes": 5186
+      "sha256": "ed9fb1d6a3dda346b53ee27e207362dea1a244115de8756d64ac427bda2f6fb0",
+      "bytes": 5178
     },
     "tests/libra_safe_adopt_candidate.cjs": {
       "sha256": "018242004d8d33d8e93e4da63c647d20ff008724d32b16124b99df678d4989ca",
@@ -9664,8 +9664,8 @@
       "bytes": 14056
     },
     "tests/libra_secondary_navigation_rail_contract_test.cjs": {
-      "sha256": "2c87e7412272c85751152bb17388451983c68b99bba53f3d1609a856720f7364",
-      "bytes": 6542
+      "sha256": "e2816ad9cf025e9aa5f3995caba78bb694de9c03bf4966445af1f36c657e6eca",
+      "bytes": 6726
     },
     "tests/libra_selected_receipt_backfill_test.cjs": {
       "sha256": "feb31d434e52d3773a00af09b292437aea766b33183c00a517f119f2b6a98aa4",
@@ -9884,8 +9884,8 @@
       "bytes": 4172
     },
     "tests/libra_unified_engine_header_layout_test.cjs": {
-      "sha256": "770a30eda6453ed52c6fdcc822b014c65e31bf89b328d1e19c05827e5d1463d8",
-      "bytes": 4924
+      "sha256": "e04f390122c5bf192d2e28bad5f51b2bf1dd7d04cc81f85e1b1d251ed2d0d8e3",
+      "bytes": 5015
     },
     "tests/libra_unified_entity_name_boundary_test.cjs": {
       "sha256": "6b7c495e15709f01456bc8934c23a4aab76e500dafc53e5a9603b53917baf2be",
@@ -10000,8 +10000,8 @@
       "bytes": 9100
     },
     "tests/libra_world_manager_correction_gui_rc2_test.cjs": {
-      "sha256": "380052a809dd90add55ea02351a50ea6a900b8c18d6c18a2cdb8ccabc2462863",
-      "bytes": 19803
+      "sha256": "c4e047c96e4a2edc1684b617501d6165fa8657b140ea155e3e5507513db1e948",
+      "bytes": 19795
     },
     "tests/libra_world_manager_correction_transaction_rc2_test.cjs": {
       "sha256": "645f6831d341a00989784248a45ba718d9e9496ca4f682e215aa0714a25291cd",
@@ -10012,8 +10012,8 @@
       "bytes": 23777
     },
     "tests/libra_world_manager_history_corrections_gui_rc2_test.cjs": {
-      "sha256": "14d2bd5d4ec10addeab41dffac25185d82f84ab26604ba4e026b3a5c72380d22",
-      "bytes": 21181
+      "sha256": "e4561445e6439f01555f7abc0bba721370d2c71577fd93658ea335028df343d0",
+      "bytes": 21173
     },
     "tests/libra_world_manager_history_v3_gui_contract_test.cjs": {
       "sha256": "8598439c1dd8459c73e51942be07d2496393302b4312e52b32bc78341aafc85a",
@@ -10024,8 +10024,8 @@
       "bytes": 18730
     },
     "tests/libra_world_manager_narrative_v1_contract_test.cjs": {
-      "sha256": "07d013e17c427b0f29eb2c78edb66e5c44ca030a156b3091e5141fc3c195e8e4",
-      "bytes": 3965
+      "sha256": "6eadb3d261519d2da0ee4d71b7498ac4dfb2543e40771ea3e49ab226188bb6fa",
+      "bytes": 3957
     },
     "tests/libra_world_manager_replay_v2_contract_test.cjs": {
       "sha256": "4a3876e864b6db66fa02c4e75069def3e9bdc7f85617443bcd9d36b087be69e7",
@@ -10036,8 +10036,8 @@
       "bytes": 19190
     },
     "tests/libra_world_manager_shared_snapshot_rc2_test.cjs": {
-      "sha256": "86843bccf82fd5f30db3c378cca2e9613d283e5dcb8f53204a114f6eec4fbedf",
-      "bytes": 8913
+      "sha256": "2d64ad75d17347a806f076c33dc9497bb0a2f372e3aed8fa7db2eaa911af046e",
+      "bytes": 8897
     },
     "tests/libra_world_manager_state_3mode_parity_test.cjs": {
       "sha256": "57cda4261130279b891bd80ffc5fb717823dab84add5864c869782e45f466b5e",
@@ -11460,8 +11460,8 @@
       "bytes": 8255
     },
     "tests/suite_libra_operational_fault_test.cjs": {
-      "sha256": "365ec0d01d1335919d40f5ec2f46175f8efc2f2ef46f391ae76fc1a1418ba98a",
-      "bytes": 16905
+      "sha256": "2fce5d811d679fd082905823537c6c6270a48e81c6a65632fa672ee9f14cc2fa",
+      "bytes": 15366
     },
     "tests/sync_read_context_composition_test.cjs": {
       "sha256": "605f0e91fcd56ffa5e2a7d187653eaf6a8be7c7fdd71d28203722232087b0bbc",

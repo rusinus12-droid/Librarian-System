@@ -195,10 +195,9 @@ async function syntheticPortableEnvelope(){
       await page.waitForFunction(value=>document.querySelector('.page[data-page="settings"] [data-product-settings-section]')?.getAttribute('data-product-settings-section')===value,section);
       assert.equal(await settingsPage.locator('[data-product-settings-section]').getAttribute('data-product-settings-section'),section,`settings section ${section} remains reachable`);
       const host=settingsPage.locator(`[data-product-settings-section="${section}"]`);
-      const controls={pipeline:'[data-librarian-analyzer] [data-analyzer-field="presetName"]',logs:'[data-execution-kind]',references:'[data-reference-settings] .setting',source_edits:'[data-source-input-controls]',state:'[data-state-replay-maintenance]',transfer:'[data-configuration-transfer="json"]',general:'[data-diagnostic-field="section"]'};
+      const controls={pipeline:'[data-librarian-analyzer] [data-analyzer-field="maxChars"]',logs:'[data-execution-kind]',references:'[data-reference-settings] [data-reference-controls="modules"]',source_edits:'[data-source-input-controls]',state:'[data-recovery-kinds="maintenance"]',transfer:'[data-configuration-transfer="json"]',general:'[data-diagnostic-field="section"]'};
       if(controls[section])await host.locator(controls[section]).first().waitFor();
       if(section==='pipeline'){
-        await host.locator('.fold > summary').first().click();
         const input=host.locator('[data-analyzer-field="maxChars"]');await input.fill('19000');await input.dispatchEvent('input');
         assert.equal(await host.locator('[data-analyzer-reference]').count(),4,'analyzer references preserved');
         assert.equal(await host.locator('[data-generation-policy="v1"] select').count(),3,'all existing generation policy controls preserved');await host.locator('[data-instruction-settings] > summary').click();assert.equal(await host.locator('[data-instruction-settings] > .fold__body > .field select').count(),2,'existing NSFW/profile selectors remain reachable');assert.ok(await host.locator('[data-instruction-field]').count()>0,'existing individual response instruction controls preserved');
@@ -206,12 +205,11 @@ async function syntheticPortableEnvelope(){
       if(section==='logs')assert.equal(await host.locator('[data-execution-kind]').count(),6,'six real execution receipt kinds remain selectable');
       if(section==='references'){
         await page.evaluate(()=>{__mockupAudit.Gui.moduleCatalogLoadedAt=Date.now();__mockupAudit.Gui.characterLoreCatalogLoadedAt=Date.now();__mockupAudit.Gui.characterLoreCatalogLoading=true;__mockupAudit.Gui.moduleCatalog=[{key:'synthetic-module',name:'Synthetic Module',active:true,loreCount:1,loreEntries:[{key:'synthetic-lore',name:'Synthetic Lore',contentPreview:'Synthetic only'}]}];__mockupAudit.Gui.characterLoreCatalog=[{key:'synthetic-character-lore',name:'Synthetic Character Lore'}];});
-        await host.getByRole('button',{name:'선택…',exact:true}).click();
+        await page.evaluate(()=>__mockupAudit.renderSettingsGui());
         const module=host.locator('[data-module-lore-module-toggle="synthetic-module"]');await module.check();
         await page.waitForTimeout(40);
         await host.locator('[data-reference-controls="modules"] .fold > summary').click();
         assert.ok(await page.evaluate(()=>__mockupAudit.Gui.state.runtime.selectedModuleLoreIds.includes('synthetic-module')),'module selection updates draft');await host.locator('[data-module-lore-entry-toggle="synthetic-lore"]').uncheck();assert.ok(await page.evaluate(()=>__mockupAudit.Gui.state.runtime.excludedModuleLoreIds.includes('synthetic-lore')),'individual lore exclusion updates actual runtime draft');
-        await host.getByRole('button',{name:'제외 관리…',exact:true}).click();
         await host.locator('[data-character-lore-exclude="synthetic-character-lore"]').check();await page.evaluate(()=>{__mockupAudit.Gui.characterLoreCatalogLoading=false;});
       }
       if(section==='source_edits'){
@@ -220,28 +218,28 @@ async function syntheticPortableEnvelope(){
         assert.ok(await host.locator('[data-source-input-preview]').count(),'actual source rules preview handler reachable');
       }
       if(section==='state'){
-        assert.equal(await host.locator('[data-recovery-kind]').count(),5,'five original recovery action kinds remain reachable');
-        for(const kind of ['state','correction','rebuild','receipt','micro']){
-          await host.locator(`[data-recovery-kind="${kind}"]`).click();
-          const recovery=page.locator(kind==='correction'?'#dlg-corr-life':'#dlg-recover');await recovery.waitFor();
-          assert.ok(await recovery.locator('.dialog').count(),'recovery uses original approved dialog body');
-          if(kind!=='correction'){
-            assert.ok(await recovery.locator('.cost-table').count(),'recovery cost and impact use original body');
-            assert.ok(!(await recovery.textContent()).includes('T120'),'recovery never mounts demo boundaries');
-          }
+        assert.equal(await host.locator('[data-recovery-kind]').count(),1,'one-stop check is the single recovery entry');
+        await host.locator('[data-recovery-kind="maintenance"]').click();
+        const maintenance=page.locator('#dlg-maintenance');await maintenance.locator('[data-maintenance-targets="ready"]').waitFor();
+        assert.ok(await maintenance.locator('[data-maintenance-copy-diagnostics]').count(),'diagnostics copy replaces the standalone server health card');
+        await maintenance.locator('[data-maintenance-close]').click();await maintenance.waitFor({state:'detached'});
+        for(const kind of ['receipt','micro']){
+          await page.evaluate(k=>{void __mockupAudit.openApprovedRecoveryDialog(k,{status:'publish_ready'});},kind);
+          const recovery=page.locator('#dlg-recover');await recovery.waitFor();
+          assert.ok(await recovery.locator('.cost-table').count(),'per-row recovery keeps the original approved body');
           await recovery.getByRole('button',{name:'닫기',exact:true}).click();await recovery.waitFor({state:'detached'});
         }
-        await host.locator('[data-recovery-kind="state"]').focus();
+        await host.locator('[data-recovery-kind="maintenance"]').focus();
         await page.evaluate(()=>{void __mockupAudit.confirmApprovedOperation('Synthetic operation only',{title:'Synthetic Confirmation',target:'synthetic-target'});});
         const confirmation=page.locator('#dlg-product-confirm');await confirmation.waitFor();
         await confirmation.evaluate(node=>{node.dataset.operationScope='different-synthetic-scope';});
         await confirmation.locator('[data-operation-confirm-execute]').click();
         assert.ok((await confirmation.locator('[data-operation-confirm-status]').innerText()).includes('바뀌었습니다'),'canonical confirmation blocks scope/target mismatch');
-        await page.keyboard.press('Shift+Tab');assert.ok(await confirmation.evaluate(node=>node.contains(document.activeElement)),'confirmation contains reverse Tab');await page.keyboard.press('Escape');await confirmation.waitFor({state:'detached'});assert.equal(await page.evaluate(()=>document.activeElement?.dataset.recoveryKind),'state','decline returns original focus');
+        await page.keyboard.press('Shift+Tab');assert.ok(await confirmation.evaluate(node=>node.contains(document.activeElement)),'confirmation contains reverse Tab');await page.keyboard.press('Escape');await confirmation.waitFor({state:'detached'});assert.equal(await page.evaluate(()=>document.activeElement?.dataset.recoveryKind),'maintenance','decline returns original focus');
         const guard=await page.evaluate(async()=>{try{await __mockupAudit.runStateReplayMaintenance({kind:'rebuild',scopeKey:'different-synthetic-scope',worldlineId:'main'});return '';}catch(error){return error.message;}});
         assert.match(guard,/STATE_MAINTENANCE_SCOPE_CHANGED/,'state maintenance blocks changed scope before mutation');
-        await host.locator('[data-state-replay-maintenance] .fold > summary').click();
-        assert.equal(await host.locator('[data-state-maintenance-field="throughTurn"]').count(),1,'committed five-turn rollback input preserved');
+        // The manual worldline switch / rollback panel was retired; the one-stop check releases rollback anchors.
+        assert.equal(await host.locator('[data-state-maintenance-field]').count(),0,'manual rollback input retired');
       }
       if(section==='transfer'){
         await host.getByRole('button',{name:'JSON 만들기',exact:true}).click();

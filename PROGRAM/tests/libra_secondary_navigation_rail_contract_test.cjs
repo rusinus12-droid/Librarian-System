@@ -82,8 +82,8 @@ const settingsPanel = between('const buildApprovedMockupSettingsPanel = (groupId
 assert.match(settingsPanel, /if\(sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel\(false,false\)/);
 assert.match(settingsPanel, /if\(sectionId==='logs'\)return buildSharedExecutionLogsPanel\(\)/);
 const analyzer = between('const buildLibrarianAnalyzerPanel =', 'const exportConfiguration =');
-assert.match(analyzer, /openApprovedPromptDialog\(\)/, 'prompt authoring opens the Lens Studio');
-assert.match(analyzer, /guiEl\('details',\{class:'fold'\}/, 'expert analyzer controls stay folded');
+assert.match(between('const buildApprovedMockupSettingsPanel = (groupId, sectionId) =>', 'const BOOK_EXTERNAL_SETTINGS_ITEMS'), /bindingRow\('lens'[\s\S]*openApprovedPromptDialog\(\)/, 'prompt authoring opens the Lens Studio from the lens binding');
+assert.match(analyzer, /text:'기억 분석 상세 설정'/, 'analyzer limits are one visible card instead of an extra fold layer');
 assert.doesNotMatch(analyzer, /이번 턴 적용 결과|id: 'injection'|buildLibraSgaPanel|buildPromptInjectionPanel/,
   'the analyzer route is authoring only and does not duplicate execution results');
 

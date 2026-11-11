@@ -12,7 +12,10 @@ for(const fn of ['buildLibrarianAnalyzerPanel','buildSharedExecutionLogsPanel','
 // The prompt dialog hosts the Lens Studio; the canonical prompt editor is retired (locked prompt).
 assert.match(extract(source,'openApprovedPromptDialog'),/renderLensStudio\(\)/,'the prompt dialog hosts the Lens Studio');assert.doesNotMatch(extract(source,'openApprovedPromptDialog'),/buildLibraPromptStudioPanel/,'the canonical prompt editor is not mounted');
 for(const forbidden of ['buildBookQuickInputWriterPanel','buildInputAssistSettingsPanel','buildMemoryPipelinePanel','buildGradiaDraftSettingsPanel','buildLibraResponseModeSettingsPanel'])assert.doesNotMatch(settings,new RegExp(forbidden+'\\('),'retired/duplicate workspace must not mount');
-assert.match(settings,/buildLibraClassicPanel\(\{compact:true\}\)/);
+// The per-turn delivery card was display-only in settings (the recall view keeps the evidence);
+// the memory section opens with the two switches a user may flip.
+assert.doesNotMatch(settings,/buildLibraClassicPanel\(/,'delivery card is not mounted in settings');
+assert.match(settings,/memoryOperationToggles:'true'/,'memory switches are visible at the top');
 assert.match(saveBar,/saveSettingsRoom/);assert.match(saveBar,/revertGuiStateFromStorage/);
 assert.match(literal(source,'LIBRA_APPROVED_MOCKUP_STYLE'),/\.btn--primary\{/,'save uses original approved button palette');
 for(const name of ['BOOK_PEOPLE_SECTIONS','BOOK_STORY_SECTIONS','BOOK_SETTINGS_WORKBENCH_SECTIONS'])assert.ok(source.includes(name),'retained compatibility section '+name);

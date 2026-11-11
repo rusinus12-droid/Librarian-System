@@ -40,7 +40,8 @@ assert.match(source, /const libraGuiNavigate = \(section, _tab = 'flow'\) => \{\
 // memory-only authority/lazy editing is retained, the old shared shell is retired.
 const approved=require('./helpers/libra_approved_gui_contract.cjs');
 const custom=approved.extract(source,'buildLibrarianAnalyzerPanel');
-assert.match(custom,/openApprovedPromptDialog\(\)/);
+// The lens studio entry moved to AI connection > feature bindings (lens row).
+assert.match(approved.extract(source,'buildApprovedMockupSettingsPanel'),/bindingRow\('lens'[\s\S]*openApprovedPromptDialog\(\)/,'the lens studio opens from the lens binding');
 assert.match(custom,/memoryStage:LIBRARIAN_STAGE_ID/);
 assert.doesNotMatch(custom,/이번 턴 적용 결과|id: 'injection'|renderPromptStudioOocBuilder/);
 const disclosure=approved.extract(source,'openApprovedPromptDialog');

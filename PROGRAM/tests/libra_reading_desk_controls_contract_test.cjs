@@ -41,7 +41,7 @@ assert.match(between('const bookSettingsRoomActiveSection =', 'const selectBookS
 const settingsPanel = between('const buildApprovedMockupSettingsPanel =', "if(sectionId==='logs')");
 assert.match(settingsPanel, /if\(sectionId==='pipeline'\)return buildLibrarianAnalyzerPanel\(/);
 const analyzer = between('const buildLibrarianAnalyzerPanel =', 'const exportConfiguration =');
-assert.match(analyzer, /openApprovedPromptDialog\(/, 'the memory analyzer opens the memory prompt studio');
+assert.match(between('const buildApprovedMockupSettingsPanel =', 'const BOOK_EXTERNAL_SETTINGS_ITEMS'), /bindingRow\('lens'[\s\S]*openApprovedPromptDialog\(/, 'the lens binding opens the memory prompt studio');
 assert.doesNotMatch(analyzer, /buildDraftWorkspacePanel\(/);
 assert.doesNotMatch(source, /buildDraftWorkspacePanel\(/);
 assert.match(source, /if\(sectionId==='state'\)return buildStateTrackingAvailabilityPanel\('settings'\)/,

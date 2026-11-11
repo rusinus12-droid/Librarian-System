@@ -29,7 +29,7 @@ assert.doesNotMatch(source, /const buildLibraRunsPanel\s*=/,
 
 // Domain cards require a source badge with the authority mapping fixed by the
 // plan, rather than the current two-state AI/user label.
-const worldManagerGui = between('const worldManagerSnapshotView =', 'const stateTrackingSettingsForGui =');
+const worldManagerGui = between('const worldManagerSnapshotView =', 'const operationalScopeKey =');
 assert.match(worldManagerGui, /const worldManagerSourceBadge\s*=/,
   'missing World Manager source-badge resolver');
 for (const label of ['사용자 교정', 'Character ito', 'World ito', 'Plot ito', 'Ariadne', '이전 데이터 이관', '출처 미확인']) {
