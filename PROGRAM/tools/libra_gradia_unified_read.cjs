@@ -65,10 +65,8 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
         const boundary = await options.boundary(payload);
         const record = { id: options.randomId(), operationId: 'select_' + options.randomId(), request: copy(payload), active: true, expires: now() + ttl, execution: null, receipt: null };
         const authority = {
-          bindGraph(graph) {
-            const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
-              nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
-              bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+          bindSelection(selection) {
+            const ownerCorpusDigest = options.fingerprint(JSON.stringify(selection));
             record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
             return record.receipt;
           },
@@ -104,11 +102,9 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
     try {
       record.boundary = await options.boundary(record.request); assertRecord(record);
       const authority = {
-        bindGraph(graph) {
+        bindSelection(selection) {
           assertRecord(record);
-          const ownerCorpusDigest = options.fingerprint(JSON.stringify({ frame: graph.readerFrame,
-            nodes: graph.nodes.map(row => [row.id, row.bindingId]), edges: graph.edges.map(row => [row.id, row.bindingId]),
-            bases: graph.bases.map(row => [row.id, row.bindingId]) }));
+          const ownerCorpusDigest = options.fingerprint(JSON.stringify(selection));
           record.receipt = Object.freeze({ ownerCorpusDigest, selectionReceiptId: record.id });
           return record.receipt;
         },
@@ -117,7 +113,7 @@ module.exports = function createLibraGradiaUnifiedRead(options = {}) {
       record.execution = await options.query(record.request, authority); await validate(record);
       const execution = record.execution, content = execution.packet.renderedText;
       if (execution.modelDispatchEligible !== true) fail('LIB_READ_UNIFIED_UNAVAILABLE');
-      const engine = { source: 'unified_engine', generation: execution.bundle.generation,
+      const engine = { source: 'unified_engine', servingEngine: execution.engine || 'state_first', generation: execution.bundle.generation,
         ...(execution.lensEvidence ? {lensEvidence:copy(execution.lensEvidence)} : {}),
         purpose: payload.proposal ? 'input_writer_proposal' : 'response_evidence',
         ...(payload.proposal ? { proposal: copy(payload.proposal) } : {}),

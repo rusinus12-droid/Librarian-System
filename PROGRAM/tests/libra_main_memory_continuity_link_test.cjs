@@ -13,7 +13,7 @@
 //
 // So the reference is the PAIR (complete cursor, tempFactId) -- the cursor from the shipped
 // `statePipelineCursorForRef`, combined with the fact id through the shipped
-// `evidenceLinkIndexFactKey` -- plus the successor's own declared link (`01` section 7.3
+// the scope-bound canonical fact key -- plus the successor's own declared link (`01` section 7.3
 // link kinds, stored on the canonical fact by T05). This suite measures all three claims:
 //
 //   (1) two DIFFERENT promises that share a subject, a name and even a temp numbering are

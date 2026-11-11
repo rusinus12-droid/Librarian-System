@@ -2,7 +2,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {serverFixture}=require('./fixtures/libra_server_runtime_fixture.cjs');
 const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
-const expose=s=>s.replace('    const stateDerivedWorldlineSuffix =',`    globalThis.__jobs={storage,run:withBackgroundReadJob,frames:memoryGraphReadFrames,
+const expose=s=>s.replace('    const stateDerivedWorldlineSuffix =',`    globalThis.__jobs={storage,run:withBackgroundReadJob,frames:nativeReadFrames,
   active:activeBackgroundReadFrames,clear:invalidateAllVerifiedReads,fresh:n=>{freshReadDepth=n;}};
     const stateDerivedWorldlineSuffix =`);
 const scope={scopeKey:'seventh-server-scope',characterId:'fixture',chatId:'fixture'};
@@ -70,7 +70,7 @@ test('native: exact bytes, additions, settings witness and concurrent fresh read
  assert.equal(c.active.size,0);
 });
 for(const mode of ['server_only','mirror'])test(`${mode}: repeating a real classified Micro reuses verified inventory without rewriting its revisions`,async t=>{
- const {fixture}=require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+ const {fixture}=require('./fixtures/libra_direct_memory_reader_fixture.cjs');
  const x=await fixture({mode});t.after(()=>x.cleanup());
  const inventories=()=>x.server.storedRows().filter(r=>/libra\.person_span_inventory(?:_head)?\.v1/.test(r.value?.schema||''));
  const before=JSON.stringify(inventories()),calls=x.f.control.calls.length;

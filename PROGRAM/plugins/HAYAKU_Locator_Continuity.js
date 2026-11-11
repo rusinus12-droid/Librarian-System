@@ -34454,6 +34454,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const MODEL_MEMORY_VIEW_LOCALES = Object.freeze({
     ko: Object.freeze({
       contextLead: '앞서 확립된 정황:',
+      contextUse: '(지금 입력과 장면에 닿는 것만 골라, 인물이 알고 기억하고 행동하는 방식과 이어지는 결과로 자연스럽게 반영한다. 그대로 되풀이하거나 요약하지 않고, 지금 필요 없는 것은 쓰지 않는다. 서로 다르면 나중 시점을 따르고, 기록에 없는 세부는 지어내지 않는다.)',
       pastFrame: value => `당시, ${value}`,
       lastKnownFrame: value => `마지막으로 확인된 당시, ${value}`,
       eventFrame: (time, value) => `${time} 무렵, ${value}`,
@@ -34479,6 +34480,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     en: Object.freeze({
       contextLead: 'What had already been established:',
+      contextUse: '(Draw only on what bears on the current input and scene, and let it show in what the characters know, remember and do and in consequences that carry forward. Do not restate or summarize it; leave what is not needed now unused. Where records differ, follow the later one, and do not invent details the records do not give.)',
       pastFrame: value => `At that time, ${value}`,
       lastKnownFrame: value => `When last confirmed, ${value}`,
       eventFrame: (time, value) => `Around ${time}, ${value}`,
@@ -34504,6 +34506,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     ja: Object.freeze({
       contextLead: 'これまでに明らかになったこと：',
+      contextUse: '（現在の入力と場面に関わるものだけを選び、登場人物が知り、覚え、行動するあり方と、その後に続く結果として自然に反映する。そのまま繰り返したり要約したりせず、今必要のないものは使わない。食い違う場合は後の時点に従い、記録にない細部は作らない。）',
       pastFrame: value => `当時、${value}`,
       lastKnownFrame: value => `最後に確かめられた時点では、${value}`,
       eventFrame: (time, value) => `${time}ごろ、${value}`,
@@ -34529,6 +34532,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     zh: Object.freeze({
       contextLead: '此前已经发生的事：',
+      contextUse: '（只取与当前输入和场景相关的内容，让它自然体现在人物所知、所记、所为以及延续下来的后果中。不要照搬或概述；眼下用不到的就不用。记录不一致时以较晚的为准，记录中没有的细节不要编造。）',
       pastFrame: value => `当时，${value}`,
       lastKnownFrame: value => `最后一次确认时，${value}`,
       eventFrame: (time, value) => `${time}前后，${value}`,
@@ -36103,6 +36107,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const append=value=>{body+=(body?'\n':'')+value;};
     if(structured.length){
       append(locale.contextLead);
+      // How to use the block, in the conversation's language; the records below stay in-world facts.
+      if(locale.contextUse)append(locale.contextUse);
       const hasDerived=structured.some(u=>effectiveHayakuRenderLane(u)===CONTINUITY_EVIDENCE_LANES.derivedSummaries);
       if(!hasDerived){
         append('');append(CONTINUITY_EVIDENCE_LANE_HEADERS[CONTINUITY_EVIDENCE_LANES.derivedSummaries]);
@@ -36920,19 +36926,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       [staticWrite, healthRepairHint, runtimeSkeletonInstruction, terminalSeal],
       cap
     );
-    const policySignals = objectish(baseRecallPolicy?.signals) ? baseRecallPolicy.signals : {};
-    const broadSecondaryEvidenceHint = policySignals.packetRecoveryActive === true
-      || policySignals.timelineIntent === true
-      || policySignals.explicitComplexIntent === true;
     const presetKey = hayakuRecallPresetOf(settings);
     const preset = HAYAKU_RECALL_PRESETS[presetKey];
     const targetBudget = Number(preset?.targetBudgetChars) || RECALL_DATA_BUDGETS.standard;
     const tierSequence = recallCapProvided
       ? [{ tier: 'explicit', targetChars: recallBudgetRequestedChars }]
       : [
-          { tier: 'standard', targetChars: Math.max(RECALL_DATA_BUDGETS.standard, Math.floor(targetBudget * 0.45)) },
-          { tier: 'precision', targetChars: Math.max(RECALL_DATA_BUDGETS.precision, Math.floor(targetBudget * 0.75)) },
-          { tier: 'extended', targetChars: Math.max(RECALL_DATA_BUDGETS.extended, targetBudget) }
+          // The chosen preset is the ceiling of every step: a small preset is never widened
+          // past its own budget, and a large one can be filled when evidence was selected for it.
+          { tier: 'standard', targetChars: Math.min(targetBudget, Math.max(RECALL_DATA_BUDGETS.standard, Math.floor(targetBudget * 0.45))) },
+          { tier: 'precision', targetChars: Math.min(targetBudget, Math.max(RECALL_DATA_BUDGETS.precision, Math.floor(targetBudget * 0.75))) },
+          { tier: 'extended', targetChars: targetBudget }
         ];
     let memoryBudgetChars = 0;
     let memoryContextResult = emptyPacketCoreMemoryResult(selectedRowKeys);
@@ -36998,17 +37002,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       };
       if (recallCapProvided) break;
       if (tier.tier === 'standard') {
-        // Normal narrative input remains at 3k unless evidence selected by the
-        // retrieval engine actually fails to fit. Optional leftovers never expand.
-        if (!pressure.needsPrecisionExpansion || appliedCap < tier.targetChars) break;
+        // The first step is a probe. Any evidence the retrieval engine selected that
+        // did not fit moves to the next step, up to the preset budget.
+        if (!(pressure.totalDroppedCount > 0) || appliedCap < tier.targetChars) break;
         continue;
       }
       if (tier.tier === 'precision') {
-        // 6k is exceptional: hard required evidence still does not fit, or broad
-        // timeline/recovery evidence remains important after the 4.5k pass.
-        const needsExtended = pressure.hardDroppedCount > 0
-          || (pressure.importantDroppedCount > 0 && broadSecondaryEvidenceHint);
-        if (!needsExtended || appliedCap < tier.targetChars) break;
+        if (!(pressure.totalDroppedCount > 0) || appliedCap < tier.targetChars) break;
         continue;
       }
       break;
@@ -49818,6 +49818,7 @@ const MemorySuiteHealthRecovery = (() => {
 
   /* GRADIA PLUGIN READ START */
 function createGradiaReadPrimitives() {
+const fingerprint = (function createLibraMemoryFingerprint() {
   const utf8Bytes = value => {
     const text = String(value || '');
     if (typeof TextEncoder === 'function') return new TextEncoder().encode(text);
@@ -49894,8 +49895,9 @@ function createGradiaReadPrimitives() {
     }
     return [h0,h1,h2,h3,h4,h5,h6,h7].map(word => word.toString(16).padStart(8, '0')).join('');
   };
-
-return {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};
+  return sha256Hex;
+})();
+return {fingerprint, byteLength: value => new TextEncoder().encode(String(value)).length};
 }
 const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const schema = 'memory-suite.gradia-plugin-read.v1';

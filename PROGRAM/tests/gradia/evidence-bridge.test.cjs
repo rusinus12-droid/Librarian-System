@@ -29,7 +29,8 @@ async function fixture(opts={}){
   assert.match(url,opts.expectedUrl||/^https:\/\/offline\.invalid\//);const body=JSON.parse(init.body);prompts.push(body);await opts.onModel?.(prompts.length,body,init);
   const system=body.messages?.filter(m=>m.role==='system').map(m=>m.content).join('\n')||'';
   const user=body.messages?.find(m=>m.role==='user')?.content||'';
-  let content=system.includes('patch JSON')||system.includes('serial RP draft analysis-and-patch agent')?JSON.stringify({schema:'serial_gradation_agents_for_rp_draft_patch_v1',stage:(system.match(/Return the compact (aide_\w+) patch JSON/)||[])[1],ok:true,domain:{},analysis:{summary:'No changes necessary',constraints:[],risks:[]},edits:[]}):system.includes('Run shadow_act analysis now')||system.includes('Run aide_')?JSON.stringify({schema:'serial_gradation_agents_for_rp_analysis_v4',stage:(system.match(/Run (\w+) analysis now/)||[])[1],ok:true,analysis:{summary:'Preserve the scene',constraints:['Preserve door'],risks:[]},domain:{continuity:'The archivist waits.',story_author_plan:{scene_purpose:'Continue the scene',beats:Array.from({length:24},(_,i)=>'Beat '+i)},director_brief:{required_outcomes:['Keep current scene']}},rewrite_directives:['Continue the current scene.']}):'DERIVED_DRAFT_SENTINEL The archivist rested one hand on the door. “Come in,” he said. The lamplight spread over the quiet room, and the clock continued its measured ticking.';
+  const compactAnalysis=system.includes('Repair a failed mandatory private RP analysis response from the compact evidence only.');
+  let content=system.includes('patch JSON')||system.includes('serial RP draft analysis-and-patch agent')?JSON.stringify({schema:'serial_gradation_agents_for_rp_draft_patch_v1',stage:(system.match(/Return the compact (aide_\w+) patch JSON/)||[])[1],ok:true,domain:{},analysis:{summary:'No changes necessary',constraints:[],risks:[]},edits:[]}):system.includes('Run shadow_act analysis now')||system.includes('Run aide_')||compactAnalysis?JSON.stringify({schema:'serial_gradation_agents_for_rp_analysis_v4',stage:(system.match(/Run (\w+) analysis now/)||user.match(/STAGE: (\w+)/)||[])[1],ok:true,analysis:{summary:'Preserve the scene',constraints:['Preserve door'],risks:[]},domain:{continuity:'The archivist waits.',story_author_plan:{scene_purpose:'Continue the scene',beats:Array.from({length:24},(_,i)=>'Beat '+i)},director_brief:{required_outcomes:['Keep current scene']}},rewrite_directives:['Continue the current scene.']}):'DERIVED_DRAFT_SENTINEL The archivist rested one hand on the door. “Come in,” he said. The lamplight spread over the quiet room, and the clock continued its measured ticking.';
   if(opts.modelContent)content=opts.modelContent(prompts.length,body,content);
   const finish=opts.finish?.(prompts.length,body)||'stop';
   return {ok:true,status:200,json:async()=>({choices:[{message:{content},finish_reason:finish}]}),text:async()=>{await opts.onBody?.();return JSON.stringify({choices:[{message:{content},finish_reason:finish}]})}};}}});
@@ -53,6 +54,23 @@ test('actual pipeline opens one evidence read and places bounded evidence into a
 });
 module.exports={fixture,messages,instrument};
 
+for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true])test(`anatomical feasibility remains mandatory with evidence (${mode}, Bianca ${bianca})`,async()=>{
+ const f=await fixture({mode});Object.assign(f.settings,{biancaInject:bianca,nsfwMode:'off',nsfwGuidanceEnabled:false});
+ const r=await f.run();try{
+  assert.equal(r.ok,true);assert.equal(r.externalEvidence,true);assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,mode==='heavyweight'?8:4,'no additional analysis or provider call');
+  for(const [index,body] of f.prompts.entries()){
+   const text=JSON.stringify(body);
+   assert.equal(text.split('ANATOMICAL AND SPATIAL FEASIBILITY — HARD CONDITION:').length-1,1,'call '+index);
+   assert.ok(text.includes('a second hand cannot enter while the first remains there'));
+   assert.ok(text.includes('EVIDENCE_SENTINEL'),'memory evidence remains bound');
+  }
+  assert.ok(r.injection.includes('ANATOMICAL FEASIBILITY — PRESERVE REPAIRS'),'the final handoff preserves physical repairs');
+  await r.finalizeHandoff();
+ }finally{r.closeEvidence();}
+ assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+});
+
 test('heavyweight uses eight actual analysis/draft/patch calls sharing one immutable packet',async()=>{
  const f=await fixture({mode:'heavyweight'});const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,8);assert.equal(f.recalls,1);for(const p of f.prompts)assert.equal(JSON.stringify(p).split('EVIDENCE_SENTINEL').length-1,1);r.closeEvidence();
 });
@@ -61,6 +79,22 @@ test('post-model currentness loss cannot escape through soft last-safe fallback'
 });
 test('runtime and storage never retain evidence or derived draft content during or after success',async()=>{
  let f;f=await fixture({onModel:()=>{const state=JSON.stringify(f.host.plugin.getRuntime());assert.ok(!state.includes('EVIDENCE_SENTINEL'));assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));}});const r=await f.run();await r.finalizeHandoff();r.closeEvidence();const state=JSON.stringify(f.host.plugin.getRuntime());assert.ok(!state.includes('EVIDENCE_SENTINEL'));assert.ok(!state.includes('DERIVED_DRAFT_SENTINEL'));assert.ok(!JSON.stringify([...f.host.store]).includes('EVIDENCE_SENTINEL'));
+});
+test('actual evidence pipelines retain all four detailed results for the UI after handoff cleanup',async()=>{
+ for(const mode of ['lightweight','heavyweight']){
+  const f=await fixture({mode,transform:source=>source.replace("    async debugNavigateGui(section = 'overview', tab = 'flow') {",
+   "    __testTraceFor: stage => latestTraceForStage(stage),\n    __testDisplayRuntime: () => runtimeForDisplay(),\n    async debugNavigateGui(section = 'overview', tab = 'flow') {")});
+  const r=await f.run();assert.equal(r.ok,true);await r.finalizeHandoff();r.closeEvidence();
+  for(const stage of ['shadow_act','aide_character','aide_world','aide_plot']){
+   const trace=f.host.plugin.__testTraceFor(stage);assert.ok(trace,stage);assert.equal(trace.archived,true,stage);
+   assert.match(trace.parsed.draft.rp_text,/DERIVED_DRAFT_SENTINEL/,stage);
+   assert.ok(trace.materialsUsed,stage);assert.equal(trace.model,'offline-fake');
+   assert.equal(trace.systemPrompt,undefined);assert.equal(trace.rawResponse,undefined);
+   if(stage!=='shadow_act')assert.ok(trace.parsed.analysis.summary,stage);
+  }
+  for(const snapshot of [f.host.plugin.getRuntime(),f.host.plugin.__testDisplayRuntime()])assert.doesNotMatch(JSON.stringify(snapshot),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+  assert.doesNotMatch(JSON.stringify([...f.host.store]),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+ }
 });
 test('host retry and imported checkpoint evidence are rejected without running models',async()=>{
  const f=await fixture();const r=await f.run();r.closeEvidence();const input=[...messages(),{role:'system',content:r.injection}];await assert.rejects(()=>f.host.hooks.beforeRequest(input,'model'),e=>e.code==='LIB_READ_RETRY_DISABLED');assert.equal(f.prompts.length,4);
@@ -495,15 +529,118 @@ test('plugin mode: a stalled stage request times out and is resent once by the t
  const start=Date.now();const r=await f.run();assert.equal(r.ok,true);assert.ok(Date.now()-start<10000);assert.equal(f.prompts.length,5);
  assert.ok(!JSON.stringify(f.prompts).includes('EVIDENCE_SENTINEL'));
 });
-test('an evidence response that claims stop but is truncated is not retried',async()=>{
- const f=await fixture({mode:'heavyweight',modelContent:(n,body,content)=>n===1?content.slice(0,40):content});f.settings.failureMode='soft';
- await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');assert.equal(f.prompts.length,1);
+test('a truncated SHADOW analysis recovers once before drafting and retains response diagnostics',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n===1?content.slice(0,40):content});
+ const r=await f.run();
+ try {
+  assert.equal(r.ok,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,9);
+  assert.ok(compactAnalysisBody(f.prompts[1]));
+  assert.equal(JSON.stringify(f.prompts[1]).split('EVIDENCE_SENTINEL').length-1,1);
+ } finally { r.closeEvidence(); }
+ const [initial,retry]=f.host.plugin.getRuntime().callTelemetry.attempts;
+ assert.equal(initial.finishReason,'stop');
+ assert.equal(initial.outputChars,40);
+ assert.ok(initial.incompleteReason);
+ assert.equal(retry.retryKind,'analysis_compact');
 });
-test('an unusable evidence AIDE response keeps the previous draft without a resend',async()=>{
+test('a failed SHADOW recovery stops before draft and AIDE dispatch',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(n,_body,content)=>n<=2?content.slice(0,40):content});
+ f.settings.failureMode='soft';
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_DRAFT_UNAVAILABLE');
+ assert.equal(f.prompts.length,2);
+});
+test('a truncated lightweight SHADOW draft still stops without a resend',async()=>{
+ const f=await fixture({mode:'lightweight',finish:()=> 'length',modelContent:()=>''});
+ await assert.rejects(()=>f.run(),e=>e.code==='LIB_READ_MODEL_INCOMPLETE');
+ assert.equal(f.prompts.length,1);
+});
+test('an unusable evidence AIDE patch keeps the previous draft without a resend',async()=>{
  for(const mode of ['lightweight','heavyweight'])for(const broken of [content=>content.slice(0,40),()=>'{broken patch',()=>'{"unrelated":true}']){
-  const target=mode==='heavyweight'?3:2;
+  const target=mode==='heavyweight'?4:2;
   const f=await fixture({mode,modelContent:(n,body,content)=>n===target?broken(content):content});f.settings.failureMode='soft';
-  const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,mode==='heavyweight'?7:4);
+  const r=await f.run();assert.equal(r.ok,true);assert.equal(f.prompts.length,mode==='heavyweight'?8:4);
   assert.match(r.injection,/DERIVED_DRAFT_SENTINEL/);assert.equal(f.recalls,1);r.closeEvidence();
  }
+});
+
+const compactAnalysisBody=body=>body.messages.some(m=>typeof m.content==='string'&&m.content.includes('Repair a failed mandatory private RP analysis response from the compact evidence only.'));
+const primaryAideAnalysis=body=>body.messages.some(m=>typeof m.content==='string'&&/Run aide_\w+ analysis now/.test(m.content));
+
+test('an owner that becomes available after startup can answer before status refresh finishes',async()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../../plugins/GRADIA.js'),'utf8');
+ const start=source.indexOf('  const libOwnerAbsentUntil = ');
+ const end=source.indexOf('\n  const LibReadConsumer =',start);
+ assert.ok(start>=0 && end>start);
+ let calls=0, refreshes=0;
+ const select=require('node:vm').runInNewContext(source.slice(start,end)+'\nselectLibOwnerRecall',{
+  libOwnerReader:()=>({select:async()=>++calls===1
+   ? {absent:true,code:'LIB_READ_SCOPE_UNAVAILABLE'} : {content:'ready'}}),
+  LibReadConnection:{
+   status:()=>({unavailable:{flashback:'LIB_READ_OWNER_UNAVAILABLE'}}),
+   refreshOwners:()=>{refreshes++;return new Promise(()=>{});}
+  }
+ });
+ const scope={chatId:'chat-1'};
+ assert.equal((await select('flashback',scope,'query')).code,'LIB_READ_SCOPE_UNAVAILABLE');
+ assert.equal((await select('flashback',scope,'query')).content,'ready');
+ assert.equal(refreshes,1);
+});
+
+test('truncated world and plot mandatory analyses recover independently after SHADOW length expansion',async()=>{
+ const f=await fixture({mode:'heavyweight',transform:source=>source.replace('const publicApi = Object.freeze({','const publicApi = Object.freeze({ __testTelemetry:()=>Runtime.callTelemetry,'),finish:n=>n===1?'length':'stop',modelContent:(n,body,content)=>
+  n===1||body.messages.some(m=>typeof m.content==='string'&&/Run aide_(world|plot) analysis now/.test(m.content))?content.slice(0,40):content});
+ f.settings.presets.offline.max_tokens=8192;
+ const r=await f.run();try{
+  assert.equal(r.ok,true);assert.equal(f.recalls,1);assert.equal(f.prompts.length,11);
+  for(const stage of ['aide_world','aide_plot'])assert.equal(r.stages.find(s=>s.stage===stage).fallback,false,stage);
+  const compact=f.prompts.filter(compactAnalysisBody);assert.equal(compact.length,2);
+  for(const body of compact){const serialized=JSON.stringify(body);assert.equal(serialized.split('EVIDENCE_SENTINEL').length-1,1);assert.match(serialized,/ANATOMICAL AND SPATIAL FEASIBILITY/);}
+  const telemetry=f.host.plugin.__testTelemetry();
+  assert.equal(telemetry.attempts.filter(a=>a.retryKind==='analysis_compact').length,2);
+  assert.equal(telemetry.recoveryLogicalCalls,2);assert.equal(telemetry.retryAttempts,3);
+  await r.finalizeHandoff();
+ }finally{r.closeEvidence();}
+ assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+ assert.doesNotMatch(JSON.stringify([...f.host.store]),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
+});
+
+test('each reported-length AIDE analysis gets one compact recovery at the preset output ceiling',async()=>{
+ const f=await fixture({mode:'heavyweight',finish:(_n,body)=>primaryAideAnalysis(body)?'length':'stop',
+  modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
+ const r=await f.run();try{
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,11);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  for(const body of f.prompts.filter(compactAnalysisBody))assert.ok((body.max_tokens??body.max_completion_tokens)<=f.settings.presets.offline.max_tokens);
+  for(const stage of r.stages)assert.notEqual(stage.fallback,true,stage.stage);
+ }finally{r.closeEvidence();}
+});
+
+test('a complete but invalid mandatory analysis contract is regenerated before the AIDE patch',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(_n,body,content)=>primaryAideAnalysis(body)?'{"unrelated":true}':content});
+ const r=await f.run();try{
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,11);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  for(const stage of r.stages)assert.notEqual(stage.fallback,true,stage.stage);
+ }finally{r.closeEvidence();}
+});
+
+test('a failed compact analysis falls back once with the provider cause rather than repair-disabled',async()=>{
+ const f=await fixture({mode:'heavyweight',modelContent:(_n,body,content)=>primaryAideAnalysis(body)||compactAnalysisBody(body)?content.slice(0,40):content});
+ f.settings.failureMode='soft';const r=await f.run();try{
+  assert.equal(r.ok,true);assert.equal(f.prompts.length,8);assert.equal(f.prompts.filter(compactAnalysisBody).length,3);
+  for(const stage of r.stages.filter(s=>s.stage!=='shadow_act')){
+   assert.equal(stage.fallback,true);assert.equal(stage.reason,'mandatory_analysis_request_failed:evidence_model_incomplete');
+   assert.equal(stage.model,'offline-fake');
+  }
+  assert.match(r.injection,/DERIVED_DRAFT_SENTINEL/);
+ }finally{r.closeEvidence();}
+});
+
+test('owner invalidation during a compact mandatory analysis prevents patch and final handoff',async()=>{
+ let valid=true;
+ const f=await fixture({mode:'heavyweight',current:()=>valid,onModel:(_n,body)=>{if(compactAnalysisBody(body))valid=false;},
+  modelContent:(_n,body,content)=>primaryAideAnalysis(body)?content.slice(0,40):content});
+ f.settings.failureMode='soft';await assert.rejects(()=>f.run(),e=>/^LIB_READ_/.test(e.code));
+ assert.equal(f.prompts.length,4);assert.equal(f.recalls,1);
+ assert.doesNotMatch(JSON.stringify(f.host.plugin.getRuntime()),/EVIDENCE_SENTINEL|DERIVED_DRAFT_SENTINEL/);
 });

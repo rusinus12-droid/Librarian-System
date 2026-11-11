@@ -52,5 +52,23 @@ module.exports = function createLibraRecallTokenizer() {
     }
     return tokens;
   };
+  // Same vocabulary as bm25Tokens, but repeated terms keep their count.
+  legacy.bm25TermFrequency = value => {
+    const { lexicalWords, hangulRuns, hangulGrams, cjkGrams } = partsFor(value);
+    const tf = new Map();
+    let length = 0;
+    const add = term => { if (length < 1600) { tf.set(term, (tf.get(term) || 0) + 1); length += 1; } };
+    for (const word of lexicalWords) {
+      add('w:' + word);
+      if (/[가-힣]/u.test(word)) {
+        const stem = word.replace(koreanParticle, '');
+        if (stem && stem !== word) add('w:' + stem);
+      }
+    }
+    for (const run of hangulRuns) if (run.length === 1) add('w:' + run);
+    for (const gram of hangulGrams) add('g:' + gram);
+    for (const gram of cjkGrams) add('c:' + gram);
+    return { tf, length };
+  };
   return legacy;
 };

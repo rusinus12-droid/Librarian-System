@@ -48,7 +48,7 @@ const QUERY = '도서관의 정숙 규칙을 고려해서 이어줘.';
 // The unified Classic renderer (9c03c35, "Replace LIBRA legacy retrieval with the unified memory
 // engine") appends Live Tail under this header and labels each evidence row `(n) [family:role]`.
 const DIALOGUE_MARK = '[RECENT COMPLETED DIALOGUE]';
-const MICRO_MARK = /^\(\d+\) \[micro\] /m;
+const MICRO_MARK = /^\[SCENE DETAILS\]\n\[@T\d+(?: \| [^\]]+)?\]\n- /m;
 
 const measure = async (mode, combo) => {
   let listener;

@@ -103,6 +103,49 @@ test('a refusal that survives every stage is never injected',async()=>{
  assert.equal(result.injection,'');assert.equal(f.prompts.length,4);
  result.closeEvidence();
 });
+const LONG_SCENE='The archivist walked the length of the cabinet hall and counted the drawers. '.repeat(80);
+const SHORT_SCENE='The archivist opened the cabinet and found the blue ledger. '.repeat(30);
+test('the AIDE patch call is sized for a whole-draft replacement, not just a few edits',async()=>{
+ const patchBodies=f=>f.prompts.filter(body=>body.messages.some(row=>row.role==='system'&&/Return the compact aide_\w+ patch JSON/.test(String(row.content||''))));
+ const budgetOf=body=>body.max_tokens??body.max_completion_tokens;
+ for(const mode of ['lightweight','heavyweight']){
+  const draftCall=mode==='heavyweight'?2:1;
+  // 초안이 프리셋 상한보다 크면 상한까지 올라간다(예전에는 편집용 1,800에 묶여 있었다).
+  const long=await fixture({server:true,unbound:true,mode,modelContent:(n,body,normal)=>n===draftCall?LONG_SCENE:normal});
+  const longRun=await long.run();assert.equal(longRun.ok,true,String(longRun.reason));
+  const longPatches=patchBodies(long);assert.equal(longPatches.length,3);
+  for(const body of longPatches)assert.equal(budgetOf(body),long.settings.presets.offline.max_tokens,`${mode} long draft budget`);
+  longRun.closeEvidence();
+  // 초안이 작으면 초안 크기에 맞춰 늘어난다(1,800 초과, 상한 미만).
+  const short=await fixture({server:true,unbound:true,mode,modelContent:(n,body,normal)=>n===draftCall?SHORT_SCENE:normal});
+  const shortRun=await short.run();assert.equal(shortRun.ok,true);
+  const shortPatches=patchBodies(short);assert.equal(shortPatches.length,3);
+  const shortBudget=budgetOf(shortPatches[0]);
+  assert.ok(shortBudget>1800&&shortBudget<short.settings.presets.offline.max_tokens,`${mode} short draft budget ${shortBudget}`);
+  for(const body of shortPatches)assert.equal(budgetOf(body),shortBudget);
+  shortRun.closeEvidence();
+ }
+});
+test('lightweight names the unusable class in the same call it must recover in',async()=>{
+ const line='This mode has no separate analysis call';
+ const collect=async mode=>{
+  const f=await fixture({server:true,unbound:true,mode,modelContent:(n,body,normal)=>normal});
+  const result=await f.run();assert.equal(result.ok,true);
+  const systems=f.prompts.map(body=>body.messages.filter(row=>row.role==='system').map(row=>String(row.content||'')).join('\n'));
+  result.closeEvidence();
+  return {systems,patch:systems.filter(system=>/Return the compact aide_\w+ patch JSON/.test(system))};
+ };
+ const light=await collect('lightweight');
+ assert.equal(light.patch.length,3);
+ for(const system of light.patch){
+  assert.ok(system.includes(line));
+  assert.ok(system.includes('name the unusable class, the required scene beats, and the ending boundary'));
+ }
+ const heavy=await collect('heavyweight');
+ assert.equal(heavy.patch.length,3);
+ for(const system of heavy.patch)assert.ok(!system.includes(line));
+ assert.equal(heavy.systems.filter(system=>system.includes('name the unusable class, the required scene beats')).length,3);
+});
 test('non-text full replacement is rejected by normalization rather than stringified',async()=>{
  const f=await unit(),value=envelope('aide_plot',f.document.sourceHash);value.edits[0].content={text:SCENE};
  assert.equal(f.normalize(value),null);

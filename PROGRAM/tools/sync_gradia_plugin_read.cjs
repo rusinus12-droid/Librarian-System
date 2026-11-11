@@ -57,9 +57,8 @@ function adapter(owner) {
   text = text.replace(/module\.exports = [^;]+;\s*$/, 'return createReadSession;');
   return 'function create' + (owner === 'hayaku' ? 'Hayaku' : 'Flashback') + 'PluginReadSession(primitives) {\n' + text + '\n}';
 }
-const network = fs.readFileSync(path.join(__dirname, 'libra_memory_network.cjs'), 'utf8');
-const primitives = 'function createGradiaReadPrimitives() {\n' + network.slice(network.indexOf('  const utf8Bytes'), network.indexOf('  const array ='))
-  + '\nreturn {fingerprint: sha256Hex, byteLength: value => utf8Bytes(value).length};\n}';
+const fingerprintFactory = require('./libra_memory_fingerprint.cjs');
+const primitives = 'function createGradiaReadPrimitives() {\nconst fingerprint = (' + fingerprintFactory.toString() + ')();\nreturn {fingerprint, byteLength: value => new TextEncoder().encode(String(value)).length};\n}';
 const protocol = 'const createGradiaPluginRead = (' + require('./gradia_plugin_read.cjs').toString() + ');';
 const snapshot = 'const createGradiaPluginSnapshot = (' + require('./gradia_plugin_snapshot.cjs').toString() + ');';
 const begin = '  /* GRADIA PLUGIN READ START */', end = '  /* GRADIA PLUGIN READ END */';

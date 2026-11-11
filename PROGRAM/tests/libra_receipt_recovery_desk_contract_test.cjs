@@ -158,6 +158,7 @@ function deskContext(api={}){
   const dialogs=[];
   const c=vm.createContext({guiEl:el,Gui:{visible:true,bookPage:'desk',receiptDesk:null},dialogs,
     openApprovedRecoveryDialog:async(kind,row)=>{dialogs.push({kind,row});return true;},
+    showLibraSourceReanalysisDrawer:async options=>{dialogs.push({kind:'source',options});return true;},
     LibraMemoryCore:{peekSnapshot:()=>current,state:{worldManagerRuntimeMetaGeneration:0},
       getReceiptRecoveryStatus:async()=>({scopeKey:current.scope.scopeKey,receiptStages:[],microJobs:[]}),...api},
     buildBookHostLineagePanel:()=>el('div'),buildBookMemoryProgressPanel:()=>el('div'),
@@ -245,7 +246,7 @@ test('result-ready publication repair card clicks a model-free action and joins 
   assert.equal(c.dialogs[0].kind,'micro');assert.equal(c.dialogs[0].row,row);
   assert.equal(repairs+retries,0,'opening the dialog alone cannot dispatch recovery');
   const dialog=sourceBetween('const openApprovedRecoveryDialog =','const recoveryRowIdentity =');
-  assert.match(dialog,/same\.status==='publish_ready'\?'micro_publish':'micro_retry'/,
+  assert.match(dialog,/kind==='receipt'\?'receipt':'micro_publish'/,
     'dialog dispatches publish_ready rows to the model-free publication repair');
   assert.match(dialog,/await runBookReceiptRecoveryAction\(action,same\)/);
   void c.runBookReceiptRecoveryAction('micro_publish',row);await tick();
@@ -297,22 +298,22 @@ test('persistent status read failure waits for bounded timer instead of render r
   assert.equal(reads,2,'one bounded automatic retry after ten seconds');
   assert.equal(timers.filter(timer=>!timer.cancelled&&!timer.fired).length,1);
 });
-test('double click joins one retry, disables its button, and rejects an old-scope click',async()=>{
-  let resolve,calls=0;
-  const wait=new Promise(r=>resolve=r),row={scopeKey:'scope-A',turn:1,status:'unknown',
+test('missing Micro work opens the selected turn for source review and rejects an old-scope click',async()=>{
+  let calls=0;
+  const row={scopeKey:'scope-A',turn:1,status:'unknown',reason:'micro_work_missing',
     receiptRef:'r1',revisionId:'v1',sourceDigest:'d1'};
   const {c,current}=deskContext({getReceiptRecoveryStatus:async()=>({scopeKey:current.scope.scopeKey,
-    receiptStages:[],microJobs:[row]}),retryMicroAnalysis:async()=>{calls++;return wait;}});
+    receiptStages:[],microJobs:[row]}),retryMicroAnalysis:async()=>{calls++;}});
   await c.loadBookReceiptRecoveryStatus();
-  const one=c.runBookReceiptRecoveryAction('micro_retry',row);
-  const two=c.runBookReceiptRecoveryAction('micro_retry',row);
-  assert.equal(one,two);assert.equal(calls,1);
-  const button=flat(c.buildBookDeskPanel()).find(n=>n.text==='분석 진행 중');
-  assert.equal(button?.disabled,true);
-  resolve({status:'verified'});await one;
+  const button=flat(c.buildBookDeskPanel()).find(n=>n.text==='Micro 분석 다시 시도');
+  button.onClick();await tick();
+  assert.equal(c.dialogs[0].kind,'source');
+  assert.equal(c.dialogs[0].options.startTurn,1);
+  assert.equal(c.dialogs[0].options.endTurn,1);
+  assert.equal(calls,0);
   current.scope={scopeKey:'scope-B',characterId:'char-B',chatId:'chat-B'};
-  await c.runBookReceiptRecoveryAction('micro_retry',row);
-  assert.equal(calls,1,'old scope card cannot submit in a new chat');
+  await c.runBookReceiptRecoveryAction('micro_reanalyze',row);
+  assert.equal(c.dialogs.length,1,'old scope card cannot submit in a new chat');
 });
 test('late status from an old scope is never adopted by the new desk',async()=>{
   let resolve;
@@ -326,14 +327,14 @@ test('late status from an old scope is never adopted by the new desk',async()=>{
   assert.equal(c.Gui.receiptDesk.scopeKey,'scope-B');
   assert.equal(c.Gui.receiptDesk.status,null);
 });
-test('late retry result from an old scope is not shown in the new desk',async()=>{
+test('late publication repair result from an old scope is not shown in the new desk',async()=>{
   let resolve,calls=0;
-  const wait=new Promise(r=>resolve=r),row={scopeKey:'scope-A',turn:1,status:'failed',
+  const wait=new Promise(r=>resolve=r),row={scopeKey:'scope-A',turn:1,status:'publish_ready',
     receiptRef:'r1',revisionId:'v1',sourceDigest:'d1'};
   const {c,current}=deskContext({getReceiptRecoveryStatus:async()=>({scopeKey:current.scope.scopeKey,
-    receiptStages:[],microJobs:[row]}),retryMicroAnalysis:async()=>{calls++;return wait;}});
+    receiptStages:[],microJobs:[row]}),repairMicroPublication:async()=>{calls++;return wait;}});
   await c.loadBookReceiptRecoveryStatus();
-  const task=c.runBookReceiptRecoveryAction('micro_retry',row);
+  const task=c.runBookReceiptRecoveryAction('micro_publish',row);
   current.scope={scopeKey:'scope-B',characterId:'char-B',chatId:'chat-B'};
   c.bookReceiptRecoveryState();resolve({status:'verified'});await task;
   assert.equal(calls,1);assert.equal(c.Gui.receiptDesk.scopeKey,'scope-B');

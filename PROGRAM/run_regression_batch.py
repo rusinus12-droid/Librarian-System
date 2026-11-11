@@ -388,7 +388,6 @@ TEST_TIMEOUT_SECONDS = {
     'distribution_builder_failure_runtime_test.cjs': 300,
     # 90s RECALL_REQUEST_BUDGET_MS watchdog + 30-turn 1024-d local embedding suites
     # naturally exceed the 60s default while preserving all internal test deadlines.
-    'libra_memory_graph_local_gc_semantic_runtime_test.cjs': 180,
     'libra_micro_vector_ranking_runtime_test.cjs': 180,
     'libra_consumed_micro_freshness_runtime_test.cjs': 180,
     'libra_response_context_v1_test.cjs': 180,

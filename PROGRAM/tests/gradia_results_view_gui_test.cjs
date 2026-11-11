@@ -5,7 +5,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {gradia,sleep}=require('./fixtures/companion_gui_fixture.cjs');
 
 const expose=source=>source.replace('    async debugNavigateGui(section = \'overview\', tab = \'flow\') {',
-  '    __testRuntime: Runtime, __testSetLibSelection: value => { libReadSelection = value; },\n    async debugNavigateGui(section = \'overview\', tab = \'flow\') {');
+  '    __testRuntime: Runtime,\n    async debugNavigateGui(section = \'overview\', tab = \'flow\') {');
 
 test('results page renders readable draft, grouped materials, memory owners and AIDE edits',async()=>{
  const f=await gradia({transformSource:expose});
@@ -25,9 +25,9 @@ test('results page renders readable draft, grouped materials, memory owners and 
     patchMeta:{requestedEdits:1,appliedEdits:1,blockCountBefore:71,blockCountAfter:72},draft:{rp_text:draft+'\n\n모에는 대답하지 않았다.'}}}
   ];
   R.finalDraftMeta={externalEvidence:true,libReadStatus:'ready'};
-  f.plugin.__testSetLibSelection({selectedItems:2,items:[
-   {owner:'libra',source:'canonical',key:'mem_26',chars:120,preview:'T26–30 라운지 소동 정본'},
-   {owner:'hayaku',source:'packet',key:'t31',chars:80,preview:'모에 손목 소매'}]});
+  R.lastMemoryRecall={owners:[
+   {owner:'libra',status:'ok',chars:120,content:'T26–30 라운지 소동 정본'},
+   {owner:'hayaku',status:'ok',chars:80,content:'모에 손목 소매'}]};
   await f.plugin.openSettingsGui();await f.plugin.debugNavigateGui('results','s');await sleep(30);
   const page=f.doc.querySelector('[data-page="results"]');
   const shadow=page.querySelector('[data-subpanel="s"]');

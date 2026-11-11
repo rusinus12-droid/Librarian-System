@@ -73,6 +73,7 @@ function assertPackageRoot(root, { allowSourceInput = false } = {}) {
     // GitHub Download ZIP also includes this file without a .git directory.
     // Only verified readable source inputs may carry repository metadata.
     if (fs.existsSync(path.join(root, '.gitignore'))) expectedRootEntries.push('.gitignore');
+    if (fs.existsSync(path.join(root, '.gitattributes'))) expectedRootEntries.push('.gitattributes');
     if (fs.existsSync(path.join(root, '.github'))) expectedRootEntries.push('.github');
     if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
@@ -88,7 +89,7 @@ function main() {
       else fs.writeFileSync(path.join(rootControl, name), '');
     }
     assertPackageRoot(rootControl);
-    for (const name of ['unaccounted.bin', 'LICENSE', 'PUBLICATION-PROVENANCE.json', '.git', '.gitignore']) {
+    for (const name of ['unaccounted.bin', 'LICENSE', 'PUBLICATION-PROVENANCE.json', '.git', '.gitignore', '.gitattributes']) {
       fs.writeFileSync(path.join(rootControl, name), '');
       assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, `packaged roots reject ${name}`);
       fs.unlinkSync(path.join(rootControl, name));
@@ -104,6 +105,7 @@ function main() {
     const provenancePath = path.join(rootControl, 'PUBLICATION-PROVENANCE.json');
     fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'librarian.six-plugin-checkpoint-publication.v2' }));
     fs.writeFileSync(path.join(rootControl, '.gitignore'), 'node_modules/\n');
+    fs.writeFileSync(path.join(rootControl, '.gitattributes'), '*.js text eol=lf\n');
     assertPackageRoot(rootControl, { allowSourceInput: true });
     assert.throws(() => assertPackageRoot(rootControl), assert.AssertionError, 'source metadata is not a runtime bundle exemption');
     fs.writeFileSync(provenancePath, JSON.stringify({ schema: 'wrong' }));

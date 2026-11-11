@@ -68,20 +68,26 @@ const results = [];
     assert.ok(f.getMemory()?.canonicalArtifact, 'canonical memory is stored as before');
     results.push('the queued lens run stores its note after the commit');
 
+    // The lens budget follows the configured evidence budget (it used to fall back to 4,000).
+    await f.r.api.saveLibraMemorySettings({ ...await f.r.api.getLibraMemorySettings(), recallMaxChars: 12000 });
     const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: '지호가 열쇠를 돌려주기로 한 약속은 어떻게 됐지?' }], 'model');
     const system = messages.filter(message => message.role === 'system').map(message => String(message.content)).join('\n');
-    assert.match(system, /\[LIBRA LENS MEMORY — PERSPECTIVE NOTES \(NON-CANONICAL\)\]/);
-    assert.match(system, /\[lens:약속 추적\] \(T1–T5 · 약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
+    assert.match(system, /<LIBRA_CLASSIC_RECALL>/);
+    assert.match(system, /\[인물 · lens · T5\] \[PERSPECTIVE NOTES · NON-CANONICAL\] - \[약속 추적\] \(T1–T5 · 약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
     const context = f.r.api.getLastResponseContext();
     const validity = await f.r.api.validateResponseContext(context);
     assert.equal(validity.ok, true, JSON.stringify(validity));
     const viewer = f.r.api.getLastMemoryRecallViewer?.() || null;
     if (viewer?.lensRecall) assert.equal(viewer.lensRecall.injected, true);
+    assert.equal(viewer?.lensRecall?.budgetChars, 12000, 'shared mode screens lens candidates within the configured budget');
+    assert.equal(viewer.recallDiagnostics.familyAllocation.lens.weight, 40);
+    assert.doesNotMatch(system, /^\(\d+\) \[|^\[LIBRA_EVIDENCE /m, 'the final document carries no packet numbering or packet header');
     results.push('the next request delivers the lens note and the response context validates');
 
     await f.r.api.trashLens(lens.lensId);
     const after = await f.control.hooks.beforeRequest([{ role: 'user', content: '지호가 열쇠를 돌려주기로 한 약속은 어떻게 됐지?' }], 'model');
-    assert.ok(!after.some(message => String(message.content).includes('PERSPECTIVE NOTES')), 'a trashed lens is not recalled');
+    assert.ok(!after.some(message => /\[인물 · lens · T\d+\].*\[약속 추적\]/.test(String(message.content))), 'a trashed lens is not recalled');
+    assert.ok(!(f.r.api.getLastMemoryRecallViewer()?.lensRecall?.injectedItems || []).some(item => item.lensId === lens.lensId));
     results.push('a trashed lens is excluded from delivery');
 
     console.log(JSON.stringify({ test: 'libra_custom_memory_lens_pipeline_runtime', passed: results.length, results }));

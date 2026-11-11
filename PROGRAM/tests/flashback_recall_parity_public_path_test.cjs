@@ -146,6 +146,19 @@ const captureOnce = async (fixture, mode, { userText, replyText }) => {
         lastRecallDelivered: lr.delivery?.delivered,
         warmupDelivered
       };
+      if (lr.delivery?.delivered > 0) {
+        const {id,chatId}=fixture.currentChat;
+        try {
+          fixture.currentChat.id=fixture.currentChat.chatId='other-chat';
+          const other=await t.resolveCurrentScopeIdentityBundle(false);
+          assert.notEqual(other.scope.scopeKey,scope.scopeKey);
+          assert.equal(t.pendingCaptureRuntimeSnapshot().lastRecall,null);
+        } finally {
+          Object.assign(fixture.currentChat,{id,chatId});
+        }
+        await t.resolveCurrentScopeIdentityBundle(false);
+        assert.deepEqual(plain(t.pendingCaptureRuntimeSnapshot().lastRecall),lr);
+      }
       // ---- SELECTION: the public chain, with the real capChars argument --------------------------
       // `capChars` is an ARGUMENT, not a setting: omitting it passes 0 and every choice is discarded
       // (`discarded:[1]`, `capChars:0` — measured).

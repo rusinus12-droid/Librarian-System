@@ -48,8 +48,16 @@ const baseDirection = (patch = {}) => ({
 // The existing public API remains the storage authority, but Commit 5 must
 // close its optimistic-write gap: set/clear may only resolve after an exact
 // readback from the established scope-native key.
-const completionCore = between(
-  'const __LIBRA_NARRATIVE_DIRECTION_LEGACY_SCHEMA =',
+// Schema declarations initialize before any module await; the function region remains
+// near the end. Extract both explicitly without executing the plugin's startup body.
+const completionSchemas = ['__LIBRA_NARRATIVE_COMPLETION_V2', '__LIBRA_NARRATIVE_DIRECTION_LEGACY_SCHEMA', '__LIBRA_STORY_ARC_MIGRATION_SCHEMA']
+  .map(name => {
+    const declarations = [...source.matchAll(new RegExp(`^const ${name} = [^;]+;`, 'gm'))];
+    assert.equal(declarations.length, 1, `one schema declaration: ${name}`);
+    return declarations[0][0];
+  }).join('\n');
+const completionCore = completionSchemas + '\n' + between(
+  'function __libraCompletionClone(value)',
   'function __libraCompletionLegacyToNarrative'
 );
 

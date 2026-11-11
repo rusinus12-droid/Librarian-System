@@ -3,34 +3,32 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../plugins/LIBRA.js'), 'utf8');
+const start = source.indexOf('    const verifiedReadCache = new Map();');
+const end = source.indexOf('    const invalidateVerifiedRead =', start);
+assert.ok(start >= 0 && end > start, 'extract the active verified-read cache');
 
-assert.match(
-  source,
-  /const previous = store\.has\(key\) \? keyBytes \+ volatileUtf8Bytes\(store\.get\(key\)\) : 0;/,
-  'overwriting a tracked entry must remove the old key and value bytes before adding the replacement'
-);
-assert.match(
-  source,
-  /const nextBytes = retainedBytes - previous \+ keyBytes \+ valueBytes;/,
-  'tracked retained bytes must be computed from the complete replacement entry'
-);
+const context = vm.createContext({
+  state: { residentSequence: 0 },
+  clone: structuredClone,
+  ensureResidentBudget() {},
+  VERIFIED_READ_CACHE_TTL_MS: 30000,
+  VERIFIED_READ_CACHE_ENTRY_BYTES: 8192,
+  VERIFIED_READ_CACHE_MAX_BYTES: 8192,
+  VERIFIED_READ_CACHE_MAX: 16
+});
+vm.runInContext(source.slice(start, end) + '\nObject.assign(globalThis, { rememberVerifiedRead, deleteVerifiedRead, verifiedReadStats });', context);
 
-const utf8Bytes = value => Buffer.byteLength(String(value), 'utf8');
-const retainedAfter = (retained, entries, key, value) => {
-  const keyBytes = utf8Bytes(key), valueBytes = utf8Bytes(value);
-  const previous = entries.has(key) ? keyBytes + utf8Bytes(entries.get(key)) : 0;
-  entries.set(key, value);
-  return retained - previous + keyBytes + valueBytes;
-};
-
-const entries = new Map();
-let retained = retainedAfter(0, entries, 'a', '1111');
-assert.equal(retained, utf8Bytes('a') + utf8Bytes('1111'));
-retained = retainedAfter(retained, entries, 'a', '22');
-assert.equal(retained, utf8Bytes('a') + utf8Bytes('22'));
-retained = retainedAfter(retained, entries, 'a', '333');
-assert.equal(retained, utf8Bytes('a') + utf8Bytes('333'));
-
-console.log(JSON.stringify({ test: 'libra_volatile_store_bytes', passed: 5 }));
+const key = 'memory', signature = 'revision';
+const bytes = value => 2 * (key.length + signature.length + JSON.stringify(value).length + 'null'.length);
+for (const value of ['1111', '22', '333']) {
+  context.rememberVerifiedRead(key, signature, value, false);
+  assert.equal(context.verifiedReadStats.entries, 1, 'replacement keeps one entry');
+  assert.equal(context.verifiedReadStats.bytes, bytes(value), 'replacement accounts only for its current payload');
+}
+context.deleteVerifiedRead(key);
+assert.equal(context.verifiedReadStats.entries, 0);
+assert.equal(context.verifiedReadStats.bytes, 0);
+console.log('PASS: verified-read cache replacement and removal account for retained bytes');

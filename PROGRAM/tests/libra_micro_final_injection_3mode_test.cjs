@@ -56,8 +56,13 @@ const DETAIL = '도서관 전체는 정숙 구역';
       const classicBlock = delivered.map(row => String(row.content || '')).join('\n');
       assert.ok(classicBlock.includes(DETAIL),
         `${mode}: the Classic block carries the verified Micro evidence`);
-      assert.match(classicBlock, /\(1\) \[micro\] 도서관 전체는 정숙 구역이다\./,
-        `${mode}: the unified Classic block labels the one-turn Micro with the micro kind`);
+      // The final document states the kind once, in the section heading, instead of on every line.
+      assert.match(classicBlock, /\[SCENE DETAILS\]\n\[@T1 [^\n]*\]\n- 도서관 전체는 정숙 구역이다\./,
+        `${mode}: the unified Classic block files the one-turn Micro under SCENE DETAILS`);
+      assert.doesNotMatch(classicBlock, /^\(\d+\) \[|^\[LIBRA_EVIDENCE /m,
+        `${mode}: packet-only numbering and header stay out of the final document`);
+      assert.match(classicBlock, /except under SCENE DETAILS \(Micro\)/,
+        `${mode}: the preamble says which section holds Micro`);
       assert.match(classicBlock, /\[@T1 \| 2026-05-14 \(목\) 09:12 PM\]/,
         `${mode}: a Micro claim carries the clock printed in its own turn`);
       assert.match(classicBlock, /Micro is a source observation/,

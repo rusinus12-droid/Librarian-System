@@ -1,6 +1,6 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto'),fs=require('node:fs'),path=require('node:path');
-const {fixture,QUOTE}=require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const {fixture,QUOTE}=require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 const {load}=require('./gradia/host.cjs');
 const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
 // Publication precedes the scheduled state snapshot. Wait for real owner work
@@ -31,7 +31,6 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  const registry=await f.r.api.getLensRegistry();await f.r.api.saveLensRegistry({...registry,recallSemantic:false});
  f.control.onCall=async()=>{throw Error('read must not analyze memory');};
  chat.message.push({role:'user',chatId:'t7-u',data:'민아 은빛 열쇠의 현재 보관자는?'});chat.messages=chat.message;
- await f.r.api.buildMemoryGraphCorpus({limit:2});
  const lensProbe=await f.r.api.recallLensMemories({queryText:'은빛 열쇠와 도서관의 규칙',maxChars:12000,semantic:false,refreshVectors:false,readOnly:true});
  assert.ok(lensProbe.renderedBlock.includes('LENS_IPC_ONLY'),JSON.stringify(lensProbe));
  const sdkFetch=async(url,init)=>{
@@ -62,10 +61,10 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  assert.equal(prompts.length,4,JSON.stringify(g.plugin.getRuntime().last));
  assert.ok(prompts.every(body=>JSON.stringify(body).includes(QUOTE)),'unified Micro in each actual model request');
  assert.ok(prompts.every(body=>JSON.stringify(body).includes('LENS_IPC_ONLY')),'lens notes in each actual model request');
- assert.ok(prompts.every(body=>JSON.stringify(body).includes('정본 기억이 우선')),'noncanonical precedence travels with the lens notes');
+ assert.ok(prompts.every(body=>JSON.stringify(body).includes('do not override explicit source facts')),'noncanonical precedence travels with the lens notes');
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(lensBytes(),before,'reading creates no lens storage mutations');assert.equal(f.control.calls.length,calls);
- const replies=bus.messages.filter(m=>m.body.action==='capture'&&m.body.result?.items?.some(item=>item.content.includes('LENS_IPC_ONLY'))||m.body.result?.engine?.lensEvidence?.itemCount);
+ const replies=bus.messages.filter(m=>['capture','select'].includes(m.body.action)&&m.body.kind==='response'&&JSON.stringify(m.body.result||{}).includes('LENS_IPC_ONLY'));
  assert.ok(replies.length,'real host-routed reply contains lens bytes');
  // Selected memory is held as selected: a later lens change neither stops the run nor discards the draft.
  prompts.length=0;onModel=async()=>{await f.r.api.updateLens(lens.lensId,{recall:{enabled:false,mode:'recent',share:100,maxItems:2}});};

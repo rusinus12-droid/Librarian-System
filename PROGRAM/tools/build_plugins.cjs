@@ -1098,8 +1098,7 @@ async function buildPlugins(options = {}) {
   const list = only ? [only] : TARGETS;
   for (const p of list) if (!PLUGINS[p]) throw new Error(`unknown_plugin:${p}`);
 
-  if (list.includes('libra')) require('./sync_libra_memory_network.cjs').sync({ target: path.join(programDir, 'plugins/LIBRA.js'), check: true });
-  if (list.includes('libra')) require('./sync_libra_memory_graph.cjs').sync({ target: path.join(programDir, 'plugins/LIBRA.js'), check: true });
+  if (list.includes('libra')) require('node:child_process').execFileSync(process.execPath, [path.join(__dirname,'sync_libra_state_memory.cjs'),'--check'], {stdio:'inherit'});
   if (list.includes('libra') || list.includes('gradia')) require('./sync_chat_status.cjs').sync({ root:programDir, check:true,
     plugins:list.filter(name => ['libra','gradia'].includes(name)).map(name => name.toUpperCase()+'.js') });
 

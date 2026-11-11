@@ -2,7 +2,7 @@
 // Real classic hook/graph/physical validation with a controlled elapsed clock.
 // This verifies budget behavior, not device latency or live provider performance.
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {fixture,QUOTE}=require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+const {fixture,QUOTE}=require('./fixtures/libra_direct_memory_reader_fixture.cjs');
 
 for(const mode of ['plugin_only','mirror','server_only'])test(`${mode}: recall can finish physical validation after 40 seconds and remains bounded`,async()=>{
   let offset=0;

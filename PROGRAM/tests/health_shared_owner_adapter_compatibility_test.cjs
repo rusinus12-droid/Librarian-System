@@ -29,8 +29,10 @@ function fixture(owner, options = {}) {
     : { version: 'hayaku_storage_ledger_v2', scopeKey: scope.scopeKey, records: [] };
   const control = { reads: 0, clears: 0, previews: 0, applies: 0, cancels: 0, mode: 'plugin_only',
     raw: JSON.stringify(canonicalValue), gate: null, returned: { ok: true, status: 'verified' } };
-  const cache = new Map([[scope.scopeKey, { entries: new Map([['cached', 'derived']]) }], ['unrelated', { entries: new Map([['keep', true]]) }]]);
-  const state = { lastResolvedContext: { scope }, recallCatalogCache: cache, disposed: false };
+  const cacheKey = owner === 'LIBRA' ? scope.scopeKey + '\u0000active' : scope.scopeKey;
+  const cache = new Map([[cacheKey, { entries: new Map([['cached', 'derived']]) }], ['unrelated', { entries: new Map([['keep', true]]) }]]);
+  const verifiedReadCache = new Map([['libra:v1:scope:scope:manifest',{}],['stored\u0000libra:v1:scope:scope:micro-memory-head:1',{}],['libra:v1:scope:other:manifest',{}]]);
+  const state = { lastResolvedContext: { scope }, disposed: false };
   const Runtime = { inFlight: false };
   const Memory = { unloaded: false, nativeRecovery: { inFlight: false, manualBatchInFlight: false }, messageRevisionCaches: cache };
   const originalDelete = cache.delete.bind(cache);
@@ -51,6 +53,9 @@ function fixture(owner, options = {}) {
   const host = { getCharacter: async () => character, getCurrentChatIndex: async () => 0 };
   const context = vm.createContext({
     Promise, Map, Object, state, Runtime, Memory,
+    PREFIX: 'libra:v1', string: value => String(value || ''), stateMicroIndexes: cache, verifiedReadCache,
+    invalidateStateMicroIndex: scopeKey => { for (const key of cache.keys()) if (key.startsWith(scopeKey + '\u0000')) cache.delete(key); },
+    deleteVerifiedRead: key => verifiedReadCache.delete(key),
     loadCurrentCharacterForRisuContext: async () => ({ character }),
     loadCurrentChatForRisuContext: async () => ({ chat }),
     contextId: value => value.id,
@@ -86,7 +91,7 @@ function fixture(owner, options = {}) {
     const health = context.product.health;
     context.product.health = {...health,preview:()=>context.product.router.preview('refresh_derived_cache'),repair:ticket=>context.product.router.apply(ticket),clear:()=>context.product.router.clear()};
   }
-  return { sdk, ...context.product, productRouter, control, chat, character, scope, cache, state, Runtime, Memory };
+  return { sdk, ...context.product, productRouter, control, chat, character, scope, cacheKey, cache, verifiedReadCache, state, Runtime, Memory };
 }
 
 for (const owner of Object.keys(products)) {
@@ -107,9 +112,10 @@ for (const owner of Object.keys(products)) {
   test(`${owner}: cache repair clears only current scope, retains repeat verification and detects refill`, async () => {
     const f = fixture(owner), before = f.control.raw, ticket = await f.health.preview();
     assert.equal((await f.health.repair(ticket)).status, 'verified');
-    assert.equal(f.cache.has(f.scope.scopeKey), false); assert.equal(f.cache.has('unrelated'), true);
+    assert.equal(f.cache.has(f.cacheKey), false); assert.equal(f.cache.has('unrelated'), true);
+    if (owner === 'LIBRA') assert.deepEqual([...f.verifiedReadCache.keys()], ['libra:v1:scope:other:manifest']);
     assert.equal((await f.health.repair(ticket)).status, 'verified'); assert.equal(f.control.clears, 1);
-    f.cache.set(f.scope.scopeKey, { entries: new Map([['refilled', true]]) });
+    f.cache.set(f.cacheKey, { entries: new Map([['refilled', true]]) });
     assert.equal((await f.health.repair(ticket)).reason, 'derived_cache_refilled');
     assert.equal(f.control.clears, 1); assert.equal(f.control.raw, before); assert.equal(f.control.applies, 0);
   });

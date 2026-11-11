@@ -13,9 +13,9 @@ test('plugin cache TTL, isolation, invalidation, fresh bypass and byte budgets',
  const c=r.context.__readCache,scope={_cachedMode:'plugin_only'},key='libra:v1:scope:cache-test:source-receipt-head:w:e0:t1';
  r.values.set(key,JSON.stringify({n:1}));
  const read=()=>c.storage.getVerifiedJson(key,scope);
- assert.equal((await read()).n,1);const before=r.storageReads.length,parsed=c.state.memoryNetworkIO.parsedRows;
+ assert.equal((await read()).n,1);const before=r.storageReads.length,parsed=c.state.memoryReadIO.parsedRows;
  const got=await read();got.n=99;assert.equal((await read()).n,1);assert.equal(r.storageReads.length,before+2,'native currentness observes actual bytes');
- assert.equal(c.state.memoryNetworkIO.parsedRows,parsed,'unchanged native bytes reuse decode');
+ assert.equal(c.state.memoryReadIO.parsedRows,parsed,'unchanged native bytes reuse decode');
  r.values.set(key,JSON.stringify({n:2}));c.age();assert.equal((await read()).n,2);
  r.values.set(key,JSON.stringify({n:3}));c.fresh(1);assert.equal((await read()).n,3);c.fresh(0);
  c.invalidateVerifiedRead(key);assert.equal((await read()).n,3);

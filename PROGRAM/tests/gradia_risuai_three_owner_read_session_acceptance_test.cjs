@@ -695,7 +695,7 @@ test('Scenario 4: Input Writer without owner memory followed by submitted <Curre
 });
 
 test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + live GRADIA.js end-to-end 3-owner read-session under RisuAI template/CBS/<chat>+<Current Input> transformation', { timeout: 60000 }, async t => {
-  const { fixture: libraGraphFixture, QUOTE } = require('./fixtures/libra_memory_graph_reader_fixture.cjs');
+  const { fixture: libraGraphFixture, QUOTE } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
   const bus = createBus();
   const x = await libraGraphFixture({ mode: 'server_only', hostOverrides: bus.api('libra') });
   const unloads = [];
@@ -852,7 +852,6 @@ test('Scenario 5: Live LIBRA.js kernel + live HAYAKU.js + live Flashback.js + li
     data: '{{user}}가 {{random::은빛 열쇠의 현재 보관자를 묻는다::서재 장부를 확인한다}} 그리고 <char>를 바라본다.'
   });
   chat.messages = chat.message;
-  await f.r.api.buildMemoryGraphCorpus({ limit: 2 });
 
   const prompts = [];
   const serverRoutes = [];

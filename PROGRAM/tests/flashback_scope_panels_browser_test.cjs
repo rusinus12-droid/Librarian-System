@@ -57,7 +57,8 @@ let ws,referenceServer;const watchdog=setTimeout(()=>{child.kill('SIGKILL');cons
     navHeaderChecks.push({viewport:viewport.name,...chrome});
     assert.ok(await ev(`!document.querySelector('.topbar .sidebar-health,.topbar .badge-on,.topbar .badge-off,[data-page="lab"] .type-row,[data-page="lab"] .row__body')`),viewport.name+': no old header or Lab hydration HTML/classes');
     assert.ok(await ev(`(()=>{const p=document.querySelector('#lastRecallPanel');return !!p.querySelector('.lab .lab__q')&&!!p.querySelector('.frames')&&!!p.querySelector('.film')&&!!p.querySelector('.fold')})()`),viewport.name+': empty current frame preserves original dark Lab, frame grid, film and diagnostic fold');
-    assert.ok(await ev(`(()=>{const d=document.querySelector('#miniCounts'),a=document.querySelector('#overviewActivityList');return [...d.children].every(n=>['DT','DD'].includes(n.tagName))&&a.tagName==='DL'&&[...a.children].every(n=>['DT','DD'].includes(n.tagName))})()`),viewport.name+': hydrated Lab distribution/activity preserve original kv dt/dd structure');
+    // Home must separate stored text from stored vectors, turn by turn.
+    assert.ok(await ev(`(()=>{const c=document.querySelector('#turnVectorCard');if(!c)return false;const t=c.textContent||'';return /턴별 벡터 상태/.test(t)&&((/저장된 턴 \d+/.test(t)&&/임베딩 벡터 저장 턴 \d+/.test(t))||/아직 불러오지 않았습니다/.test(t))})()`),viewport.name+': home card reports stored turns and vectorised turns separately');    assert.ok(await ev(`(()=>{const d=document.querySelector('#miniCounts'),a=document.querySelector('#overviewActivityList');return [...d.children].every(n=>['DT','DD'].includes(n.tagName))&&a.tagName==='DL'&&[...a.children].every(n=>['DT','DD'].includes(n.tagName))})()`),viewport.name+': hydrated Lab distribution/activity preserve original kv dt/dd structure');
 
    }
 

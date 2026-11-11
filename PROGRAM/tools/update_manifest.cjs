@@ -354,8 +354,8 @@ manifest.dataContract.computePlane = {
     operation: computePilots.libra.operation,
     algorithmFingerprint: computePilots.libra.fingerprint,
     retired: true,
-    replacement: 'libra.memory_graph_query.v1',
-    execution: 'retired_unified_engine_replacement',
+    replacement: 'libra.state_memory_query.v1',
+    execution: 'retired_direct_memory_replacement',
     localDefaultZeroNetwork: true,
     preferServerDelegatesCurrentRequest: false,
     deadlineMs: 1500,
@@ -1212,6 +1212,14 @@ manifest.dataContract.postGuiBoundedFixes = {
   companionReport:'../../reports/companion-gui-defect-fixes-20261009.md'
 };
 
+delete manifest.dataContract.libraShardedDurableGraph;
+manifest.dataContract.libraDirectMemoryRecall = {
+  pluginVersion:pluginVersions.libra, schema:'libra.state_memory_query.v1',
+  allocation:'lens_40_percent_and_query_adaptive_evidence', sources:['lens','state','canonical','micro'],
+  loreDirectDelivery:false, graphConstruction:false, graphPublication:false,
+  currentState:'native_response_projection_with_approved_micro_and_review',
+  currentness:'native_source_and_admission_proof_revalidation', actualHostQualified:false
+};
 manifest.files = Object.fromEntries(listFiles(root)
   .map(filePath => {
     const relative = path.relative(root, filePath).split(path.sep).join('/');

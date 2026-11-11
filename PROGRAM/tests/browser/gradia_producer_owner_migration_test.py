@@ -44,14 +44,10 @@ async def main():
         assert await page.locator('.mode-switch [data-mode=rp]').get_attribute('aria-pressed')=='true'
         checks.append('RP confirmation cancel/apply/save/revert and active mode readback')
         await page.locator('.mode-switch [data-mode=novel]').click();await save()
-        await page.locator('#q-input .choice').nth(0).click();await save()
-        await page.locator('#q-input .choice').nth(1).click()
-        await page.wait_for_function('__producer.Gui.dirty')
-        await page.wait_for_function('!document.querySelector("#savebar [data-revert]").disabled')
-        assert await page.locator('#savebar [data-revert]').is_enabled()
-        await page.locator('#savebar [data-revert]').click();await clean()
-        assert await page.evaluate('__producer.Gui.state.runtime.inputAssistMode')=='off'
-        checks.append('actual Input Assist enablement dirty/save/revert/storage readback')
+        # 인풋 관리자 on/off 선택지는 제거됐다: 빠른 설정과 단계 패널 어디에도 없어야 한다.
+        assert await page.locator('#q-input').count()==0
+        assert await page.locator('#inp-mode').count()==0
+        checks.append('Input Assist on/off choice is gone from quick setup and the stage panel')
         await route('pipeline')
         await page.locator('.node[data-select-row=world]').click()
         prompt=page.locator('[data-stage-ins="세계관 AIDE"]')

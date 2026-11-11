@@ -17,9 +17,9 @@ for(const mode of ['server_only','mirror'])test(`${mode}: Micro, Lens, Canonical
   const epoch=c.state.snapshotSourceEpoch||0;
   await change(key,{text:'added'});assert.equal((await read()).text,'added',family+' negative->present');
   assert.ok(c.state.snapshotSourceEpoch>epoch,'remote additions invalidate derived source views');
-  const parsed=c.state.memoryNetworkIO.parsedRows,hits=c.state.verifiedReadCacheStats.hits;
+  const parsed=c.state.memoryReadIO.parsedRows,hits=c.state.verifiedReadCacheStats.hits;
   const same=await read();same.text='mutated by reader';assert.equal((await read()).text,'added');
-  assert.equal(c.state.memoryNetworkIO.parsedRows,parsed,'unchanged server bytes reuse JSON decode');
+  assert.equal(c.state.memoryReadIO.parsedRows,parsed,'unchanged server bytes reuse JSON decode');
   assert.ok(c.state.verifiedReadCacheStats.hits>hits);
   await change(key,{text:'updated'});assert.equal((await read()).text,'updated');
   const changes=c.state.verifiedReadCacheStats.remoteChanges;
@@ -112,8 +112,8 @@ test('an older server ignoring knownValues falls back to full current reads',asy
  s.hooks.beforeServerRequest=async(url,init)=>{if(url.endsWith('/v1/kv/get-many')){const body=JSON.parse(init.body);delete body.knownValues;init.body=JSON.stringify(body);}};
  const c=s.f.r.context.__familyCache,scope={_cachedMode:'server_only'},key='libra:v1:scope:seventh-server-scope:memory:legacy:r1';
  await s.mutate(key,{text:'old'});await c.storage.getVerifiedJson(key,scope);
- const hits=c.state.verifiedReadCacheStats.hits,parsed=c.state.memoryNetworkIO.parsedRows;
+ const hits=c.state.verifiedReadCacheStats.hits,parsed=c.state.memoryReadIO.parsedRows;
  assert.equal((await c.storage.getVerifiedJson(key,scope)).text,'old');assert.equal(c.state.verifiedReadCacheStats.hits,hits);
- assert.ok(c.state.memoryNetworkIO.parsedRows>parsed,'legacy full response is decoded instead of reused without revision validation');
+ assert.ok(c.state.memoryReadIO.parsedRows>parsed,'legacy full response is decoded instead of reused without revision validation');
  await s.mutate(key,{text:'updated'});assert.equal((await c.storage.getVerifiedJson(key,scope)).text,'updated');
 });

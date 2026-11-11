@@ -1,0 +1,2 @@
+# Plugin sources contain generated SDK blocks checked against LF source bytes.
+PROGRAM/plugins/*.js text eol=lf

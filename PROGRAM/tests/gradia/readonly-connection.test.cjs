@@ -4,6 +4,12 @@ const {JSDOM}=require('jsdom');
 const {createMemorySuiteServer,mockFetch,trace}=require('../fixtures/flashback_in_memory_server_fixture.cjs');
 const {load}=require('./host.cjs');
 const createBus=require('../fixtures/libra_gradia_read_bus.cjs'),createOwner=require('../../tools/libra_gradia_unified_read.cjs');
+// 이 파일의 픽스처는 unified_engine(서버 읽기) 전송 계층만 대상으로 한다. 그 경로는 3dac4012에서
+// 삭제됐고 기억 읽기는 플러그인 IPC 단일 경로가 됐다. 읽기 경로와 무관한 동의 계약 네 가지는
+// readonly-connection-ipc.test.cjs 로 이관했고, 나머지는 제거된 전송 계층 자체의 계약이므로
+// 이유를 남기고 건너뛴다.
+const SKIP_REMOVED='unified_engine 서버 읽기 경로 제거(3dac4012) — 읽기는 플러그인 IPC 단일 경로';
+const SKIP_PORTED='readonly-connection-ipc.test.cjs 로 이관됨(플러그인 IPC 기준)';
 const PREF='serial_gradation_agents_for_rp:lib_read_connection:v1';
 const REG='libra:v1:scope-registry:v1',ROUTE='__memory_suite_internal_scope_routes_v1__:libra';
 const wait=async fn=>{const start=Date.now();while(Date.now()-start<6000){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('Connection action did not settle');};
@@ -38,12 +44,12 @@ async function fixture(t,options={}){
  const importPayload=async()=>{node('[data-manage-action="import-replace"]').click();const confirm=await wait(()=>doc.querySelector('.overlay.is-open .dialog button.btn--primary'));confirm.click();};
  return {...host,app,url,values,local,writes,locals,requests,initial,doc,node,editUrl,click,connect,importPayload,status,holdCapture:()=>{let release,enter;const promise=new Promise(resolve=>release=resolve),entered=new Promise(resolve=>enter=resolve);captureHold={promise,enter};return {release,entered};},release:()=>release?.(),waiting:()=>!!release,failRevokeOnce:()=>{failRevocation=1;},releasePreference:()=>releasePreference?.(),preferenceWaiting:()=>!!releasePreference,setChat:id=>{currentChat={id,message:[]};chatRows[currentIndex]=currentChat;},switchIndex:()=>{currentIndex=1;currentChat=chatRows[1];},nativeWaiting:()=>!!releaseNative,releaseNative:()=>releaseNative?.(),unload:async()=>{for(const fn of unloads)await fn();},rows:()=>app.repositories.libra.database.prepare('SELECT * FROM kv ORDER BY key').all()};
 }
-test('fresh startup and unapproved saved URL perform no connection writes or transport',async t=>{
+test('fresh startup and unapproved saved URL perform no connection writes or transport',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:false}});
  assert.deepEqual(h.initial.requests,[]);assert.deepEqual(h.initial.locals,[]);assert.deepEqual(h.initial.writes,[]);
  assert.equal(h.status().connection?.state,'disconnected');assert.ok(h.node('[data-page="sources"] .state-grid > div:nth-child(4)').textContent.includes('모델·문맥 설정 기준'));
 });
-test('actual Connect and inspect handlers use only bootstrap/capture/current and leave SQLite unchanged',async t=>{
+test('actual Connect and inspect handlers use only bootstrap/capture/current and leave SQLite unchanged',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t),before=h.rows(),start=h.writes.length;assert.equal((await h.connect()).connection.state,'connected');
  assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);assert.ok(h.requests.every(r=>r.headers['X-Memory-Suite-Plugin']==='serial_gradation_agents_for_rp'));
  h.click('inspect');await wait(()=>h.status().connection?.corpus?.source==='unified_engine');
@@ -52,40 +58,40 @@ test('actual Connect and inspect handlers use only bootstrap/capture/current and
  assert.deepEqual(h.writes.slice(start),[]);assert.deepEqual([...new Set(h.locals)],[PREF]);assert.equal(JSON.parse(h.local.get(PREF)).explicit,true);
  assert.equal(h.status().status,'bound');assert.equal(h.getCalls(),0);assert.equal(h.plugin.createPluginStorageProxy,undefined);assert.equal(h.plugin.configureConnection,undefined);
 });
-test('missing or ambiguous native registry fails without bootstrap, guesses, or registry mutation',async t=>{
+test('missing or ambiguous native registry fails without bootstrap, guesses, or registry mutation',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);for(const registry of [null,{}, {'c::h':{scopeKey:'x',characterId:'c',chatId:'other'}},{'c::h':{scopeKey:'registered',characterId:'c',chatId:'h'},duplicate:{scopeKey:'other',characterId:'c',chatId:'h'}}]){
  h.values.set(REG,JSON.stringify(registry));assert.equal((await h.connect()).connection.state,'error');assert.match(h.status().connection.reason,/LIB_READ_SCOPE/);assert.equal(h.requests.length,0);}
 });
-test('plugin-only, transitioning, and unreviewed reset reject capture without fallback',async t=>{
+test('plugin-only, transitioning, and unreviewed reset reject capture without fallback',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);for(const patch of [{mode:'plugin_only'},{origin:'transition_pending'}]){const r=JSON.parse(h.values.get(ROUTE));Object.assign(r.entries.registered,{mode:'server_only',origin:'user_explicit'},patch);h.values.set(ROUTE,JSON.stringify(r));assert.equal((await h.connect()).connection.state,'error');assert.match(h.status().connection.reason,/LIB_READ_(SERVER_MODE|STORAGE_TRANSITION)/);}
  const r=JSON.parse(h.values.get(ROUTE));Object.assign(r.entries.registered,{mode:'server_only',origin:'user_explicit'});h.values.set(ROUTE,JSON.stringify(r));h.values.set('memory_suite_reset_choice.v2.libra','{}');assert.equal((await h.connect()).connection.state,'error');assert.match(h.status().connection.reason,/LIB_READ_RESET/);assert.equal(h.requests.filter(r=>r.url.endsWith('/capture')).length,0);
 });
-test('URL change, disconnect, and unload prevent late bootstrap publication',async t=>{
+test('URL change, disconnect, and unload prevent late bootstrap publication',{skip:SKIP_REMOVED},async t=>{
  for(const cancel of ['url','disconnect','unload']){const h=await fixture(t,{delayBootstrap:true});h.editUrl(h.url);h.click('connect');await wait(h.waiting);if(cancel==='url')h.editUrl('http://127.0.0.1:47631');else if(cancel==='unload')await h.unload();else h.click('disconnect');h.release();await new Promise(r=>setTimeout(r,50));assert.notEqual(h.status().status,'bound',cancel);assert.notEqual(h.status().connection.state,'connected',cancel);assert.equal(h.requests.filter(r=>r.url.endsWith('/capture')).length,0);}
 });
-test('native chat change discards current binding and corpus without automatic reconnection',async t=>{
+test('native chat change discards current binding and corpus without automatic reconnection',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();h.setChat('other');await wait(()=>h.status().status!=='bound');assert.equal(h.status().connection.corpus,null);assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);assert.match(h.status().connection.reason,/LIB_READ_NATIVE_SCOPE_CHANGED/);
 });
-test('transport refusal is an explicit terminal state with one bootstrap attempt',async t=>{
+test('transport refusal is an explicit terminal state with one bootstrap attempt',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{deny:true});assert.equal((await h.connect()).connection.state,'error');assert.equal(h.requests.length,1);assert.match(h.status().connection.reason,/LIB_READ_/);assert.notEqual(h.status().status,'bound');
 });
-test('startup only reuses locally saved explicit connection consent for that exact URL',async t=>{
+test('startup only reuses locally saved explicit connection consent for that exact URL',{skip:SKIP_PORTED},async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:true}});await wait(()=>h.status().connection?.state==='connected');assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);assert.deepEqual(h.initial.locals,[]);
 });
 
-test('canceling pending preference persistence cannot restore startup consent',async t=>{
+test('canceling pending preference persistence cannot restore startup consent',{skip:SKIP_REMOVED},async t=>{
  for(const cancel of ['disconnect','url','unload']){
  const h=await fixture(t,{delayPreference:true});h.editUrl(h.url);h.click('connect');await wait(h.preferenceWaiting);
  if(cancel==='url')h.editUrl('http://127.0.0.1:47631');else if(cancel==='unload'){const unloading=h.unload();h.releasePreference();await unloading;}else h.click('disconnect');
  h.releasePreference();await new Promise(r=>setTimeout(r,50));
  assert.equal(JSON.parse(h.local.get(PREF)).explicit,false,cancel);assert.notEqual(h.status().status,'bound');}
 });
-test('connection card reports native invalidation as it occurs',async t=>{
+test('connection card reports native invalidation as it occurs',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();await wait(()=>h.node('#lib-state').textContent.includes('connected'));
  h.setChat('other');await wait(()=>h.node('#lib-state').textContent.includes('LIB_READ_NATIVE_SCOPE_CHANGED'));
  assert.equal(h.node('#lib-check').disabled,true);
 });
-test('settings import never imports or retains automatic connection consent',async t=>{
+test('settings import never imports or retains automatic connection consent',{skip:SKIP_PORTED},async t=>{
  const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('transfer','flow');
  const box=h.doc.querySelector('#mockup-import-text');assert.ok(box);
  box.value=JSON.stringify({runtime:{mode:'off',libReadConnection:{url:h.url,explicit:true}},providerPresets:{offline:{provider:'openai',model:'test-offline',url:'https://api.openai.com/v1/chat/completions'}}});
@@ -94,49 +100,49 @@ test('settings import never imports or retains automatic connection consent',asy
  await wait(()=>h.local.get(PREF)&&JSON.parse(h.local.get(PREF)).explicit===false);
  assert.notEqual(h.status().status,'bound');assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
 });
-test('non-loopback and credential-bearing URLs never bootstrap',async t=>{
+test('non-loopback and credential-bearing URLs never bootstrap',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);for(const url of ['https://example.test','http://user:pass@127.0.0.1:47630','http://127.0.0.1:47630/?token=x']){
  h.editUrl(url);h.click('connect');await wait(()=>h.status().connection.state==='error');assert.equal(h.status().connection.reason,'LIB_READ_SERVER_URL_INVALID');}assert.equal(h.requests.length,0);
 });
 
-test('failed consent revocation stays retryable through a later Disconnect',async t=>{
+test('failed consent revocation stays retryable through a later Disconnect',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();h.failRevokeOnce();h.click('disconnect');
  await wait(()=>h.doc.body.textContent.includes('LIB_READ_PREFERENCE_UNAVAILABLE'));
  assert.equal(JSON.parse(h.local.get(PREF)).explicit,true,'simulate durable write failure');
  h.click('disconnect');await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);
  assert.notEqual(h.status().status,'bound');
 });
-test('existing accepted reset witness is required and remains unchanged',async t=>{
+test('existing accepted reset witness is required and remains unchanged',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{resetEpoch:2}),key='memory_suite_reset_choice.v2.libra',original=h.values.get(key);
  assert.equal((await h.connect()).connection.state,'connected');assert.equal(h.values.get(key),original);
  const bad=JSON.parse(original);bad.epoch=1;h.values.set(key,JSON.stringify(bad));
  assert.equal((await h.connect()).connection.state,'error');assert.equal(h.status().connection.reason,'LIB_READ_RESET_REVIEW_REQUIRED');
 });
-test('normal loopback URL with a trailing slash is canonicalized before Connect',async t=>{
+test('normal loopback URL with a trailing slash is canonicalized before Connect',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);h.editUrl(h.url+'/');h.click('connect');await wait(()=>h.status().connection.state==='connected');assert.equal(h.status().connection.url,h.url);
 });
 
-test('unload waits for in-flight consent write and its compensating revocation',async t=>{
+test('unload waits for in-flight consent write and its compensating revocation',{skip:SKIP_PORTED},async t=>{
  const h=await fixture(t,{delayPreference:true});h.editUrl(h.url);h.click('connect');await wait(h.preferenceWaiting);
  let finished=false;const pending=h.unload().then(()=>{finished=true;});
  await new Promise(r=>setTimeout(r,25));assert.equal(finished,false);
  h.releasePreference();await pending;assert.equal(JSON.parse(h.local.get(PREF)).explicit,false);
 });
-test('chat change during preference persistence cannot briefly publish the old binding',async t=>{
+test('chat change during preference persistence cannot briefly publish the old binding',{skip:SKIP_PORTED},async t=>{
  const h=await fixture(t,{delayPreference:true});h.editUrl(h.url);h.click('connect');await wait(h.preferenceWaiting);
  h.setChat('other');h.releasePreference();await wait(()=>h.status().connection.state!=='connecting');
  assert.notEqual(h.status().status,'bound');await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);
 });
 
-test('Disconnect during initial consent read durably suppresses later startup consent',async t=>{
+test('Disconnect during initial consent read durably suppresses later startup consent',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:true},disconnectDuringRead:true});
  assert.equal(JSON.parse(h.local.get(PREF)).explicit,false);assert.equal(h.requests.length,0);assert.notEqual(h.status().status,'bound');
 });
-test('native selection changing during final fixed-index reads is rejected before bootstrap',async t=>{
+test('native selection changing during final fixed-index reads is rejected before bootstrap',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{delayFinalNative:true});h.editUrl(h.url);h.click('connect');await wait(h.nativeWaiting);
  h.switchIndex();h.releaseNative();await wait(()=>h.status().connection.state==='error');assert.equal(h.requests.length,0);assert.notEqual(h.status().status,'bound');
 });
-test('import reports a failed auto-connect revocation instead of silently accepting it',async t=>{
+test('import reports a failed auto-connect revocation instead of silently accepting it',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();h.failRevokeOnce();await h.plugin.debugNavigateGui('transfer','flow');
  const box=h.doc.querySelector('#mockup-import-text');box.value=JSON.stringify({runtime:{mode:'off'},providerPresets:{offline:{provider:'openai',model:'test-offline',url:'https://api.openai.com/v1/chat/completions'}}});box.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
  await h.importPayload();
@@ -144,7 +150,7 @@ test('import reports a failed auto-connect revocation instead of silently accept
  assert.notEqual(h.status().status,'bound');assert.equal(JSON.parse(h.local.get(PREF)).explicit,true);
 });
 
-test('Disconnect before startup preference loading suppresses that startup and saved consent',async t=>{
+test('Disconnect before startup preference loading suppresses that startup and saved consent',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v1',explicit:true},disconnectBeforeStart:true});
  assert.equal(h.requests.length,0);await wait(()=>JSON.parse(h.local.get(PREF)).explicit===false);assert.notEqual(h.status().status,'bound');
 });
@@ -160,12 +166,12 @@ for(const timing of ['disconnectBeforeStart','disconnectDuringRead'])test(`faile
  assert.equal(h.requests.length,0);assert.notEqual(h.status().status,'bound');
 });
 
-test('old saved read-source choices migrate to the unified engine and the old search option is absent',async t=>{
+test('old saved read-source choices migrate to the unified engine and the old search option is absent',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{preference:{schema:'gradia.lib-read-connection.v2',explicit:true,readOwners:['libra'],readSource:'server_logical_read'}});
  await wait(()=>h.status().connection?.state==='connected');assert.equal(h.status().connection.readSource,'unified_engine');
  assert.deepEqual([...h.node('#lib-read-source').options].map(o=>o.value),['off','unified_engine','plugin_ipc']);
 });
-test('missing unified owner support cannot fall back to server logical memory',async t=>{
+test('missing unified owner support cannot fall back to server logical memory',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{ownerUnavailable:true});assert.equal((await h.connect()).connection.state,'error');
  // Memory owners are optional (GRADIA 0.26.15): a missing plugin channel leaves no owner
  // scope to resolve, so the connect reports the absent owner (LIB_READ_OWNER_UNAVAILABLE)
@@ -176,7 +182,7 @@ test('missing unified owner support cannot fall back to server logical memory',a
  assert.notEqual(h.status().status,'bound');
 });
 
-test('settings applies the server mode through the real read-only connection and saves verified consent',async t=>{
+test('settings applies the server mode through the real read-only connection and saves verified consent',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.plugin.debugNavigateGui('references','flow');
  const field=h.node('#lib-url');field.value=h.url;field.dispatchEvent(new h.doc.defaultView.Event('input',{bubbles:true}));
  const select=h.node('#lib-read-source');select.value='unified_engine';select.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
@@ -193,7 +199,7 @@ test('settings applies the server mode through the real read-only connection and
  assert.equal(h.status().status,'unavailable');
 });
 
-test('a failed settings mode switch reports no active connection and never falls back to the previous server',async t=>{
+test('a failed settings mode switch reports no active connection and never falls back to the previous server',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t,{ownerUnavailable:true});await h.plugin.debugNavigateGui('references','flow');
  const select=h.node('#lib-read-source');select.value='plugin_ipc';select.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
  assert.equal(h.requests.length,0);assert.equal(h.node('#lib-url').disabled,true);
@@ -202,7 +208,7 @@ test('a failed settings mode switch reports no active connection and never falls
  assert.equal(h.node('#lib-check').disabled,true);
 });
 
-test('pending explicit inspection retains the connected card and does not reconnect',async t=>{
+test('pending explicit inspection retains the connected card and does not reconnect',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();const gate=h.holdCapture();
  try{h.click('inspect');await gate.entered;assert.equal(h.status().connection.state,'connected');
  assert.match(h.node('#lib-state').textContent,/connected/);
@@ -212,7 +218,7 @@ test('pending explicit inspection retains the connected card and does not reconn
  assert.equal(h.status().connection.state,'connected');
 });
 
-test('settings memory check displays progress and its result in the owning card',async t=>{
+test('settings memory check displays progress and its result in the owning card',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('references','flow');
  const gate=h.holdCapture(),button=h.node('#lib-check');button.click();await gate.entered;
  try{assert.equal(button.disabled,true);assert.match(button.textContent,/확인 중/);}
@@ -223,7 +229,7 @@ test('settings memory check displays progress and its result in the owning card'
  assert.equal(h.requests.filter(r=>r.url.endsWith('/bootstrap')).length,1);
 });
 
-test('a failed memory check displays the refusal beside its button',async t=>{
+test('a failed memory check displays the refusal beside its button',{skip:SKIP_REMOVED},async t=>{
  const h=await fixture(t);await h.connect();await h.plugin.debugNavigateGui('references','flow');
  h.setChat('replaced');h.node('#lib-check').click();
  await wait(()=>h.status().connection.lastInspection?.ok===false);

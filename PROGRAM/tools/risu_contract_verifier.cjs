@@ -291,7 +291,7 @@ function parsePluginHeader(sourceText, fileLabel = 'plugin.js') {
   const rawDirectives = [];
 
   for (const line of lines) {
-    if (/^[ \t]*\/\/(?:@|!)[^\r\n]*$/.test(line)) {
+    if (/^[ \t]*\/\/(?:@|!)[^\r\n]*\r?$/.test(line)) {
       rawDirectives.push(line.trim());
     }
     if (line.startsWith('//@name')) {
@@ -457,12 +457,13 @@ function verifyLoaderAndIpcContracts(loaderContract, ipcContract, options = {}) 
       if (missingDirectives.length > 0 || artifactHeader.rawDirectives.length !== sourceHeader.rawDirectives.length) {
         throw createVerificationError(
           'MINIFICATION_DIRECTIVE_LOSS',
-          `${item.owner} (${item.file}) lost ${missingDirectives.length} directive(s) during build: ${missingDirectives.slice(0, 5).join(', ')}`,
+          `${item.owner} (${item.file}) directive mismatch: ${missingDirectives.length} missing, ${remaining.length} extra`,
           {
             owner: item.owner,
             sourceCount: sourceHeader.rawDirectives.length,
             artifactCount: artifactHeader.rawDirectives.length,
-            missingDirectives
+            missingDirectives,
+            extraDirectives: remaining
           }
         );
       }

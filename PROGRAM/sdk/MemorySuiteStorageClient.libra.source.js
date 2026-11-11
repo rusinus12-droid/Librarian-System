@@ -199,7 +199,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopeRoutingEnabled = !managerOnly && options.scopeRouting !== false;
   const startupDiagnosticsEnabled = !localOnlyOwner && !managerOnly && options.startupDiagnostics !== false;
   const scopeCacheMs = Math.max(0, Math.min(10000, Number(options.scopeCacheMs || 0) || 0));
-  const sharedRouteModeRaw = String(options.sharedRouteMode || MODE_MIRROR);
+  const sharedRouteModeRaw = options.sharedRouteMode ? String(options.sharedRouteMode) : '';
   // Optional owner semantic validation runs only after the SDK has restored and
   // read back every generic key.  It lets each plugin reject a structurally
   // complete but semantically unusable snapshot without weakening the common
@@ -942,8 +942,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const readConfig = async (force = false) => {
     if (!force && state.transientMode && VALID_MODES.has(state.transientMode)) return { ...state.config, mode: state.transientMode };
     if (!force && Date.now() - Number(state.config.at || 0) < configCacheMs) return state.config;
-    const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
-    const mode = localOnlyOwner || managerOnly ? MODE_PLUGIN_ONLY : state.transientMode && VALID_MODES.has(state.transientMode) ? state.transientMode : normalizeMode(rawMode);
+    let mode = MODE_PLUGIN_ONLY;
+    if (!localOnlyOwner && !managerOnly) {
+      if (state.transientMode && VALID_MODES.has(state.transientMode)) {
+        mode = state.transientMode;
+      } else {
+        const registry = await loadScopeRegistry(false, false);
+        const globalStored = liveGlobalRow(registry);
+        if (globalStored) {
+          mode = normalizeMode(globalStored.mode);
+        } else {
+          const rawMode = (await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)).trim().toLowerCase();
+          mode = normalizeMode(rawMode);
+        }
+      }
+    }
     const rawUrl = await getArgumentValue(urlArguments, defaultUrl);
     const url = normalizeServerUrl(rawUrl);
     if (state.config.url !== url) resetBootstrapCache();
@@ -5450,7 +5463,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (kind === 'scope' && !scope.scopeId) scope = normalizeScopeDescriptor(currentScope);
     let mode = MODE_PLUGIN_ONLY;
     if (kind === 'scope') mode = (await readScopeMode(scope, false)).mode;
-    else if (kind === 'shared') mode = (await anyServerScopedMode()) ? normalizeMode(sharedRouteModeRaw) : MODE_PLUGIN_ONLY;
+    else if (kind === 'shared') {
+      if (await anyServerScopedMode()) {
+        if (sharedRouteModeRaw) {
+          mode = normalizeMode(sharedRouteModeRaw);
+        } else {
+          const registry = await loadScopeRegistry(false, false);
+          const globalStored = liveGlobalRow(registry);
+          const effectiveGlobal = globalStored ? normalizeMode(globalStored.mode) : normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY));
+          if (effectiveGlobal === MODE_SERVER_ONLY) {
+            mode = MODE_SERVER_ONLY;
+          } else if (effectiveGlobal === MODE_MIRROR) {
+            mode = MODE_MIRROR;
+          } else {
+            const curScope = state.scopeRouting.current;
+            const curMode = curScope?.scopeId && registry.entries?.[curScope.scopeId] ? normalizeMode(registry.entries[curScope.scopeId].mode) : null;
+            mode = curMode === MODE_SERVER_ONLY ? MODE_SERVER_ONLY : MODE_MIRROR;
+          }
+        }
+      } else {
+        mode = MODE_PLUGIN_ONLY;
+      }
+    }
     const remoteKey = String(raw.remoteKey || (raw.scopedContainer === true && scope.scopeId
       ? `${key}${SCOPED_REMOTE_KEY_MARKER}${encodeURIComponent(scope.scopeId)}`
       : key));
@@ -9151,7 +9185,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
   const dispose = async () => {
     if (lifecycle.disposed) return false;
-    for(const lease of graphStorageLeases.values())void lease.release();
     lifecycle.disposed = true;
     cleanupDialogController?.dispose();cleanupDialogController=null;
     for (const timer of [...lifecycle.timers]) clearTimeout(timer);
@@ -9307,36 +9340,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     throw connectionStaleError();
   };
-  // Server-only derived-store leases. Public DTOs and process-local Maps are
-  // never accepted as a namespace fence by the storage owner.
-  const graphStorageLeases=new Map();
-  const graphLifecycleRequest=async(scopeKey,body)=>{
-    const scope=await resolveCurrentScope(false),mode=(await readScopeMode(scope,false)).mode;
-    if(scope.scopeKey!==scopeKey||![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
-    const before=await conditionalBatchBoundary();
-    const boot=await bootstrap(false,true);
-    if(boot?.capabilities?.['libra-graph-lifecycle.v1']!==true)throw new Error('LIBRA_GRAPH_LEASE_UPGRADE_REQUIRED');
-    // A v2 projection must only be published by a GC-aware storage owner.
-    if(body.action==='acquire'&&body.kind==='build'&&boot?.capabilities?.['libra-graph-projection-pages.v1']!==true)throw new Error('LIBRA_GRAPH_PROJECTION_UPGRADE_REQUIRED');
-    const payload=await request('POST','/v1/libra/graph-lifecycle',{scopeKey,...body},{allowPluginOnly:true,scopeId:scopeKey,storageMode:mode});
-    if(jsonComparable(before)!==jsonComparable(await conditionalBatchBoundary()))throw new Error('LIBRA_GRAPH_LEASE_ROUTE_CHANGED');
-    if(payload?.ok!==true||!payload.result)throw new Error('LIBRA_GRAPH_LEASE_RESPONSE_INVALID');
-    return payload.result;
-  };
-  const acquireGraphStorageLease=async(scopeKey,kind)=>{
-    const mode=(await readScopeMode(await resolveCurrentScope(false),false)).mode;
-    if(![MODE_SERVER_ONLY,MODE_MIRROR].includes(mode)||kind==='gc'&&mode!==MODE_SERVER_ONLY)return null;
-    let lease=await graphLifecycleRequest(scopeKey,{action:'acquire',kind,requestId:operationId('graph-lease')}),closed=false,timer=null,failure=null;
-    const key=lease.token;
-    const assertCurrent=async()=>{if(closed||failure)throw failure||new Error('LIBRA_GRAPH_LEASE_CLOSED');return await graphLifecycleRequest(scopeKey,{action:'assert',token:key});};
-    const renew=async()=>{try{if(closed)return;lease=await graphLifecycleRequest(scopeKey,{action:'renew',token:key});}catch(error){failure=error;}finally{if(!closed&&!failure){timer=setTimeout(renew,20000);timer?.unref?.();}}};
-    timer=setTimeout(renew,20000);timer?.unref?.();
-    const session={scopeKey,kind,token:key,assertCurrent,
-      command:async body=>{await assertCurrent();return await graphLifecycleRequest(scopeKey,{...body,token:key});},
-      release:async()=>{if(closed)return;closed=true;clearTimeout(timer);graphStorageLeases.delete(key);try{await graphLifecycleRequest(scopeKey,{action:'release',token:key});}catch(_){/* durable expiration still revokes this lease */}}
-    };
-    graphStorageLeases.set(key,session);return Object.freeze(session);
-  };
   const prepareConditionalBatch = async (input = {}) => {
     const mutations = input.mutations, conditions = input.conditions || [];
     if (!Array.isArray(mutations) || !mutations.length || !Array.isArray(conditions) || mutations.length+conditions.length>64) {
@@ -9366,11 +9369,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for(const pin of pinnedSets)for(const saved of pin.records){
       const condition=[...body.conditions,...body.mutations].find(c=>c.space===saved.space&&c.key===saved.remoteKey);
       if(!condition||condition.expectedRevision!==saved.revision||condition.expectedDigest!==saved.digest||condition.expectedExists!==saved.exists||condition.expectedTombstone!==saved.tombstone)throw conditionalBatchError('MEMORY_SUITE_BATCH_PIN_NOT_BOUND');
-    }
-    const graphScope=/^libra:v1:scope:(.+?):memory-graph:v1:/.exec(body.mutations[0]?.key||'')?.[1];
-    if(graphScope&&body.mutations.some(m=>m.key.includes(':root:'))){
-      const lease=[...graphStorageLeases.values()].find(x=>x.scopeKey===graphScope&&x.kind==='build');
-      if(!lease)throw new Error('LIBRA_GRAPH_BUILD_LEASE_REQUIRED');await lease.assertCurrent();body.graphLease={scopeKey:graphScope,token:lease.token};
     }
     if (storageValueBytes(body)>4*1024*1024) throw conditionalBatchError('MEMORY_SUITE_BATCH_BODY_LIMIT');
     if (jsonComparable(boundary)!==jsonComparable(await conditionalBatchBoundary())) throw conditionalBatchError('MEMORY_SUITE_BATCH_BOUNDARY_CHANGED');
@@ -9704,7 +9702,6 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     namespace,
     pluginId,
     observeReadonlyRoute, observeOwnerReadonlyRoute, assertReadonlyRouteCurrent, releaseReadonlyRouteObservation,
-    acquireGraphStorageLease,
     captureConditionalReadSet,
     assertConditionalReadSet,
     prepareConditionalBatch,
