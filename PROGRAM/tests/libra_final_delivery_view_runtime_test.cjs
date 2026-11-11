@@ -29,6 +29,15 @@ test('final delivery GUI uses only the current receipt and never promotes select
   let notes=u.buildBookDeliveryNotes(view);
   assert.match(notes.textContent,/마지막 요청의 사서 주석/);assert.doesNotMatch(notes.textContent,/이번 턴|이번 리콜|추가 LLM/);
   assert.match(notes.textContent,/현재 턴과 다를 수 있습니다/);assert.ok(notes.querySelector('.anno--final'));
+  // The note lists the delivered lines themselves, grouped by a filter, without opening a dialog.
+  assert.equal(notes.querySelectorAll('.recall-line').length,2,'only injected rows are listed');
+  assert.deepEqual([...notes.querySelectorAll('.recall-line')].map(row=>row.dataset.recallFamily),['canonical','micro']);
+  assert.equal(notes.querySelector('.recall-line__text').textContent,receipt.rows[0].text);assert.equal(notes.querySelector('literal'),null,'a delivered line is inert text');
+  assert.deepEqual([...notes.querySelectorAll('.recall-filter button')].map(button=>button.textContent),['전체 2','정본 1','Micro 1']);
+  notes.querySelector('.recall-filter button[data-val="micro"]').click();
+  assert.deepEqual([...notes.querySelectorAll('.recall-line')].map(row=>row.querySelector('.recall-line__text').textContent),['Micro receipt text']);
+  assert.equal(notes.querySelector('.recall-filter button[data-val="micro"]').getAttribute('aria-pressed'),'true');
+  assert.equal(notes.querySelectorAll('.recall-mix__part').length,2);assert.doesNotMatch(notes.textContent,/selected but never delivered/);
   u.openBookFinalEvidenceDialog();const overlay=document.querySelector('[data-final-evidence]');assert.ok(overlay);
   assert.equal(overlay.querySelectorAll('[data-evidence-family]').length,2);
   const full=overlay.querySelector('[data-final-injection-body]');assert.ok(full);

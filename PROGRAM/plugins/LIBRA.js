@@ -75860,6 +75860,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .mem-entry__text{margin:0;max-height:440px;overflow:auto;padding:16px 18px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;font-size:13px;line-height:1.75}',
     '.t-libra .mem-footnote{margin:0;padding:0 4px;font-size:11.5px;line-height:1.6}',
     '.t-libra .anno--failed{border-left-color:var(--danger)}.t-libra .anno--unconfirmed{border-left-color:var(--warn)}',
+    // Desk note of the last recall: question, composition bar, and the delivered lines.
+    '.t-libra .recall-note{display:flex;flex-direction:column;gap:12px}.t-libra .recall-note>h2,.t-libra .recall-note>.hint{margin:0}',
+    '.t-libra .recall-note__top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}',
+    '.t-libra .recall-query{margin:0;padding:12px 14px;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:var(--r-sm);background:var(--surface2);display:grid;gap:6px;justify-items:start}',
+    '.t-libra .recall-query__kicker{font:700 11.5px/1 var(--font-mono);letter-spacing:.08em;color:var(--accent)}',
+    '.t-libra .recall-query p{margin:0;font:500 14.5px/1.6 var(--font-display,var(--font-sans));color:var(--text);overflow-wrap:anywhere}',
+    '.t-libra .recall-summary{display:grid;gap:7px}.t-libra .recall-summary p{margin:0}.t-libra .recall-summary__count{font-size:13.5px;color:var(--text2)}.t-libra .recall-summary__count b{font-size:15px;color:var(--text)}',
+    '.t-libra .recall-mix{display:flex;gap:2px;height:8px;border-radius:99px;overflow:hidden;background:var(--surface3)}.t-libra .recall-mix__part{flex-basis:0;min-width:6px;border:0!important;padding:0!important}',
+    '.t-libra .recall-filter{flex-wrap:wrap;align-self:flex-start;max-width:100%}.t-libra .recall-filter button{display:inline-flex;align-items:center;gap:6px;padding:4px 11px}.t-libra .recall-dot{width:8px;height:8px;border-radius:99px;border:0!important;padding:0!important}',
+    '.t-libra .recall-list{list-style:none;margin:0;padding:0;display:grid;gap:0;max-height:264px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface)}',
+    '.t-libra .recall-line{padding:8px 12px;display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;align-items:baseline;min-width:0}.t-libra .recall-line+.recall-line{border-top:1px solid var(--border)}',
+    '.t-libra .recall-line.is-clamped{cursor:pointer}.t-libra .recall-line.is-clamped:hover{background:var(--surface2)}.t-libra .recall-line:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}',
+    '.t-libra .recall-line__meta{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);white-space:nowrap}.t-libra .recall-line__turn{font:600 11.5px/1 var(--font-mono)}.t-libra .recall-line__label{color:var(--text3);font-size:12.5px}',
+    '.t-libra .recall-line__text{margin:0;font-size:13.5px;line-height:1.6;color:var(--text);overflow-wrap:anywhere}',
+    '.t-libra .recall-line.is-clamped:not(.is-open) .recall-line__text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
+    '.t-libra .recall-tag{display:inline-flex;align-items:center;padding:1px 8px;border-radius:99px;border:1px solid transparent;font:650 11.5px/1.6 var(--font-sans);white-space:nowrap}',
+    '.t-libra .recall-tag--lens{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent-ink)}.t-libra .recall-mix__part.recall-tag--lens,.t-libra .recall-dot.recall-tag--lens{background:var(--accent)}',
+    '.t-libra .recall-tag--state{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}.t-libra .recall-mix__part.recall-tag--state,.t-libra .recall-dot.recall-tag--state{background:var(--ok)}',
+    '.t-libra .recall-tag--canonical{background:#e3e9e6;border-color:#a9bdb5;color:#1f3a33}.t-libra .recall-mix__part.recall-tag--canonical,.t-libra .recall-dot.recall-tag--canonical{background:#1f3a33}',
+    '.t-libra .recall-tag--micro{background:#e6e3ee;border-color:#b9b1cf;color:#43386b}.t-libra .recall-mix__part.recall-tag--micro,.t-libra .recall-dot.recall-tag--micro{background:#6a5c9c}',
+    '.t-libra .recall-tag--other{background:var(--surface3);border-color:var(--border2);color:var(--text2)}.t-libra .recall-mix__part.recall-tag--other,.t-libra .recall-dot.recall-tag--other{background:var(--text3)}',
+    '@container app (max-width:640px){.t-libra .recall-line{grid-template-columns:minmax(0,1fr);gap:4px}.t-libra .recall-list{max-height:340px}}',
+    '.t-libra .recall-note__final{display:grid;gap:6px}.t-libra .recall-note__final p{margin:0;font-size:12px;color:var(--text2)}.t-libra .recall-note__links{display:flex;gap:14px;flex-wrap:wrap}',
     // Versions keep their own scroll range when the execution tab below changes height.
     '.t-libra [data-canonical-variant-dialog] .drawer{min-width:0;min-height:0;max-width:100%}',
     '.t-libra [data-canonical-variant-dialog] .drawer__head{flex-shrink:0;min-width:0}.t-libra [data-canonical-variant-dialog] .drawer__head>div{min-width:0;overflow-wrap:anywhere}',
@@ -87216,23 +87239,80 @@ advanced
       ? rows.filter(row => row.injected === true && (!lensRows.length || (row.family || row.kind) !== 'lens')) : [],lensRows};
   };
 
+  // The desk note for the last request: what was asked, what kind of memory answered it,
+  // and the lines themselves. It reads the delivery receipt only and grants no authority.
+  const BOOK_RECALL_FAMILIES = Object.freeze([['lens', '렌즈'], ['state', '상태'], ['canonical', '정본'], ['micro', 'Micro'], ['other', '기타']]);
+  const BOOK_RECALL_INTENTS = Object.freeze({ current: '현재 상태 우선', history: '과거 경위 우선', detail: '정확한 발언 우선', mixed: '관련도 순' });
+  const bookRecallEntries = view => {
+    const known = new Set(BOOK_RECALL_FAMILIES.map(row => row[0]));
+    const turnText = range => { const start = Number(range?.start || 0), end = Number(range?.end || 0);
+      return start > 0 ? (end > start ? `T${start}~${end}` : `T${start}`) : ''; };
+    return [
+      ...libraGuiArray(view.lensRows).map(item => ({ family: 'lens', turn: turnText(item.turnRange),
+        label: [libraGuiText(item.lensName), item.evidenceLevel === 'interpreted' ? '해석' : ''].filter(Boolean).join(' · '),
+        text: libraGuiText(item.text || item.renderedLine) })),
+      ...libraGuiArray(view.rows).map(row => { const family = libraGuiText(row.family || row.kind);
+        return { family: known.has(family) ? family : 'other', turn: turnText(row.turnRange), label: row.stateStatus === 'last_known' ? '마지막 확인값' : row.semanticRole === 'source_only' ? '원문 발췌' : '',
+          text: libraGuiText(row.selectedText ?? row.text).replace(/^\[PERSPECTIVE NOTES[^\]]*\]\s*-?\s*/, '') }; })
+    ].filter(entry => entry.text);
+  };
   const buildBookDeliveryNotes = view => {
     const {status,delivery,rows,lensRows}=view;
     const verified=status==='verified',count=rows.length+lensRows.length;
     const statusText={verified:'요청 메시지 주입 검증 완료',failed:'마지막 요청 전달 실패',skipped:'마지막 요청 리콜 건너뜀',unconfirmed:'마지막 요청 전달 검증 미확인',unavailable:'전달 기록 없음'}[status];
     const absence={failed:'마지막 요청의 전달 처리에 실패했습니다.',skipped:'마지막 요청에서는 리콜을 건너뛰었습니다.',unconfirmed:'마지막 요청에서 어떤 근거가 주입됐는지 최종 검증되지 않았습니다.',unavailable:'현재 채팅·세계선에서 확인된 전달 기록이 없습니다.'}[status];
     const reason=delivery.error || delivery.skipReason || delivery.finalVerification?.reason;
-    const excerpts=[...rows.map(row=>row.selectedText ?? row.text),...lensRows.map(row=>row.renderedLine || row.text)].map(value=>compact(libraGuiText(value),360)).filter(Boolean).slice(0,3).join('  ');
-    const note=(kicker,title,body,action=null,className='anno')=>guiEl('div',{class:className},[
-      guiEl('div',{class:'anno__head'},[guiEl('span',{class:'anno__kicker',text:kicker}),action]),guiEl('h3',{text:title}),guiEl('p',{text:body})]);
-    return guiEl('article',{class:'leaf',dataset:{deliveryNotes:status}},[
-      guiEl('div',{class:'eyebrow',text:"Librarian's Notes"}),guiEl('h2',{text:'마지막 요청의 사서 주석'}),
-      guiEl('p',{class:'hint',text:status==='unavailable'?'현재 범위의 마지막 요청 기록을 표시합니다.':`기록 시각 · ${libraFormatTime(delivery.at)} · 현재 턴과 다를 수 있습니다.`}),
-      note('RECALL',verified?`마지막 리콜 · 기억 근거 ${count}개`:'마지막 리콜 · 근거 확인 안 됨',verified?(excerpts || (delivery.liveTailInjected?'검색 기억 없이 최근 완료 대화만 주입했습니다.':'검증된 요청에 포함된 기억 근거가 없습니다.')):absence,
-        guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})),
-      note('DELIVERY','사서 모드 전달',verified?`일반 근거 ${rows.length}개 · 렌즈 기억(비정본) ${lensRows.length}개 · 전체 주입 ${Number(delivery.blockChars || 0)}자`:`${absence}${reason?` 사유: ${libraGuiText(reason)}`:''}`),
-      note('FINAL',statusText,'플러그인의 요청 메시지 주입 검증 상태입니다. 제공자 수신이나 모델의 실제 활용 여부를 확인한 기록은 아닙니다.',
-        guiEl('button',{class:'linkbtn',type:'button',text:'전달 근거 보기 →',onClick:()=>openBookFinalEvidenceDialog()}),`anno ${verified?'anno--final':status==='failed'?'anno--failed':'anno--unconfirmed'}`)
+    const badgeClass={verified:'badge badge--ok',failed:'badge badge--danger',skipped:'badge',unconfirmed:'badge badge--warn',unavailable:'badge'}[status];
+    const head=[guiEl('div',{class:'recall-note__top'},[guiEl('div',{class:'eyebrow',text:"Librarian's Notes"}),
+        guiEl('span',{class:badgeClass,dataset:{deliveryStatus:status},text:statusText})]),
+      guiEl('h2',{text:'마지막 요청의 사서 주석'}),
+      guiEl('p',{class:'hint',text:status==='unavailable'?'현재 범위의 마지막 요청 기록을 표시합니다.':`기록 시각 · ${libraFormatTime(delivery.at)} · 현재 턴과 다를 수 있습니다.`})];
+    if(!verified)return guiEl('article',{class:'leaf recall-note',dataset:{deliveryNotes:status}},[...head,
+      guiEl('div',{class:`anno ${status==='failed'?'anno--failed':'anno--unconfirmed'}`},[
+        guiEl('div',{class:'anno__head'},[guiEl('span',{class:'anno__kicker',text:'RECALL'}),
+          guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})]),
+        guiEl('h3',{text:'마지막 리콜 · 근거 확인 안 됨'}),guiEl('p',{text:`${absence}${reason?` 사유: ${libraGuiText(reason)}`:''}`})])]);
+    const entries=bookRecallEntries(view),query=compact(libraGuiText(delivery.queryText),220);
+    const diagnostics=libraGuiObject(delivery.recallDiagnostics),allocation=libraGuiObject(diagnostics.familyAllocation);
+    const budget=Number(allocation.lens?.targetCharacters||0)+Number(allocation.evidence?.targetCharacters||0);
+    const intent=BOOK_RECALL_INTENTS[libraGuiText(libraGuiObject(diagnostics.allocationPlan).intent)]||'';
+    const families=BOOK_RECALL_FAMILIES.map(([id,label])=>({id,label,count:entries.filter(entry=>entry.family===id).length})).filter(row=>row.count>0);
+    const list=guiEl('ol',{class:'recall-list',dataset:{recallList:'true'}});
+    let filter='all';
+    const draw=()=>{
+      const shown=entries.filter(entry=>filter==='all'||entry.family===filter);
+      list.replaceChildren(...shown.map(entry=>{
+        const body=guiEl('p',{class:'recall-line__text'},[entry.label?guiEl('span',{class:'recall-line__label',text:entry.label+' — '}):null,entry.text]);
+        const row=guiEl('li',{class:'recall-line',dataset:{recallFamily:entry.family}},[
+          guiEl('div',{class:'recall-line__meta'},[guiEl('span',{class:`recall-tag recall-tag--${entry.family}`,text:BOOK_RECALL_FAMILIES.find(item=>item[0]===entry.family)[1]}),
+            entry.turn?guiEl('span',{class:'recall-line__turn',text:entry.turn}):null]),body]);
+        // A long line is clamped to keep the list scannable; the whole line opens in place.
+        if(entry.text.length>90){row.classList.add('is-clamped');row.tabIndex=0;row.setAttribute('role','button');row.setAttribute('aria-expanded','false');
+          const toggle=()=>{const open=row.classList.toggle('is-open');row.setAttribute('aria-expanded',String(open));};
+          row.addEventListener('click',toggle);row.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});}
+        return row;}));
+      for(const button of filters.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.dataset.val===filter));
+    };
+    const filters=guiEl('div',{class:'seg recall-filter',role:'group','aria-label':'기억 종류로 거르기'},[['all','전체',entries.length],...families.map(row=>[row.id,row.label,row.count])]
+      .map(([id,label,total])=>guiEl('button',{type:'button',dataset:{val:id},'aria-pressed':String(id==='all'),onClick:()=>{filter=id;draw();}},[id==='all'?null:guiEl('span',{class:`recall-dot recall-tag--${id}`,'aria-hidden':'true'}),`${label} ${total}`])));
+    draw();
+    const mix=guiEl('div',{class:'recall-mix',role:'img','aria-label':families.map(row=>`${row.label} ${row.count}개`).join(', ')},
+      families.map(row=>guiEl('span',{class:`recall-mix__part recall-tag--${row.id}`,style:{flexGrow:String(row.count)},title:`${row.label} ${row.count}개`})));
+    return guiEl('article',{class:'leaf recall-note',dataset:{deliveryNotes:status}},[...head,
+      query?guiEl('blockquote',{class:'recall-query'},[guiEl('span',{class:'recall-query__kicker',text:'이 입력으로 찾은 기억'}),guiEl('p',{text:query}),
+        intent?guiEl('span',{class:'chip',text:intent}):null]):null,
+      guiEl('div',{class:'recall-summary'},[
+        guiEl('p',{class:'recall-summary__count'},[guiEl('b',{text:`기억 근거 ${count}개`}),
+          guiEl('span',{text:` · ${Number(delivery.dynamicChars||0).toLocaleString()}자${budget?` / 예산 ${budget.toLocaleString()}자`:''}`})]),
+        families.length?mix:null,
+        guiEl('p',{class:'hint recall-summary__detail',text:`일반 근거 ${rows.length}개 · 렌즈 기억(비정본) ${lensRows.length}개 · 안내문 포함 전체 주입 ${Number(delivery.blockChars||0).toLocaleString()}자`})]),
+      entries.length?filters:null,
+      entries.length?list:guiEl('p',{class:'hint',text:delivery.liveTailInjected?'검색 기억 없이 최근 완료 대화만 주입했습니다.':'검증된 요청에 포함된 기억 근거가 없습니다.'}),
+      guiEl('div',{class:'anno anno--final recall-note__final'},[
+        guiEl('p',{text:'플러그인의 요청 메시지 주입 검증 상태입니다. 제공자 수신이나 모델의 실제 활용 여부를 확인한 기록은 아닙니다.'}),
+        guiEl('div',{class:'recall-note__links'},[
+          guiEl('button',{class:'linkbtn',type:'button',text:'전달 근거 보기 →',onClick:()=>openBookFinalEvidenceDialog()}),
+          guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})])])
     ]);
   };
 
