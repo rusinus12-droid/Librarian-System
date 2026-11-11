@@ -2,11 +2,8 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const {fixture,variants:fixtureVariants} = require('./storage_global_allchat_job_test.cjs');
+const {fixture,installedSdkVariants:variants} = require('./storage_global_allchat_job_test.cjs');
 const transport = require('./helpers/inprocess-review-transport.cjs');
-
-const variants = fixtureVariants.map(variant => variant[0] === 'flashback'
-  ? [variant[0],variant[1],'MemorySuiteStorageClient.flashback.source.js'] : variant);
 
 for (const variant of variants) {
   const [namespace] = variant;
@@ -18,12 +15,21 @@ for (const variant of variants) {
     const sizes = new Map([...bodies].map(([key,value]) => [key,value.length + 2]));
     const scopeFor = key => key.slice(namespace.length + 1).split('.')[0];
     let scopedReads = 0, boundedBatches = 0, discoveryPasses = 0, singlePayloadReads = 0;
+    const uploadBatches = [], oversizedUploads = [];
     const f = await fixture(variant, {
       bridgeOptions:{resolveKeyScope:async ({key}) => ({kind:'scope',scopeId:scopeFor(key)}),
         ...(namespace==='flashback'?{getManyResponseBudgetBytes:1024*1024}:{})},
       transportFactory:base => async (url, init={}) => {
         const parsed = new URL(url);
         const size = sizes.get(parsed.searchParams.get('key'));
+        if (parsed.pathname === '/v1/kv/batch') {
+          const mutations = JSON.parse(init.body).mutations.filter(row => sizes.has(row.key));
+          if (mutations.length) uploadBatches.push(mutations.map(row => row.key));
+        }
+        if (parsed.pathname === '/v1/kv/set') {
+          const {key} = JSON.parse(init.body);
+          if (sizes.has(key)) oversizedUploads.push(key);
+        }
         if (parsed.pathname === '/v1/kv/get' && size && size <= 1024 * 1024) singlePayloadReads++;
         if (parsed.pathname === '/v1/kv/get-many') {
           const requested = JSON.parse(init.body).keys;
@@ -49,6 +55,13 @@ for (const variant of variants) {
     try {
       for (const [key,value] of bodies) f.values.set(key,value);
       await f.bridge.setGlobalMode('server_only');
+      assert.ok(uploadBatches.length > 1, 'payloads are distributed across multiple batches');
+      for (const batch of uploadBatches) {
+        assert.ok(batch.reduce((bytes,key) => bytes + sizes.get(key),0) <= 1024 * 1024,
+          'each upload batch respects the 1 MiB aggregate payload budget');
+      }
+      assert.deepEqual(oversizedUploads, [...sizes].filter(([,bytes]) => bytes > 1024 * 1024).map(([key]) => key));
+      assert.deepEqual([...uploadBatches.flat(),...oversizedUploads].sort(), [...bodies.keys()].sort());
       for (const key of bodies.keys()) f.values.delete(key);
       const before={discoveryPasses,singlePayloadReads};
       const preview=await f.bridge.previewGlobalMode('plugin_only');

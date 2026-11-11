@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { fixture, variants } = require('./storage_global_allchat_job_test.cjs');
+const { fixture, installedSdkVariants:variants } = require('./storage_global_allchat_job_test.cjs');
 const { makePanelDom } = require('./helpers/global-allchat-panel-dom.cjs');
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -26,7 +26,7 @@ for (const variant of variants) {
       await f.bridge.mountConnectionPanel(dom1.container);
       assert.doesNotMatch(dom1.root.innerHTML, /data-sync|서버와 기기 내용 맞추기|지금 동기화/,
         'manual mirror synchronization is absent from the operational mode panel');
-      assert.equal(typeof dom1.byAttr('data-restore').onclick, 'function', 'explicit recovery stays available');
+      assert.equal(typeof dom1.byAttr('data-recover').onclick, 'function', 'automatic transition recovery stays available');
       const jobCard1 = dom1.byAttr('data-job');
       assert.equal(jobCard1.classList.contains('show'), true, 'initial completed job must be shown before user dismisses');
 

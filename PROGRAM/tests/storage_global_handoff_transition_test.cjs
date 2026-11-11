@@ -1,62 +1,69 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { fixture, variants } = require('./storage_global_allchat_job_test.cjs');
+const { fixture, installedSdkVariants:variants } = require('./storage_global_allchat_job_test.cjs');
 
 const methods = [
   ['handoff', (bridge, scope) => bridge.ensureHandoffReady({ scope })],
   ['native source durability', (bridge, scope) => bridge.verifyNativeBranchSourceDurability({ scope })]
 ];
 const busy = error => error.code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS';
-const sources = f => [...f.values].filter(([key]) => key.startsWith(f.namespace + '.'));
-
-async function pausedFixture(variant) {
-  let injected = false;
-  const f = await fixture(variant, { writeFault: async (key, value) => {
-    if (key === `__memory_suite_internal_sync_job_v1__:${variant[0]}`
-      && !injected && JSON.parse(value).checkpoints?.A) {
-      injected = true;
-      throw new Error('synthetic_pause_after_first_scope');
-    }
-  } });
-  f.namespace = variant[0];
-  try {
-    await assert.rejects(() => f.bridge.setGlobalMode('server_only'));
-    assert.equal(injected, true);
-    assert.equal(f.bridge.getSyncJob().kind, 'global_mode');
-    assert.equal(f.bridge.getSyncJob().status, 'paused');
-    assert.equal((await f.bridge.getGlobalMode()).mode, 'plugin_only');
-    f.setCurrent('C');
-    return f;
-  } catch (error) { await f.close(); throw error; }
+async function legacyPausedFixture(variant) {
+  const [namespace] = variant;
+  const journalKey = `__memory_suite_internal_sync_job_v1__:${namespace}`;
+  const original = await fixture(variant);
+  const now = Date.now();
+  original.values.set(journalKey, JSON.stringify({
+    schema: 'memory-suite.sync-job.v1', namespace, jobId: 'legacy-paused', id: 'legacy-paused',
+    kind: 'global_mode', scopeId: '__memory_suite_global__', status: 'paused', phase: 'recovery_pending',
+    targetMode: 'server_only', sourceMode: 'plugin_only', effectsStarted: true, startedAt: now, updatedAt: now
+  }));
+  return original;
 }
 
 for (const variant of variants) {
   for (const [name, invoke] of methods) {
-    for (const restarted of [false, true]) {
-      test(`${variant[0]} ${name} refuses ${restarted ? 'restored' : 'live'} aggregate pause in selected and new scopes`, async () => {
-        const original = await pausedFixture(variant);
-        let fresh;
-        try {
-          if (restarted) {
-            await original.bridge.dispose();
-            fresh = await fixture(variant, { app: original.app, values: original.values, current: 'C' });
-            fresh.namespace = variant[0];
-          }
-          const f = fresh || original;
-          const before = sources(f);
-          const registry = f.values.get(f.registryKey);
-          const journalKey = `__memory_suite_internal_sync_job_v1__:${variant[0]}`;
-          const journal = f.values.get(journalKey);
-          for (const scopeId of ['C', 'NEW']) {
-            await assert.rejects(() => invoke(f.bridge, { scopeId, scopeKey: scopeId }), busy);
-          }
-          assert.deepEqual(sources(f), before, 'refusal preserves source payloads');
-          assert.equal(f.values.get(f.registryKey), registry, 'refusal cannot publish a route');
-          assert.equal(f.values.get(journalKey), journal, 'readiness does not resume or rewrite the job');
-        } finally { if (fresh) await fresh.close(); await original.close(); }
-      });
-    }
+    test(`${variant[0]} ${name} refuses an active fast transfer and admits reads after stop`, async () => {
+      let enterBatch, releaseBatch;
+      const entered = new Promise(resolve => { enterBatch = resolve; });
+      const held = new Promise(resolve => { releaseBatch = resolve; });
+      const f = await fixture(variant, { current: 'C', transportFactory: base => async (url, init) => {
+        if (new URL(url).pathname === '/v1/kv/batch') {
+          enterBatch();
+          await held;
+        }
+        return base(url, init);
+      } });
+      const transferring = f.bridge.setGlobalMode('server_only');
+      try {
+        await Promise.race([entered, transferring.then(() => { throw Error('Transfer completed before the first batch'); })]);
+        for (const scopeId of ['C', 'NEW']) {
+          await assert.rejects(() => invoke(f.bridge, { scopeId, scopeKey: scopeId }), busy);
+        }
+        await f.bridge.cancelSyncJob();
+        releaseBatch();
+        await assert.rejects(transferring, error => error.code === 'MEMORY_SUITE_TRANSFER_STOPPED');
+        assert.equal((await f.bridge.getGlobalMode()).mode, 'plugin_only');
+        assert.equal((await invoke(f.bridge, { scopeId: 'A', scopeKey: 'A' })).verified, true);
+      } finally {
+        releaseBatch();
+        await transferring.catch(() => {});
+        await f.close();
+      }
+    });
+
+    test(`${variant[0]} ${name} refuses a restored legacy pause in selected and new scopes`, async () => {
+      const original = await legacyPausedFixture(variant);
+      let fresh;
+      try {
+        fresh = await fixture(variant, { app: original.app, values: original.values, current: 'C' });
+        const before = [...fresh.values];
+        for (const scopeId of ['C', 'NEW']) {
+          await assert.rejects(() => invoke(fresh.bridge, { scopeId, scopeKey: scopeId }), busy);
+        }
+        assert.deepEqual([...fresh.values], before, 'readiness cannot modify data, routes, or the legacy journal');
+      } finally { await fresh?.close(); await original.close(); }
+    });
   }
 
   test(`${variant[0]} completed aggregate migration permits both readiness APIs`, async () => {
@@ -78,6 +85,7 @@ for (const variant of variants) {
       const key = `__memory_suite_internal_sync_job_v1__:${variant[0]}`;
       const journal = JSON.parse(original.values.get(key));
       journal.kind = 'connection_config';
+      delete journal.engine;
       journal.status = 'paused';
       journal.scopeId = 'B';
       original.values.set(key, JSON.stringify(journal));

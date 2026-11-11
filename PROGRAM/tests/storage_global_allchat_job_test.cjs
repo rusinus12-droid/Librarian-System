@@ -6,6 +6,8 @@ const root=process.env.LIB_TEST_PROGRAM_ROOT||path.resolve(__dirname,'..');
 const {createMemorySuiteServer}=require(path.join(root,'server/server.cjs'));
 const transport=require('./helpers/inprocess-review-transport.cjs');
 const variants=[['hayaku','hayaku_locator_continuity','MemorySuiteStorageClient.source.js'],['flashback','flashback_memory','MemorySuiteStorageClient.source.js'],['libra','libra','MemorySuiteStorageClient.libra.source.js']];
+const installedSdkVariants=variants.map(variant=>variant[0]==='flashback'
+ ? [variant[0],variant[1],'MemorySuiteStorageClient.flashback.source.js'] : variant);
 const clone=x=>JSON.parse(JSON.stringify(x));
 async function fixture([namespace,pluginId,sdk],opts={}){
  const app=opts.app||createMemorySuiteServer({dataDir:fs.mkdtempSync(path.join(os.tmpdir(),'allchat-job-')),autoBackup:false,computeEnabled:false});
@@ -56,4 +58,4 @@ async function run(){
  }
 }
 if(require.main===module)run().catch(e=>{console.error(e);process.exitCode=1;});
-module.exports={fixture,variants,run};
+module.exports={fixture,variants,installedSdkVariants,run};

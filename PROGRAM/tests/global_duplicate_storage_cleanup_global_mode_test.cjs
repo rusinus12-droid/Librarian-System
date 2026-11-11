@@ -1,9 +1,10 @@
 'use strict';
 const assert=require('node:assert/strict'),test=require('node:test');
-const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
-const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
+const {fixture, installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
+const {JSDOM}=require('jsdom');
 for(const variant of variants)test(`${variant[0]}: duplicate cleanup follows global mode despite legacy plugin_only argument`,async()=>{
- const f=await fixture(variant);const dom=makePanelDom();
+ const f=await fixture(variant),dom=new JSDOM('<main></main>');
+ const q=selector=>dom.window.document.querySelector(selector);
  const repo=f.app.repositories[variant[0]];
  const serverDump=()=>JSON.stringify(repo.database.prepare('SELECT space,key,value_json,digest,revision,deleted FROM kv ORDER BY space,key').all());
  try{
@@ -16,16 +17,21 @@ for(const variant of variants)test(`${variant[0]}: duplicate cleanup follows glo
   const checked=await f.bridge.globalVerifyPreservation();
   assert.equal(checked.ok,true);assert.equal(checked.checked,2);
   assert.equal(serverDump(),before,'verification only reads the server');
-  await f.bridge.mountConnectionPanel(dom.container);
-  const button=dom.byAttr('data-delete');
-  await button.onclick();
-  assert.match(button.textContent,/검증 완료/,'first click must verify and arm, not claim server is stopped');
-  assert.equal(f.values.has(variant[0]+'.A'),true,'first click preserves local copies');
-  await button.onclick();
+  await f.bridge.mountConnectionPanel(q('main'));
+  await q('[data-delete]').onclick();
+  assert.equal(q('[data-cleanup-dialog]').hidden,false);
+  assert.equal(q('[data-cleanup-items]').querySelectorAll('article').length,2);
+  const confirm=q('[data-cleanup-continue]');
+  assert.equal(confirm.disabled,true);
+  await confirm.onclick();
+  assert.equal(f.values.has(variant[0]+'.A'),true,'review and an untyped confirmation preserve local copies');
+  const typed=q('[data-cleanup-typed]');typed.value='삭제';typed.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(confirm.disabled,false);
+  await confirm.onclick();
   assert.equal(f.values.has(variant[0]+'.A'),false);
   assert.equal(f.values.has(variant[0]+'.B'),false);
   assert.equal(serverDump(),before,'cleanup never changes server memory');
   assert.equal((await f.bridge.getGlobalMode()).mode,'server_only');
   assert.equal((await f.bridge.globalDeletePluginStorageAfterVerification()).deleted,0);
- }finally{dom.root.isConnected=false;await f.close();}
+ }finally{q('main').remove();await f.close();dom.window.close();}
 });

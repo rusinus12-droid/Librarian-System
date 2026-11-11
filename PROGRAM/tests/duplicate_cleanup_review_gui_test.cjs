@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {JSDOM}=require('jsdom'),{fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+const {JSDOM}=require('jsdom'),{fixture, installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 for(const v of variants)test(`${v[0]} actual cleanup GUI: review, acknowledgement, progress, stop and server copy removal`,async()=>{
  const f=await fixture(v),dom=new JSDOM('<main id="panel"></main>');
  const q=selector=>dom.window.document.querySelector(selector);
@@ -18,7 +18,11 @@ for(const v of variants)test(`${v[0]} actual cleanup GUI: review, acknowledgemen
   const select=q('[data-cleanup-choice="0"]');assert.equal(select.value,'keep');select.value='delete';select.dispatchEvent(new dom.window.Event('change',{bubbles:true}));
   assert.equal(q('[data-cleanup-ack-row]').hidden,false);assert.equal(q('[data-cleanup-continue]').disabled,true);
   await q('[data-cleanup-continue]').onclick();assert(f.values.has(v[0]+'.A'),'disabled confirmation cannot trigger deletion');
-  q('[data-cleanup-ack]').checked=true;q('[data-cleanup-ack]').onchange();assert.equal(q('[data-cleanup-continue]').disabled,false);
+  q('[data-cleanup-ack]').checked=true;q('[data-cleanup-ack]').onchange();
+  assert.equal(q('[data-cleanup-continue]').disabled,true,'acknowledgement alone cannot delete');
+  const type=value=>{const input=q('[data-cleanup-typed]');input.value=value;input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
+  type('삭제할게요');assert.equal(q('[data-cleanup-continue]').disabled,true);
+  type('삭제');assert.equal(q('[data-cleanup-continue]').disabled,false);
   let release,entered;const held=new Promise(resolve=>entered=resolve),unblock=new Promise(resolve=>release=resolve),remove=f.store.removeItem;
   f.store.removeItem=async key=>{entered();await unblock;return remove(key);};
   const running=q('[data-cleanup-continue]').onclick();await held;
@@ -28,7 +32,10 @@ for(const v of variants)test(`${v[0]} actual cleanup GUI: review, acknowledgemen
   q('[data-cleanup-close]').onclick();assert.equal(q('[data-cleanup-dialog]').hidden,true);
   f.store.removeItem=remove;
   await f.bridge.setGlobalMode('plugin_only');
-  await q('[data-server-delete]').onclick();assert.match(q('[data-cleanup-title]').textContent,/서버 사본/);
+  await q('[data-server-delete]').onclick();assert.equal(q('[data-cleanup-title]').textContent,'데이터 정리 · 서버 스토리지');
+  assert.equal(q('[data-cleanup-typed]').value,'','confirmation does not carry over to another review');
+  assert.equal(q('[data-cleanup-continue]').disabled,true);type('삭제');
+  assert.equal(q('[data-cleanup-continue]').disabled,false);
   await q('[data-cleanup-continue]').onclick();assert.match(q('[data-cleanup-summary]').textContent,/정리 완료.*2개 항목 삭제/);
   assert(f.values.has(v[0]+'.A'));assert(f.values.has(v[0]+'.B'));
  }finally{dom.window.document.querySelector('#panel').innerHTML='';await f.close();dom.window.close();}

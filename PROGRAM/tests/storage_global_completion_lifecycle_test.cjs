@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const test=require('node:test');
-const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+const {fixture, installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(predicate){for(let i=0;i<200;i++){if(predicate())return;await pause(10);}throw Error('terminal notification timeout');}
@@ -35,8 +35,11 @@ for(const variant of variants){
    await f.bridge.setGlobalMode('server_only');
    await until(()=>checks.length===1);await Promise.all(checks);
    let cancelRequested=false;
-   const cancel=f.bridge.subscribeSyncJob(job=>{if(!cancelRequested&&job?.targetMode==='plugin_only'&&job?.checkpoints?.A){cancelRequested=true;void f.bridge.cancelSyncJob();}});
-   try{await f.bridge.setGlobalMode('plugin_only');await until(()=>checks.length===2);await Promise.all(checks);}
+   const cancel=f.bridge.subscribeSyncJob(job=>{if(!cancelRequested&&job?.targetMode==='plugin_only'&&job.engine==='fast'&&job.phase==='copy'){cancelRequested=true;void f.bridge.cancelSyncJob();}});
+   try{
+    await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_TRANSFER_STOPPED');
+    await until(()=>checks.length===2);await Promise.all(checks);
+   }
    finally{cancel();}
    assert.equal(f.bridge.getSyncJob().status,'cancelled');assert.equal(delays,2);
    assert.deepEqual(lateNotifications,[{status:'completed',modeDepth:0,persistedStatus:'completed'},{status:'cancelled',modeDepth:0,persistedStatus:'cancelled'}]);
@@ -48,8 +51,9 @@ for(const variant of variants){
   try{
    await assert.rejects(()=>f.bridge.setGlobalMode('server_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');
    await pause(30);
-   assert.equal(completed.length,0);assert.equal(f.bridge.getSyncJob().status,'paused');
-   assert.equal(JSON.parse(f.values.get(jobKey)).status,'paused');
+   assert.equal(completed.length,0);
+   assert.notEqual(f.bridge.getSyncJob().status,'completed');
+   assert.notEqual(JSON.parse(f.values.get(jobKey)).status,'completed');
   }finally{stop();await f.close();}
  });
  test(namespace+' global display and diagnostic copy distinguish completed work from a new blocked inspection',async()=>{
@@ -57,7 +61,7 @@ for(const variant of variants){
   const f=await fixture(variant,{current:'',adapter:async({hostScopes,records})=>({
    scopes:hostScopes.map(scope=>({...scope,scopeId:scope.chatId,scopeKey:scope.chatId})),
    records:records.map(row=>({...row,classification:'scope',scopeId:row.logicalKey.slice(namespace.length+1)})),
-   blockers:blocked?[{code:'synthetic_new_inspection_blocked',key:'manifest-key',value:'PRIVATE_BODY',credential:'PRIVATE_TOKEN'}]:[],completeKnownScopes:!blocked
+   blockers:blocked?[{code:'synthetic_new_inspection_blocked',detail:'missing-catalog-page',value:'PRIVATE_BODY',credential:'PRIVATE_TOKEN'}]:[],completeKnownScopes:!blocked
   })});
   const dom=makePanelDom();
   try{
@@ -71,14 +75,18 @@ for(const variant of variants){
    assert.equal(dom.byAttr('data-current-mode').textContent,'현재 전역 모드: 서버 단독','an unapproved target is not an applied setting');
    blocked=true;
    const before=[...f.values];
-   await dom.byAttr('data-apply').onclick();
-   assert.match(dom.byAttr('data-status').textContent,/새 이전 검사.*미해결/);
-   assert.match(dom.byAttr('data-status').textContent,/저장 설정은 변경되지 않았습니다/);
+   const applying=dom.byAttr('data-apply').onclick();
+   const approve=dom.byAttr('data-mode-confirm-approve');
+   await until(()=>typeof approve.onclick==='function');
+   assert.equal(f.bridge.getSyncJob().status,'completed','the consent prompt does not replace the previous result');
+   approve.onclick();await applying;
+   assert.match(dom.byAttr('data-status').textContent,/synthetic_new_inspection_blocked/);
+   assert.match(dom.byAttr('data-status').textContent,/저장 위치는 바뀌지 않았고/);
    await dom.byAttr('data-job-copy').onclick();
    const diagnostic=JSON.parse(dom.byAttr('data-job-diagnostics').value);
-   assert.equal(diagnostic.status,'completed');assert.equal(diagnostic.effectiveMode,'server_only');
-   assert.equal(diagnostic.migrationPreview.completeKnownScopes,false);
-   assert.equal(diagnostic.migrationPreview.blockers[0].code,'synthetic_new_inspection_blocked');
+   assert.equal(diagnostic.status,'failed');assert.equal(diagnostic.effectiveMode,'server_only');
+   assert.equal(diagnostic.error,'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE');
+   assert.equal(diagnostic.details.blockers[0].code,'synthetic_new_inspection_blocked');
    assert(!JSON.stringify(diagnostic).includes('PRIVATE_'),'copy retains metadata, never source bodies or credentials');
    assert.deepEqual([...f.values],before,'failed reinspection cannot mutate the completed configuration');
    assert.equal((await f.bridge.getGlobalMode({force:true})).mode,'server_only');

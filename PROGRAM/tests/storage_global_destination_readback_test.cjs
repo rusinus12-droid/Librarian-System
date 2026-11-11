@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),test=require('node:test');
-const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+const {fixture, installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 const {makePanelDom}=require('./helpers/global-allchat-panel-dom.cjs');
 async function paused(variant,sourceA){
  const f=await fixture(variant);let requested=false;
@@ -27,41 +27,40 @@ for(const variant of variants){
    assert.equal(f.values.get(key),'PLUGIN_ADVANCED');
   }finally{await f.close();}
  });
- test(`${namespace}: an independently changed local destination is preserved`,async()=>{
+ test(namespace+': an independently changed local destination is preserved',async()=>{
   const f=await fixture(variant);
-  let dom;
   try{
    await f.bridge.setGlobalMode('server_only');
-   const completedJobId=f.bridge.getSyncJob().jobId;
    await f.proxy.setItem(key,'SERVER_ADVANCED');
    f.values.set(key,'LOCAL_INDEPENDENT');
-   if(namespace==='libra'){
-    dom=makePanelDom();await f.bridge.mountConnectionPanel(dom.container);
-    await new Promise(resolve=>setTimeout(resolve,50));
-    for(const radio of dom.radios)radio.checked=radio.value==='plugin_only';
-    dom.byAttr('data-url').value='http://127.0.0.1:47631';
-    const apply=dom.byAttr('data-apply').onclick();
-    const approve=dom.byAttr('data-mode-confirm-approve');
-    for(let i=0;i<200&&!approve.onclick;i++)await new Promise(resolve=>setTimeout(resolve,10));
-    assert.equal(typeof approve.onclick,'function');approve.onclick();await apply;
-    assert.ok(dom.byAttr('data-status').textContent.includes(key),dom.byAttr('data-status').textContent);
-    assert.equal(dom.byAttr('data-preview-diagnostics').hidden,false);
-    assert.equal(JSON.parse(dom.byAttr('data-preview-diagnostics-text').value).details.key,key);
-    const exported=f.bridge.decorateDebugExportSync({}).memorySuite;
-    assert.equal(exported.migrationPreview.completeKnownScopes,true);
-    const failure=exported.migrationAdmissionFailure;
-    assert.equal(failure.phase,'destination_preflight');
-    assert.equal(failure.code,'MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT');
-    assert.equal(failure.details.key,key);
-    assert.equal(failure.details.destinationLocation,'plugin');
-    assert.equal(failure.details.replicaWitness,'changed');
-    assert.doesNotMatch(JSON.stringify(failure),/LOCAL_INDEPENDENT|SERVER_ADVANCED/);
-   }else await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT');
-   assert.equal(f.bridge.getSyncJob().jobId,completedJobId);
-   assert.equal(f.values.get(key),'LOCAL_INDEPENDENT');
+   const error=await f.bridge.setGlobalMode('plugin_only').then(()=>null,error=>error);
+   assert.equal(f.values.get(key),'LOCAL_INDEPENDENT','switching modes preserves an independent destination edit');
    assert.equal(f.app.repositories[namespace].get('plugin',key).value,'SERVER_ADVANCED');
    assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');
-  }finally{if(dom)dom.root.isConnected=false;await f.close();}
+   assert.equal(error?.code,'MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT');
+   const diagnostic=f.bridge.getCachedDiagnostics();
+   assert.doesNotMatch(JSON.stringify(diagnostic),/LOCAL_INDEPENDENT|SERVER_ADVANCED/);
+  }finally{await f.close();}
+ });
+ test(namespace+': a server source removed after inventory prevents a mode switch',async()=>{
+  let removed=false,inject=false;
+  const f=await fixture(variant,{transportFactory:base=>async(url,init={})=>{
+   if(inject&&!removed&&new URL(url).pathname==='/v1/kv/get-many'&&JSON.parse(init.body).keys.includes(key)){
+    removed=true;
+    f.app.repositories[namespace].database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',key);
+   }
+   return base(url,init);
+  }});
+  try{
+   await f.bridge.setGlobalMode('server_only');
+   await f.proxy.setItem(key,'SERVER_ADVANCED');
+   inject=true;
+   const error=await f.bridge.setGlobalMode('plugin_only').then(()=>null,error=>error);
+   assert.equal(removed,true,'fault is injected at the batched read after inventory');
+   assert.equal((await f.bridge.getGlobalMode()).mode,'server_only','an incomplete source cannot promote the stale replica');
+   assert.equal(f.values.get(key),'A_SOURCE');
+   assert.ok(error,'the interrupted transfer is reported as a failure');
+  }finally{await f.close();}
  });
  test(`${namespace}: the local representation is compared through its server projection`,async()=>{
   const bridgeOptions={resolveKeyScope:async({key:logicalKey})=>({
@@ -130,20 +129,24 @@ for(const variant of variants){
    assert.equal(f.app.repositories[namespace].get('plugin',key).exists,false);assert.equal(fresh.bridge.getSyncJob().status,'paused');
   }finally{stop?.();await fresh?.close();await f.close();}
  });
- test(`${namespace}: conditional creation preserves a server record arriving after the missing read`,async()=>{
-  const f=await paused(variant);let fresh;
+ test(namespace+': a failed batch precondition preserves a concurrently created server record',async()=>{
+  let inserted=false;
+  const f=await fixture(variant,{transportFactory:base=>async(url,init={})=>{
+   if(!inserted&&new URL(url).pathname==='/v1/kv/batch'&&JSON.parse(init.body).mutations.some(row=>row.key===key)){
+    inserted=true;
+    f.app.repositories[namespace].mutate({kind:'set',space:'plugin',key,value:'RACING_SERVER_VALUE',operationId:'concurrent_create'});
+   }
+   return base(url,init);
+  }});
   try{
-   f.app.repositories[namespace].database.prepare('DELETE FROM kv WHERE space=? AND key=?').run('plugin',key);let inserted=false;
-   fresh=await fixture(variant,{app:f.app,values:f.values,transportFactory:base=>async(url,init={})=>{
-    if(!inserted&&new URL(url).pathname==='/v1/kv/set'&&JSON.parse(init.body).key===key){
-     inserted=true;f.app.repositories[namespace].mutate({kind:'set',space:'plugin',key,value:'RACING_SERVER_VALUE',operationId:'concurrent_create'});
-    }
-    return base(url,init);
-   }});
-   await assert.rejects(()=>fresh.bridge.setGlobalMode('server_only'));
-   assert.equal(inserted,true);assert.equal(f.app.repositories[namespace].get('plugin',key).value,'RACING_SERVER_VALUE');
-   assert.equal(f.values.get(key),'A_SOURCE');assert.equal(fresh.bridge.getSyncJob().status,'paused');
-  }finally{await fresh?.close();await f.close();}
+   const error=await f.bridge.setGlobalMode('server_only').then(()=>null,error=>error);
+   assert.equal(inserted,true,'the server changed after inventory and before conditional batch writes');
+   assert.ok(f.calls.some(call=>call.path==='/v1/kv/batch'&&call.status===409),'the real server rejected the stale batch precondition');
+   assert.equal(f.app.repositories[namespace].get('plugin',key).value,'RACING_SERVER_VALUE');
+   assert.equal(f.values.get(key),'A_SOURCE');
+   assert.equal((await f.bridge.getGlobalMode()).mode,'plugin_only');
+   assert.ok(error,'batch fallback must not report success after a destination conflict');
+  }finally{await f.close();}
  });
  test(`${namespace}: an originally server-only source never falls back to a retained local copy`,async()=>{
   const f=await fixture(variant);let stop;

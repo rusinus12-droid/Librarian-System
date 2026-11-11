@@ -130,31 +130,34 @@ async function openPanel(s){
  await settleOwnerStore(s);
 }
 async function apply(s,mode){
- let approvedWarningCount=0;
- const input=s.doc.querySelector(`input[value="${mode}"]`);assert(input);input.checked=true;input.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
+ const input=s.doc.querySelector(`input[value="${mode}"]`);assert(input);input.checked=true;
+ input.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));
  s.context.confirm=()=>{throw Error('Native confirmation forbidden');};
- const approve=async button=>{const pending=button.onclick();await until(()=>s.doc.querySelector('[data-mode-confirm-approve]')?.onclick||s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview'),'migration approval or fresh preview');const node=s.doc.querySelector('[data-mode-confirm-approve]');if(node?.onclick){
-  if(s.name==='Flashback'){
-   const preview=JSON.parse(s.doc.querySelector('[data-preview-diagnostics-text]').value);approvedWarningCount=preview.warningCount;
-   assert.ok(approvedWarningCount>0);assert.equal(preview.warnings[0].code,'flashback_global_vector_payload_absent');
-   assert.equal(s.doc.querySelector('[data-preview-diagnostics]').hidden,false);
-   assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/경고 .*건.*키워드/);
-  }
-  node.click();}await pending;};
- const button=s.doc.querySelector('[data-apply]');await approve(button);
- // A read-only preview may observe the owner's own startup schema write. Exercise
- // the documented fresh confirmation path once, never skip an unknown-data blocker.
- if(s.doc.querySelector('[data-status]')?.textContent.includes('inventory_changed_during_preview')){s.globalInventoryRefreshes=(s.globalInventoryRefreshes||0)+1;await settleOwnerStore(s);const selected=s.doc.querySelector(`input[value="${mode}"]`);selected.checked=true;selected.dispatchEvent(new s.dom.window.Event('change',{bubbles:true}));await approve(s.doc.querySelector('[data-apply]'));}
- // Successful recovery may return the owner to its ordinary screen before the
- // awaiting click handler returns. Observe durable completion, then reopen the
- // real server panel rather than asserting against an already-removed view.
- await until(()=>{try{const job=JSON.parse(s.values.get(`__memory_suite_internal_sync_job_v1__:${owners[s.name]}`));return job?.status==='completed'&&job.targetMode===mode;}catch(_){return false;}},'durable global job completion',10000);
+ const pending=s.doc.querySelector('[data-apply]').onclick();
+ await until(()=>s.doc.querySelector('[data-mode-confirm-approve]')?.onclick,'migration approval');
+ assert.match(s.doc.querySelector('[data-mode-confirm-text]').textContent,/전환합니다/);
+ s.doc.querySelector('[data-mode-confirm-approve]').click();await pending;
+ // Recovery can return the owner to its ordinary screen. Observe the durable
+ // job before reading the real server panel.
+ const journalKey=`__memory_suite_internal_sync_job_v1__:${owners[s.name]}`;
+ const readJob=()=>JSON.parse(s.values.get(journalKey)||'null');
+ await until(()=>{const job=readJob();return job?.targetMode===mode&&['completed','failed','cancelled'].includes(job.status);},
+  'durable global job result',10000);
+ const job=readJob();
+ assert.equal(job.status,'completed',job.error||s.doc.querySelector('[data-status]')?.textContent);
  if(!s.doc.querySelector('[data-status]'))await openPanel(s);
  await until(()=>s.doc.querySelector('[data-job].terminal'),'completed global job card',4000);
  const text=[s.doc.querySelector('[data-status]').textContent,s.doc.querySelector('[data-job-title]').textContent,s.doc.querySelector('[data-job-count]').textContent].join('\n');
- const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);assert.equal(diagnostics.result.completeKnownScopes,true,text);assert.equal(diagnostics.result.mode,mode,text);assert.equal(diagnostics.result.verifiedScopes,3);assert.match(s.doc.querySelector('[data-job-count]').textContent,/3 \/ 3/,text);
- assert.equal(diagnostics.result.warningCount,approvedWarningCount,'completion retains the approved warning count');
- if(s.name==='Flashback'){assert.match(text,/경고 .*건.*키워드/);assert.match(s.doc.querySelector('[data-job-result]').textContent,/경고 .*건.*키워드/);}
+ const diagnostics=JSON.parse(s.doc.querySelector('[data-job-diagnostics]').value);
+ assert.equal(diagnostics.result.completeKnownScopes,true,text);
+ assert.equal(diagnostics.result.mode,mode,text);
+ assert.equal(diagnostics.result.verifiedScopes,3);
+ assert.match(s.doc.querySelector('[data-job-count]').textContent,/대화 3개 · 항목 \d+ \/ \d+/,text);
+ if(s.name==='Flashback'){
+  assert.ok(diagnostics.result.warningCount>0);
+  assert.ok(diagnostics.result.warnings.some(row=>row.code==='flashback_global_vector_payload_absent'));
+  assert.match(s.doc.querySelector('[data-job-result]').textContent,/확인이 필요한 항목 \d+건/);
+ }
  return text;
 }
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
@@ -165,10 +168,10 @@ async function apply(s,mode){
   s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch,beforeWrite:async(key,value)=>{
    if(s&&key===`__memory_suite_internal_sync_job_v1__:${namespace}`&&typeof value==='string'){
     const job=JSON.parse(value);
-    // The prepared journal follows the owner writer drain and closes admission.
+    // The inventory journal follows the owner writer drain and precedes payload writes.
     // Startup normalization before that boundary is not a migration mutation.
-    if(!admittedSource&&job.kind==='global_mode'&&job.phase==='prepared'&&job.status==='queued'&&job.targetMode==='server_only')admittedSource={roots:captureSeededRoots(s,name),values:[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'))};
-    if(name==='Flashback'&&!migrationDebug&&job.kind==='global_mode'&&job.phase==='copy_verify'&&job.status==='running'){
+    if(!admittedSource&&job.engine==='fast'&&job.phase==='inventory'&&job.status==='running'&&job.targetMode==='server_only')admittedSource={roots:captureSeededRoots(s,name),values:[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'))};
+    if(name==='Flashback'&&!migrationDebug&&job.engine==='fast'&&job.phase==='inventory'&&job.status==='running'){
      migrationDebug=await s.api.exportDebugLog();
     }
    }
@@ -179,13 +182,13 @@ async function apply(s,mode){
   // Freeze the actual durable source while requiring every seeded identity/data field.
   let frozenRoots=captureSeededRoots(s,name);
   if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
-  const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
+  const forward=await apply(s,'server_only');
   if(name==='Flashback'){
    assert.equal(migrationDebug?.scope,'storage_migration');
    assert.equal(migrationDebug.memorySuite.syncJob.status,'running');
    assert.equal(migrationDebug.state,undefined,'migration debug does not hydrate scope bodies while writes are fenced');
   }
-  assert.ok(admittedSource,'the public migration persisted its prepared journal before copying');
+  assert.ok(admittedSource,'the public migration wrote its inventory journal before copying');
   frozenRoots=admittedSource.roots;before=admittedSource.values;
   console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));
   const rows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
@@ -206,7 +209,7 @@ async function apply(s,mode){
   const savedDevice=[...s.deviceValues].filter(([key])=>!deviceKeys.has(key));await s.close();s=null;
   restart=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:saved,initialDeviceValues:savedDevice,args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(restart);
-  if(name==='Flashback')assert.match(restart.doc.querySelector('[data-job-result]').textContent,/경고 .*건.*키워드/,'completed warnings survive plugin restart');
+  if(name==='Flashback')assert.match(restart.doc.querySelector('[data-job-result]').textContent,/확인이 필요한 항목 \d+건/,'completed warnings survive plugin restart');
   assert.equal(restart.doc.querySelector('input[value="server_only"]').checked,true,'restart sees committed global policy');
   for(const key of serverOnlyKeys)assert.equal(restart.values.has(key),false,'record still requires restore '+key);
   for(const key of deviceKeys)assert.equal(restart.deviceValues.has(key),false,'device payload still requires restore '+key);
@@ -223,7 +226,11 @@ async function apply(s,mode){
   await pause(100);
   await cleanupOperation(restart.doc.querySelector('[data-server-delete]').onclick());
   assert.equal(restart.doc.querySelector('[data-cleanup-dialog]').hidden,false,'the review survives owner GUI hydration');
-  assert.equal(restart.doc.querySelector('[data-cleanup-continue]').disabled,false,'verified shared and scoped payloads can be selected after moving back');
+  const confirm=restart.doc.querySelector('[data-cleanup-continue]');
+  const typed=restart.doc.querySelector('[data-cleanup-typed]');
+  assert.equal(confirm.disabled,true,'review must wait for typed confirmation');
+  typed.value='삭제';typed.dispatchEvent(new restart.dom.window.Event('input',{bubbles:true}));
+  assert.equal(confirm.disabled,false,'verified shared and scoped payloads can be selected after moving back');
   const tombstonesBefore=handler.app.repositories[namespace].database.prepare('SELECT COUNT(*) AS n FROM kv WHERE deleted=1').get().n;
   await cleanupOperation(restart.doc.querySelector('[data-cleanup-continue]').onclick());
   const cleanupSummary=restart.doc.querySelector('[data-cleanup-summary]').textContent;
@@ -233,7 +240,7 @@ async function apply(s,mode){
   for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'server cleanup retains the actual native plugin root '+key);
   for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'server cleanup retains device vectors '+key);
   assert.equal(restart.wire.length,0,'no external network/model fallback');
-  const result={name,namespace,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,restoredFromServer:serverOnlyKeys.size+deviceKeys.size,handlerRequests:handler.trace.length,readOnlyPreviewRefreshes:forwardRefreshes+(restart.globalInventoryRefreshes||0)};results.push(result);console.log(JSON.stringify(result));
+  const result={name,namespace,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,restoredFromServer:serverOnlyKeys.size+deviceKeys.size,handlerRequests:handler.trace.length,transferEngine:'fast'};results.push(result);console.log(JSON.stringify(result));
  }catch(error){const active=restart||s;if(active)console.error(JSON.stringify({name,kind,keys:[...active.values.keys()],localValues:[...active.values],deviceValues:[...active.deviceValues],serverRows:handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all(),journal:active.values.get(`__memory_suite_internal_sync_job_v1__:${namespace}`),registry:active.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`),status:active.doc.querySelector('[data-status]')?.textContent,errors:active.errors,logs:active.logs.slice(-8)},null,2));throw error;}
  finally{await restart?.close();await s?.close();await handler.close();}
 }console.log('STORAGE_MODE_ROUNDTRIP_RESULT '+JSON.stringify(results));})().catch(error=>{console.error(error);process.exitCode=1;});
