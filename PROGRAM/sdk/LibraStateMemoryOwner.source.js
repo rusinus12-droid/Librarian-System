@@ -53,7 +53,7 @@
     // One query reads the same heads and receipts many times. A background read frame
     // shares those bytes and checks every consumed key once, in batches, before the
     // result leaves. A frame that saw a change is dropped and the proof runs unshared.
-    const stateReadFrames = new WeakMap();
+    const stateReadFrames = new WeakMap(), stateDeferredProofs = new WeakSet();
     const closeStateReadFrame = context => {
       const frame = stateReadFrames.get(context);
       if (frame) { stateReadFrames.delete(context); frame.close(); }
@@ -158,6 +158,11 @@
       const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const snapshot = async (context, options = {}) => {
         const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
+        // The records every snapshot reads, in one request when a frame owns the scope.
+        try {
+          await nativeReadFrames.get(scope)?.prefetch([key.manifest(scope), key.continuityState(scope),
+            key.entityRegistry(scope), key.stateWorldlineMeta(scope)]);
+        } catch (_) { /* Each read below reports its own failure. */ }
         const stored = await storage.getVerifiedJson(key.manifest(scope), scope, null);
         const manifest = stored || await loadManifest(scope, pairs.length);
         const active = await readUnifiedWorldlineView(scope, manifest, pairs);
@@ -186,14 +191,17 @@
           semanticAllowed: options.semantic !== false };
       };
       const capture = createLibraStateMemoryCapture({
-        async context() {
+        async context(options = {}) {
           const resolved = await resolveContext(), context = { ...resolved, scope: { ...resolved.scope } };
           stateReadFrames.set(context, await openBackgroundReadFrame(context.scope));
+          if (options?.deferFrameProof === true) stateDeferredProofs.add(context);
           return context;
         },
         async settle(context) {
           const frame = stateReadFrames.get(context);
           if (!frame) return true;
+          // The caller proves the selection again before delivery, in a frame of its own.
+          if (stateDeferredProofs.has(context)) { closeStateReadFrame(context); return 'deferred'; }
           try { await frame.assertCurrent(); return true; }
           catch (error) { if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error; return false; }
           finally { closeStateReadFrame(context); }
@@ -248,9 +256,14 @@
         fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
+        // Candidate bodies of this scope in one request; other scopes' refs stay single reads.
+        async prepare(context, source, { refs = [] } = {}) {
+          const frame = stateReadFrames.get(context);
+          if (frame && !frame.disabled) await frame.prefetch(asArray(refs).map(ref => string(ref?.key || '')).filter(Boolean));
+        },
         async canonical(context, ref, source, semantic) {
-          const memory = await loadWorldManagerHistoryCanonicalMemory(ref);
-          if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory);
+          const memory = await loadWorldManagerHistoryCanonicalMemory(ref, context.scope);
+          if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
           const review = source.review;
           const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
           const rows = facts.flatMap((fact, index) => memoryReviewDecision(review, 'canonical', memory, index) === 'rejected' ? [] : [{
@@ -336,7 +349,7 @@
           // A later delivery proof gets its own frame. If that frame saw a change, the
           // unshared proof decides, so an unrelated concurrent write cannot refuse delivery.
           const readScope = { ...context.scope }, frame = await openBackgroundReadFrame(readScope);
-          try { await prove(readScope); await frame.assertCurrent(); }
+          try { await prove(readScope); await frame.assertCurrent({ observedIsCurrent: true }); }
           catch (error) {
             if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error;
             frame.close(); await prove(null);

@@ -35617,8 +35617,11 @@ function createLibraReadonlySourceContext(owner) {
         entries.set(storageKey,Promise.resolve({local:hit.localRaw,
           remote:mode==='plugin_only'?null:{...hit.serverPin,value:hit.empty?null:hit.serverRaw}}));
         if(!hit.empty)decoded.set(storageKey,clone(hit.value));
+        borrowed.add(storageKey);
         return true;
       };
+      // Keys served from resident witnesses instead of a physical read in this frame.
+      const borrowed = new Set();
       const account = async (load, select = value => value) => resources ? resources.read(load,{select}) : load();
       const physical = async storageKey => {
         const local = mode !== 'server_only'
@@ -35643,7 +35646,9 @@ function createLibraReadonlySourceContext(owner) {
       // Owner heads are small. One read lease covers a whole server get-many batch
       // (the SDK accepts 64 keys), so a verification pass costs ceil(keys/32) round
       // trips instead of ceil(keys/4). The batch body is still byte-accounted.
-      const OWNER_GET_MANY_BATCH = 32;
+      // The server takes 512 keys and pages the reply by bytes, so an unbudgeted frame
+      // sends larger batches; a budgeted read keeps the smaller one its byte cap was sized for.
+      const OWNER_GET_MANY_BATCH = resources ? 32 : 128;
       const bodyUtf8Bytes = text => { let bytes = 0; for (let i = 0; i < text.length; i++) { const code = text.charCodeAt(i);
         if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) { bytes += 4; i++; } else bytes += code < 128 ? 1 : code < 2048 ? 2 : 3; } return bytes; };
       // One lease per get-many. If the batch body could exceed the per-read cap the
@@ -35674,7 +35679,7 @@ function createLibraReadonlySourceContext(owner) {
         observeExtra(storageKey,raw,project=null){if(!extraReads.has(storageKey))extraReads.set(storageKey,{raw:stableReferenceJson(raw),project,projected:project?project(raw):null});},
         disable(){frame.disabled=true;activeBackgroundReadFrames.delete(frame);},
         acceptOwnWrite(storageKey){
-          entries.delete(storageKey);decoded.delete(storageKey);consumed.delete(storageKey);
+          entries.delete(storageKey);decoded.delete(storageKey);consumed.delete(storageKey);borrowed.delete(storageKey);
           frame.disabled=false;frame.writeBoundaryClosed=false;activeBackgroundReadFrames.add(frame);
         },
         async prefetch(storageKeys){
@@ -35765,7 +35770,7 @@ function createLibraReadonlySourceContext(owner) {
           if(mode === 'mirror' && localExists !== remoteExists)throw new Error(`LIBRA_VERIFIED_STORAGE_COPY_MISMATCH:${storageKey}`);
           return mode === 'plugin_only' ? (localExists ? entry.local : null) : (remoteExists ? entry.remote.value : null);
         },
-        async assertCurrent(){
+        async assertCurrent(assertOptions={}){
           if(mode !== string((await MemorySuiteStorageBridge.getScopeMode(scope))?.mode || 'plugin_only')
             || mode !== 'plugin_only' && binding !== stableReferenceJson(await MemorySuiteStorageBridge.captureServerBinding()))throw new Error('LIBRA_MEMORY_READER_ROUTE_CHANGED');
           for(const [storageKey,before]of extraReads){
@@ -35773,7 +35778,9 @@ function createLibraReadonlySourceContext(owner) {
             if(before.raw===stableReferenceJson(now))continue;
             if(!before.project||before.project(now)!==before.projected)throw new Error('LIBRA_BACKGROUND_SETTINGS_CHANGED');
           }
-          const keys = [...(background?consumed:entries.keys())];
+          // A frame opened only to prove currentness has just read its keys physically;
+          // with observedIsCurrent only the borrowed ones still need the closing check.
+          const keys = [...(background?consumed:entries.keys())].filter(storageKey=>!(assertOptions.observedIsCurrent===true&&background&&!borrowed.has(storageKey)));
           for(let offset=0;offset<keys.length;){
             const access = resources?.inspect();
             const batchSize = access ? Math.max(1,Math.min(4,
@@ -36127,9 +36134,12 @@ function createLibraReadonlySourceContext(owner) {
         }
         return await fencedMemoryStorageSet(storageKey, JSON.stringify(storedValue));
       },
-      async keys() {
-        const values = await LibraProviderBridge.storage.keys?.();
-        return Array.isArray(values) ? values.map(value => String(value || '')).filter(Boolean) : [];
+      // A prefix keeps the listing to one family of one scope instead of the whole namespace.
+      async keys(prefix = '') {
+        const wanted = String(prefix || '');
+        const values = await LibraProviderBridge.storage.keys?.(wanted);
+        const keys = Array.isArray(values) ? values.map(value => String(value || '')).filter(Boolean) : [];
+        return wanted ? keys.filter(storageKey => storageKey.startsWith(wanted)) : keys;
       },
       async remove(storageKey) {
         let localKey = '';
@@ -39601,6 +39611,32 @@ function createLibraReadonlySourceContext(owner) {
     // Read the existing immutable source receipts. The current host chat is used only
     // by readActiveCompletedTurnReceipt to reject stale revisions; it never supplies
     // dialogue text to this set or to its consumers.
+    // Receipt heads and bodies of several turns in two requests instead of two per turn.
+    // The frame only shares bytes read now; every turn still passes the same binding checks.
+    const openReceiptReadFrame = async (scope, worldlineId, turns, deadlineAt = 0) => {
+      let frame = null;
+      const bounded = async operation => {
+        const remaining = Number(deadlineAt) > 0 ? Number(deadlineAt) - Date.now() - 25 : Infinity;
+        if (remaining <= 0) return false;
+        if (!Number.isFinite(remaining)) { await operation(); return true; }
+        let timer = null;
+        try { return await Promise.race([operation().then(() => true), new Promise(resolve => { timer = setTimeout(() => resolve(false), remaining); })]); }
+        finally { if (timer !== null) clearTimeout(timer); }
+      };
+      try {
+        frame = await openNativeReadFrame(scope);
+        const headKeys = turns.map(turn => key.completedTurnHead(scope, worldlineId, 0, turn));
+        if (await bounded(() => frame.prefetch(headKeys))) {
+          const receiptKeys = [];
+          for (const headKey of headKeys) {
+            const head = await storage.getVerifiedJson(headKey, scope, null).catch(() => null);
+            if (typeof head?.receiptKey === 'string' && head.receiptKey) receiptKeys.push(head.receiptKey);
+          }
+          await bounded(() => frame.prefetch(receiptKeys));
+        }
+      } catch (_) { /* The per-turn reads below report their own failures. */ }
+      return frame;
+    };
     const readCompletedReceiptSet = async ({ scope: scopeValue, boundary = null, requestedTurns = [],
       expectedSources = [], signal = null, deadlineAt = 0 } = {}) => {
       const scope = asObject(scopeValue);
@@ -39616,6 +39652,9 @@ function createLibraReadonlySourceContext(owner) {
         cachedScope = { ...scope, _cachedMode: mode };
       } catch (_) {}
       const turnOptions = cachedContext ? { context: cachedContext, pairs: cachedPairs, cachedScope, skipFinalContextCheck: true } : {};
+      const receiptFrame = cachedScope && turns.length > 1 && !nativeReadFrames.has(cachedScope) && !nativeReadBudgets.has(cachedScope)
+        ? await openReceiptReadFrame(cachedScope, worldlineId, turns, deadlineAt) : null;
+      try {
       for (const turn of turns) {
         if (signal?.aborted || (Number(deadlineAt) > 0 && Date.now() >= Number(deadlineAt))) {
           gaps.push({ turn, status: 'pending', reason: 'read_budget_exhausted' });
@@ -39657,6 +39696,7 @@ function createLibraReadonlySourceContext(owner) {
           gaps.push({ turn, status: 'pending_reconciliation', reason: compact(error?.message || error, 200) });
         }
       }
+      } finally { receiptFrame?.close(); }
       const body = { status: !pairs.length ? 'empty' : gaps.length ? 'partial' : 'complete',
         scopeKey: string(scope.scopeKey || ''), worldlineId, requestedTurns: turns,
         pairs, refs, gaps, boundary: boundary ? clone(boundary) : null };
@@ -39677,9 +39717,19 @@ function createLibraReadonlySourceContext(owner) {
         throw stale('read_set_invalid');
       }
       if (!readSet.refs.length) return true;
-      const scope = asObject((await resolveContext())?.scope);
+      const recheckContext = await resolveContext();
+      const scope = { ...asObject(recheckContext?.scope) };
       if (scope.scopeKey !== readSet.scopeKey
         || hostWorldlineIdForScope(scope) !== readSet.worldlineId) throw stale('scope_or_worldline_changed');
+      // One fresh read of every used head and receipt; the checks below are unchanged.
+      let recheckFrame = null;
+      if (readSet.refs.length > 1) {
+        try {
+          recheckFrame = await openNativeReadFrame(scope);
+          await recheckFrame.prefetch(readSet.refs.flatMap(ref => [ref.headKey, ref.receiptKey]).filter(Boolean));
+        } catch (_) { recheckFrame?.close(); recheckFrame = null; }
+      }
+      try {
       for (const ref of readSet.refs) {
         const active = await readActiveCompletedTurnReceipt(scope, readSet.worldlineId,
           Number(ref.sessionEpoch), Number(ref.turn));
@@ -39693,6 +39743,7 @@ function createLibraReadonlySourceContext(owner) {
           throw stale(`turn_${Number(ref.turn)}_${active.status}`);
         }
       }
+      } finally { recheckFrame?.close(); }
       return true;
     };
     // Receipt recovery owns metadata only. Original completed dialogue remains in
@@ -45953,6 +46004,7 @@ function createLibraReadonlySourceContext(owner) {
       stateAuthority: snapshot.stateAuthority, check, canonical, micro, lens,
       semantic: typeof native.semantic === 'function' ? async query => { const value = await native.semantic(context, snapshot, query); check(); return value; } : null,
       microIndex: typeof native.microIndex === 'function' ? async () => { const value = await native.microIndex(context, snapshot); check(); return value; } : null,
+      prepare: typeof native.prepare === 'function' ? async candidates => { await native.prepare(context, snapshot, candidates); check(); } : null,
       settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
       abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,
       register: sources => native.register(scope, sources.flatMap(source => source.proofs), snapshot),
@@ -46014,11 +46066,19 @@ function createLibraReadonlySourceContext(owner) {
       try { lensSource = await timed('lensMs', () => frame.lens(queryText, maxCharacters)); keep(lensSource); }
       catch (error) { failures.push({ family: 'lens', code: error.code || error.message }); }
     }
-    for (const ref of refs) {
+    // Candidate bodies are fetched together, then read side by side in small groups.
+    // Results are kept in rank order, so the selection does not depend on arrival order.
+    if (frame.prepare) { try { await timed('prepareMs', () => frame.prepare({ refs, turns })); } catch (_) {} }
+    for (let offset = 0; offset < refs.length && !payloadLimited; offset += 8) {
       frame.check();
-      if (payloadLimited) break;
-      try { keep(await timed('canonicalMs', () => frame.canonical(ref, semantic))); }
-      catch (error) { failures.push({ family: 'canonical', key: ref.key, code: error.code || error.message }); }
+      const group = refs.slice(offset, offset + 8);
+      const settled = await timed('canonicalMs', () => Promise.all(group.map(ref =>
+        Promise.resolve().then(() => frame.canonical(ref, semantic)).then(value => ({ value }), error => ({ error })))));
+      for (const [index, outcome] of settled.entries()) {
+        if (payloadLimited) break;
+        if (outcome.error) failures.push({ family: 'canonical', key: group[index].key, code: outcome.error.code || outcome.error.message });
+        else keep(outcome.value);
+      }
     }
     for (const turn of turns) {
       frame.check();
@@ -46101,9 +46161,9 @@ function createLibraReadonlySourceContext(owner) {
     try {
       await validatePacket(packet);
       // A frame that saw a concurrent change is closed by settle; prove once more without it.
-      const shared = frame.settle ? await frame.settle() !== false : null;
-      if (shared === false) await validatePacket(packet);
-      result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      const settled = frame.settle ? await frame.settle() : null;
+      if (settled === false) await validatePacket(packet);
+      result.diagnostics.readFrame = settled === null ? 'none' : settled === false ? 'reproved' : settled === 'deferred' ? 'deferred' : 'shared';
       result.diagnostics.elapsedMs = now() - startedAt;
       return result;
     }
@@ -52956,6 +53016,36 @@ function mountMemorySuiteReanalysisReview(container,config) {
         aliases: clone(asArray(named.aliases)), state: {}, fieldEvidence: {},
         identityEvidence: clone(proof), certainty: 'confirmed'}];
     };
+    // readActiveMicroMemory reads five records per turn. Inside a read frame they are
+    // fetched in two batched stages (heads, then what the heads name); every per-turn
+    // check still runs on those bytes. Without a frame nothing changes.
+    const prefetchMicroTurnReads = async (scope, worldlineId, turns) => {
+      const frame = nativeReadFrames.get(scope);
+      if (!frame || frame.disabled || typeof frame.prefetch !== 'function' || !asArray(turns).length) return;
+      try {
+        const rows = asArray(turns).map(turn => ({ microHead: key.microMemoryHead(scope, worldlineId, 0, turn),
+          receiptHead: key.completedTurnHead(scope, worldlineId, 0, turn) }));
+        await frame.prefetch(rows.flatMap(row => [row.receiptHead, row.microHead]));
+        const named = [];
+        for (const row of rows) {
+          const [receiptHead, microHead] = [await storage.getVerifiedJson(row.receiptHead, scope, null).catch(() => null),
+            await storage.getVerifiedJson(row.microHead, scope, null).catch(() => null)];
+          for (const value of [receiptHead?.receiptKey, microHead?.recordKey, microHead?.workKey]) if (typeof value === 'string' && value) named.push(value);
+        }
+        await frame.prefetch(named);
+      } catch (_) { /* The per-turn reads report their own failures. */ }
+    };
+    // Micro heads and State admission decisions of one scope and worldline.
+    const microAdmissionInventory = async (scope, worldlineId) => {
+      const frame = nativeReadFrames.get(scope), memo = frame && !frame.disabled ? (frame.inventoryMemo ||= new Map()) : null;
+      const memoKey = 'micro-admission:' + worldlineId;
+      if (memo?.has(memoKey)) return await memo.get(memoKey);
+      const headPrefix = key.microMemoryHead(scope, worldlineId, 0, '');
+      const admissionPrefix = `${PREFIX}:scope:${scope.scopeKey}:micro-state-admission:${worldlineId}:e0:t`;
+      const pending = Promise.all([storage.keys(headPrefix), storage.keys(admissionPrefix)]).then(([heads, admissions]) => [...heads, ...admissions]);
+      if (memo) { memo.set(memoKey, pending); pending.catch(() => memo.delete(memoKey)); }
+      return await pending;
+    };
     const projectActiveMicroStateForResponse = async (scope, manifest, canonicalView, options = {}) => {
       const base = asObject(canonicalView);
       const stateProofs = asArray(consumedMicroProofsByState.get(base.authority || base.head)).slice();
@@ -52992,7 +53082,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       let projectedThroughTurn = canonicalThroughTurn;
       if (!genesis && canonicalThroughTurn > 0) {
         let admissionKeys = null;
-        try { admissionKeys = await storage.keys(); }
+        try { admissionKeys = await microAdmissionInventory(scope, worldlineId); }
         catch (_) { pendingClaims.push({ reason: 'overlap_admission_inventory_unavailable' }); }
         const overlap = [];
         const microHeadPrefix = key.microMemoryHead(scope, worldlineId, 0, '');
@@ -53001,6 +53091,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             ? string(storageKey).slice(microHeadPrefix.length) : '';
           return /^\d+$/.test(suffix) ? Number(suffix) : 0;
         }).filter(turn => turn > 0 && turn <= canonicalThroughTurn))].sort((a, b) => a - b) : [];
+        await prefetchMicroTurnReads(scope, worldlineId, overlapTurns);
         for (const turn of overlapTurns) {
           let active;
           try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
@@ -53216,6 +53307,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
         }
       }
+      await prefetchMicroTurnReads(scope, worldlineId,
+        Array.from({ length: Math.max(0, pairs.length - canonicalThroughTurn) }, (_, index) => canonicalThroughTurn + 1 + index));
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         let active;
         try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
@@ -61834,6 +61927,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const unifiedExec = await runRecallStep(guard, 'state_memory_query', () => executeStateMemoryQuery({
         expectedScopeKey: scopeKeyStr,
         mode: 'state_first',
+        // The request hook always runs the delivery proof before injecting, so the
+        // query's own closing check of the same keys would only repeat it.
+        deferFrameProof: suppliedBundle?.deferFrameProof === true,
         queryInput: {
           queryText: string(queryBundle.currentText || ''),
           ...(activeView.cutoffTurn != null ? { asOfTurn: Number(activeView.cutoffTurn) } : {}),
@@ -63824,6 +63920,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // manifest publication cannot revoke the read set between those steps.
         return await runRecallStep(guard, 'unified_source_publication', () => enqueue(context.scope.scopeKey, async () => {
         ensureRecallGuard(guard, 'unified_source_publication');
+        queryBundle.deferFrameProof = true;
         let result = await recall(context, queryBundle, guard);
         pendingMemoryExecution = result.unifiedExecution;
         if (requestOwner !== latestRecallPublicationOwner) return messages;
@@ -67226,8 +67323,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         entityAdmission:stateMode?clone(asObject(receipt?.entityAdmission)):null
       };
     };
-    const loadWorldManagerHistoryCanonicalMemory = async ref => {
-      const memory=await loadMemoryRef(ref);
+    const loadWorldManagerHistoryCanonicalMemory = async (ref, scope = null) => {
+      const memory=await loadMemoryRef(ref, scope);
       if (!memory || string(memory.memoryId||'')!==string(ref.memoryId||'') || Number(memory.revision||0)!==Number(ref.revision||0)
         || string(memory.sourceDigest||'')!==string(ref.sourceDigest||'')
         || stableReferenceJson(asObject(memory.turnRange))!==stableReferenceJson(asObject(ref.turnRange))) throw stateCorrectionFailure('WORLD_MANAGER_HISTORY_CANONICAL_IDENTITY_MISMATCH');
@@ -67654,7 +67751,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     // One query reads the same heads and receipts many times. A background read frame
     // shares those bytes and checks every consumed key once, in batches, before the
     // result leaves. A frame that saw a change is dropped and the proof runs unshared.
-    const stateReadFrames = new WeakMap();
+    const stateReadFrames = new WeakMap(), stateDeferredProofs = new WeakSet();
     const closeStateReadFrame = context => {
       const frame = stateReadFrames.get(context);
       if (frame) { stateReadFrames.delete(context); frame.close(); }
@@ -67759,6 +67856,11 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const engine = createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const snapshot = async (context, options = {}) => {
         const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
+        // The records every snapshot reads, in one request when a frame owns the scope.
+        try {
+          await nativeReadFrames.get(scope)?.prefetch([key.manifest(scope), key.continuityState(scope),
+            key.entityRegistry(scope), key.stateWorldlineMeta(scope)]);
+        } catch (_) { /* Each read below reports its own failure. */ }
         const stored = await storage.getVerifiedJson(key.manifest(scope), scope, null);
         const manifest = stored || await loadManifest(scope, pairs.length);
         const active = await readUnifiedWorldlineView(scope, manifest, pairs);
@@ -67787,14 +67889,17 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           semanticAllowed: options.semantic !== false };
       };
       const capture = createLibraStateMemoryCapture({
-        async context() {
+        async context(options = {}) {
           const resolved = await resolveContext(), context = { ...resolved, scope: { ...resolved.scope } };
           stateReadFrames.set(context, await openBackgroundReadFrame(context.scope));
+          if (options?.deferFrameProof === true) stateDeferredProofs.add(context);
           return context;
         },
         async settle(context) {
           const frame = stateReadFrames.get(context);
           if (!frame) return true;
+          // The caller proves the selection again before delivery, in a frame of its own.
+          if (stateDeferredProofs.has(context)) { closeStateReadFrame(context); return 'deferred'; }
           try { await frame.assertCurrent(); return true; }
           catch (error) { if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error; return false; }
           finally { closeStateReadFrame(context); }
@@ -67849,9 +67954,14 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
+        // Candidate bodies of this scope in one request; other scopes' refs stay single reads.
+        async prepare(context, source, { refs = [] } = {}) {
+          const frame = stateReadFrames.get(context);
+          if (frame && !frame.disabled) await frame.prefetch(asArray(refs).map(ref => string(ref?.key || '')).filter(Boolean));
+        },
         async canonical(context, ref, source, semantic) {
-          const memory = await loadWorldManagerHistoryCanonicalMemory(ref);
-          if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory);
+          const memory = await loadWorldManagerHistoryCanonicalMemory(ref, context.scope);
+          if (unifiedArtifactSchemaReadable(memory.canonicalArtifact?.schema)) await unifiedEvidenceRead(memory, storageKey => storage.getStoredJson(storageKey, null, context.scope));
           const review = source.review;
           const facts = canonicalEvidenceArtifactRows(memory.canonicalArtifact);
           const rows = facts.flatMap((fact, index) => memoryReviewDecision(review, 'canonical', memory, index) === 'rejected' ? [] : [{
@@ -67937,7 +68047,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           // A later delivery proof gets its own frame. If that frame saw a change, the
           // unshared proof decides, so an unrelated concurrent write cannot refuse delivery.
           const readScope = { ...context.scope }, frame = await openBackgroundReadFrame(readScope);
-          try { await prove(readScope); await frame.assertCurrent(); }
+          try { await prove(readScope); await frame.assertCurrent({ observedIsCurrent: true }); }
           catch (error) {
             if (!STATE_FRAME_CHANGED.test(string(error?.code || error?.message))) throw error;
             frame.close(); await prove(null);

@@ -33,6 +33,7 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
       stateAuthority: snapshot.stateAuthority, check, canonical, micro, lens,
       semantic: typeof native.semantic === 'function' ? async query => { const value = await native.semantic(context, snapshot, query); check(); return value; } : null,
       microIndex: typeof native.microIndex === 'function' ? async () => { const value = await native.microIndex(context, snapshot); check(); return value; } : null,
+      prepare: typeof native.prepare === 'function' ? async candidates => { await native.prepare(context, snapshot, candidates); check(); } : null,
       settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
       abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,
       register: sources => native.register(scope, sources.flatMap(source => source.proofs), snapshot),

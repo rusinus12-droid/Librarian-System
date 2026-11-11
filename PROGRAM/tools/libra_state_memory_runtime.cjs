@@ -53,11 +53,19 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       try { lensSource = await timed('lensMs', () => frame.lens(queryText, maxCharacters)); keep(lensSource); }
       catch (error) { failures.push({ family: 'lens', code: error.code || error.message }); }
     }
-    for (const ref of refs) {
+    // Candidate bodies are fetched together, then read side by side in small groups.
+    // Results are kept in rank order, so the selection does not depend on arrival order.
+    if (frame.prepare) { try { await timed('prepareMs', () => frame.prepare({ refs, turns })); } catch (_) {} }
+    for (let offset = 0; offset < refs.length && !payloadLimited; offset += 8) {
       frame.check();
-      if (payloadLimited) break;
-      try { keep(await timed('canonicalMs', () => frame.canonical(ref, semantic))); }
-      catch (error) { failures.push({ family: 'canonical', key: ref.key, code: error.code || error.message }); }
+      const group = refs.slice(offset, offset + 8);
+      const settled = await timed('canonicalMs', () => Promise.all(group.map(ref =>
+        Promise.resolve().then(() => frame.canonical(ref, semantic)).then(value => ({ value }), error => ({ error })))));
+      for (const [index, outcome] of settled.entries()) {
+        if (payloadLimited) break;
+        if (outcome.error) failures.push({ family: 'canonical', key: group[index].key, code: outcome.error.code || outcome.error.message });
+        else keep(outcome.value);
+      }
     }
     for (const turn of turns) {
       frame.check();
@@ -140,9 +148,9 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     try {
       await validatePacket(packet);
       // A frame that saw a concurrent change is closed by settle; prove once more without it.
-      const shared = frame.settle ? await frame.settle() !== false : null;
-      if (shared === false) await validatePacket(packet);
-      result.diagnostics.readFrame = shared === null ? 'none' : shared ? 'shared' : 'reproved';
+      const settled = frame.settle ? await frame.settle() : null;
+      if (settled === false) await validatePacket(packet);
+      result.diagnostics.readFrame = settled === null ? 'none' : settled === false ? 'reproved' : settled === 'deferred' ? 'deferred' : 'shared';
       result.diagnostics.elapsedMs = now() - startedAt;
       return result;
     }

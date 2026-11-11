@@ -257,3 +257,29 @@ test('server mode: an unrelated rewrite during the query does not refuse it, and
   const after = await x.f.r.api.executeStateMemoryQuery(options);
   assert.notEqual(after.generation, result.generation, 'an edited source turn is read again, never served from shared bytes');
 });
+
+test('server mode: a request after the read cache expired stays batched instead of reading five records per turn', async t => {
+  const x = await fixture({ mode: 'server_only', pauseAutomaticAnalysis: true, microCount: 24,
+    microText: turn => `민아는 은빛 열쇠 기록${turn}을 준호에게 남겼다.` });
+  t.after(() => x.cleanup());
+  const ask = () => x.f.control.hooks.beforeRequest([{ role: 'user', content: '기록9 은빛 열쇠는 누가 보관해?' }], 'model');
+  await ask();
+  // Resident verified reads live 20 s; a real next turn arrives later than that.
+  await new Promise(resolve => setTimeout(resolve, 21000));
+  let requests = 0, single = 0, wholeNamespaceListings = 0;
+  x.server.hooks.beforeServerRequest = async (url, init) => {
+    requests++;
+    if (/\/v1\/kv\/get\?/.test(url) && /micro-memory|micro-work|source-receipt/.test(decodeURIComponent(url))) single++;
+    if (/\/v1\/kv\/keys\?/.test(url) && /[?&]prefix=(&|$)/.test(url)) wholeNamespaceListings++;
+    if (init?.method === 'POST' && /\/v1\/kv\/get-many$/.test(url)) assert.ok(JSON.parse(init.body).keys.length <= 512);
+  };
+  const output = await ask();
+  x.server.hooks.beforeServerRequest = null;
+  assert.ok(output.length > 1);
+  assert.equal(x.f.r.api.getRuntime().lastMemoryInjectionMeta.finalVerification.status, 'verified');
+  assert.equal(x.f.r.core.state.lastRecall.unifiedExecution.diagnostics.readFrame, 'deferred');
+  assert.equal(wholeNamespaceListings, 0, 'State projection lists only its own Micro heads and admissions');
+  assert.ok(single <= 6, 'per-turn records are fetched in batches: ' + single + ' single reads');
+  assert.ok(requests <= 60, 'cold request total: ' + requests);
+  console.log(JSON.stringify({ test: 'state_first_cold_request', requests, single }));
+});
