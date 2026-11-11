@@ -153,6 +153,61 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('flashback',{hostScopes:[host(1)]});ok(r);assert.equal(r.scopes[0].canonicalScopeId,identity('flashback',1));
  r=await inspect('libra',{records:[row('libra:v1:migration:remove-world-additional:v1',{completed:true})]});ok(r);assert.equal(r.records[0].classification,'control');
 
+ // Real legacy forms from the mode-switch diagnostics, with synthetic identities.
+ {
+  const libraHost=host(1),nativeIdentity=libraHost.characterId+':'+libraHost.chatId;
+  const libraScope=identity=>stableDraftHash(identity+'|'+libraHost.characterId+'|'+libraHost.chatId)+'_'+identity;
+  const manifestAt=scopeKey=>row(`libra:v1:scope:${scopeKey}:manifest`,{...JSON.parse(root('libra',1).value),scopeKey});
+  const oldScope=libraScope('1:0'),newScope=libraScope(nativeIdentity);
+  const oldGraph=row(`libra:v1:scope:${oldScope}:memory-graph:v1:corpus:page:adjacency:retired`,'retired payload',{location:'server'});
+  const oldGraphRoot=row(`libra:v1:scope:${oldScope}:memory-graph-control:v1:root`,{},{location:'server'});
+  const placeState=row(`libra:v1:scope:${oldScope}:continuity-state`,{scopeKey:oldScope,world:[{state:{parentRef:'place'},fieldEvidence:{parentRef:{schema:'field-evidence'}}}]});
+  const absentKey=`libra:v1:scope:${oldScope}:state-worldline-meta:v1`;
+  const memoryWithRead=exists=>row(`libra:v1:scope:${oldScope}:memory:1:r1`,{schema:'libra.canonical_memory.v1',scopeKey:oldScope,
+   unifiedBasis:{serverReadSet:{schema:'memory-suite.storage.read-set.v1',records:[{scopeId:oldScope,key:absentKey,remoteKey:absentKey,exists}]}}});
+  const cancelledJob=state=>row(`libra:v1:scope:${oldScope}:canonical-job:job`,{schema:'libra.canonical_job.v1',scopeKey:oldScope,state,comparison:{candidate:{key:`libra:v1:scope:${oldScope}:memory:1:r2`}}});
+  r=await inspect('libra',{hostScopes:[libraHost],records:[manifestAt(oldScope),manifestAt(newScope),oldGraph,oldGraphRoot,placeState,memoryWithRead(false),cancelledJob('cancelled')]});
+  ok(r);assert.equal(r.scopes.length,2);assert.equal(r.records[2].classification,'control');assert.equal(r.records[3].classification,'control');
+  r=await inspect('libra',{records:[manifestAt(oldScope),manifestAt('unverified-alias')]});blocked(r,/identity_conflict/);
+  r=await inspect('libra',{records:[manifestAt(oldScope),memoryWithRead(true),cancelledJob('awaiting_edit')]});
+  blocked(r,/dependency_missing/);assert.equal(r.blockers.filter(x=>x.code==='libra_global_dependency_missing').length,2);
+
+  const archiveId='portable',archiveScope='archive:'+archiveId;
+  const archiveKey=`libra:v1:shared-archive:${archiveId}:manifest`;
+  const archiveBodyKey=`libra:v1:shared-archive:${archiveId}:memory:m:r1`;
+  const vectorKey=`libra:v1:scope:${archiveScope}:vector:m:r1:profile`;
+  const vectorSidecarKey='libra:v1:local-vector:'+stableDraftHash(vectorKey);
+  const pointer={key:archiveBodyKey,memoryId:'m',revision:1,sourceDigest:'proof',status:'committed',vectorKey:'libra:v1:shared-archive:portable:vector:m:r1:old'};
+  const sidecar={schema:'libra.local_vector_payload.v1',storageKey:vectorKey,localKey:vectorSidecarKey,vectorHash:'vector-proof',byteLength:4,data:'AACAPw=='};
+  const archiveRows=[
+   root('libra',1,{archiveRef:{archiveId,manifestKey:archiveKey}}),
+   row(archiveKey,{schema:'libra.shared_archive.v1',archiveId,memoryRefs:[pointer]}),
+   row(archiveBodyKey,{schema:'libra.canonical_memory.v1',archiveId,archiveCanonicalId:'m',scopeKey:archiveScope,memoryId:'m',revision:1,sourceDigest:'proof',status:'committed',embedding:{vectorKey}}),
+   row(vectorSidecarKey,sidecar,{space:'local',location:'device'})
+  ];
+  const projection=memoryId=>row(vectorKey,{schema:'libra.embedding_projection.v2',scopeKey:archiveScope,memoryId,revision:1,
+   vectorPayloadPortable:true,portableVectorPayload:sidecar,localVectorRef:sidecar},{location:'server'});
+  r=await inspect('libra',{records:[...archiveRows,projection('m')]});ok(r);assert.ok(r.records[3].dependencyScopeIds.includes(identity('libra',1)));
+  r=await inspect('libra',{records:[...archiveRows,projection('wrong-memory')]});blocked(r,/dependency_missing/);
+
+  const flashScope=identity('flashback',1);
+  const flashRouting=characterId=>[{entries:{[flashScope]:{scopeId:flashScope,characterId,chatId:host(1).chatId}}}];
+  const flashNative=root('flashback',1,{characterId:'historical-character-id'});
+  r=await inspect('flashback',{hostScopes:[host(1)],registries:flashRouting(host(1).characterId),records:[flashNative]});
+  ok(r);assert.equal(r.scopes[0].characterId,host(1).characterId);
+  r=await inspect('flashback',{registries:flashRouting('unverified-character-id'),records:[flashNative]});blocked(r,/identity_conflict/);
+
+  const digest=stableHash64('retained-record');
+  const hayakuArchiveId='hy_'+stableHash64(['',hk,1,digest,digest].join('\u0001')).slice(0,28);
+  const hayakuArchiveKey='hayaku.v2.shared_archive.'+hayakuArchiveId,hayakuMetaKey='hayaku.v2.shared_archive_meta.'+hayakuArchiveId;
+  const layer={archiveId:hayakuArchiveId,generation:1,depth:1,deltaCount:1,deltaDigest:digest,recordCount:1,digest,parentRef:null};
+  const hayakuArchive=scope=>row(hayakuArchiveKey,{...layer,schema:'hayaku.shared_archive.v1',records:[{inheritedViaScopeKey:scope,archiveCanonicalId:'retained-record'}]});
+  const hayakuMeta=row(hayakuMetaKey,{...layer,schema:'hayaku.shared_archive_meta.v1',storageKey:hayakuArchiveKey,metaKey:hayakuMetaKey,deltaMemberIds:['retained-record']});
+  r=await inspect('hayaku',{records:[root('hayaku',1),hayakuArchive(hk),hayakuMeta]});ok(r);
+  assert.ok(r.records.slice(1).every(entry=>entry.dependencyScopeIds.includes(hk)));
+  r=await inspect('hayaku',{records:[root('hayaku',1),root('hayaku',2),hayakuArchive(identity('hayaku',2)),hayakuMeta]});blocked(r,/shared_ownership_unresolved/);
+ }
+
  for(const [suffix,schema] of [['unified-migration:v1','libra.unified_migration.v1'],['planner-narrative-direction:v1','libra.planner_narrative_direction.v1'],['story-arc-migration:v1','libra.story_arc_migration.v1'],['embedding-metadata-migration:v1','libra.embedding_metadata_migration_journal.v1']]) {
   r=await inspect('libra',{records:[root('libra',1),row(`libra:v1:scope:${identity('libra',1)}:${suffix}`,{schema,scopeKey:identity('libra',1),rows:[]})]});ok(r);assert.equal(r.records[1].classification,'scope');
  }

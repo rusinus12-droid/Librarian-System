@@ -14599,6 +14599,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     const list = byKey.get(row.logicalKey) || []; list.push(row); byKey.set(row.logicalKey,list); edges.set(row,new Set());
     const physical = byPhysicalKey.get(row.key) || []; physical.push(row); byPhysicalKey.set(row.key,physical);
   }
+  const observedIds = new Map(), nativeIds = new Map();
   const addScope = (source, reason) => {
     if (!object(source)) { issue('identity_invalid',null,reason); return null; }
     const id = str(source.scopeId || source.scopeKey);
@@ -14607,10 +14608,12 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
       canonicalCharacterId:str(source.canonicalCharacterId), canonicalChatId:str(source.canonicalChatId), canonicalScopeId:str(source.canonicalScopeId),
       characterName:str(source.characterName), chatTitle:str(source.chatTitle), aliases:[id,...(source.aliases || []).filter(x=>typeof x==='string' && x)],
       discoverySources:[reason], detached:true, label:str(source.label) || [source.characterName,source.chatTitle].filter(Boolean).join(' / ') || id };
+    if (!observedIds.has(id)) observedIds.set(id,{characterId:new Set(),chatId:new Set()});
+    for (const field of ['characterId','chatId']) if (next[field]) observedIds.get(id)[field].add(next[field]);
     const prior = scopesById.get(id);
     if (prior) {
       for (const field of ['characterId','chatId','canonicalCharacterId','canonicalChatId','canonicalScopeId']) {
-        if (prior[field] && next[field] && prior[field] !== next[field]) issue('identity_conflict',null,id + ':' + field);
+        if (field.startsWith('canonical') && prior[field] && next[field] && prior[field] !== next[field]) issue('identity_conflict',null,id + ':' + field);
         if (!prior[field]) prior[field] = next[field];
       }
       for (const field of ['characterName','chatTitle']) if (!prior[field]) prior[field] = next[field];
@@ -14751,6 +14754,19 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     const canonicalCharacterId = scope.canonicalCharacterId || scope.characterId, canonicalChatId = scope.canonicalChatId || scope.chatId;
     if (scope.canonicalScopeId && canonicalCharacterId && canonicalChatId
       && scope.canonicalScopeId !== `char:${keyHash(canonicalCharacterId)}|chat:${keyHash(canonicalChatId)}`) issue('canonical_identity_conflict',row);
+    // A physical native manifest can carry a historical host ID beside the
+    // canonical ID used to generate its storage scope.
+    const canonicalId = str(value.canonicalScopeId);
+    if (reason !== 'native_registry' && value.canonicalCharacterId && value.canonicalChatId
+      && canonicalId === `char:${keyHash(value.canonicalCharacterId)}|chat:${keyHash(value.canonicalChatId)}`
+      && (scope.scopeId === canonicalId || scope.scopeId.startsWith(canonicalId + '|persona:'))) {
+      if (!nativeIds.has(scope.scopeId)) nativeIds.set(scope.scopeId,{characterId:new Set(),chatId:new Set()});
+      const aliases = nativeIds.get(scope.scopeId);
+      for (const [field,canonical] of [['characterId','canonicalCharacterId'],['chatId','canonicalChatId']]) {
+        if (value[field]) aliases[field].add(value[field]);
+        aliases[field].add(value[canonical]);
+      }
+    }
   };
   for (const row of records) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
@@ -14794,6 +14810,12 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   }
 
   for (const scope of scopesById.values()) {
+    const ids = observedIds.get(scope.scopeId), aliases = nativeIds.get(scope.scopeId);
+    for (const [field,canonical] of [['characterId','canonicalCharacterId'],['chatId','canonicalChatId']]) {
+      if (ids[field].size < 2) continue;
+      if (aliases && [...ids[field]].every(id=>aliases[field].has(id))) scope[field] = scope[canonical];
+      else issue('identity_conflict',null,scope.scopeId + ':' + field);
+    }
     if (scope.discoverySources.includes('host_catalog')) {
       scope.canonicalCharacterId = scope.characterId; scope.canonicalChatId = scope.chatId;
       scope.canonicalScopeId = `char:${keyHash(scope.characterId)}|chat:${keyHash(scope.chatId)}`;

@@ -78,6 +78,13 @@ jobs:
               mismatch = true;
             }
           }
+          const roundTrip = report.storageModeRoundTrip;
+          if (roundTrip?.passed !== true || ["libra", "hayaku", "flashback"].some(owner =>
+            !report.pluginSha256?.[owner] || roundTrip.plugins?.[owner] !== report.pluginSha256[owner]
+          )) {
+            console.error("Missing storage mode round-trip verification for the packaged plugins.");
+            mismatch = true;
+          }
           if (mismatch) process.exit(1);
           console.log("Build report publication contract verified successfully.");
           '

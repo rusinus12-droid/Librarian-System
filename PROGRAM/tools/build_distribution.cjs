@@ -17,6 +17,8 @@ const DEFAULT_OUTPUT_BASE = path.resolve(packageRoot, '..', 'RELEASES');
 const REQUIRED_ROOT_FILE = '0_설치_안내.txt';
 const ACTIVE_NAMESPACES = Object.freeze(['flashback', 'hayaku', 'libra', 'lia', 'retrace']);
 const REQUIRED_PLUGIN_IDS = new Set(Object.values(PLUGINS).map(([, , id]) => id));
+const STORAGE_MODE_TEST = 'storage_global_owner_public_gui_test.cjs';
+const STORAGE_MODE_OWNERS = Object.freeze(['flashback', 'hayaku', 'libra']);
 const RELEASE_SMOKE_TESTS = Object.freeze([
   'current_status_gui_runtime_test.cjs',
   'plugin_catalog_separation_test.cjs',
@@ -62,7 +64,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'storage_global_destination_readback_test.cjs',
   'storage_global_maintenance_wait_test.cjs',
   'storage_job_user_cancellation_test.cjs',
-  'storage_global_owner_public_gui_test.cjs',
+  STORAGE_MODE_TEST,
   'storage_transition_gui_recovery_test.cjs',
   'manifest_minified_declaration_binding_test.cjs',
   'libra_canonical_reasoning_off_length_runtime_test.cjs',
@@ -496,6 +498,35 @@ function runNode(scriptPath, args = [], cwd = programDir, options = {}) {
   return runNodeProcess([scriptPath, ...args], cwd, options);
 }
 
+function runStagedStorageModeRoundTrip(pluginDir, transformBindings) {
+  const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
+  const { modulesDir } = ensureBuildSupportDependencies({ programDir });
+  const result = runNode(path.join(programDir, 'tests', STORAGE_MODE_TEST), [], programDir, {
+    timeoutMs: 240000,
+    env: { NODE_PATH: modulesDir, GLOBAL_MODE_PLUGIN_DIR: pluginDir, GLOBAL_MODE_OWNER: '' }
+  });
+  const prefix = 'STORAGE_MODE_ROUNDTRIP_RESULT ';
+  const summaries = result.stdout.split(/\r?\n/).filter(line => line.startsWith(prefix));
+  if (summaries.length !== 1) throw new Error('distribution_storage_mode_roundtrip_summary_missing');
+  const results = JSON.parse(summaries[0].slice(prefix.length));
+  if (!Array.isArray(results) || results.length !== STORAGE_MODE_OWNERS.length) {
+    throw new Error('distribution_storage_mode_roundtrip_owner_count');
+  }
+  const plugins = {};
+  for (const owner of STORAGE_MODE_OWNERS) {
+    const observed = results.find(row => row.namespace === owner);
+    const filename = PLUGINS[owner][0];
+    const expectedSha256 = transformBindings.plugins[`plugins/${filename}`].artifactSha256;
+    if (observed?.kind !== 'Min' || observed.status !== 'PASS' || observed.sourceSha256 !== expectedSha256
+      || !Number.isSafeInteger(observed.restoredFromServer) || observed.restoredFromServer < 1
+      || sha256File(path.join(pluginDir, filename)) !== expectedSha256) {
+      throw new Error(`distribution_storage_mode_roundtrip_unverified:${owner}`);
+    }
+    plugins[owner] = expectedSha256;
+  }
+  return { passed: true, plugins };
+}
+
 function assertCanonicalPlugins(stagedRoot) {
   const canonicalDir = path.join(stagedRoot, 'PROGRAM', 'plugins');
   const canonical = listFiles(canonicalDir).filter(filePath => /\.js$/i.test(filePath));
@@ -642,7 +673,7 @@ function runReleaseSmokeFromSource() {
     'sync_flashback_consent_profile.cjs', 'sync_hayaku_consent_profile.cjs']) {
     runNode(path.join(programDir, 'tools', file), ['--check'], programDir);
   }
-  const smokeEnv = {};
+  const smokeEnv = { GLOBAL_MODE_OWNER: '', GLOBAL_MODE_ARTIFACT_ROOT: '', GLOBAL_MODE_PLUGIN_DIR: '', GLOBAL_MODE_RECOVERY_CASE: '' };
   const { ensureBuildSupportDependencies } = require('./ensure_build_support.cjs');
   const support = ensureBuildSupportDependencies({ programDir });
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
@@ -747,7 +778,7 @@ function buildDistribution(options = {}) {
     // release profile only. The SOURCE profile keeps the readable build, because that
     // artifact is the developer package. The swap happens on the STAGED tree, so the
     // readable source is never modified (assertTreeSourceUnchanged still holds below).
-    let pluginArtifacts=null,transformBindings=null;
+    let pluginArtifacts=null,transformBindings=null,storageModeRoundTrip=null;
     if(!isSource){
       phase='release_plugins';
       const artifactDir=path.join(temporaryRoot,'release-plugins');
@@ -772,6 +803,10 @@ function buildDistribution(options = {}) {
       }
       if(replaced!==REQUIRED_PLUGIN_IDS.size)throw new Error(`distribution_release_artifact_count:${replaced}`);
       pluginArtifacts={profile:'release',replaced,sourceBytes,releaseBytes,reductionPercent:Number((100*(sourceBytes-releaseBytes)/sourceBytes).toFixed(1))};
+      if(!offline){
+        phase='storage_mode_roundtrip';
+        storageModeRoundTrip=runStagedStorageModeRoundTrip(stagedPluginDir,transformBindings);
+      }
     } else {
       phase='source_plugins';
       const artifactDir=path.join(temporaryRoot,'source-plugins');
@@ -822,6 +857,7 @@ function buildDistribution(options = {}) {
       cleanDataFiles:dataCheck.files,crossPlatformScripts:scriptCheck.scripts,updateLaunchers:updaterScriptCheck.launchers,copiedUpdaterFiles:copiedUpdater.copied,
       copiedProgramFiles:copiedProgram.copied,packagedPluginFiles:pluginCheck.files,pluginInstallPath:'PROGRAM/plugins',topLevelPluginsFolder:false,
       pluginBuild:pluginArtifacts,runtimeDependencyClosure,
+      ...(storageModeRoundTrip?{storageModeRoundTrip}:{}),
       ...(offline?{status:'offline_candidate',publicationReady:false,fullReleaseGate:'NOT_RUN',actualHostQualification:'NOT_RUN'}:{}),
       checksumFilesVerified:checksumCheck.files,unixExecutePermissionsVerified:true,utf8EntryNamesVerified:true,privateDataPatternsRejected:true,
       testsRun:true,testProfile:offline?'offline_candidate_contents':'release_smoke',releaseSmokeTests:offline?[]:[...RELEASE_SMOKE_TESTS],releaseSmokeOutput:smoke.stdout,fullRegressionRunByBuilder:false,

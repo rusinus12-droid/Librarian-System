@@ -13764,14 +13764,45 @@ async function memorySuiteHayakuDiscoverGlobalScopes(input = {}) {
       for (const target of archiveEdges.get(row) || []) pending.push([target,false]);
     }
   }
-  // Closure is finite and uncapped: each edge can only add an observed scope ID.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [from,targets] of edges) for (const target of targets) for (const id of from.dependencyScopeIds) {
-      if (!target.dependencyScopeIds.includes(id)) { target.dependencyScopeIds.push(id); changed = true; }
+  const expandOwnership = () => {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [from,targets] of edges) for (const target of targets) for (const id of from.dependencyScopeIds) {
+        if (!target.dependencyScopeIds.includes(id)) { target.dependencyScopeIds.push(id); changed = true; }
+      }
     }
+  };
+  expandOwnership();
+  // A retained archive can outlive its target ledger reference. The archive ID
+  // binds the original source scope and the immutable layer digests.
+  for (const row of records) {
+    if (row.deleted || row.classification !== 'shared' || row.dependencyScopeIds.length
+      || !row.logicalKey.startsWith('hayaku.v2.shared_archive.')) continue;
+    const archive = values.get(row);
+    if (archive?.schema !== 'hayaku.shared_archive.v1' || !Array.isArray(archive.records)
+      || archive.deltaCount !== archive.records.length || !str(archive.deltaDigest) || !str(archive.digest)
+      || !Number.isSafeInteger(archive.generation) || archive.generation < 1) continue;
+    const sources = [...new Set(archive.records.map(record=>str(record?.inheritedViaScopeKey)))];
+    if (sources.length !== 1 || !scopesById.has(sources[0])) continue;
+    const expectedId = 'hy_' + stableHash64([archive.parentRef?.archiveId || '',sources[0],archive.generation,archive.deltaDigest,archive.digest].join('\u0001')).slice(0,28);
+    if (archive.archiveId !== expectedId || row.logicalKey !== 'hayaku.v2.shared_archive.' + expectedId) continue;
+    const metaKey = 'hayaku.v2.shared_archive_meta.' + expectedId;
+    const metaRows = (byKey.get(metaKey) || []).filter(other=>!other.deleted && !other.artifact && sameSource(row,other) && other.space === 'plugin');
+    if (metaRows.length !== 1) continue;
+    const meta = values.get(metaRows[0]);
+    const members = archive.records.map(record=>str(record?.archiveCanonicalId)).sort();
+    if (meta?.schema !== 'hayaku.shared_archive_meta.v1' || meta.archiveId !== expectedId
+      || meta.storageKey !== row.logicalKey || meta.metaKey !== metaKey
+      || !['generation','depth','deltaCount','deltaDigest','recordCount','digest'].every(field=>meta[field] === archive[field])
+      || members.some(id=>!id) || new Set(members).size !== members.length
+      || !Array.isArray(meta.deltaMemberIds) || JSON.stringify(members) !== JSON.stringify([...meta.deltaMemberIds].sort())
+      || stableHash64(members.join('\u0001')) !== archive.deltaDigest
+      || str(meta.parentRef?.archiveId) !== str(archive.parentRef?.archiveId)) continue;
+    row.dependencyScopeIds.push(sources[0]);
+    dependency(row,metaKey,'plugin');
   }
+  expandOwnership();
   for (const row of records) {
     if (row.classification === 'artifact') {
       const key = str(row.artifactOwnerKey) || row.logicalKey.split('::chunk:v1:')[0];

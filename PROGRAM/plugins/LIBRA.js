@@ -14215,10 +14215,12 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     if (row.scopeId && row.scopeId !== id) issue('physical_scope_identity_conflict',row);
     row.scopeId = id; row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,id])];
   };
-  const dependency = (row,key,space = '',optional = false,archive = false) => {
+  const dependency = (row,key,space = '',optional = false,archive = false,verifiedReplica = null) => {
     if (!key) return;
     if (key === row.logicalKey) { if (archive) issue('archive_dependency_cycle',row); return; }
-    const found = (byKey.get(key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && (!space || other.space === space));
+    const candidates = (byKey.get(key) || []).filter(other => !other.deleted && !other.artifact && (!space || other.space === space));
+    const sameSourceCopies = candidates.filter(other=>sameSource(row,other));
+    const found = !sameSourceCopies.length && verifiedReplica ? candidates.filter(verifiedReplica) : sameSourceCopies;
     if (!found.length) { if (!optional) issue('dependency_missing',row,key); return; }
     row.dependencyKeys = [...new Set([...row.dependencyKeys,key])];
     for (const other of found) {
@@ -14237,7 +14239,9 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     }
   };
   const artifact = row => row.artifact === true || row.logicalKey.includes('::chunk:v1:') || str(row.key).includes('::chunk:v1:');
-  const control = key => /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || /^libra:v1:(?:provider-presets|provider-settings|agent-slots|unused-post-processors|prompt-overrides|runtime-settings|settings-transaction-journal|migration|reference-budget-migration|unused-writer-designs|unused-legacy-presets|unused-legacy-settings|memory-settings|embedding-rebuild)$/.test(key) || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:migration:remove-world-additional:v1';
+  // State-first recall no longer reads or maintains these derived graph keys.
+  const retiredGraph = key => /^libra:v1:scope:.+:(?:memory-graph:v1:corpus:.+|memory-graph-control:v1:root(?:::chunk:v1:.+)?)$/.test(key);
+  const control = key => retiredGraph(key) || /^__memory_suite_/i.test(key) || /(?:credential|provider-secrets|provider-config-secrets|backend-hosting-token|embedding_secret|embedding-key|embedding_key)/i.test(key) || /^libra:v1:(?:provider-presets|provider-settings|agent-slots|unused-post-processors|prompt-overrides|runtime-settings|settings-transaction-journal|migration|reference-budget-migration|unused-writer-designs|unused-legacy-presets|unused-legacy-settings|memory-settings|embedding-rebuild)$/.test(key) || key.startsWith('libra:v1:local-vector-migration:') || key === 'libra:v1:migration:remove-world-additional:v1';
   for (const row of records) {
     if (control(row.logicalKey)) row.classification = 'control';
     else if (artifact(row)) row.classification = 'artifact';
@@ -14295,10 +14299,21 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     for (const scope of matching) { scope.detached = false; if (!scope.characterName) scope.characterName = host.characterName || ''; if (!scope.chatTitle) scope.chatTitle = host.chatTitle || ''; }
   }
 
+  const matchesGeneratedScope = scope => {
+    const id = scope.scopeId;
+    const suffix = id.slice(9);
+    const nativeIdentity = scope.characterId + ':' + scope.chatId;
+    const identity = /^\d+:\d+$/.test(suffix) ? suffix : nativeIdentity;
+    return id === stableDraftHash(identity + '|' + scope.characterId + '|' + scope.chatId)
+      + '_' + identity.replace(/[^\w:-]+/g,'_').slice(0,80);
+  };
   const identities = new Map();
   for (const scope of scopesById.values()) if (scope.characterId && scope.chatId) {
     const id = JSON.stringify([scope.characterId,scope.chatId]), prior = identities.get(id);
-    if (prior && prior !== scope.scopeId) issue('identity_conflict',null,prior + ':' + scope.scopeId); identities.set(id,scope.scopeId);
+    // Host-ID and older index-derived keys can both be proven for the same chat.
+    // Each keeps its own physical records and routing identity.
+    if (prior && ![prior,scope].every(matchesGeneratedScope)) issue('identity_conflict',null,prior.scopeId + ':' + scope.scopeId);
+    identities.set(id,scope);
   }
   const families = /^(?:manifest$|story-arc$|continuity-state$|state-projection$|(?:state-projection-cache|source-evidence|source-edit-consent|source-receipt|source-receipt-head|source-receipt-capture|receipt-recovery|person-span-inventory|person-span-inventory-head|micro-work|micro-memory|micro-memory-head|micro-vector|micro-state-admission|inherited-micro-state-admission|micro-handoff-archive|memory|vector|work|run|predecessor|predecessor-vector|recall-catalog|lens|evidence-link-index|lore-link-index|lore-link-mapping|pending-live-boundaries|canonical-variants|canonical-job|canonical-job-head|canonical-adoption-transaction|continuity-delta|continuity-overrides|candidate-work|portable-restore-snapshot|portable-restore-journal|portable-import-journal|entity-registry|entity-admission|manual-state-disposition|state-observation|state-pipeline-receipt|state-corrections|state-correction-meta|state-correction-commit|state-worldline-meta|state-replay-cache|state-replay-errors|state-tracking-journal|unified-migration|planner-narrative-direction|story-arc-migration|embedding-metadata-migration):)/;
   for (const row of records) {
@@ -14323,14 +14338,18 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     } else if (key === 'libra:v1:scope-registry:v1') {
       row.ownerWide = true; row.dependencyScopeIds = [...scopesById.keys()];
     } else if (!/^libra:v1:(?:shared-archive:|handoff:|handoff-receipt:|micro-handoff-archive:|lens-handoff-archive:|local-vector:)/.test(key)) issue('unknown_owner_key',row);
-    if (!row.deleted && object(value)) walk(value,(node,field)=> {
-      if (['archiveRef','parentRef','parentArchiveRef'].includes(field)) {
-        if (!str(node.archiveId)) issue('archive_identity_invalid',row);
-        else {
-          const expected='libra:v1:shared-archive:' + node.archiveId + ':manifest';
-          if (node.manifestKey && node.manifestKey !== expected) issue('archive_pointer_invalid',row);
-          else dependency(row,expected,'plugin',false,true);
-        }
+    if (!row.deleted && object(value)) walk(value,node=> {
+      // State facts and field evidence also use parentRef for place links.
+      const archiveParent = ['libra.shared_archive.v1','libra.shared_archive_ref.v1'].includes(node.schema)
+        || object(node.parentRef) && (node.parentRef.archiveId || node.parentRef.manifestKey);
+      for (const field of archiveParent ? ['archiveRef','parentArchiveRef','parentRef'] : ['archiveRef','parentArchiveRef']) {
+        const pointer = node[field];
+        if (pointer == null) continue;
+        if (!object(pointer)) { issue('archive_pointer_invalid',row); continue; }
+        if (!str(pointer.archiveId)) { issue('archive_identity_invalid',row); continue; }
+        const expected = 'libra:v1:shared-archive:' + pointer.archiveId + ':manifest';
+        if (pointer.manifestKey && pointer.manifestKey !== expected) issue('archive_pointer_invalid',row);
+        else dependency(row,expected,'plugin',false,true);
       }
     });
     if (!row.deleted && /^libra:v1:shared-archive:.+:manifest$/.test(key)
@@ -14343,10 +14362,20 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
     const inlineKeys = new Set();
     const variantRefs = new Map(), root = values.get(row);
+    const absentReads = new Set();
+    const addAbsentReads = memory => {
+      const set = memory?.unifiedBasis?.serverReadSet;
+      if (memory?.schema !== 'libra.canonical_memory.v1' || set?.schema !== 'memory-suite.storage.read-set.v1') return;
+      for (const entry of Array.isArray(set.records) ? set.records : []) {
+        if (object(entry) && entry.exists === false && entry.scopeId === row.scopeId && entry.key === entry.remoteKey) absentReads.add(entry);
+      }
+    };
+    addAbsentReads(root);
     if (root?.schema === 'libra.canonical_variant_index.v1' && root.scopeKey === row.scopeId
       && row.logicalKey === `libra:v1:scope:${row.scopeId}:canonical-variants:v1` && object(root.slots)) {
       for (const slot of Object.values(root.slots)) for (const ref of Array.isArray(slot?.variants) ? slot.variants : []) {
         if (!object(ref)) continue;
+        addAbsentReads(ref);
         variantRefs.set(ref,ref);
         // registerCanonicalVariant preserves the memory snapshot, so its
         // embedding object can retain an old profile pointer as well. Bind only
@@ -14368,22 +14397,41 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
         ? memorySuiteLibraVariantVectorReference(ref,values.get(other),row.scopeId,str(value.vectorKey))
         : memorySuiteLibraArchiveVectorReference(value,values.get(other)));
       const vectorPointer = vectorPointers.length && vectorPointers.every(key => key === vectorPointers[0]) ? vectorPointers[0] : str(value.vectorKey);
-      for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
       for (const [name,body] of Object.entries(value)) {
         if (!referenceFields.has(name)) continue;
         for (const key of Array.isArray(body) ? body : [body]) if (typeof key === 'string' && key.startsWith('libra:v1:')) {
           if (inlineKeys.has(key)) continue;
           if (name === 'storageKey' && value.schema === 'libra.local_vector_payload.v1'
             && (row.space === 'local' && value === values.get(row) || field === 'portableVectorPayload')) continue;
-          if (name === 'vectorKey' && vectorPointer !== key) {
-            dependency(row,vectorPointer,'plugin');
-            // Retain a still-present historical vector too; never rewrite raw
-            // index bytes or their archive integrity digests during discovery.
-            dependency(row,key,'plugin',true);
-            continue;
+          if (name === 'vectorKey') {
+            const archiveMemory = value === root?.embedding ? root : memoryRows.length === 1 ? values.get(memoryRows[0]) : null;
+            const archiveMemoryKey = value === root?.embedding ? row.logicalKey : ref.key;
+            const verifiedReplica = archiveMemory?.schema === 'libra.canonical_memory.v1' && str(archiveMemory.archiveId)
+              && archiveMemory.scopeKey === 'archive:' + archiveMemory.archiveId && archiveMemory.status === 'committed'
+              && archiveMemoryKey === `libra:v1:shared-archive:${archiveMemory.archiveId}:memory:${archiveMemory.archiveCanonicalId}:r${archiveMemory.revision}`
+              && archiveMemory.embedding?.vectorKey === vectorPointer ? other => {
+                const vector = values.get(other);
+                const payload = vector?.portableVectorPayload, localRef = vector?.localVectorRef;
+                return vector?.schema === 'libra.embedding_projection.v2' && vector.scopeKey === archiveMemory.scopeKey
+                  && vector.memoryId === archiveMemory.memoryId && vector.revision === archiveMemory.revision
+                  && vector.vectorPayloadPortable === true && payload?.schema === 'libra.local_vector_payload.v1'
+                  && payload.storageKey === vectorPointer && localRef?.storageKey === vectorPointer
+                  && payload.localKey === `libra:v1:local-vector:${stableDraftHash(vectorPointer)}` && payload.localKey === localRef.localKey
+                  && str(payload.vectorHash) && payload.vectorHash === localRef.vectorHash
+                  && Number.isSafeInteger(payload.byteLength) && payload.byteLength > 0 && payload.byteLength === localRef.byteLength
+                  && !!str(payload.data);
+              } : null;
+            if (verifiedReplica || vectorPointer !== key) {
+              dependency(row,vectorPointer,'plugin',false,false,verifiedReplica);
+              // Preserve a still-present historical vector with the original index bytes.
+              if (vectorPointer !== key) dependency(row,key,'plugin',true);
+              continue;
+            }
           }
           const completedRun=schema==='libra.execution_run.v1'&&['complete','complete_with_warnings'].includes(values.get(row).status)&&values.get(row).commit?.status==='committed';
           const optional = name === 'localKey' && values.get(row)?.vectorPayloadPortable === true
+            || name === 'key' && absentReads.has(value)
+            || name === 'key' && schema === 'libra.canonical_job.v1' && root.state === 'cancelled' && value === root.comparison?.candidate
             || completedRun&&['memoryKey','vectorKey'].includes(name);
           dependency(row,key,name === 'localKey' ? 'local' : '',optional);
         }
@@ -14399,6 +14447,14 @@ async function memorySuiteLibraDiscoverGlobalScopes(input = {}) {
           || storageKey.startsWith(`libra:v1:scope:${id}:predecessor-vector:`));
         if (row.logicalKey !== `libra:v1:local-vector:${stableDraftHash(storageKey)}` || value.localKey !== row.logicalKey) issue('local_vector_identity_invalid',row);
         else if (owners.length === 1) row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,owners[0]])];
+        else if (/^libra:v1:scope:archive:[^:]+:vector:/.test(storageKey)) {
+          for (const vectorRow of byKey.get(storageKey) || []) {
+            const vector = values.get(vectorRow);
+            if (!vectorRow.deleted && vector?.schema === 'libra.embedding_projection.v2'
+              && vector.localVectorRef?.localKey === row.logicalKey && vector.localVectorRef.storageKey === storageKey
+              && vector.localVectorRef.vectorHash === value.vectorHash && str(value.vectorHash)) edges.get(vectorRow).add(row);
+          }
+        }
       }
     });
   }

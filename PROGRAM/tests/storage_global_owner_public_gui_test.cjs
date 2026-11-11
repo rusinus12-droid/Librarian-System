@@ -6,7 +6,8 @@ const {createHandlerFixture}=require('./fixtures/shared_reanalysis_handler_fixtu
 const {createBucketFixture}=require('./fixtures/flashback_bucketed_v1_fixture.cjs');
 const owners={LIBRA:'libra',HAYAKU:'hayaku',Flashback:'flashback'};
 const artifactRoot=process.env.GLOBAL_MODE_ARTIFACT_ROOT;
-const kinds=artifactRoot?['Full','Min']:['Full'];
+const pluginDir=process.env.GLOBAL_MODE_PLUGIN_DIR;
+const kinds=pluginDir?['Min']:artifactRoot?['Full','Min']:['Full'];
 const cleanupOperation=async task=>{let timer;try{return await Promise.race([task,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('cleanup GUI operation timed out')),20000);})]);}finally{clearTimeout(timer);}};
 const hash=value=>{let h=0x811c9dc5;for(const c of value)h=Math.imul(h^c.charCodeAt(0),0x01000193);return (h>>>0).toString(36);};
 const hash64=value=>{let h=0xcbf29ce484222325n;for(const c of value)h=BigInt.asUintN(64,(h^BigInt(c.charCodeAt(0)))*0x100000001b3n);return 'h64'+h.toString(36);};
@@ -60,6 +61,15 @@ const seedRoots=name=>{const roots=Array.from({length:2},(_,i)=>{
    revision:1,sourceDigest:currentPendingRef.sourceDigest,status:'committed',turnRange:{start:6,end:10},
    text:'synthetic retained source',embedding:{status:'rebuild_required',vectorKey:'',vectorCount:0,provider:'voyageai',model:'voyage-4-large',
     dimensions:1024,profileId:'retired-profile',quarantinedProfileId:'retired-profile',reason:'previous quarantined vector deleted'}})]);
+ }
+ if(name==='HAYAKU'){
+  const {scopeKey}=JSON.parse(roots[0][1]),archiveCanonicalId='retained-hayaku-record';
+  const digest=hash64(archiveCanonicalId);
+  const archiveId='hy_'+hash64(['',scopeKey,1,digest,digest].join('\u0001')).slice(0,28);
+  const storageKey='hayaku.v2.shared_archive.'+archiveId,metaKey='hayaku.v2.shared_archive_meta.'+archiveId;
+  const layer={archiveId,generation:1,depth:1,deltaCount:1,deltaDigest:digest,recordCount:1,digest,parentRef:null};
+  roots.push([storageKey,JSON.stringify({...layer,schema:'hayaku.shared_archive.v1',records:[{archiveCanonicalId,inheritedViaScopeKey:scopeKey}]})],
+   [metaKey,JSON.stringify({...layer,schema:'hayaku.shared_archive_meta.v1',storageKey,metaKey,deltaMemberIds:[archiveCanonicalId]})]);
  }
  if(name==='Flashback'){
   const first=JSON.parse(roots[0][1]);first.commitId='retained-commit';first.shardCount=1;first.count=1;first.stats={recordTotal:1,charTotal:7,tokenTotal:2,byType:{response:{records:1,chars:7,tokens:2}}};first.shardSummaries=[{shardIndex:0,recordCount:1}];roots[0][1]=JSON.stringify(first);
@@ -148,7 +158,9 @@ async function apply(s,mode){
  return text;
 }
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
- const handler=createHandlerFixture(),namespace=owners[name],pluginPath=artifactRoot?path.join(artifactRoot,kind,META[name][0]):path.resolve(__dirname,'../plugins',META[name][0]);let s,restart,admittedSource;
+ const handler=createHandlerFixture(),namespace=owners[name];
+ const pluginPath=path.join(pluginDir||(artifactRoot?path.join(artifactRoot,kind):path.resolve(__dirname,'../plugins')),META[name][0]);
+ let s,restart,admittedSource;
  try{
   s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch,beforeWrite:async(key,value)=>{
    if(!admittedSource&&s&&key===`__memory_suite_internal_sync_job_v1__:${namespace}`&&typeof value==='string'){
@@ -172,14 +184,28 @@ async function apply(s,mode){
   for(const [key,value]of [...frozenRoots,...seedDevice(name)])assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===value),'actual owner root transferred '+key);
   assert(rows.some(row=>row.key===`__memory_suite_scope_routes_v1__:${namespace}`),'global policy published to actual handler');
   for(const [key,value]of before)assert.equal(s.values.get(key),value,'forward preserves local source '+key);
-  const saved=[...s.values],savedDevice=[...s.deviceValues];await s.close();s=null;
+  // Reopen in server mode with the selected payloads only on the server.
+  // Existing matching local copies would otherwise mask a broken restore path.
+  // Keep other Flashback scopes intact and clear one whole scope, including
+  // its previous manifest, so the fixture does not leave dangling local references.
+  const flashbackScopePrefix=name==='Flashback'?frozenRoots[0][0].replace(/manifest:v2$/,''):'';
+  const serverOnlyKeys=new Set(flashbackScopePrefix
+   ? [...s.values.keys()].filter(key=>key.startsWith(flashbackScopePrefix))
+   : frozenRoots.map(([key])=>key));
+  for(const key of serverOnlyKeys)assert(rows.some(row=>row.key===key&&JSON.parse(row.value_json)===s.values.get(key)),'verified server source '+key);
+  const deviceKeys=new Set(seedDevice(name).map(([key])=>key));
+  const saved=[...s.values].filter(([key])=>!serverOnlyKeys.has(key));
+  const savedDevice=[...s.deviceValues].filter(([key])=>!deviceKeys.has(key));await s.close();s=null;
   restart=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:saved,initialDeviceValues:savedDevice,args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch});
   await openPanel(restart);
   if(name==='Flashback')assert.match(restart.doc.querySelector('[data-job-result]').textContent,/경고 .*건.*키워드/,'completed warnings survive plugin restart');
   assert.equal(restart.doc.querySelector('input[value="server_only"]').checked,true,'restart sees committed global policy');
+  for(const key of serverOnlyKeys)assert.equal(restart.values.has(key),false,'record still requires restore '+key);
+  for(const key of deviceKeys)assert.equal(restart.deviceValues.has(key),false,'device payload still requires restore '+key);
   const reverseRows=handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all();
   console.log('REVERSE_PREFLIGHT_DIAGNOSTIC',JSON.stringify({name,kind,differences:reverseRows.filter(row=>restart.values.has(row.key)&&JSON.stringify(restart.values.get(row.key))!==row.value_json).map(row=>({key:row.key,local:restart.values.get(row.key),server:JSON.parse(row.value_json)}))}));
   const reverse=await apply(restart,'plugin_only');
+  for(const key of serverOnlyKeys)assert.equal(restart.values.get(key),JSON.parse(rows.find(row=>row.key===key).value_json),'actual server payload restored '+key);
   for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'exact pre-confirmation native root survives roundtrip '+key);
   for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'retained local vector payload survives roundtrip '+key);
   const registry=JSON.parse(restart.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`));assert.equal(registry.entries.__memory_suite_global__.mode,'plugin_only');
@@ -199,7 +225,7 @@ async function apply(s,mode){
   for(const [key,value]of frozenRoots)assert.equal(restart.values.get(key),value,'server cleanup retains the actual native plugin root '+key);
   for(const [key,value]of seedDevice(name))assert.equal(restart.deviceValues.get(key),value,'server cleanup retains device vectors '+key);
   assert.equal(restart.wire.length,0,'no external network/model fallback');
-  const result={name,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,handlerRequests:handler.trace.length,readOnlyPreviewRefreshes:forwardRefreshes+(restart.globalInventoryRefreshes||0)};results.push(result);console.log(JSON.stringify(result));
+  const result={name,namespace,kind,sourceSha256:restart.sourceSha256,status:'PASS',forward,reverse,restoredFromServer:serverOnlyKeys.size+deviceKeys.size,handlerRequests:handler.trace.length,readOnlyPreviewRefreshes:forwardRefreshes+(restart.globalInventoryRefreshes||0)};results.push(result);console.log(JSON.stringify(result));
  }catch(error){const active=restart||s;if(active)console.error(JSON.stringify({name,kind,keys:[...active.values.keys()],localValues:[...active.values],deviceValues:[...active.deviceValues],serverRows:handler.app.repositories[namespace].database.prepare('SELECT key,value_json FROM kv WHERE deleted=0').all(),journal:active.values.get(`__memory_suite_internal_sync_job_v1__:${namespace}`),registry:active.values.get(`__memory_suite_internal_scope_routes_v1__:${namespace}`),status:active.doc.querySelector('[data-status]')?.textContent,errors:active.errors,logs:active.logs.slice(-8)},null,2));throw error;}
  finally{await restart?.close();await s?.close();await handler.close();}
-}console.log(JSON.stringify({flows:results.length,results},null,2));})().catch(error=>{console.error(error);process.exitCode=1;});
+}console.log('STORAGE_MODE_ROUNDTRIP_RESULT '+JSON.stringify(results));})().catch(error=>{console.error(error);process.exitCode=1;});
