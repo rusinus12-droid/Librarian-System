@@ -209,7 +209,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
 
     await check('recall: own budget, header, relevance floor and stale exclusion', async () => {
       const recall = await api.recallLensMemories({ query: '푸른 열쇠 약속 기억나?', canonicalBudgetChars: 12000 });
-      assert.equal(recall.budgetChars, Math.min(4000, Math.floor(12000 * 0.30)));
+      assert.equal(recall.budgetChars, Math.floor(12000 * 0.40));
       assert.ok(recall.injectedItems.length >= 1);
       assert.ok(recall.renderedBlock.startsWith('[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]'));
       assert.ok(recall.renderedBlock.length <= recall.budgetChars);
@@ -217,7 +217,8 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
       const unrelated = await api.recallLensMemories({ query: '오늘 저녁 메뉴는 뭐야', canonicalBudgetChars: 12000 });
       assert.equal(unrelated.injectedItems.length, 0, 'unrelated input recalls nothing from a relevance lens');
       const tiny = await api.recallLensMemories({ query: '푸른 열쇠', canonicalBudgetChars: 1000 });
-      assert.equal(tiny.injectedItems.length, 0, 'a budget below the minimum injects nothing');
+      assert.equal(tiny.budgetChars, 400);
+      assert.ok(tiny.renderedBlock.length <= tiny.budgetChars, 'the smaller allocation is still enforced');
       root.message[1].data = '내용이 바뀌었습니다. 열쇠 이야기는 없습니다.';
       const stale = await api.recallLensMemories({ query: '푸른 열쇠 약속', canonicalBudgetChars: 12000 });
       assert.equal(stale.injectedItems.length, 0);

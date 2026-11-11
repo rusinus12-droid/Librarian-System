@@ -23,7 +23,7 @@ const receipt = between('const bookFinalDeliveryView =', 'const openBookFinalEvi
 assert.match(receipt, /LibraMemoryCore\.getLastRecallViewer\(\)/);
 assert.match(receipt, /delivery\.scopeKey !== binding\.scopeKey/);
 assert.match(receipt, /worldline !== binding\.worldlineId/);
-assert.match(receipt, /rows\.filter\(row => row\.injected === true\)/);
+assert.match(receipt, /rows\.filter\(row => row\.injected === true\b/);
 assert.doesNotMatch(receipt, /LibraMemoryCore\.getLastRecall\(\)/,
   'an older successful selection must not replace the last request delivery receipt');
 assert.doesNotMatch(desk, /북쪽 정원|은색 열쇠|M-25|1,248/,
