@@ -34454,6 +34454,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const MODEL_MEMORY_VIEW_LOCALES = Object.freeze({
     ko: Object.freeze({
       contextLead: '앞서 확립된 정황:',
+      contextUse: '(지금 입력과 장면에 닿는 것만 골라, 인물이 알고 기억하고 행동하는 방식과 이어지는 결과로 자연스럽게 반영한다. 그대로 되풀이하거나 요약하지 않고, 지금 필요 없는 것은 쓰지 않는다. 서로 다르면 나중 시점을 따르고, 기록에 없는 세부는 지어내지 않는다.)',
       pastFrame: value => `당시, ${value}`,
       lastKnownFrame: value => `마지막으로 확인된 당시, ${value}`,
       eventFrame: (time, value) => `${time} 무렵, ${value}`,
@@ -34479,6 +34480,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     en: Object.freeze({
       contextLead: 'What had already been established:',
+      contextUse: '(Draw only on what bears on the current input and scene, and let it show in what the characters know, remember and do and in consequences that carry forward. Do not restate or summarize it; leave what is not needed now unused. Where records differ, follow the later one, and do not invent details the records do not give.)',
       pastFrame: value => `At that time, ${value}`,
       lastKnownFrame: value => `When last confirmed, ${value}`,
       eventFrame: (time, value) => `Around ${time}, ${value}`,
@@ -34504,6 +34506,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     ja: Object.freeze({
       contextLead: 'これまでに明らかになったこと：',
+      contextUse: '（現在の入力と場面に関わるものだけを選び、登場人物が知り、覚え、行動するあり方と、その後に続く結果として自然に反映する。そのまま繰り返したり要約したりせず、今必要のないものは使わない。食い違う場合は後の時点に従い、記録にない細部は作らない。）',
       pastFrame: value => `当時、${value}`,
       lastKnownFrame: value => `最後に確かめられた時点では、${value}`,
       eventFrame: (time, value) => `${time}ごろ、${value}`,
@@ -34529,6 +34532,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }),
     zh: Object.freeze({
       contextLead: '此前已经发生的事：',
+      contextUse: '（只取与当前输入和场景相关的内容，让它自然体现在人物所知、所记、所为以及延续下来的后果中。不要照搬或概述；眼下用不到的就不用。记录不一致时以较晚的为准，记录中没有的细节不要编造。）',
       pastFrame: value => `当时，${value}`,
       lastKnownFrame: value => `最后一次确认时，${value}`,
       eventFrame: (time, value) => `${time}前后，${value}`,
@@ -36103,6 +36107,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const append=value=>{body+=(body?'\n':'')+value;};
     if(structured.length){
       append(locale.contextLead);
+      // How to use the block, in the conversation's language; the records below stay in-world facts.
+      if(locale.contextUse)append(locale.contextUse);
       const hasDerived=structured.some(u=>effectiveHayakuRenderLane(u)===CONTINUITY_EVIDENCE_LANES.derivedSummaries);
       if(!hasDerived){
         append('');append(CONTINUITY_EVIDENCE_LANE_HEADERS[CONTINUITY_EVIDENCE_LANES.derivedSummaries]);

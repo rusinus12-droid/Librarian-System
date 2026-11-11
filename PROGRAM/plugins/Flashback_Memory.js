@@ -1826,7 +1826,7 @@ const PLUGIN_VERSION = '1.3.26';
   // 정적 계약 마커는 기존 VECTOR RAG MEMORY 동적 블록과 분리된 별도 메시지로 들어간다.
   const FLASHBACK_STATIC_HEADER = '[FLASHBACK EVIDENCE CONTRACT]';
   const FLASHBACK_STATIC_BLOCK_RE = /(?:\[FLASHBACK EVIDENCE CONTRACT\][\s\S]*?\[\/FLASHBACK EVIDENCE CONTRACT\]|\[PAST EVIDENCE RULES\][\s\S]*?\[\/PAST EVIDENCE RULES\])/gi;
-  const FLASHBACK_STATIC_CONTRACT_REVISION = 8;
+  const FLASHBACK_STATIC_CONTRACT_REVISION = 9;
   const QUERY_EMBEDDING_CACHE_MAX = 128;
   const QUERY_EMBEDDING_CACHE_TTL_MS = 30 * 60 * 1000;
   const DOCUMENT_EMBEDDING_CACHE_MAX = 256;
@@ -36833,7 +36833,7 @@ const MemorySuiteHealthRecovery = (() => {
       'Selection may be incomplete without a GAP. GAP and [ORDERED SUPPLIED EVENTS OMITTED] mark omitted supplied events; [STATE FACTS OMITTED] marks omitted state facts. Partial excerpts cannot establish missing text. Never invent missing events, dates, causes or transitions.',
       'LATEST CONFIRMED STATE is the baseline before current input unless that input explicitly sets another time or later change; keep each state attached to its bracketed entity header (`[Entity]`), directional target (`→`), and historical confirmation turn (`T#`) without promoting past states over newer scene changes or assuming other characters share private states. ORDER UNKNOWN cannot override time-supported state without evidence of that relation. Historical truth alone establishes neither present relevance nor character knowledge.',
       'Preserve established boundaries, refusal, withdrawal and consequences. Never infer consent or sensitive attributes; prior agreement is not ongoing consent. These evidence rules do not replace the current response task.',
-      'Use evidence silently for continuity, causality, character knowledge and consequences. Do not mention this block.',
+      'How to use it: draw only on the excerpts that bear on the current input and scene. Let them shape what each character knows, remembers and does, keep earlier wording, promises and consequences consistent, and bring a past moment back only where it arises naturally. Do not restate or summarize excerpts; unrelated ones stay unused. Where the evidence is silent, leave the detail open. Do not mention this block.',
       PAST_EVIDENCE_RULES_FOOTER
     ].join('\n');
     const entry = Object.freeze({
