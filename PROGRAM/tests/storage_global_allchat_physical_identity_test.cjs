@@ -3,7 +3,13 @@ const assert=require('node:assert/strict');
 const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
 (async()=>{const failures=[];for(const v of variants){
  let failValidation=false;
- const adapter=async({hostScopes,records})=>({scopes:hostScopes.map(s=>({...s,scopeId:s.chatId,scopeKey:s.chatId,aliases:Array.from({length:31},(_,i)=>s.chatId+'_alias_'+i)})),records:records.map(r=>({...r,classification:'scope',scopeId:r.logicalKey.slice(v[0].length+1),...(r.value==='PHYSICAL_ENVELOPE'?{logicalValue:'A_SOURCE'}:{})})),blockers:[],completeKnownScopes:true});
+ const adapter=async({hostScopes,records,readRecord})=>{
+  const classified=[];
+  for(const row of records)classified.push({...row,classification:'scope',scopeId:row.logicalKey.slice(v[0].length+1),
+   ...(await readRecord(row)==='PHYSICAL_ENVELOPE'?{logicalValue:'A_SOURCE'}:{})});
+  return {scopes:hostScopes.map(s=>({...s,scopeId:s.chatId,scopeKey:s.chatId,aliases:Array.from({length:31},(_,i)=>s.chatId+'_alias_'+i)})),
+   records:classified,blockers:[],completeKnownScopes:true};
+ };
  const f=await fixture(v,{adapter,bridgeOptions:{validateRestore:async ctx=>{if(failValidation&&ctx.phase==='complete')throw Error('INJECT_SEMANTIC_RESTORE_FAILURE');return {ok:true};}}});
  try{
   f.values.set(v[0]+'.A','PHYSICAL_ENVELOPE');await f.bridge.setGlobalMode('server_only');

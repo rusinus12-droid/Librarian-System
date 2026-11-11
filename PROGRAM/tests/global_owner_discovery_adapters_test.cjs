@@ -130,6 +130,33 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  r=await inspect('libra',{records:[row(base,envelope),...chunkKeys.map((k,i)=>row(k,body.slice(i*524288,(i+1)*524288),{artifact:true,artifactOwnerKey:base}))]});ok(r);assert.equal(r.records[0].value,JSON.stringify(envelope));assert.equal(r.records[0].logicalValue,body);
  r=await inspect('libra',{records:[row(base,envelope),row(chunkKeys[0],body.slice(0,524288),{artifact:true,artifactOwnerKey:base})]});blocked(r,/chunk.*missing|dependency.*missing/);
 
+ const vectorScope=identity('libra',1),vectorKey=`libra:v1:scope:${vectorScope}:vector:old:r1:profile`;
+ const localVectorKey='libra:v1:local-vector:'+stableDraftHash(vectorKey);
+ const vectorPayload={schema:'libra.local_vector_payload.v1',localKey:localVectorKey,storageKey:vectorKey,vectorHash:'vector-proof',data:'AACAPw=='};
+ const deviceVector=row(localVectorKey,vectorPayload,{location:'device',space:'local'});
+ const serverVector=payload=>row(vectorKey,{schema:'libra.embedding_projection.v2',scopeKey:vectorScope,
+  localVectorRef:{localKey:localVectorKey,storageKey:vectorKey,vectorHash:'vector-proof'},vectorPayloadPortable:!!payload,
+  ...(payload?{portableVectorPayload:payload}:{})},{location:'server'});
+ r=await inspect('libra',{records:[root('libra',1),deviceVector]});ok(r);
+ assert.equal(r.records[1].classification,'shared','ordinary forward transfer still owns the sidecar');
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,true,'an unreferenced device vector is harmless');
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,serverVector(vectorPayload)]});ok(r);
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,true,'a portable server vector does not require the cache');
+ const serverCache={...deviceVector,location:'server'};
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,serverVector(vectorPayload),serverCache]});ok(r);
+ assert.equal(r.records[3].retainDeviceCacheAfterReset,true,'the matching server cache is also independent');
+ assert.equal(r.records[3].vectorCacheStorageKey,vectorKey);
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,serverVector(null),serverCache]});ok(r);
+ assert.equal(r.records[3].retainDeviceCacheAfterReset,undefined,'a required server sidecar cannot be treated as a cache');
+ const explicitCacheDependency=serverVector(vectorPayload);
+ explicitCacheDependency.value=JSON.stringify({...JSON.parse(explicitCacheDependency.value),dependencyKey:localVectorKey});
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,explicitCacheDependency,serverCache]});ok(r);
+ assert.equal(r.records[3].retainDeviceCacheAfterReset,undefined,'an explicit cache dependency remains required');
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,serverVector(null)]});blocked(r,/dependency_missing/);
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,undefined,'a required legacy sidecar is not exempted');
+ r=await inspect('libra',{records:[root('libra',1),deviceVector,serverVector({...vectorPayload,data:''})]});
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,undefined,'a portable marker without bytes does not exempt a required sidecar');
+
  for(const owner of Object.keys(adapters)) {
   r=await inspect(owner,{records:[root(owner,1,{archiveRef:'corrupt pointer'})]});blocked(r,/archive.*invalid/);
  }
@@ -487,10 +514,19 @@ const blocked = (r,pattern) => {assert.equal(r.completeKnownScopes,false);assert
  // source: copying the archive row would drop reachability that is still real.
  const fbServerArchiveManifest={...fbArchiveManifest,location:'server'},fbServerArchiveShard={...fbArchiveShard,location:'server'};
  const fbDeviceOnlyPayload=row(fbRetiredVector,{schema:'flashback_memory.local_vector_shard.v1',scopeKey:fbArchiveSource,
-  commitId:'1retired',shardIndex:0,items:[],data:''},{space:'local',location:'device'});
+  commitId:'1retired',shardIndex:0,items:[{recordId:'record-a',offset:0,length:1}],data:'AACAPw=='},{space:'local',location:'device'});
+ r=await inspect('flashback',{records:[{...fbArchiveSourceRoot,location:'server'},fbDeviceOnlyPayload]});
+ ok(r);
+ assert.equal(r.records[1].classification,'scope','the device shard remains an owned record in ordinary migration');
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,true,'a device shard with no server reference can be retained');
  r=await inspect('flashback',{records:[fbServerArchiveManifest,fbServerArchiveShard,fbArchiveSourceRoot,fbDeviceOnlyPayload]});
  blocked(r,/dependency.*missing/);
  assert.equal(r.warningCount,0);
+ assert.equal(r.records[3].retainDeviceCacheAfterReset,undefined,'a referenced device-only shard remains a dependency');
+ const fbDeclaredVectorCommit='1retired';
+ r=await inspect('flashback',{records:[{...root('flashback',9,{commitId:fbDeclaredVectorCommit,vectorSidecarCount:1}),location:'server'},fbDeviceOnlyPayload]});
+ blocked(r,/vector_dependency_count_invalid/);
+ assert.equal(r.records[1].retainDeviceCacheAfterReset,undefined,'declared sidecars remain required before resolving exact keys');
  // A manifest that does declare vector sidecars for its own commit still gates:
  // a declared-but-absent sidecar count is not covered by the payload warning.
  const fbDeclaredSidecarRoot=root('flashback',10,{commitId:'1declared',count:1,shardCount:1,vectorSidecarCount:1});

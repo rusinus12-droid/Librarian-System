@@ -160,14 +160,17 @@ async function apply(s,mode){
 (async()=>{const results=[];for(const name of (process.env.GLOBAL_MODE_OWNER?[process.env.GLOBAL_MODE_OWNER]:Object.keys(owners)))for(const kind of kinds){
  const handler=createHandlerFixture(),namespace=owners[name];
  const pluginPath=path.join(pluginDir||(artifactRoot?path.join(artifactRoot,kind):path.resolve(__dirname,'../plugins')),META[name][0]);
- let s,restart,admittedSource;
+ let s,restart,admittedSource,migrationDebug;
  try{
   s=await create(name,kind,{pluginPath,separateLocalStorage:true,initialValues:seedRoots(name),initialDeviceValues:seedDevice(name),args:{memory_suite_server_url:handler.url},nativeFetch:handler.nativeFetch,beforeWrite:async(key,value)=>{
-   if(!admittedSource&&s&&key===`__memory_suite_internal_sync_job_v1__:${namespace}`&&typeof value==='string'){
+   if(s&&key===`__memory_suite_internal_sync_job_v1__:${namespace}`&&typeof value==='string'){
     const job=JSON.parse(value);
     // The prepared journal follows the owner writer drain and closes admission.
     // Startup normalization before that boundary is not a migration mutation.
-    if(job.kind==='global_mode'&&job.phase==='prepared'&&job.status==='queued'&&job.targetMode==='server_only')admittedSource={roots:captureSeededRoots(s,name),values:[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'))};
+    if(!admittedSource&&job.kind==='global_mode'&&job.phase==='prepared'&&job.status==='queued'&&job.targetMode==='server_only')admittedSource={roots:captureSeededRoots(s,name),values:[...s.values.entries()].filter(([key])=>!key.startsWith('__memory_suite_'))};
+    if(name==='Flashback'&&!migrationDebug&&job.kind==='global_mode'&&job.phase==='copy_verify'&&job.status==='running'){
+     migrationDebug=await s.api.exportDebugLog();
+    }
    }
   }});
   await openPanel(s);
@@ -177,6 +180,11 @@ async function apply(s,mode){
   let frozenRoots=captureSeededRoots(s,name);
   if(name==='LIBRA'||name==='HAYAKU')assert.equal(s.doc.querySelector('[data-scope-manager]'),null,'scope data management is separate from server settings');
   const forward=await apply(s,'server_only');const forwardRefreshes=s.globalInventoryRefreshes||0;
+  if(name==='Flashback'){
+   assert.equal(migrationDebug?.scope,'storage_migration');
+   assert.equal(migrationDebug.memorySuite.syncJob.status,'running');
+   assert.equal(migrationDebug.state,undefined,'migration debug does not hydrate scope bodies while writes are fenced');
+  }
   assert.ok(admittedSource,'the public migration persisted its prepared journal before copying');
   frozenRoots=admittedSource.roots;before=admittedSource.values;
   console.log('FROZEN_OWNER_ROOTS',JSON.stringify({name,kind,roots:frozenRoots.map(([key,value])=>({key,bytes:Buffer.byteLength(value),sha256:require('node:crypto').createHash('sha256').update(value).digest('hex')}))}));

@@ -12,6 +12,72 @@ async function paused(variant,sourceA){
 }
 for(const variant of variants){
  const namespace=variant[0],key=namespace+'.A';
+ test(`${namespace}: the last verified replica can be refreshed in either direction`,async()=>{
+  const f=await fixture(variant);
+  try{
+   await f.bridge.setGlobalMode('server_only');
+   await f.proxy.setItem(key,'SERVER_ADVANCED');
+   assert.equal(f.values.get(key),'A_SOURCE');
+   await f.bridge.setGlobalMode('plugin_only');
+   assert.equal(f.values.get(key),'SERVER_ADVANCED');
+   await f.proxy.setItem(key,'PLUGIN_ADVANCED');
+   assert.equal(f.app.repositories[namespace].get('plugin',key).value,'SERVER_ADVANCED');
+   await f.bridge.setGlobalMode('server_only');
+   assert.equal(f.app.repositories[namespace].get('plugin',key).value,'PLUGIN_ADVANCED');
+   assert.equal(f.values.get(key),'PLUGIN_ADVANCED');
+  }finally{await f.close();}
+ });
+ test(`${namespace}: an independently changed local destination is preserved`,async()=>{
+  const f=await fixture(variant);
+  let dom;
+  try{
+   await f.bridge.setGlobalMode('server_only');
+   const completedJobId=f.bridge.getSyncJob().jobId;
+   await f.proxy.setItem(key,'SERVER_ADVANCED');
+   f.values.set(key,'LOCAL_INDEPENDENT');
+   if(namespace==='libra'){
+    dom=makePanelDom();await f.bridge.mountConnectionPanel(dom.container);
+    await new Promise(resolve=>setTimeout(resolve,50));
+    for(const radio of dom.radios)radio.checked=radio.value==='plugin_only';
+    dom.byAttr('data-url').value='http://127.0.0.1:47631';
+    const apply=dom.byAttr('data-apply').onclick();
+    const approve=dom.byAttr('data-mode-confirm-approve');
+    for(let i=0;i<200&&!approve.onclick;i++)await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal(typeof approve.onclick,'function');approve.onclick();await apply;
+    assert.ok(dom.byAttr('data-status').textContent.includes(key),dom.byAttr('data-status').textContent);
+    assert.equal(dom.byAttr('data-preview-diagnostics').hidden,false);
+    assert.equal(JSON.parse(dom.byAttr('data-preview-diagnostics-text').value).details.key,key);
+    const exported=f.bridge.decorateDebugExportSync({}).memorySuite;
+    assert.equal(exported.migrationPreview.completeKnownScopes,true);
+    const failure=exported.migrationAdmissionFailure;
+    assert.equal(failure.phase,'destination_preflight');
+    assert.equal(failure.code,'MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT');
+    assert.equal(failure.details.key,key);
+    assert.equal(failure.details.destinationLocation,'plugin');
+    assert.equal(failure.details.replicaWitness,'changed');
+    assert.doesNotMatch(JSON.stringify(failure),/LOCAL_INDEPENDENT|SERVER_ADVANCED/);
+   }else await assert.rejects(()=>f.bridge.setGlobalMode('plugin_only'),error=>error.code==='MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT');
+   assert.equal(f.bridge.getSyncJob().jobId,completedJobId);
+   assert.equal(f.values.get(key),'LOCAL_INDEPENDENT');
+   assert.equal(f.app.repositories[namespace].get('plugin',key).value,'SERVER_ADVANCED');
+   assert.equal((await f.bridge.getScopeMode({scopeId:'A'})).mode,'server_only');
+  }finally{if(dom)dom.root.isConnected=false;await f.close();}
+ });
+ test(`${namespace}: the local representation is compared through its server projection`,async()=>{
+  const bridgeOptions={resolveKeyScope:async({key:logicalKey})=>({
+   kind:'scope',scopeId:logicalKey.slice(namespace.length+1),
+   projectValue:value=>String(value).replace(/^device:/,''),
+   mergeValue:remote=>'device:'+remote
+  })};
+  const f=await fixture(variant,{bridgeOptions});
+  try{
+   f.values.set(key,'device:A_SOURCE');
+   await f.bridge.setGlobalMode('server_only');
+   assert.equal(f.app.repositories[namespace].get('plugin',key).value,'A_SOURCE');
+   await f.bridge.setGlobalMode('plugin_only');
+   assert.equal(f.values.get(key),'device:A_SOURCE');
+  }finally{await f.close();}
+ });
  test(`${namespace}: a saved server route does not skip a missing payload on resume`,async()=>{
   const f=await paused(variant);let fresh;
   try{

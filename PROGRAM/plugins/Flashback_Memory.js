@@ -4561,7 +4561,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const job = state.syncJob.current;
     if (!legacy || typeof legacy.setItem !== 'function' || !job) return false;
     try {
-      const payload = JSON.stringify({ ...cloneSyncJob(job), persistedAt: Date.now() });
+      const payload = JSON.stringify({ ...job, persistedAt: Date.now() });
       const result = await legacy.setItem(SYNC_JOB_STORAGE_KEY, payload);
       if (result === false || typeof legacy.getItem !== 'function') return false;
       const actual = await legacy.getItem(SYNC_JOB_STORAGE_KEY);
@@ -4859,7 +4859,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     && typeof value.url === 'string' && value.dataIdentityContract === 'memory-suite.physical-data-identity.v1'
     && value.dataIdentityCertified === true && value.resetEpochCertified === true
     && typeof value.dataInstanceId === 'string' && /^[A-Za-z0-9_-]{32}$/.test(value.dataInstanceId)
-    && Number.isSafeInteger(value.epoch) && value.epoch > 0 && ['empty','upload'].includes(value.choice)
+    && Number.isSafeInteger(value.epoch) && value.epoch > 0 && ['empty','upload','restored'].includes(value.choice)
     ;
   const readResetPreferenceCandidate = async () => {
     const store = state.legacy.plugin;
@@ -5718,7 +5718,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const cache = fencedReadCacheFor(key), cacheKey = `${space}\n${key}`;
     if (cache?.has(cacheKey)) return cloneFencedRead(cache.get(cacheKey));
     const writeEpoch = fencedReadWriteEpoch;
-    const payload = await request(
+    const payload = await (requestOptions.inventoryRequest || request)(
       'GET',
       `/v1/kv/get?namespace=${encodeURIComponent(namespace)}&space=${encodeURIComponent(space)}&key=${encodeURIComponent(key)}`,
       null,
@@ -5758,7 +5758,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       cursor = normalizedNext;
     }
-    if(requestOptions.strictInventory===true&&(oversizedKeys.size||list.some(key=>!Object.hasOwn(values,key))))throw globalModeError('remote_values_incomplete_or_oversized');
+    if(requestOptions.strictInventory===true&&list.some(key=>!Object.hasOwn(values,key)&&!oversizedKeys.has(key)))throw globalModeError('remote_values_incomplete_or_oversized');
     for (const key of oversizedKeys) defineStorageRecordValue(values, key, await remoteGet(space, key, requestOptions));
     return { values, pages, oversizedKeys: [...oversizedKeys] };
   };
@@ -5927,8 +5927,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!legacy || typeof legacy.getItem !== 'function') return null;
     const value=await legacy.getItem(key);
     if(globalMigrationContext){const space=legacy===globalMigrationContext.stores.local?'local':'plugin';
-      const record=globalMigrationContext.records.find(row=>row.location!=='server'&&row.space===space&&row.key===key&&Object.hasOwn(row,'logicalValue'));
-      if(record){if(globalCanonical(value)!==globalCanonical(record.value))throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key});return record.logicalValue;}
+      const record=globalMigrationContext.records.find(row=>row.location!=='server'&&row.space===space&&row.key===key
+        &&(row.logicalChunks?.length||Object.hasOwn(row,'logicalValue')));
+      if(record){
+        if(globalMigrationContext.targetMode===MODE_PLUGIN_ONLY&&record.logicalChunks?.length)return await readCleanupLocalValue(legacy,key,value);
+        if(await globalDigest([false,value])!==record.fingerprint)throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{key});
+        return await readGlobalLogicalRecord(globalMigrationContext,record);
+      }
     }
     return value;
   };
@@ -8551,7 +8556,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const globalValueDifferenceMetadata = (expected,actual) => {
     const object=value=>value!==null&&typeof value==='object';
-    const decode=value=>{if(typeof value==='string'){try{return JSON.parse(value);}catch(_){return null;}}return value;};
+    const decode=value=>{if(typeof value==='string'){if(value.length>1024*1024)return null;try{return JSON.parse(value);}catch(_){return null;}}return value;};
     const left=decode(expected),right=decode(actual);
     if(!object(left)||!object(right))return {};
     const jsonEquivalent=globalCanonical(left)===globalCanonical(right);
@@ -8602,6 +8607,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     return walk(value);
     };
+  const snapshotGlobalJson = value => value===null||typeof value==='string'||typeof value==='boolean'||Number.isFinite(value)
+    ?value:JSON.parse(globalExactJson(value));
   const globalRecordIdentity = row => [row.location,row.space,row.key].join('\u0000');
   const globalRecordScopeIds = row => row.classification === 'shared'
     ? (Array.isArray(row.dependencyScopeIds) ? row.dependencyScopeIds.map(String) : []) : [String(row.scopeId || '')];
@@ -8648,7 +8655,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         reason:'server_source_witness',location,space,key,localKey,localStatus
       });
       if(!keysBySpace.get(space).has(localKey))throw location==='server'?remoteWitnessError('missing'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_MISSING',{space,key});
-      let value;try{value=JSON.parse(globalExactJson(await store.getItem(localKey)));}catch(_){throw location==='server'?remoteWitnessError('unreadable'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});}
+      let value;try{value=snapshotGlobalJson(await store.getItem(localKey));}catch(_){throw location==='server'?remoteWitnessError('unreadable'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_UNVERIFIED',{space,key});}
       if(await globalDigest([false,value])!==source.fingerprint)throw location==='server'?remoteWitnessError('different'):globalModeError('MEMORY_SUITE_LOCAL_CANCEL_SOURCE_CHANGED',{space,key});
       verified.push([source.identity,source.fingerprint]);
       verifiedLocalKeys.add(JSON.stringify([space,localKey]));
@@ -8697,25 +8704,59 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return {...value,entries:Object.fromEntries(Object.entries(value.entries).map(([id,row])=>[id,{...row,scopeId:row.scopeId||id}]))};
   };
   const globalHostCatalog = async () => {
-    const host=apiCandidates().find(api=>typeof api?.getDatabase === 'function');
-    if(!host)throw globalModeError('host_catalog_api_unavailable');
-    const database=await host.getDatabase(['characters']);
-    if(!database || !Array.isArray(database.characters))throw globalModeError('host_catalog_unavailable_or_denied');
-    const scopes=[],seen=new Set();
-    for(let characterIndex=0;characterIndex<database.characters.length;characterIndex++){
-      const character=database.characters[characterIndex];
-      const characterId=String(character?.chaId || character?.characterId || character?.id || character?.uuid || '').trim();
-      if(!characterId || !Array.isArray(character?.chats))throw globalModeError('host_character_identity_or_chats_incomplete');
-      for(let chatIndex=0;chatIndex<character.chats.length;chatIndex++){
-        const chat=character.chats[chatIndex],chatId=String(chat?.id || chat?.chatId || chat?.uuid || '').trim();
-        if(!chatId || seen.has(characterId+'\u0000'+chatId))throw globalModeError('host_chat_identity_missing_or_duplicate');
-        seen.add(characterId+'\u0000'+chatId);
-        scopes.push({characterId,chatId,characterIndex,chatIndex,characterName:String(character.nickname || character.name || '').slice(0,160),
-          chatTitle:String(chat.name || chat.title || '').slice(0,200),personaId:String(chat.bindedPersona || chat.boundPersonaId || chat.personaId || '')});
+    const indexed=apiCandidates().find(api=>typeof api?.getCharacterFromIndex==='function');
+    const databaseHost=apiCandidates().find(api=>typeof api?.getDatabase==='function');
+    const collect = async readCharacter => {
+      const scopes=[],characters=new Set();
+      for(let characterIndex=0;;characterIndex++){
+        const character=await readCharacter(characterIndex);
+        if(character==null)return scopes;
+        const characterId=String(character?.chaId||character?.characterId||character?.id||character?.uuid||'').trim();
+        if(!characterId||!Array.isArray(character.chats))throw globalModeError('host_character_identity_or_chats_incomplete');
+        if(characters.has(characterId))throw globalModeError('host_character_identity_duplicate');
+        characters.add(characterId);
+        const chats=new Set();
+        for(let chatIndex=0;chatIndex<character.chats.length;chatIndex++){
+          const chat=character.chats[chatIndex],chatId=String(chat?.id||chat?.chatId||chat?.uuid||'').trim();
+          if(!chatId||chats.has(chatId))throw globalModeError('host_chat_identity_missing_or_duplicate');
+          chats.add(chatId);
+          scopes.push({characterId,chatId,characterIndex,chatIndex,characterName:String(character.nickname||character.name||'').slice(0,160),
+            chatTitle:String(chat.name||chat.title||'').slice(0,200),personaId:String(chat.bindedPersona||chat.boundPersonaId||chat.personaId||'')});
+        }
       }
+    };
+    if(indexed){
+      // The host snapshots one character at a time. Keep only chat identities
+      // in the catalog so histories from different characters never accumulate.
+      try{return await collect(index=>indexed.getCharacterFromIndex(index));}
+      catch(error){if(!databaseHost||error?.code!=='host_character_identity_duplicate')throw error;}
     }
-    return scopes;
+    if(!databaseHost)throw globalModeError('host_catalog_api_unavailable');
+    const database=await databaseHost.getDatabase(['characters']);
+    if(!database||!Array.isArray(database.characters)||database.characters.some(character=>character==null))
+      throw globalModeError('host_catalog_unavailable_or_denied');
+    return await collect(index=>database.characters[index]);
   };
+  const assertGlobalRemoteRecord = (row, expected) => {
+    if (!row || row.revision !== expected.revision || row.digest !== expected.digest
+      || row.tombstone !== expected.deleted || row.exists === expected.deleted) {
+      throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:expected.space,key:expected.key,location:'server'});
+    }
+  };
+  const readGlobalLogicalRecord = async (inventory,row) => {
+    if (Object.hasOwn(row,'logicalValue')) return row.logicalValue;
+    if (!row.logicalChunks?.length) return inventory.readRecord ? await inventory.readRecord(row) : row.value;
+    const parts = [];
+    for (const key of row.logicalChunks) {
+      const chunk = inventory.physicalRecords.get(globalRecordIdentity({...row,key}));
+      if (!chunk) throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key});
+      parts.push(await inventory.readRecord(chunk));
+    }
+    return parts.join('');
+  };
+  const globalResetChoiceMatchesPin = (choice,pin) => validResetPreference(choice)&&!!pin
+    &&choice.url===pin.url&&choice.dataInstanceId===pin.dataInstanceId
+    &&choice.dataIdentityContract===pin.dataIdentityContract&&choice.epoch===pin.resetEpoch;
   const collectGlobalInventory = async (target,inventoryOptions={}) => {
     const readOnlyUnfingerprinted=inventoryOptions.readOnlyCatalog===true&&typeof globalThis.crypto?.subtle?.digest!=='function';
     const digestInventory=value=>readOnlyUnfingerprinted?Promise.resolve(''):globalDigest(value);
@@ -8727,7 +8768,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // Existing owner authority, read-only keys/get-many only, same DATA response proof.
       inventoryRequest=async(method,route,body)=>{
         if(!connection){connection=await bootstrapAtUrl(targetUrl);durableServerPinFromConnection(connection,targetUrl);}
-        if(!(method==='GET'&&route.startsWith('/v1/kv/keys?')||method==='POST'&&route==='/v1/kv/get-many'))throw globalModeError('MEMORY_SUITE_GLOBAL_INVENTORY_METHOD_INVALID');
+        if(!(method==='GET'&&(route.startsWith('/v1/kv/keys?')||route.startsWith('/v1/kv/get?'))||method==='POST'&&route==='/v1/kv/get-many'))throw globalModeError('MEMORY_SUITE_GLOBAL_INVENTORY_METHOD_INVALID');
         if(Number(connection.resetEpochs?.[namespace]||0)!==0)throw globalModeError('MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');
         const payload=await fetchJson(connection.url+route,{method,headers:{Authorization:`Bearer ${connection.token}`,
           'X-Memory-Suite-Plugin':pluginId,'X-Memory-Suite-Plugin-Version':pluginVersion,'X-Memory-Suite-Storage-Mode':MODE_PLUGIN_ONLY,
@@ -8736,6 +8777,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       };
     }
     const blockers=[],records=[],registries=[],registryCopies=[];
+    const retainValues=inventoryOptions.readOnlyCatalog===true;
+    const physicalRecords=new Map(), remoteGroups=new Map();
+    const readOptions={allowPluginOnly:true,strictInventory:true,inventoryRequest,
+      storageMode:inventoryOptions.serverManagement?MODE_SERVER_ONLY:undefined};
+    const recordValue=async (row,value) => {
+      row.fingerprint=await digestInventory([row.deleted,value]);
+      if(retainValues)row.value=value;
+      records.push(row);physicalRecords.set(globalRecordIdentity(row),row);
+    };
     if(readOnlyUnfingerprinted)blockers.push({code:'scope_catalog_read_only_crypto_unavailable'});
     let hostScopes=[];
     try{hostScopes=await globalHostCatalog();}catch(error){blockers.push({code:String(error.code || 'host_catalog_read_failed')});}
@@ -8752,14 +8802,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       for(const key of keys.slice().sort()){
         const artifactOwnerKey=chunkOwnerKey(key),decoded=scopedRemoteKeyInfo(artifactOwnerKey||key);
         if(!matchesRoute(space,artifactOwnerKey||key)&&!matchesRoute(space,decoded.logicalKey))continue;
-        try{const value=await store.getItem(key);const serialized=globalExactJson(value);if(serialized===undefined)throw 0;
-          records.push({location,space,key,logicalKey:decoded.logicalKey,scopeId:decoded.scopeId,artifact:!!artifactOwnerKey,artifactOwnerKey,deleted:false,value:JSON.parse(serialized)});
+        try{const value=snapshotGlobalJson(await store.getItem(key));
+          await recordValue({location,space,key,logicalKey:decoded.logicalKey,scopeId:decoded.scopeId,artifact:!!artifactOwnerKey,artifactOwnerKey,deleted:false},value);
         }catch(_){blockers.push({code:'physical_value_unreadable',location,space,key});}
       }
     }
     const localRegistry=mergeScopeRegistries(...registries);
     const legacyMode=normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY));
-    const remoteRequired=urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
+    const resetCandidate=await readResetPreferenceCandidate();
+    const remoteRequired=resetCandidate?.choice==='empty'&&resetCandidate.url===targetUrl || urlChanged || target!==MODE_PLUGIN_ONLY || legacyMode!==MODE_PLUGIN_ONLY || !!dataBinding.dataInstanceId
       || registryCopies.some(copy=>copy.raw != null && Object.values(globalReadRegistry(copy.raw,copy.location,[]).entries).some(row=>!isRemovedScopeRow(row)&&normalizeMode(row.mode)!==MODE_PLUGIN_ONLY))
       || registries.some(registry=>registry.globalMigrationRemoteHistory===true)
       || registryCopies.some(copy=>copy.raw!=null)&&registries.some(registry=>registry.globalMigrationRemoteHistory!==false&&Object.keys(registry.entries).length>0);
@@ -8769,24 +8820,41 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try{
         serverPin=await captureDurableServerPin(targetUrl);
         for(const space of ['plugin','local']){
-          const listing=await remoteKeys(space,'',{allowPluginOnly:true,strictInventory:true,inventoryRequest,storageMode:inventoryOptions.serverManagement?MODE_SERVER_ONLY:undefined});
-          const metadata=new Map(listing.records.map(row=>[String(row.key),row]));
-          const all=[...listing.keys,...listing.tombstones];
-          for(let offset=0;offset<all.length;offset+=512){
-            const keys=all.slice(offset,offset+512),batch=await remoteGetMany(space,keys,{allowPluginOnly:true,strictInventory:true,inventoryRequest,storageMode:inventoryOptions.serverManagement?MODE_SERVER_ONLY:undefined});
-            for(const key of keys){
-              const row=batch.values[key],meta=metadata.get(key);
-              if(!row || !meta || row.revision!==meta.revision || row.digest!==meta.digest || Boolean(row.tombstone)!==Boolean(meta.tombstone))throw globalModeError('remote_record_changed_or_incomplete');
-              if(key===SCOPE_ROUTING_SERVER_KEY){if(row.exists){registryCopies.push({location:'server',raw:row.value});registries.push(globalReadRegistry(row.value,'server',blockers));}continue;}
-              const artifactOwnerKey=chunkOwnerKey(key),decoded=scopedRemoteKeyInfo(artifactOwnerKey||key);
-              if(!matchesRoute(space,artifactOwnerKey||key)&&!matchesRoute(space,decoded.logicalKey)){
-                if(!key.startsWith('__memory_suite_'))blockers.push({code:'remote_key_ownership_unknown',space,key});
-                continue;
+          const listing=await remoteKeys(space,'',readOptions);
+          let pending=[], bytes=0;
+          const consume=async () => {
+            if(!pending.length)return;
+            const group={space,keys:pending.map(item=>item.key),bytes};
+            const batch=await remoteGetMany(space,group.keys,readOptions);
+            for(const expected of pending){
+              const row=batch.values[expected.key];
+              assertGlobalRemoteRecord(row,expected);
+              if(expected.key===SCOPE_ROUTING_SERVER_KEY){
+                if(row.exists){registryCopies.push({location:'server',raw:row.value});registries.push(globalReadRegistry(row.value,'server',blockers));}
+              }else{
+                await recordValue(expected,row.exists?row.value:null);
+                remoteGroups.set(globalRecordIdentity(expected),group);
               }
-              records.push({location:'server',space,key,logicalKey:decoded.logicalKey,scopeId:decoded.scopeId,artifact:!!artifactOwnerKey,artifactOwnerKey,
-                deleted:row.tombstone===true,value:row.exists===true?row.value:null,revision:row.revision,digest:row.digest,valueBytes:meta.valueBytes});
             }
+            pending=[];bytes=0;
+          };
+          // Use listing sizes to bound the retained page, including when the
+          // server splits a get-many response into several continuations.
+          const metadata=new Map(listing.records.map(row=>[row.key,row]));
+          for(const listedKey of [...listing.keys,...listing.tombstones]){
+            const meta=metadata.get(listedKey);
+            const key=meta.key,artifactOwnerKey=chunkOwnerKey(key),decoded=scopedRemoteKeyInfo(artifactOwnerKey||key);
+            if(key!==SCOPE_ROUTING_SERVER_KEY&&!matchesRoute(space,artifactOwnerKey||key)&&!matchesRoute(space,decoded.logicalKey)){
+              if(!key.startsWith('__memory_suite_'))blockers.push({code:'remote_key_ownership_unknown',space,key});
+              continue;
+            }
+            const size=Math.max(0,Number(meta.valueBytes)||0);
+            if(pending.length>=32||bytes+size>1024*1024)await consume();
+            pending.push({location:'server',space,key,logicalKey:decoded.logicalKey,scopeId:decoded.scopeId,artifact:!!artifactOwnerKey,artifactOwnerKey,
+              deleted:meta.tombstone===true,revision:meta.revision,digest:meta.digest,valueBytes:size});
+            bytes+=size;
           }
+          await consume();
         }
       }catch(error){
         if(inventoryOptions.allowServerOffline===true||inventoryOptions.localManagement===true){
@@ -8796,11 +8864,46 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         }
       }
     }
+    // Keep only a few admitted response pages while classifying ownership.
+    // Transfer and final readback still read storage directly.
+    const pages=new Map(), pageBudget=4*1024*1024;
+    let pageBytes=0, discovering=true;
+    const readRecord=async row => {
+      const expected=physicalRecords.get(globalRecordIdentity(row));
+      if(!expected)throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.key});
+      if(Object.hasOwn(expected,'value'))return expected.value;
+      if(expected.location==='server'){
+        const group=discovering?remoteGroups.get(globalRecordIdentity(expected)):null;
+        let remote;
+        if(group){
+          let page=pages.get(group);
+          if(page){pages.delete(group);pages.set(group,page);}
+          else{
+            const weight=Math.max(group.bytes,64*1024);
+            while(pages.size&&pageBytes+weight>pageBudget){
+              const oldest=pages.keys().next().value;
+              pageBytes-=pages.get(oldest).weight;pages.delete(oldest);
+            }
+            const batch=await remoteGetMany(group.space,group.keys,readOptions);
+            page={values:batch.values,weight};
+            if(weight<=pageBudget){pages.set(group,page);pageBytes+=weight;}
+          }
+          remote=page.values[expected.key];
+        }else remote=await remoteGet(expected.space,expected.key,readOptions);
+        assertGlobalRemoteRecord(remote,expected);
+        return remote.exists?remote.value:null;
+      }
+      const value=snapshotGlobalJson(await stores[expected.space].getItem(expected.key));
+      if(await digestInventory([false,value])!==expected.fingerprint)
+        throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:expected.space,key:expected.key});
+      return value;
+    };
     let owner={scopes:[],records:[],blockers:[],completeKnownScopes:false};
     if(typeof options.discoverGlobalScopes==='function'){
-      try{owner=await options.discoverGlobalScopes({namespace,hostScopes,registries,records});}
+      try{owner=await options.discoverGlobalScopes({namespace,hostScopes,registries,records,readRecord});}
       catch(error){blockers.push({code:'owner_global_discovery_failed',reason:String(error.code || error.message || '').slice(0,160)});}
     }
+    discovering=false;pages.clear();remoteGroups.clear();
     if(!owner || !Array.isArray(owner.scopes)||!Array.isArray(owner.records)||!Array.isArray(owner.blockers))throw globalModeError('MEMORY_SUITE_GLOBAL_OWNER_CONTRACT_INVALID');
     blockers.push(...owner.blockers);
     const scopes=owner.scopes.map(globalScopeDescriptorOnly).sort((a,b)=>a.scopeId.localeCompare(b.scopeId));
@@ -8814,29 +8917,45 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(globalPayloadRecord(value)&&(!globalRecordScopeIds(value).length||globalRecordScopeIds(value).some(id=>!scopeIds.has(id))))blockers.push({code:'owner_record_scope_unverified',space:row.space,key:row.key});
     }
     const registry=mergeScopeRegistries(mergeScopeRegistries(...registries));
+    const resetEmpty=resetCandidate?.choice==='empty'&&globalResetChoiceMatchesPin(resetCandidate,serverPin)?resetCandidate:null;
     const modeFor=scope=>{
+      if(resetEmpty)return MODE_SERVER_ONLY;
       const sourceRegistry=urlChanged?localRegistry:registry;
       return registryScopeMode(sourceRegistry,scope.scopeId,legacyMode);
     };
     const scoped=scopes.map(scope=>({...scope,sourceMode:modeFor(scope)}));
-    const safeRecords=[],originalByIdentity=new Map(records.map(item=>[globalRecordIdentity(item),item]));
+    const safeRecords=[];
     for(const row of owner.records){
-      const original=originalByIdentity.get(globalRecordIdentity(row));
+      const original=physicalRecords.get(globalRecordIdentity(row));
       if(!original)continue;
-      const checked={...original,...(Object.hasOwn(row,'logicalValue')?{logicalValue:row.logicalValue}:{}),classification:row.classification,scopeId:String(row.scopeId||''),dependencyScopeIds:row.dependencyScopeIds||[],dependencyKeys:row.dependencyKeys||[]};
-      checked.fingerprint=await digestInventory([checked.deleted,checked.value]);safeRecords.push(checked);
+      const checked={...original,...(Object.hasOwn(row,'logicalValue')?{logicalValue:row.logicalValue}:{}),...(row.logicalChunks?{logicalChunks:row.logicalChunks}:{}),classification:row.classification,scopeId:String(row.scopeId||''),dependencyScopeIds:row.dependencyScopeIds||[],dependencyKeys:row.dependencyKeys||[],retainDeviceCacheAfterReset:original.location==='device'&&original.space==='local'&&row.retainDeviceCacheAfterReset===true};
+      safeRecords.push(checked);
     }
+    const liveLocalKeys=new Set(safeRecords.filter(row=>row.location!=='server'&&!row.deleted).map(row=>JSON.stringify([row.space,row.logicalKey])));
+    const scopeModes=new Map(scoped.map(scope=>[scope.scopeId,scope.sourceMode]));
+    const payloadsByScope=new Map(scoped.map(scope=>[scope.scopeId,[]]));
     for(const row of safeRecords){
-      if(row.location!=='server'||row.deleted||!globalPayloadRecord(row))continue;
-      const lacksLocal=!safeRecords.some(local=>local.location!=='server'&&local.space===row.space&&local.logicalKey===row.logicalKey&&!local.deleted);
-      if(!inventoryOptions.serverManagement&&lacksLocal&&globalRecordScopeIds(row).some(id=>scoped.find(scope=>scope.scopeId===id)?.sourceMode===MODE_PLUGIN_ONLY))
+      if(!globalPayloadRecord(row))continue;
+      const ids=globalRecordScopeIds(row);
+      for(const id of ids)payloadsByScope.get(id)?.push(row);
+      if(row.location!=='server'||row.deleted)continue;
+      const lacksLocal=!liveLocalKeys.has(JSON.stringify([row.space,row.logicalKey]));
+      if(!inventoryOptions.serverManagement&&lacksLocal&&ids.some(id=>scopeModes.get(id)===MODE_PLUGIN_ONLY))
         blockers.push({code:'remote_source_route_unverified',space:row.space,key:row.logicalKey,scopeId:row.scopeId});
+    }
+    if(resetEmpty&&target===MODE_PLUGIN_ONLY&&!retainValues){
+      const serverKeys=new Set(safeRecords.filter(row=>row.location==='server'&&globalPayloadRecord(row)).map(row=>JSON.stringify([row.space,row.logicalKey])));
+      // A pre-reset local-only body would become visible again in plugin mode.
+      for(const row of safeRecords){
+        if(row.location!=='server'&&globalPayloadRecord(row)&&!row.deleted&&!row.retainDeviceCacheAfterReset&&!serverKeys.has(JSON.stringify([row.space,row.logicalKey])))
+          blockers.push({code:'MEMORY_SUITE_GLOBAL_RESET_LOCAL_ONLY_RECORD',space:row.space,key:row.logicalKey,scopeId:row.scopeId});
+      }
     }
     const catalog={hostScopes,scopes:scopes.map(scope=>[scope.scopeId,scope.scopeKey,scope.characterId,scope.chatId,scope.aliases]),
       keys:[...new Set(safeRecords.filter(row=>row.classification!=='control').map(row=>globalCanonical([row.space,row.logicalKey,row.classification,row.scopeId,row.dependencyScopeIds])))].sort()};
     const catalogFingerprint=await digestInventory(catalog);
-    return {schema:'memory-suite.global-inventory.v1',namespace,targetUrl,targetMode:target,scopes:scoped,records:safeRecords,registry,registryCopies,hostScopes,legacyMode,
-      stores,remoteRequired,serverManagement:inventoryOptions.serverManagement===true,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
+    return {schema:'memory-suite.global-inventory.v1',namespace,targetUrl,targetMode:target,scopes:scoped,records:safeRecords,payloadsByScope,scopeModes,registry,registryCopies,hostScopes,legacyMode,
+      stores,readRecord,physicalRecords,retainValues,resetEmpty,remoteRequired,serverManagement:inventoryOptions.serverManagement===true,serverPin,catalogFingerprint,inventoryFingerprint:await digestInventory([catalogFingerprint,safeRecords.filter(row=>row.classification!=='control').map(row=>[globalRecordIdentity(row),row.fingerprint,row.revision,row.digest])]),
       blockers,...globalWarningMetadata(owner),completeKnownScopes:owner.completeKnownScopes===true&&blockers.length===0};
   };
   const globalWorkflowSummary = (inventory, job = state.syncJob.current) => {
@@ -9057,11 +9176,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(targetUrl!==url){const old=await collectGlobalInventory(MODE_PLUGIN_ONLY);
       if(!old.completeKnownScopes)return rememberGlobalPreview(globalInventorySummary(old));
       if(old.scopes.some(scope=>scope.sourceMode!==MODE_PLUGIN_ONLY))return rememberGlobalPreview({...globalInventorySummary(old),completeKnownScopes:false,blockers:[{code:'MEMORY_SUITE_SERVER_URL_IN_USE'}]});}
-    const first=await collectGlobalInventory(target,{url:targetUrl});
-    if(first.completeKnownScopes){const second=await collectGlobalInventory(target,{url:targetUrl});
-      if(!second.completeKnownScopes||first.catalogFingerprint!==second.catalogFingerprint||first.inventoryFingerprint!==second.inventoryFingerprint
-        ||globalCanonical(first.registryCopies)!==globalCanonical(second.registryCopies)){first.completeKnownScopes=false;first.blockers.push({code:'inventory_changed_during_preview'});}}
-    return rememberGlobalPreview(globalInventorySummary(first));
+    // The confirmation fingerprint is checked again under the writer fence.
+    return rememberGlobalPreview(globalInventorySummary(await collectGlobalInventory(target,{url:targetUrl})));
   };
   const globalSaveJob = async patch => {
     state.syncJob.current={...state.syncJob.current,...patch,updatedAt:Date.now(),lastActivityAt:Date.now()};
@@ -9074,7 +9190,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const globalSourceWitness = inventory => inventory.records.filter(row=>{
     if(!globalPayloadRecord(row)&&row.classification!=='artifact')return false;
-    const modes=globalRecordScopeIds(row).map(id=>inventory.scopes.find(scope=>scope.scopeId===id)?.sourceMode);
+    const modes=globalRecordScopeIds(row).map(id=>inventory.scopeModes.get(id));
     return row.location==='server'?modes.some(mode=>mode!==MODE_PLUGIN_ONLY):modes.some(mode=>mode!==MODE_SERVER_ONLY);
   }).map(row=>({identity:globalRecordIdentity(row),fingerprint:row.fingerprint,revision:row.revision,digest:row.digest}));
   const assertGlobalPlanCurrent = async (job,inventory,allowPreviousUrl=false) => {
@@ -9093,17 +9209,40 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const globalRouteForRecord = async (row,scope) => {
     const raw=resolveKeyScopeProvider?await resolveKeyScopeProvider({namespace,pluginId,pluginVersion,space:row.space,key:row.logicalKey,currentScope:scope,
-      registry:{...globalMigrationContext.registry,entries:{...globalMigrationContext.registry.entries,...Object.fromEntries(globalMigrationContext.scopes.map(item=>[item.scopeId,item]))}}}):{};
+      registry:globalMigrationContext.routeRegistry ||= {...globalMigrationContext.registry,entries:{...globalMigrationContext.registry.entries,...Object.fromEntries(globalMigrationContext.scopes.map(item=>[item.scopeId,item]))}}}):{};
     // The strict owner inventory supplies membership even for older resolver gaps.
     // Only already-owned route keys reach this path; control/credential rows never do.
     return await normalizeRouteDescriptor({...raw,kind:row.classification==='shared'?'shared':'scope',scope,scopeId:scope.scopeId,scopeKey:scope.scopeKey,
       includeInScopeSync:true,...(row.location==='server'?{remoteKey:row.key}:{})},row.space,row.logicalKey,scope);
   };
-  const globalPreflightDestinations = async inventory => {
+  const globalDestinationWitnesses = async (previous,inventory) => {
+    if(!previous&&inventory.serverPin){
+      // Completion expires from the UI before the verified replica expires.
+      const raw=await state.legacy.plugin?.getItem(SYNC_JOB_STORAGE_KEY);
+      try{previous=typeof raw==='string'?JSON.parse(raw):raw;}catch(_){return new Map();}
+    }
+    if(previous?.kind!=='global_mode'||previous.status!=='completed'||previous.targetMode===inventory.targetMode
+      ||previous.targetUrl!==inventory.targetUrl||!inventory.serverPin||!previous.globalPlan?.sources)return new Map();
+    const pin=previous.serverPins?.target||previous.serverPins?.source;
+    if(globalCanonical(pin)!==globalCanonical(inventory.serverPin))return new Map();
+    await assertStoredDurableJobMetadata(previous);
+    if(await globalDigest(previous.globalPlan)!==previous.globalPlanDigest)throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
+    const originalModes=new Map(previous.globalPlan.scopes.map(scope=>[scope.scopeId,scope.sourceMode]));
+    const records=new Map(inventory.records.map(row=>[globalRecordIdentity(row),row]));
+    return new Map(previous.globalPlan.sources.filter(witness=>{
+      const row=records.get(witness.identity);
+      return row&&globalPayloadRecord(row)&&globalRecordScopeIds(row).every(id=>originalModes.get(id)===inventory.targetMode);
+    }).map(witness=>[witness.identity,witness]));
+  };
+  const globalWitnessMatches = (witness,row) => witness?.fingerprint===row.fingerprint
+    &&witness.revision===row.revision&&witness.digest===row.digest;
+  const globalReplacement = (location,space,key) => globalMigrationContext?.replacements?.get(globalRecordIdentity({location,space,key}));
+  const globalPreflightDestinations = async (inventory,witnesses=new Map()) => {
+    const replacements=new Map();
     const byIdentity=new Map(inventory.records.map(row=>[globalRecordIdentity(row),row]));
     for(const scope of inventory.scopes){
       if(scope.sourceMode===inventory.targetMode)continue;
-      for(const row of inventory.records.filter(row=>globalPayloadRecord(row)&&globalRecordScopeIds(row).includes(scope.scopeId))){
+      for(const row of inventory.payloadsByScope.get(scope.scopeId)||[]){
         const sourceRemote=scope.sourceMode===MODE_SERVER_ONLY;
         if((row.location==='server')!==sourceRemote)continue;
         const route=await globalRouteForRecord(row,scope);
@@ -9111,11 +9250,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           :['server',row.space,route.remoteKey].join('\u0000');
         const destination=byIdentity.get(destinationKey);
         if(!destination)continue;
-        const sourceValue=Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value;
+        if(row.fingerprint===destination.fingerprint&&!route.projectValue
+          &&![row,destination].some(item=>item.logicalChunks?.length||Object.hasOwn(item,'logicalValue')))continue;
+        const sourceValue=await readGlobalLogicalRecord(inventory,row);
         const projected=sourceRemote?sourceValue:await routeProjectValue(route,sourceValue);
-        const actual=Object.hasOwn(destination,'logicalValue')?destination.logicalValue:destination.value;
+        const destinationValue=await readGlobalLogicalRecord(inventory,destination);
+        const actual=sourceRemote&&!destination.deleted?await routeProjectValue(route,destinationValue):destinationValue;
         const expectedFingerprint=await globalDigest([row.deleted,projected]),actualFingerprint=await globalDigest([destination.deleted,actual]);
-        if(row.deleted!==destination.deleted||expectedFingerprint!==actualFingerprint)
+        if(row.deleted!==destination.deleted||expectedFingerprint!==actualFingerprint){
+          const witness=witnesses.get(destinationKey);
+          if(globalWitnessMatches(witness,destination)){replacements.set(destinationKey,witness);continue;}
           throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_CONFLICT',{
             scopeId:scope.scopeId,space:row.space,key:row.logicalKey,...(!sourceRemote?{remoteKey:route.remoteKey}:{}),targetMode:inventory.targetMode,sourceLocation:row.location,
             reason:destination.deleted&&!row.deleted?'destination_tombstone':'destination_value_mismatch',repairable:false,sourceMode:scope.sourceMode,
@@ -9124,8 +9268,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             actualValueType:destination.deleted?'absent':Array.isArray(actual)?'array':actual===null?'null':typeof actual,
             expectedFingerprint,actualFingerprint,...globalValueDifferenceMetadata(projected,actual)
           });
+        }
       }
     }
+    return replacements;
   };
   const readGlobalDestination = async (space,key,job) => {
     const maxRetries=5,originalAction=state.syncJob.current?.currentAction,originalMessage=state.syncJob.current?.message;
@@ -9167,8 +9313,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const verifyGlobalScopeDestination = async (inventory,scope,target,verifyOptions={}) => {
     let verified=0,copiedMissingRecords=0,notifiedAt=0;
-    const rows=inventory.records.filter(row=>globalPayloadRecord(row)&&globalRecordScopeIds(row).includes(scope.scopeId)
-      &&(scope.sourceMode===MODE_SERVER_ONLY?row.location==='server':row.location!=='server'));
+    const rows=(inventory.payloadsByScope.get(scope.scopeId)||[]).filter(row=>scope.sourceMode===MODE_SERVER_ONLY?row.location==='server':row.location!=='server');
     for(const row of rows){
       if(verifyOptions.job){
         const now=Date.now();Object.assign(state.syncJob.current,{currentSpace:row.space,currentKey:row.logicalKey,currentAction:target===MODE_SERVER_ONLY?'서버 저장 항목 재조회·검증':'기기 저장 항목 재조회·검증',updatedAt:now,lastActivityAt:now});
@@ -9179,8 +9324,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const route=await globalRouteForRecord(row,scope);
       if(target===MODE_SERVER_ONLY){
         let remote=await readGlobalDestination(row.space,route.remoteKey,verifyOptions.job);
-        const logical=Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value;
-        const expected=row.location==='server'?logical:await routeProjectValue(route,logical);
+        if(row.location==='server'){
+          const actualFingerprint=await globalDigest([remote.tombstone===true,remote.exists===true?remote.value:null]);
+          if((row.deleted?remote.tombstone!==true:remote.exists!==true)||actualFingerprint!==row.fingerprint)
+            throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
+              scopeId:scope.scopeId,space:row.space,key:row.logicalKey,remoteKey:route.remoteKey,targetMode:target,
+              sourceLocation:'server',sourceMode:scope.sourceMode,repairable:false,actualExists:remote.exists===true,
+              reason:remote.tombstone&&!row.deleted?'destination_tombstone':!remote.exists&&!row.deleted?'destination_missing':'destination_value_mismatch',
+              expectedFingerprint:row.fingerprint,actualFingerprint
+            });
+          verified++;continue;
+        }
+        const expected=await routeProjectValue(route,await readGlobalLogicalRecord(inventory,row));
         const job=verifyOptions.job;
         const source=job?.globalPlan?.sources?.find(source=>source.identity===globalRecordIdentity(row));
         const originalMode=job?registryScopeMode(job.globalPlan.registry,scope.scopeId,job.globalPlan.legacyMode??MODE_PLUGIN_ONLY):scope.sourceMode;
@@ -9192,7 +9347,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           &&!row.deleted&&source?.fingerprint===row.fingerprint;
         if(canFill&&remote.exists===false&&remote.tombstone===false&&remote.revision===0){
           await assertDurableJobAdmission(job);
-          let value;try{value=JSON.parse(globalExactJson(await inventory.stores[row.space]?.getItem(row.key)));}
+          let value;try{value=snapshotGlobalJson(await inventory.stores[row.space]?.getItem(row.key));}
           catch(_){throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey,reason:'source_readback_unavailable'});}
           if(await globalDigest([false,value])!==source.fingerprint)throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space:row.space,key:row.logicalKey});
           Object.assign(state.syncJob.current,{currentSpace:row.space,currentKey:row.logicalKey,currentAction:'누락된 서버 항목 복사·검증'});notifySyncJob();
@@ -9211,7 +9366,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         });
       }else{
         const store=inventory.stores[row.space],value=await legacyRead(store,row.logicalKey);
-        if(row.deleted?!isNullishStorageValue(value):globalCanonical(await routeProjectValue(route,value))!==globalCanonical(Object.hasOwn(row,'logicalValue')?row.logicalValue:row.value))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
+        if(row.deleted?!isNullishStorageValue(value):globalCanonical(await routeProjectValue(route,value))!==globalCanonical(await readGlobalLogicalRecord(inventory,row)))throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{
           scopeId:scope.scopeId,space:row.space,key:row.logicalKey,targetMode:target,sourceLocation:row.location,
           reason:!row.deleted&&isNullishStorageValue(value)?'destination_missing':'destination_value_mismatch',repairable:false
         });
@@ -9219,6 +9374,24 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       verified++;
     }
     return {scopeId:scope.scopeId,verifiedRecords:verified,...(copiedMissingRecords?{copiedMissingRecords}:{})};
+  };
+  const updateGlobalResetRestoreChoice = async (job,rollback=false) => {
+    const original=job.resetRestorePreference;
+    if(!original)return;
+    await withResetPreferenceCommit(async()=>{
+      await assertDurableJobIdentity(job);
+      if(original.choice!=='empty'||!globalResetChoiceMatchesPin(original,job.serverPins?.source))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+      const completed={...original,choice:'restored'};
+      const current=await readResetPreferenceCandidate();
+      const target=rollback?original:completed;
+      if(globalCanonical(current)===globalCanonical(target))return;
+      if(globalCanonical(current)!==globalCanonical(rollback?completed:original)
+        ||!await legacyWriteVerified(rawPluginStorage(),resetChoiceKey,JSON.stringify(target)))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+      if(globalCanonical(await readResetChoice())!==globalCanonical(target))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+    });
   };
   const runGlobalModeJob = async (job,initialInventory=null) => {
     if(globalJobRunning)throw transitionBusyError();
@@ -9231,6 +9404,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(globalRollbackPending(job))return await rollbackGlobalModeRoutes(job);
       // Admitted writers may have completed during drain; never reuse the prepare snapshot.
       let inventory=await collectGlobalInventory(job.targetMode,{url:job.targetUrl});
+      const witnesses=new Map((job.globalPlan.destinationWitnesses||[]).map(witness=>[witness.identity,witness]));
       if(await configuredServerUrlNow()!==job.targetUrl){
         if(await configuredServerUrlNow()!==job.globalPlan.previousUrl)throw globalModeError('MEMORY_SUITE_JOB_SERVER_PIN_CHANGED');
         await assertDurableJobAdmission(job);
@@ -9240,14 +9414,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if(state.syncJob.current.pauseRequested)return state.syncJob.current.cancelRequested===true
           ?await rollbackGlobalModeRoutes(job):await globalSaveJob({status:'cancelled',phase:'cancelled_before_effects'});
         await assertGlobalPlanCurrent(job,inventory,true);
-        globalMigrationContext=inventory;await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes});globalMigrationContext=null;
+        globalMigrationContext=inventory;await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes},witnesses);globalMigrationContext=null;
         await globalSaveJob({phase:'configure_url',effectsStarted:true});
         await persistServerUrl(job.targetUrl);
         inventory=await collectGlobalInventory(job.targetMode);
       }
       await assertGlobalPlanCurrent(job,inventory);
+      if(inventory.resetEmpty&&job.targetMode===MODE_PLUGIN_ONLY){
+        if(job.globalPlan.scopes.some(scope=>scope.sourceMode!==MODE_SERVER_ONLY))
+          throw globalModeError('MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED',globalInventorySummary(inventory));
+        if(job.resetRestorePreference&&globalCanonical(job.resetRestorePreference)!==globalCanonical(inventory.resetEmpty))
+          throw globalModeError('MEMORY_SUITE_GLOBAL_RESET_PREFERENCE_CHANGED');
+        if(!job.resetRestorePreference)job=await globalSaveJob({resetRestorePreference:inventory.resetEmpty});
+      }
       globalMigrationContext=inventory;
-      await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes});
+      inventory.replacements=await globalPreflightDestinations({...inventory,scopes:job.globalPlan.scopes},witnesses);
       const firstPass=job.status==='queued'&&job.phase==='prepared';
       const workflow={...globalWorkflowSummary(inventory,firstPass?null:job),...(!firstPass?{kind:'resume',newCheckRequired:false}:job.workflow?.newCheckRequired?{kind:'reuse',newCheckRequired:true}:{})};
       await globalSaveJob({status:'running',phase:'copy_verify',workflow,error:'',failedPhase:'',errorDetails:null,failureDetails:[],failures:0,result:null,metrics:null,serverWait:null,
@@ -9262,20 +9443,25 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         await globalSaveJob({currentScopeId:scope.scopeId,currentKey:'',currentAction:'대화 자료 확인',currentProgress:null,effectsStarted:true});
         const sameMode=scope.sourceMode===job.targetMode;
         const actual=(await readScopeMode(scope,true)).mode;
-        const completed=actual===job.targetMode&&inventory.registry.entries[scope.scopeId]?.globalMigrationJobId===job.jobId;
-        const hasRecords=inventory.records.some(row=>globalPayloadRecord(row)&&globalRecordScopeIds(row).includes(scope.scopeId));
-        const hasLiveScopeRecords=inventory.records.some(row=>row.classification==='scope'&&!row.deleted&&row.scopeId===scope.scopeId&&(scope.sourceMode===MODE_SERVER_ONLY?row.location==='server':row.location!=='server'));
+        const completed=inventory.registry.entries[scope.scopeId]?.mode===job.targetMode
+          &&inventory.registry.entries[scope.scopeId]?.globalMigrationJobId===job.jobId&&(actual===job.targetMode||Boolean(inventory.resetEmpty));
+        const payloads=inventory.payloadsByScope.get(scope.scopeId)||[];
+        const hasRecords=payloads.length>0;
+        const hasLiveScopeRecords=payloads.some(row=>row.classification==='scope'&&!row.deleted&&row.scopeId===scope.scopeId&&(scope.sourceMode===MODE_SERVER_ONLY?row.location==='server':row.location!=='server'));
         if(!sameMode&&!completed&&hasRecords){
+          let notifiedAt=0;
           await scopedSetModeSafely(job.targetMode,{scope,source:'global_allchat_transition',origin:'transition_pending',recordExplicit:false,
             globalMigrationJobId:job.jobId,allowEmptyRestore:!hasLiveScopeRecords,assertServerPins:()=>assertDurableJobAdmission(job),
             onProgress:progress=>{state.syncJob.current={...state.syncJob.current,currentSpace:progress.space,currentKey:progress.currentKey||'',currentAction:progress.currentAction||'',
-              currentProgress:Object.fromEntries(['phase','space','totalItems','processedItems','processedBytes','transferredBytes','uploaded','restored','matched','dryRun','failureCount','conflictCount'].filter(key=>progress[key]!=null).map(key=>[key,progress[key]]))};notifySyncJob();}});
+              currentProgress:Object.fromEntries(['phase','space','totalItems','processedItems','processedBytes','transferredBytes','uploaded','restored','matched','dryRun','failureCount','conflictCount'].filter(key=>progress[key]!=null).map(key=>[key,progress[key]]))};
+              const now=Date.now();if(now-notifiedAt>=200){notifiedAt=now;notifySyncJob();}}});
         }
         const evidence=await verifyGlobalScopeDestination(inventory,scope,job.targetMode,{job});
         if(sameMode||completed||!hasRecords)await persistScopedMode(job.targetMode,scope,{origin:'transition_pending',source:'global_allchat_verified',globalMigrationJobId:job.jobId});
         await globalSaveJob({checkpoints:{...state.syncJob.current.checkpoints,[scope.scopeId]:evidence},verifiedScopes:Object.keys({...state.syncJob.current.checkpoints,[scope.scopeId]:evidence}).length});
       }
       if(state.syncJob.current.pauseRequested){if(state.syncJob.current.cancelRequested===true)return await rollbackGlobalModeRoutes(job);return await globalSaveJob({status:'paused',phase:'paused_resumable',message:'미완료 · 검증된 경로와 원본을 보존했습니다. 전체 적용은 재개 후 완료합니다.'});}
+      globalMigrationContext=null;
       await globalSaveJob({phase:'final_verify',currentAction:'최종 저장 상태 재검증 준비',message:'대화별 검증 완료 · 최종 저장 상태 재검증과 전체 설정 적용을 진행하고 있습니다.'});
       inventory=await collectGlobalInventory(job.targetMode);
       await assertGlobalPlanCurrent(job,inventory);
@@ -9311,6 +9497,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const remote=await remoteGet('plugin',SCOPE_ROUTING_SERVER_KEY,{allowPluginOnly:true});
         if(remote.exists!==true||globalCanonical(parseScopeRegistry(remote.value))!==globalCanonical(parseScopeRegistry(saved)))throw globalModeError('MEMORY_SUITE_GLOBAL_PUBLICATION_READBACK_FAILED');
       }
+      await updateGlobalResetRestoreChoice(job);
       const result={scope:globalScopeDescriptor(),mode:job.targetMode,effectiveMode:job.targetMode,requestedMode:job.targetMode,modeLabel:modeLabel(job.targetMode),
         completeKnownScopes:true,discoveredScopes:job.globalPlan.scopes.length,verifiedScopes:job.globalPlan.scopes.length,migrated:job.globalPlan.scopes.map(scope=>scope.scopeId),failed:[],
         ...globalWarningMetadata(job.globalPlan.warnings?job.globalPlan:inventory),registry:saved};
@@ -9370,17 +9557,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const inventory=await collectGlobalInventory(target,{url:targetUrl});
     if(!inventory.completeKnownScopes)throw globalModeError('MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE',globalInventorySummary(inventory));
     if(operationOptions.previewFingerprint&&operationOptions.previewFingerprint!==inventory.inventoryFingerprint)throw globalModeError('MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');
-    const second=await collectGlobalInventory(target,{url:targetUrl});
-    if(!second.completeKnownScopes||inventory.catalogFingerprint!==second.catalogFingerprint||inventory.inventoryFingerprint!==second.inventoryFingerprint
-      ||globalCanonical(inventory.registryCopies)!==globalCanonical(second.registryCopies))throw globalModeError('MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');
+    if(!operationOptions.previewFingerprint){
+      const second=await collectGlobalInventory(target,{url:targetUrl});
+      if(!second.completeKnownScopes||inventory.catalogFingerprint!==second.catalogFingerprint||inventory.inventoryFingerprint!==second.inventoryFingerprint
+        ||globalCanonical(inventory.registryCopies)!==globalCanonical(second.registryCopies))throw globalModeError('MEMORY_SUITE_GLOBAL_REDISCOVERY_REQUIRED');
+    }
+    let replacements;
+    const witnesses=superseded
+      ?new Map((superseded.globalPlan.destinationWitnesses||[]).map(witness=>[witness.identity,witness]))
+      :await globalDestinationWitnesses(pending,inventory);
     globalMigrationContext=inventory;
-    try{await globalPreflightDestinations(inventory);}finally{globalMigrationContext=null;}
+    try{replacements=await globalPreflightDestinations(inventory,witnesses);}finally{globalMigrationContext=null;}
     const now=Date.now(),jobId=operationId('global');
     const globalPlan={schema:'memory-suite.global-mode-plan.v1',namespace,targetMode:target,scopes:inventory.scopes,...globalWarningMetadata(inventory),
       registry:inventory.registry,registryCopies:inventory.registryCopies,legacyMode:inventory.legacyMode,catalogFingerprint:inventory.catalogFingerprint,
       inventoryFingerprint:inventory.inventoryFingerprint,sources:globalSourceWitness(inventory),remoteRequired:inventory.remoteRequired,
       previousUrl:previousInventory?url:null,previousInventoryFingerprint:previousInventory?.inventoryFingerprint||null,
-      supersedesJobId:superseded?.jobId||null};
+      ...(replacements.size?{destinationWitnesses:[...replacements.values()]}:{}),supersedesJobId:superseded?.jobId||null};
     if(superseded){const key=SYNC_JOB_STORAGE_KEY+':superseded:'+superseded.jobId;
       if(!await legacyWriteVerified(state.legacy.plugin,key,JSON.stringify(superseded)))throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE');}
     state.syncJob.dismissedJobId = '';
@@ -9471,6 +9664,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       await globalSaveJob({rollbackPublication:{status:'skipped_changed_server',reason:'local_sources_verified',localSourceRecords:proof.localSourceRecords},
         currentAction:'기기 원본 검증 완료 · 현재 서버 보존',message:'기기 원본을 검증했습니다. 복원된 현재 서버는 변경하지 않고 이전을 취소하고 있습니다.'});
     }
+    if(!localOnly)await updateGlobalResetRestoreChoice(job,true);
     progress={...progress,stage:'verify_routes'};
     await globalSaveJob({rollbackProgress:progress,currentAction:'복구한 저장 경로 검증',message:'취소 복구 실행 중 · 복구한 저장 경로를 검증하고 있습니다.'});
     state.scopeRouting.routeCache.clear();
@@ -9483,7 +9677,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // Older admitted plans counted removed server rows as live sources. Restore
       // the saved routing settings, then verify their effective mode with the
       // same semantics as normal reads; never rewrite the immutable plan.
-      const expectedMode=registryScopeMode(job.globalPlan.registry,scope.scopeId,originalLegacyMode);
+      const expectedMode=job.resetRestorePreference?MODE_SERVER_ONLY:registryScopeMode(job.globalPlan.registry,scope.scopeId,originalLegacyMode);
       const actual=await readScopeMode(scope,true);
       if(actual.mode!==expectedMode)throw globalModeError('MEMORY_SUITE_GLOBAL_ROLLBACK_READBACK_FAILED',{
         scopeId:scope.scopeId,expectedMode,actualMode:actual.mode,recordedSourceMode:scope.sourceMode,modeOrigin:actual.modeOrigin
@@ -10645,12 +10839,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           stage = 'remote_read'; operation = 'remote_compare';
           const remote = await readRemote(row.route.remoteKey, operation);
           remoteBytes = scopedSyncRemoteValueBytes(remote);
+          const witness=globalReplacement('server',space,row.route.remoteKey);
+          const replaceReplica=witness&&witness.revision===remote.revision&&witness.digest===remote.digest;
           if (remote.exists === true && jsonComparable(remote.value) === jsonComparable(projected)) { result.matched += 1; action = '일치 확인'; }
           else if (flashbackWriterAlias(row.route.remoteKey) && remote.exists === true) {
             result.conflicts.push({ key:row.key, remoteKey:row.route.remoteKey, reason:'flashback_server_canonical_mismatch', localPreserved:true, serverPreserved:true });
             action = '서버 정본과 로컬 차이 보존 · 복구 확인 필요';
           }
-          else if (remote.tombstone === true && syncOptions.resurrectTombstones !== true) {
+          else if (remote.tombstone === true && syncOptions.resurrectTombstones !== true && !replaceReplica) {
             if (!dryRun && syncOptions.allowOverwrite !== false && syncOptions.restoreMissingLocal === true) {
               const removed = await routeRemoveLocal(
                 row.route,
@@ -10665,7 +10861,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
               result.conflicts.push({ key: row.key, remoteKey: row.route.remoteKey, reason: 'server_tombstone', localPreserved: true, serverPreserved:true });
               action = '삭제 충돌 보존';
             }
-          } else if (syncOptions.allowOverwrite === false && remote.exists === true) {
+          } else if (syncOptions.allowOverwrite === false && remote.exists === true && !replaceReplica) {
             const reason = 'server_value_mismatch';
             result.conflicts.push({ key: row.key, remoteKey: row.route.remoteKey, reason, localPreserved: true, serverPreserved:true });
             action = '값 충돌 보존';
@@ -10958,10 +11154,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       try {
         report('restore_values', { currentKey:row.logicalKey, currentAction:row.dependency?'서버 → 공유 의존 자료 복구':'서버 → pluginStorage 복구' });
         const remote = await remoteGet(space, row.remoteKey, { allowPluginOnly:true });
+        if (restoreOptions.captureOriginal) assertGlobalRemoteRecord(remote,restoreOptions.sourceRecord(space,row.remoteKey));
         if (remote.exists !== true) throw new Error('server_record_missing');
         const current = await legacyRead(legacy, row.logicalKey);
-        const merged = await routeMergeValue(row.route, remote.value, current);
-        if (!(globalMigrationContext && jsonComparable(current)===jsonComparable(merged)) && !await legacyWriteVerified(legacy, row.logicalKey, merged)) throw new Error('pluginstorage_restore_failed');
+        const matched = globalMigrationContext && !isNullishStorageValue(current)
+          && jsonComparable(await routeProjectValue(row.route,current))===jsonComparable(remote.value);
+        if (!matched) {
+          const merged = await routeMergeValue(row.route, remote.value, current);
+          await restoreOptions.captureOriginal?.(space,row.logicalKey,legacy);
+          if (!await legacyWriteVerified(legacy, row.logicalKey, merged)) throw new Error('pluginstorage_restore_failed');
+        }
         const readback = await legacyRead(legacy, row.logicalKey);
         const projected = await routeProjectValue(row.route, readback);
         if (jsonComparable(projected) !== jsonComparable(remote.value)) throw new Error('pluginstorage_restore_coverage_mismatch');
@@ -10974,7 +11176,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for (const row of tombstones) {
       try {
         report('restore_tombstones', { currentKey:row.logicalKey, currentAction:row.dependency?'공유 의존 자료 삭제 표식 적용':'서버 삭제 표식 적용' });
-        const ok = await routeRemoveLocal(row.route, async()=>legacyRead(legacy,row.logicalKey), async next=>legacyWriteVerified(legacy,row.logicalKey,next), async()=>legacyRemoveVerified(legacy,row.logicalKey));
+        if (restoreOptions.captureOriginal) {
+          const remote = await remoteGet(space,row.remoteKey,{allowPluginOnly:true});
+          assertGlobalRemoteRecord(remote,restoreOptions.sourceRecord(space,row.remoteKey));
+        }
+        const write = async next => {
+          await restoreOptions.captureOriginal?.(space,row.logicalKey,legacy);
+          return await legacyWriteVerified(legacy,row.logicalKey,next);
+        };
+        const remove = async () => {
+          await restoreOptions.captureOriginal?.(space,row.logicalKey,legacy);
+          return await legacyRemoveVerified(legacy,row.logicalKey);
+        };
+        const ok = await routeRemoveLocal(row.route, async()=>legacyRead(legacy,row.logicalKey),write,remove);
         if (!ok) throw new Error('pluginstorage_tombstone_readback_failed');
         result.removed += 1; result.removedKeys.push(row.logicalKey);
       } catch (error) { result.failures.push({ key:row.logicalKey, remoteKey:row.remoteKey, dependency:row.dependency, error:compact(error?.message || error, 300) }); }
@@ -11013,7 +11227,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       failures:[], restored:0, removed:0, verified:0, totalItems:0, processedItems:0,
       candidateCount:0, scopeCandidateCount:0, dependencyCandidateCount:0, validation:null, metrics:null
     };
+    const inventorySnapshot=globalMigrationContext;
+    const streamed=Boolean(inventorySnapshot&&!inventorySnapshot.retainValues);
     const restoreOriginals = [];
+    const rollbackId=streamed?operationId('restore'):null;
     const restoreOriginalKeys = new Set();
     const captureRestoreOriginals = async (space, inventory, legacy) => {
       if (!legacy) return;
@@ -11026,21 +11243,52 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         restoreOriginals.push({ space, logicalKey, legacy, existed:value !== null && value !== undefined, value });
       }
     };
+    const sourceRecord = (space,key) => {
+      const expected=inventorySnapshot.physicalRecords.get(globalRecordIdentity({location:'server',space,key}));
+      if(!expected)throw globalModeError('MEMORY_SUITE_GLOBAL_SOURCE_CHANGED',{space,key,location:'server'});
+      return expected;
+    };
+    const captureOriginal = async (space,logicalKey,legacy) => {
+      const location=space==='plugin'?'plugin':'device';
+      const identity=globalRecordIdentity({location,space,key:logicalKey});
+      if(restoreOriginalKeys.has(identity))return;
+      const expected=inventorySnapshot.physicalRecords.get(identity);
+      const value=await legacy.getItem(logicalKey);
+      const existed=value!==null&&value!==undefined;
+      const fingerprint=existed?await globalDigest([false,value]):null;
+      const replacement=globalReplacement(location,space,logicalKey);
+      if(existed? !expected||expected.fingerprint!==fingerprint||replacement&&replacement.fingerprint!==fingerprint : Boolean(expected))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_DESTINATION_UNVERIFIED',{space,key:logicalKey,reason:'destination_changed_since_preflight'});
+      // A scoped rollback must not keep all displaced bodies in the JS heap.
+      const backupKey=existed?SYNC_JOB_STORAGE_KEY+':restore:'+rollbackId+':'+restoreOriginals.length:null;
+      if(backupKey&&!await legacyWriteVerified(legacy,backupKey,value))
+        throw globalModeError('MEMORY_SUITE_GLOBAL_JOURNAL_UNAVAILABLE',{space,key:logicalKey});
+      restoreOriginalKeys.add(identity);
+      restoreOriginals.push({space,logicalKey,legacy,existed,backupKey,fingerprint});
+    };
+    const clearRestoreBackups = async () => {
+      for(const original of restoreOriginals)if(original.backupKey)
+        await legacyRemoveVerified(original.legacy,original.backupKey).catch(()=>false);
+    };
     const rollbackRestoreOriginals = async () => {
       const rollback = { attempted:restoreOriginals.length, restored:0, removed:0, failures:[], ok:true };
       for (const original of restoreOriginals.slice().reverse()) {
         try {
+          const value=original.backupKey?await original.legacy.getItem(original.backupKey):original.value;
+          if(original.backupKey&&await globalDigest([false,value])!==original.fingerprint)
+            throw new Error('pluginstorage_restore_rollback_backup_mismatch');
           const ok = original.existed
-            ? await legacyWriteVerified(original.legacy, original.logicalKey, original.value)
+            ? await legacyWriteVerified(original.legacy, original.logicalKey, value)
             : await legacyRemoveVerified(original.legacy, original.logicalKey);
           if (!ok) throw new Error('pluginstorage_restore_rollback_readback_failed');
           if (original.existed) rollback.restored += 1;
           else rollback.removed += 1;
         } catch (error) {
-          rollback.failures.push({ space:original.space, key:original.logicalKey, error:compact(error?.message || error, 300) });
+          rollback.failures.push({ space:original.space, key:original.logicalKey, ...(original.backupKey?{backupKey:original.backupKey}:{}), error:compact(error?.message || error, 300) });
         }
       }
       rollback.ok = rollback.failures.length === 0;
+      if(rollback.ok)await clearRestoreBackups();
       return rollback;
     };
     const forward = progress => { try { restoreOptions.onProgress?.(progress); } catch (_) {} };
@@ -11070,11 +11318,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const error = new Error(`memory_suite_restore_snapshot_empty:${scope.scopeId}:dependencies=${result.dependencyCandidateCount},tombstones=${allTombstones}`);
         error.code = 'MEMORY_SUITE_RESTORE_SNAPSHOT_EMPTY'; throw error;
       }
-      await captureRestoreOriginals('plugin', pluginInventory, globalLegacyStore('plugin'));
-      await captureRestoreOriginals('local', localInventory, globalLegacyStore('local'));
-      result.plugin = await scopedRestoreSpace(globalLegacyStore('plugin'), 'plugin', { ...restoreOptions, scope, inventory:pluginInventory, onProgress:forward });
+      if(!streamed){
+        await captureRestoreOriginals('plugin', pluginInventory, globalLegacyStore('plugin'));
+        await captureRestoreOriginals('local', localInventory, globalLegacyStore('local'));
+      }
+      const copyOptions={...restoreOptions,scope,onProgress:forward,...(streamed?{captureOriginal,sourceRecord}:{})};
+      result.plugin = await scopedRestoreSpace(globalLegacyStore('plugin'), 'plugin', { ...copyOptions, inventory:pluginInventory });
       if (localInventory.candidates.length || localInventory.tombstones.length) {
-        result.local = await scopedRestoreSpace(globalLegacyStore('local'), 'local', { ...restoreOptions, scope, inventory:localInventory, onProgress:forward });
+        result.local = await scopedRestoreSpace(globalLegacyStore('local'), 'local', { ...copyOptions, inventory:localInventory });
       }
       for (const spaceResult of [result.plugin, result.local].filter(Boolean)) {
         result.restored += Number(spaceResult.restored || 0); result.removed += Number(spaceResult.removed || 0);
@@ -11108,6 +11359,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if (restoreOptions.assertServerPins) await restoreOptions.assertServerPins();
       await clearRecoveryRequired(scope);
+      await clearRestoreBackups();
       state.management.lastResult = result;
       setStatus('restore_verified', '', { scopeId:scope.scopeId, scopeLabel:scope.label, restored:result.restored, dependencies:result.dependencyCandidateCount, recoveryRequired:false });
       return result;
@@ -11132,7 +11384,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       // A replaced DATA instance cannot receive the old job's recovery metadata.
       // Completed local rollback needs no integrity hold; incomplete rollback keeps
       // a durable local hold without adopting or publishing to the replacement.
-      if (!error.serverPinFailure || result.rollback?.ok !== true) {
+      // A global job with a verified rollback can resume under its existing fence.
+      if (result.rollback?.ok !== true || (!streamed && !error.serverPinFailure)) {
         try { error.recoveryLock = await persistRecoveryRequired(scope, error, { result, validation:error.validation || result.validation, metrics:error.metrics || result.metrics }, {localOnly:!!error.serverPinFailure}); }
         catch (lockError) { error.recoveryLockError = compact(lockError?.message || lockError, 500); }
       }
@@ -11186,7 +11439,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const scopedSetModeSafely = async (requestedMode, operationOptions = {}) => {
     const target = requireOperationalMode(requestedMode);
     const scope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(true));
-    if ((await qualifyResetChoiceForScope(scope))?.choice === 'empty' && target !== MODE_SERVER_ONLY) throw new Error('reset_empty_mode_locked: select local upload and reload before changing storage mode');
+    const resetPreference=await qualifyResetChoiceForScope(scope);
+    const restoringVerifiedServer=globalMigrationContext?.targetMode===MODE_PLUGIN_ONLY
+      &&operationOptions.globalMigrationJobId===state.syncJob.current?.jobId
+      &&globalCanonical(globalMigrationContext.resetEmpty)===globalCanonical(resetPreference);
+    if(resetPreference?.choice==='empty'&&target!==MODE_SERVER_ONLY&&!restoringVerifiedServer)
+      throw new Error('reset_empty_mode_locked: select local upload and reload before changing storage mode');
     const recoveryLock = await recoveryLockForScope(scope);
     if (recoveryLock && target !== MODE_SERVER_ONLY) throw recoveryRequiredError(scope, recoveryLock, `set_mode_${target}`);
     const current = await readScopeMode(scope, true);
@@ -11683,7 +11941,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return val;
   };
 
-  const readCleanupLocalValue = async (legacy, key) => {
+  const readCleanupLocalValue = async (legacy, key, rawValue) => {
     const raw = await legacyRead(legacy, key);
     const manifest = normalizeJsonVal(raw);
     if (namespace !== 'libra' || manifest?.__libraChunkedStorageV1 !== true) return raw;
@@ -14548,6 +14806,12 @@ function memorySuiteFlashbackBucketValid(manifest, index, value) {
 // The historical physical key convention is not assumed. Only an observed key
 // whose envelope matches this manifest's scope, index, count and hash can bind.
 function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
+  const scan = memorySuiteFlashbackScanBuckets(manifest,candidates);
+  let step = scan.next();
+  while (!step.done) step = scan.next(step.value.value);
+  return step.value;
+}
+function* memorySuiteFlashbackScanBuckets(manifest, candidates) {
   const count = manifest.bucketCount, errors = [], keys = [];
   const invalid = reason => ({keys,errors:[{code:'bucket_manifest_invalid',reason}]});
   if (manifest.bucketVersion !== 1) return invalid('bucket_version');
@@ -14566,7 +14830,7 @@ function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
   for (const row of candidates) {
     const key = row.logicalKey || row.key;
     if (typeof key !== 'string' || !key.startsWith(prefix) || row.deleted || row.artifact) continue;
-    let value = row.value;
+    let value = yield row;
     if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { continue; } }
     const index = value?.shard;
     if (!Number.isSafeInteger(index) || index < 0 || index >= count || !memorySuiteFlashbackBucketValid(manifest,index,value)) continue;
@@ -14584,7 +14848,7 @@ function memorySuiteFlashbackBucketCatalog(manifest, candidates) {
 async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value);
   const str = value => typeof value === 'string' ? value : '';
-  const blockers = [], scopesById = new Map(), values = new Map(), edges = new Map(), archiveEdges = new Map();
+  const blockers = [], scopesById = new Map(), edges = new Map(), archiveEdges = new Map();
   const issue = (code, row = null, detail = '') => blockers.push({ code:'flashback_global_' + code,
     ...(row ? { key:str(row.logicalKey || row.key), location:str(row.location) } : {}), ...(detail ? { detail } : {}) });
   if (!Array.isArray(input.hostScopes) || !Array.isArray(input.registries) || !Array.isArray(input.records)) {
@@ -14629,12 +14893,41 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
       addScope(object(source) ? { ...source, scopeId:source.scopeId || source.scopeKey || id } : source,'routing_registry');
     }
   }
-  const parse = row => {
-    if (values.has(row)) return values.get(row);
-    let value = row.value;
-    if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { issue('payload_json_malformed',row); value = null; } }
-    if (value == null || typeof value !== 'object') { issue('payload_object_invalid',row); value = null; }
-    values.set(row,value); return value;
+  const readRecord = row => input.readRecord ? input.readRecord(row) : row.value;
+  const parse = async row => {
+    if (!row || row.deleted || ['control','artifact'].includes(row.classification)) return null;
+    let value = await readRecord(row);
+    if (typeof value === 'string') { try { value = JSON.parse(value); } catch (_) { issue('payload_json_malformed',row); return null; } }
+    if (value == null || typeof value !== 'object') { issue('payload_object_invalid',row); return null; }
+    // The previous manifest envelope is still the physical transfer value.
+    if (/^vector_rag_memory:scope:[^:]+:manifest:v2:previous:v1$/.test(row.logicalKey)) {
+      const previous = value;
+      try {
+        if (!object(previous) || previous.schema !== 'flashback.previous_manifest.v1' || !str(previous.scopeKey)
+          || typeof previous.raw !== 'string' || previous.digest !== stableHash(previous.raw)) throw new Error('previous_envelope_invalid');
+        const manifest = JSON.parse(previous.raw);
+        if (!object(manifest) || manifest.scopeKey !== previous.scopeKey) throw new Error('previous_identity_invalid');
+        return manifest;
+      } catch (_) { issue('previous_manifest_invalid',row); return null; }
+    }
+    const outer = value;
+    if (!object(outer) || outer.schema !== 'flashback_memory.archive_shard_gzip.v1') return value;
+    try {
+      if (outer.encoding !== 'gzip+base64' || !Number.isSafeInteger(outer.rawChars) || outer.rawChars < 1 || outer.rawChars > 16000000
+        || !str(outer.rawHash) || typeof DecompressionStream !== 'function' || typeof atob !== 'function') throw new Error('archive_decode_metadata_or_budget_invalid');
+      const bytes = Uint8Array.from(atob(outer.data),char=>char.charCodeAt(0));
+      const reader = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip')).getReader(), decoder = new TextDecoder(), parts = [];
+      let length = 0;
+      try {
+        for (;;) { const part = await reader.read(), body = part.done ? decoder.decode() : decoder.decode(part.value,{stream:true});
+          length += body.length; if (length > outer.rawChars) throw new Error('archive_decode_length_invalid'); parts.push(body); if (part.done) break; }
+      } catch (error) { try { await reader.cancel(); } catch (_) {} throw error; } finally { reader.releaseLock(); }
+      const raw = parts.join('');
+      if (raw.length !== outer.rawChars || stableHash(raw) !== outer.rawHash) throw new Error('archive_decode_digest_invalid');
+      const decoded = JSON.parse(raw); if (!object(decoded)) throw new Error('archive_decode_object_invalid');
+      if (outer.archiveId && decoded.archiveId !== outer.archiveId) throw new Error('archive_decode_identity_invalid');
+      return decoded;
+    } catch (_) { issue('archive_decode_invalid',row); return null; }
   };
   const attach = (row,id) => {
     if (!scopesById.has(id)) { issue('scope_identity_unresolved',row); return; }
@@ -14650,10 +14943,12 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   // that does exist somewhere (another storage source, deleted, artifact) stays a
   // hard dependency: dropping it would break reachability that still exists.
   const VECTOR_PAYLOAD_PREFIX = 'vector_rag_memory:local-vector-shard:v1:';
+  const deviceVectorShards = new Set(), serverVectorReferences = new Set(), serverVectorCommits = new Set();
   const vectorPayloadAbsent = { count: 0, warnings: [] };
   const dependency = (row,key,space = '',optional = false,archive = false) => {
     if (!key) return;
     if (key === row.logicalKey) { if (archive) issue('archive_dependency_cycle',row); return; }
+    if (row.location === 'server' && key.startsWith(VECTOR_PAYLOAD_PREFIX)) serverVectorReferences.add(key);
     const found = (byKey.get(key) || []).filter(other => !other.deleted && !other.artifact && sameSource(row,other) && (!space || other.space === space));
     if (!found.length) {
       if (!optional) {
@@ -14666,7 +14961,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
           return;
         }
         issue('dependency_missing',row,key);
-        const manifest = values.get(row);
+        const manifest = row.manifestDiagnostic;
         if (manifest?.schema === 'vector_rag_memory.scope_manifest.v2' && !diagnosedManifests.has(row)) {
           diagnosedManifests.add(row);
           const prefix = `vector_rag_memory:scope:${keyHash(manifest.scopeKey || '')}:records:`;
@@ -14703,46 +14998,9 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   for (const row of records) {
     if (control(row.logicalKey)) row.classification = 'control';
     else if (artifact(row)) row.classification = 'artifact';
-    else if (!row.deleted) parse(row);
   }
 
 
-  // Decode only in memory; the runtime archive readers update caches and are deliberately not used.
-  for (const row of records) {
-    const outer = values.get(row);
-    if (!object(outer) || outer.schema !== 'flashback_memory.archive_shard_gzip.v1') continue;
-    try {
-      if (outer.encoding !== 'gzip+base64' || !Number.isSafeInteger(outer.rawChars) || outer.rawChars < 1 || outer.rawChars > 16000000
-        || !str(outer.rawHash) || typeof DecompressionStream !== 'function' || typeof atob !== 'function') throw new Error('archive_decode_metadata_or_budget_invalid');
-      const bytes = Uint8Array.from(atob(outer.data),char=>char.charCodeAt(0));
-      const reader = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip')).getReader(), decoder = new TextDecoder(), parts = [];
-      let length = 0;
-      try {
-        for (;;) { const part = await reader.read(), body = part.done ? decoder.decode() : decoder.decode(part.value,{stream:true});
-          length += body.length; if (length > outer.rawChars) throw new Error('archive_decode_length_invalid'); parts.push(body); if (part.done) break; }
-      } catch (error) { try { await reader.cancel(); } catch (_) {} throw error; } finally { reader.releaseLock(); }
-      const raw = parts.join('');
-      if (raw.length !== outer.rawChars || stableHash(raw) !== outer.rawHash) throw new Error('archive_decode_digest_invalid');
-      const decoded = JSON.parse(raw); if (!object(decoded)) throw new Error('archive_decode_object_invalid');
-      if (outer.archiveId && decoded.archiveId !== outer.archiveId) throw new Error('archive_decode_identity_invalid');
-      values.set(row,decoded);
-    } catch (_) { issue('archive_decode_invalid',row); values.set(row,null); }
-  }
-
-  // The native fallback is an exact verified manifest envelope, not a new root
-  // payload to transfer. Inspect its inner manifest without replacing row.value.
-  for (const row of records) {
-    if (row.deleted || ['control','artifact'].includes(row.classification)
-      || !/^vector_rag_memory:scope:[^:]+:manifest:v2:previous:v1$/.test(row.logicalKey)) continue;
-    const previous = values.get(row);
-    try {
-      if (!object(previous) || previous.schema !== 'flashback.previous_manifest.v1' || !str(previous.scopeKey)
-        || typeof previous.raw !== 'string' || previous.digest !== stableHash(previous.raw)) throw new Error('previous_envelope_invalid');
-      const manifest = JSON.parse(previous.raw);
-      if (!object(manifest) || manifest.scopeKey !== previous.scopeKey) throw new Error('previous_identity_invalid');
-      values.set(row,manifest);
-    } catch (_) { issue('previous_manifest_invalid',row); values.set(row,null); }
-  }
 
   const archiveHashes = new Map(), nativeHashes = new Map();
   const validScopeKey = key => /^char:[^|]+\|chat:[^|]+(?:\|persona:[^|]+)?$/.test(key);
@@ -14770,7 +15028,9 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   };
   for (const row of records) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
-    const value = values.get(row),key = row.logicalKey;
+    const key = row.logicalKey;
+    if (key !== 'vector_rag_memory:scope_registry:v2' && !/^vector_rag_memory:scope:[^:]+:manifest:v2(?::previous:v1)?$/.test(key)) continue;
+    const value = await parse(row);
     if (key === 'vector_rag_memory:scope_registry:v2') {
       row.ownerWide = true;
       if (!object(value) || value.version !== 2 || !Array.isArray(value.scopes)) { issue('native_registry_invalid',row); continue; }
@@ -14780,9 +15040,13 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
           // physical archive manifest; they are shared data, never native chats.
           const hash = keyHash(scope.scopeKey), manifestKey = `vector_rag_memory:scope:${hash}:manifest:v2`;
           const manifests = (byKey.get(manifestKey) || []).filter(other => !other.deleted && !other.artifact && other.space === 'plugin' && sameSource(row,other));
-          if (scope.storageHash && scope.storageHash !== hash || !manifests.length
-            || manifests.some(other => { const manifest = values.get(other); return !object(manifest) || manifest.scopeKey !== scope.scopeKey
-              || manifest.archiveOwner !== true || scope.scopeKey !== 'flashback_archive_v1:' + manifest.archiveId; })) issue('archive_registry_identity_invalid',row,scope.scopeKey);
+          let valid = (!scope.storageHash || scope.storageHash === hash) && manifests.length > 0;
+          for (const other of manifests) {
+            const manifest = await parse(other);
+            if (!object(manifest) || manifest.scopeKey !== scope.scopeKey || manifest.archiveOwner !== true
+              || scope.scopeKey !== 'flashback_archive_v1:' + manifest.archiveId) valid = false;
+          }
+          if (!valid) issue('archive_registry_identity_invalid',row,scope.scopeKey);
           else dependency(row,manifestKey,'plugin');
         } else addNative(scope,'native_registry',row);
       }
@@ -14828,10 +15092,13 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   }
   const bucketKeys = new Set();
   for (const row of records) {
-    const value = values.get(row);
-    if (row.deleted || row.classification === 'control' || row.classification === 'artifact'
-      || value?.schema !== 'vector_rag_memory.scope_manifest.v2' || !memorySuiteFlashbackBucketed(value)) continue;
-    const catalog = memorySuiteFlashbackBucketCatalog(value,records.filter(other => other.space === 'plugin' && sameSource(row,other)));
+    if (!/:manifest:v2(?::previous:v1)?$/.test(row.logicalKey)) continue;
+    const value = await parse(row);
+    if (value?.schema !== 'vector_rag_memory.scope_manifest.v2' || !memorySuiteFlashbackBucketed(value)) continue;
+    const scan = memorySuiteFlashbackScanBuckets(value,records.filter(other => other.space === 'plugin' && sameSource(row,other)));
+    let step = scan.next();
+    while (!step.done) step = scan.next(await readRecord(step.value));
+    const catalog = step.value;
     for (const error of catalog.errors) {
       issue(error.code,row,error.reason || (error.index == null ? '' : `bucket_index:${error.index}`));
       blockers[blockers.length-1].manifestState = {storageMode:value.storageMode,bucketVersion:value.bucketVersion,
@@ -14846,7 +15113,9 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   }
   for (const row of records) {
     if (['control','artifact'].includes(row.classification)) continue;
-    const key = row.logicalKey, value = values.get(row);
+    const key = row.logicalKey, value = await parse(row);
+    if (value?.schema === 'vector_rag_memory.scope_manifest.v2') row.manifestDiagnostic = {schema:value.schema,
+      scopeKey:value.scopeKey,commitId:value.commitId,count:value.count,shardCount:value.shardCount,rawPageLayout:value.rawPageLayout};
     const match = key.match(/^vector_rag_memory:scope:([^:]+):(.+)$/) || key.match(/^vector_rag_memory:local-vector-shard:v1:([^:]+):(.+)$/);
     if (match) {
       const id = nativeHashes.get(match[1]), archiveId = archiveHashes.get(match[1]);
@@ -14869,6 +15138,12 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     } else if (key === 'vector_rag_memory:manifest:v1' || key.startsWith('vector_rag_memory:records:shard:')) issue('legacy_owner_identity_unresolved',row);
     else issue('unknown_owner_key',row);
     if (row.deleted || !object(value)) continue;
+    if (row.location === 'device' && row.space === 'local' && key.startsWith(VECTOR_PAYLOAD_PREFIX)
+      && value.schema === 'flashback_memory.local_vector_shard.v1' && !!str(value.scopeKey)
+      && Number.isSafeInteger(value.shardIndex) && value.shardIndex >= 0 && !!str(value.data)
+      && key === `${VECTOR_PAYLOAD_PREFIX}${keyHash(value.scopeKey)}:${value.commitId || 'legacy'}:${String(value.shardIndex).padStart(4,'0')}`) {
+      deviceVectorShards.add(row);
+    }
     if (/:manifest:v2(?::previous:v1)?$/.test(key)) {
       const prefix = `vector_rag_memory:scope:${keyHash(value.scopeKey || '')}:`, shardCount = value.shardCount;
       if (!memorySuiteFlashbackBucketed(value) && Number.isSafeInteger(shardCount) && shardCount >= 0) {
@@ -14890,13 +15165,16 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
             // when its own envelope attests this exact manifest commit.
             const legacyKey = prefix + 'records:shard:' + String(i).padStart(4,'0');
             const legacy = (byKey.get(legacyKey) || []).filter(other => !other.deleted && !other.artifact && other.space === 'plugin' && sameSource(row,other));
-            if (legacy.length && legacy.every(other => values.get(other)?.commitId === value.commitId)) shardKey = legacyKey;
+            let matchesCommit = legacy.length > 0;
+            for (const other of legacy) if ((await parse(other))?.commitId !== value.commitId) matchesCommit = false;
+            if (matchesCommit) shardKey = legacyKey;
           }
           dependency(row,shardKey,'plugin');
         }
       }
       if (Number.isSafeInteger(value.vectorSidecarCount) && value.vectorSidecarCount > 0) {
         const localPrefix = `vector_rag_memory:local-vector-shard:v1:${keyHash(value.scopeKey)}:${value.commitId || 'legacy'}:`;
+        if (row.location === 'server') serverVectorCommits.add(localPrefix);
         const keys = [...new Set(records.filter(other=>!other.deleted && sameSource(row,other) && other.space === 'local' && other.logicalKey.startsWith(localPrefix)).map(other=>other.logicalKey))];
         if (keys.length !== value.vectorSidecarCount) issue('vector_dependency_count_invalid',row);
         for (const key of keys) dependency(row,key,'local');
@@ -14918,11 +15196,11 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
   const referenceFields = new Set(['key','keys','storageKey','localKey','memoryKey','vectorKey','archiveKey','manifestKey','ledgerKey','vaultKey','recordKey','shardKey','chunkKey','chunkKeys','dependencyKey','dependencyKeys','deltaKey','checkpointKey']);
   for (const row of records) {
     if (row.deleted || ['control','artifact'].includes(row.classification)) continue;
-    const inlineKeys = new Set();
-    if (values.get(row)?.schema === 'libra.micro_handoff_archive.v1') walk(values.get(row),node=> {
+    const inlineKeys = new Set(), root = await parse(row);
+    if (root?.schema === 'libra.micro_handoff_archive.v1') walk(root,node=> {
       if (typeof node.key === 'string' && object(node.value)) inlineKeys.add(node.key);
     });
-    walk(values.get(row),(value,field) => {
+    walk(root,(value,field) => {
       for (const name of ['archiveRef','parentRef','parentArchiveRef']) if (value[name] != null && !object(value[name])) issue('archive_pointer_invalid',row);
       for (const [name,body] of Object.entries(value)) {
         if (!referenceFields.has(name)) continue;
@@ -14937,6 +15215,11 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
         const id = str(value[name]); if (scopesById.has(id)) row.dependencyScopeIds = [...new Set([...row.dependencyScopeIds,id])];
       }
     });
+  }
+  // Keep unreferenced device shards across reset without reactivating old memory.
+  for (const row of deviceVectorShards) {
+    const commitPrefix = row.logicalKey.slice(0,row.logicalKey.lastIndexOf(':')+1);
+    if (!serverVectorReferences.has(row.logicalKey) && !serverVectorCommits.has(commitPrefix)) row.retainDeviceCacheAfterReset = true;
   }
   // A repeated immutable archive parent is corruption, not a bounded/truncated chain.
   const archiveColors = new Map();
@@ -14968,6 +15251,7 @@ async function memorySuiteFlashbackDiscoverGlobalScopes(input = {}) {
     } else if (row.classification === 'shared' && !row.dependencyScopeIds.length && !row.deleted && !row.ownerWide) issue('shared_ownership_unresolved',row);
     row.dependencyScopeIds.sort(); row.dependencyKeys.sort();
     delete row.ownerWide;
+    delete row.manifestDiagnostic;
   }
   const scopes = [...scopesById.values()].sort((a,b)=>a.scopeId.localeCompare(b.scopeId));
   for (const scope of scopes) scope.aliases.sort();
@@ -20170,12 +20454,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       : await RisuCompat.keys({strict:true,scopeKey:manifest.scopeKey,prefix});
     if (!Array.isArray(inventory)) throw new Error('FLASHBACK_BUCKET_INVENTORY_UNAVAILABLE');
     const read = readOptions.readPlugin || (key=>RisuCompat.getItem(key));
-    const candidates = [];
-    for (const key of [...new Set(inventory)].filter(key=>typeof key==='string' && key.startsWith(prefix)
-      && !/:manifest:v2(?::previous:v1)?$/.test(key) && !key.includes('::chunk:v1:'))) {
-      candidates.push({key,value:await read(key,manifest.scopeKey)});
-    }
-    const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
+    const candidates = [...new Set(inventory)].filter(key=>typeof key==='string' && key.startsWith(prefix)
+      && !/:manifest:v2(?::previous:v1)?$/.test(key) && !key.includes('::chunk:v1:')).map(key=>({key}));
+    const scan = memorySuiteFlashbackScanBuckets(manifest,candidates);
+    let step = scan.next();
+    while (!step.done) step = scan.next(await read(step.value.key,manifest.scopeKey));
+    const catalog = step.value;
     if (catalog.errors.length) throw Object.assign(new Error('FLASHBACK_BUCKET_DIRECTORY_INVALID'),{code:'FLASHBACK_BUCKET_DIRECTORY_INVALID'});
     manifest[FLASHBACK_BUCKET_DIRECTORY] = catalog.keys;
     manifest.shardCount = manifest.bucketCount;
@@ -26476,7 +26760,7 @@ const MemorySuiteSnapshotCache = (() => {
       const scopeErrors = [];
       if (!parsed) {
         scopeErrors.push({ code: 'flashback_manifest_missing_or_invalid', scopeKey: wantedScopeKey, key: manifestKey });
-        return { manifest: null, records: [], memberIds: [], errors: scopeErrors, vectorPayloads: 0 };
+        return { manifest: null, recordCount: 0, memberIds: [], errors: scopeErrors, vectorPayloads: 0 };
       }
       metrics.pluginManifests += 1;
       if (text(parsed.scopeKey || '') !== text(wantedScopeKey)) {
@@ -26508,12 +26792,12 @@ const MemorySuiteSnapshotCache = (() => {
         }); }
         catch (_) {
           scopeErrors.push({code:'flashback_bucket_directory_invalid',scopeKey:wantedScopeKey});
-          return {manifest,records:[],memberIds:[],errors:scopeErrors,vectorPayloads:0};
+          return {manifest,recordCount:0,memberIds:[],errors:scopeErrors,vectorPayloads:0};
         }
       }
       const shardResults = await mapOrderedWithConcurrency(
         Array.from({ length: manifest.shardCount }, (_, index) => index),
-        Math.min(RECALL_SHARD_READ_CONCURRENCY, 3),
+        1,
         async shardIndex => {
           const expectedKey = scopeShardKeyForManifest(wantedScopeKey, manifest, shardIndex);
           let raw = await physicalRead('plugin', expectedKey);
@@ -26528,7 +26812,7 @@ const MemorySuiteSnapshotCache = (() => {
             }
           }
           if (raw == null || raw === '') {
-            return { shardIndex, errors: [{ code: 'flashback_shard_missing', scopeKey: wantedScopeKey, shardIndex, key: expectedKey }], records: [], vectorPayloads: 0 };
+            return { shardIndex, errors: [{ code: 'flashback_shard_missing', scopeKey: wantedScopeKey, shardIndex, key: expectedKey }], recordCount: 0, tokenTotal: 0, memberIds: [], vectorPayloads: 0 };
           }
           const decoded = await decodeFlashbackShardEnvelope(raw);
           const envelope = decoded?.parsed;
@@ -26589,34 +26873,40 @@ const MemorySuiteSnapshotCache = (() => {
           return {
             shardIndex,
             errors: shardErrors,
-            records: Array.isArray(records) ? records : [],
+            recordCount: Array.isArray(records) ? records.length : 0,
+            tokenTotal: Array.isArray(records) ? records.reduce((sum,record)=>sum+estimateTokens(text(record?.text || '')),0) : 0,
+            memberIds: options.archiveLayer === true && Array.isArray(records)
+              ? records.filter(record=>record && isRetainedMemoryRecord(record)).map(flashbackArchiveRecordIdentity) : [],
             vectorPayloads: Number(vectorAudit.payloadsChecked || 0),
             missingVectorPayloads: Number(vectorAudit.allowedMissingPayloads || 0),
             fallback
           };
         }
       );
-      const records = shardResults.flatMap(item => item.records || []);
+      let recordCount = 0, tokenTotal = 0;
+      const memberIds = [];
       for (const result of shardResults) {
+        recordCount += result.recordCount;
+        tokenTotal += result.tokenTotal;
+        for (const id of result.memberIds) memberIds.push(id);
         scopeErrors.push(...(result.errors || []));
         metrics.pluginShards += result.errors?.some(error => error.code === 'flashback_shard_missing') ? 0 : 1;
         metrics.vectorPayloads += Number(result.vectorPayloads || 0);
         metrics.missingVectorPayloads += Number(result.missingVectorPayloads || 0);
       }
-      if (records.length !== manifest.count) {
-        scopeErrors.push({ code: 'flashback_manifest_record_count_mismatch', scopeKey: wantedScopeKey, expected: manifest.count, actual: records.length });
+      if (recordCount !== manifest.count) {
+        scopeErrors.push({ code: 'flashback_manifest_record_count_mismatch', scopeKey: wantedScopeKey, expected: manifest.count, actual: recordCount });
       }
-      const calculatedStats = statsForRecords(records);
       const storedStats = normalizeStatsForDisplay(manifest.stats || {});
-      if (Number(storedStats.recordTotal || 0) !== records.length
-        || Number(storedStats.tokenTotal || 0) !== Number(calculatedStats.tokenTotal || 0)) {
+      if (Number(storedStats.recordTotal || 0) !== recordCount
+        || Number(storedStats.tokenTotal || 0) !== tokenTotal) {
         scopeErrors.push({
           code: 'flashback_manifest_stats_mismatch',
           scopeKey: wantedScopeKey,
           expectedRecords: Number(storedStats.recordTotal || 0),
-          actualRecords: records.length,
+          actualRecords: recordCount,
           expectedTokens: Number(storedStats.tokenTotal || 0),
-          actualTokens: Number(calculatedStats.tokenTotal || 0)
+          actualTokens: tokenTotal
         });
       }
       if (options.archiveLayer === true && manifest.archiveOwner !== true) {
@@ -26624,8 +26914,8 @@ const MemorySuiteSnapshotCache = (() => {
       }
       return {
         manifest,
-        records,
-        memberIds: normalizeFlashbackArchiveMemberIds(records.filter(isRetainedMemoryRecord).map(flashbackArchiveRecordIdentity)),
+        recordCount,
+        memberIds: normalizeFlashbackArchiveMemberIds(memberIds),
         errors: scopeErrors,
         vectorPayloads: shardResults.reduce((sum, item) => sum + Number(item.vectorPayloads || 0), 0)
       };
@@ -26634,7 +26924,7 @@ const MemorySuiteSnapshotCache = (() => {
     const current = await validatePhysicalScope(scopeKey, { archiveLayer: false });
     errors.push(...current.errors);
     if (!current.manifest) return { ok: false, errors, warnings, metrics };
-    metrics.currentRecords = current.records.length;
+    metrics.currentRecords = current.recordCount;
 
     const head = normalizeFlashbackArchiveRef(current.manifest.archiveRef);
     if (head) {
@@ -50061,14 +50351,30 @@ ${cleanedText}`, 80),
   };
 
   const exportDebugLogPayload = async () => {
-    const operationLogs = await flushOperationLogs();
-    const state = await debugState();
+    const header = {
+      exportedAt: nowIso(),
+      plugin: { name: PLUGIN_NAME, id: PLUGIN_STORAGE_ID, version: PLUGIN_VERSION }
+    };
+    const migrationOnly = () => ({
+      ...header,
+      scope: 'storage_migration',
+      memorySuite: MemorySuiteStorageBridge.getCachedDiagnostics()
+    });
+    const job = MemorySuiteStorageBridge.getCachedDiagnostics().syncJob;
+    if (job?.kind === 'global_mode' && !['completed', 'failed', 'cancelled'].includes(job.status)) return migrationOnly();
+    let operationLogs, state;
+    try {
+      operationLogs = await flushOperationLogs();
+      state = await debugState();
+    } catch (error) {
+      if (error?.code === 'MEMORY_SUITE_STORAGE_TRANSITION_IN_PROGRESS') return migrationOnly();
+      throw error;
+    }
     const memorySuite = await MemorySuiteStorageBridge.getDiagnostics({ force: true, limit: 500 }).catch(error => ({
       schema: 'memory-suite.plugin-server-diagnostics.v1', reachable: false, error: diagnosticSlice(error?.message || error, 700), status: MemorySuiteStorageBridge.status()
     }));
     return {
-      exportedAt: nowIso(),
-      plugin: { name: PLUGIN_NAME, id: PLUGIN_STORAGE_ID, version: PLUGIN_VERSION },
+      ...header,
       state,
       operationLogs,
       memorySuite
