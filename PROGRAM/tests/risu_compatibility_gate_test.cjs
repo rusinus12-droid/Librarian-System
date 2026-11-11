@@ -159,12 +159,18 @@ test('5. Minification directive loss fails with MINIFICATION_DIRECTIVE_LOSS', ()
     for (const file of fs.readdirSync(path.join(programDir, 'plugins'))) {
       if (!file.endsWith('.js')) continue;
       let text = fs.readFileSync(path.join(programDir, 'plugins', file), 'utf8');
-      if (file === 'HAYAKU_Locator_Continuity.js') {
-        // Simulate minifier stripping one header directive
-        text = text.replace(/^\/\/@update-url\s+\S+[^\n]*\r?\n/m, '');
+      if (file === 'Flashback_Memory.js') {
+        text = text.replace(/^(\/\/@[^\r\n]+)\r?\n/gm, '$1\r\n');
       }
       fs.writeFileSync(path.join(tempArtifactDir, file), text, 'utf8');
     }
+    assert.doesNotThrow(() => verifyLoaderAndIpcContracts(pack.pluginLoaderContract, pack.ipcContract, {
+      artifactPluginDir: tempArtifactDir
+    }));
+
+    const hayakuArtifact = path.join(tempArtifactDir, 'HAYAKU_Locator_Continuity.js');
+    const original = fs.readFileSync(hayakuArtifact, 'utf8');
+    fs.writeFileSync(hayakuArtifact, original.replace(/^\/\/@update-url\s+\S+[^\n]*\r?\n/m, ''));
 
     assert.throws(
       () => verifyLoaderAndIpcContracts(pack.pluginLoaderContract, pack.ipcContract, {
