@@ -3532,9 +3532,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         && /^[A-Za-z0-9_-]{32}$/.test(String(value.dataInstanceId || '')) ? value : null;
     } catch (_) { return null; }
   };
-  // Written only where a server mode is applied, which already writes configuration; a preview or a
-  // memory read never writes it. Best effort: a failure here never fails the applied change.
-  const rememberServerData = async identity => {
+  // Explicit mode changes can replace the binding. An existing server-backed install can
+  // establish its first binding at the configured endpoint without reapplying its mode.
+  const rememberServerData = async (identity, { initialize = false } = {}) => {
     if (identity?.dataIdentityCertified !== true || identity.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
       || !/^[A-Za-z0-9_-]{32}$/.test(String(identity.dataInstanceId || ''))) return;
     const serialized = JSON.stringify({schema:SERVER_DATA_SCHEMA, namespace, dataInstanceId:identity.dataInstanceId,
@@ -3543,8 +3543,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const store = rawPluginStorage();
       if (!store?.getItem || !store?.setItem) return;
-      if (await store.getItem(SAVED_SERVER_DATA_KEY) !== serialized) await store.setItem(SAVED_SERVER_DATA_KEY, serialized);
+      const previous = await store.getItem(SAVED_SERVER_DATA_KEY);
+      if (previous !== serialized) {
+        if (initialize) {
+          if (previous != null && previous !== '') return;
+          const currentUrl = await configuredServerUrlNow();
+          if (currentUrl !== identity.requestedUrl || modeConfigurationBusy || storageTransition) return;
+        }
+        await store.setItem(SAVED_SERVER_DATA_KEY, serialized);
+        if (await store.getItem(SAVED_SERVER_DATA_KEY) !== serialized) return;
+      }
       rememberedServerData = serialized;
+    } catch (_) {}
+  };
+  const initializeConfiguredServerData = async connection => {
+    if (rememberedServerData || !scopeRoutingEnabled || localOnlyOwner || modeConfigurationBusy || storageTransition
+      || connection.dataIdentityCertified !== true) return;
+    try {
+      const raw = await rawPluginStorage()?.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
+      const registry = mergeScopeRegistries(raw);
+      const serverBacked = Object.values(registry.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+      const legacyMode = !registry.legacyGlobalModeImported && !serverBacked
+        ? normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) : MODE_PLUGIN_ONLY;
+      if (serverBacked || legacyMode !== MODE_PLUGIN_ONLY) await rememberServerData(connection, { initialize:true });
     } catch (_) {}
   };
   // A server-backed plugin may follow its own DATA to a new address, never move to other DATA.
@@ -3879,7 +3900,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dataInstanceId:pin.dataInstanceId,dataIdentityContract:pin.dataIdentityContract,resetEpoch:pin.resetEpoch};
   };
   const durableJobPinRoles = job => [
-    {role:'source',url:job.sourceUrl,required:normalizeMode(job.sourceMode) !== MODE_PLUGIN_ONLY},
+    {role:'source',url:job.sourceUrl,required:job.sameDataEndpointChange !== true && normalizeMode(job.sourceMode) !== MODE_PLUGIN_ONLY},
     {role:'target',url:job.targetUrl,required:normalizeMode(job.targetMode) !== MODE_PLUGIN_ONLY || job.targetUrl !== job.sourceUrl}
   ];
   const captureDurableJobServerPins = async job => {
@@ -3890,7 +3911,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const assertStoredDurableJobMetadata = async job => {
     const store=state.legacy.plugin;
     let saved;try { const raw=await store?.getItem?.(SYNC_JOB_STORAGE_KEY);saved=typeof raw==='string'?JSON.parse(raw):raw; }catch(_){saved=null;}
-    const fixed=value=>['schema','namespace','jobId','kind','scopeId','sourceMode','sourceUrl','targetMode','targetUrl','serverPins','globalPlan','globalPlanDigest']
+    const fixed=value=>['schema','namespace','jobId','kind','scopeId','sourceMode','sourceUrl','targetMode','targetUrl','sameDataEndpointChange','serverPins','globalPlan','globalPlanDigest']
       .map(field=>value?.[field]);
     if (!saved || jsonComparable(fixed(saved)) !== jsonComparable(fixed(job)))
       throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
@@ -4335,6 +4356,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const currentUrl = await configuredServerUrlNow();
       if (lifecycle.disposed || sequence !== bootstrapSequence || currentUrl !== config.url) throw connectionStaleError();
       adoptDataBinding(value);
+      await initializeConfiguredServerData(value);
+      if (lifecycle.disposed || sequence !== bootstrapSequence) throw connectionStaleError();
       if (previous.value?.resetEpochs?.[namespace] !== value.resetEpochs?.[namespace]) cacheQualifiedResetChoice(null);
       if (intent) pinInitialBootstrapIntent(intent, value);
       sharedBootstrapFailures.delete(config.url);
@@ -11123,6 +11146,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let urlChanged = false;
     try {
       if (targetUrl !== currentUrl) {
+        if (operationOptions.assertServerPins) await operationOptions.assertServerPins();
         await persistServerUrl(targetUrl);
         urlChanged = true;
       }
@@ -11192,7 +11216,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const requestedMode = target.requestedMode ? normalizeMode(target.requestedMode) : (target.mode ? normalizeMode(target.mode) : currentMode);
     const currentUrl = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
     const targetUrl = target.url ? normalizeServerUrl(target.url) : currentUrl;
-    const serverPins = await captureDurableJobServerPins({sourceMode:currentMode,sourceUrl:currentUrl,targetMode:requestedMode,targetUrl});
+    const sameDataEndpointChange = kind === 'connection_config' && currentMode === MODE_SERVER_ONLY
+      && requestedMode === currentMode && targetUrl !== currentUrl;
+    if (sameDataEndpointChange) {
+      const moved = await sameServerDataAt(targetUrl);
+      if (!moved.same) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE', { reason:moved.reason });
+    }
+    const serverPins = await captureDurableJobServerPins({sourceMode:currentMode,sourceUrl:currentUrl,targetMode:requestedMode,targetUrl,sameDataEndpointChange});
     state.syncJob.dismissedJobId = '';
     state.syncJob.current = {
       schema: SYNC_JOB_SCHEMA, namespace, pluginId, pluginVersion,
@@ -11200,7 +11230,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       scopeId: scope.scopeId, scopeKey: scope.scopeKey, scopeLabel: scope.label,
       sourceMode: currentMode, sourceUrl: currentUrl, requestedMode, effectiveMode: currentMode,
       targetMode: requestedMode,
-      targetUrl, serverPins,
+      targetUrl, serverPins, ...(sameDataEndpointChange ? {sameDataEndpointChange:true} : {}),
       status: 'queued', phase: 'queued', message: '작업을 준비하고 있습니다.',
       startedAt: now, updatedAt: now, lastActivityAt: now, finishedAt: 0,
       totalItems: 0, processedItems: 0, processedBytes: 0, transferredBytes: 0,

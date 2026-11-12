@@ -48,10 +48,11 @@ function parseArgs(argv = process.argv.slice(2)) {
 const MIN_SERVER_PORT = 1024, MAX_SERVER_PORT = 65535;
 const launcherFailure = (code, message, exitCode) => Object.assign(new Error(message), { code, exitCode });
 
-function portAvailable(host, port) {
+function portAvailable(host, port, allowIPv4Fallback = false) {
   return new Promise(resolve => {
     const probe = require('node:net').createServer();
-    probe.once('error', () => resolve(false));
+    probe.once('error', error => resolve(allowIPv4Fallback && ['EAFNOSUPPORT', 'EADDRNOTAVAIL', 'EPROTONOSUPPORT'].includes(error.code)
+      ? portAvailable('0.0.0.0', port) : false));
     probe.listen({ host, port, exclusive: true }, () => probe.close(() => resolve(true)));
   });
 }
@@ -100,8 +101,8 @@ async function setServerPort(dataDir, requested, options = {}) {
     return { changed: false, port, url: config.url };
   }
   await assertServerStopped(config, 'SERVER_PORT_SERVER_RUNNING');
-  const bindHost = config.host === 'localhost' ? '127.0.0.1' : config.host;
-  if (!(await portAvailable(bindHost, port))) {
+  const bindHost = config.remoteAccess ? '::' : config.host === 'localhost' ? '127.0.0.1' : config.host;
+  if (!(await portAvailable(bindHost, port, config.remoteAccess && config.host !== '::1'))) {
     throw launcherFailure('SERVER_PORT_IN_USE', `포트 ${port}는 다른 프로그램이 사용 중입니다. 다른 포트를 고르세요.`, 4);
   }
   writeFileAtomically(config.configPath, `${JSON.stringify({ ...JSON.parse(fs.readFileSync(config.configPath, 'utf8')), port }, null, 2)}\n`);
@@ -113,6 +114,7 @@ async function setServerPort(dataDir, requested, options = {}) {
     '',
     '서버를 다시 실행한 뒤, RisuAI의 각 플러그인에서 서버 주소를 새 주소로 바꿔 주세요.',
     '플러그인마다 주소를 따로 저장하므로 한 곳만 바꾸면 나머지는 예전 포트에 남습니다.',
+    '업데이트 직후라면 포트를 바꾸기 전에 기존 주소에서 서버 단독 플러그인이 한 번 정상 연결되도록 해 주세요. DATA 식별값은 자동으로 저장됩니다.',
     '  - LIBRA · HAYAKU · Flashback: 서버 연결 설정 → 서버 주소',
     '  - GRADIA: 소스 탭 → 서버 주소',
     '  - RE:TRACE: 서버 관리 → 연결 진단 → 서버 주소',

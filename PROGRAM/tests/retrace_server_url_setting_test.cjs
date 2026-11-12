@@ -15,8 +15,10 @@ assert.match(source,/root\.querySelector\('#openOwnerStorage'\)[^\n]*\n\s*void f
 
 const allowed=['127.0.0.1','localhost','[::1]','host.docker.internal'];
 const makeBridge=(name,state)=>({name,url:'http://127.0.0.1:47630',key:'',
-  async setServerAccessKey(value){
+  async setServerAccessKey(value,registerRollback){
     if(value&&!/^[A-Za-z0-9_-]{32,256}$/.test(value))throw Object.assign(Error('memory_suite_access_key_invalid'),{code:'MEMORY_SUITE_ACCESS_KEY_INVALID'});
+    const previous=this.key;registerRollback?.(async()=>{this.key=previous;});
+    if(state.failKey===name)throw Error('key_write_rejected');
     this.key=value;state.keyWrites.push(name);return {configured:!!value};
   },
   async getServerAccessKeyStatus(){return {configured:!!this.key};},
@@ -93,7 +95,7 @@ const fixture=()=>{
     const f=fixture();f.nodes['#retraceServerUrl'].value='http://127.0.0.1:4';f.root.ownerDocument.activeElement=f.nodes['#retraceServerUrl'];
     await f.api.fillRetraceServerUrl(f.root);assert.equal(f.nodes['#retraceServerUrl'].value,'http://127.0.0.1:4');results.push('typing is not overwritten');
   }
-  { // A typed access key goes to RE:TRACE and LIA before the address, is cleared from the field and never shown.
+  { // A typed access key goes to RE:TRACE and LIA after the address, is cleared from the field and never shown.
     const f=fixture();const key='k'.repeat(43);
     f.nodes['#retraceServerUrl'].value='http://127.0.0.1:47630';f.nodes['#retraceServerAccessKey'].value=key;await f.click();
     assert.deepEqual(f.state.keyWrites,['retrace','lia'],'the key is saved only to RE:TRACE and LIA');
@@ -102,6 +104,21 @@ const fixture=()=>{
     assert.match(f.nodes['#retraceServerAccessKeyStatus'].textContent,/접근 키 저장됨/);
     assert.doesNotMatch(JSON.stringify(f.nodes),new RegExp(key),'the key is not written back to the page');
     results.push('access key saved to RE:TRACE and LIA');
+  }
+  { // Both failure stages preserve the working key and the previous endpoint for each connection.
+    const f=fixture();const previous='a'.repeat(43),newKey='b'.repeat(43);
+    f.manager.key=previous;f.peers.lia.key=previous;
+    f.peers.lia.url='http://127.0.0.1:47631';
+    const urls=f.urls();
+    f.nodes['#retraceServerAccessKey'].value=newKey;
+    f.nodes['#retraceServerUrl'].value='http://192.168.0.10:47630';await f.click();
+    assert.deepEqual(f.state.keyWrites,[]);
+    assert.deepEqual([f.manager.key,f.peers.lia.key],[previous,previous]);
+    f.nodes['#retraceServerUrl'].value='http://127.0.0.1:48001';f.state.failKey='lia';await f.click();
+    assert.deepEqual(f.urls(),urls);
+    assert.deepEqual([f.manager.key,f.peers.lia.key],[previous,previous]);
+    assert.equal(f.nodes['#retraceServerAccessKey'].value,newKey);
+    results.push('address or key save failure preserves each working connection');
   }
   { // A malformed key stops before any address changes; an empty field keeps the saved key.
     const f=fixture();f.nodes['#retraceServerUrl'].value='http://127.0.0.1:48001';f.nodes['#retraceServerAccessKey'].value='short';await f.click();

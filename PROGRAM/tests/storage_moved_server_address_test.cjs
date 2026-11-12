@@ -3,7 +3,7 @@
 // physical DATA (the server port was moved). Other DATA, an unreachable address, or an address
 // change before the DATA was ever reached is still refused, and the old address is kept.
 const assert=require('node:assert/strict');
-const {fixture,variants}=require('./storage_global_allchat_job_test.cjs');
+const {fixture,installedSdkVariants:variants}=require('./storage_global_allchat_job_test.cjs');
 const OLD='http://127.0.0.1:47631',MOVED='http://127.0.0.1:47642',OTHER='http://127.0.0.1:47643',DOWN='http://127.0.0.1:47644';
 const urlKey=ns=>'__memory_suite_internal_server_url_v1__:'+ns,dataKey=ns=>'__memory_suite_internal_server_data_v1__:'+ns;
 const until=async(fn,label)=>{for(let i=0;i<200;i++){if(fn())return;await new Promise(r=>setTimeout(r,5));}throw Error('timeout '+label);};
@@ -58,6 +58,26 @@ const until=async(fn,label)=>{for(let i=0;i<200;i++){if(fn())return;await new Pr
    // And back again through the scope connection path.
    await f.bridge.configureConnection({url:OLD,mode:'server_only'});
    assert.equal(f.values.get(urlKey(ns)),OLD);assert.equal(await f.proxy.getItem(ns+'.A'),'AFTER_MOVE');
+
+   // An installation from before the binding was introduced keeps its existing routing table.
+   const installedValues=new Map(f.values);installedValues.delete(dataKey(ns));
+   const upgraded=await fixture(variant,{app:f.app,values:installedValues,transportFactory:route});
+   try{
+    assert.equal((await upgraded.bridge.testConnection(OTHER)).ok,true);
+    assert.equal(installedValues.has(dataKey(ns)),false,'a preview does not initialize the binding');
+    assert.equal(await upgraded.proxy.getItem(ns+'.A'),'AFTER_MOVE','existing server memory works without applying a mode');
+    assert.deepEqual(JSON.parse(installedValues.get(dataKey(ns))),remembered,'first configured connection remembers the DATA');
+   }finally{await upgraded.close();}
+   const reopened=await fixture(variant,{app:f.app,values:installedValues,transportFactory:base=>(url,init)=>{
+    if(new URL(url).port==='47631')return Promise.reject(Object.assign(Error('connect ECONNREFUSED'),{cause:{code:'ECONNREFUSED'}}));
+    return base(url.replace(':47642',':47631'),init);
+   }});
+   try{
+    await reopened.bridge.startConnectionConfigurationJob({url:MOVED,mode:'server_only'});
+    await until(()=>['completed','failed','paused'].includes(reopened.bridge.getSyncJob()?.status),'relocation job finished');
+    assert.equal(reopened.bridge.getSyncJob().status,'completed',JSON.stringify(reopened.bridge.getSyncJob().error));
+    assert.equal(await reopened.proxy.getItem(ns+'.A'),'AFTER_MOVE');
+   }finally{await reopened.close();}
    results.push(ns);
   }finally{await f.close();await other.close();}
  }

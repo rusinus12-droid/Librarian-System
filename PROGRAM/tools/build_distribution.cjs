@@ -236,7 +236,7 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '서버_포트_변경.sh',
   '서버_외부접속_설정.bat',
   '서버_외부접속_설정.sh',
-  '서버_사용과_접속_관련_상세_안내.md',
+  '서버_사용과_접속_관련_상세_안내.txt',
   '안드로이드_Termux_준비.sh',
   '안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat',
@@ -258,7 +258,7 @@ const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
   'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/updater-bootstrap.cjs', 'core/file-picker.cjs',
   'runtime.cjs', 'launch.sh', '_find_node.bat', 'core/lock.cjs',
-  'logs/README.txt',
+  'logs/README.txt', '서버 업데이트 장해 대처법.txt',
   'platform/windows.cjs', 'platform/macos.cjs', 'platform/linux.cjs', 'platform/android.cjs'
 ]);
 const UPDATER_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:update-state\.json|latest\.log|[^/]+\.(?:log|tmp|bak|old|sqlite|db|zip))(?:$|\/)/i;
@@ -343,7 +343,8 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   '_common.cmd','_find_node.bat','_server_foreground.cmd',
   '1_서버_실행.bat','1_서버_실행.sh','2_서버_종료.bat','2_서버_종료.sh',
   '서버_백그라운드_실행.bat','서버_백그라운드_실행.sh','서버_상태_확인.bat','서버_상태_확인.sh',
-  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_사용과_접속_관련_상세_안내.md',
+  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh',
+  '서버_사용과_접속_관련_상세_안내.txt',
   'macOS_서버_실행.command','memory-suite.sh','안드로이드_Termux_준비.sh','안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat','기존_DATA_이관_ZIP_만들기.sh',
   'DATA_폴더_열기.bat','RisuAI_플러그인_폴더_열기.bat','처음_읽어주세요.txt','PACKAGE_CONTENTS.txt',

@@ -1,7 +1,7 @@
 # Librarian System server in a container.
 # Build in the package root (the folder that holds PROGRAM and DATA):
 #   docker build -f PROGRAM/docker/Dockerfile -t librarian-system .
-# Or use PROGRAM/docker/compose.yaml. The guide is PROGRAM/서버_사용과_접속_관련_상세_안내.md.
+# Or use PROGRAM/docker/compose.yaml. The guide is PROGRAM/서버_사용과_접속_관련_상세_안내.txt.
 FROM node:22-bookworm-slim
 ENV LIBRARIAN_HOME=/librarian
 WORKDIR /librarian

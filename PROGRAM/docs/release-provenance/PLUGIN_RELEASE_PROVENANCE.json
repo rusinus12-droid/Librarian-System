@@ -285,18 +285,18 @@
     "plugins": {
       "flashback": {
         "version": "2.0.1",
-        "sha256": "f213abc7ad7e98e121e3569503d41881a8af90d934def67c7820a1a3cf4f2018",
-        "bytes": 3804310
+        "sha256": "53101e03baba7f417b931082e6801de435e741ecaeaa4c3a4b41e268d2dc7259",
+        "bytes": 3806318
       },
       "hayaku": {
         "version": "4.0.1",
-        "sha256": "8ee774e45fff004410e6a4b14d4453ef830f3daaf5c55ca77f6e0f7a539d03f4",
-        "bytes": 4261363
+        "sha256": "64f3ca8b9285db547e41960f5034d622745cfec14a6b4d8e9812f8693d7c1a0f",
+        "bytes": 4263371
       },
       "libra": {
         "version": "3.0.1",
-        "sha256": "7238a8fd3be1c7215e9b2158641ee898d93ec291a5119b3365535539f83eaf9d",
-        "bytes": 6520805
+        "sha256": "6419f9b5a1cc2a9c776af8c9e4c1ccf0f554ba99f7ee3b961dcc1c97522d2885",
+        "bytes": 6522813
       },
       "lia": {
         "version": "0.30.0",
@@ -305,8 +305,8 @@
       },
       "retrace": {
         "version": "2.0.1",
-        "sha256": "8922b1040f8f455dbb6158c641e9abbe293d9ac66a68e75df75ead9610912b53",
-        "bytes": 1245598
+        "sha256": "5fb013f540e3b7b6355e73893c216ab2a6d6086ea6734156f1b414a6409ca41c",
+        "bytes": 1246126
       },
       "gradia": {
         "version": "1.0.1",

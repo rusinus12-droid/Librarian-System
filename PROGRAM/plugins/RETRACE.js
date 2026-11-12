@@ -7548,7 +7548,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     restorePluginStorage: async () => await withOwnerIO('plugin','',()=>scopedRestoreAll({})),
     testConnection,
     setServerUrl: (...args) => withModeConfiguration(()=>persistServerUrl(...args)),
-    setServerAccessKey: value => withModeConfiguration(()=>persistServerAccessKey(value)),
+    setServerAccessKey: (value, registerRollback) => withModeConfiguration(async()=>{
+      if (typeof registerRollback === 'function') {
+        const previous = await rawPluginStorage()?.getItem?.(SAVED_SERVER_ACCESS_KEY_KEY);
+        registerRollback(() => withModeConfiguration(() => persistServerAccessKey(previous)));
+      }
+      return await persistServerAccessKey(value);
+    }),
     getServerAccessKeyStatus: async () => ({ configured: !!(await readSavedAccessKey()) }),
     configureConnection: (...args) => withModeConfiguration(()=>scopedConfigureConnection(...args)),
     getConnectionSettings: scopedGetConnectionSettings,
@@ -16261,29 +16267,36 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
     const input=root.querySelector('#retraceServerUrl'),requested=text(input?.value||'').trim();
     if(!requested)throw new Error('서버 주소를 입력하세요. 예: http://127.0.0.1:47630');
     const bridges=retraceServerBridges();
-    const previous=text((await MemorySuiteStorageBridge.getConnectionSettings())?.url||'');
+    const connections=await Promise.all(bridges.map(async bridge=>({bridge,url:(await bridge.getConnectionSettings()).url})));
+    const previous=connections[0].url;
     if(!(await retraceConfirm('RE:TRACE의 서버 주소를 바꿉니다.\n이전: '+(previous||'기본값')+'\n새 주소: '+requested
       +'\nRE:TRACE 관리 연결과 LIA 보관 자료 연결에 저장합니다. LIBRA · HAYAKU · Flashback 연결은 각 플러그인에 저장된 주소를 따르므로 여기서 바뀌지 않습니다.'))){
       say('서버 주소 변경을 취소했습니다.');return;
     }
     const keyInput=root.querySelector('#retraceServerAccessKey'),accessKey=text(keyInput?.value||'').trim();
-    if(accessKey){
-      try{for(const bridge of bridges)await bridge.setServerAccessKey(accessKey);}
-      catch(error){
-        const reason=String(error?.code||error?.message||error);
-        throw new Error(/ACCESS_KEY_INVALID/i.test(reason)?'접근 키 형식이 올바르지 않습니다. 서버의 외부 접속 설정 도구가 보여 준 키를 그대로 붙여 넣으세요.':'접근 키를 저장하지 못했습니다: '+reason);
+    if(accessKey&&!/^[A-Za-z0-9_-]{32,256}$/.test(accessKey))throw new Error('접근 키 형식이 올바르지 않습니다. 서버의 외부 접속 설정 도구가 보여 준 키를 그대로 붙여 넣으세요.');
+    const rollbacks=[];
+    let savingKey=false;
+    try{
+      for(const {bridge,url} of connections){
+        rollbacks.push(async()=>{
+          if((await bridge.getConnectionSettings()).url!==url)await bridge.setServerUrl(url);
+        });
+        await bridge.setServerUrl(requested);
       }
-      keyInput.value='';
+      if(accessKey){
+        savingKey=true;
+        for(const bridge of bridges)await bridge.setServerAccessKey(accessKey,rollback=>rollbacks.push(rollback));
+        keyInput.value='';
+      }
     }
-    const saved=[];
-    try{for(const bridge of bridges){await bridge.setServerUrl(requested);saved.push(bridge);}}
     catch(error){
       let restored=true;
-      if(previous)for(const bridge of saved){try{await bridge.setServerUrl(previous);}catch(_){restored=false;}}
+      for(const rollback of rollbacks.reverse()){try{await rollback();}catch(_){restored=false;}}
       const reason=String(error?.code||error?.message||error);
       throw new Error(/INVALID_SERVER_URL|invalid_memory_suite_server_url/i.test(reason)
         ?'허용되지 않는 주소입니다. http://127.0.0.1:포트 · http://localhost:포트 · http://[::1]:포트 · http://host.docker.internal:포트 형식만 쓸 수 있습니다.'
-        :'서버 주소를 저장하지 못했습니다: '+reason+(restored?'\n저장했던 연결은 이전 주소로 되돌렸습니다.':'\n일부 연결을 이전 주소로 되돌리지 못했습니다. 다시 저장해 주세요.'));
+        :(savingKey?'접근 키를 저장하지 못했습니다: ':'서버 주소를 저장하지 못했습니다: ')+reason+(restored?'\n저장했던 연결은 이전 주소로 되돌렸습니다.':'\n일부 연결 설정을 되돌리지 못했습니다. 다시 저장해 주세요.'));
     }
     const url=text((await MemorySuiteStorageBridge.getConnectionSettings())?.url||requested);
     if(input)input.value=url;
