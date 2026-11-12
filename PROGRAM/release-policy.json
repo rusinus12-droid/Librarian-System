@@ -1,6 +1,6 @@
 {
   "schema": "librarian.release-policy.v1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "channel": "stable",
   "updatePolicy": "program_only",
   "minimumSourceVersion": "1.0.0",

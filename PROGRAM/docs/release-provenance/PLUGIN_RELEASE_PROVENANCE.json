@@ -280,8 +280,8 @@
     }
   ],
   "currentRelease": {
-    "packageVersion": "1.0.0",
-    "artifact": "Librarian-System-1.0.0-Source.zip",
+    "packageVersion": "1.1.0",
+    "artifact": "Librarian-System-1.1.0-Source.zip",
     "plugins": {
       "flashback": {
         "version": "2.0.1",
