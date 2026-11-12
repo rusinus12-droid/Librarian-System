@@ -35,6 +35,13 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 서버 updater는 RisuAI 내부에 설치된 플러그인을 자동으로 교체할 수 없습니다.
 플러그인 업데이트가 필요한 경우 PROGRAM/plugins의 최신 JS를 RisuAI에서 직접 적용하세요.
 
+[서버 포트 바꾸기]
+47630 포트를 다른 프로그램이 쓰고 있다면 서버를 끈 뒤 PROGRAM\서버_포트_변경.bat(Windows) 또는
+PROGRAM/서버_포트_변경.sh(macOS · Linux · Termux)로 포트를 바꿉니다.
+그다음 LIBRA · HAYAKU · Flashback · GRADIA · RE:TRACE에서 서버 주소를 각각 새 주소로 바꿔야 합니다.
+새 포트로 서버를 실행한 뒤 바꾸세요. 서버 단독 스코프가 있어도 같은 DATA로 확인되면 주소만 옮깁니다.
+자세한 내용은 PROGRAM/docs/사용설명서.md의 '서버 포트 바꾸기'를 보세요.
+
 [문제가 생겼을 때]
 1. 업데이트 메뉴의 '미완료 업데이트 복구'를 먼저 실행합니다.
 2. 실패 메시지를 확인합니다.
@@ -43,11 +50,11 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 [현재 구성]
 - Librarian System Server 1.0.0
-- Flashback Memory 2.0.0
-- HAYAKU Locator Continuity 4.0.0
-- LIBRA 3.0.0
+- Flashback Memory 2.0.1
+- HAYAKU Locator Continuity 4.0.1
+- LIBRA 3.0.1
 - LIA Persona Linker 0.30.0
-- RE:TRACE 2.0.0
+- RE:TRACE 2.0.1
 - GRADIA 1.0.0
 
 [호환 정보]

@@ -597,6 +597,45 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
     return true;
   };
+  // The physical DATA this plugin last reached at its configured address. Its identity comes from
+  // the DATA's own token, not from the port, so it proves a moved server is still the same DATA.
+  const SAVED_SERVER_DATA_KEY = `__memory_suite_internal_server_data_v1__:${namespace}`;
+  const SERVER_DATA_SCHEMA = 'memory-suite.server-data-binding.v1';
+  let rememberedServerData = '';
+  const readSavedServerData = async () => {
+    try {
+      const raw = await rawPluginStorage()?.getItem?.(SAVED_SERVER_DATA_KEY);
+      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return value?.schema === SERVER_DATA_SCHEMA && value.namespace === namespace
+        && value.dataIdentityContract === 'memory-suite.physical-data-identity.v1'
+        && /^[A-Za-z0-9_-]{32}$/.test(String(value.dataInstanceId || '')) ? value : null;
+    } catch (_) { return null; }
+  };
+  // Written only where a server mode is applied, which already writes configuration; a preview or a
+  // memory read never writes it. Best effort: a failure here never fails the applied change.
+  const rememberServerData = async identity => {
+    if (identity?.dataIdentityCertified !== true || identity.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+      || !/^[A-Za-z0-9_-]{32}$/.test(String(identity.dataInstanceId || ''))) return;
+    const serialized = JSON.stringify({schema:SERVER_DATA_SCHEMA, namespace, dataInstanceId:identity.dataInstanceId,
+      dataIdentityContract:identity.dataIdentityContract});
+    if (rememberedServerData === serialized) return;
+    try {
+      const store = rawPluginStorage();
+      if (!store?.getItem || !store?.setItem) return;
+      if (await store.getItem(SAVED_SERVER_DATA_KEY) !== serialized) await store.setItem(SAVED_SERVER_DATA_KEY, serialized);
+      rememberedServerData = serialized;
+    } catch (_) {}
+  };
+  // A server-backed plugin may follow its own DATA to a new address, never move to other DATA.
+  const sameServerDataAt = async targetUrl => {
+    const saved = await readSavedServerData();
+    if (!saved) return { same:false, reason:'server_data_unknown' };
+    const probe = await testConnection(targetUrl);
+    if (!probe?.ok) return { same:false, reason:'target_unreachable', error:probe?.error || '' };
+    const same = probe.dataIdentityCertified === true && probe.dataIdentityContract === saved.dataIdentityContract
+      && probe.dataInstanceId === saved.dataInstanceId;
+    return { same, reason:same ? 'same_data' : 'different_data' };
+  };
   const getArgumentValue = async (names, fallback = '') => {
     if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
@@ -5802,7 +5841,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return '서버 초기화 이전의 기억이 기기에만 남아 있어 전환을 보류했습니다. 상세 진단에서 대화와 저장 키를 확인하세요.';
     if (code === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE') return `대화 목록 또는 자료 목록을 읽지 못했습니다(${(details?.blockers || []).map(row => row.code).slice(0, 3).join(', ') || '원인 미상'}). ${kept}`;
     if (code === 'MEMORY_SUITE_TRANSFER_INCOMPLETE') return `옮기지 못한 항목이 ${Number(details?.failureCount || 0)}개 있습니다. ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
-    if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `지금 서버에 자료가 있는 상태에서는 서버 주소를 바꿀 수 없습니다. 먼저 플러그인 단독으로 전환하세요. ${kept}`;
+    if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `서버에 자료가 있는 상태에서는 다른 서버로 주소를 바꿀 수 없습니다. 포트만 바꾼 같은 서버라면 그 서버를 실행한 뒤 다시 적용하세요. 다른 서버로 옮기려면 먼저 플러그인 단독으로 전환하세요. ${kept}`;
     if (/SERVER_UNAVAILABLE|fetch|network|timeout|ECONN/i.test(code)) return `서버에 연결하지 못했습니다. 서버 실행 여부와 주소를 확인하세요. ${kept}`;
     return `전환을 마치지 못했습니다(${code}). ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
   };
@@ -5871,7 +5910,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         message:publish ? '대화와 자료 목록을 확인하고 있습니다.' : '옮길 자료 목록을 확인하고 있습니다.' };
       state.syncJob.loaded = true;
       notifySyncJob();
-      if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE');
+      if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) {
+        const moved = await sameServerDataAt(targetUrl);
+        if (!moved.same) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE', { reason:moved.reason });
+      }
       // Nothing is written until the chat list and both sides have been read.
       inventory = await collectGlobalInventory(target,{url:targetUrl,light:true,requireRemote:forcedSource==='server',
         resolutionPin:transferOptions.resolutionPin,resolutions:publish ? transferOptions.resolutions : []});
@@ -6061,6 +6103,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         currentKey:'', currentAction:'완료', error:'', result:{ ...journalResult, migrated:undefined, warnings:warnings.warnings.slice(0, 16) },
         message:publish ? `저장 위치를 ${modeLabel(target)}(으)로 바꿨습니다.` : '데이터 이동을 마쳤습니다.' });
       committed = true;
+      if (publish && target !== MODE_PLUGIN_ONLY && inventory.serverPin)
+        await rememberServerData({ dataIdentityCertified:true, dataIdentityContract:inventory.serverPin.dataIdentityContract, dataInstanceId:inventory.serverPin.dataInstanceId });
       if (publish) {
         if (inventory.remoteRequired) {
           try {
@@ -8146,11 +8190,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const serverBackedScopes = Object.values(registry?.entries || {})
         .filter(row => normalizeMode(row?.mode) !== MODE_PLUGIN_ONLY)
         .map(row => ({ scopeId:String(row?.scopeId || ''), scopeLabel:String(row?.label || row?.scopeId || ''), mode:normalizeMode(row?.mode) }));
-      if (serverBackedScopes.length) {
+      const moved = serverBackedScopes.length ? await sameServerDataAt(targetUrl) : null;
+      if (serverBackedScopes.length && !moved.same) {
         const error = new Error(`memory_suite_server_url_in_use:${serverBackedScopes.length}`);
         error.code = 'MEMORY_SUITE_SERVER_URL_IN_USE';
-        error.details = { currentUrl, targetUrl, serverBackedScopes };
-        error.userMessage = '서버를 사용하는 스코프가 남아 있어 서버 주소를 변경할 수 없습니다. 해당 스코프들을 먼저 플러그인 단독으로 전환해 주세요.';
+        error.details = { currentUrl, targetUrl, serverBackedScopes, reason:moved.reason };
+        error.userMessage = '서버를 사용하는 스코프가 남아 있어 다른 서버로 주소를 변경할 수 없습니다. 포트만 바꾼 같은 서버라면 그 서버를 실행한 뒤 다시 시도하세요. 다른 서버로 옮기려면 해당 스코프들을 먼저 플러그인 단독으로 전환해 주세요.';
         throw error;
       }
     }
@@ -8167,6 +8212,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         urlChanged = true;
       }
       const modeResult = await scopedSetModeSafely(targetMode, { ...operationOptions, scope });
+      if (targetMode !== MODE_PLUGIN_ONLY && connectionTest?.ok) await rememberServerData(connectionTest);
       const effectiveMode = normalizeMode(modeResult?.effectiveMode || targetMode);
       const from = { mode:currentMode, modeLabel:modeLabel(currentMode), requestedMode:currentMode, effectiveMode:currentMode, url:currentUrl, scope };
       const to = { mode:effectiveMode, modeLabel:modeLabel(effectiveMode), requestedMode:targetMode, effectiveMode, url:targetUrl, scope };

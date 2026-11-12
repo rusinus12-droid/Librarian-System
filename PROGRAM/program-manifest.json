@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.0.0",
-  "generatedAt": "2026-11-12T01:16:55.223Z",
+  "generatedAt": "2026-11-12T06:51:58.018Z",
   "server": {
     "version": "1.0.0",
     "protocol": {
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "3.0.0",
+          "version": "3.0.1",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -397,7 +397,7 @@
           ]
         },
         "hayaku": {
-          "version": "4.0.0",
+          "version": "4.0.1",
           "deferredAuthoritativeBinding": true,
           "backendOrder": [
             "chat_output_v3",
@@ -407,7 +407,7 @@
           "nonOwningOutputHooksAreSanitizers": true
         },
         "flashback": {
-          "version": "2.0.0",
+          "version": "2.0.1",
           "provisionalRemoteEmbedding": false,
           "backendOrder": [
             "chat_output_v3",
@@ -568,7 +568,7 @@
       "nativePersonaDatabaseExcluded": true
     },
     "hayakuNativeOtherAxRecovery": {
-      "version": "4.0.0",
+      "version": "4.0.1",
       "schema": "hayaku.native_recovery.v1",
       "normalPathNoLlmWhenCurrentPacketUsable": true,
       "normalPathLlmCallsWhenCurrentPacketUsable": 0,
@@ -760,7 +760,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "3.0.0",
+        "version": "3.0.1",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -768,7 +768,7 @@
         "canonicalStorageFormatUnchanged": true
       },
       "flashback": {
-        "version": "2.0.0",
+        "version": "2.0.1",
         "unchangedNormalizedDescriptorReuse": true,
         "unchangedLivePairStateReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -778,7 +778,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -804,7 +804,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -994,7 +994,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1030,7 +1030,7 @@
       "remountPreservesBusyState": true
     },
     "flashbackArchiveReembedding": {
-      "version": "2.0.0",
+      "version": "2.0.1",
       "fullMaintenanceIncludesArchive": true,
       "automaticMaintenanceIncludesArchive": true,
       "progressiveMaintenanceIncludesArchive": true,
@@ -1076,7 +1076,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "3.0.0",
+        "version": "3.0.1",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "6a15c2189099026497c98d819b400e679ebfdb9d44b4da913ab16b7d163031c2",
         "retired": true,
@@ -1097,7 +1097,7 @@
         ]
       },
       "hayakuSparseRrfPilot": {
-        "version": "4.0.0",
+        "version": "4.0.1",
         "operation": "hayaku.sparse-rrf-fusion.v1",
         "algorithmFingerprint": "7f32e8b10fdd34e8356af70e40ad90d3c48e6fda132080046a807db0ea3ec58f",
         "retired": true,
@@ -1163,7 +1163,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1187,7 +1187,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1203,7 +1203,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1275,7 +1275,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "3.0.0",
+      "version": "3.0.1",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1409,7 +1409,7 @@
     },
     "scopeSpecificStorageModesCompatibilityOnly": true,
     "flashbackQueryEmbeddingLifetime": {
-      "version": "2.0.0",
+      "version": "2.0.1",
       "callerBudgetMs": [
         1500,
         4000
@@ -1421,7 +1421,7 @@
       "physicalPendingRequestRetainedUntilSettled": true
     },
     "libraDirectMemoryRecall": {
-      "pluginVersion": "3.0.0",
+      "pluginVersion": "3.0.1",
       "schema": "libra.state_memory_query.v1",
       "allocation": "lens_40_percent_and_query_adaptive_evidence",
       "sources": [
@@ -1439,11 +1439,11 @@
     }
   },
   "plugins": {
-    "flashback": "2.0.0",
-    "hayaku": "4.0.0",
-    "libra": "3.0.0",
+    "flashback": "2.0.1",
+    "hayaku": "4.0.1",
+    "libra": "3.0.1",
     "lia": "0.30.0",
-    "retrace": "2.0.0",
+    "retrace": "2.0.1",
     "gradia": "1.0.0"
   },
   "files": {
@@ -3832,7 +3832,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "39b822950ba9b605e2b0cae649cb9511661af9f19ccf055fa8a1308b02a28c2a",
+      "sha256": "1dac7090af3493ceefe688f01d61b74289487638c10ce802c3e6419baf854982",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4216,8 +4216,8 @@
       "bytes": 9711
     },
     "docs/사용설명서.md": {
-      "sha256": "42adfb3ccc062b89e9a7815edf7d761840da5eba29c58081a945d63709b60edb",
-      "bytes": 108218
+      "sha256": "5f24d80443894411a22b24fd2857399c04d69d6b6d76f032ab59bafa32c88249",
+      "bytes": 110770
     },
     "macOS_서버_실행.command": {
       "sha256": "cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c",
@@ -4228,32 +4228,32 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "594cda5e5dd71310da91eab9e585606c7ba0b299570ff68149ba5cfc99d02a9b",
-      "bytes": 3347
+      "sha256": "d78fc71d188d0dd99eeb0b6d9ae6b5f5ad2a5839b8fdb8759ca59e35a596a7c8",
+      "bytes": 3944
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "670ab689df90546fe7b8de295aa1fd066a25fb213721be76658474096abc4849",
-      "bytes": 3796136
+      "sha256": "6883a7c46b2c9a0ace0d1d6c0a88b70cabb37fe4b657ac8d1e6638d1b11bbd45",
+      "bytes": 3799504
     },
     "plugins/GRADIA.js": {
       "sha256": "9ad8179ada89cfa78264c347070113a420fe750bde47602c57d3a5401c2dbcfd",
       "bytes": 3089950
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "88ff2279b546e1a48651ca70602d82637b7987ad550645a28289d9922debd168",
-      "bytes": 4253189
+      "sha256": "d9bbdb3b1513184e0596fa8aa6b4a027537d6cece24ca8e129762ddd11d6331a",
+      "bytes": 4256557
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "2c8555f1853d817395434a0c6b744a7848789401b96ccc88694537a195bd0710",
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "1840ddae396654d1c01c88a780eb08d4f5f068cd407ad10f805a44ecd659c1eb",
-      "bytes": 6512631
+      "sha256": "0e6692917539a749bfb8de31e3c0931a0cc5a9b0eb127d6e22c933c58487df21",
+      "bytes": 6515999
     },
     "plugins/RETRACE.js": {
-      "sha256": "741d361f347f49aeaf839dce7aba6eb8378e0ab3300fa013c0a5ca4a098cb3ba",
-      "bytes": 1235533
+      "sha256": "3f9740f31beff3d26f41f91ea99d9d360ba9ea3ed06b77098429f30c3cc30fe6",
+      "bytes": 1241564
     },
     "release-policy.json": {
       "sha256": "27add36c7da2daca857532c3bb7dcc0776a43e83021d5a199e3d256b4a00199c",
@@ -4372,16 +4372,16 @@
       "bytes": 4596
     },
     "sdk/MemorySuiteStorageClient.flashback.source.js": {
-      "sha256": "edee702997f133bd73ae69950a9b1a0c2b9f3dc36e31880c538afe344d461c24",
-      "bytes": 832825
+      "sha256": "f71a3d6057bfa81cfc56b9a3d92efa32119500587ba94e241956376881016b43",
+      "bytes": 836193
     },
     "sdk/MemorySuiteStorageClient.libra.source.js": {
-      "sha256": "ce438b030e8d60a758e8c03bc25ba58736c93e445a81277f8c3860e095462869",
-      "bytes": 815483
+      "sha256": "5cfec0deb7fd19bfde7621e54a2878b9b2a3ef46c3fc61c8e390b695ac91f50f",
+      "bytes": 818851
     },
     "sdk/MemorySuiteStorageClient.source.js": {
-      "sha256": "786f262b914499f04ca0e0c01dc72c7af7a50396f3b2fbecda5a4540bc12904e",
-      "bytes": 822084
+      "sha256": "ab87d3c26e93fc34fab650f1f26ea7c0e9973ff110d9cb0a3308e5f09bd95c12",
+      "bytes": 825452
     },
     "server/admin.cjs": {
       "sha256": "a67f5877523fa6460b986888aeb659ba84a2fda4ee384101ffc0fed222482480",
@@ -5084,8 +5084,8 @@
       "bytes": 5384
     },
     "tests/cross_platform_launcher_test.cjs": {
-      "sha256": "b45db2ee2a4f4f63b00ef674a5ef4d74d1b9e8314d4166cec834ccdd2d71ff90",
-      "bytes": 6964
+      "sha256": "6f85530e29e1dc3b6e18394ddc42ca4296bbc91e9787e4c30fd4b767b27e614f",
+      "bytes": 6993
     },
     "tests/current_status_gui_runtime_test.cjs": {
       "sha256": "3fc48253a3fb1abe6caa8bd27ada9a5b167ebbbcd496c8ad9884a47ea9d3228f",
@@ -10839,6 +10839,14 @@
       "sha256": "1a93e4d81b94077415530f6455cd88bcfeb884db5cf3e11e4ccf658fa5a8531f",
       "bytes": 34805
     },
+    "tests/retrace_server_url_runtime_test.cjs": {
+      "sha256": "6c2193b03b29ed593381fa4883d54195df9c309d8d704c8ebd5fe2920f2e6631",
+      "bytes": 5313
+    },
+    "tests/retrace_server_url_setting_test.cjs": {
+      "sha256": "68ba808cbdf5f8c5650b209c711d3f631212abfbb10e11171240a61199327de6",
+      "bytes": 8113
+    },
     "tests/retrace_storage_mode_identity_test.cjs": {
       "sha256": "44cf597b26199bb58a60c90d0497626a99eef8569ce8f33dfb5a4d9d7863a616",
       "bytes": 1890
@@ -11018,6 +11026,10 @@
     "tests/server_online_restore_terminal_rollback_test.cjs": {
       "sha256": "a880c0a1101c8514c3aa8e5676af31cafb917b63495d7ca7c3976e770317187e",
       "bytes": 3076
+    },
+    "tests/server_port_change_test.cjs": {
+      "sha256": "a15d2663dd0ff9cfafd2d080aac607472c73f491c3602411eafa0f3600eaf426",
+      "bytes": 5282
     },
     "tests/server_restore_absent_config_rollback_failure_test.cjs": {
       "sha256": "399466dd827eecbeaa7aeaead4c5571c4aceda1df8285218e29eab12508d2357",
@@ -11316,8 +11328,8 @@
       "bytes": 4283
     },
     "tests/storage_global_allchat_reconfigure_test.cjs": {
-      "sha256": "68bb8a8cf82d56d77b9549d40675d1ef2c15b9938c088bbe24c90dc5d7141e7a",
-      "bytes": 3586
+      "sha256": "567cd39ca4c21eef4fbdeebac169598bd3a2f0e899c1d98c7939b97aab952d1a",
+      "bytes": 3991
     },
     "tests/storage_global_allchat_url_recovery_test.cjs": {
       "sha256": "2871d4c992dd76b1db2e89626ab193c1f526dc0ca65b31b62b1047915a041c52",
@@ -11414,6 +11426,10 @@
     "tests/storage_modes_test.cjs": {
       "sha256": "1c6bc63f67cdb9b4109040e3a712af87bad0bf56cd91ad12c378cb006f04db29",
       "bytes": 11265
+    },
+    "tests/storage_moved_server_address_test.cjs": {
+      "sha256": "b6494286118f11934fbdf744723dbbd009f99b483f0f6f1a29ab6bd05f9ef8cb",
+      "bytes": 5017
     },
     "tests/storage_owner_operation_admission_test.cjs": {
       "sha256": "39140be2a9d13b73039a2e3c5d41ac886af10a3840eb66a0b7cd1a6c3cc40cf7",
@@ -11548,8 +11564,8 @@
       "bytes": 4108
     },
     "tests/windows_bootstrap_contract_test.cjs": {
-      "sha256": "0e8fe868281b95f30f6e06ce158f98be38e09bc41e67384b280fcc31737f137c",
-      "bytes": 9093
+      "sha256": "2f8584e7ca61648f516848346fec75d6e3eb04a4a4669a355bbb261b21a96f96",
+      "bytes": 9168
     },
     "tests/wm_semantic_context_v1_test.cjs": {
       "sha256": "ee742e475a773b042a7d1b3168d5ed14036a3d74c58e61629c3d33da8d94b54b",
@@ -11752,8 +11768,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "a74b2e17cdba0d2148bd7ef3af9c0fc8bf7d5fb62021668fa3910899febfa068",
-      "bytes": 59420
+      "sha256": "dcc2b300d789aa23e59cb887cd04f04a66ea003346253a799ab3d63e713efdaf",
+      "bytes": 59535
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -11856,8 +11872,8 @@
       "bytes": 2314
     },
     "tools/lib/sdk_variants.cjs": {
-      "sha256": "2b2c1f116255a5a9f22ecda236020397dee561539e18c9cb3f325968ade84f95",
-      "bytes": 2752
+      "sha256": "df083d1a1f86a36640f631bfdbed518897f235122421c6cfe8bd4e3b14557829",
+      "bytes": 2860
     },
     "tools/lib/ultralight_scan.cjs": {
       "sha256": "d081789a8ecda6b6cf4b6705d7fe840c98ec264765f2a9fcfdb76568264298ca",
@@ -11916,8 +11932,8 @@
       "bytes": 11842
     },
     "tools/platform_launcher.cjs": {
-      "sha256": "8e2f9507610c88877f4ecef0244f9e21301dcce26f307245a2bd684d2254bb45",
-      "bytes": 17914
+      "sha256": "ea8bf6795f66c193a0a0ec6f62e895259d689d9bccdeb56b74ee8db90836a16f",
+      "bytes": 22987
     },
     "tools/plugin_version_provenance.cjs": {
       "sha256": "7680d0670f8fdb6cb842360cea8800ef4601dde5ac300998957e8d814b6b512a",
@@ -12343,6 +12359,14 @@
       "sha256": "b8d3d4ed2f1e93b18a92914f9a33fb50b23a6d76152bdd4d1829f951640de6c2",
       "bytes": 137
     },
+    "서버_포트_변경.bat": {
+      "sha256": "010ce44acadb577188e39278b3875538a360e2ff139b4e30f5032d44e8a81333",
+      "bytes": 885
+    },
+    "서버_포트_변경.sh": {
+      "sha256": "9d19887c4f1dd0b03aeb83f5e210afa288c3b4355eeaf81888952158f90c706b",
+      "bytes": 564
+    },
     "안드로이드_Termux_준비.sh": {
       "sha256": "8be65d21878632996fc872a0831351ffcd21a024261d9d76996fd6a0e232b217",
       "bytes": 1499
@@ -12360,7 +12384,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "c2a60cb073bb7eaabb5ab85e93ecf9f6a052b11eeb7b9c90b26506698e55e64a",
+      "sha256": "03fab56707d4cd3684e3873520dac7ae335afa532d41551e68b4c331fea7dd85",
       "bytes": 3781
     }
   },
@@ -12458,25 +12482,25 @@
     "Flashback_Memory.js": {
       "variant": "core3-standard-flashback",
       "source": "sdk/MemorySuiteStorageClient.flashback.source.js",
-      "sha256": "46ecf8cc623d0cb4f1b13a9dd4196bfe32b051c1739c2e22189b51c98c366807",
+      "sha256": "2af49293fe6038bc57eaeb381b6f1e98d96f32cb97720635fb261c4e7213108a",
       "synchronization": "canonical-variant"
     },
     "HAYAKU_Locator_Continuity.js": {
       "variant": "core3-standard-hayaku",
       "source": "sdk/MemorySuiteStorageClient.source.js",
-      "sha256": "786f262b914499f04ca0e0c01dc72c7af7a50396f3b2fbecda5a4540bc12904e",
+      "sha256": "ab87d3c26e93fc34fab650f1f26ea7c0e9973ff110d9cb0a3308e5f09bd95c12",
       "synchronization": "canonical-variant"
     },
     "LIBRA.js": {
       "variant": "libra-control-plane-preroute",
       "source": "sdk/MemorySuiteStorageClient.libra.source.js",
-      "sha256": "9b6952fa1eda97b1158b457e8e11abccde08384dd6dd28d92f98c9921627ac90",
+      "sha256": "d88d8671c9c337e066773b60df3664849823bf8efaf87387755d5438f49c8324",
       "synchronization": "canonical-variant"
     },
     "RETRACE.js": {
       "variant": "preserved-manager-only",
       "source": null,
-      "sha256": "bfacb47b747b7eef6152024b807a36132071c8484a2a0baac256a11edab066f1",
+      "sha256": "3664d32e131cc8f812b1bb7505ce9bbd42e642a4ec730031598967a837ebc994",
       "synchronization": "verify-preserved-only"
     },
     "GRADIA.js": {

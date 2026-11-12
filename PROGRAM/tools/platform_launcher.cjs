@@ -29,12 +29,88 @@ function parseArgs(argv = process.argv.slice(2)) {
     if (argv[index] === '--data-dir') {
       if (!argv[index + 1] || String(argv[index + 1]).startsWith('--')) throw new Error('launcher_data_dir_value_required');
       result.dataDir = path.resolve(argv[++index]);
+    } else if (argv[index] === '--port' && result.command === 'set-port') {
+      if (argv[index + 1] === undefined) throw new Error('launcher_port_value_required');
+      result.port = String(argv[++index]);
     } else throw new Error(`unknown_launcher_argument:${argv[index]}`);
   }
-  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare'].includes(result.command)) {
+  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare', 'set-port'].includes(result.command)) {
     throw new Error(`unknown_launcher_command:${result.command}`);
   }
+  if (result.command === 'set-port' && result.port === undefined) throw new Error('launcher_port_value_required');
   return result;
+}
+
+const MIN_SERVER_PORT = 1024, MAX_SERVER_PORT = 65535;
+const launcherFailure = (code, message, exitCode) => Object.assign(new Error(message), { code, exitCode });
+
+function portAvailable(host, port) {
+  return new Promise(resolve => {
+    const probe = require('node:net').createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen({ host, port, exclusive: true }, () => probe.close(() => resolve(true)));
+  });
+}
+
+// The server port lives only in DATA/config/server-config.json; every launcher, admin tool and
+// the updater read it from there. It is changed only while the server is stopped, so a running
+// server never loses the port its plugins are using, and only to a port nothing else holds.
+async function setServerPort(dataDir, requested, options = {}) {
+  const write = options.write || (text => process.stdout.write(text));
+  const textValue = String(requested ?? '').trim();
+  const port = Number(textValue);
+  if (!/^\d+$/.test(textValue) || !Number.isInteger(port) || port < MIN_SERVER_PORT || port > MAX_SERVER_PORT) {
+    throw launcherFailure('SERVER_PORT_INVALID', `포트는 ${MIN_SERVER_PORT}~${MAX_SERVER_PORT} 사이의 숫자여야 합니다. 입력값: ${textValue || '(비어 있음)'}`, 2);
+  }
+  const journal = path.join(packageRoot, 'UPDATER', 'update-state.json');
+  if (fs.existsSync(journal)) {
+    let state = null;
+    try { state = JSON.parse(fs.readFileSync(journal, 'utf8')); } catch (_) {}
+    if (!['complete', 'rolled_back', 'aborted'].includes(String(state?.status || ''))) {
+      throw launcherFailure('SERVER_PORT_UPDATE_PENDING', '미완료 업데이트가 있어 포트를 바꾸지 않았습니다. 서버를 한 번 실행해 업데이트 복구를 끝낸 뒤 다시 시도하세요.', 5);
+    }
+  }
+  if (options.prepare !== false) prepareData(dataDir);
+  const config = readConfig(dataDir);
+  if (config.port === port) {
+    write(`[Librarian System] 서버 포트는 이미 ${port}입니다. 바꾸지 않았습니다.\n서버 주소: ${config.url}\n`);
+    return { changed: false, port, url: config.url };
+  }
+  try {
+    await health(config.url, 2000);
+    throw launcherFailure('SERVER_PORT_SERVER_RUNNING', `서버가 현재 포트 ${config.port}에서 실행 중입니다. 먼저 2_서버_종료로 서버를 끈 뒤 다시 시도하세요.`, 3);
+  } catch (error) {
+    if (error?.code === 'SERVER_PORT_SERVER_RUNNING') throw error;
+    if (error?.code !== 'SERVER_UNAVAILABLE') {
+      throw launcherFailure('SERVER_PORT_SERVER_RUNNING', `현재 포트 ${config.port}에서 응답하는 프로그램이 있어 서버가 꺼졌는지 확인하지 못했습니다. 서버를 끈 뒤 다시 시도하세요.`, 3);
+    }
+  }
+  const bindHost = config.host === 'localhost' ? '127.0.0.1' : config.host;
+  if (!(await portAvailable(bindHost, port))) {
+    throw launcherFailure('SERVER_PORT_IN_USE', `포트 ${port}는 다른 프로그램이 사용 중입니다. 다른 포트를 고르세요.`, 4);
+  }
+  const raw = JSON.parse(fs.readFileSync(config.configPath, 'utf8'));
+  const temporary = `${config.configPath}.port-${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify({ ...raw, port }, null, 2)}\n`, { mode: 0o600 });
+  try { fs.renameSync(temporary, config.configPath); }
+  catch (error) { try { fs.rmSync(temporary, { force: true }); } catch (_) {} throw error; }
+  const saved = readConfig(dataDir);
+  if (saved.port !== port) throw launcherFailure('SERVER_PORT_READBACK_FAILED', '포트를 저장했지만 다시 읽은 값이 다릅니다. 설정 파일을 확인하세요.', 6);
+  write([
+    `[Librarian System] 서버 포트를 ${config.port} → ${port}로 바꿨습니다.`,
+    `새 서버 주소: ${saved.url}`,
+    '',
+    '서버를 다시 실행한 뒤, RisuAI의 각 플러그인에서 서버 주소를 새 주소로 바꿔 주세요.',
+    '플러그인마다 주소를 따로 저장하므로 한 곳만 바꾸면 나머지는 예전 포트에 남습니다.',
+    '  - LIBRA · HAYAKU · Flashback: 서버 연결 설정 → 서버 주소',
+    '  - GRADIA: 소스 탭 → 서버 주소',
+    '  - RE:TRACE: 서버 관리 → 연결 진단 → 서버 주소',
+    '  LIA는 서버를 쓰지 않으므로 바꾸지 않아도 됩니다.',
+    '',
+    `설정 파일: ${saved.configPath}`,
+    ''
+  ].join('\n'));
+  return { changed: true, previousPort: config.port, port, url: saved.url };
 }
 
 function runChecked(script, args = [], options = {}) {
@@ -389,6 +465,7 @@ async function main() {
     process.stdout.write(`[LIBRARIAN SYSTEM] DATA ready: ${args.dataDir}\n`);
     return;
   }
+  if (args.command === 'set-port') return await setServerPort(args.dataDir, args.port);
   if (args.command === 'serve' || args.command === 'background') {
     recoverPendingUpdaterStateBeforeServerStart();
     prepareData(args.dataDir);
@@ -410,7 +487,9 @@ async function main() {
 
 if (require.main === module) {
   main().catch(error => {
-    process.stderr.write(`[LIBRARIAN SYSTEM LAUNCHER] ${String(error?.stack || error)}\n`);
+    // A refused port change is the user's answer, not a crash: show the guidance without a stack.
+    if (String(error?.code || '').startsWith('SERVER_PORT_')) process.stderr.write(`[Librarian System] ${error.message}\n`);
+    else process.stderr.write(`[LIBRARIAN SYSTEM LAUNCHER] ${String(error?.stack || error)}\n`);
     process.exitCode = Number(error?.exitCode || 1);
   });
 }
@@ -426,5 +505,6 @@ module.exports = {
   inspectExistingServer,
   canonicalizePotentialPath,
   isTermuxRuntime,
-  assertSafeDataDir
+  assertSafeDataDir,
+  setServerPort
 };

@@ -33,7 +33,10 @@ for (const variant of variants) {
   });
 
   test(namespace + ': URL preview is read-only and Apply rejects changing a live server route', async () => {
-    const f = await fixture(variant);
+    // 47633 serves different DATA. (The same DATA on another port may be followed: storage_moved_server_address_test.)
+    const other = await fixture(variant);
+    const f = await fixture(variant, { transportFactory: base => (target, init) =>
+      new URL(target).port === '47633' ? other.host.nativeFetch(target.replace(':47633', ':47631'), init) : base(target, init) });
     const url = 'http://127.0.0.1:47632';
     try {
       const before = [...f.values];
@@ -48,9 +51,9 @@ for (const variant of variants) {
       assert.equal(f.bridge.getSyncJob().targetUrl, url);
       assert.equal((await f.bridge.inspectModePublication()).status, 'observed');
       await assert.rejects(() => f.bridge.setGlobalMode('server_only', { url: 'http://127.0.0.1:47633' }),
-        error => error.code === 'MEMORY_SUITE_SERVER_URL_IN_USE');
+        error => error.code === 'MEMORY_SUITE_SERVER_URL_IN_USE' && error.details?.reason === 'different_data');
       assert.equal(await savedUrl(f, namespace), url);
-    } finally { await f.close(); }
+    } finally { await f.close(); await other.close(); }
   });
 
   test(namespace + ': Apply includes a chat added after a read-only preview', async () => {

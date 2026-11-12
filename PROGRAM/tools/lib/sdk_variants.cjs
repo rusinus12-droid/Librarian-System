@@ -3,7 +3,8 @@
 // a consumer's preserved SDK with the newer active-writer runtime.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 // Reviewed manager-only health and saved-server-address delta; local-only consumers retain their pin.
-const managerOnlyConsumerSha256='bfacb47b747b7eef6152024b807a36132071c8484a2a0baac256a11edab066f1';
+// 2026-11-12: the manager surface also exposes setServerUrl, so RE:TRACE can follow a changed server port.
+const managerOnlyConsumerSha256='3664d32e131cc8f812b1bb7505ce9bbd42e642a4ec730031598967a837ebc994';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
 const gradiaReadOnlyConsumerSha256='1c96e747a1625fc9044a1c5ef889fef7756948352c5bd95ff6898f8388a2c7f4';
 const STORAGE_VARIANTS=Object.freeze({
