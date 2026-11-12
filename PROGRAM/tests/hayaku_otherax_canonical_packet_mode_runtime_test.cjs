@@ -117,26 +117,28 @@ const runTurn = async ({ otherAx, afterRequestAutoRepair }) => {
   assert.equal(onWithAfter.calls, 1, 'ON: exactly one Other Ax call per turn');
   assert.equal(onWithAfter.captured.packetAuthor, 'otherax_canonical');
 
-  // The effective setting and the saved values keep afterRequest auto repair off while otherAX is on.
+  // otherAX pauses afterRequest auto repair at run time only. The saved switch keeps its value,
+  // so turning otherAX off in a later edit brings the previous choice back.
   const s = await createHayakuRuntime({ afterRequestAutoRepair: true, arguments: { hayaku_otherax_canonical_packet: 'true' } });
   try {
+    const savedValues = async () => { const saved = JSON.parse(await s.pluginStorage.getItem('hayaku.v2.settings.values.v1') || '{}'); return saved.values || saved; };
     const current = await s.hayaku.settingsControl.current();
     assert.equal(current.hayaku_otherax_canonical_packet, 'true');
-    assert.equal(current.hayaku_after_request_auto_repair, 'false', 'otherAX on turns afterRequest auto repair off');
+    assert.equal(current.hayaku_after_request_auto_repair, 'true', 'otherAX on leaves the saved afterRequest value as it was');
+    const on = await s.hayaku.settingsControl.apply({ hayaku_otherax_canonical_packet: 'true', hayaku_after_request_auto_repair: 'true' });
+    assert.equal(on.ok, true, 'a save with both on passes readback: ' + JSON.stringify(on).slice(0, 400));
+    assert.notEqual((await savedValues()).hayaku_after_request_auto_repair, 'false', 'saving with otherAX on never overwrites afterRequest with false');
     const off = await s.hayaku.settingsControl.apply({ hayaku_otherax_canonical_packet: 'false' });
-    assert.equal(off.ok, true, 'turning otherAX off saves even though afterRequest was masked: ' + JSON.stringify(off).slice(0, 600));
+    assert.equal(off.ok, true, 'turning otherAX off saves: ' + JSON.stringify(off).slice(0, 600));
     const afterOff = await s.hayaku.settingsControl.current();
     assert.equal(afterOff.hayaku_otherax_canonical_packet, 'false');
-    assert.equal(afterOff.hayaku_after_request_auto_repair, 'false', 'the masked value is stored as it was shown, not resurfaced');
-    const reenabled = await s.hayaku.settingsControl.apply({ hayaku_after_request_auto_repair: 'true' });
-    assert.equal(reenabled.ok, true, 'with otherAX off, afterRequest can be turned back on');
-    const applied = await s.hayaku.settingsControl.apply({ hayaku_otherax_canonical_packet: 'true', hayaku_after_request_auto_repair: 'true' });
-    assert.equal(applied.ok, true, 'a save that asks for both keeps them consistent instead of failing readback: ' + JSON.stringify(applied).slice(0, 400));
-    const saved = JSON.parse(await s.pluginStorage.getItem('hayaku.v2.settings.values.v1'));
-    const savedValues = saved.values || saved;
-    assert.equal(savedValues.hayaku_otherax_canonical_packet, 'true');
-    assert.equal(savedValues.hayaku_after_request_auto_repair, 'false', 'turning otherAX on stores afterRequest auto repair off');
-    assert.equal((await s.hayaku.settingsControl.current()).hayaku_after_request_auto_repair, 'false');
+    assert.equal(afterOff.hayaku_after_request_auto_repair, 'true', 'turning otherAX off in a later edit restores afterRequest auto repair');
+    // An explicit off choice made while otherAX is on is kept too.
+    const choiceOff = await s.hayaku.settingsControl.apply({ hayaku_otherax_canonical_packet: 'true', hayaku_after_request_auto_repair: 'false' });
+    assert.equal(choiceOff.ok, true);
+    const back = await s.hayaku.settingsControl.apply({ hayaku_otherax_canonical_packet: 'false' });
+    assert.equal(back.ok, true);
+    assert.equal((await s.hayaku.settingsControl.current()).hayaku_after_request_auto_repair, 'false', 'an explicit off choice survives otherAX');
   } finally { await s.dispose(); }
   console.log('PASS hayaku_otherax_canonical_packet_mode_runtime_test');
 })().catch(error => { console.error(error); process.exitCode = 1; });

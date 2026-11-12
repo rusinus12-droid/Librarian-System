@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.0.0",
-  "generatedAt": "2026-11-12T14:10:36.121Z",
+  "generatedAt": "2026-11-12T15:52:15.488Z",
   "server": {
     "version": "1.0.0",
     "protocol": {
@@ -3844,7 +3844,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "2c232da0730765fc4d4c52e01f55a44f7f74231b92b19d4ff7771726aeedb3f9",
+      "sha256": "76539bac3783b111a8cb35bf7ab87b5c6165fedcbadf45b28090b67016e7c824",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4252,8 +4252,8 @@
       "bytes": 3091988
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "04c2988f8d11bcd02d51bd583ec8b316faa3b9909b14479381639773ea65a91c",
-      "bytes": 4269312
+      "sha256": "8f5775b1469bd402d4a5034d01fe5ec729546c96a1a531844a4d4a7400cbf4ad",
+      "bytes": 4269455
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "2c8555f1853d817395434a0c6b744a7848789401b96ccc88694537a195bd0710",
@@ -7352,8 +7352,8 @@
       "bytes": 8454
     },
     "tests/hayaku_otherax_canonical_packet_mode_runtime_test.cjs": {
-      "sha256": "797a4392a539eb2a2d11def42298b0165bd474ddc20186db6a05eef4bdc29efb",
-      "bytes": 10157
+      "sha256": "6555dba9892e915900a1279774e788c99aa535245dcd625294651b0e8dc40399",
+      "bytes": 10367
     },
     "tests/hayaku_otherax_evidence_grounding_runtime_test.cjs": {
       "sha256": "0ec1c5579e84af07fc623c98ff79064f5d37c1ddbf4c999ca77d3a62b4360006",
