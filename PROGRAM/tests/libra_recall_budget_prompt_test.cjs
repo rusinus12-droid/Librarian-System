@@ -48,10 +48,12 @@ test('Classic uses the current line contract and readable State fields without l
  const f=await fixture();t.after(()=>f.r.cleanup());await f.run();
  const messages=await f.control.hooks.beforeRequest([{role:'user',content:'은빛 열쇠는 누가 보관해?'}],'model');
  const block=messages.find(row=>row.role==='system'&&row.content.includes('<LIBRA_CLASSIC_RECALL>'))?.content;
- assert.ok(block);assert.match(block,/selection order, not chronological order/);
- assert.doesNotMatch(block,/@T<n>|RELEVANT HISTORY|SCENE DETAILS|object_state|lifecycleId|holderRef|participants: \[\]/);
- assert.match(block,/은빛 열쇠 — 소지자: 민아/);
- assert.match(block,/\[세계 · state · T5\]/);
+ // Sectioned by authority: the present (State) first, then records oldest first with their recorded turn.
+ assert.ok(block);assert.match(block,/Sections, in order of authority: CURRENT STATE is how things stand now/);
+ assert.doesNotMatch(block,/@T<n>|object_state|lifecycleId|holderRef|participants: \[\]|selection order|\[세계 · state/);
+ assert.match(block,/\[CURRENT STATE · as of T5 — how things stand now\]\n(?:- .*\n)*- 은빛 열쇠 — 소지자: 민아/);
+ const history=block.indexOf('[RECORDED HISTORY');
+ assert.ok(history<0||history>block.indexOf('[CURRENT STATE'),'records follow the present');
  assert.equal(f.r.api.getRuntime().lastMemoryInjectionMeta.finalVerification.status,'verified');
 });
 

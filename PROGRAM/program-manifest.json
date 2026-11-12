@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.0.0",
-  "generatedAt": "2026-11-11T17:27:16.475Z",
+  "generatedAt": "2026-11-11T23:59:00.185Z",
   "server": {
     "version": "1.0.0",
     "protocol": {
@@ -3832,7 +3832,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "acaa100f07b620783191fb1806783c22002f87125827d86971df9ad7b8d9f425",
+      "sha256": "39b822950ba9b605e2b0cae649cb9511661af9f19ccf055fa8a1308b02a28c2a",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4248,8 +4248,8 @@
       "bytes": 800005
     },
     "plugins/LIBRA.js": {
-      "sha256": "f7889965b07f9a3e363fc3c5ba28af38416f483cb1fbbcf5b18e3a0933853a8b",
-      "bytes": 6508139
+      "sha256": "1840ddae396654d1c01c88a780eb08d4f5f068cd407ad10f805a44ecd659c1eb",
+      "bytes": 6512631
     },
     "plugins/RETRACE.js": {
       "sha256": "741d361f347f49aeaf839dce7aba6eb8378e0ab3300fa013c0a5ca4a098cb3ba",
@@ -8284,8 +8284,8 @@
       "bytes": 13399
     },
     "tests/libra_custom_memory_lens_pipeline_runtime_test.cjs": {
-      "sha256": "6d5ed9576783c13928c61d86530e995cd30e98d3ff0d80fc50bde9955c386f14",
-      "bytes": 6686
+      "sha256": "c26a78953406e5b53ee19907b1d8d18952e4513772310b15ab0e1202dcb9d910",
+      "bytes": 6797
     },
     "tests/libra_custom_memory_lens_runtime_test.cjs": {
       "sha256": "795885c96b71b269bca2525786e73451b64cdbd09483935b47492cff094701c7",
@@ -8416,8 +8416,8 @@
       "bytes": 2235
     },
     "tests/libra_gradia_lens_ipc_runtime_test.cjs": {
-      "sha256": "b701778434b384111e72ada10d869d878d6dd2996904b9d8dbcb98b7f31c5d72",
-      "bytes": 8153
+      "sha256": "a1f8121ac3b7eef9d7f69d5110cbf7548f457ff680b54d99c99f0c0ae64a2b78",
+      "bytes": 8167
     },
     "tests/libra_gradia_ranked_frontier_basic.test.cjs": {
       "sha256": "7f8fb27ee31147a47f59268ed589eb1b19216affefa4e8ae917d8d6df77ede42",
@@ -9472,8 +9472,8 @@
       "bytes": 3831
     },
     "tests/libra_recall_budget_prompt_test.cjs": {
-      "sha256": "04ba772233edd58f5da331621aed41a653cb47f4636f57f85b5d8f0120d2a7a8",
-      "bytes": 6995
+      "sha256": "d164b7fcd43f86a389c6dabf75de66a22d27074c27887a258320569a8d011366",
+      "bytes": 7298
     },
     "tests/libra_recall_concurrent_manifest_runtime_test.cjs": {
       "sha256": "7a8486d0d38cfd3cf142d8b50733956b73ca799f7434850c6390326aa1de44d1",
@@ -9820,16 +9820,16 @@
       "bytes": 6629
     },
     "tests/libra_state_memory_engine_test.cjs": {
-      "sha256": "7fa740cfa24933c2d7715becfb3c75fe0e14ba4be70454b468ba5b8b1bffc0e0",
-      "bytes": 20490
+      "sha256": "cff763b2c75682c88133079a6ab774eb2dc3cdfc7b969ba2a2492c0d6322b6ef",
+      "bytes": 20958
     },
     "tests/libra_state_memory_projection_runtime_test.cjs": {
       "sha256": "15b783b10eb2104944daba3d53b73f44b7c6a2e14351b65bb559e67505540c86",
       "bytes": 6009
     },
     "tests/libra_state_memory_runtime_test.cjs": {
-      "sha256": "878af493f9f510d797ad135da2a93f9358a993e8dd001250b4581bba9c054699",
-      "bytes": 19716
+      "sha256": "ccddf88b7c69cc4b956878705e4004c9963cdd7e23073e5020a8056b69f169da",
+      "bytes": 20168
     },
     "tests/libra_state_memory_semantic_test.cjs": {
       "sha256": "6d3eb2a189704bb128e78e7e1998bb1753f8ea80c775650da6165594a8e33547",
@@ -11884,16 +11884,16 @@
       "bytes": 4034
     },
     "tools/libra_state_memory_capture.cjs": {
-      "sha256": "a85142c3665c60107594c3f938d376e662e5f084dfc8245c3794a2b7c15e5ecc",
-      "bytes": 3301
+      "sha256": "27f934abd129f07e9ad6933b358ee778ff1c36ade421102f30b4a523d8d68a67",
+      "bytes": 3481
     },
     "tools/libra_state_memory_engine.cjs": {
-      "sha256": "890303a9caeee4e10a3cf25bc5b1278de7a05aef1950a2d618aa3eb295cce78a",
-      "bytes": 34354
+      "sha256": "0178744210d759287aebbde099fc493d34328ec655f3b238ebd2122ce45c29c8",
+      "bytes": 35351
     },
     "tools/libra_state_memory_runtime.cjs": {
-      "sha256": "5495b6a4b4528e7acb999a70c38515da19dde8064ff663c2308ad8ca41c99b0f",
-      "bytes": 12463
+      "sha256": "87b882655b1e14539fccf4de17a97bf870556d4b02d1ea640af945466189cd20",
+      "bytes": 15547
     },
     "tools/llm_fail_gate_unit_test.js": {
       "sha256": "cae70ac4a93fe34c81df139b8ecc15583ee1297adc7873d23b164ffb9972d67c",

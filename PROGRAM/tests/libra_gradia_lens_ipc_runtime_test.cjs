@@ -61,7 +61,7 @@ for(const mode of ['plugin_only','server_only'])test(`${mode}: actual RisuAI cha
  assert.equal(prompts.length,4,JSON.stringify(g.plugin.getRuntime().last));
  assert.ok(prompts.every(body=>JSON.stringify(body).includes(QUOTE)),'unified Micro in each actual model request');
  assert.ok(prompts.every(body=>JSON.stringify(body).includes('LENS_IPC_ONLY')),'lens notes in each actual model request');
- assert.ok(prompts.every(body=>JSON.stringify(body).includes('do not override explicit source facts')),'noncanonical precedence travels with the lens notes');
+ assert.ok(prompts.every(body=>JSON.stringify(body).includes('they never override CURRENT STATE or recorded facts')),'noncanonical precedence travels with the lens notes');
  assert.ok(output.some(row=>row.content?.includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1')));
  assert.equal(lensBytes(),before,'reading creates no lens storage mutations');assert.equal(f.control.calls.length,calls);
  const replies=bus.messages.filter(m=>['capture','select'].includes(m.body.action)&&m.body.kind==='response'&&JSON.stringify(m.body.result||{}).includes('LENS_IPC_ONLY'));

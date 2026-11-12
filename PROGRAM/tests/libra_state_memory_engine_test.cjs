@@ -63,12 +63,16 @@ test('lens reserves 40% while the remaining 60% follows the question instead of 
   const rows = ['lens','canonical','micro','state'].flatMap(family => Array.from({ length: 30 }, (_, n) => ({
     id: family + n, family, axis: 'world', text: family + ' 은빛 열쇠 ' + n
   })));
-  for (const [query, intent, family] of [['열쇠 지금 보유자', 'current', 'state'], ['열쇠 과거 경위', 'history', 'canonical'], ['열쇠 정확한 발언', 'detail', 'micro']]) {
+  // Relevant State always leads the evidence share; a history or detail question keeps two thirds for its records.
+  for (const [query, intent, family, stateLead] of [['열쇠 지금 보유자', 'current', 'state', 12], ['열쇠 과거 경위', 'history', 'canonical', 4], ['열쇠 정확한 발언', 'detail', 'micro', 4]]) {
     const plan = engine.allocationPlan(query);
     const result = engine.select({ rows, query, maxItems: 20, maxCharacters: 10000, plan });
     assert.equal(plan.intent, intent);
     assert.equal(result.items.filter(row => row.family === 'lens').length, 8);
-    assert.equal(result.items.filter(row => row.family === family).length, 12);
+    const evidence = result.items.filter(row => row.family !== 'lens');
+    assert.deepEqual(evidence.slice(0, stateLead).map(row => row.family), Array(stateLead).fill('state'), intent + ': State leads');
+    assert.equal(result.items.filter(row => row.family === 'state').length, stateLead);
+    assert.equal(result.items.filter(row => row.family === family).length, family === 'state' ? 12 : 12 - stateLead);
     assert.equal(result.budget.familyAllocation.lens.targetCharacters, 4000);
     assert.equal(result.budget.familyAllocation.evidence.weight, 60);
     assert.equal(result.budget.familyAllocation.canonical, undefined);

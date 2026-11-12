@@ -285,7 +285,8 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       knowledge:'알고 있는 내용',preferences:'선호',boundaries:'경계',affiliations:'소속',condition:'상태',doorStatus:'문 상태',value:'내용',
       summary:'요약',title:'제목',status:'진행 상태',participants:'관련 인물',resolvedTurn:'종결 기록 턴',description:'설명',rule:'규칙',interpretation:'해석',momentum:'서사 흐름',
       scopeRef:'적용 대상',exceptions:'예외',effect:'효과',personTempRef:'인물',organizationTempRef:'조직',text:'내용',
-      organizationRef:'조직',access:'접근 조건',affiliation:'소속',locks:'제약',notes:'비고',detail:'세부 내용',time:'시점',count:'수량',locked:'잠금 여부' };
+      organizationRef:'조직',access:'접근 조건',affiliation:'소속',locks:'제약',notes:'비고',detail:'세부 내용',time:'시점',count:'수량',locked:'잠금 여부',
+      trust:'신뢰',affection:'호감',attitude:'태도',closeness:'친밀도',tension:'긴장',dynamic:'관계 양상',role:'관계',feelings:'감정' };
     const statuses = { open:'미해결',active:'진행 중',resolved:'해결됨',closed:'종결됨',pending:'보류 중',unknown:'알 수 없음' };
     const metadata = new Set(['evidenceSpans','evidenceRefs','firstTurn','lastTurn','identityEvidence','aliasEvidence',
       'fieldEvidence','fieldCandidates','clearedFieldEvidence','fieldCorrectionProvenance','clearedFieldCorrectionProvenance',
@@ -472,14 +473,23 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     };
 
     const familyAllocation = {};
+    const groups = plan ? [{ key: 'lens', weight: plan.lensSharePercent, items: Math.round(maxItems * plan.lensSharePercent / 100) },
+      { key: 'evidence', weight: 100 - plan.lensSharePercent, items: maxItems - Math.round(maxItems * plan.lensSharePercent / 100) }] : [];
+    // State holds the present, so the State fields that bear on the request lead every intent. The
+    // intent only orders the records (canonical, Micro) that explain the past. A history or detail
+    // question still keeps room for those records: State then leads with a third of the evidence share.
+    const evidenceItems = groups.find(group => group.key === 'evidence')?.items || maxItems;
+    const stateLeadLimit = ['history','detail'].includes(plan?.intent) ? Math.max(1, Math.ceil(evidenceItems / 3)) : evidenceItems;
+    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0)
+      .sort((a, b) => b.score - a.score).slice(0, stateLeadLimit).map(row => row.id));
+    const tier = row => row.family !== 'state' ? 1 : leadingState.has(row.id) ? 0 : 2;
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
       if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
         || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
-      return plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score;
+      return tier(a) - tier(b)
+        || (plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score);
     }) : candidates;
-    const groups = plan ? [{ key: 'lens', weight: plan.lensSharePercent, items: Math.round(maxItems * plan.lensSharePercent / 100) },
-      { key: 'evidence', weight: 100 - plan.lensSharePercent, items: maxItems - Math.round(maxItems * plan.lensSharePercent / 100) }] : [];
     for (const group of groups) {
         const targetCharacters = Math.floor(maxCharacters * group.weight / 100);
         let used = 0, count = 0;

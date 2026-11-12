@@ -73,7 +73,8 @@ const results = [];
     const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: '지호가 열쇠를 돌려주기로 한 약속은 어떻게 됐지?' }], 'model');
     const system = messages.filter(message => message.role === 'system').map(message => String(message.content)).join('\n');
     assert.match(system, /<LIBRA_CLASSIC_RECALL>/);
-    assert.match(system, /\[인물 · lens · T5\] \[PERSPECTIVE NOTES · NON-CANONICAL\] - \[약속 추적\] \(T1–T5 · 약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
+    // Lens notes are their own section under the present and the records; each keeps its lens, span and label.
+    assert.match(system, /\[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records\]\n- \[약속 추적\] \(T1–T5 · 약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
     const context = f.r.api.getLastResponseContext();
     const validity = await f.r.api.validateResponseContext(context);
     assert.equal(validity.ok, true, JSON.stringify(validity));
@@ -86,7 +87,7 @@ const results = [];
 
     await f.r.api.trashLens(lens.lensId);
     const after = await f.control.hooks.beforeRequest([{ role: 'user', content: '지호가 열쇠를 돌려주기로 한 약속은 어떻게 됐지?' }], 'model');
-    assert.ok(!after.some(message => /\[인물 · lens · T\d+\].*\[약속 추적\]/.test(String(message.content))), 'a trashed lens is not recalled');
+    assert.ok(!after.some(message => /^- \[약속 추적\]/m.test(String(message.content))), 'a trashed lens is not recalled');
     assert.ok(!(f.r.api.getLastMemoryRecallViewer()?.lensRecall?.injectedItems || []).some(item => item.lensId === lens.lensId));
     results.push('a trashed lens is excluded from delivery');
 

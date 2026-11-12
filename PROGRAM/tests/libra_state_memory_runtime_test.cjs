@@ -30,7 +30,11 @@ test('real lens records participate in direct recall and Classic delivery withou
   const result = await f.api.executeStateMemoryQuery(options);
   assert.ok(result.bundle.items.some(row => row.family === 'lens' && row.semanticRole === 'perspective_note'));
   assert.equal(result.diagnostics.familyAllocation.lens.weight, 40);
-  assert.match(result.packet.renderedText, /PERSPECTIVE NOTES.*비|PERSPECTIVE NOTES.*NON-CANONICAL/);
+  // Lens notes sit in their own section below the present and the records, marked as interpretations.
+  const rendered = result.packet.renderedText;
+  assert.match(rendered, /\n\[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records\]\n- .*민아는 은빛 열쇠의 반환을 유난히 신경 썼다\./);
+  assert.ok(rendered.indexOf('[CURRENT STATE') < rendered.indexOf('[PERSPECTIVE NOTES'));
+  assert.equal(rendered.split('PERSPECTIVE NOTES').length - 1, 1, 'the lens marker is a section heading, not a per-line prefix');
   const messages = await f.control.hooks.beforeRequest([{ role: 'user', content: '은빛 열쇠의 반환' }], 'model');
   const injected = messages.filter(message => message.role === 'system').map(message => message.content).join('\n');
   assert.equal(injected.split('민아는 은빛 열쇠의 반환을 유난히 신경 썼다.').length - 1, 1);

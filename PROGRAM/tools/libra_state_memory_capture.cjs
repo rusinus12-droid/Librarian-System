@@ -13,7 +13,8 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
       const value = await native.canonical(context, ref, snapshot, semantic); check();
       return { key: ref.key, proofs: value.proofs, assertCurrent: value.assertCurrent, rows: value.rows.map((row, n) => ({ ...row,
         id: 'canonical:' + native.fingerprint([ref.key, ref.revision, n]), family: 'canonical', axis: engine.axisFor(row.domain),
-        sourceKey: ref.key, turn: Number(ref.turnRange?.end || 0) })) };
+        // A canonical memory covers a turn span; its facts are dated by that whole span, not by its last turn.
+        sourceKey: ref.key, turn: Number(ref.turnRange?.end || 0), turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0) })) };
     };
     const micro = async turn => {
       const value = await native.micro(context, snapshot, turn); check();

@@ -77,17 +77,67 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
     const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
-    const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
-    const sources = loaded.filter(item => chosen.has(item.key));
-    const publicItems = selected.items.map(item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
+    const stateAsOfTurn = frame.head?.throughTurn ?? null;
+    const latestTurn = frame.turns.at(-1) || 0;
+    const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
+    const toPublic = item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
       semanticRole: item.family === 'lens' ? 'perspective_note' : item.family === 'state' ? 'projected_state'
         : item.family === 'micro' && item.analysisStatus === 'minimum_source_bound' ? 'source_only' : 'recorded_evidence',
       ...(item.family === 'state' ? { stateStatus: item.stateStatus } : {}), text: item.promptText || item.text, score: item.score,
-      turn: item.turn || 0, sourceKey: item.sourceKey || frame.stateKey }));
-    const generation = fingerprint(JSON.stringify([frame.identity, publicItems]));
-    const renderedText = publicItems.map(item => `[${engine.labels[item.axis]} · ${item.family}${item.turn ? ' · T' + item.turn : ''}${item.stateStatus === 'last_known' ? ' · last_known' : ''}] ${item.text}`).join('\n');
-    // Rendering overhead participates in the same hard cap as the selection.
+      turn: item.turn || 0, ...(Number(item.turnStart) > 0 && Number(item.turnStart) < Number(item.turn) ? { turnStart: Number(item.turnStart) } : {}),
+      sourceKey: item.sourceKey || frame.stateKey });
+    // One document in order of authority: the present first, then what happened, then how a lens read
+    // it, then the source observations. Records are listed oldest first and each keeps its recorded turn,
+    // so a line that is no longer true reads as an earlier moment rather than as the present.
+    const render = items => {
+      if (!items.length) return '';
+      const span = item => { const end = Number(item.turn || 0), start = Number(item.turnStart || end);
+        return end ? (start && start < end ? `T${start}–${end}` : `T${end}`) : 'T?'; };
+      const oldestFirst = list => list.slice().sort((a, b) => Number(a.turnStart || a.turn || 0) - Number(b.turnStart || b.turn || 0)
+        || Number(a.turn || 0) - Number(b.turn || 0));
+      const family = name => items.filter(item => item.family === name);
+      const state = family('state'), lines = [];
+      const lastKnown = state.some(item => item.stateStatus === 'last_known');
+      if (state.length) {
+        lines.push(`[CURRENT STATE · ${stateAsOfTurn != null ? `as of T${stateAsOfTurn}` : 'turn unknown'}${lastKnown ? ' · includes last_known' : ''} — how things stand now]`);
+        if (turnLag) lines.push(`(Turns after T${stateAsOfTurn} are not reflected here yet; a record below dated after T${stateAsOfTurn} is newer than this State.)`);
+        for (const item of state) lines.push(`- ${item.text}${item.stateStatus === 'last_known' ? ' (last_known)' : ''}`);
+      } else lines.push('[CURRENT STATE · none selected — the records below are earlier moments; do not assert them as the present]');
+      const canonical = oldestFirst(family('canonical'));
+      if (canonical.length) {
+        lines.push('[RECORDED HISTORY · canonical · oldest first — true at the recorded turn, not necessarily now]');
+        for (const item of canonical) lines.push(`- (${span(item)}) ${item.text}`);
+      }
+      const lens = oldestFirst(family('lens'));
+      if (lens.length) {
+        lines.push('[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records]');
+        for (const item of lens) {
+          const text = String(item.text).replace(/^\[PERSPECTIVE NOTES · NON-CANONICAL\]\s*/, '');
+          lines.push(text.startsWith('- ') ? text : `- ${text}`);
+        }
+      }
+      const micro = oldestFirst(family('micro'));
+      if (micro.length) {
+        lines.push('[SCENE DETAILS · Micro source observations · oldest first]');
+        for (const item of micro) lines.push(`- (${span(item)}) ${item.text}`);
+      }
+      return lines.join('\n');
+    };
+    // The selection charges each line, not the section headings. When the headings tip the document
+    // over the hard cap, the lines chosen last (the lowest priority) give way, State last of all.
+    let kept = selected.items.map(toPublic), renderedText = render(kept);
+    while (renderedText.length > maxCharacters && kept.length) {
+      const drop = kept.filter(item => item.family !== 'state').at(-1) || kept.at(-1);
+      kept = kept.filter(item => item !== drop);
+      renderedText = render(kept);
+    }
     if (renderedText.length > maxCharacters) fail('LIBRA_STATE_CHARACTER_BUDGET');
+    const publicItems = kept;
+    const keptIds = new Set(publicItems.map(item => item.id));
+    selected.items = selected.items.filter(item => keptIds.has(item.id));
+    const chosen = new Set(selected.items.map(item => item.sourceKey).filter(Boolean));
+    const sources = loaded.filter(item => chosen.has(item.key));
+    const generation = fingerprint(JSON.stringify([frame.identity, publicItems]));
     const packet = { schema: 'libra.state_memory_packet.v1', consumer: policy.consumer || 'classic',
       renderedText, characterLength: renderedText.length, admittedNodeIds: publicItems.map(item => item.id) };
     const packetDigest = fingerprint(JSON.stringify(packet));
@@ -111,9 +161,6 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // stored search text and reading each one that matched.
     const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= frame.turns.length && ranked.matchesRead === ranked.matches;
     const complete = refs.length === frame.refs.length && (turns.length === frame.turns.length || microScreened) && !failures.length && !payloadLimited;
-    const stateAsOfTurn = frame.head?.throughTurn ?? null;
-    const latestTurn = frame.turns.at(-1) || 0;
-    const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
     const headFreshness = stateAsOfTurn == null ? 'absent' : frame.stateAuthority?.pending ? 'partial' : (turnLag === 0 ? 'current' : 'lagging');
     const pointInTimeNotice = headFreshness === 'partial' || turnLag && turnLag > 0
       ? `State includes verified projections through turn ${stateAsOfTurn}; unresolved or later changes remain unconfirmed.`
@@ -145,7 +192,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       guiSearch: { sourceKeys: loaded.filter(item => item.rows.some(row => engine.score(row.text, queryText) > 0 || row.semanticScore > 0)).map(item => item.key), complete,
         stopReason: complete ? '' : 'candidate_budget' } };
     authorityStore.set(result, { validatePacket, release, displayRows: publicItems.map(item => ({ ...item, memoryKey: item.sourceKey,
-      scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turn, end: item.turn } })) });
+      scopeKey: frame.scope.scopeKey, worldlineId: frame.worldlineId, turnRange: { start: item.turnStart || item.turn, end: item.turn } })) });
     try {
       await validatePacket(packet);
       // A frame that saw a concurrent change is closed by settle; prove once more without it.
