@@ -179,16 +179,24 @@ jobs:
           const { execSync } = require("node:child_process");
           const { VERSION_TRANSACTION_RELATIVE_FILES } = require("./PROGRAM/tools/build_distribution.cjs");
 
-          const status = execSync("git status --porcelain", { encoding: "utf8" }).trim();
-          if (!status) {
+          // -z with quotePath off: paths come back as raw UTF-8 (0_설치_안내.txt), not as the
+          // quoted octal escapes git prints by default, so they compare with the allowed list.
+          const status = execSync("git -c core.quotePath=false status --porcelain=v1 -z --untracked-files=all", { encoding: "utf8" });
+          const entries = status.split("\0").filter(Boolean);
+          if (!entries.length) {
             console.error("No file modifications found after version bump");
             process.exit(1);
           }
 
           const allowed = new Set(VERSION_TRANSACTION_RELATIVE_FILES);
-          const lines = status.split("\n").filter(Boolean);
-          for (const line of lines) {
-            const file = line.slice(3).trim();
+          const files = [];
+          for (let index = 0; index < entries.length; index += 1) {
+            const code = entries[index].slice(0, 2);
+            files.push(entries[index].slice(3));
+            // A rename or copy is followed by its source path as a separate entry.
+            if (/[RC]/.test(code)) files.push(entries[++index]);
+          }
+          for (const file of files) {
             if (!allowed.has(file)) {
               console.error(`Disallowed file modified outside VERSION_TRANSACTION_RELATIVE_FILES: ${file}`);
               process.exit(1);
