@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.0.0
+//@display-name LIBRA v3.0.1
 //@api 3.0
-//@version 3.0.0
+//@version 3.0.1
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.0';
+  const PLUGIN_VERSION = '3.0.1';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -4221,6 +4221,93 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if ((await readSavedServerUrl()) !== String(value).trim()) { const error = new Error('memory_suite_server_url_readback_mismatch'); error.code = 'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'; throw error; }
     return true;
   };
+  // The physical DATA this plugin last reached at its configured address. Its identity comes from
+  // the DATA's own token, not from the port, so it proves a moved server is still the same DATA.
+  const SAVED_SERVER_DATA_KEY = `__memory_suite_internal_server_data_v1__:${namespace}`;
+  const SERVER_DATA_SCHEMA = 'memory-suite.server-data-binding.v1';
+  let rememberedServerData = '';
+  const readSavedServerData = async () => {
+    try {
+      const raw = await rawPluginStorage()?.getItem?.(SAVED_SERVER_DATA_KEY);
+      const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return value?.schema === SERVER_DATA_SCHEMA && value.namespace === namespace
+        && value.dataIdentityContract === 'memory-suite.physical-data-identity.v1'
+        && /^[A-Za-z0-9_-]{32}$/.test(String(value.dataInstanceId || '')) ? value : null;
+    } catch (_) { return null; }
+  };
+  // Explicit mode changes can replace the binding. An existing server-backed install can
+  // establish its first binding at the configured endpoint without reapplying its mode.
+  const rememberServerData = async (identity, { initialize = false } = {}) => {
+    if (identity?.dataIdentityCertified !== true || identity.dataIdentityContract !== 'memory-suite.physical-data-identity.v1'
+      || !/^[A-Za-z0-9_-]{32}$/.test(String(identity.dataInstanceId || ''))) return;
+    const serialized = JSON.stringify({schema:SERVER_DATA_SCHEMA, namespace, dataInstanceId:identity.dataInstanceId,
+      dataIdentityContract:identity.dataIdentityContract});
+    if (rememberedServerData === serialized) return;
+    try {
+      const store = rawPluginStorage();
+      if (!store?.getItem || !store?.setItem) return;
+      const previous = await store.getItem(SAVED_SERVER_DATA_KEY);
+      if (previous !== serialized) {
+        if (initialize) {
+          if (previous != null && previous !== '') return;
+          const currentUrl = await configuredServerUrlNow();
+          if (currentUrl !== identity.requestedUrl || modeConfigurationBusy || storageTransition) return;
+        }
+        await store.setItem(SAVED_SERVER_DATA_KEY, serialized);
+        if (await store.getItem(SAVED_SERVER_DATA_KEY) !== serialized) return;
+      }
+      rememberedServerData = serialized;
+    } catch (_) {}
+  };
+  const initializeConfiguredServerData = async connection => {
+    if (rememberedServerData || !scopeRoutingEnabled || localOnlyOwner || modeConfigurationBusy || storageTransition
+      || connection.dataIdentityCertified !== true) return;
+    try {
+      const raw = await rawPluginStorage()?.getItem?.(SCOPE_ROUTING_LOCAL_KEY);
+      const registry = mergeScopeRegistries(raw);
+      const serverBacked = Object.values(registry.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY);
+      const legacyMode = !registry.legacyGlobalModeImported && !serverBacked
+        ? normalizeMode(await getArgumentValue(modeArguments, MODE_PLUGIN_ONLY)) : MODE_PLUGIN_ONLY;
+      if (serverBacked || legacyMode !== MODE_PLUGIN_ONLY) await rememberServerData(connection, { initialize:true });
+    } catch (_) {}
+  };
+  // A server-backed plugin may follow its own DATA to a new address, never move to other DATA.
+  const sameServerDataAt = async targetUrl => {
+    const saved = await readSavedServerData();
+    if (!saved) return { same:false, reason:'server_data_unknown' };
+    const probe = await testConnection(targetUrl);
+    if (!probe?.ok) return { same:false, reason:'target_unreachable', error:probe?.error || '' };
+    const same = probe.dataIdentityCertified === true && probe.dataIdentityContract === saved.dataIdentityContract
+      && probe.dataInstanceId === saved.dataInstanceId;
+    return { same, reason:same ? 'same_data' : 'different_data' };
+  };
+  // The access key of a server opened to other hosts. Like the address it is kept per namespace
+  // in pluginStorage; it travels only on /bootstrap and the bridge never hands it back.
+  const SAVED_SERVER_ACCESS_KEY_KEY = `__memory_suite_internal_server_access_key_v1__:${namespace}`;
+  const SERVER_ACCESS_KEY_PATTERN = /^[A-Za-z0-9_-]{32,256}$/;
+  const readSavedAccessKey = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_ACCESS_KEY_KEY);
+      const key = value === undefined || value === null ? '' : String(value).trim();
+      return SERVER_ACCESS_KEY_PATTERN.test(key) ? key : '';
+    } catch (_) { return ''; }
+  };
+  const accessKeyHeaders = async () => {
+    const key = await readSavedAccessKey();
+    return key ? { 'X-Memory-Suite-Access-Key': key } : {};
+  };
+  const persistServerAccessKey = async value => {
+    const key = String(value ?? '').trim();
+    if (key && !SERVER_ACCESS_KEY_PATTERN.test(key)) throw Object.assign(new Error('memory_suite_access_key_invalid'), { code:'MEMORY_SUITE_ACCESS_KEY_INVALID' });
+    const storage = rawPluginStorage();
+    if (!storage?.setItem) throw Object.assign(new Error('memory_suite_access_key_storage_unavailable'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    if (key) await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, key);
+    else if (typeof storage.removeItem === 'function') await storage.removeItem(SAVED_SERVER_ACCESS_KEY_KEY);
+    else await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, '');
+    if ((await readSavedAccessKey()) !== key) throw Object.assign(new Error('memory_suite_access_key_readback_mismatch'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    resetBootstrapCache();
+    return { configured: !!key };
+  };
   const getArgumentValue = async (names, fallback = '') => {
     if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
@@ -4418,8 +4505,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const parsed = new URL(raw);
       const host = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-      if (parsed.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host)) {
-        throw new Error('server_url_must_be_loopback_http');
+      // http:// only for this machine (and a container's view of it). Any other address is another
+      // device and must come through a tunnel's https:// address (tailscale serve, Cloudflare Tunnel).
+      const loopback = ['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host);
+      if (parsed.username || parsed.password || !host
+        || !((parsed.protocol === 'http:' && loopback) || parsed.protocol === 'https:')) {
+        throw new Error(loopback || parsed.protocol !== 'http:' ? 'server_url_must_be_loopback_http_or_https' : 'server_url_remote_requires_https');
       }
       return parsed.origin;
     } catch (error) {
@@ -4527,7 +4618,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       dataInstanceId:pin.dataInstanceId,dataIdentityContract:pin.dataIdentityContract,resetEpoch:pin.resetEpoch};
   };
   const durableJobPinRoles = job => [
-    {role:'source',url:job.sourceUrl,required:normalizeMode(job.sourceMode) !== MODE_PLUGIN_ONLY},
+    {role:'source',url:job.sourceUrl,required:job.sameDataEndpointChange !== true && normalizeMode(job.sourceMode) !== MODE_PLUGIN_ONLY},
     {role:'target',url:job.targetUrl,required:normalizeMode(job.targetMode) !== MODE_PLUGIN_ONLY || job.targetUrl !== job.sourceUrl}
   ];
   const captureDurableJobServerPins = async job => {
@@ -4538,7 +4629,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const assertStoredDurableJobMetadata = async job => {
     const store=state.legacy.plugin;
     let saved;try { const raw=await store?.getItem?.(SYNC_JOB_STORAGE_KEY);saved=typeof raw==='string'?JSON.parse(raw):raw; }catch(_){saved=null;}
-    const fixed=value=>['schema','namespace','jobId','kind','scopeId','sourceMode','sourceUrl','targetMode','targetUrl','serverPins','globalPlan','globalPlanDigest']
+    const fixed=value=>['schema','namespace','jobId','kind','scopeId','sourceMode','sourceUrl','targetMode','targetUrl','sameDataEndpointChange','serverPins','globalPlan','globalPlanDigest']
       .map(field=>value?.[field]);
     if (!saved || jsonComparable(fixed(saved)) !== jsonComparable(fixed(job)))
       throw durableServerPinError('MEMORY_SUITE_JOB_PIN_PERSIST_FAILED');
@@ -4803,7 +4894,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       method: 'GET',
       headers: {
         'X-Memory-Suite-Plugin': pluginId,
-        'X-Memory-Suite-Plugin-Version': pluginVersion
+        'X-Memory-Suite-Plugin-Version': pluginVersion,
+        ...(await accessKeyHeaders())
       }
     }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
     return validateBootstrapPayload(payload, url);
@@ -4974,7 +5066,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         method: 'GET',
         headers: {
           'X-Memory-Suite-Plugin': pluginId,
-          'X-Memory-Suite-Plugin-Version': pluginVersion
+          'X-Memory-Suite-Plugin-Version': pluginVersion,
+          ...(await accessKeyHeaders())
         }
       }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
@@ -4982,6 +5075,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const currentUrl = await configuredServerUrlNow();
       if (lifecycle.disposed || sequence !== bootstrapSequence || currentUrl !== config.url) throw connectionStaleError();
       adoptDataBinding(value);
+      await initializeConfiguredServerData(value);
+      if (lifecycle.disposed || sequence !== bootstrapSequence) throw connectionStaleError();
       if (previous.value?.resetEpochs?.[namespace] !== value.resetEpochs?.[namespace]) cacheQualifiedResetChoice(null);
       if (intent) pinInitialBootstrapIntent(intent, value);
       sharedBootstrapFailures.delete(config.url);
@@ -5083,6 +5178,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         && requestOptions.maintenanceRetry !== false && method === 'POST' && MAINTENANCE_RETRY_ROUTES.includes(route)) {
         await new Promise(resolve => setTimeout(resolve, Math.min(1000, MAINTENANCE_RETRY_BASE_MS * (maintenanceAttempt + 1))));
         return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, maintenanceAttempt: maintenanceAttempt + 1 });
+      }
+      // A token this server start did not sign (restart in remote access mode, mode change or key
+      // rotation): bootstrap again once. The request was refused before it ran, so a retry is safe.
+      if (error?.payload?.reason === 'capability_token_invalid' && requestOptions.capabilityRetry !== true) {
+        resetBootstrapCache();
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, capabilityRetry: true, forceBootstrap: true });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);
@@ -7966,6 +8067,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return true;
   };
   const globalModeError = (code, details) => Object.assign(new Error(code), {code, ...(details ? {details} : {})});
+  // Why a server-backed plugin refused a new address (sameServerDataAt), in words a user can act on.
+  const serverMoveRefusalMessage = reason => reason === 'server_data_unknown'
+    ? '이 플러그인이 기존 서버 DATA의 식별값을 아직 저장하지 못해 새 주소가 같은 DATA인지 확인할 수 없습니다. 다시 시도해도 같습니다. 서버_포트_변경 도구로 이전 포트로 되돌려 서버를 실행하고, 이전 주소에서 기억을 한 번 읽은 뒤 다시 포트를 바꾸세요.'
+    : reason === 'target_unreachable'
+      ? '새 주소의 서버에 연결하지 못했습니다. 서버가 새 포트로 실행 중인지, 원격 접속 모드라면 접근 키를 넣었는지 확인한 뒤 다시 적용하세요.'
+      : reason === 'different_data'
+        ? '새 주소의 서버는 지금 쓰는 서버와 다른 DATA를 엽니다. 주소가 맞는지 확인하세요. 정말 다른 서버로 옮기려면 먼저 플러그인 단독으로 전환하세요.'
+        : '서버에 자료가 있는 상태에서는 다른 서버로 주소를 바꿀 수 없습니다. 다른 서버로 옮기려면 먼저 플러그인 단독으로 전환하세요.';
   const globalCanonical = value => JSON.stringify(value, (_key,item) => item && typeof item === 'object' && !Array.isArray(item)
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]])) : item);
   const globalDigest = async value => {
@@ -9426,7 +9535,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return '서버 초기화 이전의 기억이 기기에만 남아 있어 전환을 보류했습니다. 상세 진단에서 대화와 저장 키를 확인하세요.';
     if (code === 'MEMORY_SUITE_GLOBAL_DISCOVERY_INCOMPLETE') return `대화 목록 또는 자료 목록을 읽지 못했습니다(${(details?.blockers || []).map(row => row.code).slice(0, 3).join(', ') || '원인 미상'}). ${kept}`;
     if (code === 'MEMORY_SUITE_TRANSFER_INCOMPLETE') return `옮기지 못한 항목이 ${Number(details?.failureCount || 0)}개 있습니다. ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
-    if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `지금 서버에 자료가 있는 상태에서는 서버 주소를 바꿀 수 없습니다. 먼저 플러그인 단독으로 전환하세요. ${kept}`;
+    if (code === 'MEMORY_SUITE_SERVER_URL_IN_USE') return `${serverMoveRefusalMessage(details?.reason)} ${kept}`;
     if (/SERVER_UNAVAILABLE|fetch|network|timeout|ECONN/i.test(code)) return `서버에 연결하지 못했습니다. 서버 실행 여부와 주소를 확인하세요. ${kept}`;
     return `전환을 마치지 못했습니다(${code}). ${kept} 다시 적용하면 이미 옮긴 자료는 건너뜁니다.`;
   };
@@ -9495,7 +9604,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         message:publish ? '대화와 자료 목록을 확인하고 있습니다.' : '옮길 자료 목록을 확인하고 있습니다.' };
       state.syncJob.loaded = true;
       notifySyncJob();
-      if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE');
+      if (targetUrl !== configuredUrl && Object.values(registryBefore.entries).some(row => !isRemovedScopeRow(row) && normalizeMode(row.mode) !== MODE_PLUGIN_ONLY)) {
+        const moved = await sameServerDataAt(targetUrl);
+        if (!moved.same) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE', { reason:moved.reason });
+      }
       // Nothing is written until the chat list and both sides have been read.
       inventory = await collectGlobalInventory(target,{url:targetUrl,light:true,requireRemote:forcedSource==='server',
         resolutionPin:transferOptions.resolutionPin,resolutions:publish ? transferOptions.resolutions : []});
@@ -9685,6 +9797,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         currentKey:'', currentAction:'완료', error:'', result:{ ...journalResult, migrated:undefined, warnings:warnings.warnings.slice(0, 16) },
         message:publish ? `저장 위치를 ${modeLabel(target)}(으)로 바꿨습니다.` : '데이터 이동을 마쳤습니다.' });
       committed = true;
+      if (publish && target !== MODE_PLUGIN_ONLY && inventory.serverPin)
+        await rememberServerData({ dataIdentityCertified:true, dataIdentityContract:inventory.serverPin.dataIdentityContract, dataInstanceId:inventory.serverPin.dataInstanceId });
       if (publish) {
         if (inventory.remoteRequired) {
           try {
@@ -11770,11 +11884,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const serverBackedScopes = Object.values(registry?.entries || {})
         .filter(row => normalizeMode(row?.mode) !== MODE_PLUGIN_ONLY)
         .map(row => ({ scopeId:String(row?.scopeId || ''), scopeLabel:String(row?.label || row?.scopeId || ''), mode:normalizeMode(row?.mode) }));
-      if (serverBackedScopes.length) {
+      const moved = serverBackedScopes.length ? await sameServerDataAt(targetUrl) : null;
+      if (serverBackedScopes.length && !moved.same) {
         const error = new Error(`memory_suite_server_url_in_use:${serverBackedScopes.length}`);
         error.code = 'MEMORY_SUITE_SERVER_URL_IN_USE';
-        error.details = { currentUrl, targetUrl, serverBackedScopes };
-        error.userMessage = '서버를 사용하는 스코프가 남아 있어 서버 주소를 변경할 수 없습니다. 해당 스코프들을 먼저 플러그인 단독으로 전환해 주세요.';
+        error.details = { currentUrl, targetUrl, serverBackedScopes, reason:moved.reason };
+        error.userMessage = serverMoveRefusalMessage(moved.reason);
         throw error;
       }
     }
@@ -11787,10 +11902,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let urlChanged = false;
     try {
       if (targetUrl !== currentUrl) {
+        if (operationOptions.assertServerPins) await operationOptions.assertServerPins();
         await persistServerUrl(targetUrl);
         urlChanged = true;
       }
       const modeResult = await scopedSetModeSafely(targetMode, { ...operationOptions, scope });
+      if (targetMode !== MODE_PLUGIN_ONLY && connectionTest?.ok) await rememberServerData(connectionTest);
       const effectiveMode = normalizeMode(modeResult?.effectiveMode || targetMode);
       const from = { mode:currentMode, modeLabel:modeLabel(currentMode), requestedMode:currentMode, effectiveMode:currentMode, url:currentUrl, scope };
       const to = { mode:effectiveMode, modeLabel:modeLabel(effectiveMode), requestedMode:targetMode, effectiveMode, url:targetUrl, scope };
@@ -11855,7 +11972,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const requestedMode = target.requestedMode ? normalizeMode(target.requestedMode) : (target.mode ? normalizeMode(target.mode) : currentMode);
     const currentUrl = normalizeServerUrl(await getArgumentValue(urlArguments, defaultUrl));
     const targetUrl = target.url ? normalizeServerUrl(target.url) : currentUrl;
-    const serverPins = await captureDurableJobServerPins({sourceMode:currentMode,sourceUrl:currentUrl,targetMode:requestedMode,targetUrl});
+    const sameDataEndpointChange = kind === 'connection_config' && currentMode === MODE_SERVER_ONLY
+      && requestedMode === currentMode && targetUrl !== currentUrl;
+    if (sameDataEndpointChange) {
+      const moved = await sameServerDataAt(targetUrl);
+      if (!moved.same) throw globalModeError('MEMORY_SUITE_SERVER_URL_IN_USE', { reason:moved.reason });
+    }
+    const serverPins = await captureDurableJobServerPins({sourceMode:currentMode,sourceUrl:currentUrl,targetMode:requestedMode,targetUrl,sameDataEndpointChange});
     state.syncJob.dismissedJobId = '';
     state.syncJob.current = {
       schema: SYNC_JOB_SCHEMA, namespace, pluginId, pluginVersion,
@@ -11863,7 +11986,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       scopeId: scope.scopeId, scopeKey: scope.scopeKey, scopeLabel: scope.label,
       sourceMode: currentMode, sourceUrl: currentUrl, requestedMode, effectiveMode: currentMode,
       targetMode: requestedMode,
-      targetUrl, serverPins,
+      targetUrl, serverPins, ...(sameDataEndpointChange ? {sameDataEndpointChange:true} : {}),
       status: 'queued', phase: 'queued', message: '작업을 준비하고 있습니다.',
       startedAt: now, updatedAt: now, lastActivityAt: now, finishedAt: 0,
       totalItems: 0, processedItems: 0, processedBytes: 0, transferredBytes: 0,
@@ -13146,7 +13269,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary hidden></div>
-        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <p class="muted" data-server-hint>이 PC의 서버는 http://127.0.0.1:포트, 다른 기기의 서버는 Tailscale·Cloudflare Tunnel의 https:// 주소만 입력할 수 있습니다. Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label><label data-server-access><b>접근 키</b><input data-access-key type="password" autocomplete="off" spellcheck="false" placeholder="원격 접속 모드 서버(Docker 포함)에 연결할 때 입력"></label><p class="muted" data-access-status></p>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
         <section class="mscx-card" data-mode-confirm role="alertdialog" aria-label="저장 위치 전환 확인" hidden style="display:none">
           <b data-mode-confirm-title>저장 위치 전환 확인</b><p data-mode-confirm-text style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
@@ -13386,7 +13509,34 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void refreshPanelSettings();},0);}
     };
-    q('[data-test]').onclick = async()=>{ setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}`,storageResult.ok?'good':'error'); };
+    // A typed access key is saved before the address is tested or applied; an empty field keeps the saved key.
+    const renderAccessKeyStatus = async () => {
+      const node = q('[data-access-status]'); if (!node) return;
+      let configured = false; try { configured = !!(await readSavedAccessKey()); } catch (_) {}
+      node.innerHTML = configured ? '접근 키 저장됨 · 바꾸려면 새 키를 입력하세요. <button type="button" data-access-clear>키 지우기</button>'
+        : '내부 접속 모드의 서버는 접근 키가 필요 없습니다. 원격 접속 모드의 서버(Docker 서버 포함)는 같은 PC에서도 서버_외부접속_설정 도구가 보여 준 키를 입력해야 합니다.';
+      const clear = node.querySelector?.('[data-access-clear]');
+      if (clear) clear.onclick = async () => {
+        try { await persistServerAccessKey(''); setMessage('접근 키를 지웠습니다.','good'); }
+        catch (error) { setMessage(`접근 키를 지우지 못했습니다\n${error?.code || error?.message || error}`,'error'); }
+        await renderAccessKeyStatus();
+      };
+    };
+    const saveTypedAccessKey = async () => {
+      const input = q('[data-access-key]'), value = String(input?.value || '').trim();
+      if (!value) return true;
+      try { await persistServerAccessKey(value); }
+      catch (error) {
+        setMessage(error?.code === 'MEMORY_SUITE_ACCESS_KEY_INVALID' ? '접근 키 형식이 올바르지 않습니다. 서버의 외부 접속 설정 도구가 보여 준 키를 그대로 붙여 넣으세요.' : `접근 키를 저장하지 못했습니다\n${error?.code || error?.message || error}`,'error');
+        return false;
+      }
+      input.value = ''; await renderAccessKeyStatus(); return true;
+    };
+    const accessKeyHint = error => /remote_access_key_required/.test(String(error||''))
+      ? '\n이 서버는 원격 접속 모드라 모든 연결에 접근 키를 요구합니다. 서버_외부접속_설정 도구(show)가 보여 준 키를 접근 키 칸에 넣고 다시 시도하세요.'
+      : /server_url_remote_requires_https/.test(String(error||'')) ? '\n다른 기기의 서버는 http:// 주소로 연결할 수 없습니다. Tailscale(tailscale serve)이나 Cloudflare Tunnel의 https:// 주소를 넣으세요.' : '';
+    void renderAccessKeyStatus();
+    q('[data-test]').onclick = async()=>{ if(String(q('[data-access-key]')?.value||'').trim()&&!await saveTypedAccessKey())return; setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}${accessKeyHint(storageResult.error)}`,storageResult.ok?'good':'error'); };
     // ── 적용 범위 (전역 / 스코프별) ────────────────────────────────────────────────────────────────
     // `scopeTarget` is declared before the handlers below read it; the panel also refreshes through a
     // scheduled callback, so a later `let` would be a TDZ error on the first refresh.
@@ -13596,6 +13746,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
     q('[data-apply]').onclick = async()=>{
       if(q('[data-apply]').disabled)return;
+      if(String(q('[data-access-key]')?.value||'').trim()&&!await saveTypedAccessKey())return;
       const targetUrl=q('[data-url]').value;
       const mode=root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value;
       const selectionCurrent=()=>root.isConnected!==false&&q('[data-url]').value===targetUrl&&root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value===mode;
@@ -14681,6 +14832,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     restorePluginStorage: async () => await withOwnerIO('plugin','',()=>scopedRestoreAll({})),
     testConnection,
     setServerUrl: (...args) => withModeConfiguration(()=>persistServerUrl(...args)),
+    setServerAccessKey: value => withModeConfiguration(()=>persistServerAccessKey(value)),
+    getServerAccessKeyStatus: async () => ({ configured: !!(await readSavedAccessKey()) }),
     configureConnection: (...args) => withModeConfiguration(()=>scopedConfigureConnection(...args)),
     getConnectionSettings: scopedGetConnectionSettings,
     mountConnectionPanel: scopedMountConnectionPanel,

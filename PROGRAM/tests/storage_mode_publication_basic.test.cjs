@@ -71,7 +71,9 @@ test('legacy mode argument and recovery publication use the same real sink',asyn
  await f.context.internal.persistRecoveryRequired(f.scope,Error('fixture restore failed'),null,{localOnly:true});const view=await f.bridge.inspectModePublication();assert.equal(view.status,'observed');assert.equal(f.record().entries[f.scope.scopeId].mode,'server_only');assert.equal(f.record().entries[f.scope.scopeId].recoveryRequired.required,true);
 }finally{await f.close();}});
 test('invalid connection URLs are rejected before any diagnostic persistence',async()=>{const f=fixture();try{
- await assert.rejects(()=>f.bridge.setServerUrl('https://example.invalid'),e=>e.code==='MEMORY_SUITE_INVALID_SERVER_URL');assert.equal(f.writes.length,0);
+ // Another device's server over plain http:// (https:// is a valid tunnel address).
+ await assert.rejects(()=>f.bridge.setServerUrl('http://example.invalid'),e=>e.code==='MEMORY_SUITE_INVALID_SERVER_URL');assert.equal(f.writes.length,0);
+ await assert.rejects(()=>f.bridge.setServerUrl('ftp://127.0.0.1:47630'),e=>e.code==='MEMORY_SUITE_INVALID_SERVER_URL');assert.equal(f.writes.length,0);
 }finally{await f.close();}});
 test('final asynchronous store identity read cannot hide an overlapping configuration change',async()=>{const f=fixture();try{
  // Since 0e1c039d the device provider is pinned per host API (RisuAI v3 returns a new proxy per call), so the

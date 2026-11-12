@@ -1,0 +1,19 @@
+# Run in the package root (the folder that holds PROGRAM and DATA):
+#   docker compose -f PROGRAM/docker/compose.yaml up -d --build
+# The container is a separate device: plugins on this PC connect to http://127.0.0.1:47630 with the
+# access key shown in the first start log. Other devices use Tailscale or Cloudflare Tunnel (https://).
+services:
+  librarian:
+    build:
+      context: ../..
+      dockerfile: PROGRAM/docker/Dockerfile
+    image: librarian-system:local
+    init: true
+    restart: unless-stopped
+    ports:
+      # Only this PC can reach the server. Do not widen this: open other devices through a tunnel instead.
+      - "127.0.0.1:47630:47630"
+    volumes:
+      - librarian-data:/librarian/DATA
+volumes:
+  librarian-data:

@@ -262,6 +262,23 @@ function httpHost(value) {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
+// Remote access mode is opt-in and keyed. The server still listens on loopback only; other devices
+// reach it through a tunnel (tailscale serve, Cloudflare Tunnel), which arrives from loopback too,
+// so every /bootstrap needs the key, whatever its source. The key lives beside the DATA it protects.
+const REMOTE_ACCESS_KEY_FILE = 'remote-access-key.txt';
+function remoteAccessKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ACCESS_KEY_FILE); }
+function loadRemoteAccessKey(dataDir) {
+  let key = '';
+  try { key = fs.readFileSync(remoteAccessKeyPath(dataDir), 'utf8').trim(); } catch (_) {}
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_access_key_missing_or_invalid');
+  return key;
+}
+// A container's own heartbeat. A tool started in another container (docker compose run) shares
+// DATA but not the network, so it reads this file to tell whether the server is running.
+const CONTAINER_HEARTBEAT_FILE = 'server-heartbeat.json';
+const CONTAINER_HEARTBEAT_INTERVAL_MS = 10000;
+function containerHeartbeatPath(dataDir) { return path.join(dataDir, 'config', CONTAINER_HEARTBEAT_FILE); }
+
 function loopbackUrl(host, port) {
   return `http://${httpHost(host)}:${Number(port)}`;
 }
@@ -533,6 +550,9 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--host') result.host = String(argv[++index] || result.host);
     else if (arg === '--port') result.port = Number(argv[++index] || result.port);
     else if (arg === '--portable-settings-from-data') result.portableSettingsFromData = true;
+    else if (arg === '--remote-access') result.remoteAccess = true;
+    // Docker: the port forward reaches the container's own interface, never its loopback.
+    else if (arg === '--container') result.container = true;
     else if (arg === '--no-auto-backup') { result.autoBackup = false; explicitPortableSettings.add('autoBackup'); }
     // Server Compute is retired. Older launchers may still pass these flags: accept and ignore them.
     else if (arg === '--no-compute') {}
@@ -1477,7 +1497,7 @@ function corsHeaders(request) {
   const origin = String(request?.headers?.origin || '').trim();
   const headers = {
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Memory-Suite-Plugin, X-Memory-Suite-Read-Owners, X-Memory-Suite-Plugin-Version, X-Memory-Suite-Admin, X-Memory-Suite-Manager, X-Memory-Suite-Scope-Id, X-Memory-Suite-Storage-Mode, X-Memory-Suite-Reset-Epochs, X-Memory-Suite-Data-Instance',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Memory-Suite-Plugin, X-Memory-Suite-Read-Owners, X-Memory-Suite-Plugin-Version, X-Memory-Suite-Admin, X-Memory-Suite-Manager, X-Memory-Suite-Scope-Id, X-Memory-Suite-Storage-Mode, X-Memory-Suite-Reset-Epochs, X-Memory-Suite-Data-Instance, X-Memory-Suite-Access-Key',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'X-Content-Type-Options': 'nosniff'
   };
@@ -2215,8 +2235,16 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     for (const key of ['autoBackup']) {
       if (!explicit.has(key)) options[key] = stored[key];
     }
+    if (options.remoteAccess !== true) options.remoteAccess = stored.remoteAccess === true;
   }
   const autoBackup = options.autoBackup !== false;
+  // A container is a separate device: it always runs in remote access mode and listens on its
+  // own interface, because the port forward cannot reach its loopback. Outside a container the
+  // server listens on the configured loopback host in both modes.
+  const container = options.container === true;
+  const remoteAccess = container || options.remoteAccess === true;
+  const remoteAccessKey = remoteAccess ? loadRemoteAccessKey(dataDir) : '';
+  const listenHost = container ? '0.0.0.0' : host;
   if (!authorityRuntime && fs.existsSync(dataDir)) preflightDataCompatibility(dataDir);
   if (!authorityRuntime) fs.mkdirSync(dataDir, { recursive: true });
   const dataLayout = authorityRuntime ? readJsonFile(path.join(dataDir,'data-layout.json'),null) : ensurePortableDataLayout(dataDir);
@@ -2257,6 +2285,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const scopeCatalogPath = path.join(dataDir, 'config', 'scope-catalog.json');
   scopeCatalogDegraded = readScopeCatalogFromDisk(dataDir).degraded === true;
 
+  // Remote tokens are signed with a key bound to this access key and to this server start, so a
+  // key rotation, a mode change or a restart revokes every token issued before it.
+  const remoteCapabilityKey = remoteAccess
+    ? crypto.createHmac('sha256', token).update('memory-suite.remote-capability.v2\0')
+      .update(crypto.randomBytes(32)).update('\0').update(remoteAccessKey).digest('base64url')
+    : '';
+  const capabilityKeyFor = () => remoteAccess ? remoteCapabilityKey : token;
   const authenticate = request => {
     const authorization = String(request.headers.authorization || '');
     const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
@@ -2266,7 +2301,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         ? { kind: 'admin', pluginId: 'memory-suite-admin', namespace: '', roles: ['admin'], readNamespaces: NAMESPACES.slice(), writeNamespaces: NAMESPACES.slice() }
         : null;
     }
-    const principal = verifyCapabilityToken(token, supplied);
+    const principal = verifyCapabilityToken(capabilityKeyFor(request), supplied);
     if (!principal) return null;
     const claimedPluginId = String(request.headers['x-memory-suite-plugin'] || '').trim().toLowerCase();
     return claimedPluginId === principal.pluginId ? principal : null;
@@ -3315,6 +3350,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           startedAt,
           uptimeMs: now() - startedAt,
           maintenanceMode,
+          remoteAccess: { enabled: remoteAccess, container },
           namespaces: NAMESPACES,
           legacyNamespaces:NAMESPACES,
           supportedStorageOwners:authorityRuntime ? ACTIVE_STORAGE_NAMESPACES : SUPPORTED_STORAGE_OWNERS,
@@ -3328,6 +3364,12 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           scopeCatalogDegraded,
           interruptedRestoreRecovery
         });
+      }
+      // Remote access mode: every /bootstrap needs this DATA's access key, the same PC included, because a
+      // tunnel delivers other devices' requests from loopback as well.
+      if (url.pathname === '/bootstrap' && remoteAccess
+        && !safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
+        return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
       }
       if (request.method === 'GET' && url.pathname === '/bootstrap') {
         let requestedReadOwners;
@@ -3344,7 +3386,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         rememberClient(request, bootstrapPrincipal);
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : port;
-        const actualHost = typeof address === 'object' && address && address.address
+        const actualHost = container ? host : typeof address === 'object' && address && address.address
           ? (address.address === '::' ? '::1' : address.address)
           : host;
         return sendJson(request, response, 200, {
@@ -3361,7 +3403,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           programDataSeparation: true,
           securityGate: 'loopback_scoped_capability_token',
           url: loopbackUrl(actualHost, actualPort),
-          token: issueCapabilityToken(token, bootstrapPrincipal),
+          token: issueCapabilityToken(capabilityKeyFor(request), bootstrapPrincipal),
           authorization: {
             schema: 'memory-suite.bootstrap-authorization.v1',
             pluginId: bootstrapPrincipal.pluginId,
@@ -3394,7 +3436,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         return sendJson(request, response, 410, { ok: false, error: 'compute_retired', code: 'COMPUTE_RETIRED', schema: 'memory-suite.compute.retired.v1' });
       }
       const principal = authenticate(request);
-      if (!principal) return sendJson(request, response, 403, { ok: false, error: 'forbidden' });
+      if (!principal) {
+        // A capability token this server start did not sign (restart in remote mode, mode change, key
+        // rotation): the plugin bootstraps again once instead of failing.
+        const supplied = String(request.headers.authorization || '').replace(/^Bearer\s+/, '').trim();
+        return sendJson(request, response, 403, { ok: false, error: 'forbidden',
+          ...(supplied.startsWith(`${CAPABILITY_TOKEN_PREFIX}.`) ? { reason: 'capability_token_invalid' } : {}) });
+      }
       if (authorityHandler && url.pathname.startsWith('/v1/authority/')) {
         const body = await readBody(request, 32768, 'authority_request_too_large');
         return sendJson(request,response,200,{ok:true,result:authorityHandler(request,url.pathname,body)});
@@ -3908,6 +3956,26 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     authorityRuntime?.close();
   };
 
+  let containerHeartbeatTimer = null;
+  const writeContainerHeartbeat = () => {
+    try {
+      const file = containerHeartbeatPath(dataDir), temporary = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temporary, `${JSON.stringify({ schema: 'memory-suite.container-heartbeat.v1', pid: process.pid, port: server.address()?.port || port, at: now() })}\n`);
+      fs.renameSync(temporary, file);
+    } catch (_) {}
+  };
+  const startContainerHeartbeat = () => {
+    if (!container || authorityRuntime) return;
+    writeContainerHeartbeat();
+    containerHeartbeatTimer = setInterval(writeContainerHeartbeat, CONTAINER_HEARTBEAT_INTERVAL_MS);
+    containerHeartbeatTimer.unref?.();
+  };
+  const stopContainerHeartbeat = () => {
+    if (containerHeartbeatTimer) clearInterval(containerHeartbeatTimer);
+    containerHeartbeatTimer = null;
+    if (container && !authorityRuntime) { try { fs.rmSync(containerHeartbeatPath(dataDir), { force: true }); } catch (_) {} }
+  };
+
   const gracefulClose = async () => {
     if (closing) return;
     diagnosticJournal.record({ event: 'server.stopping', operation: 'server.shutdown', ok: true, message: 'graceful shutdown requested' });
@@ -3937,6 +4005,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   server.on('close', () => {
     if (closing) return;
     closing = true;
+    stopContainerHeartbeat();
     if (autoBackupTimer) clearInterval(autoBackupTimer);
     if (startupBackupTimer) clearTimeout(startupBackupTimer);
     if (changeSettledBackupTimer) clearTimeout(changeSettledBackupTimer);
@@ -3975,13 +4044,21 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     managerControl,
     listen: () => new Promise((resolve, reject) => {
       if (authorityRuntime) return reject(Object.assign(new Error('AUTHORITY_HOST_PROFILE_UNQUALIFIED'),{code:'AUTHORITY_HOST_PROFILE_UNQUALIFIED',statusCode:503}));
-      server.once('error', reject);
-      server.listen(port, host, async () => {
-        server.off('error', reject);
+      const onListening = () => {
+        server.off('error', onError);
         scheduleAutomaticBackups();
-        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${host}:${server.address()?.port || port}`, itemCount: NAMESPACES.length });
-        resolve(server.address());
-      });
+        startContainerHeartbeat();
+        const address = server.address();
+        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${httpHost(address.address)}:${address.port}${remoteAccess ? ' remote-access' : ''}${container ? ' container' : ''}`, itemCount: NAMESPACES.length });
+        resolve(address);
+      };
+      const onError = error => {
+        server.off('listening', onListening);
+        reject(error);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen({port, host:listenHost});
     }),
     close: gracefulClose
   };
@@ -4143,6 +4220,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  CONTAINER_HEARTBEAT_FILE,
+  CONTAINER_HEARTBEAT_INTERVAL_MS,
   createMemorySuiteServer,
   parseArgs,
   SERVER_VERSION,

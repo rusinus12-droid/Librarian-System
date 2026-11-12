@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.0.0
+//@display-name GRADIA v1.0.1
 //@api 3.0
-//@version 1.0.0
+//@version 1.0.1
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.0.0';
+  const PLUGIN_VERSION = '1.0.1';
   
   
   
@@ -29789,7 +29789,9 @@ function createGradiaModelContextBudget({ digest }) {
     try {
       const parsed = new URL(String(value || LIB_READ_DEFAULT_URL).trim());
       const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-      if (parsed.protocol !== 'http:' || !['127.0.0.1','localhost','::1','host.docker.internal'].includes(hostname)
+      // http:// only for this machine; another device's server only through a tunnel's https:// address.
+      const loopback = ['127.0.0.1','localhost','::1','host.docker.internal'].includes(hostname);
+      if (!hostname || !((parsed.protocol === 'http:' && loopback) || parsed.protocol === 'https:')
           || parsed.username || parsed.password || parsed.search || parsed.hash || !['','/'].includes(parsed.pathname)) throw Error('invalid');
       return parsed.origin;
     } catch (_) { throw libEvidenceError('LIB_READ_SERVER_URL_INVALID'); }
@@ -30653,6 +30655,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The access key of a server opened to other hosts. Like the address it is kept per namespace
+  // in pluginStorage; it travels only on /bootstrap and the bridge never hands it back.
+  const SAVED_SERVER_ACCESS_KEY_KEY = `__memory_suite_internal_server_access_key_v1__:${namespace}`;
+  const SERVER_ACCESS_KEY_PATTERN = /^[A-Za-z0-9_-]{32,256}$/;
+  const readSavedAccessKey = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_ACCESS_KEY_KEY);
+      const key = value === undefined || value === null ? '' : String(value).trim();
+      return SERVER_ACCESS_KEY_PATTERN.test(key) ? key : '';
+    } catch (_) { return ''; }
+  };
+  const accessKeyHeaders = async () => {
+    const key = await readSavedAccessKey();
+    return key ? { 'X-Memory-Suite-Access-Key': key } : {};
+  };
+  const persistServerAccessKey = async value => {
+    const key = String(value ?? '').trim();
+    if (key && !SERVER_ACCESS_KEY_PATTERN.test(key)) throw Object.assign(new Error('memory_suite_access_key_invalid'), { code:'MEMORY_SUITE_ACCESS_KEY_INVALID' });
+    const storage = rawPluginStorage();
+    if (!storage?.setItem) throw Object.assign(new Error('memory_suite_access_key_storage_unavailable'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    if (key) await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, key);
+    else if (typeof storage.removeItem === 'function') await storage.removeItem(SAVED_SERVER_ACCESS_KEY_KEY);
+    else await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, '');
+    if ((await readSavedAccessKey()) !== key) throw Object.assign(new Error('memory_suite_access_key_readback_mismatch'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    resetBootstrapCache();
+    return { configured: !!key };
+  };
   const getArgumentValue = async (names, fallback = '') => {
     for (const name of names) {
       for (const api of apiCandidates()) {
@@ -30839,8 +30868,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const parsed = new URL(raw);
       const host = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-      if (parsed.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host)) {
-        throw new Error('server_url_must_be_loopback_http');
+      // http:// only for this machine (and a container's view of it). Any other address is another
+      // device and must come through a tunnel's https:// address (tailscale serve, Cloudflare Tunnel).
+      const loopback = ['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host);
+      if (parsed.username || parsed.password || !host
+        || !((parsed.protocol === 'http:' && loopback) || parsed.protocol === 'https:')) {
+        throw new Error(loopback || parsed.protocol !== 'http:' ? 'server_url_must_be_loopback_http_or_https' : 'server_url_remote_requires_https');
       }
       return parsed.origin;
     } catch (error) {
@@ -31213,7 +31246,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       method: 'GET',
       headers: {
         'X-Memory-Suite-Plugin': pluginId,
-        'X-Memory-Suite-Plugin-Version': pluginVersion
+        'X-Memory-Suite-Plugin-Version': pluginVersion,
+        ...(await accessKeyHeaders())
       }
     }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
     return validateBootstrapPayload(payload, url);
@@ -31384,7 +31418,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         method: 'GET',
         headers: {
           'X-Memory-Suite-Plugin': pluginId,
-          'X-Memory-Suite-Plugin-Version': pluginVersion
+          'X-Memory-Suite-Plugin-Version': pluginVersion,
+          ...(await accessKeyHeaders())
         }
       }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
@@ -31473,6 +31508,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (error?.status === 403 && requestOptions.authRetry !== false) {
         await bootstrap(true, requestOptions.allowPluginOnly === true);
         return await request(method, route, body, { ...requestOptions, bindingGeneration, authRetry: false });
+      }
+      // A token this server start did not sign (restart in remote access mode, mode change or key
+      // rotation): bootstrap again once. The request was refused before it ran, so a retry is safe.
+      if (error?.payload?.reason === 'capability_token_invalid' && requestOptions.capabilityRetry !== true) {
+        resetBootstrapCache();
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, capabilityRetry: true, forceBootstrap: true });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);
@@ -36099,7 +36140,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <p>이 PC의 서버는 http://127.0.0.1:포트, 다른 기기의 서버는 Tailscale·Cloudflare Tunnel의 https:// 주소만 입력할 수 있습니다. Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
         <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>
@@ -37568,6 +37609,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     restorePluginStorage: async () => await withOwnerIO('plugin','',()=>scopedRestoreAll({})),
     testConnection,
     setServerUrl: (...args) => withModeConfiguration(()=>persistServerUrl(...args)),
+    setServerAccessKey: value => withModeConfiguration(()=>persistServerAccessKey(value)),
+    getServerAccessKeyStatus: async () => ({ configured: !!(await readSavedAccessKey()) }),
     configureConnection: (...args) => withModeConfiguration(()=>scopedConfigureConnection(...args)),
     getConnectionSettings: scopedGetConnectionSettings,
     mountConnectionPanel: scopedMountConnectionPanel,

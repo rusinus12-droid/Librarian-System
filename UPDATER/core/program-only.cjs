@@ -97,14 +97,18 @@ function runLauncher(programDir, command, dataDir, options = {}) {
 async function portIsClosed(dataDir, timeoutMs = 700) {
   const config = readConfig(dataDir);
   const endpoint = new URL(config.url);
-  return new Promise(resolve => {
+  const isClosed = host => new Promise(resolve => {
     let settled = false;
-    const socket = net.createConnection({host:endpoint.hostname.replace(/^\[|\]$/g,''),port:Number(endpoint.port)});
+    const socket = net.createConnection({host,port:Number(endpoint.port)});
     const finish = closed => {if (settled) return; settled=true; socket.destroy(); resolve(closed);};
     socket.setTimeout(timeoutMs,()=>finish(false));
     socket.once('connect',()=>finish(false));
     socket.once('error',error=>finish(error.code === 'ECONNREFUSED'));
   });
+  const host = endpoint.hostname.replace(/^\[|\]$/g,'');
+  if (!await isClosed(host)) return false;
+  // Earlier remote-access servers with this config listened only on IPv4.
+  return config.remoteAccess?.enabled === true && host === '::1' ? await isClosed('127.0.0.1') : true;
 }
 
 async function waitForOffline(dataDir, timeoutMs = 8000) {
