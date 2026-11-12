@@ -69,10 +69,35 @@ function verifyReleaseShaFence({ expectedSha, currentMainSha, stage = 'fence' })
   return { ok: true, sha: expected, stage };
 }
 
+// The version a Manual Release publishes. Without a request it is the next patch, as before.
+// A request equal to the source version publishes that commit as-is ("current": no version
+// commit, the tag goes on the validated commit); a higher request becomes the bump target.
+// A release commit already at HEAD fixes the target, so a different request is refused.
+function resolveReleaseTarget({ state, currentVersion, requestedVersion = '' }) {
+  const { compareVersions, nextPatchVersion } = require('./release_version.cjs');
+  const current = String(currentVersion || '').trim();
+  const requested = String(requestedVersion || '').trim().replace(/^v/i, '');
+  if (requested && !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(requested)) {
+    throw new Error(`release_requested_version_invalid:${requested}`);
+  }
+  if (state?.phase === 'resume') {
+    if (requested && requested !== state.targetVersion) {
+      throw new Error(`release_requested_version_conflicts_with_release_commit:${requested}:${state.targetVersion}`);
+    }
+    return state;
+  }
+  if (!requested) return { ...state, phase: 'prepare', previousVersion: current, targetVersion: nextPatchVersion(current) };
+  const order = compareVersions(requested, current);
+  if (order < 0) throw new Error(`release_requested_version_below_current:${requested}:${current}`);
+  if (order === 0) return { ...state, phase: 'current', previousVersion: current, targetVersion: current };
+  return { ...state, phase: 'prepare', previousVersion: current, targetVersion: requested };
+}
+
 module.exports = {
   classifyRelease,
   classifyTag,
   determineReleaseState,
+  resolveReleaseTarget,
   parseReleaseCommitSubject,
   verifyReleaseShaFence
 };

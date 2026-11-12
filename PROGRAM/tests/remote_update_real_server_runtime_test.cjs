@@ -4,6 +4,10 @@ const {fixture}=require('./helpers/updater_fixture.cjs');
 const core=require('../../UPDATER/core/program-only.cjs');
 const source=path.resolve(__dirname,'..');
 const sourceVersion=fs.readFileSync(path.join(source,'VERSION.txt'),'utf8').trim();
+// Install the source the way a release ships it: a release never carries node_modules
+// (build_distribution PROGRAM_DENY_SEGMENTS). On Linux CI, `npm ci` in build-support leaves
+// .bin symlinks there, which the updater checkpoint correctly refuses.
+const copyAsRelease=(from,to)=>fs.cpSync(from,to,{recursive:true,filter:item=>!path.relative(from,item).split(path.sep).includes('node_modules')});
 const targetVersion=sourceVersion.replace(/(\d+)$/,n=>String(Number(n)+1));
 const freePort=()=>new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port));});});
 async function api(data,route,body){const config=JSON.parse(fs.readFileSync(path.join(data,'config/server-config.json')));const token=fs.readFileSync(path.join(data,'runtime-token.txt'),'utf8').trim();const r=await fetch(`http://127.0.0.1:${config.port}${route}`,{method:body?'POST':'GET',headers:{'Authorization':'Bearer '+token,'x-memory-suite-admin':'1','Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(5000)});return{status:r.status,body:await r.json()};}
@@ -11,8 +15,9 @@ const put=(data,marker)=>api(data,'/v1/kv/set',{namespace:'libra',space:'plugin'
 const get=data=>api(data,'/v1/kv/get?namespace=libra&space=plugin&key=phase3-proof');
 (async()=>{let failures=0;
  for(const mode of ['success','candidate_failure','committed_live_failure']){const f=await fixture();try{
-   fs.rmSync(f.p('PROGRAM'),{recursive:true});fs.cpSync(source,f.p('PROGRAM'),{recursive:true});
-   fs.rmSync(f.p('.update/PROGRAM.next'),{recursive:true});fs.cpSync(source,f.p('.update/PROGRAM.next'),{recursive:true});
+   fs.rmSync(f.p('PROGRAM'),{recursive:true});copyAsRelease(source,f.p('PROGRAM'));
+   fs.rmSync(f.p('.update/PROGRAM.next'),{recursive:true});copyAsRelease(source,f.p('.update/PROGRAM.next'));
+   assert.equal(fs.existsSync(f.p('PROGRAM/build-support/node_modules')),false,'the installed program carries no dependency tree');
    fs.writeFileSync(f.p('.update/PROGRAM.next/VERSION.txt'),targetVersion+'\n');
    const serverPath=f.p('.update/PROGRAM.next/server/server.cjs');fs.writeFileSync(serverPath,fs.readFileSync(serverPath,'utf8').replace(/const SERVER_VERSION = '[^']+';/,`const SERVER_VERSION = '${targetVersion}';`));
    f.receipt.targetVersion=targetVersion;

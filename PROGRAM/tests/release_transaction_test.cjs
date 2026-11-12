@@ -6,6 +6,7 @@ const {
   classifyTag,
   determineReleaseState,
   parseReleaseCommitSubject,
+  resolveReleaseTarget,
   verifyReleaseShaFence
 } = require('../tools/release_transaction.cjs');
 
@@ -72,5 +73,27 @@ assert.throws(
   () => verifyReleaseShaFence({ expectedSha: 'abc1234', currentMainSha: '' }),
   /release_sha_fence_missing_current/
 );
+
+// Requested version: empty keeps the next patch; the source version publishes as-is; higher bumps.
+const prepare = determineReleaseState({ headSubject: 'feat: work', currentVersion: '1.0.0' });
+assert.deepEqual(resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0' }),
+  { phase: 'prepare', previousVersion: '1.0.0', targetVersion: '1.0.1', releaseTag: null });
+assert.deepEqual(resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: ' ' }),
+  { phase: 'prepare', previousVersion: '1.0.0', targetVersion: '1.0.1', releaseTag: null });
+assert.deepEqual(resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: '1.0.0' }),
+  { phase: 'current', previousVersion: '1.0.0', targetVersion: '1.0.0', releaseTag: null });
+assert.deepEqual(resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: 'v1.0.0' }).phase, 'current');
+assert.deepEqual(resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: '1.2.0' }),
+  { phase: 'prepare', previousVersion: '1.0.0', targetVersion: '1.2.0', releaseTag: null });
+assert.throws(() => resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: '0.9.9' }),
+  /release_requested_version_below_current:0\.9\.9:1\.0\.0/);
+for (const bad of ['1.0', '1.0.0-rc1', '01.0.0', '1.0.0; rm -rf /', '$(id)'])
+  assert.throws(() => resolveReleaseTarget({ state: prepare, currentVersion: '1.0.0', requestedVersion: bad }), /release_requested_version_invalid/);
+// A release commit at HEAD decides the version; a matching request resumes, a different one is refused.
+const resume = determineReleaseState({ headSubject: 'chore(release): v1.0.1', currentVersion: '1.0.1', parentVersion: '1.0.0' });
+assert.deepEqual(resolveReleaseTarget({ state: resume, currentVersion: '1.0.1' }), resume);
+assert.deepEqual(resolveReleaseTarget({ state: resume, currentVersion: '1.0.1', requestedVersion: '1.0.1' }), resume);
+assert.throws(() => resolveReleaseTarget({ state: resume, currentVersion: '1.0.1', requestedVersion: '1.0.2' }),
+  /release_requested_version_conflicts_with_release_commit:1\.0\.2:1\.0\.1/);
 
 process.stdout.write('release_transaction_test: PASS\n');

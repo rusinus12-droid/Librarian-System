@@ -2,6 +2,12 @@ name: Manual Release
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version x.y.z. Empty: next patch. Equal to PROGRAM/VERSION.txt: publish the current commit as-is. Higher: bump to it.'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   risu-compatibility-gate:
@@ -41,6 +47,8 @@ jobs:
 
       - name: Resolve release transaction state (Fence #1)
         id: state
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
             echo "Error: Manual release is only permitted on the main branch (attempted on ${{ github.ref }})."
@@ -57,11 +65,11 @@ jobs:
             exit 1
           fi
           git checkout -B main "$EXPECTED_RELEASE_SHA"
-          CURRENT_MAIN_SHA="$CURRENT_MAIN_SHA" EXPECTED_RELEASE_SHA="$EXPECTED_RELEASE_SHA" node -e '
+          # The requested version reaches the script only as an environment value, never as script text.
+          CURRENT_MAIN_SHA="$CURRENT_MAIN_SHA" EXPECTED_RELEASE_SHA="$EXPECTED_RELEASE_SHA" REQUESTED_VERSION="$REQUESTED_VERSION" node -e '
           const fs = require("node:fs");
           const { execFileSync } = require("node:child_process");
-          const { determineReleaseState, verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
-          const { nextPatchVersion } = require("./PROGRAM/tools/release_version.cjs");
+          const { determineReleaseState, resolveReleaseTarget, verifyReleaseShaFence } = require("./PROGRAM/tools/release_transaction.cjs");
           const expectedSha = process.env.EXPECTED_RELEASE_SHA || "${{ github.sha }}";
           const currentSha = process.env.CURRENT_MAIN_SHA || execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
           verifyReleaseShaFence({ expectedSha, currentMainSha: currentSha, stage: "fence1" });
@@ -70,8 +78,9 @@ jobs:
           const parentVersion = headSubject.startsWith("chore(release):")
             ? execFileSync("git", ["show", "HEAD^:PROGRAM/VERSION.txt"], { encoding: "utf8" }).trim()
             : null;
-          const state = determineReleaseState({ headSubject, currentVersion, parentVersion });
-          const targetVersion = state.targetVersion || nextPatchVersion(currentVersion);
+          const state = resolveReleaseTarget({ state: determineReleaseState({ headSubject, currentVersion, parentVersion }),
+            currentVersion, requestedVersion: process.env.REQUESTED_VERSION || "" });
+          const targetVersion = state.targetVersion;
           const previousVersion = state.previousVersion || currentVersion;
           const commit = currentSha;
           const seedRef = state.phase === "resume" ? "HEAD^" : "HEAD";
@@ -87,9 +96,14 @@ jobs:
           '
 
       - name: Guard against duplicate version transaction
-        if: env.RELEASE_PHASE == 'prepare'
+        if: env.RELEASE_PHASE == 'prepare' || env.RELEASE_PHASE == 'current'
         run: |
           if git rev-parse -q --verify "refs/tags/v${NEXT_VERSION}" >/dev/null; then
+            # A "current" release that stopped after tagging may resume only on the same commit.
+            if [[ "$RELEASE_PHASE" == "current" && "$(git rev-list -n 1 "v${NEXT_VERSION}")" == "$RELEASE_COMMIT_SHA" ]]; then
+              echo "Tag v${NEXT_VERSION} already marks ${RELEASE_COMMIT_SHA}; resuming the current-version release."
+              exit 0
+            fi
             echo "Error: Tag v${NEXT_VERSION} already exists. Aborting release without modification."
             exit 1
           fi

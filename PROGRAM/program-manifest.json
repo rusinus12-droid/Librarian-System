@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.0.0",
-  "generatedAt": "2026-11-11T23:59:00.185Z",
+  "generatedAt": "2026-11-12T01:16:55.223Z",
   "server": {
     "version": "1.0.0",
     "protocol": {
@@ -10548,8 +10548,8 @@
       "bytes": 1796
     },
     "tests/release_transaction_test.cjs": {
-      "sha256": "b7c6b18ef59e18a923e70c45015106de58a6073174d103c9893f25c10e871259",
-      "bytes": 2801
+      "sha256": "113fa3ba333c387b3fcd6f6d458880fb5c7ecb8ec33b402c3e4832ac31d1049d",
+      "bytes": 4977
     },
     "tests/remaining_embedding_migration_runtime_test.cjs": {
       "sha256": "37047cb451c13e4cfba6130e3fd0c282648d9f44d0d3c1fec06105349beef4c3",
@@ -10624,8 +10624,8 @@
       "bytes": 3808
     },
     "tests/remote_update_real_server_runtime_test.cjs": {
-      "sha256": "35de19e3196376af2f441a38de06c00a71db054567161dc5e8fd1b0daa1d7369",
-      "bytes": 4494
+      "sha256": "a888f5ae0d2749743635af8ee58922b856c5d2a0df911332537246bec5ff9eab",
+      "bytes": 5000
     },
     "tests/remote_update_recovery_boundaries_test.cjs": {
       "sha256": "ad01efd6cd72eb9c08c6e9a10a6184126ca0aa8fbc10078343417fd2353e7306",
@@ -12048,8 +12048,8 @@
       "bytes": 6799
     },
     "tools/release_transaction.cjs": {
-      "sha256": "bdbcde5f9d241dcb7ed8eafee6bbad1b9af6078f9f4a237bee84dd9bd5358054",
-      "bytes": 2559
+      "sha256": "e371f75cb58f28851e4baa6fff6548e4574a074e55b71b23f10818150a36cd2a",
+      "bytes": 4128
     },
     "tools/release_version.cjs": {
       "sha256": "a7b21d6bd4f1bad3e831772da4e4652b986a2944b35238d7ca1e9a6fb2130128",
