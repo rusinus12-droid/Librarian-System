@@ -178,7 +178,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_real_server_runtime_test.cjs',
   'memory_injection_presentation_v1_test.cjs'
 ]);
-const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
+const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // Accepted synthetic source fixtures only; never a general SQLite/private-data exception.
 const SOURCE_FIXTURE_PINS = Object.freeze({
   "tests/fixtures/authority-preserved/logical-reader-fixtures/wal-only-authority/source.sqlite": {
@@ -212,7 +212,7 @@ function verifySourceFixtureBytes(programRoot) {
 }
 const PROGRAM_DENY_SEGMENTS = new Set(['.git', 'node_modules', '__pycache__', 'backups', 'logs', 'releases', 'evidence', 'checkpoints']);
 const PROGRAM_ALLOWED_TOP_LEVEL_DIRECTORIES = new Set([
-  '_runtime', '관리도구', 'build-support', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools'
+  '_runtime', '관리도구', 'build-support', 'docker', 'docs', 'plugins', 'sdk', 'server', 'tests', 'tools'
 ]);
 const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '_common.cmd',
@@ -234,6 +234,9 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '서버_상태_확인.sh',
   '서버_포트_변경.bat',
   '서버_포트_변경.sh',
+  '서버_외부접속_설정.bat',
+  '서버_외부접속_설정.sh',
+  '서버_사용과_접속_관련_상세_안내.md',
   '안드로이드_Termux_준비.sh',
   '안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat',
@@ -249,7 +252,7 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   'VERSION.txt',
   'release-policy.json'
 ]);
-const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|scope-catalog(?:\.[^/]*)?\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|[^/]+\.(?:pem|key|pfx|p12|sqlite(?:-(?:wal|shm))?|db|jsonl|log|zip|7z|tar|tgz|gz))(?:$|\/)/i;
+const PROGRAM_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:\.env(?:\.[^/]*)?|credentials?(?:\.[^/]*)?|secrets?(?:\.[^/]*)?|runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|[^/]+\.(?:pem|key|pfx|p12|sqlite(?:-(?:wal|shm))?|db|jsonl|log|zip|7z|tar|tgz|gz))(?:$|\/)/i;
 const REQUIRED_ROOT_UPDATE_LAUNCHERS = Object.freeze(['업데이트.bat', '업데이트.command', '업데이트.sh']);
 const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
@@ -340,7 +343,7 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   '_common.cmd','_find_node.bat','_server_foreground.cmd',
   '1_서버_실행.bat','1_서버_실행.sh','2_서버_종료.bat','2_서버_종료.sh',
   '서버_백그라운드_실행.bat','서버_백그라운드_실행.sh','서버_상태_확인.bat','서버_상태_확인.sh',
-  '서버_포트_변경.bat','서버_포트_변경.sh',
+  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_사용과_접속_관련_상세_안내.md',
   'macOS_서버_실행.command','memory-suite.sh','안드로이드_Termux_준비.sh','안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat','기존_DATA_이관_ZIP_만들기.sh',
   'DATA_폴더_열기.bat','RisuAI_플러그인_폴더_열기.bat','처음_읽어주세요.txt','PACKAGE_CONTENTS.txt',
@@ -367,6 +370,7 @@ function shouldCopyRuntimeProgram(relativePath) {
   if (top==='server') return !leaf.startsWith('wm/');
   if (top==='관리도구') return !['전체_자동시험.bat','전체_자동시험.sh'].includes(leaf);
   if (top==='_runtime') return leaf==='README.txt';
+  if (top==='docker') return ['Dockerfile','compose.yaml','entrypoint.sh'].includes(leaf);
   if (top==='tools') return RUNTIME_TOOL_FILES.has(leaf);
   if (top==='sdk') return RUNTIME_SDK_FILES.has(leaf);
   if (top==='docs') return RUNTIME_DOC_FILES.has(leaf);

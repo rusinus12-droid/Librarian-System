@@ -29,15 +29,19 @@ function parseArgs(argv = process.argv.slice(2)) {
     if (argv[index] === '--data-dir') {
       if (!argv[index + 1] || String(argv[index + 1]).startsWith('--')) throw new Error('launcher_data_dir_value_required');
       result.dataDir = path.resolve(argv[++index]);
+    } else if (result.command === 'set-remote-access' && ['--enable', '--disable', '--rotate', '--show'].includes(argv[index])) {
+      if (result.remoteAction) throw new Error('launcher_remote_action_conflict');
+      result.remoteAction = argv[index].slice(2);
     } else if (argv[index] === '--port' && result.command === 'set-port') {
       if (argv[index + 1] === undefined) throw new Error('launcher_port_value_required');
       result.port = String(argv[++index]);
     } else throw new Error(`unknown_launcher_argument:${argv[index]}`);
   }
-  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare', 'set-port'].includes(result.command)) {
+  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare', 'set-port', 'set-remote-access'].includes(result.command)) {
     throw new Error(`unknown_launcher_command:${result.command}`);
   }
   if (result.command === 'set-port' && result.port === undefined) throw new Error('launcher_port_value_required');
+  if (result.command === 'set-remote-access' && !result.remoteAction) result.remoteAction = 'show';
   return result;
 }
 
@@ -52,6 +56,32 @@ function portAvailable(host, port) {
   });
 }
 
+// Server configuration changes wait for a finished update and a stopped server, and replace files whole.
+function assertNoPendingUpdate(code, subject) {
+  const journal = path.join(packageRoot, 'UPDATER', 'update-state.json');
+  if (!fs.existsSync(journal)) return;
+  let state = null;
+  try { state = JSON.parse(fs.readFileSync(journal, 'utf8')); } catch (_) {}
+  if (!['complete', 'rolled_back', 'aborted'].includes(String(state?.status || ''))) {
+    throw launcherFailure(code, `미완료 업데이트가 있어 ${subject} 바꾸지 않았습니다. 서버를 한 번 실행해 업데이트 복구를 끝낸 뒤 다시 시도하세요.`, 5);
+  }
+}
+async function assertServerStopped(config, code) {
+  try {
+    await health(config.url, 2000);
+  } catch (error) {
+    if (error?.code === 'SERVER_UNAVAILABLE') return;
+    throw launcherFailure(code, `현재 포트 ${config.port}에서 응답하는 프로그램이 있어 서버가 꺼졌는지 확인하지 못했습니다. 서버를 끈 뒤 다시 시도하세요.`, 3);
+  }
+  throw launcherFailure(code, `서버가 현재 포트 ${config.port}에서 실행 중입니다. 먼저 2_서버_종료로 서버를 끈 뒤 다시 시도하세요.`, 3);
+}
+function writeFileAtomically(filePath, text) {
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, text, { mode: 0o600 });
+  try { fs.renameSync(temporary, filePath); }
+  catch (error) { try { fs.rmSync(temporary, { force: true }); } catch (_) {} throw error; }
+}
+
 // The server port lives only in DATA/config/server-config.json; every launcher, admin tool and
 // the updater read it from there. It is changed only while the server is stopped, so a running
 // server never loses the port its plugins are using, and only to a port nothing else holds.
@@ -62,38 +92,19 @@ async function setServerPort(dataDir, requested, options = {}) {
   if (!/^\d+$/.test(textValue) || !Number.isInteger(port) || port < MIN_SERVER_PORT || port > MAX_SERVER_PORT) {
     throw launcherFailure('SERVER_PORT_INVALID', `포트는 ${MIN_SERVER_PORT}~${MAX_SERVER_PORT} 사이의 숫자여야 합니다. 입력값: ${textValue || '(비어 있음)'}`, 2);
   }
-  const journal = path.join(packageRoot, 'UPDATER', 'update-state.json');
-  if (fs.existsSync(journal)) {
-    let state = null;
-    try { state = JSON.parse(fs.readFileSync(journal, 'utf8')); } catch (_) {}
-    if (!['complete', 'rolled_back', 'aborted'].includes(String(state?.status || ''))) {
-      throw launcherFailure('SERVER_PORT_UPDATE_PENDING', '미완료 업데이트가 있어 포트를 바꾸지 않았습니다. 서버를 한 번 실행해 업데이트 복구를 끝낸 뒤 다시 시도하세요.', 5);
-    }
-  }
+  assertNoPendingUpdate('SERVER_PORT_UPDATE_PENDING', '포트를');
   if (options.prepare !== false) prepareData(dataDir);
   const config = readConfig(dataDir);
   if (config.port === port) {
     write(`[Librarian System] 서버 포트는 이미 ${port}입니다. 바꾸지 않았습니다.\n서버 주소: ${config.url}\n`);
     return { changed: false, port, url: config.url };
   }
-  try {
-    await health(config.url, 2000);
-    throw launcherFailure('SERVER_PORT_SERVER_RUNNING', `서버가 현재 포트 ${config.port}에서 실행 중입니다. 먼저 2_서버_종료로 서버를 끈 뒤 다시 시도하세요.`, 3);
-  } catch (error) {
-    if (error?.code === 'SERVER_PORT_SERVER_RUNNING') throw error;
-    if (error?.code !== 'SERVER_UNAVAILABLE') {
-      throw launcherFailure('SERVER_PORT_SERVER_RUNNING', `현재 포트 ${config.port}에서 응답하는 프로그램이 있어 서버가 꺼졌는지 확인하지 못했습니다. 서버를 끈 뒤 다시 시도하세요.`, 3);
-    }
-  }
+  await assertServerStopped(config, 'SERVER_PORT_SERVER_RUNNING');
   const bindHost = config.host === 'localhost' ? '127.0.0.1' : config.host;
   if (!(await portAvailable(bindHost, port))) {
     throw launcherFailure('SERVER_PORT_IN_USE', `포트 ${port}는 다른 프로그램이 사용 중입니다. 다른 포트를 고르세요.`, 4);
   }
-  const raw = JSON.parse(fs.readFileSync(config.configPath, 'utf8'));
-  const temporary = `${config.configPath}.port-${process.pid}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify({ ...raw, port }, null, 2)}\n`, { mode: 0o600 });
-  try { fs.renameSync(temporary, config.configPath); }
-  catch (error) { try { fs.rmSync(temporary, { force: true }); } catch (_) {} throw error; }
+  writeFileAtomically(config.configPath, `${JSON.stringify({ ...JSON.parse(fs.readFileSync(config.configPath, 'utf8')), port }, null, 2)}\n`);
   const saved = readConfig(dataDir);
   if (saved.port !== port) throw launcherFailure('SERVER_PORT_READBACK_FAILED', '포트를 저장했지만 다시 읽은 값이 다릅니다. 설정 파일을 확인하세요.', 6);
   write([
@@ -111,6 +122,56 @@ async function setServerPort(dataDir, requested, options = {}) {
     ''
   ].join('\n'));
   return { changed: true, previousPort: config.port, port, url: saved.url };
+}
+
+// Remote access (Docker and other hosts): the server then listens on every interface, and a client
+// that is not on this machine receives a token only with the key in DATA/config/remote-access-key.txt.
+// Requests from this machine keep working without the key.
+const REMOTE_ACCESS_ACTIONS = Object.freeze(['enable', 'disable', 'rotate', 'show']);
+async function setRemoteAccess(dataDir, action, options = {}) {
+  const write = options.write || (text => process.stdout.write(text));
+  if (!REMOTE_ACCESS_ACTIONS.includes(action)) throw launcherFailure('SERVER_REMOTE_ACTION_INVALID', `알 수 없는 동작입니다: ${action || '(비어 있음)'}. enable · disable · rotate · show 중 하나를 고르세요.`, 2);
+  if (options.prepare !== false) prepareData(dataDir);
+  const config = readConfig(dataDir);
+  const keyPath = path.join(dataDir, 'config', 'remote-access-key.txt');
+  const readKey = () => { try { const key = fs.readFileSync(keyPath, 'utf8').trim(); return /^[A-Za-z0-9_-]{32,256}$/.test(key) ? key : ''; } catch (_) { return ''; } };
+  const keyLines = key => [
+    `접근 키: ${key}`,
+    '',
+    '이 키는 이 DATA에 접속할 수 있는 열쇠입니다. 믿을 수 있는 곳에만 입력하세요.',
+    '내부 네트워크 바깥(인터넷 · VPN)에서 연결하는 플러그인만 서버 연결 설정의 "접근 키"에 이 값을 넣으세요.',
+    '  - LIBRA · HAYAKU · Flashback: 서버 연결 설정 → 접근 키',
+    '  - RE:TRACE: 서버 관리 → 연결 진단 → 접근 키',
+    '  - GRADIA는 LIBRA에 저장한 접근 키를 함께 씁니다.',
+    '이 PC, 같은 내부 네트워크(사설 IP), 이 PC의 Docker 컨테이너에서 오는 연결은 키가 없어도 됩니다.'
+  ];
+  if (action === 'show') {
+    const key = readKey();
+    write([`[Librarian System] 외부 접속: ${config.remoteAccess ? '켜짐' : '꺼짐'}`, ...(config.remoteAccess && key ? ['', ...keyLines(key)] : []), ''].join('\n'));
+    return { enabled: config.remoteAccess, keyPresent: !!key };
+  }
+  assertNoPendingUpdate('SERVER_REMOTE_UPDATE_PENDING', '외부 접속 설정을');
+  await assertServerStopped(config, 'SERVER_REMOTE_SERVER_RUNNING');
+  let key = readKey();
+  if (action === 'rotate' || (action === 'enable' && !key)) {
+    key = crypto.randomBytes(32).toString('base64url');
+    fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+    writeFileAtomically(keyPath, `${key}\n`);
+    if (readKey() !== key) throw launcherFailure('SERVER_REMOTE_KEY_READBACK_FAILED', '접근 키를 저장했지만 다시 읽은 값이 다릅니다.', 6);
+  }
+  const enabled = action === 'disable' ? false : action === 'enable' ? true : config.remoteAccess;
+  if (enabled !== config.remoteAccess) {
+    const raw = JSON.parse(fs.readFileSync(config.configPath, 'utf8'));
+    writeFileAtomically(config.configPath, `${JSON.stringify({ ...raw, remoteAccess: { enabled } }, null, 2)}\n`);
+    if (readConfig(dataDir).remoteAccess !== enabled) throw launcherFailure('SERVER_REMOTE_READBACK_FAILED', '외부 접속 설정을 저장했지만 다시 읽은 값이 다릅니다.', 6);
+  }
+  const lines = action === 'disable'
+    ? ['[Librarian System] 외부 접속을 껐습니다. 서버는 다시 이 PC(127.0.0.1)에서만 연결을 받습니다.', '접근 키 파일은 남겨 두었습니다. 다시 켜면 같은 키를 씁니다.']
+    : [action === 'rotate' ? '[Librarian System] 접근 키를 새로 만들었습니다. 예전 키로는 더 이상 새 연결을 받지 않습니다.' : '[Librarian System] 외부 접속을 켰습니다.',
+      ...(enabled ? [`서버를 다시 실행하면 모든 네트워크 주소의 포트 ${config.port}에서 연결을 받습니다.`] : ['외부 접속은 꺼져 있습니다. 켜면 이 키를 씁니다.']),
+      '', ...keyLines(key)];
+  write(`${lines.join('\n')}\n`);
+  return { enabled, rotated: action === 'rotate', keyPath };
 }
 
 function runChecked(script, args = [], options = {}) {
@@ -229,6 +290,8 @@ function readConfig(dataDir, options = {}) {
     host,
     port,
     autoBackup: config.autoBackup !== false,
+    // Opt-in: the server then listens on every interface and keys non-loopback /bootstrap requests.
+    remoteAccess: config.remoteAccess?.enabled === true,
     url: `http://${urlHost}:${port}`,
     configPath
   };
@@ -466,6 +529,7 @@ async function main() {
     return;
   }
   if (args.command === 'set-port') return await setServerPort(args.dataDir, args.port);
+  if (args.command === 'set-remote-access') return await setRemoteAccess(args.dataDir, args.remoteAction);
   if (args.command === 'serve' || args.command === 'background') {
     recoverPendingUpdaterStateBeforeServerStart();
     prepareData(args.dataDir);
@@ -488,7 +552,7 @@ async function main() {
 if (require.main === module) {
   main().catch(error => {
     // A refused port change is the user's answer, not a crash: show the guidance without a stack.
-    if (String(error?.code || '').startsWith('SERVER_PORT_')) process.stderr.write(`[Librarian System] ${error.message}\n`);
+    if (/^SERVER_(?:PORT|REMOTE)_/.test(String(error?.code || ''))) process.stderr.write(`[Librarian System] ${error.message}\n`);
     else process.stderr.write(`[LIBRARIAN SYSTEM LAUNCHER] ${String(error?.stack || error)}\n`);
     process.exitCode = Number(error?.exitCode || 1);
   });
@@ -506,5 +570,6 @@ module.exports = {
   canonicalizePotentialPath,
   isTermuxRuntime,
   assertSafeDataDir,
-  setServerPort
+  setServerPort,
+  setRemoteAccess
 };

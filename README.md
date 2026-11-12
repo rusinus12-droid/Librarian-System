@@ -80,7 +80,7 @@ flowchart TB
 | **HAYAKU Locator Continuity** | `4.0.1` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
 | **LIA Persona Linker** | `0.30.0` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
 | **RE:TRACE** | `2.0.1` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
-| **GRADIA** | `1.0.0` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
+| **GRADIA** | `1.0.1` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
 
 > **호환 SDK**: Storage SDK `1.8.35` · Compute SDK `0.3.8`
 
@@ -231,6 +231,7 @@ flowchart TB
 
 - 기본 바인딩 주소는 `http://127.0.0.1:47630` (Loopback 전용)입니다.
 - 47630 포트를 다른 프로그램이 쓰고 있다면 서버를 끈 상태에서 `PROGRAM\서버_포트_변경.bat`(Windows) 또는 `sh PROGRAM/서버_포트_변경.sh`(macOS · Linux · Termux)로 포트를 바꿉니다. 도구가 서버가 꺼졌는지와 새 포트가 비어 있는지 확인한 뒤 `DATA/config/server-config.json`에 저장합니다. 그다음 플러그인마다 서버 주소를 새 주소로 바꿔야 합니다. 플러그인은 주소를 각자 저장하므로 한 곳만 바꾸면 나머지는 예전 포트에 남습니다(LIBRA · HAYAKU · Flashback: 서버 연결 설정, GRADIA: 소스 탭, RE:TRACE: 서버 관리 → 연결 진단. LIA는 서버를 쓰지 않습니다). 서버 단독으로 쓰는 스코프가 있어도, 새 포트로 서버를 실행한 뒤 바꾸면 플러그인이 같은 DATA임을 확인하고 주소만 옮깁니다(자세한 내용: [사용설명서](./PROGRAM/docs/사용설명서.md)의 '서버 포트 바꾸기').
+- **Docker**로 서버를 실행할 수 있습니다: 패키지 폴더에서 `docker compose -f PROGRAM/docker/compose.yaml up -d --build`. 플러그인 설정은 그대로입니다(`http://127.0.0.1:47630`). 이 PC와 내부 네트워크에서는 키 없이 연결되고, 내부 네트워크 바깥(인터넷 · VPN)에서 접속할 때만 **접근 키**가 필요합니다. PC에서 직접 실행하는 서버도 `PROGRAM\서버_외부접속_설정.bat` · `sh PROGRAM/서버_외부접속_설정.sh`로 외부 접속을 켤 수 있습니다(자세한 내용: [서버 사용과 접속 관련 상세 안내](./PROGRAM/서버_사용과_접속_관련_상세_안내.md)).
 
 ### 3. RisuAI 플러그인 설치 및 연결
 

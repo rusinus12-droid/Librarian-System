@@ -10,18 +10,24 @@ const shell=source.slice(source.indexOf('root.innerHTML = "<style>'));
 assert.match(shell,/data-server-view=\\"connection\\"><div class=\\"stack\\">\\n {8}<div class=\\"card\\"><div class=\\"card__head\\"><div><h2 class=\\"card__title\\">서버 주소<\/h2>/,'the address card leads the connection page');
 assert.match(shell,/<input class=\\"input\\" id=\\"retraceServerUrl\\" type=\\"url\\"/);
 assert.match(shell,/data-server-control=\\"url-save\\">주소 저장<\/button>/);
+assert.match(shell,/<input class=\\"input\\" id=\\"retraceServerAccessKey\\" type=\\"password\\"/,'the access key field is a password field');
 assert.match(source,/root\.querySelector\('#openOwnerStorage'\)[^\n]*\n\s*void fillRetraceServerUrl\(root\);/,'the saved address is shown when the page is built');
 
 const allowed=['127.0.0.1','localhost','[::1]','host.docker.internal'];
-const makeBridge=(name,state)=>({name,url:'http://127.0.0.1:47630',
+const makeBridge=(name,state)=>({name,url:'http://127.0.0.1:47630',key:'',
+  async setServerAccessKey(value){
+    if(value&&!/^[A-Za-z0-9_-]{32,256}$/.test(value))throw Object.assign(Error('memory_suite_access_key_invalid'),{code:'MEMORY_SUITE_ACCESS_KEY_INVALID'});
+    this.key=value;state.keyWrites.push(name);return {configured:!!value};
+  },
+  async getServerAccessKeyStatus(){return {configured:!!this.key};},
   async setServerUrl(value){
     if(state.fail===name)throw Object.assign(Error('argument_write_rejected'),{code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE'});
     const parsed=new URL(value);if(parsed.protocol!=='http:'||!allowed.includes(parsed.hostname))throw Object.assign(Error('invalid_memory_suite_server_url:server_url_must_be_loopback_http'),{code:'MEMORY_SUITE_INVALID_SERVER_URL'});
     this.url=parsed.origin;state.writes.push([name,this.url]);return {url:this.url};
   }});
 const fixture=()=>{
-  const state={writes:[],fail:'',accept:true,probe:{ok:true}};
-  const nodes={'#serverControlResult':{textContent:'',dataset:{}},'#retraceServerUrl':{value:''},'#retraceServerUrlPeers':{innerHTML:''}};
+  const state={writes:[],keyWrites:[],fail:'',accept:true,probe:{ok:true}};
+  const nodes={'#serverControlResult':{textContent:'',dataset:{}},'#retraceServerUrl':{value:''},'#retraceServerUrlPeers':{innerHTML:''},'#retraceServerAccessKey':{value:''},'#retraceServerAccessKeyStatus':{textContent:''}};
   const root={querySelector:id=>nodes[id]||null,querySelectorAll:()=>[],ownerDocument:{activeElement:null}};
   const Runtime={busy:false,serverControl:{},root,visible:true};
   const manager=Object.assign(makeBridge('retrace',state),{
@@ -86,6 +92,26 @@ const fixture=()=>{
   { // A focused field is not overwritten while the user types.
     const f=fixture();f.nodes['#retraceServerUrl'].value='http://127.0.0.1:4';f.root.ownerDocument.activeElement=f.nodes['#retraceServerUrl'];
     await f.api.fillRetraceServerUrl(f.root);assert.equal(f.nodes['#retraceServerUrl'].value,'http://127.0.0.1:4');results.push('typing is not overwritten');
+  }
+  { // A typed access key goes to RE:TRACE and LIA before the address, is cleared from the field and never shown.
+    const f=fixture();const key='k'.repeat(43);
+    f.nodes['#retraceServerUrl'].value='http://127.0.0.1:47630';f.nodes['#retraceServerAccessKey'].value=key;await f.click();
+    assert.deepEqual(f.state.keyWrites,['retrace','lia'],'the key is saved only to RE:TRACE and LIA');
+    assert.deepEqual([f.manager.key,f.peers.lia.key,f.peers.libra.key],[key,key,'']);
+    assert.equal(f.nodes['#retraceServerAccessKey'].value,'','the field is cleared after saving');
+    assert.match(f.nodes['#retraceServerAccessKeyStatus'].textContent,/접근 키 저장됨/);
+    assert.doesNotMatch(JSON.stringify(f.nodes),new RegExp(key),'the key is not written back to the page');
+    results.push('access key saved to RE:TRACE and LIA');
+  }
+  { // A malformed key stops before any address changes; an empty field keeps the saved key.
+    const f=fixture();f.nodes['#retraceServerUrl'].value='http://127.0.0.1:48001';f.nodes['#retraceServerAccessKey'].value='short';await f.click();
+    assert.equal(f.state.writes.length,0);assert.match(f.nodes['#serverControlResult'].textContent,/접근 키 형식이 올바르지 않습니다/);
+    f.nodes['#retraceServerAccessKey'].value='';await f.click();assert.equal(f.state.keyWrites.length,0);
+    results.push('bad key refused, empty field keeps the key');
+  }
+  { // A server that wants a key says so.
+    const f=fixture();f.state.probe={ok:false,error:'HTTP 403 remote_access_key_required'};f.nodes['#retraceServerUrl'].value='http://127.0.0.1:47630';await f.click();
+    assert.match(f.nodes['#serverControlResult'].textContent,/접근 키를 요구합니다/);results.push('key-required server explained');
   }
   console.log('retrace_server_url_setting_test: PASS ('+results.join('; ')+')');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -262,6 +262,34 @@ function httpHost(value) {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
+// Remote access is opt-in and keyed. The key lives beside the DATA it protects and never leaves it.
+const REMOTE_ACCESS_KEY_FILE = 'remote-access-key.txt';
+const REMOTE_ACCESS_LISTEN_HOST = '0.0.0.0';
+function remoteAccessKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ACCESS_KEY_FILE); }
+function loadRemoteAccessKey(dataDir) {
+  let key = '';
+  try { key = fs.readFileSync(remoteAccessKeyPath(dataDir), 'utf8').trim(); } catch (_) {}
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(key)) throw new Error('remote_access_key_missing_or_invalid');
+  return key;
+}
+function isLoopbackAddress(address) {
+  const value = String(address || '').toLowerCase().replace(/^::ffff:/, '');
+  return value === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value);
+}
+// The same PC and the local network (private IPv4, link-local, IPv6 unique-local/link-local) connect
+// without the access key, as a loopback-only server always did; a Docker bridge gateway is one of
+// these. Every other address (internet, CGNAT/VPN 100.64.0.0/10) needs the key.
+function isLocalNetworkAddress(address) {
+  if (isLoopbackAddress(address)) return true;
+  const value = String(address || '').toLowerCase().replace(/^::ffff:/, '').replace(/%.*$/, '');
+  const v4 = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  return /^f[cd][0-9a-f]{0,2}:/.test(value) || /^fe[89ab][0-9a-f]?:/.test(value);
+}
+
 function loopbackUrl(host, port) {
   return `http://${httpHost(host)}:${Number(port)}`;
 }
@@ -533,6 +561,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === '--host') result.host = String(argv[++index] || result.host);
     else if (arg === '--port') result.port = Number(argv[++index] || result.port);
     else if (arg === '--portable-settings-from-data') result.portableSettingsFromData = true;
+    else if (arg === '--remote-access') result.remoteAccess = true;
     else if (arg === '--no-auto-backup') { result.autoBackup = false; explicitPortableSettings.add('autoBackup'); }
     // Server Compute is retired. Older launchers may still pass these flags: accept and ignore them.
     else if (arg === '--no-compute') {}
@@ -1477,7 +1506,7 @@ function corsHeaders(request) {
   const origin = String(request?.headers?.origin || '').trim();
   const headers = {
     'Cache-Control': 'no-store',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Memory-Suite-Plugin, X-Memory-Suite-Read-Owners, X-Memory-Suite-Plugin-Version, X-Memory-Suite-Admin, X-Memory-Suite-Manager, X-Memory-Suite-Scope-Id, X-Memory-Suite-Storage-Mode, X-Memory-Suite-Reset-Epochs, X-Memory-Suite-Data-Instance',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Memory-Suite-Plugin, X-Memory-Suite-Read-Owners, X-Memory-Suite-Plugin-Version, X-Memory-Suite-Admin, X-Memory-Suite-Manager, X-Memory-Suite-Scope-Id, X-Memory-Suite-Storage-Mode, X-Memory-Suite-Reset-Epochs, X-Memory-Suite-Data-Instance, X-Memory-Suite-Access-Key',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'X-Content-Type-Options': 'nosniff'
   };
@@ -2215,8 +2244,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     for (const key of ['autoBackup']) {
       if (!explicit.has(key)) options[key] = stored[key];
     }
+    if (options.remoteAccess !== true) options.remoteAccess = stored.remoteAccess === true;
   }
   const autoBackup = options.autoBackup !== false;
+  // host stays loopback in the config; remote access only widens where this process listens.
+  const remoteAccess = options.remoteAccess === true;
+  const remoteAccessKey = remoteAccess ? loadRemoteAccessKey(dataDir) : '';
+  const listenHost = remoteAccess ? REMOTE_ACCESS_LISTEN_HOST : host;
   if (!authorityRuntime && fs.existsSync(dataDir)) preflightDataCompatibility(dataDir);
   if (!authorityRuntime) fs.mkdirSync(dataDir, { recursive: true });
   const dataLayout = authorityRuntime ? readJsonFile(path.join(dataDir,'data-layout.json'),null) : ensurePortableDataLayout(dataDir);
@@ -3315,6 +3349,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           startedAt,
           uptimeMs: now() - startedAt,
           maintenanceMode,
+          remoteAccess: { enabled: remoteAccess },
           namespaces: NAMESPACES,
           legacyNamespaces:NAMESPACES,
           supportedStorageOwners:authorityRuntime ? ACTIVE_STORAGE_NAMESPACES : SUPPORTED_STORAGE_OWNERS,
@@ -3328,6 +3363,13 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           scopeCatalogDegraded,
           interruptedRestoreRecovery
         });
+      }
+      // Without remote access the server listens on loopback only and nothing here changes. With it, only a
+      // client outside the local network needs this DATA's access key for a capability token; an unknown
+      // address counts as outside.
+      if (remoteAccess && url.pathname === '/bootstrap' && !isLocalNetworkAddress(request.socket?.remoteAddress)
+        && !safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
+        return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
       }
       if (request.method === 'GET' && url.pathname === '/bootstrap') {
         let requestedReadOwners;
@@ -3344,7 +3386,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         rememberClient(request, bootstrapPrincipal);
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : port;
-        const actualHost = typeof address === 'object' && address && address.address
+        const actualHost = remoteAccess ? host : typeof address === 'object' && address && address.address
           ? (address.address === '::' ? '::1' : address.address)
           : host;
         return sendJson(request, response, 200, {
@@ -3976,10 +4018,10 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     listen: () => new Promise((resolve, reject) => {
       if (authorityRuntime) return reject(Object.assign(new Error('AUTHORITY_HOST_PROFILE_UNQUALIFIED'),{code:'AUTHORITY_HOST_PROFILE_UNQUALIFIED',statusCode:503}));
       server.once('error', reject);
-      server.listen(port, host, async () => {
+      server.listen(port, listenHost, async () => {
         server.off('error', reject);
         scheduleAutomaticBackups();
-        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${host}:${server.address()?.port || port}`, itemCount: NAMESPACES.length });
+        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${listenHost}:${server.address()?.port || port}${remoteAccess ? ' remote-access' : ''}`, itemCount: NAMESPACES.length });
         resolve(server.address());
       });
     }),
@@ -4143,6 +4185,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  isLocalNetworkAddress,
   createMemorySuiteServer,
   parseArgs,
   SERVER_VERSION,

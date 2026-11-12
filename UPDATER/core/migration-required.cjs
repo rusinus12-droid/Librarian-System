@@ -61,7 +61,8 @@ async function copyIdentityAndEndpoint(sourceData, dataNext) {
   // physical authority at DATA.next and again at the promoted DATA path.
   identity.readDataInstanceIdentity(sourceData);
   await fsp.copyFile(identity.identityPath(sourceData), identity.identityPath(dataNext));
-  for (const name of ['compute-signing-key.txt', 'compute-pairing-key.txt']) {
+  // remote-access-key.txt: plugins on other hosts (Docker) keep connecting with the same key.
+  for (const name of ['compute-signing-key.txt', 'compute-pairing-key.txt', 'remote-access-key.txt']) {
     const source = path.join(sourceData, 'config', name);
     if (!fs.existsSync(source)) continue;
     const value = fs.readFileSync(source, 'utf8').trim();
@@ -75,7 +76,8 @@ async function copyIdentityAndEndpoint(sourceData, dataNext) {
   const sourceHost = ['127.0.0.1', 'localhost', '::1'].includes(String(sourceConfig.host || '')) ? String(sourceConfig.host) : String(templateConfig.host || '127.0.0.1');
   const sourcePort = Number(sourceConfig.port);
   const port = Number.isInteger(sourcePort) && sourcePort >= 1024 && sourcePort <= 65535 ? sourcePort : Number(templateConfig.port || 47630);
-  const nextConfig = { ...templateConfig, schema: 'memory-suite.server-config.v1', host: sourceHost, port };
+  const nextConfig = { ...templateConfig, schema: 'memory-suite.server-config.v1', host: sourceHost, port,
+    ...(sourceConfig.remoteAccess?.enabled === true ? { remoteAccess: { enabled: true } } : {}) };
   await fsp.writeFile(templateConfigPath, `${JSON.stringify(nextConfig, null, 2)}\n`, { mode: 0o600 });
   return { token, host: sourceHost, port };
 }

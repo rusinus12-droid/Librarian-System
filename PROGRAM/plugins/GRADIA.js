@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.0.0
+//@display-name GRADIA v1.0.1
 //@api 3.0
-//@version 1.0.0
+//@version 1.0.1
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.0.0';
+  const PLUGIN_VERSION = '1.0.1';
   
   
   
@@ -30653,6 +30653,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return out;
   };
 
+  // The access key of a server opened to other hosts. Like the address it is kept per namespace
+  // in pluginStorage; it travels only on /bootstrap and the bridge never hands it back.
+  const SAVED_SERVER_ACCESS_KEY_KEY = `__memory_suite_internal_server_access_key_v1__:${namespace}`;
+  const SERVER_ACCESS_KEY_PATTERN = /^[A-Za-z0-9_-]{32,256}$/;
+  const readSavedAccessKey = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_ACCESS_KEY_KEY);
+      const key = value === undefined || value === null ? '' : String(value).trim();
+      return SERVER_ACCESS_KEY_PATTERN.test(key) ? key : '';
+    } catch (_) { return ''; }
+  };
+  const accessKeyHeaders = async () => {
+    const key = await readSavedAccessKey();
+    return key ? { 'X-Memory-Suite-Access-Key': key } : {};
+  };
+  const persistServerAccessKey = async value => {
+    const key = String(value ?? '').trim();
+    if (key && !SERVER_ACCESS_KEY_PATTERN.test(key)) throw Object.assign(new Error('memory_suite_access_key_invalid'), { code:'MEMORY_SUITE_ACCESS_KEY_INVALID' });
+    const storage = rawPluginStorage();
+    if (!storage?.setItem) throw Object.assign(new Error('memory_suite_access_key_storage_unavailable'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    if (key) await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, key);
+    else if (typeof storage.removeItem === 'function') await storage.removeItem(SAVED_SERVER_ACCESS_KEY_KEY);
+    else await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, '');
+    if ((await readSavedAccessKey()) !== key) throw Object.assign(new Error('memory_suite_access_key_readback_mismatch'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    resetBootstrapCache();
+    return { configured: !!key };
+  };
   const getArgumentValue = async (names, fallback = '') => {
     for (const name of names) {
       for (const api of apiCandidates()) {
@@ -31213,7 +31240,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       method: 'GET',
       headers: {
         'X-Memory-Suite-Plugin': pluginId,
-        'X-Memory-Suite-Plugin-Version': pluginVersion
+        'X-Memory-Suite-Plugin-Version': pluginVersion,
+        ...(await accessKeyHeaders())
       }
     }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
     return validateBootstrapPayload(payload, url);
@@ -31384,7 +31412,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         method: 'GET',
         headers: {
           'X-Memory-Suite-Plugin': pluginId,
-          'X-Memory-Suite-Plugin-Version': pluginVersion
+          'X-Memory-Suite-Plugin-Version': pluginVersion,
+          ...(await accessKeyHeaders())
         }
       }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
@@ -37568,6 +37597,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     restorePluginStorage: async () => await withOwnerIO('plugin','',()=>scopedRestoreAll({})),
     testConnection,
     setServerUrl: (...args) => withModeConfiguration(()=>persistServerUrl(...args)),
+    setServerAccessKey: value => withModeConfiguration(()=>persistServerAccessKey(value)),
+    getServerAccessKeyStatus: async () => ({ configured: !!(await readSavedAccessKey()) }),
     configureConnection: (...args) => withModeConfiguration(()=>scopedConfigureConnection(...args)),
     getConnectionSettings: scopedGetConnectionSettings,
     mountConnectionPanel: scopedMountConnectionPanel,

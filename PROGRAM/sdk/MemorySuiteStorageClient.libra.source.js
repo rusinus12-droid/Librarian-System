@@ -636,6 +636,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       && probe.dataInstanceId === saved.dataInstanceId;
     return { same, reason:same ? 'same_data' : 'different_data' };
   };
+  // The access key of a server opened to other hosts. Like the address it is kept per namespace
+  // in pluginStorage; it travels only on /bootstrap and the bridge never hands it back.
+  const SAVED_SERVER_ACCESS_KEY_KEY = `__memory_suite_internal_server_access_key_v1__:${namespace}`;
+  const SERVER_ACCESS_KEY_PATTERN = /^[A-Za-z0-9_-]{32,256}$/;
+  const readSavedAccessKey = async () => {
+    try {
+      const value = await rawPluginStorage()?.getItem?.(SAVED_SERVER_ACCESS_KEY_KEY);
+      const key = value === undefined || value === null ? '' : String(value).trim();
+      return SERVER_ACCESS_KEY_PATTERN.test(key) ? key : '';
+    } catch (_) { return ''; }
+  };
+  const accessKeyHeaders = async () => {
+    const key = await readSavedAccessKey();
+    return key ? { 'X-Memory-Suite-Access-Key': key } : {};
+  };
+  const persistServerAccessKey = async value => {
+    const key = String(value ?? '').trim();
+    if (key && !SERVER_ACCESS_KEY_PATTERN.test(key)) throw Object.assign(new Error('memory_suite_access_key_invalid'), { code:'MEMORY_SUITE_ACCESS_KEY_INVALID' });
+    const storage = rawPluginStorage();
+    if (!storage?.setItem) throw Object.assign(new Error('memory_suite_access_key_storage_unavailable'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    if (key) await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, key);
+    else if (typeof storage.removeItem === 'function') await storage.removeItem(SAVED_SERVER_ACCESS_KEY_KEY);
+    else await storage.setItem(SAVED_SERVER_ACCESS_KEY_KEY, '');
+    if ((await readSavedAccessKey()) !== key) throw Object.assign(new Error('memory_suite_access_key_readback_mismatch'), { code:'MEMORY_SUITE_ARGUMENT_PERSISTENCE_UNAVAILABLE' });
+    resetBootstrapCache();
+    return { configured: !!key };
+  };
   const getArgumentValue = async (names, fallback = '') => {
     if (names === urlArguments) { const saved = await readSavedServerUrl(); if (saved) return saved; }
     for (const name of names) {
@@ -1218,7 +1245,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       method: 'GET',
       headers: {
         'X-Memory-Suite-Plugin': pluginId,
-        'X-Memory-Suite-Plugin-Version': pluginVersion
+        'X-Memory-Suite-Plugin-Version': pluginVersion,
+        ...(await accessKeyHeaders())
       }
     }, 'Librarian System connection test', bootstrapRequestTimeoutMs);
     return validateBootstrapPayload(payload, url);
@@ -1389,7 +1417,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         method: 'GET',
         headers: {
           'X-Memory-Suite-Plugin': pluginId,
-          'X-Memory-Suite-Plugin-Version': pluginVersion
+          'X-Memory-Suite-Plugin-Version': pluginVersion,
+          ...(await accessKeyHeaders())
         }
       }, 'Librarian System bootstrap', bootstrapRequestTimeoutMs);
       const value = validateBootstrapPayload(payload, config.url);
@@ -9568,7 +9597,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary hidden></div>
-        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <p class="muted" data-server-hint>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label><label data-server-access><b>접근 키</b><input data-access-key type="password" autocomplete="off" spellcheck="false" placeholder="내부 네트워크 바깥(인터넷·VPN)의 서버에 연결할 때만 입력"></label><p class="muted" data-access-status></p>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button></div>
         <section class="mscx-card" data-mode-confirm role="alertdialog" aria-label="저장 위치 전환 확인" hidden style="display:none">
           <b data-mode-confirm-title>저장 위치 전환 확인</b><p data-mode-confirm-text style="white-space:pre-wrap;overflow-wrap:anywhere"></p>
@@ -9808,7 +9837,34 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       if(terminal&&job.jobId!==terminalRefreshId){terminalRefreshId=job.jobId;scheduleLifecycleTimeout(()=>{void refreshPanelSettings();},0);}
     };
-    q('[data-test]').onclick = async()=>{ setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}`,storageResult.ok?'good':'error'); };
+    // A typed access key is saved before the address is tested or applied; an empty field keeps the saved key.
+    const renderAccessKeyStatus = async () => {
+      const node = q('[data-access-status]'); if (!node) return;
+      let configured = false; try { configured = !!(await readSavedAccessKey()); } catch (_) {}
+      node.innerHTML = configured ? '접근 키 저장됨 · 바꾸려면 새 키를 입력하세요. <button type="button" data-access-clear>키 지우기</button>'
+        : '이 PC와 내부 네트워크의 서버(이 PC의 Docker 포함)는 접근 키가 필요 없습니다. 인터넷·VPN 너머의 서버에만 외부 접속 설정 도구가 보여 준 키를 입력하세요.';
+      const clear = node.querySelector?.('[data-access-clear]');
+      if (clear) clear.onclick = async () => {
+        try { await persistServerAccessKey(''); setMessage('접근 키를 지웠습니다.','good'); }
+        catch (error) { setMessage(`접근 키를 지우지 못했습니다\n${error?.code || error?.message || error}`,'error'); }
+        await renderAccessKeyStatus();
+      };
+    };
+    const saveTypedAccessKey = async () => {
+      const input = q('[data-access-key]'), value = String(input?.value || '').trim();
+      if (!value) return true;
+      try { await persistServerAccessKey(value); }
+      catch (error) {
+        setMessage(error?.code === 'MEMORY_SUITE_ACCESS_KEY_INVALID' ? '접근 키 형식이 올바르지 않습니다. 서버의 외부 접속 설정 도구가 보여 준 키를 그대로 붙여 넣으세요.' : `접근 키를 저장하지 못했습니다\n${error?.code || error?.message || error}`,'error');
+        return false;
+      }
+      input.value = ''; await renderAccessKeyStatus(); return true;
+    };
+    const accessKeyHint = error => /remote_access_key_required/.test(String(error||''))
+      ? '\n이 서버는 내부 네트워크 바깥에서 오는 연결에 접근 키를 요구합니다. 서버의 외부 접속 설정 도구가 보여 준 키를 접근 키 칸에 넣고 다시 시도하세요.'
+      : /remote_access_disabled/.test(String(error||'')) ? '\n이 서버는 외부 접속이 꺼져 있습니다. 서버 쪽에서 외부 접속 설정 도구로 켜야 합니다.' : '';
+    void renderAccessKeyStatus();
+    q('[data-test]').onclick = async()=>{ if(String(q('[data-access-key]')?.value||'').trim()&&!await saveTypedAccessKey())return; setMessage('서버 연결을 확인하고 있습니다…'); const attempt=probeUi.begin(); const storageResult=await testConnection(q('[data-url]').value, {adoptDataInstance:true}); if(!await attempt.current(storageResult))return storageResult; setMessage(storageResult.ok?`연결됨 · Librarian System ${storageResult.serverVersion} · 항목 ${storageResult.liveRecords}`:`연결 실패 · ${storageResult.error}${accessKeyHint(storageResult.error)}`,storageResult.ok?'good':'error'); };
     // ── 적용 범위 (전역 / 스코프별) ────────────────────────────────────────────────────────────────
     // `scopeTarget` is declared before the handlers below read it; the panel also refreshes through a
     // scheduled callback, so a later `let` would be a TDZ error on the first refresh.
@@ -10018,6 +10074,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
     q('[data-apply]').onclick = async()=>{
       if(q('[data-apply]').disabled)return;
+      if(String(q('[data-access-key]')?.value||'').trim()&&!await saveTypedAccessKey())return;
       const targetUrl=q('[data-url]').value;
       const mode=root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value;
       const selectionCurrent=()=>root.isConnected!==false&&q('[data-url]').value===targetUrl&&root.querySelector(`input[name="${rootId}-mode"]:checked`)?.value===mode;
@@ -11103,6 +11160,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     restorePluginStorage: async () => await withOwnerIO('plugin','',()=>scopedRestoreAll({})),
     testConnection,
     setServerUrl: (...args) => withModeConfiguration(()=>persistServerUrl(...args)),
+    setServerAccessKey: value => withModeConfiguration(()=>persistServerAccessKey(value)),
+    getServerAccessKeyStatus: async () => ({ configured: !!(await readSavedAccessKey()) }),
     configureConnection: (...args) => withModeConfiguration(()=>scopedConfigureConnection(...args)),
     getConnectionSettings: scopedGetConnectionSettings,
     mountConnectionPanel: scopedMountConnectionPanel,
