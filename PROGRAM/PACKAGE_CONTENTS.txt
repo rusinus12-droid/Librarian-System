@@ -45,7 +45,8 @@ PROGRAM/서버_포트_변경.sh(macOS · Linux · Termux)로 포트를 바꿉니
 [원격 접속 · Docker]
 서버는 이 PC(127.0.0.1)에서만 연결을 받습니다. 다른 기기에서 쓰려면 서버를 끈 뒤
 PROGRAM\서버_외부접속_설정.bat(Windows) 또는 PROGRAM/서버_외부접속_설정.sh로 원격 접속 모드를 켜고,
-Tailscale이나 Cloudflare Tunnel의 https:// 주소로 연결합니다. 원격 접속 모드에서는 이 PC를 포함한
+Tailscale이나 Cloudflare Tunnel의 https:// 주소로 연결합니다. Tailscale은
+PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh가 열기 · 닫기 · 상태 보기를 해 줍니다. 원격 접속 모드에서는 이 PC를 포함한
 모든 플러그인에 접근 키를 넣습니다. Docker 서버는 항상 원격 접속 모드입니다.
 서버 주소 · 포트 · 접속 모드 · Docker는 PROGRAM/서버_사용과_접속_관련_상세_안내.txt에 모아 두었습니다.
 

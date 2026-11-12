@@ -32,16 +32,25 @@ function parseArgs(argv = process.argv.slice(2)) {
     } else if (result.command === 'set-remote-access' && ['--remote', '--local', '--rotate', '--show'].includes(argv[index])) {
       if (result.remoteAction) throw new Error('launcher_remote_action_conflict');
       result.remoteAction = argv[index].slice(2);
-    } else if (argv[index] === '--port' && result.command === 'set-port') {
+    } else if (result.command === 'remote-tunnel' && ['--open', '--close', '--status'].includes(argv[index])) {
+      if (result.tunnelAction) throw new Error('launcher_tunnel_action_conflict');
+      result.tunnelAction = argv[index].slice(2);
+    } else if (result.command === 'remote-tunnel' && argv[index] === '--docker') {
+      result.docker = true;
+    } else if (argv[index] === '--port' && ['set-port', 'remote-tunnel'].includes(result.command)) {
       if (argv[index + 1] === undefined) throw new Error('launcher_port_value_required');
       result.port = String(argv[++index]);
     } else throw new Error(`unknown_launcher_argument:${argv[index]}`);
   }
-  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare', 'set-port', 'set-remote-access'].includes(result.command)) {
+  if (!['serve', 'background', 'status', 'stop', 'integrity', 'prepare', 'set-port', 'set-remote-access', 'remote-tunnel'].includes(result.command)) {
     throw new Error(`unknown_launcher_command:${result.command}`);
   }
   if (result.command === 'set-port' && result.port === undefined) throw new Error('launcher_port_value_required');
   if (result.command === 'set-remote-access' && !result.remoteAction) result.remoteAction = 'show';
+  if (result.command === 'remote-tunnel') {
+    if (!result.tunnelAction) result.tunnelAction = 'status';
+    if (result.port !== undefined && !/^\d+$/.test(result.port)) throw new Error('launcher_port_value_invalid');
+  }
   return result;
 }
 
@@ -210,7 +219,33 @@ async function setRemoteAccess(dataDir, action, options = {}) {
       ...(effective ? [] : ['현재 내부 접속 모드입니다. remote로 켜면 이 키를 씁니다.']),
       '', restart, '', ...keyLines(key)];
   write(`${lines.join('\n')}\n`);
-  return { enabled: effective, rotated: action === 'rotate', created, keyPath };
+  // A tunnel left open in local mode lets other devices in without the key: offer to close ours.
+  const tunnel = action === 'local' && options.tunnelCheck !== false
+    ? await require('./tailscale_serve.cjs').closeTunnelForLocalMode(tunnelContext(dataDir, options, write)) : null;
+  return { enabled: effective, rotated: action === 'rotate', created, keyPath, ...(tunnel ? { tunnel } : {}) };
+}
+
+function tunnelContext(dataDir, options = {}, write = options.write || (text => process.stdout.write(text))) {
+  const tailscale = require('./tailscale_serve.cjs');
+  return {
+    run: options.run || tailscale.systemRunner(),
+    confirm: options.confirm || tailscale.terminalConfirm,
+    write, dataDir, readConfig, setRemoteAccess,
+    docker: options.docker === true, port: options.port,
+    termux: options.termux ?? isTermuxRuntime(),
+    container: options.container ?? inContainer()
+  };
+}
+
+// 서버_원격접속_열기: open / close / status of this server's tailscale serve entry.
+async function remoteTunnel(dataDir, action, options = {}) {
+  const tailscale = require('./tailscale_serve.cjs');
+  if (options.prepare !== false && options.docker !== true) prepareData(dataDir);
+  const context = tunnelContext(dataDir, options);
+  if (action === 'open') return await tailscale.openTunnel(context);
+  if (action === 'close') return tailscale.closeTunnel(context);
+  if (action === 'status') return tailscale.tunnelStatus(context);
+  throw launcherFailure('TUNNEL_ACTION_INVALID', `알 수 없는 동작입니다: ${action}. open · close · status 중 하나를 고르세요.`, 2);
 }
 
 function runChecked(script, args = [], options = {}) {
@@ -570,6 +605,7 @@ async function main() {
   }
   if (args.command === 'set-port') return await setServerPort(args.dataDir, args.port);
   if (args.command === 'set-remote-access') return await setRemoteAccess(args.dataDir, args.remoteAction);
+  if (args.command === 'remote-tunnel') return await remoteTunnel(args.dataDir, args.tunnelAction, { docker: args.docker, port: args.port });
   if (args.command === 'serve' || args.command === 'background') {
     recoverPendingUpdaterStateBeforeServerStart();
     if (process.env.LIBRARIAN_UPDATER_INTERNAL !== '1') startUpdaterRefresh();
@@ -604,7 +640,7 @@ function startUpdaterRefresh(options) {
 if (require.main === module) {
   main().catch(error => {
     // A refused port change is the user's answer, not a crash: show the guidance without a stack.
-    if (/^SERVER_(?:PORT|REMOTE)_/.test(String(error?.code || ''))) process.stderr.write(`[Librarian System] ${error.message}\n`);
+    if (/^(?:SERVER_(?:PORT|REMOTE)|TUNNEL)_/.test(String(error?.code || ''))) process.stderr.write(`[Librarian System] ${error.message}\n`);
     else process.stderr.write(`[LIBRARIAN SYSTEM LAUNCHER] ${String(error?.stack || error)}\n`);
     process.exitCode = Number(error?.exitCode || 1);
   });
@@ -623,5 +659,6 @@ module.exports = {
   isTermuxRuntime,
   assertSafeDataDir,
   setServerPort,
-  setRemoteAccess
+  setRemoteAccess,
+  remoteTunnel
 };

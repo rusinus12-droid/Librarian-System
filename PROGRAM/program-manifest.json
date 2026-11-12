@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.0.0",
-  "generatedAt": "2026-11-12T16:09:57.655Z",
+  "generatedAt": "2026-11-12T16:34:49.676Z",
   "server": {
     "version": "1.0.0",
     "protocol": {
@@ -4228,8 +4228,8 @@
       "bytes": 9711
     },
     "docs/사용설명서.md": {
-      "sha256": "c5d610568e58ed4f7f84fb60d818f38bc1b30706152c0160df75cdb7a726b640",
-      "bytes": 112830
+      "sha256": "f064ff96b0c46cfb8285935a943a4756f270b199a721f83e4f324a5f994b8ee6",
+      "bytes": 113194
     },
     "macOS_서버_실행.command": {
       "sha256": "cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c",
@@ -4240,8 +4240,8 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "1effa2260f47b47f56642603f23e88daae7d4ef26b37df4e08d0934ff9f901ec",
-      "bytes": 4575
+      "sha256": "7d15a394721f3d4522134a692fc92eb3abd0792567b1e417dbf2b1945b56b6dd",
+      "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
       "sha256": "cc76fabb103a84083fb98fd5c4f13fe71c20818b7d4f4e102923d71cf5d5da43",
@@ -5096,8 +5096,8 @@
       "bytes": 5384
     },
     "tests/cross_platform_launcher_test.cjs": {
-      "sha256": "e0e90dc88c62a9d8d6f21649e6b5cb7fddeda1f2e209a937cb557778c77c3edf",
-      "bytes": 7028
+      "sha256": "0acfc56fd6a533e768ec32d90af8629a5ad33c2103a49cb8085236f715925688",
+      "bytes": 7063
     },
     "tests/current_status_gui_runtime_test.cjs": {
       "sha256": "3fc48253a3fb1abe6caa8bd27ada9a5b167ebbbcd496c8ad9884a47ea9d3228f",
@@ -10576,8 +10576,12 @@
       "bytes": 6781
     },
     "tests/remote_access_server_test.cjs": {
-      "sha256": "305de964072ffd61386d73d823dcebffcdcf61ac87f04acbe2940ad794e03f2a",
-      "bytes": 18177
+      "sha256": "074033745dff854a5060853458bed7f8231656dcd7096ded70682a97974d92f0",
+      "bytes": 18231
+    },
+    "tests/remote_tunnel_tailscale_test.cjs": {
+      "sha256": "4f6ebd850382dfa9499b6b8a2127d3f826a45160683d2ea4c4cee6e9748b6e3a",
+      "bytes": 10682
     },
     "tests/remote_update_commit_boundary_test.cjs": {
       "sha256": "6a2c5505eb05761d849424424b261335b8170c2a4066ac7ab5a6bc32efde460a",
@@ -11432,8 +11436,8 @@
       "bytes": 12343
     },
     "tests/storage_mode_publication_basic.test.cjs": {
-      "sha256": "67224e517c58d9ee04013268add5fae9cd816d21e9ee8a086b6cceb680292476",
-      "bytes": 17058
+      "sha256": "afab457bf910491070cc9d813a6d92a8b6b9b5df5659197ef6d75d56afbc1f9b",
+      "bytes": 17295
     },
     "tests/storage_mode_special_parity_gates_test.cjs": {
       "sha256": "ea47f5e9c772161a71b085caef7dced89a189cc0b44fbe86d79210d56bca6ee2",
@@ -11588,8 +11592,8 @@
       "bytes": 4108
     },
     "tests/windows_bootstrap_contract_test.cjs": {
-      "sha256": "86a5396d63d9a267239fe54ea4358cc414571853730dcd6fa19f07785f40293d",
-      "bytes": 9255
+      "sha256": "21668d2b35f0dd696ea6744695c5807ddedf88a3ce1007ba852a50a541a19cab",
+      "bytes": 9342
     },
     "tests/wm_semantic_context_v1_test.cjs": {
       "sha256": "ee742e475a773b042a7d1b3168d5ed14036a3d74c58e61629c3d33da8d94b54b",
@@ -11792,8 +11796,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "8d84a8f0a77dcd1158ea6042f64bd5312e04d396ccc22412a91b2bc51aa52521",
-      "bytes": 60500
+      "sha256": "61ce286f753230144a09bfbf70c6bdc08e1d4919eefef8d80c232ba590d1bc2f",
+      "bytes": 60658
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -11956,8 +11960,8 @@
       "bytes": 11842
     },
     "tools/platform_launcher.cjs": {
-      "sha256": "157a5efa138781039a53f4f751d0fafbc3458b94e5c5f565d3f1edd7cbf3cd24",
-      "bytes": 31594
+      "sha256": "a689c35f1ed1524078c809c5aa67c1a0e58ed0ab8d33bd51512328cbb81762f2",
+      "bytes": 33893
     },
     "tools/plugin_version_provenance.cjs": {
       "sha256": "7680d0670f8fdb6cb842360cea8800ef4601dde5ac300998957e8d814b6b512a",
@@ -12227,6 +12231,10 @@
       "sha256": "c370ff60f39b4657e6e52ed05aa4f769e1cda785b74d80a65f6cef4eb4aba94d",
       "bytes": 2390
     },
+    "tools/tailscale_serve.cjs": {
+      "sha256": "011d9d245a09c098bfc2d1289f47895da2b57e0d6259e8636a688bd3e1637954",
+      "bytes": 14654
+    },
     "tools/termux_install.py": {
       "sha256": "aa4a94a43ea50ad20cc60638f93d4eaa5f955899337b308871e446e0aa35e452",
       "bytes": 4643
@@ -12380,8 +12388,8 @@
       "bytes": 141
     },
     "서버_사용과_접속_관련_상세_안내.txt": {
-      "sha256": "8d98e651e56abf54c4ce819a34529a9e896878ad8039ee3e70e16006ef83524d",
-      "bytes": 22244
+      "sha256": "548c40e298cc77df577d73880dd2ddbf7abfa4b1319c54e396d5da3e2ca37221",
+      "bytes": 27728
     },
     "서버_상태_확인.bat": {
       "sha256": "15293595a7613873c0288e5435e8dfefd6225d45d9af19a9964c9d9e0ecd843a",
@@ -12398,6 +12406,14 @@
     "서버_외부접속_설정.sh": {
       "sha256": "aa44945cbee1b02853c29adfa0b173b75e6db1de2cf889d61439e44d556bb94a",
       "bytes": 1411
+    },
+    "서버_원격접속_열기.bat": {
+      "sha256": "b59c183d8431c70fd19a077e2f4f8b2a7cce63b5bec13ee9c717e40e5af6aada",
+      "bytes": 1988
+    },
+    "서버_원격접속_열기.sh": {
+      "sha256": "50b924927e2d44dde6a9f11f28090d9001515a45ba6ffb1a7340eab5d6dbd7e8",
+      "bytes": 1223
     },
     "서버_포트_변경.bat": {
       "sha256": "010ce44acadb577188e39278b3875538a360e2ff139b4e30f5032d44e8a81333",

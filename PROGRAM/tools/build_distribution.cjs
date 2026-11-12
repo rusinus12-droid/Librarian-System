@@ -238,6 +238,8 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '서버_포트_변경.sh',
   '서버_외부접속_설정.bat',
   '서버_외부접속_설정.sh',
+  '서버_원격접속_열기.bat',
+  '서버_원격접속_열기.sh',
   '서버_사용과_접속_관련_상세_안내.txt',
   '안드로이드_Termux_준비.sh',
   '안드로이드_설치.sh',
@@ -346,7 +348,7 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   '_common.cmd','_find_node.bat','_server_foreground.cmd',
   '1_서버_실행.bat','1_서버_실행.sh','2_서버_종료.bat','2_서버_종료.sh',
   '서버_백그라운드_실행.bat','서버_백그라운드_실행.sh','서버_상태_확인.bat','서버_상태_확인.sh',
-  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh',
+  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_원격접속_열기.bat','서버_원격접속_열기.sh',
   '서버_사용과_접속_관련_상세_안내.txt',
   'macOS_서버_실행.command','memory-suite.sh','안드로이드_Termux_준비.sh','안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat','기존_DATA_이관_ZIP_만들기.sh',
@@ -355,7 +357,7 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
 ]);
 const RUNTIME_TOOL_FILES = new Set([
   'check_node.cjs','config_env.cjs','install_runtime.ps1','platform_launcher.cjs','portable_export_stopped.cjs',
-  'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','updater-refresh.cjs','zip_writer.cjs'
+  'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','tailscale_serve.cjs','termux_install.py','updater-refresh.cjs','zip_writer.cjs'
 ]);
 const RUNTIME_SDK_FILES = new Set([
   // The search kernel stays in sdk/ only as a test oracle; nothing at runtime loads it.

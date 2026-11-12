@@ -39,7 +39,7 @@ test('launcher: remote/local/rotate/show keep the key and say a restart applies 
     assert.match(rotatedOut.join(''),/다시 실행해야 반영/);
     const rotated=fs.readFileSync(path.join(t.data,'config','remote-access-key.txt'),'utf8').trim();
     assert.notEqual(rotated,first.key);
-    const localOut=[];await launcher.setRemoteAccess(t.data,'local',{write:x=>localOut.push(x)});
+    const localOut=[];await launcher.setRemoteAccess(t.data,'local',{tunnelCheck:false,write:x=>localOut.push(x)});
     assert.match(localOut.join(''),/다시 실행해야 반영/);
     assert.match(localOut.join(''),/보존/);
     assert.equal(launcher.readConfig(t.data).remoteAccess,false);
@@ -54,7 +54,7 @@ test('launcher: remote/local/rotate/show keep the key and say a restart applies 
 test('launcher: a container cannot leave remote mode, and a fresh heartbeat counts as a running server',async()=>{
   const t=temp();try{
     await enable(t.data);
-    await assert.rejects(()=>launcher.setRemoteAccess(t.data,'local',{write:()=>{},container:true}),e=>e.code==='SERVER_REMOTE_CONTAINER_FIXED');
+    await assert.rejects(()=>launcher.setRemoteAccess(t.data,'local',{tunnelCheck:false,write:()=>{},container:true}),e=>e.code==='SERVER_REMOTE_CONTAINER_FIXED');
     const previous=process.env.LIBRARIAN_CONTAINER;process.env.LIBRARIAN_CONTAINER='1';
     const beat=path.join(t.data,'config','server-heartbeat.json');
     try{
@@ -125,7 +125,7 @@ test('server: a restart, a rotation or a mode change revokes remote tokens',asyn
       assert.equal((await get(`http://127.0.0.1:${s.port}/bootstrap`,{...H,'X-Memory-Suite-Access-Key':key})).status,403,'the old key no longer connects');
       assert.equal((await get(`http://127.0.0.1:${s.port}/bootstrap`,{...H,'X-Memory-Suite-Access-Key':newKey})).status,200);
       await s.app.close();s=null;
-      await launcher.setRemoteAccess(t.data,'local',{write:()=>{}});
+      await launcher.setRemoteAccess(t.data,'local',{tunnelCheck:false,write:()=>{}});
       s=await start(t.data,{portableSettingsFromData:true});
       const local=await get(`http://127.0.0.1:${s.port}/bootstrap`,H);
       assert.equal(local.status,200,'local mode again: no key');
