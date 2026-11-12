@@ -4,6 +4,8 @@
 # Or use PROGRAM/docker/compose.yaml. The guide is PROGRAM/서버_사용과_접속_관련_상세_안내.txt.
 FROM node:22-bookworm-slim
 ENV LIBRARIAN_HOME=/librarian
+# The container is a separate device: remote access mode is fixed, so every plugin needs the access key.
+ENV LIBRARIAN_CONTAINER=1
 WORKDIR /librarian
 # Only PROGRAM goes into the image. DATA is a volume, so the image never carries anyone's memories.
 COPY PROGRAM ./PROGRAM

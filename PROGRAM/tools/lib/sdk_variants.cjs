@@ -5,10 +5,12 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 // Reviewed manager-only health and saved-server-address delta; local-only consumers retain their pin.
 // 2026-11-12: the manager surface also exposes setServerUrl, so RE:TRACE can follow a changed server port.
 // 2026-11-12: setServerAccessKey/getServerAccessKeyStatus, so RE:TRACE can reach a remote-access (Docker) server.
-const managerOnlyConsumerSha256='4d5362de393f837d4703f8b73c2c92671c6a750571f51fd4ba8e2c34b6da385b';
+// 2026-11-13: https:// tunnel addresses for other devices, and one re-bootstrap after a server restart in remote mode.
+const managerOnlyConsumerSha256='3cdd12016e56019dd7f557fb0db89b29ae200e786fc7d3891f9096d0052007d8';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
 // 2026-11-12: /bootstrap sends the saved access key of a remote-access (Docker) server.
-const gradiaReadOnlyConsumerSha256='21a15291e1703a380bd40c50a63650ff0c913326f7af811124803e7150c01ea1';
+// 2026-11-13: https:// tunnel addresses for other devices, and one re-bootstrap after a server restart in remote mode.
+const gradiaReadOnlyConsumerSha256='c437b3a747456e4f67456ece1e48102b683b25f41e439b5a243b7ec0c5a2cc7e';
 const STORAGE_VARIANTS=Object.freeze({
  'Flashback_Memory.js':Object.freeze({variant:'core3-standard-flashback',source:'sdk/MemorySuiteStorageClient.flashback.source.js',embedsCompute:false}),
  'HAYAKU_Locator_Continuity.js':Object.freeze({variant:'core3-standard-hayaku',source:'sdk/MemorySuiteStorageClient.source.js',embedsCompute:false}),

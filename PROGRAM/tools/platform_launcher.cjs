@@ -29,7 +29,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     if (argv[index] === '--data-dir') {
       if (!argv[index + 1] || String(argv[index + 1]).startsWith('--')) throw new Error('launcher_data_dir_value_required');
       result.dataDir = path.resolve(argv[++index]);
-    } else if (result.command === 'set-remote-access' && ['--enable', '--disable', '--rotate', '--show'].includes(argv[index])) {
+    } else if (result.command === 'set-remote-access' && ['--remote', '--local', '--rotate', '--show'].includes(argv[index])) {
       if (result.remoteAction) throw new Error('launcher_remote_action_conflict');
       result.remoteAction = argv[index].slice(2);
     } else if (argv[index] === '--port' && result.command === 'set-port') {
@@ -48,11 +48,15 @@ function parseArgs(argv = process.argv.slice(2)) {
 const MIN_SERVER_PORT = 1024, MAX_SERVER_PORT = 65535;
 const launcherFailure = (code, message, exitCode) => Object.assign(new Error(message), { code, exitCode });
 
-function portAvailable(host, port, allowIPv4Fallback = false) {
+// Inside the Docker image (LIBRARIAN_CONTAINER=1) the server is a separate device: remote access
+// mode is fixed and it listens on the container's own interface.
+const inContainer = () => process.env.LIBRARIAN_CONTAINER === '1';
+const CONTAINER_HEARTBEAT_STALE_MS = 30000;
+
+function portAvailable(host, port) {
   return new Promise(resolve => {
     const probe = require('node:net').createServer();
-    probe.once('error', error => resolve(allowIPv4Fallback && ['EAFNOSUPPORT', 'EADDRNOTAVAIL', 'EPROTONOSUPPORT'].includes(error.code)
-      ? portAvailable('0.0.0.0', port) : false));
+    probe.once('error', () => resolve(false));
     probe.listen({ host, port, exclusive: true }, () => probe.close(() => resolve(true)));
   });
 }
@@ -67,7 +71,17 @@ function assertNoPendingUpdate(code, subject) {
     throw launcherFailure(code, `미완료 업데이트가 있어 ${subject} 바꾸지 않았습니다. 서버를 한 번 실행해 업데이트 복구를 끝낸 뒤 다시 시도하세요.`, 5);
   }
 }
-async function assertServerStopped(config, code) {
+async function assertServerStopped(config, code, dataDir) {
+  // `docker compose run` starts the tool in its own container: the running server's port is not
+  // visible from there, but the heartbeat it writes into the shared DATA volume is.
+  if (inContainer() && dataDir) {
+    let beat = null;
+    try { beat = JSON.parse(fs.readFileSync(path.join(dataDir, 'config', 'server-heartbeat.json'), 'utf8')); } catch (_) {}
+    const age = Date.now() - Number(beat?.at || 0);
+    if (beat && age >= 0 && age < CONTAINER_HEARTBEAT_STALE_MS) {
+      throw launcherFailure(code, '서버 컨테이너가 실행 중입니다. 먼저 docker compose -f PROGRAM/docker/compose.yaml stop 으로 멈춘 뒤 다시 시도하세요.', 3);
+    }
+  }
   try {
     await health(config.url, 2000);
   } catch (error) {
@@ -100,9 +114,9 @@ async function setServerPort(dataDir, requested, options = {}) {
     write(`[Librarian System] 서버 포트는 이미 ${port}입니다. 바꾸지 않았습니다.\n서버 주소: ${config.url}\n`);
     return { changed: false, port, url: config.url };
   }
-  await assertServerStopped(config, 'SERVER_PORT_SERVER_RUNNING');
-  const bindHost = config.remoteAccess ? '::' : config.host === 'localhost' ? '127.0.0.1' : config.host;
-  if (!(await portAvailable(bindHost, port, config.remoteAccess && config.host !== '::1'))) {
+  await assertServerStopped(config, 'SERVER_PORT_SERVER_RUNNING', dataDir);
+  const bindHost = inContainer() ? '0.0.0.0' : config.host === 'localhost' ? '127.0.0.1' : config.host;
+  if (!(await portAvailable(bindHost, port))) {
     throw launcherFailure('SERVER_PORT_IN_USE', `포트 ${port}는 다른 프로그램이 사용 중입니다. 다른 포트를 고르세요.`, 4);
   }
   writeFileAtomically(config.configPath, `${JSON.stringify({ ...JSON.parse(fs.readFileSync(config.configPath, 'utf8')), port }, null, 2)}\n`);
@@ -119,6 +133,7 @@ async function setServerPort(dataDir, requested, options = {}) {
     '  - GRADIA: 소스 탭 → 서버 주소',
     '  - RE:TRACE: 서버 관리 → 연결 진단 → 서버 주소',
     '  LIA는 서버를 쓰지 않으므로 바꾸지 않아도 됩니다.',
+    'Tailscale이나 Cloudflare Tunnel로 포트를 열어 두었다면 새 포트로 다시 여세요(예: tailscale serve --bg 새포트).',
     '',
     `설정 파일: ${saved.configPath}`,
     ''
@@ -126,54 +141,76 @@ async function setServerPort(dataDir, requested, options = {}) {
   return { changed: true, previousPort: config.port, port, url: saved.url };
 }
 
-// Remote access (Docker and other hosts): the server then listens on every interface, and a client
-// that is not on this machine receives a token only with the key in DATA/config/remote-access-key.txt.
-// Requests from this machine keep working without the key.
-const REMOTE_ACCESS_ACTIONS = Object.freeze(['enable', 'disable', 'rotate', 'show']);
+// Two modes. Local (default): loopback only, no key. Remote: still loopback only, and every
+// /bootstrap needs the key in DATA/config/remote-access-key.txt, the same PC included, because other
+// devices arrive through a tunnel (tailscale serve, Cloudflare Tunnel) from loopback as well.
+// A container is always in remote mode. Changes apply from the next server start.
+const REMOTE_ACCESS_ACTIONS = Object.freeze(['remote', 'local', 'rotate', 'show']);
 async function setRemoteAccess(dataDir, action, options = {}) {
   const write = options.write || (text => process.stdout.write(text));
-  if (!REMOTE_ACCESS_ACTIONS.includes(action)) throw launcherFailure('SERVER_REMOTE_ACTION_INVALID', `알 수 없는 동작입니다: ${action || '(비어 있음)'}. enable · disable · rotate · show 중 하나를 고르세요.`, 2);
+  if (!REMOTE_ACCESS_ACTIONS.includes(action)) throw launcherFailure('SERVER_REMOTE_ACTION_INVALID', `알 수 없는 동작입니다: ${action || '(비어 있음)'}. remote · local · rotate · show 중 하나를 고르세요.`, 2);
   if (options.prepare !== false) prepareData(dataDir);
   const config = readConfig(dataDir);
+  const container = options.container ?? inContainer();
   const keyPath = path.join(dataDir, 'config', 'remote-access-key.txt');
   const readKey = () => { try { const key = fs.readFileSync(keyPath, 'utf8').trim(); return /^[A-Za-z0-9_-]{32,256}$/.test(key) ? key : ''; } catch (_) { return ''; } };
+  const modeName = enabled => enabled ? '원격 접속 모드' : '내부 접속 모드';
   const keyLines = key => [
     `접근 키: ${key}`,
     '',
-    '이 키는 이 DATA에 접속할 수 있는 열쇠입니다. 믿을 수 있는 곳에만 입력하세요.',
-    '내부 네트워크 바깥(인터넷 · VPN)에서 연결하는 플러그인만 서버 연결 설정의 "접근 키"에 이 값을 넣으세요.',
+    '이 키는 이 DATA에 접속할 수 있는 열쇠입니다. 믿을 수 있는 곳에만 입력하고 다른 사람에게 보내지 마세요.',
+    '원격 접속 모드에서는 같은 PC의 플러그인을 포함해 모든 플러그인에 이 키를 넣어야 합니다.',
     '  - LIBRA · HAYAKU · Flashback: 서버 연결 설정 → 접근 키',
     '  - RE:TRACE: 서버 관리 → 연결 진단 → 접근 키',
     '  - GRADIA는 LIBRA에 저장한 접근 키를 함께 씁니다.',
-    '이 PC, 같은 내부 네트워크(사설 IP), 이 PC의 Docker 컨테이너에서 오는 연결은 키가 없어도 됩니다.'
+    '다른 기기는 Tailscale(tailscale serve)이나 Cloudflare Tunnel의 https:// 주소로만 연결할 수 있습니다.'
   ];
   if (action === 'show') {
     const key = readKey();
-    write([`[Librarian System] 외부 접속: ${config.remoteAccess ? '켜짐' : '꺼짐'}`, ...(config.remoteAccess && key ? ['', ...keyLines(key)] : []), ''].join('\n'));
-    return { enabled: config.remoteAccess, keyPresent: !!key };
+    const enabled = container || config.remoteAccess;
+    write([`[Librarian System] 현재: ${modeName(enabled)}${container ? ' (Docker 컨테이너는 원격 접속 모드로 고정)' : ''}`,
+      ...(enabled && key ? ['', ...keyLines(key)] : !enabled && key ? ['접근 키 파일은 보존되어 있습니다. remote로 다시 켜면 같은 키를 씁니다.'] : []), ''].join('\n'));
+    return { enabled, keyPresent: !!key };
   }
-  assertNoPendingUpdate('SERVER_REMOTE_UPDATE_PENDING', '외부 접속 설정을');
-  await assertServerStopped(config, 'SERVER_REMOTE_SERVER_RUNNING');
+  if (container && action === 'local') {
+    throw launcherFailure('SERVER_REMOTE_CONTAINER_FIXED', 'Docker 컨테이너는 별도 기기로 취급하므로 내부 접속 모드로 바꿀 수 없습니다. 같은 PC의 플러그인도 접근 키를 넣어 연결하세요.', 2);
+  }
   let key = readKey();
-  if (action === 'rotate' || (action === 'enable' && !key)) {
+  // Asking for the mode that is already set changes nothing, so it needs no stopped server. The
+  // container entrypoint relies on this when it restarts right after a crash.
+  if (action === 'remote' && key && config.remoteAccess) {
+    write(`[Librarian System] 이미 원격 접속 모드입니다. 바꾸지 않았습니다.\n\n${keyLines(key).join('\n')}\n`);
+    return { enabled: true, rotated: false, created: false, keyPath };
+  }
+  assertNoPendingUpdate('SERVER_REMOTE_UPDATE_PENDING', '접속 모드를');
+  await assertServerStopped(config, 'SERVER_REMOTE_SERVER_RUNNING', dataDir);
+  const created = action === 'rotate' || (action === 'remote' && !key);
+  if (created) {
     key = crypto.randomBytes(32).toString('base64url');
     fs.mkdirSync(path.dirname(keyPath), { recursive: true });
     writeFileAtomically(keyPath, `${key}\n`);
     if (readKey() !== key) throw launcherFailure('SERVER_REMOTE_KEY_READBACK_FAILED', '접근 키를 저장했지만 다시 읽은 값이 다릅니다.', 6);
   }
-  const enabled = action === 'disable' ? false : action === 'enable' ? true : config.remoteAccess;
+  // local keeps the key file, so returning to remote mode keeps the same key.
+  const enabled = action === 'local' ? false : action === 'remote' ? true : config.remoteAccess;
   if (enabled !== config.remoteAccess) {
     const raw = JSON.parse(fs.readFileSync(config.configPath, 'utf8'));
     writeFileAtomically(config.configPath, `${JSON.stringify({ ...raw, remoteAccess: { enabled } }, null, 2)}\n`);
-    if (readConfig(dataDir).remoteAccess !== enabled) throw launcherFailure('SERVER_REMOTE_READBACK_FAILED', '외부 접속 설정을 저장했지만 다시 읽은 값이 다릅니다.', 6);
+    if (readConfig(dataDir).remoteAccess !== enabled) throw launcherFailure('SERVER_REMOTE_READBACK_FAILED', '접속 모드를 저장했지만 다시 읽은 값이 다릅니다.', 6);
   }
-  const lines = action === 'disable'
-    ? ['[Librarian System] 외부 접속을 껐습니다. 서버는 다시 이 PC(127.0.0.1)에서만 연결을 받습니다.', '접근 키 파일은 남겨 두었습니다. 다시 켜면 같은 키를 씁니다.']
-    : [action === 'rotate' ? '[Librarian System] 접근 키를 새로 만들었습니다. 예전 키로는 더 이상 새 연결을 받지 않습니다.' : '[Librarian System] 외부 접속을 켰습니다.',
-      ...(enabled ? [`서버를 다시 실행하면 모든 네트워크 주소의 포트 ${config.port}에서 연결을 받습니다.`] : ['외부 접속은 꺼져 있습니다. 켜면 이 키를 씁니다.']),
-      '', ...keyLines(key)];
+  const effective = container || enabled;
+  const restart = '서버를 다시 실행해야 반영됩니다. 실행하면 이전에 발급된 원격 연결 토큰은 모두 무효가 되고, 플러그인은 키로 다시 연결합니다.';
+  const lines = action === 'local'
+    ? ['[Librarian System] 내부 접속 모드로 바꿨습니다. 같은 PC의 플러그인은 키 없이 연결합니다.',
+      '접근 키 파일은 보존했습니다. remote로 다시 켜면 같은 키를 씁니다.',
+      'Tailscale이나 Cloudflare Tunnel로 서버 포트를 열어 두었다면 함께 닫으세요. 내부 접속 모드에서 터널을 열어 두면 키 없이 접속됩니다.',
+      '', restart]
+    : [action === 'rotate' ? '[Librarian System] 접근 키를 새로 만들었습니다. 예전 키로는 더 이상 연결할 수 없습니다.'
+      : `[Librarian System] 원격 접속 모드로 바꿨습니다.${created ? ' 새 접근 키를 만들었습니다.' : ' 기존 접근 키를 그대로 씁니다.'}`,
+      ...(effective ? [] : ['현재 내부 접속 모드입니다. remote로 켜면 이 키를 씁니다.']),
+      '', restart, '', ...keyLines(key)];
   write(`${lines.join('\n')}\n`);
-  return { enabled, rotated: action === 'rotate', keyPath };
+  return { enabled: effective, rotated: action === 'rotate', created, keyPath };
 }
 
 function runChecked(script, args = [], options = {}) {
@@ -292,7 +329,7 @@ function readConfig(dataDir, options = {}) {
     host,
     port,
     autoBackup: config.autoBackup !== false,
-    // Opt-in: the server then listens on every interface and keys non-loopback /bootstrap requests.
+    // Opt-in remote access mode: still loopback only, and every /bootstrap needs the access key.
     remoteAccess: config.remoteAccess?.enabled === true,
     url: `http://${urlHost}:${port}`,
     configPath
@@ -399,7 +436,8 @@ function serverArguments(config, dataDir) {
     '--port', String(config.port),
     '--data-dir', dataDir,
     // The child resolves these preferences only after its own restore recovery.
-    '--portable-settings-from-data'
+    '--portable-settings-from-data',
+    ...(inContainer() ? ['--container'] : [])
   ];
 }
 

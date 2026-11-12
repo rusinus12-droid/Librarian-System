@@ -29789,7 +29789,9 @@ function createGradiaModelContextBudget({ digest }) {
     try {
       const parsed = new URL(String(value || LIB_READ_DEFAULT_URL).trim());
       const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-      if (parsed.protocol !== 'http:' || !['127.0.0.1','localhost','::1','host.docker.internal'].includes(hostname)
+      // http:// only for this machine; another device's server only through a tunnel's https:// address.
+      const loopback = ['127.0.0.1','localhost','::1','host.docker.internal'].includes(hostname);
+      if (!hostname || !((parsed.protocol === 'http:' && loopback) || parsed.protocol === 'https:')
           || parsed.username || parsed.password || parsed.search || parsed.hash || !['','/'].includes(parsed.pathname)) throw Error('invalid');
       return parsed.origin;
     } catch (_) { throw libEvidenceError('LIB_READ_SERVER_URL_INVALID'); }
@@ -30866,8 +30868,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try {
       const parsed = new URL(raw);
       const host = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-      if (parsed.protocol !== 'http:' || !['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host)) {
-        throw new Error('server_url_must_be_loopback_http');
+      // http:// only for this machine (and a container's view of it). Any other address is another
+      // device and must come through a tunnel's https:// address (tailscale serve, Cloudflare Tunnel).
+      const loopback = ['127.0.0.1', 'localhost', '::1', 'host.docker.internal'].includes(host);
+      if (parsed.username || parsed.password || !host
+        || !((parsed.protocol === 'http:' && loopback) || parsed.protocol === 'https:')) {
+        throw new Error(loopback || parsed.protocol !== 'http:' ? 'server_url_must_be_loopback_http_or_https' : 'server_url_remote_requires_https');
       }
       return parsed.origin;
     } catch (error) {
@@ -31502,6 +31508,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (error?.status === 403 && requestOptions.authRetry !== false) {
         await bootstrap(true, requestOptions.allowPluginOnly === true);
         return await request(method, route, body, { ...requestOptions, bindingGeneration, authRetry: false });
+      }
+      // A token this server start did not sign (restart in remote access mode, mode change or key
+      // rotation): bootstrap again once. The request was refused before it ran, so a retry is safe.
+      if (error?.payload?.reason === 'capability_token_invalid' && requestOptions.capabilityRetry !== true) {
+        resetBootstrapCache();
+        return await requestImpl(method, route, body, { ...requestOptions, bindingGeneration, capabilityRetry: true, forceBootstrap: true });
       }
       if (error?.payload?.error === 'data_instance_binding_changed') dataBinding.rejected = true;
       const unavailable = normalizeServerAvailabilityError(error);
@@ -36128,7 +36140,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         </div>
         <div class="muted" data-mirror-transition>미러는 두 저장 위치 사이의 전환 중에만 사용합니다. 기존 미러 설정은 단독 모드를 선택해 전환을 완료하세요.</div>
         <div class="scope" data-mode-summary${integratesCompute ? '' : ' hidden'}></div>
-        <p>Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
+        <p>이 PC의 서버는 http://127.0.0.1:포트, 다른 기기의 서버는 Tailscale·Cloudflare Tunnel의 https:// 주소만 입력할 수 있습니다. Docker는 host.docker.internal 주소를 입력할 수 있습니다. PocketRisu의 /proxy2 경유 요청은 PocketRisu 서버에서 출발합니다. localhost는 그 서버 또는 컨테이너 자신입니다. 백엔드가 실행 중인 위치와 접근 경로를 확인하세요.</p><label data-server-fields><b>서버 주소</b><input data-url type="text" value="${esc(initial.url)}"></label>
         <div class="actions"><button data-test>연결 테스트</button><button class="primary" data-apply>설정 적용</button><button data-sync>지금 동기화</button><button data-restore>서버 → pluginStorage 복구</button><button class="danger" data-delete>현재 스코프 pluginStorage 삭제</button></div>
         <div class="actions"><button data-reset-empty>서버 자료 사용 · 로컬 업로드 안 함</button><button data-reset-upload>초기화 후 로컬 기억 다시 업로드</button></div><div class="status" data-status>${integratesCompute ? `현재 방식: ${esc(initial.modeLabel)}\n연산: ${initial.executionPolicy?.computeMode === 'prefer_server' ? '서버 우선 · 실패 시 로컬' : '로컬'}` : `현재 모드: ${esc(initial.modeLabel)}\n서버 상태를 확인할 수 있습니다.`}</div>
       </div>

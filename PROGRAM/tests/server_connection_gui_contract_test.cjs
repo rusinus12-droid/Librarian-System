@@ -122,9 +122,15 @@ async function main() {
     assert.equal(settings.connection.ok, true);
     assert.equal(settings.connection.serverVersion, require('node:fs').readFileSync(require('node:path').join(__dirname, '../VERSION.txt'),'utf8').trim());
 
+    // Another device's server over plain http:// is not an address a plugin accepts.
+    await assert.rejects(
+      () => bridge.configureConnection({ mode: 'server_only', url: 'http://example.com' }),
+      /invalid_memory_suite_server_url|server_url_remote_requires_https/
+    );
+    // A tunnel's https:// address is a valid address; with server-backed scopes it is still another server.
     await assert.rejects(
       () => bridge.configureConnection({ mode: 'server_only', url: 'https://example.com' }),
-      /invalid_memory_suite_server_url|server_url_must_be_loopback_http/
+      error => error?.code === 'MEMORY_SUITE_SERVER_URL_IN_USE'
     );
     assert.equal(await bridge.getMode(), 'server_only', 'invalid URL must not change mode');
     assert.equal((await bridge.getConnectionSettings({ force: true })).url, baseUrl, 'invalid URL must not change saved URL');
