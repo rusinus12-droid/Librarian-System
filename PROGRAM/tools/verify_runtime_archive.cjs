@@ -5,14 +5,18 @@
 // node: 접두사 요청은 Module.isBuiltin으로 다시 판정한다 (지원 런타임 22.13~22.x).
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
 const {readZipEntries}=require('./zip_writer.cjs');
+const {PAYLOAD,verifyPayload}=require('./updater-refresh.cjs');
 const fail=reason=>{throw Error('distribution_runtime_dependency_'+reason);};
 function inspectExtractedRuntime(rootDir){
  const root=fs.realpathSync(rootDir),inside=file=>file.startsWith(root+path.sep),builtins=new Set(Module.builtinModules.flatMap(x=>[x,'node:'+x]));
+ const program=path.join(root,'PROGRAM'),payload=path.join(program,PAYLOAD);
  const pending=[],seen=new Set();let localRequires=0,builtinRequires=0;
  const gap='(?:\\s|/\\*[\\s\\S]*?\\*/|//[^\\r\\n]*(?:\\r?\\n|$))*';
  const literalRequire=new RegExp('\\brequire'+gap+'\\('+gap+'([\'\"])([^\'\"\\r\\n]+)\\1'+gap+'\\)','g');
- function walk(dir){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isSymbolicLink())fail('symlink');if(entry.isDirectory())walk(file);else if(entry.isFile()&&/\.(?:cjs|js)$/.test(entry.name))pending.push(file);}}
- for(const rel of ['PROGRAM/server','PROGRAM/tools','UPDATER'])walk(path.join(root,...rel.split('/')));
+ function walk(dir,onFile,skip){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isSymbolicLink())fail('symlink');if(file===skip)continue;if(entry.isDirectory())walk(file,onFile,skip);else if(entry.isFile())onFile(file);}}
+ for(const rel of ['PROGRAM/server','PROGRAM/tools','UPDATER']){
+  walk(path.join(root,...rel.split('/')),file=>{if(/\.(?:cjs|js)$/.test(file))pending.push(file);},payload);
+ }
  while(pending.length){
   const file=pending.pop();if(seen.has(file))continue;seen.add(file);
   const source=fs.readFileSync(file,'utf8'),resolve=Module.createRequire(file).resolve;
@@ -35,6 +39,19 @@ function inspectExtractedRuntime(rootDir){
  if(typeof load('PROGRAM/server/server.cjs').createMemorySuiteServer!=='function')fail('server_entrypoint');
  if(typeof load('PROGRAM/tools/portable_export_stopped.cjs').exportStopped!=='function')fail('exporter_entrypoint');
  if(typeof load('UPDATER/core/migration-required.cjs').buildMigratedDataNext!=='function')fail('updater_entrypoint');
+ if(fs.existsSync(payload)){
+  // This copy is installed into UPDATER before it is used. Its literal imports
+  // are checked at the installed location above, and the copy must match byte for byte.
+  const updater=path.join(root,'UPDATER');
+  const expected=load('UPDATER/core/updater-bootstrap.cjs').listStaticFiles(updater).sort();
+  const actual=[];
+  walk(payload,file=>actual.push(path.relative(payload,file).split(path.sep).join('/')));
+  if(JSON.stringify(actual.sort())!==JSON.stringify(expected))fail('updater_payload_layout');
+  for(const file of expected){
+   if(!fs.readFileSync(path.join(payload,file)).equals(fs.readFileSync(path.join(updater,file))))fail('updater_payload_bytes:'+file);
+  }
+  verifyPayload({program,payload,version:fs.readFileSync(path.join(program,'VERSION.txt'),'utf8').trim()},expected);
+ }
  return {verified:true,files:seen.size,localRequires,builtinRequires,entrypoints:['server/server.cjs','tools/portable_export_stopped.cjs','UPDATER/core/migration-required.cjs'],sourceFallback:false,listenersStarted:false};
 }
 function verifyRuntimeArchive(archivePath,extractionRoot){

@@ -534,6 +534,7 @@ async function main() {
   if (args.command === 'set-remote-access') return await setRemoteAccess(args.dataDir, args.remoteAction);
   if (args.command === 'serve' || args.command === 'background') {
     recoverPendingUpdaterStateBeforeServerStart();
+    if (process.env.LIBRARIAN_UPDATER_INTERNAL !== '1') startUpdaterRefresh();
     prepareData(args.dataDir);
     const config = readConfig(args.dataDir);
     if (args.command === 'serve') return await serveForeground(config, args.dataDir);
@@ -548,7 +549,18 @@ async function main() {
     return;
   }
   if (args.command === 'stop') return await verifiedAdmin('stop', config, args.dataDir);
-  if (args.command === 'integrity') return await verifiedAdmin('integrity', config, args.dataDir);
+  if (args.command === 'integrity') {
+    const result = await verifiedAdmin('integrity', config, args.dataDir);
+    // The 1.0.0 updater calls the new PROGRAM's integrity launcher before
+    // committing. A separate process waits for it to finish and release its lock.
+    if (process.env.LIBRARIAN_UPDATER_INTERNAL === '1') startUpdaterRefresh({ afterIntegrity: true });
+    return result;
+  }
+}
+
+function startUpdaterRefresh(options) {
+  try { require('./updater-refresh.cjs').scheduleUpdaterRefresh(packageRoot, options); }
+  catch (error) { process.stderr.write(`[LIBRARIAN SYSTEM] updater refresh: ${error.message}\n`); }
 }
 
 if (require.main === module) {

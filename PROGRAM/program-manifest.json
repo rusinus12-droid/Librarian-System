@@ -11559,6 +11559,10 @@
       "sha256": "073fe4a6c2b14a7ac85dd3efdbf0e1643b9f5a60bd93ea9e43fcd968cddf946b",
       "bytes": 6986
     },
+    "tests/updater_refresh_runtime_test.cjs": {
+      "sha256": "64ce5dccd57bcdd1535984ae6be1d6f208ed1f48a6b6dbc1aa95cc6da505cc4b",
+      "bytes": 5045
+    },
     "tests/updater_release_asset_selection_test.cjs": {
       "sha256": "21495bb7ba34198cf5d9fa5ffdc7aa42dfcde8b1d2280730bb75e01eb1bcc6e9",
       "bytes": 982
@@ -11788,8 +11792,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "eeeea3ff20e4eb7d2ad3676115924aab68ca97247481d07f498bc6cd3cba8d47",
-      "bytes": 59970
+      "sha256": "8d84a8f0a77dcd1158ea6042f64bd5312e04d396ccc22412a91b2bc51aa52521",
+      "bytes": 60500
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -11952,8 +11956,8 @@
       "bytes": 11842
     },
     "tools/platform_launcher.cjs": {
-      "sha256": "f291fb3650643fb60cb4f5eb059690035a60d4ef3caaaaf5d68f47633ebfeb78",
-      "bytes": 28277
+      "sha256": "3c964ca6a25ab3f7498393be9402747836a3af36c092e9d444c4955b50a5a190",
+      "bytes": 28886
     },
     "tools/plugin_version_provenance.cjs": {
       "sha256": "7680d0670f8fdb6cb842360cea8800ef4601dde5ac300998957e8d814b6b512a",
@@ -12251,9 +12255,13 @@
       "sha256": "8fa4c8aa979558d154b30e807dd2a8db628c4a41109d2229942889fd46f26594",
       "bytes": 63689
     },
+    "tools/updater-refresh.cjs": {
+      "sha256": "61be7fc5aae41b1f11ad1a95c3d094f55035deddca6441eb91234eb12b446049",
+      "bytes": 4707
+    },
     "tools/verify_runtime_archive.cjs": {
-      "sha256": "29e2de76fce6e71a1ebe211c3ca4f0685a22539ccf69bb1cd1e7ebc443a62730",
-      "bytes": 4529
+      "sha256": "84ac69003609473a3bb5e74d8cd4dd8876f22a312fcdaa5f423f62a15a11ac72",
+      "bytes": 5577
     },
     "tools/zip_writer.cjs": {
       "sha256": "bd8bd526bd5d972e33eea67ce442133a71deb8fe56f586d1e27b44605e9cbe19",
@@ -12372,8 +12380,8 @@
       "bytes": 141
     },
     "서버_사용과_접속_관련_상세_안내.txt": {
-      "sha256": "3bbf2189b9d2ed2cb17c0eb772d1dea0fdb5c27de7d7ac77dea89ba68e8ce27d",
-      "bytes": 18310
+      "sha256": "ac35152300480886d72a5024507fc0360157d8cd2e03d2399c5b32207453e772",
+      "bytes": 18390
     },
     "서버_상태_확인.bat": {
       "sha256": "15293595a7613873c0288e5435e8dfefd6225d45d9af19a9964c9d9e0ecd843a",
