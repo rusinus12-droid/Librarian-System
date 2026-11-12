@@ -264,7 +264,6 @@ function httpHost(value) {
 
 // Remote access is opt-in and keyed. The key lives beside the DATA it protects and never leaves it.
 const REMOTE_ACCESS_KEY_FILE = 'remote-access-key.txt';
-const REMOTE_ACCESS_LISTEN_HOST = '0.0.0.0';
 function remoteAccessKeyPath(dataDir) { return path.join(dataDir, 'config', REMOTE_ACCESS_KEY_FILE); }
 function loadRemoteAccessKey(dataDir) {
   let key = '';
@@ -2250,7 +2249,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   // host stays loopback in the config; remote access only widens where this process listens.
   const remoteAccess = options.remoteAccess === true;
   const remoteAccessKey = remoteAccess ? loadRemoteAccessKey(dataDir) : '';
-  const listenHost = remoteAccess ? REMOTE_ACCESS_LISTEN_HOST : host;
+  const listenHost = remoteAccess ? '::' : host;
   if (!authorityRuntime && fs.existsSync(dataDir)) preflightDataCompatibility(dataDir);
   if (!authorityRuntime) fs.mkdirSync(dataDir, { recursive: true });
   const dataLayout = authorityRuntime ? readJsonFile(path.join(dataDir,'data-layout.json'),null) : ensurePortableDataLayout(dataDir);
@@ -2291,6 +2290,11 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
   const scopeCatalogPath = path.join(dataDir, 'config', 'scope-catalog.json');
   scopeCatalogDegraded = readScopeCatalogFromDisk(dataDir).degraded === true;
 
+  const remoteCapabilityKey = remoteAccess
+    ? crypto.createHmac('sha256', token).update('memory-suite.remote-capability.v1\0').update(remoteAccessKey).digest('base64url')
+    : '';
+  const requiresRemoteKey = request => remoteAccess && !isLocalNetworkAddress(request.socket?.remoteAddress);
+  const capabilityKeyFor = request => requiresRemoteKey(request) ? remoteCapabilityKey : token;
   const authenticate = request => {
     const authorization = String(request.headers.authorization || '');
     const supplied = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
@@ -2300,7 +2304,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
         ? { kind: 'admin', pluginId: 'memory-suite-admin', namespace: '', roles: ['admin'], readNamespaces: NAMESPACES.slice(), writeNamespaces: NAMESPACES.slice() }
         : null;
     }
-    const principal = verifyCapabilityToken(token, supplied);
+    const principal = verifyCapabilityToken(capabilityKeyFor(request), supplied);
     if (!principal) return null;
     const claimedPluginId = String(request.headers['x-memory-suite-plugin'] || '').trim().toLowerCase();
     return claimedPluginId === principal.pluginId ? principal : null;
@@ -3367,7 +3371,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
       // Without remote access the server listens on loopback only and nothing here changes. With it, only a
       // client outside the local network needs this DATA's access key for a capability token; an unknown
       // address counts as outside.
-      if (remoteAccess && url.pathname === '/bootstrap' && !isLocalNetworkAddress(request.socket?.remoteAddress)
+      if (url.pathname === '/bootstrap' && requiresRemoteKey(request)
         && !safeEqual(String(request.headers['x-memory-suite-access-key'] || '').trim(), remoteAccessKey)) {
         return sendJson(request, response, 403, { ok: false, error: 'remote_access_key_required' });
       }
@@ -3403,7 +3407,7 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
           programDataSeparation: true,
           securityGate: 'loopback_scoped_capability_token',
           url: loopbackUrl(actualHost, actualPort),
-          token: issueCapabilityToken(token, bootstrapPrincipal),
+          token: issueCapabilityToken(capabilityKeyFor(request), bootstrapPrincipal),
           authorization: {
             schema: 'memory-suite.bootstrap-authorization.v1',
             pluginId: bootstrapPrincipal.pluginId,
@@ -4017,13 +4021,27 @@ function createMemorySuiteServerWithRuntime(options, authorityRuntime) {
     managerControl,
     listen: () => new Promise((resolve, reject) => {
       if (authorityRuntime) return reject(Object.assign(new Error('AUTHORITY_HOST_PROFILE_UNQUALIFIED'),{code:'AUTHORITY_HOST_PROFILE_UNQUALIFIED',statusCode:503}));
-      server.once('error', reject);
-      server.listen(port, listenHost, async () => {
-        server.off('error', reject);
+      const onListening = () => {
+        server.off('error', onError);
         scheduleAutomaticBackups();
-        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${listenHost}:${server.address()?.port || port}${remoteAccess ? ' remote-access' : ''}`, itemCount: NAMESPACES.length });
-        resolve(server.address());
-      });
+        const address = server.address();
+        diagnosticJournal.record({ event: 'server.started', operation: 'server.listen', ok: true, message: `${httpHost(address.address)}:${address.port}${remoteAccess ? ' remote-access' : ''}`, itemCount: NAMESPACES.length });
+        resolve(address);
+      };
+      let triedIPv4 = false;
+      const onError = error => {
+        if (!triedIPv4 && remoteAccess && host !== '::1' && ['EAFNOSUPPORT', 'EADDRNOTAVAIL', 'EPROTONOSUPPORT'].includes(error.code)) {
+          triedIPv4 = true;
+          server.once('error', onError);
+          server.listen({port, host:'0.0.0.0'});
+          return;
+        }
+        server.off('listening', onListening);
+        reject(error);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen({port, host:listenHost, ipv6Only:false});
     }),
     close: gracefulClose
   };

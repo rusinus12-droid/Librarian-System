@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 // Reviewed manager-only health and saved-server-address delta; local-only consumers retain their pin.
 // 2026-11-12: the manager surface also exposes setServerUrl, so RE:TRACE can follow a changed server port.
 // 2026-11-12: setServerAccessKey/getServerAccessKeyStatus, so RE:TRACE can reach a remote-access (Docker) server.
-const managerOnlyConsumerSha256='553b399b83b7d02922b80f25085721a838772733650c85a73f13727901810eb6';
+const managerOnlyConsumerSha256='4d5362de393f837d4703f8b73c2c92671c6a750571f51fd4ba8e2c34b6da385b';
 // Explicit GRADIA-only read extension; other preserved consumers keep their prior pin.
 // 2026-11-12: /bootstrap sends the saved access key of a remote-access (Docker) server.
 const gradiaReadOnlyConsumerSha256='21a15291e1703a380bd40c50a63650ff0c913326f7af811124803e7150c01ea1';

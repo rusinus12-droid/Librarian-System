@@ -81,19 +81,49 @@ test('server: a local-network /bootstrap needs no key even with a key set',insid
 test('server: an outside /bootstrap needs the key; same-host requests do not',outside,async()=>{
   const t=temp();try{
     const {key}=await enable(t.data);
-    const s=await start(t.data,{portableSettingsFromData:true});
+    let s=await start(t.data,{portableSettingsFromData:true});
     try{
       const local=`http://127.0.0.1:${s.port}`,remote=`http://${outsideLan}:${s.port}`;
-      assert.equal((await get(local+'/bootstrap',H)).status,200,'same host needs no key');
+      const localBoot=await get(local+'/bootstrap',H);
+      assert.equal(localBoot.status,200,'same host needs no key');
       assert.deepEqual((await get(remote+'/health')).body.remoteAccess,{enabled:true});
       assert.deepEqual([(await get(remote+'/bootstrap',H)).status,(await get(remote+'/bootstrap',H)).body.error],[403,'remote_access_key_required']);
       assert.equal((await get(remote+'/bootstrap',{...H,'X-Memory-Suite-Access-Key':'x'.repeat(43)})).status,403,'a wrong key is refused');
       const boot=await get(remote+'/bootstrap',{...H,'X-Memory-Suite-Access-Key':key});
       assert.equal(boot.status,200);assert.ok(boot.body.token);
       const kv=`${remote}/v1/kv/get?namespace=libra&space=plugin&key=x`;
-      assert.equal((await get(kv,{...H,Authorization:'Bearer '+boot.body.token,'X-Memory-Suite-Reset-Epochs':JSON.stringify(boot.body.resetEpochs||{})})).status,200,'the issued token works remotely');
+      const auth=payload=>({...H,Authorization:'Bearer '+payload.token,'X-Memory-Suite-Reset-Epochs':JSON.stringify(payload.resetEpochs||{})});
+      assert.equal((await get(kv,auth(boot.body))).status,200,'the issued token works remotely');
+      assert.equal((await get(kv,auth(localBoot.body))).status,403,'a local token cannot authorize an external request');
       assert.equal((await get(kv,H)).status,403,'other routes still require the token');
-    }finally{await s.app.close();}
+      await s.app.close();s=null;
+      await launcher.setRemoteAccess(t.data,'rotate',{write:()=>{}});
+      const newKey=fs.readFileSync(path.join(t.data,'config','remote-access-key.txt'),'utf8').trim();
+      s=await start(t.data,{portableSettingsFromData:true});
+      const rotated=`http://${outsideLan}:${s.port}`;
+      const route='/v1/kv/get?namespace=libra&space=plugin&key=x';
+      assert.equal((await get(rotated+route,auth(boot.body))).status,403,'rotation revokes already issued external tokens');
+      assert.equal((await get(rotated+'/bootstrap',{...H,'X-Memory-Suite-Access-Key':key})).status,403);
+      const current=await get(rotated+'/bootstrap',{...H,'X-Memory-Suite-Access-Key':newKey});
+      assert.equal(current.status,200);
+      assert.equal((await get(rotated+route,auth(current.body))).status,200);
+      assert.equal((await get(`http://127.0.0.1:${s.port}`+route,auth(localBoot.body))).status,200,'local tokens survive key rotation');
+    }finally{if(s)await s.app.close();}
+  }finally{t.close();}
+});
+
+const hasIPv6Loopback=Object.values(os.networkInterfaces()).flat().some(address=>address?.internal&&address.address==='::1');
+test('server: a configured IPv6 loopback keeps serving after external access is enabled',{skip:!hasIPv6Loopback},async()=>{
+  const t=temp();try{
+    await enable(t.data);
+    const configFile=path.join(t.data,'config','server-config.json');
+    const config=JSON.parse(fs.readFileSync(configFile,'utf8'));
+    fs.writeFileSync(configFile,JSON.stringify({...config,host:'::1'}));
+    const {app,port}=await start(t.data,{host:'::1',portableSettingsFromData:true});
+    try{
+      assert.equal((await get(`http://[::1]:${port}/health`)).status,200);
+      assert.equal((await get(`http://127.0.0.1:${port}/bootstrap`,H)).status,200);
+    }finally{await app.close();}
   }finally{t.close();}
 });
 

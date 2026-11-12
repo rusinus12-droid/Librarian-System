@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createZipFromDirectory, readZipEntries, verifyZipAgainstDirectory } = require('./zip_writer.cjs');
+const { PAYLOAD: UPDATER_REFRESH_PAYLOAD } = require('./updater-refresh.cjs');
 const { PLUGINS, syncReleaseGuides, syncRepositoryReadme, readReleaseMetadata, renderGuide, GUIDES } = require('./release_metadata.cjs');
 const { writeUpdateManifest, expectedAssetName, expectedSourceAssetName, readReleasePolicy } = require('./release_asset_contract.cjs');
 const { compareVersions, nextPatchVersion, validateTargetVersion, applyReleaseVersion } = require('./release_version.cjs');
@@ -176,6 +177,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_updater_bootstrap_test.cjs',
   'remote_update_updater_external_target_test.cjs',
   'remote_update_real_server_runtime_test.cjs',
+  'updater_refresh_runtime_test.cjs',
   'memory_injection_presentation_v1_test.cjs'
 ]);
 const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
@@ -236,7 +238,7 @@ const PROGRAM_ALLOWED_TOP_LEVEL_FILES = new Set([
   '서버_포트_변경.sh',
   '서버_외부접속_설정.bat',
   '서버_외부접속_설정.sh',
-  '서버_사용과_접속_관련_상세_안내.md',
+  '서버_사용과_접속_관련_상세_안내.txt',
   '안드로이드_Termux_준비.sh',
   '안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat',
@@ -258,7 +260,7 @@ const REQUIRED_UPDATER_FILES = new Set([
   'updater.cjs', 'update_check.cjs', 'update_common.cjs', 'release_archive.cjs',
   'core/journal.cjs', 'core/checkpoint.cjs', 'core/program-only.cjs', 'core/data-identity.cjs', 'core/migration-required.cjs', 'core/updater-bootstrap.cjs', 'core/file-picker.cjs',
   'runtime.cjs', 'launch.sh', '_find_node.bat', 'core/lock.cjs',
-  'logs/README.txt',
+  'logs/README.txt', '서버 업데이트 장해 대처법.txt',
   'platform/windows.cjs', 'platform/macos.cjs', 'platform/linux.cjs', 'platform/android.cjs'
 ]);
 const UPDATER_SENSITIVE_PATH_PATTERN = /(?:^|\/)(?:update-state\.json|latest\.log|[^/]+\.(?:log|tmp|bak|old|sqlite|db|zip))(?:$|\/)/i;
@@ -330,6 +332,7 @@ function shouldCopySourceProgram(relativePath) {
   if (parts[0] === 'plugins' && !Object.values(PLUGINS).some(([file]) => normalized === 'plugins/' + file)) return false;
   if (/^(?:sdk\/Wm[^/]+|server\/wm(?:\/|$))/.test(normalized)) return false;
   if (parts[0] === '_runtime') return normalized === '_runtime/README.txt';
+  if (normalized.startsWith(`${UPDATER_REFRESH_PAYLOAD}/`)) return false;
   if (parts.some(part => PROGRAM_DENY_SEGMENTS.has(part))) return false;
   if (Object.hasOwn(SOURCE_FIXTURE_PINS, normalized)) return true;
   if (PROGRAM_SENSITIVE_PATH_PATTERN.test(normalized)) return false;
@@ -343,7 +346,8 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
   '_common.cmd','_find_node.bat','_server_foreground.cmd',
   '1_서버_실행.bat','1_서버_실행.sh','2_서버_종료.bat','2_서버_종료.sh',
   '서버_백그라운드_실행.bat','서버_백그라운드_실행.sh','서버_상태_확인.bat','서버_상태_확인.sh',
-  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh','서버_사용과_접속_관련_상세_안내.md',
+  '서버_포트_변경.bat','서버_포트_변경.sh','서버_외부접속_설정.bat','서버_외부접속_설정.sh',
+  '서버_사용과_접속_관련_상세_안내.txt',
   'macOS_서버_실행.command','memory-suite.sh','안드로이드_Termux_준비.sh','안드로이드_설치.sh',
   '기존_DATA_이관_ZIP_만들기.bat','기존_DATA_이관_ZIP_만들기.sh',
   'DATA_폴더_열기.bat','RisuAI_플러그인_폴더_열기.bat','처음_읽어주세요.txt','PACKAGE_CONTENTS.txt',
@@ -351,7 +355,7 @@ const RUNTIME_PROGRAM_TOP_FILES = new Set([
 ]);
 const RUNTIME_TOOL_FILES = new Set([
   'check_node.cjs','config_env.cjs','install_runtime.ps1','platform_launcher.cjs','portable_export_stopped.cjs',
-  'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','zip_writer.cjs'
+  'prepare_data.cjs','release_asset_contract.cjs','release_metadata.cjs','runtime_release_validation.cjs','termux_install.py','updater-refresh.cjs','zip_writer.cjs'
 ]);
 const RUNTIME_SDK_FILES = new Set([
   // The search kernel stays in sdk/ only as a test oracle; nothing at runtime loads it.
@@ -778,6 +782,11 @@ function buildDistribution(options = {}) {
     if(isSource){verifySourceFixtureBytes(path.join(stagedRoot,'PROGRAM'));}
     const sourceUpdater=path.join(packageRoot,'UPDATER');assertUpdaterSourceClean(sourceUpdater);
     const copiedUpdater=copyTreeAllowlisted(sourceUpdater,path.join(stagedRoot,'UPDATER'),shouldCopyUpdater);
+    if (!isSource) {
+      // A shipped 1.0.0 updater installs PROGRAM only. Carry the same static
+      // updater files there so the activated PROGRAM can finish the refresh.
+      copyTreeAllowlisted(path.join(stagedRoot,'UPDATER'),path.join(stagedRoot,'PROGRAM',UPDATER_REFRESH_PAYLOAD),shouldCopyUpdater);
+    }
     const copiedLaunchers=copyRootUpdateLaunchers(packageRoot,stagedRoot);
     const guideSource=path.join(packageRoot,REQUIRED_ROOT_FILE),guideHash=sha256File(guideSource);
     fs.copyFileSync(guideSource,path.join(stagedRoot,REQUIRED_ROOT_FILE),fs.constants.COPYFILE_EXCL);
