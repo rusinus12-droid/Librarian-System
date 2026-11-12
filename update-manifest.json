@@ -18,7 +18,7 @@
   "components": {
     "backend": "1.0.0",
     "libra": "3.0.1",
-    "hayaku": "4.0.1",
+    "hayaku": "4.0.2",
     "flashback": "2.0.1",
     "lia": "0.30.0",
     "retrace": "2.0.1",

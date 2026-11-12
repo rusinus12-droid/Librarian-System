@@ -27,6 +27,7 @@ const expectedArguments = [
   'hayaku_debug',
   'hayaku_packet_recovery',
   'hayaku_after_request_auto_repair',
+  'hayaku_otherax_canonical_packet',
   'hayaku_background_auto_repair',
   'hayaku_recovery_extra_calls',
   'risuai_aux_allow_plugins',
