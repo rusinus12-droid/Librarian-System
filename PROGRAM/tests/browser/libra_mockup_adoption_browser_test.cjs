@@ -282,7 +282,7 @@ async function syntheticPortableEnvelope(){
     const restoreMode=page.locator('[data-portable-restore-mode-modal]');await restoreMode.waitFor();
     assert.ok((await restoreMode.getAttribute('class')).split(/\s+/).includes('overlay'),'restore mode root uses the mockup overlay class');
     assert.ok(await restoreMode.locator('.dialog').count()>0,'restore qualification uses mockup dialog');
-    assert.equal(await restoreMode.locator('.choice').count(),3,'restore shows three existing modes with API qualification');
+    assert.equal(await restoreMode.locator('.choice').count(),4,'restore shows the four modes (including updated-bot rebind) with API qualification');
     const restoreText=await restoreMode.innerText();
     assert.ok(restoreText.includes(envelope.source?.chatTitle||envelope.source?.chatId),'restore summary displays the actual synthetic source chat');
     await page.keyboard.press('Shift+Tab');assert.ok(await restoreMode.evaluate(node=>node.contains(document.activeElement)),'portable mode contains reverse Tab');await page.keyboard.press('Escape');

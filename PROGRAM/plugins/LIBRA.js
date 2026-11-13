@@ -71685,9 +71685,29 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         modes: {
           restore_same_scope: { available: sameChat, reason: sameChat ? '' : !sameCharacter ? 'character_mismatch' : 'chat_id_mismatch' },
           import_as_predecessor_archive: { available: !sameChat && sameCharacter && (bundle.currentRefs.length + bundle.inheritedRefs.length) > 0 && targetCurrentRefs.length === 0 && (targetInheritedRefs.length === 0 && targetInheritedMicroRefs.length === 0 || archiveRepair) && !targetManifest.inFlight?.runId, repair: archiveRepair, reason: sameChat ? 'same_chat' : !sameCharacter ? 'character_mismatch' : !(bundle.currentRefs.length + bundle.inheritedRefs.length) ? 'source_memories_missing' : targetCurrentRefs.length || ((targetInheritedRefs.length || targetInheritedMicroRefs.length) && !archiveRepair) ? 'target_not_empty' : targetManifest.inFlight?.runId ? 'target_in_flight' : '' },
-          reconstruct_native_copy: { available: !sameChat && sameCharacter && matchedStarts.length > 0 && !conflictTurn && !targetManifest.inFlight?.runId, reason: sameChat ? 'same_chat' : !sameCharacter ? 'character_mismatch' : !bundle.lineage?.schema ? 'lineage_missing' : conflictTurn ? `target_conflict_t${conflictTurn}` : !matchedStarts.length ? 'no_contiguous_match' : targetManifest.inFlight?.runId ? 'target_in_flight' : '' }
+          reconstruct_native_copy: { available: !sameChat && sameCharacter && matchedStarts.length > 0 && !conflictTurn && !targetManifest.inFlight?.runId, reason: sameChat ? 'same_chat' : !sameCharacter ? 'character_mismatch' : !bundle.lineage?.schema ? 'lineage_missing' : conflictTurn ? `target_conflict_t${conflictTurn}` : !matchedStarts.length ? 'no_contiguous_match' : targetManifest.inFlight?.runId ? 'target_in_flight' : '' },
+          rebind_updated_bot: portableUpdatedBotRebindAvailability({ bundle, context, sameCharacter, matchedStarts, conflictTurn, targetManifest })
         }
       });
+    };
+    // A RisuAI bot update arrives as a NEW character, so the session moved into it has a
+    // different characterId and therefore a different scope. This is the only portable path
+    // that crosses characters, and it does not widen any scope check: it reuses the native-copy
+    // rebinding below, which writes every adopted memory under the CURRENT chat's own scope, and
+    // only for 5-turn batches whose U+A text matches the backup's lineage byte for byte.
+    const portableUpdatedBotRebindAvailability = ({ bundle, context, sameCharacter, matchedStarts, conflictTurn, targetManifest }) => {
+      const sourceCharacterId = string(bundle?.source?.canonicalCharacterId || bundle?.source?.characterId || '');
+      const targetCharacterId = string(context?.scope?.canonicalCharacterId || context?.scope?.characterId || '');
+      const sourceScopeKey = string(bundle?.source?.scopeKey || '');
+      const targetScopeKey = string(context?.scope?.scopeKey || '');
+      const reason = sameCharacter ? 'same_character'
+        : !sourceCharacterId || !targetCharacterId ? 'character_identity_missing'
+          : !sourceScopeKey || !targetScopeKey || sourceScopeKey === targetScopeKey ? 'scope_identity_unusable'
+            : bundle?.lineage?.schema !== 'libra.portable_lineage.v1' ? 'lineage_missing'
+              : conflictTurn ? `target_conflict_t${conflictTurn}`
+                : !matchedStarts.length ? 'no_contiguous_match'
+                  : targetManifest?.inFlight?.runId ? 'target_in_flight' : '';
+      return { available: !reason, reason, sourceCharacterId, targetCharacterId, sourceScopeKey, targetScopeKey };
     };
 
     const portableImportReceipt = ({ bundle, context, mode, details = {} }) => ({
@@ -71849,16 +71869,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
     };
 
-    const importPortableAsNativeCopy = async input => {
+    const importPortableAsNativeCopy = async (input, options = {}) => {
+      const crossBot = options?.updatedBotRebind === true;
+      const gateMode = crossBot ? 'rebind_updated_bot' : 'reconstruct_native_copy';
       const bundle = portableImportBundle(input);
       await validateUnifiedPortableBundle(bundle);
       const recoveryContext = await resolveContext();
-      if (!bundle.importId) bundle.importId = `portable_${digest([bundle.source.scopeKey, recoveryContext.scope.scopeKey, 'reconstruct_native_copy']).slice(0, 24)}`;
+      if (!bundle.importId) bundle.importId = `portable_${digest([bundle.source.scopeKey, recoveryContext.scope.scopeKey, gateMode]).slice(0, 24)}`;
       const recovered = await recoverInterruptedPortableImports(recoveryContext.scope, bundle.importId);
       if (recovered.failed) throw new Error('portable_import_interrupted_recovery_failed');
       const preview = await previewPortableImport({ ...asObject(input), importId: bundle.importId });
       if (preview.alreadyImported) return { ok: true, skipped: true, reason: 'portable_import_already_complete' };
-      if (!preview.modes.reconstruct_native_copy.available) throw new Error(`portable_chat_copy_blocked:${preview.modes.reconstruct_native_copy.reason}`);
+      if (!preview.modes[gateMode]?.available) {
+        throw new Error(`${crossBot ? 'portable_updated_bot_rebind_blocked' : 'portable_chat_copy_blocked'}:${preview.modes[gateMode]?.reason || 'unavailable'}`);
+      }
+      const crossBotDetails = crossBot ? {
+        updatedBotRebind: true,
+        sourceCharacterId: string(preview.modes.rebind_updated_bot.sourceCharacterId || ''),
+        targetCharacterId: string(preview.modes.rebind_updated_bot.targetCharacterId || '')
+      } : {};
       const context = await resolveContext();
       if (string(preview.target?.scopeKey || '') !== string(context.scope?.scopeKey || '')) throw new Error('portable_chat_copy_target_changed');
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
@@ -71999,7 +72028,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           microPendingTurns: copiedMicro.pendingRows.length,
           microInheritedArchiveCount: inheritedMicroPlan.refs.length,
           microInheritedOwnerRecords: inheritedMicroPlan.ownerRecords,
-          microInheritedArchiveRefsDigest: inheritedMicroPlan.refsDigest
+          microInheritedArchiveRefsDigest: inheritedMicroPlan.refsDigest,
+          ...crossBotDetails
         } });
         targetManifest.frontiers = { observedTurn: pairs.length, committedTurn: copiedStarts.length ? copiedStarts.at(-1) + BATCH_SIZE - 1 : 0 };
         targetManifest.branchGuard = normalizeBranchGuard({ schema: BRANCH_GUARD_SCHEMA, status: BRANCH_GUARD_READY, batchSignatures: branchBatchSignaturesForPairs(pairs), verifiedStarts: copiedStarts, observedTurns: completeBatchStarts(pairs).length * BATCH_SIZE, completeBatches: completeBatchStarts(pairs).length, lastFullAuditAt: Date.now(), updatedAt: nowIso() });
@@ -92837,7 +92867,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         `복구·월드라인: ${Number(byKind.recovery || 0) + Number(byKind.worldline || 0)}개`,
         `벡터: ${Number(byKind.vector || 0)}개`,
         '',
-        '파일을 검사한 뒤 같은 채팅 되돌리기, 새 채팅 기억 이사, 채팅 복사 기억 복구 중 안전하게 가능한 방식만 선택할 수 있습니다.',
+        '파일을 검사한 뒤 같은 채팅 되돌리기, 새 채팅 기억 이사, 채팅 복사 기억 복구, 업데이트된 봇으로 이어하기 중 안전하게 가능한 방식만 선택할 수 있습니다.',
         '서로 다른 세계선의 기억을 이름이나 위치만 보고 섞는 병합은 지원하지 않습니다.',
         '같은 채팅 교체 중 오류가 발생하면 복원 전 저장소로 자동 롤백합니다.'
       ].join('\n');
@@ -92852,8 +92882,22 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       target_not_empty: '현재 채팅에 이미 활성 정본이 있습니다.', target_in_flight: '현재 채팅에 진행 중인 정본 작업이 있습니다.',
       lineage_missing: '이 백업에는 채팅 복사 검증용 원문 지문이 없습니다.', no_contiguous_match: '현재 대화와 연속해서 일치하는 완성 5턴 구간이 없습니다.',
       source_memories_missing: '이 백업에는 새 채팅으로 이사할 정본 또는 과거 기억이 없습니다.',
-      chat_id_mismatch: '현재 채팅과 백업의 chatId가 다릅니다.'
-    }[textValue(reason).split(':')[0]] || textValue(reason || '사용 조건을 충족하지 않습니다.'));
+      chat_id_mismatch: '현재 채팅과 백업의 chatId가 다릅니다.',
+      same_character: '같은 봇의 백업입니다. 위의 방식을 사용하세요.',
+      character_identity_missing: '백업 또는 현재 봇의 캐릭터 ID를 확인할 수 없습니다.',
+      scope_identity_unusable: '백업과 현재 채팅의 스코프를 구분할 수 없습니다.'
+    }[textValue(reason).split(':')[0]] || (/^target_conflict_t\d+$/.test(textValue(reason)) ? `현재 채팅의 T${textValue(reason).replace(/\D/g, '')} 정본이 백업과 다릅니다.` : textValue(reason || '사용 조건을 충족하지 않습니다.')));
+    // Restore writes go through MemorySuiteStorageBridge, which routes by the current chat's
+    // storage mode. Name that destination so server and plugin restores are never confused.
+    const portableStorageTargetText = async () => {
+      let mode = '';
+      try { mode = textValue(await bridgeValue()?.getMode?.()); } catch (_) {}
+      return {
+        plugin_only: '플러그인 스토리지 (RisuAI pluginStorage)',
+        server_only: '서버 저장소 (Librarian 서버 DATA)',
+        mirror: '서버 저장소 + 플러그인 스토리지 (저장 모드 전환 중 미러)'
+      }[mode] || '현재 저장 모드 확인 불가';
+    };
     const restoreModeModal = (envelope, preview) => new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.setAttribute('data-portable-restore-mode-modal', config.pluginId);
@@ -92871,7 +92915,8 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const definitions = [
         { mode: 'restore_same_scope', title: '같은 채팅 되돌리기', description: '현재 기억을 백업 시점으로 교체합니다. 백업에 없는 현재 기억은 제거됩니다.', detail: '같은 chatId에서만 사용' },
         { mode: 'import_as_predecessor_archive', title: '새 채팅으로 기억 이사', description: '이전 기억을 영구 과거 아카이브로 연결하고 현재 채팅의 TURN은 새로 시작합니다.', detail: '다른 chatId · 비어 있는 새 채팅' },
-        { mode: 'reconstruct_native_copy', title: '채팅 복사 기억 복구', description: '현재 대화와 연속해서 일치하는 5턴 구간만 현재 세계선의 정본으로 재바인딩합니다.', detail: `일치 ${Number(preview.matchedMemories || 0)}개${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` }
+        { mode: 'reconstruct_native_copy', title: '채팅 복사 기억 복구', description: '현재 대화와 연속해서 일치하는 5턴 구간만 현재 세계선의 정본으로 재바인딩합니다.', detail: `일치 ${Number(preview.matchedMemories || 0)}개${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` },
+        { mode: 'rebind_updated_bot', title: '업데이트된 봇으로 이어하기', description: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 현재 채팅의 새 스코프로 기억을 다시 씁니다.', detail: `대화 일치 ${Number(preview.matchedMemories || 0)}개 구간${preview.divergenceTurn ? ` · 최초 불일치 T${preview.divergenceTurn}` : ''}` }
       ];
       for (const definition of definitions) {
         const availability = preview.modes?.[definition.mode] || { available: false, reason: 'unavailable' };
@@ -92901,20 +92946,33 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       overlay.addEventListener('click', event => { if (event.target === overlay) { overlay.remove(); resolve(''); } });
       (document.querySelector('#sga-rp-gui-root .app[data-response-family="libra"]')||document.body).appendChild(overlay);bindPortableModalKeyboard(overlay,()=>{overlay.remove();resolve('');});
     });
-    const modeConfirmationText = (mode, envelope, preview) => {
+    const modeConfirmationText = (mode, envelope, preview, storageTarget = '') => {
+      const storageLine = storageTarget ? [`저장 위치: ${storageTarget}`] : [];
+      if (mode === 'rebind_updated_bot') return [
+        previewText(envelope), '', '선택: 업데이트된 봇으로 이어하기',
+        `원래 봇: ${envelope.source?.characterName || envelope.source?.characterId || '-'}`,
+        `현재 봇: ${preview.target?.characterName || preview.target?.characterId || '-'}`,
+        `대화 내용이 일치하여 다시 연결할 정본: ${Number(preview.matchedMemories || 0)}개`,
+        preview.divergenceTurn ? `T${preview.divergenceTurn}부터는 가져오지 않고 현재 봇에서 다시 분석합니다.` : '백업의 활성 정본 구간이 현재 대화와 모두 일치합니다.',
+        '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
+        '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅의 새 스코프로 다시 씁니다. 원래 봇의 기억은 건드리지 않습니다.',
+        ...storageLine
+      ].join('\n');
       if (mode === 'import_as_predecessor_archive') return [
         previewText(envelope), '', '선택: 새 채팅으로 기억 이사',
         `과거 아카이브로 연결할 기억: ${Number(preview.sourceMemories || 0) + Number(preview.sourceInheritedMemories || 0)}개`,
         '현재 채팅의 활성 정본은 만들지 않으며 TURN은 새로 시작합니다.',
-        '이 기능은 LIBRA 기억만 이사합니다.'
+        '이 기능은 LIBRA 기억만 이사합니다.',
+        ...storageLine
       ].join('\n');
       if (mode === 'reconstruct_native_copy') return [
         previewText(envelope), '', '선택: 채팅 복사 기억 복구',
         `현재 원문과 일치하여 복구할 정본: ${Number(preview.matchedMemories || 0)}개`,
         preview.divergenceTurn ? `T${preview.divergenceTurn}부터는 가져오지 않고 현재 세계선에서 다시 분석합니다.` : '백업의 활성 정본 구간이 현재 원문과 모두 일치합니다.',
-        '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅 기준으로 재구성합니다.'
+        '기억·벡터·상태 delta·State Head·Story Arc를 현재 채팅 기준으로 재구성합니다.',
+        ...storageLine
       ].join('\n');
-      return previewText(envelope);
+      return [previewText(envelope), ...(storageLine.length ? ['', ...storageLine] : [])].join('\n');
     };
     const doExport = async () => {
       if (runtime.busy || runtime.operationId) return;
@@ -92952,13 +93010,21 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           const envelope = await validateEnvelope(await parsePortableJson(raw));
           const payload = portablePayloadFromEnvelope(envelope);
           const preview = await LibraMemoryCore.previewPortableImport(payload);
+          // The core preview names the target by ID only; show the bot and chat names the user sees.
+          try {
+            const here = await currentScope();
+            preview.target = { ...(preview.target || {}),
+              characterName: textValue(preview.target?.characterName) || here.characterName,
+              chatTitle: textValue(preview.target?.chatTitle) || here.chatTitle };
+          } catch (_) {}
           setUiBusy(false, '복원 준비 완료');
           const mode = await restoreModeModal(envelope, preview);
           if (!mode) { setUiBusy(false, ''); return { cancelled: true }; }
+          const storageTarget = await portableStorageTargetText();
           const accepted = await modal({
             title: `${config.pluginName} 기억 복원`,
-            body: modeConfirmationText(mode, envelope, preview),
-            confirmLabel: mode === 'restore_same_scope' ? '현재 기억 교체' : mode === 'import_as_predecessor_archive' ? '과거 기억으로 이사' : '일치하는 기억 복구',
+            body: modeConfirmationText(mode, envelope, preview, storageTarget),
+            confirmLabel: mode === 'restore_same_scope' ? '현재 기억 교체' : mode === 'import_as_predecessor_archive' ? '과거 기억으로 이사' : mode === 'rebind_updated_bot' ? '현재 봇에 기억 연결' : '일치하는 기억 복구',
             danger: true
           });
           if (!accepted) { setUiBusy(false, ''); return { cancelled: true }; }
@@ -92967,14 +93033,15 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
             ? await restoreEnvelope(envelope)
             : mode === 'import_as_predecessor_archive'
               ? await LibraMemoryCore.importPortableAsPredecessorArchive(payload)
-              : await LibraMemoryCore.importPortableAsNativeCopy(payload);
+              : await LibraMemoryCore.importPortableAsNativeCopy(payload, { updatedBotRebind: mode === 'rebind_updated_bot' });
           const verifiedCount = Number(result.verified || result.records || result.copiedStarts?.length || 0);
           setUiBusy(false, `복원 완료 · ${verifiedCount}개 검증`);
           await notice('복원 완료', [
-            mode === 'restore_same_scope' ? `저장 ${Number(result.written || 0).toLocaleString('ko-KR')}개` : `복원 방식 ${mode === 'import_as_predecessor_archive' ? '새 채팅으로 기억 이사' : '채팅 복사 기억 복구'}`,
+            mode === 'restore_same_scope' ? `저장 ${Number(result.written || 0).toLocaleString('ko-KR')}개` : `복원 방식 ${mode === 'import_as_predecessor_archive' ? '새 채팅으로 기억 이사' : mode === 'rebind_updated_bot' ? '업데이트된 봇으로 이어하기' : '채팅 복사 기억 복구'}`,
             mode === 'restore_same_scope' ? `이전 상태 제거 ${Number(result.removed || 0).toLocaleString('ko-KR')}개` : `채택 기억 ${verifiedCount.toLocaleString('ko-KR')}개`,
             `readback 검증 ${verifiedCount.toLocaleString('ko-KR')}개`,
             result.divergenceTurn ? `T${Number(result.divergenceTurn)}부터는 현재 세계선에서 다시 분석합니다.` : '',
+            `저장 위치: ${storageTarget}`,
             '',
             '채팅 메시지는 수정하지 않았습니다.',
             '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
@@ -93074,6 +93141,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         const validated = await validateEnvelope(envelope);
         return await LibraMemoryCore.importPortableAsNativeCopy(portablePayloadFromEnvelope(validated));
       }),
+      rebindToUpdatedBot: envelope => runPortableOperation('restore', async () => {
+        const validated = await validateEnvelope(envelope);
+        return await LibraMemoryCore.importPortableAsNativeCopy(portablePayloadFromEnvelope(validated), { updatedBotRebind: true });
+      }),
+      storageTarget: portableStorageTargetText,
       recoverInterruptedRestore: () => runPortableOperation('recovery', () => recoverInterruptedPortableRestore()),
       restoreFile: doRestoreFile,
       mountUi: ensureUi,

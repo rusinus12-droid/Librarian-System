@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.0.2
+//@display-name HAYAKU · Locator Continuity v4.0.3
 //@api 3.0
-//@version 4.0.2
+//@version 4.0.3
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.0.2';
+  const PLUGIN_VERSION = '4.0.3';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -65467,8 +65467,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const Hayaku_PORTABLE_IMPORT_MODES = Object.freeze({
       SAME_CHAT: 'same_chat_replace',
       MIGRATION: 'new_chat_migration',
-      COPY: 'copied_chat_recovery'
+      COPY: 'copied_chat_recovery',
+      // A RisuAI bot update is a NEW character. This mode carries the same session into it:
+      // it runs the copied-chat recovery below, so every packet is re-keyed to the CURRENT
+      // chat's own scope and only pairs whose U+A hashes match the backup transcript are
+      // adopted. No scope rule is widened; only the same-character gate is replaced by a
+      // different-character requirement plus proof that the conversation is the same.
+      UPDATED_BOT: 'updated_bot_rebind'
     });
+    const isCopyRecoveryMode = mode => mode === Hayaku_PORTABLE_IMPORT_MODES.COPY
+      || mode === Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT;
+    // Storage writes go through MemorySuiteStorageBridge, which routes by the current chat's
+    // storage mode. Name that destination so server and plugin restores are never confused.
+    const portableStorageTargetText = async () => {
+      let mode = '';
+      try { mode = textValue(await bridgeValue()?.getMode?.()); } catch (_) {}
+      return {
+        plugin_only: '플러그인 스토리지 (RisuAI pluginStorage)',
+        server_only: '서버 저장소 (Librarian 서버 DATA)',
+        mirror: '서버 저장소 + 플러그인 스토리지 (저장 모드 전환 중 미러)'
+      }[mode] || '현재 저장 모드 확인 불가';
+    };
     const portableTargetFingerprint = async value => {
       const integrity = await digestCanonical(value);
       return textValue(integrity?.digest || integrity?.fallbackDigest);
@@ -65624,7 +65643,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       if (Number(envelope.formatVersion) < 3) throw new Error('portable_cross_chat_requires_format_v3');
       if (sameScope) throw new Error('portable_cross_chat_mode_requires_different_scope');
-      if (!sameCharacterForImport(portableScope, envelope.source)) throw new Error('portable_cross_character_import_blocked');
+      const updatedBot = importMode === Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT;
+      const sameCharacter = sameCharacterForImport(portableScope, envelope.source);
+      if (updatedBot) {
+        if (!stableCharacterIdsForImport(portableScope).size || !stableCharacterIdsForImport(envelope.source).size) {
+          throw new Error('portable_updated_bot_character_identity_missing');
+        }
+        if (sameCharacter) throw new Error('portable_updated_bot_requires_different_character');
+      } else if (!sameCharacter) throw new Error('portable_cross_character_import_blocked');
       const target = await targetSnapshotForImport(portableScope);
       const source = await sourceLedgerFromEnvelope(envelope);
       const targetLedger = await loadStorageLedger(target.targetScope, { hydrateArchive: false });
@@ -65692,7 +65718,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || record?.permanentSessionHistory === true
       ));
       if (!matchedRecords.length && !historicalRecords.length) throw new Error('portable_copy_no_verified_matches');
+      // Another bot is only "the same session" when its transcript is the backup's transcript.
+      if (updatedBot && !pairMatch.mapping.size) throw new Error('portable_updated_bot_transcript_mismatch');
       return {
+        updatedBot,
+        sourceCharacterId: textValue(envelope.source?.canonicalCharacterId || envelope.source?.characterId),
+        targetCharacterId: textValue(portableScope?.canonicalCharacterId || portableScope?.characterId),
         mode: importMode,
         sameScope,
         portableScope,
@@ -65799,6 +65830,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const executePortableCopyRecoveryUnsafe = async (envelope, preparedValue = null, transaction = null) => {
       const prepared = preparedValue || await preparePortableImport(envelope, Hayaku_PORTABLE_IMPORT_MODES.COPY);
+      if (!isCopyRecoveryMode(prepared.mode)) throw new Error(`portable_copy_mode_invalid:${prepared.mode}`);
+      const updatedBotDetails = prepared.updatedBot === true ? {
+        updatedBotRebind: true,
+        sourceCharacterId: textValue(prepared.sourceCharacterId),
+        targetCharacterId: textValue(prepared.targetCharacterId)
+      } : {};
       let archiveRef = normalizeHayakuArchiveRef(prepared.targetLedger?.archiveRef);
       let archivedRecords = 0;
       if (prepared.historicalRecords.length) {
@@ -65887,7 +65924,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ambiguousPairs: prepared.ambiguousPairs,
         unmatchedPairs: prepared.unmatchedPairs,
         verified: true,
-        durable: true
+        durable: true,
+        ...updatedBotDetails
       });
       const proofCommit = await writeStorageLedgerDirect(prepared.targetScope, {
         ...durable,
@@ -65907,7 +65945,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unmatchedPairs: prepared.unmatchedPairs,
         verified: true,
         durable: true,
-        receipt: finalReceipt
+        receipt: finalReceipt,
+        ...updatedBotDetails
       };
     };
     const withPortableTargetRollback = async (prepared, operation) => {
@@ -65962,6 +66001,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const executePortableCopyRecovery = async (envelope, preparedValue = null) => {
       const prepared = preparedValue || await preparePortableImport(envelope, Hayaku_PORTABLE_IMPORT_MODES.COPY);
+      if (!isCopyRecoveryMode(prepared.mode)) throw new Error(`portable_copy_mode_invalid:${prepared.mode}`);
       return await withPortableTargetRollback(prepared, async transaction => (
         await executePortableCopyRecoveryUnsafe(envelope, prepared, transaction)
       ));
@@ -66450,10 +66490,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       host.appendChild(overlay);
       teardownDialog = viewerBindConfirmDialogKeys(overlay, panel, () => finish(''), '[data-cancel]');
     });
-    const previewText = (envelope, prepared = null) => {
+    const previewText = (envelope, prepared = null, storageTarget = '') => {
       const byKind = envelope.inventory?.byKind || {};
       const mode = prepared?.mode || Hayaku_PORTABLE_IMPORT_MODES.SAME_CHAT;
-      const modeLines = mode === Hayaku_PORTABLE_IMPORT_MODES.MIGRATION
+      const modeLines = mode === Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT
+        ? [
+            '복원 방식: 업데이트된 봇으로 이어하기',
+            `현재 봇: ${prepared?.portableScope?.characterName || prepared?.targetCharacterId || '-'}`,
+            `대화 매칭: ${Number(prepared?.matchedPairs || 0).toLocaleString('ko-KR')}쌍`,
+            `가져올 패킷: ${Number(prepared?.matchedRecords?.length || 0).toLocaleString('ko-KR')}개`,
+            `과거 아카이브: ${Number(prepared?.historicalRecords?.length || 0).toLocaleString('ko-KR')}개`,
+            `불일치 턴: ${ensureArray(prepared?.unmatchedPairs).join(', ') || '없음'}`,
+            '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
+            '일치한 패킷을 현재 채팅의 새 스코프로 다시 쓰고 월드라인에 재결속합니다. 원래 봇의 기억은 건드리지 않습니다.'
+          ]
+        : mode === Hayaku_PORTABLE_IMPORT_MODES.MIGRATION
         ? [
             '복원 방식: 새 채팅으로 이사',
             `과거 아카이브 후보: ${Number(prepared?.archiveCandidates || 0).toLocaleString('ko-KR')}개`,
@@ -66489,6 +66540,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         `복구·월드라인: ${Number(byKind.recovery || 0) + Number(byKind.worldline || 0)}개`,
         '',
         ...modeLines,
+        ...(storageTarget ? [`저장 위치: ${storageTarget}`] : []),
         '',
         '작업 전에 대상 채팅의 현재 기억을 자동 백업합니다.',
         '오류가 발생하면 복원 전 저장소로 자동 롤백합니다.'
@@ -66517,6 +66569,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const chooseImportMode = async (envelope, scope) => {
       if (exactScopeCompatible(scope, envelope.source)) return Hayaku_PORTABLE_IMPORT_MODES.SAME_CHAT;
       if (Number(envelope.formatVersion) < 3) throw new Error('다른 채팅으로 가져오려면 format v3 백업이 필요합니다.');
+      if (!sameCharacterForImport(scope, envelope.source)) {
+        return await choiceModal({
+          title: '다른 봇의 HAYAKU 기억입니다',
+          body: `백업: ${envelope.source?.characterName || envelope.source?.characterId || '-'} / ${envelope.source?.chatTitle || envelope.source?.chatId || '-'}\n현재: ${scope.characterName || scope.characterId || '-'} / ${scope.chatTitle || scope.chatId || '-'}\n\n봇을 업데이트해 같은 대화를 새 봇으로 옮긴 경우에만 사용하세요. 대화 본문이 일치하는 턴만 연결합니다.`,
+          choices: [
+            {
+              value: Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT,
+              label: '업데이트된 봇으로 이어하기',
+              description: '현재 대화와 본문이 일치하는 패킷을 현재 채팅의 새 스코프로 다시 쓰고 월드라인에 재결속합니다.'
+            }
+          ]
+        });
+      }
       return await choiceModal({
         title: '다른 채팅의 HAYAKU 기억입니다',
         body: `백업: ${envelope.source?.characterName || envelope.source?.characterId || '-'} / ${envelope.source?.chatTitle || envelope.source?.chatId || '-'}\n현재: ${scope.characterName || scope.characterId || '-'} / ${scope.chatTitle || scope.chatId || '-'}\n\n가져오기 방식을 선택하세요.`,
@@ -66547,20 +66612,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const mode = await chooseImportMode(envelope, scope);
         if (!mode) { setUiBusy(false, '복원을 취소했습니다.'); return; }
         const prepared = await preparePortableImport(envelope, mode);
+        const storageTarget = await portableStorageTargetText();
         setUiBusy(false, '복원 준비 완료');
         const accepted = await modal({
           title: 'HAYAKU JSON 기억 복원',
-          body: previewText(envelope, prepared),
+          body: previewText(envelope, prepared, storageTarget),
           confirmLabel: mode === Hayaku_PORTABLE_IMPORT_MODES.SAME_CHAT
             ? '현재 기억 교체'
-            : (mode === Hayaku_PORTABLE_IMPORT_MODES.MIGRATION ? '과거 기억으로 이사' : '월드라인 재구성'),
+            : mode === Hayaku_PORTABLE_IMPORT_MODES.MIGRATION ? '과거 기억으로 이사'
+              : mode === Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT ? '현재 봇에 기억 연결' : '월드라인 재구성',
           danger: true
         });
         if (!accepted) return;
         setUiBusy(true, '기억 복원 작업을 시작합니다…');
         startPortableJob(mode === Hayaku_PORTABLE_IMPORT_MODES.MIGRATION
           ? '채팅 기억 이사'
-          : (mode === Hayaku_PORTABLE_IMPORT_MODES.COPY ? '복사 채팅 복구' : 'JSON 기억 복원'));
+          : mode === Hayaku_PORTABLE_IMPORT_MODES.COPY ? '복사 채팅 복구'
+            : mode === Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT ? '업데이트된 봇으로 이어하기' : 'JSON 기억 복원');
         updatePortableJob('대상 채팅과 변경 계획을 검증했습니다.', 15, { cancellable: true });
         portableJobCheckpoint();
         const targetHasMemory = mode === Hayaku_PORTABLE_IMPORT_MODES.SAME_CHAT
@@ -66591,6 +66659,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           `이전 상태 제거 ${Number(result.removed || 0).toLocaleString('ko-KR')}개`,
           `대화 매칭 ${Number(result.matchedPairs || 0).toLocaleString('ko-KR')}쌍`,
           `안전 백업 ${safetyBackup ? '다운로드 완료' : '대상 기억 없음'}`,
+          `저장 위치: ${storageTarget}`,
           '',
           '채팅 메시지는 수정하지 않았습니다.',
           '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
@@ -66695,6 +66764,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         });
       },
       importBackup: importEnvelope,
+      rebindToUpdatedBot: envelope => importEnvelope(envelope, { mode: Hayaku_PORTABLE_IMPORT_MODES.UPDATED_BOT }),
+      storageTarget: portableStorageTargetText,
       importModes: Hayaku_PORTABLE_IMPORT_MODES,
       restoreFile: doRestoreFile,
       status: () => cloneJson({
