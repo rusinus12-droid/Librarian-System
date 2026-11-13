@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.0.2
+//@display-name LIBRA v3.0.3
 //@api 3.0
-//@version 3.0.2
+//@version 3.0.3
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.2';
+  const PLUGIN_VERSION = '3.0.3';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -26568,8 +26568,23 @@ function summarizeAgentCbsTag(rawContent) {
       throw error;
     }
     const queuedAt = Date.now();
+    const taskKind = options.__executionState?.plan?.taskKind;
+    const microHostWait = taskKind === 'micro_memory' && !options.consumerOperation;
+    const deadlineAt = options.deadlineAt || queuedAt + Number(options.timeoutMs || options.timeout_ms || 180000);
+    const queueDeadlineError = () => new MemorySuiteExecutionContract.ContractError(
+      'MICRO_HOST_QUEUE_TIMEOUT', 'Micro request expired in the RisuAI queue before submission.');
+    let queueTimer, queueExpired = false, submittedToHost = false;
+    const queueDeadline = microHostWait ? new Promise((_, reject) => {
+      queueTimer = setTimeout(() => {
+        queueExpired = true;
+        reject(queueDeadlineError());
+      }, Math.max(0, deadlineAt - Date.now()));
+    }) : null;
     const physical = enqueueRisuAuxiliaryCall(async () => {
       throwIfProviderAborted(options.signal);
+      if (microHostWait && (queueExpired || Date.now() >= deadlineAt)) throw queueDeadlineError();
+      if (microHostWait && options.validateMicroSubmission) await options.validateMicroSubmission();
+      if (microHostWait && (queueExpired || Date.now() >= deadlineAt)) throw queueDeadlineError();
       options.__executionState?.ledger.check();
       if(options.consumerOperation){
         if(Date.now()-queuedAt>=options.consumerOperation.policy.queueTimeoutMs)throw consumerContractError('CONSUMER_QUEUE_DEADLINE');
@@ -26587,6 +26602,8 @@ function summarizeAgentCbsTag(rawContent) {
         if(options.__executionState)options.__executionState.row=options.__executionState.ledger.reserve('generation');
         if(options.__executionState)Runtime.lastGenerationInvocation={...Runtime.lastGenerationInvocation,phase:'submitted',submitted:true,operation:options.__executionState.ledger.snapshot()};
         submitted = true;
+        submittedToHost = true;
+        clearTimeout(queueTimer);
         if(options.consumerAttempt){options.consumerAttempt.submittedAt=Date.now();options.consumerAttempt.queueMs=Date.now()-queuedAt;options.consumerAttempt.status='submitted';consumerPublishOperation(options.consumerOperation);}
         const response = await resolution.api.runLLMModel({
           messages: [
@@ -26641,15 +26658,26 @@ function summarizeAgentCbsTag(rawContent) {
       }
     });
     if(options.consumerOperation)return await consumerAwaitHost(physical,options.consumerOperation,options.consumerAttempt,queuedAt);
-    // Canonical OtherAx generation is owned by the host, which cannot be
-    // aborted by this API. Keep its response attached after submission instead
-    // of discarding it at the direct-provider batch deadline. The ledger still
-    // checks the deadline before submission; explicit cancellation retains the
-    // physical queue and discards late output as before.
-    const hostManagedCanonicalWait = options.__executionState?.plan?.taskKind === 'canonical_memory';
-    return await MemorySuiteExecutionContract.awaitPhysical(physical,{signal:options.signal,deadlineAt:hostManagedCanonicalWait?0:(options.deadlineAt||queuedAt+Number(options.timeoutMs||options.timeout_ms||180000)),
-      onAbandon:()=>{options.__executionState?.ledger.cancel();Runtime.risuAuxiliary.outcomeUnknown=true;},
-      onLate:()=>{Runtime.risuAuxiliary.outcomeUnknown=false;Runtime.risuAuxiliary.lateResponseDiscarded=true;}});
+    // RisuAI owns submitted memory generation. The Micro deadline only
+    // bounds the queue; cancellation still leaves the physical call in place.
+    const hostManagedWait = microHostWait || taskKind === 'canonical_memory';
+    const response = MemorySuiteExecutionContract.awaitPhysical(physical, {
+      signal: options.signal, deadlineAt: hostManagedWait ? 0 : deadlineAt,
+      onAbandon: () => {
+        options.__executionState?.ledger.cancel();
+        if (submittedToHost) Runtime.risuAuxiliary.outcomeUnknown = true;
+      },
+      onLate: () => {
+        if (!submittedToHost) return;
+        Runtime.risuAuxiliary.outcomeUnknown = false;
+        Runtime.risuAuxiliary.lateResponseDiscarded = true;
+      }
+    });
+    try {
+      return await (queueDeadline ? Promise.race([response, queueDeadline]) : response);
+    } finally {
+      clearTimeout(queueTimer);
+    }
   };
   const waitForProviderRetry = (delayMs, signal = null) => new Promise((resolve, reject) => {
     throwIfProviderAborted(signal);
@@ -29477,6 +29505,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       ['CONFIGURATION_REVIEW', /LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED/i, '이전 기억 지침 확인 필요', '업데이트 전에 쓰던 사용자 기억 지침을 가져올지 정해야 기억 생성을 이어갈 수 있습니다. 채팅 옆 LIBRA 알림 버튼이나 기억 분석 상세 설정에서 확인해 주세요.'],
       ['NATIVE_REQUEST_PENDING', /CANONICAL_NATIVE_REQUEST_PENDING/i, '이전 AI 요청 종료 대기', '이전 AI 요청이 아직 종료되지 않았습니다. 종료를 확인한 뒤 이전 실패 작업을 폐기하고 새 분석을 시작할 수 있습니다.'],
       ['HOST_REQUEST_PENDING', /CANONICAL_HOST_REQUEST_PENDING/i, '이전 보조 모델 요청 종료 대기', '이전 RisuAI 보조 모델 요청이 아직 진행 중입니다. 종료 전에는 작업 기록을 지우거나 새 요청을 제출하지 않습니다.'],
+      ['MICRO_HOST_QUEUE_TIMEOUT', /MICRO_HOST_QUEUE_TIMEOUT|Micro request expired in the RisuAI queue/i, '미크로 요청 제출 대기 시간 초과', 'RisuAI 보조 모델 대기열에서 제출 전에 시간이 초과됐습니다. 해당 요청은 제출되지 않았습니다.'],
       ['PREVIOUS_WORK_DELETE', /PREVIOUS_WORK_(?:DELETE|MANIFEST)|FRESH_ANALYSIS_.*READBACK/i, '새 분석 준비 확인 실패', '이전 임시 작업의 삭제 또는 새 작업 저장을 확인하지 못해 분석을 시작하지 않았습니다. 다시 실행하면 남은 임시 기록부터 정리합니다.'],
       ['PREVIOUS_WORK_PROTECTED', /PREVIOUS_WORK_(?:IDENTITY|CANONICAL|ARCHIVE|CHANGED)/i, '삭제 대상 확인 필요', '이전 작업의 소유 범위나 정본 연결을 확인하지 못해 삭제를 중단했습니다.'],
       ['HOST_OUTCOME_UNKNOWN', /OUTCOME_UNKNOWN|Host request outcome is still unknown/i, '호스트 응답 완료 미확인', 'RisuAI 요청의 완료를 아직 확인하지 못했습니다. 보조 모델의 처리 종료를 확인한 뒤 다시 실행해 주세요.'],
@@ -52272,32 +52301,36 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // analysis runs alongside; 45 s for both attempts lost turns to provider timeouts.
       const deadlineAt = startedAt + MICRO_PROVIDER_TIMEOUT_MS;
       const maxPhysicalAttempts = options.maxPhysicalAttempts === 1 ? 1 : 2;
+      const executionState = {};
       let result;
       try {
         result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID, systemPrompt, userPrompt, {
           taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal, presetName: microPresetNameForSettings(settings),
           maxTokens: 16384, reasoningBudgetCapTokens: 4096, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
           extraCalls: maxPhysicalAttempts - 1, maxCorrectiveRetries: maxPhysicalAttempts - 1,
+          __executionState: executionState,
+          validateMicroSubmission: options.validateSubmission,
           jsonMode: true, structuredTask: true,
           forceNonStreaming: true, disablePromptCache: true, temp: 0.1
         });
         const firstRequests = Math.max(1, Number(result?.execution?.requestCount || 1));
         if (providerOutputWasTruncated(result) && firstRequests < maxPhysicalAttempts && Date.now() < deadlineAt) {
-          const retry = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID,
+          result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID,
             systemPrompt + '\nRETRY: the previous response repeated claims and exhausted output. Extract each distinct supported fact ONCE, omit duplicate paraphrases, and close the JSON. Do not impose a top-N or omit independent facts.', userPrompt, {
               taskKind:'micro_memory',taskSettingsSnapshot:settings,signal,presetName:microPresetNameForSettings(settings),maxTokens:16384,reasoningBudgetCapTokens:4096,
               timeoutMs:MICRO_PROVIDER_TIMEOUT_MS,deadlineAt,extraCalls:0,maxCorrectiveRetries:0,jsonMode:true,structuredTask:true,
+              __executionState: executionState,
+              validateMicroSubmission: options.validateSubmission,
               forceNonStreaming:true,disablePromptCache:true,temp:0
             });
-          result = {...retry,execution:{...asObject(retry?.execution),requestCount:firstRequests+Math.max(1,Number(retry?.execution?.requestCount || 1))}};
         }
       } catch (error) {
-        const invocation = asObject(Runtime.lastGenerationInvocation);
         let activeAfterError = null;
         try { activeAfterError = await readActiveCompletedTurnReceipt(scope, receipt.worldlineId,
           Number(receipt.sessionEpoch), Number(receipt.turn)); } catch (_) {}
         return pending(`provider_error:${compact(error?.message || error, 240)}`, {
-          invocationPlan: clone(invocation.plan || null), execution: clone(invocation.operation || null),
+          invocationPlan: clone(executionState.plan || null), execution: clone(executionState.ledger?.snapshot() || null),
+          errorCode: string(error?.code || ''),
           usage: null, provider: '', model: '', elapsedMs: Date.now() - startedAt
         }, activeAfterError?.status === 'verified'
           && activeAfterError.receipt.revisionId === receipt.revisionId
@@ -53198,7 +53231,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return {status:'unknown',reason:'legacy_retry_requires_manual',workKey};
       const recordedAttempts = Number(work.physicalAttemptsUsed);
       const legacyCalls = Number(work.result?.provider?.execution?.requestCount);
-      const usedAttempts = Number.isInteger(recordedAttempts) && recordedAttempts > 0
+      const usedAttempts = Number.isInteger(recordedAttempts) && recordedAttempts >= 0
         ? recordedAttempts : Number.isInteger(legacyCalls) && legacyCalls > 0 ? legacyCalls : 2;
       if (options.manual === true && work.status === 'result_ready'
         && work.result?.micro?.status !== 'source_bound_candidate'
@@ -53258,9 +53291,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
         microInvocationsInFlight.add(workKey);
         try {
           analysis = await analyzeCompletedReceipt({ ...receipt, receiptKey: active.receiptKey },
-            inventory, settings, null, { maxPhysicalAttempts: remaining, expectedRawPacketRef:raw.rawPacketRef });
+            inventory, settings, null, {
+              maxPhysicalAttempts: remaining, expectedRawPacketRef: raw.rawPacketRef,
+              validateSubmission: async () => {
+                const current = await checkClaim();
+                if (current.status !== 'current') throw new Error(current.reason || 'micro_claim_changed');
+              }
+            });
         } finally { microInvocationsInFlight.delete(workKey); }
         analysis={...analysis,rawPacketRef:clone(raw.rawPacketRef)};
+        const reportedCalls = Number(analysis.provider?.execution?.requestCount);
+        const consumed = Number.isInteger(reportedCalls) && reportedCalls >= 0
+          ? Math.min(remaining, reportedCalls) : 0;
+        const physicalAttemptsUsed = Math.min(2, usedBefore + consumed);
+        const outcomeUnknown = Number(analysis.provider?.execution?.unknownOutcomes || 0) > 0;
         // A late result the fences reject is discarded, but the attempt must not stay
         // "invoking" forever: record it as a source-only stale outcome so the turn is
         // re-analyzed on the current boundary (gap repair) instead of being lost.
@@ -53271,7 +53315,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const rejected = { status: 'pending', reason: `provider_result_stale:${reason}`, micro: null, personInventory: null,
               provider: null, minimumSourceBound: minimumSourceBoundMicro(receipt) };
             await storage.setVerifiedJson(workKey, { ...current, status: 'result_ready', result: rejected,
-              resultDigest: digest(rejected), physicalAttemptsUsed: 2 }, scope);
+              resultDigest: digest(rejected), physicalAttemptsUsed,
+              attemptHistory: asArray(current.attemptHistory).map(row => row.attemptId === current.attemptId
+                ? { ...row, status: 'stale', physicalAttemptsUsed, resultDigest: digest(rejected) } : row) }, scope);
           } catch (_) { /* The lease still bounds the attempt. */ }
         };
         const afterProvider=await checkClaim();
@@ -53284,17 +53330,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(started?.status!=='reserved' || started.phase!=='invoking'
           || started.attemptId!==work.attemptId || started.invocationStartedAt!==work.invocationStartedAt)
           return {status:'stale_source',reason:'micro_attempt_superseded'};
-         const reportedCalls = Number(analysis.provider?.execution?.requestCount);
          const noPhysicalCall = analysis.provider?.noPhysicalCall === true;
-         const consumed = noPhysicalCall ? 0 : analysis.reason?.startsWith('provider_error:') ? remaining
-           : Number.isInteger(reportedCalls) && reportedCalls > 0
-           ? Math.min(remaining, reportedCalls) : remaining;
         work = { ...work, status: 'result_ready', result: analysis, resultDigest: digest(analysis),
-          physicalAttemptsUsed: Math.min(2, usedBefore + consumed),
+          physicalAttemptsUsed,
           attemptHistory:asArray(work.attemptHistory).map(row=>row.attemptId===work.attemptId
              ? {...row,status:noPhysicalCall?'unavailable'
-                 :analysis.micro?.status==='source_bound_candidate'?'succeeded':'failed',
-                physicalAttemptsUsed:Math.min(2,usedBefore+consumed),resultDigest:digest(analysis)}:row) };
+                 :analysis.micro?.status==='source_bound_candidate'?'succeeded':outcomeUnknown?'unknown':'failed',
+                physicalAttemptsUsed,resultDigest:digest(analysis)}:row) };
         await storage.setVerifiedJson(workKey, work, scope);
       }
       const beforePublish=await checkClaim();
@@ -60982,7 +61024,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const inventory=await readPersonSpanInventory(scope,worldlineId,sessionEpoch,turn);
       await check();
       if(typeof request?.onStage==='function')request.onStage('analysis');
-      const analysis={...await analyzeCompletedReceipt({...receipt,receiptKey:active.receiptKey},inventory.inventory,await loadSettings(),null,{expectedRawPacketRef:raw.rawPacketRef}),rawPacketRef:clone(raw.rawPacketRef)};
+      const analysis={...await analyzeCompletedReceipt({...receipt,receiptKey:active.receiptKey},inventory.inventory,await loadSettings(),null,
+        {expectedRawPacketRef:raw.rawPacketRef,validateSubmission:check}),rawPacketRef:clone(raw.rawPacketRef)};
       await check();
       if(typeof request?.onStage==='function')request.onStage('validation');
       if(analysis.micro?.status!=='source_bound_candidate')return {status:'failed',reason:analysis.reason||'미크로 분석 결과를 검증하지 못했습니다. 기존 기억을 유지합니다.'};
