@@ -73820,12 +73820,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         note: asArray(lensRead.value?.queue).length ? `대기 ${asArray(lensRead.value.queue).length}건` : latestLens?.turnRange ? `최근 T${latestLens.turnRange.start}–T${latestLens.turnRange.end}` : '', error: lensFailed ? string(latestLens.reason || latestLens.error) : lensRead.error || '' };
 
       const stateRead = await attempt(() => loadContinuityStateForResponse(scope, manifest, { skipMemoryReview: true }));
-      const authority = asObject(stateRead.value?.responseAuthority), through = Number(stateRead.value?.head?.throughTurn ?? stateRead.value?.throughTurn ?? 0);
+      const authority = asObject(stateRead.value?.authority), through = Number(stateRead.value?.head?.throughTurn || 0);
+      const journalRead = await attempt(() => loadStateTrackingJournal(scope));
+      const pendingApplications = asArray(journalRead.value?.entries).filter(entry => ['scheduled', 'running', 'pending'].includes(entry.state)).length;
+      const stateNotes = [];
+      if (asArray(authority.pendingDomains).length) stateNotes.push(`대기 영역: ${authority.pendingDomains.join(', ')}`);
+      if (pendingApplications) stateNotes.push(`상태 적용 ${pendingApplications}건 보류`);
+      if (authority.pending === true && !stateNotes.length) stateNotes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
       const replayError = await attempt(async () => asArray((await storage.getJson(key.stateReplayErrors(scope), null))?.records).filter(row => !row?.resolvedAt).at(-1) || null);
       const stateJob = { id: 'state', label: 'State projection', detail: '정본과 미크로에서 현재 상태를 만듭니다.', at: '',
-        headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${through}까지` : authority.pending === true ? '반영 대기 중' : `마지막 반영 · T${through}`,
-        status: stateRead.error ? 'attention' : replayError.value ? 'failed' : authority.pending === true ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
-        note: asArray(authority.pendingDomains).length ? `대기 영역: ${asArray(authority.pendingDomains).join(', ')}` : '', error: replayError.value ? string(replayError.value.message || replayError.value.code) : stateRead.error || '' };
+        headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${through}까지` : through ? `마지막 반영 · T${through}` : '반영 대기 중',
+        status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
+        note: stateNotes.join(' · '), error: replayError.value ? string(replayError.value.message || replayError.value.code) : stateRead.error || journalRead.error || '' };
 
       const work = asArray(state.embeddingWork).filter(row => !row.scopeKey || row.scopeKey === scopeKey), lastOf = id => work.find(row => row.work === id) || null;
       const canonicalReady = refs.filter(ref => ref.embeddingStatus === 'ready').length, semanticRead = state.lastRecallSemantic?.scopeKey === scopeKey ? state.lastRecallSemantic : null;
@@ -87312,6 +87318,7 @@ advanced
       ]);
 
       const warned = result.actionsTaken.some(act => act.includes('경고'));
+      const stateWarned = result.actionsTaken.some(act => /(?:상태 적용|상태 재생|이전 시점 고정 해제) 경고/.test(act));
       const banner = guiEl('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '12px', padding: '12px 14px', borderRadius: 'var(--r-md, 10px)', background: warned ? 'var(--warn-soft, rgba(234,153,34,0.08))' : 'var(--ok-soft, rgba(46,175,125,0.08))', border: warned ? '1px solid var(--warn-line, #ea9922)' : '1px solid var(--ok-ink, #2eaf7d)', margin: '12px 0' } }, [
         guiEl('span', { style: { fontSize: '20px', lineHeight: '1', marginTop: '1px' }, text: warned ? '⚠️' : '🎉' }),
         guiEl('div', { style: { fontSize: '13px', lineHeight: '1.55', minWidth: '0' } }, [
@@ -87339,8 +87346,8 @@ advanced
         ]),
         guiEl('div', {}, [
           guiEl('b', { text: '현재 상태' }),
-          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700', color: 'var(--ok-ink, #2eaf7d)' }, text: `T${after.stateThroughTurn}` }),
-          guiEl('small', { style: { display: 'block', color: 'var(--ok-ink, #2eaf7d)', fontSize: '11.5px', marginTop: '2px' }, text: after.stateThroughTurn >= after.lastCommittedTurn ? '최신 정본과 일치' : '반영 대기' })
+          guiEl('span', { class: 'mono', style: { fontSize: '15px', fontWeight: '700', color: stateWarned ? 'var(--warn-ink, #ea9922)' : 'var(--ok-ink, #2eaf7d)' }, text: `T${after.stateThroughTurn}` }),
+          guiEl('small', { style: { display: 'block', fontSize: '11.5px', marginTop: '2px' }, text: after.stateThroughTurn < after.lastCommittedTurn ? '반영 대기' : stateWarned ? '정본 최신 턴 도달 · 상태 확인 필요' : '최신 정본 턴까지 반영' })
         ]),
         guiEl('div', {}, [
           guiEl('b', { text: '임베딩 벡터' }),
