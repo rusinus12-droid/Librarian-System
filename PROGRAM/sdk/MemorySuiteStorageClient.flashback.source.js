@@ -7325,6 +7325,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   });
 
+  // Portable snapshots pick their read strategy from the cached scope mode; a forced
+  // registry reload per group would add the very round trips grouping removes.
+  const readPortableMode = async scopeInput => (await readScopeMode(normalizeScopeDescriptor(scopeInput), false)).mode;
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -11681,6 +11684,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
     readPortableServerRows,
+    readPortableMode,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,

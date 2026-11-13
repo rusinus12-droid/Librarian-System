@@ -10872,6 +10872,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   });
 
+  // Portable snapshots pick their read strategy from the cached scope mode; a forced
+  // registry reload per group would add the very round trips grouping removes.
+  const readPortableMode = async scopeInput => (await readScopeMode(normalizeScopeDescriptor(scopeInput), false)).mode;
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -14947,6 +14950,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
     readPortableServerRows,
+    readPortableMode,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,
@@ -71101,11 +71105,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
 
     const linkPortableLensArchives = async ({bundle, context, manifest, rollback}) => {
-      const refs = asArray(bundle.manifest.inheritedLensArchives).map(ref => ({
+      // A lens the user permanently deleted here is not brought back by a backup.
+      const purged = bundle.purgedLensIds instanceof Set ? bundle.purgedLensIds : new Set();
+      const refs = asArray(bundle.manifest.inheritedLensArchives).filter(ref => !purged.has(string(ref?.lensId || ''))).map(ref => ({
         ref: {...clone(ref), sessionEpoch: Number(ref.sessionEpoch || 0) - 1, handoffTransferId: bundle.importId},
         archive: bundle.values.get(ref.archiveKey)
       }));
-      for (const archive of bundle.portableLensArchives) {
+      for (const archive of bundle.portableLensArchives.filter(row => !purged.has(string(row?.lensId || '')))) {
         validateLensHandoffArchive(archive);
         const transferId = digest([bundle.importId, context.scope.scopeKey, archive.archiveDigest]);
         refs.push({ archive, ref: {
@@ -71784,6 +71790,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const preview = await previewPortableImport({ ...asObject(input), importId: bundle.importId });
       if (preview.alreadyImported) return { ok: true, skipped: true, reason: 'portable_import_already_complete' };
       if (!preview.modes.import_as_predecessor_archive.available) throw new Error(`portable_archive_import_blocked:${preview.modes.import_as_predecessor_archive.reason}`);
+      // A permanently deleted lens is left out of this import; everything else is restored.
+      bundle.purgedLensIds = await readPortablePurgedLensIds();
+      const skippedPurgedLensIds = portablePurgedLensIdsIn(bundle, bundle.purgedLensIds);
+      let addedLensIds = [];
       const context = await resolveContext();
       if (string(preview.target?.scopeKey || '') !== string(context.scope?.scopeKey || '')) throw new Error('portable_archive_import_target_changed');
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
@@ -71905,7 +71915,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!await portableImportReceiptReadback({ receipt: completedReceipt, context, manifest: completionReadback, pairs, bundle })) throw new Error('portable_archive_import_completion_readback_failed');
 
         await refreshSnapshot(context);
-        if (bundle.lensDefinitions.length) await mergePortableLensDefinitions(bundle.lensDefinitions);
+        if (bundle.lensDefinitions.length) addedLensIds = await mergePortableLensDefinitions(bundle.lensDefinitions);
         const journalCleanup = await rollback.complete({ receipt: completedReceipt, records: linked.length });
         const inheritedStateAdmission = await admitInheritedMicroStateClaims(context.scope)
           .catch(error => ({status: 'pending_reconciliation', reason: compact(error?.message || error, 300)}));
@@ -71916,9 +71926,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           reason: inheritedStateAdmission.reason || 'readback_pending'});
         return { ok: true, mode: completedReceipt.mode, receipt: completedReceipt,
           continuityStateCopied, storyArcRebuild, records: linked.length,
-          journalCleanup, inheritedStateAdmission, warnings };
+          journalCleanup, inheritedStateAdmission, warnings, skippedPurgedLensIds };
       } catch (error) {
         const rollbackErrors = await rollback.restore();
+        try { await revertPortableLensDefinitions(addedLensIds); }
+        catch (lensRevertError) { rollbackErrors.push({ key: 'lens_registry', error: compact(lensRevertError?.message || lensRevertError, 300) }); }
         if (!rollbackErrors.length) throw error;
         const wrapped = new Error(`${error?.message || error}; rollback_failures=${rollbackErrors.length}`);
         wrapped.code = 'PORTABLE_ARCHIVE_IMPORT_ROLLBACK_INCOMPLETE';
@@ -71946,6 +71958,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         sourceCharacterId: string(preview.modes.rebind_updated_bot.sourceCharacterId || ''),
         targetCharacterId: string(preview.modes.rebind_updated_bot.targetCharacterId || '')
       } : {};
+      // A permanently deleted lens is left out of this import; everything else is restored.
+      bundle.purgedLensIds = await readPortablePurgedLensIds();
+      const skippedPurgedLensIds = portablePurgedLensIdsIn(bundle, bundle.purgedLensIds);
+      let addedLensIds = [];
       const context = await resolveContext();
       if (string(preview.target?.scopeKey || '') !== string(context.scope?.scopeKey || '')) throw new Error('portable_chat_copy_target_changed');
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
@@ -72167,11 +72183,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (!await portableImportReceiptReadback({ receipt: completedReceipt, context, manifest: completionReadback, pairs, bundle })) throw new Error('portable_chat_copy_completion_readback_failed');
 
         await refreshSnapshot(context);
-        if (bundle.lensDefinitions.length) await mergePortableLensDefinitions(bundle.lensDefinitions);
+        if (bundle.lensDefinitions.length) addedLensIds = await mergePortableLensDefinitions(bundle.lensDefinitions);
         const journalCleanup = await rollback.complete({ receipt: completedReceipt, copiedStarts });
-        return { ok: true, mode: completedReceipt.mode, receipt: completedReceipt, copiedStarts, divergenceTurn: preview.divergenceTurn || 0, continuityStateCopied, continuityWarnings, storyArcRebuild, journalCleanup, warnings: journalCleanup.cleaned ? [] : [{ stage: 'import_journal_cleanup', reason: journalCleanup.error || 'cleanup_pending' }] };
+        return { ok: true, mode: completedReceipt.mode, receipt: completedReceipt, skippedPurgedLensIds, copiedStarts, divergenceTurn: preview.divergenceTurn || 0, continuityStateCopied, continuityWarnings, storyArcRebuild, journalCleanup, warnings: journalCleanup.cleaned ? [] : [{ stage: 'import_journal_cleanup', reason: journalCleanup.error || 'cleanup_pending' }] };
       } catch (error) {
         const rollbackErrors = await rollback.restore();
+        try { await revertPortableLensDefinitions(addedLensIds); }
+        catch (lensRevertError) { rollbackErrors.push({ key: 'lens_registry', error: compact(lensRevertError?.message || lensRevertError, 300) }); }
         if (!rollbackErrors.length) throw error;
         const wrapped = new Error(`${error?.message || error}; rollback_failures=${rollbackErrors.length}`);
         wrapped.code = 'PORTABLE_CHAT_COPY_ROLLBACK_INCOMPLETE';
@@ -72772,15 +72790,40 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return task;
     };
     const lensError = (code, message) => Object.assign(new Error(message), { code });
-    const mergePortableLensDefinitions = definitions => mutateLensRegistry(current => {
+    // The lens registry is global, so it is outside every chat checkpoint. A permanently
+    // deleted lens stays deleted: portable restores leave its definition, notes and archives
+    // out and restore everything else. They report exactly which definitions they added and
+    // remove only those again when a later step fails (they did not exist before the merge).
+    const readPortablePurgedLensIds = async () => new Set((await readLensRegistry({ force: true })).purgedLensIds);
+    const portableLensDefinitionsMissing = (current, definitions) => {
       const existing = new Set([...current.lenses, ...current.trash].map(lens => lens.lensId));
-      const missing = definitions.filter(lens => !existing.has(lens.lensId))
+      const purged = new Set(current.purgedLensIds);
+      return asArray(definitions).filter(lens => !existing.has(lens.lensId) && !purged.has(lens.lensId))
         .map((lens, index) => normalizeLensDefinition({...lens, connection: {presetName: ''}}, index));
-      if (missing.some(lens => current.purgedLensIds.includes(lens.lensId)))
-        throw lensError('LENS_PORTABLE_PURGED_ID', '이 백업에 영구 삭제된 렌즈 ID가 있습니다.');
-      return { ...current, lenses: [...current.lenses, ...missing.filter(lens => lens.status !== 'trashed')],
-        trash: [...current.trash, ...missing.filter(lens => lens.status === 'trashed')] };
-    });
+    };
+    // Lens IDs the backup carries that the user has permanently deleted here.
+    const portablePurgedLensIdsIn = (bundle, purged) => [...new Set([
+      ...asArray(bundle.lensDefinitions).map(lens => string(lens?.lensId || '')),
+      ...asArray(bundle.portableLensArchives).map(archive => string(archive?.lensId || '')),
+      ...asArray(bundle.manifest?.inheritedLensArchives).map(ref => string(ref?.lensId || ''))
+    ])].filter(id => id && purged.has(id)).sort();
+    const mergePortableLensDefinitions = async definitions => {
+      let added = [];
+      await mutateLensRegistry(current => {
+        const missing = portableLensDefinitionsMissing(current, definitions);
+        added = missing.map(lens => lens.lensId);
+        return { ...current, lenses: [...current.lenses, ...missing.filter(lens => lens.status !== 'trashed')],
+          trash: [...current.trash, ...missing.filter(lens => lens.status === 'trashed')] };
+      });
+      return added;
+    };
+    const revertPortableLensDefinitions = async lensIds => {
+      const ids = new Set(asArray(lensIds).map(id => string(id || '')).filter(Boolean));
+      if (!ids.size) return;
+      await mutateLensRegistry(current => ({ ...current,
+        lenses: current.lenses.filter(lens => !ids.has(lens.lensId)),
+        trash: current.trash.filter(lens => !ids.has(lens.lensId)) }));
+    };
     const findLens = (registry, lensId) => {
       const id = string(lensId || '');
       return registry.lenses.find(lens => lens.lensId === id) || registry.trash.find(lens => lens.lensId === id) || null;
@@ -74500,7 +74543,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         state.microPublicationToken = `${state.microRuntimeToken}:restore:${state.microRestoreGeneration}`;
         invalidateAllVerifiedReads();
       },
-      mergePortableLensDefinitions,
+      mergePortableLensDefinitions, revertPortableLensDefinitions, readPortablePurgedLensIds,
+      portableLensArchiveStats: lensArchiveStats,
       recallLensMemories,
       refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await scheduleLensVectorRefresh(context.scope, lensSlug(lensId), '', { force: true }); },
       prewarmLensQuery: async (text = '') => { await prewarmLensQuery(await resolveContext(), text); },
@@ -91779,15 +91823,31 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           if (!keys.length) throw new Error('portable_backup_key_enumeration_unavailable');
           return { keys, bridgeKeys: new Set(bridgeKeys), rawKeys: new Set(rawKeys), compatKeys: new Set(compatKeys) };
         },
+        // Portable snapshots read in groups of 64. server_only rows come from one
+        // get-many request per group. plugin_only has no batch API in RisuAI, so a
+        // group's reads are issued together through the same accessor as get().
+        // Mirror is a transition-only state whose reads may write, so it stays serial.
         async readMany(scope, keys) {
           const unique = [...new Set(keys)];
           const values = new Map();
+          if (!unique.length) return values;
+          const modeOf = async () => {
+            if (typeof bridge?.readPortableMode === 'function') return String(await bridge.readPortableMode(scope) || '');
+            if (typeof bridge?.getScopeMode === 'function') return String((await bridge.getScopeMode(scope))?.mode || '');
+            return 'plugin_only';
+          };
+          const mode = await modeOf();
           for (let offset = 0; offset < unique.length; offset += 64) {
             const part = unique.slice(offset, offset + 64);
-            const server = await bridge?.readPortableServerRows?.(scope, part);
-            for (const key of part) {
-              values.set(key, server?.has(key) ? server.get(key) : await adapter.get(key));
+            const server = mode === 'server_only' ? await bridge?.readPortableServerRows?.(scope, part) : null;
+            const rest = part.filter(key => !server?.has(key));
+            if (mode === 'plugin_only') {
+              const read = await Promise.all(rest.map(key => adapter.get(key)));
+              rest.forEach((key, index) => values.set(key, read[index]));
+            } else {
+              for (const key of rest) values.set(key, await adapter.get(key));
             }
+            for (const key of part) if (server?.has(key)) values.set(key, server.get(key));
           }
           return values;
         },
@@ -91971,6 +92031,58 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       return ids;
     };
     const portableLensDefinition = lens => ({ ...lens, connection: { presetName: '' } });
+    // A lens the user permanently deleted here stays deleted. Apply the same projection the
+    // purge applies to storage (notes, handoff archives, Lens Head entry, manifest archive refs)
+    // to the backup, and restore everything else.
+    const projectWithoutPurgedLenses = (envelope, purged) => {
+      if (!(purged instanceof Set) || !purged.size) return { envelope, skippedLensIds: [], skippedKeys: [] };
+      const hit = new Set();
+      const skippedKeys = [];
+      const rewrite = (record, raw, next) => {
+        const encoded = encodeValue(typeof raw === 'string' ? JSON.stringify(next) : next);
+        return { ...record, value: encoded };
+      };
+      const records = [];
+      for (const record of envelope.records) {
+        const storageKey = textValue(record.key);
+        const noteId = [...purged].find(id => storageKey.includes(':scope:') && storageKey.includes(`:lens:${id}:`));
+        const archiveId = storageKey.startsWith('libra:v1:lens-handoff-archive:')
+          ? [...purged].find(id => storageKey.endsWith(`:${id}`)) : '';
+        if (noteId || archiveId) { hit.add(noteId || archiveId); skippedKeys.push(storageKey); continue; }
+        const raw = decodeValue(record.value);
+        const value = logicalStoredValue(raw);
+        if (storageKey.endsWith(':lens:head') && value?.lenses && typeof value.lenses === 'object'
+          && Object.keys(value.lenses).some(id => purged.has(id))) {
+          const next = cloneJson(value);
+          for (const id of Object.keys(next.lenses)) if (purged.has(id)) { hit.add(id); delete next.lenses[id]; }
+          records.push(rewrite(record, raw, next));
+          continue;
+        }
+        if (storageKey.endsWith(':manifest') && value?.schema === 'libra.manifest.v1'
+          && (Array.isArray(value.inheritedLensArchives) ? value.inheritedLensArchives : []).some(ref => purged.has(textValue(ref?.lensId)))) {
+          const next = cloneJson(value);
+          next.inheritedLensArchives.forEach(ref => { if (purged.has(textValue(ref?.lensId))) hit.add(textValue(ref.lensId)); });
+          next.inheritedLensArchives = next.inheritedLensArchives.filter(ref => !purged.has(textValue(ref?.lensId)));
+          if (next.lastSessionHandoff) Object.assign(next.lastSessionHandoff, LibraMemoryCore.portableLensArchiveStats(next.inheritedLensArchives));
+          records.push(rewrite(record, raw, next));
+          continue;
+        }
+        records.push(record);
+      }
+      const definitions = Array.isArray(envelope.lensDefinitions) ? envelope.lensDefinitions : [];
+      definitions.forEach(lens => { if (purged.has(textValue(lens?.lensId))) hit.add(textValue(lens.lensId)); });
+      const skipped = new Set(skippedKeys);
+      const projected = {
+        ...envelope,
+        records,
+        lensDefinitions: envelope.lensDefinitions === undefined ? undefined : definitions.filter(lens => !purged.has(textValue(lens?.lensId))),
+        inventory: { ...(envelope.inventory || {}),
+          dependencyKeys: (Array.isArray(envelope.inventory?.dependencyKeys) ? envelope.inventory.dependencyKeys : [])
+            .filter(storageKey => !skipped.has(textValue(storageKey))) }
+      };
+      if (envelope.lensDefinitions === undefined) delete projected.lensDefinitions;
+      return { envelope: projected, skippedLensIds: [...hit].sort(), skippedKeys };
+    };
     const collectPotentialReferences = value => {
       const refs = [];
       const seen = new WeakSet();
@@ -92545,7 +92657,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       if (!scopeCompatible(scope, envelope.source)) {
         throw new Error(`portable_backup_scope_mismatch:${compactValue(envelope.source?.characterName || envelope.source?.characterId)} / ${compactValue(envelope.source?.chatTitle || envelope.source?.chatId)}`);
       }
-      const lensDefinitions = envelope.lensDefinitions || [];
+      // A lens permanently deleted here is left out; everything else in the file is restored.
+      const projection = projectWithoutPurgedLenses(envelope, await LibraMemoryCore.readPortablePurgedLensIds());
+      const restoring = projection.envelope;
+      const lensDefinitions = restoring.lensDefinitions || [];
+      let addedLensIds = [];
       LibraMemoryCore.noteMicroRestoreBoundary();
       let current;
       try { current = await collectRecords({ scope }); }
@@ -92554,7 +92670,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         const listed = await adapter.list();
         current = { adapter, scope, records: [], dependencies: [], allKeys: listed.keys };
       }
-      const backupByKey = new Map(envelope.records.map(record => [textValue(record.key), record]));
+      const backupByKey = new Map(restoring.records.map(record => [textValue(record.key), record]));
       const currentKeys = current.records.map(record => record.key);
       const currentByKey = new Map(current.records.map(record => [textValue(record.key), record]));
       const removableCurrentKeys = currentKeys.filter(storageKey => !allowedSharedDependencyKey(storageKey)
@@ -92585,7 +92701,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const removed = [];
       const rollbackErrors = [];
       try {
-        const ordered = [...envelope.records].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
+        const ordered = [...restoring.records].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
         for (const record of ordered) {
           const incoming = decodeValue(record.value);
           const value = incoming;
@@ -92612,8 +92728,8 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         const verified = [];
         const repaired = [];
         const physicalRecords=[];
-        const readback = await adapter.readMany(scope, envelope.records.map(record => record.key));
-        for (const record of envelope.records) {
+        const readback = await adapter.readMany(scope, restoring.records.map(record => record.key));
+        for (const record of restoring.records) {
           const expected = decodeValue(record.value);
           let actual = readback.get(record.key);
           let valid = equalValues(actual, expected);
@@ -92640,14 +92756,15 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           verified.push(record.key);
           physicalRecords.push({...record,value:encodeValue(actual)});
         }
-        validatePluginGraph(physicalRecords,envelope);
-        if (lensDefinitions.length) await LibraMemoryCore.mergePortableLensDefinitions(lensDefinitions);
+        validatePluginGraph(physicalRecords,restoring);
+        if (lensDefinitions.length) addedLensIds = await LibraMemoryCore.mergePortableLensDefinitions(lensDefinitions);
         const result = {
           ok: true,
           restoredAt: new Date().toISOString(),
           sourceExportedAt: envelope.exportedAt,
           scopeKey: scope.scopeKey,
-          records: envelope.records.length,
+          records: restoring.records.length,
+          skippedPurgedLensIds: projection.skippedLensIds,
           written: written.length,
           removed: removed.length,
           verified: verified.length,
@@ -92681,6 +92798,8 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
             rollbackErrors.push({ key, error: compactValue(rollbackError?.message || rollbackError) });
           }
         }
+        try { await LibraMemoryCore.revertPortableLensDefinitions(addedLensIds); }
+        catch (lensRevertError) { rollbackErrors.push({ key: 'lens_registry', error: compactValue(lensRevertError?.message || lensRevertError) }); }
         if (!rollbackErrors.length) {
           try {
             await sealMicroRecallRestoreEpoch(adapter, scope, checkpointId, 'rolled_back');
@@ -93060,6 +93179,18 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       importId: `portable_${textValue(envelope.integrity?.digest || envelope.integrity?.fallbackDigest || '').slice(0, 32)}`,
       records: envelope.records.map(record => ({ key: textValue(record.key), value: logicalStoredValue(decodeValue(record.value)) }))
     });
+    // Names the lenses in this file that the user permanently deleted here; they are not restored.
+    const purgedLensNoticeText = (envelope, purged) => {
+      if (!(purged instanceof Set) || !purged.size) return '';
+      const ids = new Set(projectWithoutPurgedLenses(envelope, purged).skippedLensIds);
+      for (const archive of Array.isArray(envelope.portableLensArchives) ? envelope.portableLensArchives : []) {
+        if (purged.has(textValue(archive?.lensId))) ids.add(textValue(archive.lensId));
+      }
+      if (!ids.size) return '';
+      const names = [...ids].map(id => textValue((envelope.lensDefinitions || []).find(lens => lens?.lensId === id)?.name) || id);
+      return ['', `영구 삭제한 렌즈 ${ids.size}개는 복원하지 않습니다: ${names.join(', ')}`,
+        '그 렌즈의 기록과 정의는 제외하고 나머지 기억은 모두 복원합니다.'].join('\n');
+    };
     const restoreModeReasonText = reason => ({
       same_chat: '현재 채팅과 같은 백업입니다.', character_mismatch: '원본과 현재 캐릭터가 다릅니다.',
       target_not_empty: '현재 채팅에 이미 활성 정본이 있습니다.', target_in_flight: '현재 채팅에 진행 중인 정본 작업이 있습니다.',
@@ -93212,9 +93343,10 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           const mode = await restoreModeModal(envelope, preview);
           if (!mode) { setUiBusy(false, ''); return { cancelled: true }; }
           const storageTarget = await portableStorageTargetText();
+          const purgedLensNotice = purgedLensNoticeText(envelope, await LibraMemoryCore.readPortablePurgedLensIds());
           const accepted = await modal({
             title: `${config.pluginName} 기억 복원`,
-            body: modeConfirmationText(mode, envelope, preview, storageTarget),
+            body: [modeConfirmationText(mode, envelope, preview, storageTarget), purgedLensNotice].filter(Boolean).join('\n'),
             confirmLabel: mode === 'restore_same_scope' ? '현재 기억 교체' : mode === 'import_as_predecessor_archive' ? '과거 기억으로 이사' : mode === 'rebind_updated_bot' ? '현재 봇에 기억 연결' : '일치하는 기억 복구',
             danger: true
           });
@@ -93233,6 +93365,8 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
             `readback 검증 ${verifiedCount.toLocaleString('ko-KR')}개`,
             result.divergenceTurn ? `T${Number(result.divergenceTurn)}부터는 현재 세계선에서 다시 분석합니다.` : '',
             `저장 위치: ${storageTarget}`,
+            Array.isArray(result.skippedPurgedLensIds) && result.skippedPurgedLensIds.length
+              ? `영구 삭제한 렌즈 ${result.skippedPurgedLensIds.length}개는 복원하지 않았습니다.` : '',
             '',
             '채팅 메시지는 수정하지 않았습니다.',
             '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
