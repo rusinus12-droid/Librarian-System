@@ -14,11 +14,21 @@ const expose = source => source
     'if (typeof document === "undefined") return parseLLMResult(preservedLLMResultText || "");'
   )
   .replace(
+    'function readLLMConfig() {',
+    'function readLLMConfig() { if (typeof document === "undefined") return {};'
+  )
+  .replace(
+    'async function renderPersonaPromptFromSpec(ctx, spec, config, previousPrompt = "") {',
+    'async function renderPersonaPromptFromSpec(ctx, spec, config, previousPrompt = "") { if (spec.name === "Evolution Probe") return "Name: Evolution Probe\\nRole: " + spec.role;'
+  )
+  .replace(
     '      getScopePersonaCatalog:',
     `      auditSetDraft: raw => { preservedLLMResultText = String(raw || ''); },
       auditSetName: raw => { preservedGeneratedPersonaNameText = String(raw || '').trim(); },
       auditSaveNew: async () => saveEditedResultAsNewPersona(),
       auditSaveCurrent: async () => saveEditedResultToCurrentPersona(),
+      auditApplyEvolution: async () => { preservedPersonaEvolutionSelection = new Set(["probe"]); return applySelectedPersonaEvolution(); },
+      auditReadVault: async () => readStoredResultVault(),
       auditReadLogs: async () => await readLogStore(true),
       getScopePersonaCatalog:`
   );
@@ -45,6 +55,27 @@ const saveEvents = logs => logs.operations.filter(entry => entry.event === 'pers
   try {
     const ctx = contextFor(fixture);
     const originalWrite = fixture.api.setDatabase;
+
+    const beforeEvolution = JSON.stringify(fixture.db.personas);
+    const beforeBinding = fixture.liveChat.bindedPersona;
+    fixture.runtime.auditSetDraft(JSON.stringify({
+      ...JSON.parse(VALID),
+      personaSpec: {name:'Evolution Probe',role:'Archivist',personality:'Careful and curious.'},
+      personaLineage: {lineageId:'original-lineage',revision:2},
+      personaEvolution: {summary:'New role',evidenceQuality:'high',suggestions:[
+        {id:'probe',field:'role',proposedValue:'Curator',confidence:95,evidence:['I became a curator.']}
+      ]}
+    }));
+    const evolved = await fixture.runtime.auditApplyEvolution();
+    assert.equal(evolved.result.personaSpec.role,'Curator');
+    assert.equal(evolved.result.personaLineage.parentLineageId,'original-lineage');
+    const vault = await fixture.runtime.auditReadVault();
+    assert.ok(vault.some(item=>item.personaLineage?.lineageId==='original-lineage'&&item.personaSpec.role==='Archivist'));
+    assert.ok(vault.some(item=>item.personaLineage?.evolutionCopy&&item.personaSpec.role==='Curator'));
+    assert.equal(JSON.stringify(fixture.db.personas),beforeEvolution);
+    assert.equal(fixture.liveChat.bindedPersona,beforeBinding);
+    await assert.rejects(fixture.runtime.auditSaveCurrent(),/새 RisuAI Persona/);
+    passed += 1;
 
     // ── control: the ordinary new-Persona save still succeeds ────────────────────────────────────────
     fixture.runtime.auditSetDraft(VALID);

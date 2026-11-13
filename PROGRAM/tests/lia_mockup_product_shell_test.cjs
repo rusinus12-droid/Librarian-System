@@ -14,6 +14,7 @@ const markup = readConst('LIA_MOCKUP_APP_HTML');
 assert.match(markup, /data-lia-close/, 'the main window has a dedicated close action');
 assert.match(markup, /data-lia-refresh/, 'the More menu exposes a real refresh action');
 assert.doesNotMatch(markup, /data-page="assets"|이미지 AI|job-neutral|job-emo/, 'retired image workspaces are absent');
+assert.doesNotMatch(markup, /upd-card|upd-dots|upd-hint|3\/5턴/, 'retired live update meter is absent');
 assert.match(readConst('LIA_MOCKUP_CSS'), /background:transparent!important/, 'the fullscreen host canvas stays transparent');
 assert.doesNotMatch(readConst('LIA_MOCKUP_APP_HTML'), /<script\b|suite\.js/i, 'mockup demo runtime is excluded');
 
