@@ -58,9 +58,9 @@ PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh�
 
 [현재 구성]
 - Librarian System Server 1.1.1
-- Flashback Memory 2.0.1
-- HAYAKU Locator Continuity 4.0.2
-- LIBRA 3.0.2
+- Flashback Memory 2.0.2
+- HAYAKU Locator Continuity 4.0.3
+- LIBRA 3.0.3
 - LIA Persona Linker 0.30.1
 - RE:TRACE 2.0.1
 - GRADIA 1.0.2

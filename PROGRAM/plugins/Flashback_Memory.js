@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v2.0.1
+//@display-name ⚡ FLASHBACK Memory v2.0.2
 //@api 3.0
-//@version 2.0.1
+//@version 2.0.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
@@ -1338,7 +1338,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '2.0.1';
+const PLUGIN_VERSION = '2.0.2';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -55891,7 +55891,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const Flashback_PORTABLE_RESTORE_MODES = Object.freeze({
     SAME_CHAT: 'same_chat_replace',
     CHAT_MIGRATION: 'chat_migration_archive',
-    CHAT_COPY: 'chat_copy_rebind'
+    CHAT_COPY: 'chat_copy_rebind',
+    // A RisuAI bot update is a NEW character. This mode carries the same session into it by
+    // running the chat-copy rebind: every record is re-keyed to the CURRENT chat's own scope and
+    // every memory turn must match the live U+A text. No scope rule is widened; only the
+    // same-actor gate is replaced by a different-character requirement plus per-turn proof.
+    UPDATED_BOT: 'updated_bot_rebind'
   });
   const Flashback_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Flashback","old":"1.0.25","new":PLUGIN_VERSION,"pluginVersion":PLUGIN_VERSION,"pluginId":"flashback_memory","pluginName":"FLASHBACK Memory","filePrefix":"flashback_portable_memory_backup","globalApiKey":"__FlashbackPortableMemoryBackup","uiId":"flashback-portable-memory-backup-controls","rootSelectors":[".vrmDesign","#flashback-memory-root","[data-flashback-memory]","[class*='flashback-']","[data-panel='storage']"],"anchorSelectors":[".topbar-actions",".storage-actions",".activity-log-toolbar",".actions"],"allowedKeyPatterns":["^(?:vector_rag_memory|flashback|memory[_:-]?session)"],"excludedKeyPatterns":[":settings(?::|$)","operation[_:-]?log","maintenance[_:-]?journal","pending[_:-]?capture","embedding[_:-]?secret","embedding[_:-]?checkpoint","credential","api[_:-]?key","provider[_:-]?(?:setting|preset|config|secret)","debug[_:-]?log"],"requiredDataPatterns":["flashback_memory\\..*manifest","vector_rag_memory:scope:","records?:shard","archive_ref","local_vector"],"minimumRecords":1,"maxImportBytes":536870912});
 
@@ -56972,6 +56977,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const sameChat = scopeCompatible(target.scope, payload.source);
       const actorMatches = portableActorCompatible(payload.source, target.scope);
       const transcriptMatches = portableTranscriptMatch(payload.source, target.scope);
+      const sourceCharacterId = textValue(payload.source?.canonicalCharacterId || payload.source?.characterId);
+      const targetCharacterId = textValue(target.scope?.canonicalCharacterId || target.scope?.characterId);
+      const stableCharacterId = value => !!value && !/^(?:charIndex:\d+|character:unknown)$/i.test(value);
+      const differentCharacter = stableCharacterId(sourceCharacterId) && stableCharacterId(targetCharacterId)
+        && sourceCharacterId !== targetCharacterId;
+      let updatedBotTurns = { matched: 0, total: 0, unmatched: [] };
+      if (differentCharacter && !sameChat && target.empty) {
+        try {
+          const probeAt = nowIso();
+          const probe = payload.records.map(record => cloneRecordForNativeChatCopy(record, payload.source.scopeKey, target.scope.scopeKey, probeAt));
+          updatedBotTurns = portableCopyGroupsMatchLiveChat(probe, target.liveState, target.scope.scopeKey);
+        } catch (_) { updatedBotTurns = { matched: 0, total: 0, unmatched: [{}] }; }
+      }
+      const updatedBotTranscriptMatches = transcriptMatches
+        || (updatedBotTurns.total > 0 && updatedBotTurns.unmatched.length === 0);
       const modes = {
         [Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT]: {
           allowed: sameChat,
@@ -56984,9 +57004,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         [Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY]: {
           allowed: !sameChat && actorMatches && target.empty && transcriptMatches,
           reason: sameChat ? 'same_chat_use_replace' : !actorMatches ? 'source_actor_mismatch' : !target.empty ? 'target_not_empty' : !transcriptMatches ? 'transcript_fingerprint_mismatch' : 'chat_copy_ready'
+        },
+        [Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT]: {
+          allowed: !sameChat && differentCharacter && target.empty && updatedBotTranscriptMatches,
+          reason: sameChat ? 'same_chat_use_replace'
+            : !stableCharacterId(sourceCharacterId) || !stableCharacterId(targetCharacterId) ? 'character_identity_missing'
+              : !differentCharacter ? 'same_character_use_copy'
+                : !target.empty ? 'target_not_empty'
+                  : !updatedBotTranscriptMatches ? 'updated_bot_transcript_mismatch' : 'updated_bot_ready'
         }
       };
-      return { envelope, payload, target, sameChat, actorMatches, transcriptMatches, modes };
+      return { envelope, payload, target, sameChat, actorMatches, transcriptMatches, modes,
+        updatedBot: { sourceCharacterId, targetCharacterId, matchedTurns: updatedBotTurns.matched,
+          totalTurns: updatedBotTurns.total, transcriptMatches: updatedBotTranscriptMatches } };
     };
     const restorePortableRawKey = async (key, snapshot, label) => {
       if (snapshot?.exists) {
@@ -57290,10 +57320,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (isResponseDerivedIndexRecord(record) && !isInheritedScopeMemoryRecord(record, sourceScopeKey)) visit(record);
       }
     };
-    const restorePortableAsChatCopy = async inspection => {
+    const restorePortableAsChatCopy = async (inspection, requestedMode = Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY) => {
       const { envelope, payload, target } = inspection;
-      const mode = Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY;
-      if (!inspection.modes[mode]?.allowed) throw portableRestoreError('FLASHBACK_PORTABLE_CHAT_COPY_BLOCKED', `채팅 복사 복구를 실행할 수 없습니다: ${inspection.modes[mode]?.reason || 'blocked'}`);
+      const updatedBot = requestedMode === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT;
+      const mode = updatedBot ? Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT : Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY;
+      if (!inspection.modes[mode]?.allowed) {
+        throw updatedBot
+          ? portableRestoreError('FLASHBACK_PORTABLE_UPDATED_BOT_BLOCKED', `업데이트된 봇으로 이어하기를 실행할 수 없습니다: ${inspection.modes[mode]?.reason || 'blocked'}`)
+          : portableRestoreError('FLASHBACK_PORTABLE_CHAT_COPY_BLOCKED', `채팅 복사 복구를 실행할 수 없습니다: ${inspection.modes[mode]?.reason || 'blocked'}`);
+      }
+      const updatedBotDetails = updatedBot ? {
+        updatedBotRebind: true,
+        sourceCharacterId: textValue(inspection.updatedBot?.sourceCharacterId),
+        targetCharacterId: textValue(inspection.updatedBot?.targetCharacterId)
+      } : {};
       const importId = portableImportId(envelope, target.scope.scopeKey, mode);
       const copiedAt = nowIso();
       validatePortableCopyEpisodes(payload.records, payload.source.scopeKey, target.liveState);
@@ -57388,7 +57428,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           vectorSidecars: Math.max(0, Number(durableManifest.vectorSidecarCount || 0) || 0),
           worldlineRevision: Math.max(0, Number(durableManifest.turnWorldlineRevision || 0) || 0),
           restoredAt: new Date().toISOString(),
-          envelopeDigest: envelope.integrity.digest
+          envelopeDigest: envelope.integrity.digest,
+          ...updatedBotDetails
         };
       } catch (error) {
         try { await rollbackPortableTargetScope(target.scope.scopeKey, targetSnapshots); }
@@ -57402,6 +57443,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const inspection = preparedInspection || await inspectPortableRestoreOptions(envelope);
       if (selected === Flashback_PORTABLE_RESTORE_MODES.CHAT_MIGRATION) return await restorePortableAsArchiveMigration(inspection);
       if (selected === Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY) return await restorePortableAsChatCopy(inspection);
+      if (selected === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT) {
+        return await restorePortableAsChatCopy(inspection, Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT);
+      }
       throw portableRestoreError('FLASHBACK_PORTABLE_RESTORE_MODE_UNSUPPORTED', `지원하지 않는 복원 방식입니다: ${selected}`);
     };
     const refreshRuntime = async result => {
@@ -57743,8 +57787,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       target_not_empty: '대상 채팅의 Flashback 저장소가 비어 있지 않습니다.',
       archive_migration_ready: '과거 세션 아카이브로 안전하게 연결할 수 있습니다.',
       transcript_fingerprint_mismatch: '백업 당시 대화와 현재 대화의 지문 또는 메시지 수가 다릅니다.',
-      chat_copy_ready: '현재 대화가 백업 당시 채팅과 정확히 일치합니다.'
+      chat_copy_ready: '현재 대화가 백업 당시 채팅과 정확히 일치합니다.',
+      character_identity_missing: '백업 또는 현재 봇의 캐릭터 ID를 확인할 수 없습니다.',
+      same_character_use_copy: '같은 봇의 백업입니다. 다른 방식을 사용하세요.',
+      updated_bot_transcript_mismatch: '현재 대화 본문이 백업의 기억 턴과 일치하지 않습니다.',
+      updated_bot_ready: '다른 봇이지만 대화 본문이 백업의 기억 턴과 모두 일치합니다.'
     }[reason] || reason || '사용할 수 없습니다.');
+    // Restore writes go through MemorySuiteStorageBridge, which routes by the current chat's
+    // storage mode. Name that destination so server and plugin restores are never confused.
+    const portableStorageTargetText = async () => {
+      let mode = '';
+      try { mode = textValue(await bridgeValue()?.getMode?.()); } catch (_) {}
+      return {
+        plugin_only: '플러그인 스토리지 (RisuAI pluginStorage)',
+        server_only: '서버 저장소 (Librarian 서버 DATA)',
+        mirror: '서버 저장소 + 플러그인 스토리지 (저장 모드 전환 중 미러)'
+      }[mode] || '현재 저장 모드 확인 불가';
+    };
     const restoreModeModal = inspection => new Promise(resolve => {
       const returnFocus = document.activeElement;
       const overlay = document.createElement('div');
@@ -57776,7 +57835,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const definitions = [
         { mode: Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT, title: '백업 시점으로 복원', body: '같은 채팅의 현재 기억을 백업 상태로 교체합니다.', accent: '#5f8ee8' },
         { mode: Flashback_PORTABLE_RESTORE_MODES.CHAT_MIGRATION, title: '새 채팅으로 이사', body: '다른 채팅의 기억을 영구 과거 아카이브로 연결하고 새 월드라인을 시작합니다.', accent: '#46a58c' },
-        { mode: Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY, title: '복사된 채팅 복구', body: '복사된 대화와 정확히 검증한 기억을 현재 scope로 재귀속하고 월드라인을 재구성합니다.', accent: '#b57bdb' }
+        { mode: Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY, title: '복사된 채팅 복구', body: '복사된 대화와 정확히 검증한 기억을 현재 scope로 재귀속하고 월드라인을 재구성합니다.', accent: '#b57bdb' },
+        { mode: Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT, title: '업데이트된 봇으로 이어하기', body: '다른 봇(업데이트된 봇)으로 옮긴 같은 대화에 기억을 다시 연결합니다. 본문이 일치하는 기억 턴만 현재 채팅의 새 scope로 다시 씁니다.', accent: '#d08a3c' }
       ];
       let selected = definitions.find(item => inspection.modes[item.mode]?.allowed)?.mode || '';
       const cards = new Map();
@@ -57883,7 +57943,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try { return await task(operationId); }
       finally { releasePortableOperation(operationId); }
     };
-    const previewText = (envelope, inspection = null, mode = Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT) => {
+    const previewText = (envelope, inspection = null, mode = Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT, storageTarget = '') => {
       const byKind = envelope.inventory?.byKind || {};
       const common = [
         `플러그인: ${envelope.plugin?.name || envelope.plugin?.id} ${envelope.plugin?.version || ''}`,
@@ -57901,8 +57961,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ? ['다른 채팅의 기억을 영구 과거 아카이브로 연결합니다.', '이전 월드라인은 가져오지 않으며 현재 채팅은 독립적으로 시작합니다.']
         : mode === Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY
           ? ['복사된 채팅의 기억을 현재 scope로 재귀속합니다.', '현재 대화 지문과 본문을 다시 검증하고 월드라인을 재구성합니다.']
-          : ['현재 채팅 스코프를 이 백업 상태로 교체합니다.', '백업에 없는 현재 기억은 제거되며 병합 복원은 하지 않습니다.'];
-      return [...common, '', ...impact, '오류가 발생하면 복원 전 저장소로 자동 롤백합니다.'].join('\n');
+          : mode === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT
+            ? [
+                `현재 봇: ${inspection?.target?.scope?.characterName || inspection?.updatedBot?.targetCharacterId || '-'}`,
+                `본문 일치 기억 턴: ${Number(inspection?.updatedBot?.matchedTurns || 0).toLocaleString('ko-KR')}개`,
+                '메시지 ID 같은 메타데이터가 달라도 본문이 같으면 같은 대화로 인정합니다.',
+                '기억을 현재 채팅의 새 scope로 다시 쓰고 월드라인을 재구성합니다. 원래 봇의 기억은 건드리지 않습니다.'
+              ]
+            : ['현재 채팅 스코프를 이 백업 상태로 교체합니다.', '백업에 없는 현재 기억은 제거되며 병합 복원은 하지 않습니다.'];
+      const storageLine = storageTarget ? [`저장 위치: ${storageTarget}`] : [];
+      return [...common, '', ...impact, ...storageLine, '오류가 발생하면 복원 전 저장소로 자동 롤백합니다.'].join('\n');
     };
     const doExport = async () => {
       if (runtime.busy || Runtime.portableMemoryActiveOperationId) return;
@@ -57945,19 +58013,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const mode = await restoreModeModal(inspection);
           if (!mode) return { cancelled: true };
           setUiBusy(true, '복원 준비 완료');
+          const storageTarget = await portableStorageTargetText();
           const accepted = await modal({
             title: `${config.pluginName} 기억 복원`,
-            body: previewText(envelope, inspection, mode),
+            body: previewText(envelope, inspection, mode, storageTarget),
             confirmLabel: mode === Flashback_PORTABLE_RESTORE_MODES.CHAT_MIGRATION
               ? '과거 아카이브로 이사'
               : mode === Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY
                 ? '기억·월드라인 재연결'
-                : '현재 기억 교체',
+                : mode === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT
+                  ? '현재 봇에 기억 연결'
+                  : '현재 기억 교체',
             danger: true
           });
           if (!accepted) return { cancelled: true };
           setUiBusy(true, '기억을 복원하고 물리 저장소를 재검증하고 있습니다…');
-          return { cancelled: false, result: await restorePortableByMode(envelope, mode, inspection) };
+          return { cancelled: false, storageTarget, result: await restorePortableByMode(envelope, mode, inspection) };
         });
         if (outcome.cancelled) {
           setUiBusy(false, '복원 취소');
@@ -57972,7 +58043,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           ? `채팅 이사 · 과거 아카이브 ${Number(result.archiveRecords || result.records || 0).toLocaleString('ko-KR')}개`
           : result.mode === Flashback_PORTABLE_RESTORE_MODES.CHAT_COPY
             ? `채팅 복사 복구 · 활성 턴 ${Number(result.activeTurns || result.verified || 0).toLocaleString('ko-KR')}개 · 월드라인 r${Number(result.worldlineRevision || 0).toLocaleString('ko-KR')}`
-            : '동일 채팅 · 백업 시점으로 교체';
+            : result.mode === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT
+              ? `업데이트된 봇으로 이어하기 · 활성 턴 ${Number(result.activeTurns || result.verified || 0).toLocaleString('ko-KR')}개 · 월드라인 r${Number(result.worldlineRevision || 0).toLocaleString('ko-KR')}`
+              : '동일 채팅 · 백업 시점으로 교체';
         await notice('복원 완료', [
           modeSummary,
           '',
@@ -57980,6 +58053,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           `이전 상태 제거 ${result.removed.toLocaleString('ko-KR')}개`,
           `readback 검증 ${result.verified.toLocaleString('ko-KR')}개`,
           `벡터 sidecar ${Number(result.vectorSidecars || 0).toLocaleString('ko-KR')}개 · 참조 ${Number(result.vectorReferences || 0).toLocaleString('ko-KR')}개`,
+          `저장 위치: ${outcome.storageTarget || await portableStorageTargetText()}`,
           '',
           '채팅 메시지 자체는 수정하지 않았습니다.',
           '다음 리콜과 GUI 새로고침부터 복원된 기억을 사용합니다.'
@@ -58060,6 +58134,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return result;
         });
       },
+      rebindToUpdatedBot: async envelope => await publicApi.restoreCurrentScope(envelope, { mode: Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT }),
+      storageTarget: portableStorageTargetText,
       restoreFile: doRestoreFile,
       status: () => cloneJson({
         lastExport: runtime.lastExport,
