@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0.." || exit /b 1
 set "MEMORY_SUITE_NODE_ONLY=1"
 call "%~dp0_common.cmd"
 if errorlevel 1 (

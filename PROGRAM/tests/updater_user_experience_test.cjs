@@ -15,6 +15,31 @@ const updater = require('../../UPDATER/updater.cjs');
   assert.match(updater.friendlyErrorMessage(new Error('release_sha256_mismatch')), /무결성|손상|검증/);
   assert.match(updater.friendlyErrorMessage(new Error('download_http_503')), /다운로드|인터넷|GitHub/);
 
+  if (process.platform === 'win32') {
+    for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+      const failure = Object.assign(new Error('rename failed'), {
+        code,
+        syscall: 'rename',
+        path: path.join(root, 'PROGRAM'),
+        dest: path.join(root, '.rollback', 'test', 'PROGRAM')
+      });
+      assert.match(updater.friendlyErrorMessage(failure), /PROGRAM 폴더.*터미널.*다시 시도/);
+      failure.path = path.join(root, 'DATA');
+      failure.dest = path.join(root, '.rollback', 'test', 'DATA');
+      assert.doesNotMatch(updater.friendlyErrorMessage(failure), /PROGRAM 폴더/);
+    }
+  }
+
+  const serverLaunchers = [
+    '2_서버_종료.bat', '서버_상태_확인.bat', '서버_백그라운드_실행.bat',
+    '서버_포트_변경.bat', '서버_외부접속_설정.bat', '서버_원격접속_열기.bat',
+    '_server_foreground.cmd'
+  ];
+  for (const launcher of serverLaunchers) {
+    const script = fs.readFileSync(path.join(root, 'PROGRAM', launcher), 'utf8');
+    assert.match(script, /^cd \/d "%~dp0\.\."/m, launcher + ' must use the installation root');
+  }
+
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'librarian updater ux '));
   try {
     fs.mkdirSync(path.join(temp, 'PROGRAM'), { recursive: true });

@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal
 title Librarian System Data Server
-cd /d "%~dp0"
+cd /d "%~dp0.." || exit /b 1
 
 set "MEMORY_SUITE_EARLY_LOG=%TEMP%\memory-suite-launch-%RANDOM%-%RANDOM%.log"
 >"%MEMORY_SUITE_EARLY_LOG%" echo [%DATE% %TIME%] foreground launcher start

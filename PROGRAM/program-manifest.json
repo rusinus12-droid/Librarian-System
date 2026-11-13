@@ -1460,8 +1460,8 @@
       "bytes": 183
     },
     "_server_foreground.cmd": {
-      "sha256": "255ef516759d271e9a457bf73c6f095c2a559116f1b5936ed4c926bffbc4b88f",
-      "bytes": 1909
+      "sha256": "500ee1ad8b9f4ecc045eed0ac8fc107cc94025615450017c9d114c32261e715e",
+      "bytes": 1924
     },
     "1_서버_실행.bat": {
       "sha256": "22057d7e450029aa89f8d1b3c604d5f43df19369139260942fc2b27aef0b6a78",
@@ -1472,8 +1472,8 @@
       "bytes": 136
     },
     "2_서버_종료.bat": {
-      "sha256": "e9640c2a774ab2cafa2ef08d525cd686cd774433e39c34d0747476a08b34a92c",
-      "bytes": 606
+      "sha256": "58de9133ce973c1d8614404b69efcf9e8f467007adebda6e0c36ba1ce3556fda",
+      "bytes": 621
     },
     "2_서버_종료.sh": {
       "sha256": "0157ae3a0d9afb45219d4ab0047740da196148dbfafa895c4b598c5c18c75424",
@@ -11572,8 +11572,8 @@
       "bytes": 982
     },
     "tests/updater_user_experience_test.cjs": {
-      "sha256": "7b78278fc5fc333b5605793448b856a551361b4c0f867b08f7717f911ce3c96f",
-      "bytes": 4140
+      "sha256": "fa048f6e4e71647e1b6071a40f4487998da270cee952051d8a45acd9243913ed",
+      "bytes": 5246
     },
     "tests/whole_data_migration_fault_test.cjs": {
       "sha256": "129886763aa780845a12230d61466e6c7172f53c0e9c892e3535a4defb366c8d",
@@ -12380,8 +12380,8 @@
       "bytes": 835
     },
     "서버_백그라운드_실행.bat": {
-      "sha256": "b0fdb73531422faeb7d7d279ae2d6b518460e5a42f25b6153060dad5e128185b",
-      "bytes": 345
+      "sha256": "5818665538bfb558463a268657a6dcbe61ed96e79fbe9458443d1bfc83ad7017",
+      "bytes": 360
     },
     "서버_백그라운드_실행.sh": {
       "sha256": "aa504124eb963b9d8f91dc8a369100468bf6e8e851fc424f82ae7b8e26350785",
@@ -12392,32 +12392,32 @@
       "bytes": 27728
     },
     "서버_상태_확인.bat": {
-      "sha256": "15293595a7613873c0288e5435e8dfefd6225d45d9af19a9964c9d9e0ecd843a",
-      "bytes": 582
+      "sha256": "34a46a2b054c6ce7e421b8b68102d77ddbe7f77434dc9ce818cf0f5b6fb0f0ad",
+      "bytes": 597
     },
     "서버_상태_확인.sh": {
       "sha256": "b8d3d4ed2f1e93b18a92914f9a33fb50b23a6d76152bdd4d1829f951640de6c2",
       "bytes": 137
     },
     "서버_외부접속_설정.bat": {
-      "sha256": "10830f1f80fb73482f061bde5c31ece85326e4e38378bd1f17915b866a07701e",
-      "bytes": 1926
+      "sha256": "077c539c4c8c7b3d519ff230c9b87df8328b29447c877bd5923e12218fcd7129",
+      "bytes": 1941
     },
     "서버_외부접속_설정.sh": {
       "sha256": "aa44945cbee1b02853c29adfa0b173b75e6db1de2cf889d61439e44d556bb94a",
       "bytes": 1411
     },
     "서버_원격접속_열기.bat": {
-      "sha256": "b59c183d8431c70fd19a077e2f4f8b2a7cce63b5bec13ee9c717e40e5af6aada",
-      "bytes": 1988
+      "sha256": "f41f453c5569d303306860036315e2addd462ef13de75b073493ba56ac6d7103",
+      "bytes": 2003
     },
     "서버_원격접속_열기.sh": {
       "sha256": "50b924927e2d44dde6a9f11f28090d9001515a45ba6ffb1a7340eab5d6dbd7e8",
       "bytes": 1223
     },
     "서버_포트_변경.bat": {
-      "sha256": "010ce44acadb577188e39278b3875538a360e2ff139b4e30f5032d44e8a81333",
-      "bytes": 885
+      "sha256": "553432acd86a75f02fb6c775d60b29e90dd4a5301253ae62fad97d8dc7091c5e",
+      "bytes": 900
     },
     "서버_포트_변경.sh": {
       "sha256": "9d19887c4f1dd0b03aeb83f5e210afa288c3b4355eeaf81888952158f90c706b",

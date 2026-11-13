@@ -167,6 +167,11 @@ function friendlyErrorMessage(error) {
     return '현재 설치 버전에서는 바로 업데이트할 수 없습니다. 지원되는 중간 버전부터 업데이트해 주세요.';
   }
   if (code.includes('shared_storage')) return 'Android 공유 저장소에서는 안전한 업데이트를 수행할 수 없습니다. Termux 내부 저장소 설치본을 사용해 주세요.';
+  if (process.platform === 'win32' && error?.syscall === 'rename'
+    && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code)
+    && [error.path, error.dest].some(folder => folder && /^(?:PROGRAM|PROGRAM\.next)$/i.test(path.basename(folder)))) {
+    return 'PROGRAM 폴더를 이동할 수 없습니다. 서버 실행·종료·상태 확인 창과 PROGRAM 폴더를 사용 중인 터미널이나 편집기를 닫은 뒤 다시 시도해 주세요. 계속 실패하면 UPDATER/logs/latest.log에 기록된 경로의 접근 권한을 확인해 주세요.';
+  }
   if (code.includes('operation_lock') || code.includes('locked')) return '다른 업데이트 작업이 진행 중입니다. 기존 작업이 끝난 뒤 다시 시도해 주세요.';
   if (code.includes('candidate') && (code.includes('failed') || code.includes('start'))) return '새 버전 검증에 실패하여 기존 버전으로 안전하게 복구했습니다.';
   return `업데이트를 완료하지 못했습니다. 자세한 내용은 UPDATER/logs/latest.log를 확인해 주세요. (${code})`;
