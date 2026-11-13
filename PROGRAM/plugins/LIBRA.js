@@ -40621,6 +40621,27 @@ function createLibraReadonlySourceContext(owner) {
     // Apply that equivalence only to completion proof, where the stored revision
     // still comes from the exact settled chat source.
     const completionAssistantDigest = body => digest(string(body).replace(/[ \t]+(?=\r?$)/gm, '').replace(/\r\n/g, '\n'));
+    // A current HAYAKU packet carries the generation nonce through output
+    // postprocessing. Compare the whole packet as well as its lineage.
+    const completionPacketProof = body => {
+      let proof = null;
+      for (const match of string(body).matchAll(/<!--\s*HAYAKU_STATE_PACKET_START\s+([\s\S]*?)\s+HAYAKU_STATE_PACKET_END\s*-->/g)) {
+        let packet;
+        // Use the same stored-text escape mapping as HAYAKU when reading its envelope.
+        const json = match[1].replace(/[\uE9B8-\uE9BF]/g, char =>
+          ['{', '}', '(', ')', '&lt;', '&gt;', ':', ';'][char.charCodeAt(0) - 0xE9B8]);
+        try { packet = JSON.parse(json); } catch (_) { return null; }
+        if (packet?.meta?.packet_type === 'recovery_snapshot') continue;
+        const meta = packet?.meta, lineage = meta?.lineage;
+        if (proof || meta?.schema !== 'hayaku_packet_v1' || meta.packet_type !== 'current_snapshot'
+          || lineage?.identity_version !== 2 || lineage.lineage_schema !== 'hayaku_request_lineage_v2'
+          || !/^[a-z0-9]{1,96}$/.test(lineage.request_nonce || '')
+          || lineage.generation_attempt_id !== lineage.request_nonce
+          || !lineage.turn_owner_key || !lineage.logical_turn_id) return null;
+        proof = stateMemoryFingerprint(JSON.stringify(packet));
+      }
+      return proof;
+    };
     const mainAfterRequestPairProof = (context,pair,health=state.mainAfterRequestHealth) => {
       // Identity, not elapsed time, is what binds a committed output to the
       // request that produced it; the age check only bounds how long a stale
@@ -40633,11 +40654,21 @@ function createLibraReadonlySourceContext(owner) {
       if(proof.scopeKey!==context.scope.scopeKey) return {ok:false,reason:'scope_changed'};
       if(Number(pair.turn)!==proof.turn) return {ok:false,reason:'turn_mismatch'};
       if(digest(pair.user.text)!==proof.userHash) return {ok:false,reason:'user_source_changed'};
-      const assistantHash=completionAssistantDigest(pair.assistant.text);
-      if(assistantHash!==proof.assistantHash && assistantHash!==proof.legacyAssistantHash) return {ok:false,reason:'assistant_source_changed'};
       const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
-      return {ok:true,reason:''};
+      if (proof.committedRevisionId && proof.committedRevisionId !== completedTurnRevisionId(pair))
+        return {ok:false,reason:'assistant_source_changed'};
+      const assistantHash=completionAssistantDigest(pair.assistant.text);
+      if (assistantHash === proof.assistantHash || assistantHash === proof.legacyAssistantHash) return {ok:true,reason:''};
+      if (state.lastRequestScope?.pendingMicro === health.pendingMicro
+        && proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
+        && stateMemoryFingerprint(JSON.stringify(pair.user.chatIds)) === proof.userMessageIdsHash
+        && (proof.packet || proof.legacyPacket) && pair.assistant.sourceMessageCount === 1) {
+        const row = rawChatMessages(context.chat)[pair.assistant.index];
+        const packet = completionPacketProof(contentToText(pairRevisionRawPayload(row)));
+        if (packet && (packet === proof.packet || packet === proof.legacyPacket)) return {ok:true,reason:''};
+      }
+      return {ok:false,reason:'assistant_source_changed'};
     };
     const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) =>
       mainAfterRequestPairProof(context,pair,health).ok;
@@ -41578,6 +41609,7 @@ function createLibraReadonlySourceContext(owner) {
           recoveryBoundary = await captureReceiptRecoveryBoundary(context,pair);
           const mainAfterRequestBoundary=state.mainAfterRequestHealth;
           const microPlanProof=mainAfterRequestPairProof(context,pair,mainAfterRequestBoundary);
+          if (microPlanProof.ok) mainAfterRequestBoundary.microBoundary.committedRevisionId = completedTurnRevisionId(pair);
           const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', {
             deferInventory: true, beforeWrite: preparationGuard,
             admitMicroPlan:microPlanProof.ok, microPlanReason:microPlanProof.reason,
@@ -61590,11 +61622,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const expectedScope = string(suppliedScope.scopeKey) ? clone(suppliedScope) : null;
       const health=state.mainAfterRequestHealth;
       // Legacy output carries the response after later response hooks. Bind it
-      // to the existing main request, then still require the settled live bytes,
-      // user source, prefix and scope to match before admitting Micro work.
+      // to the existing main request and retain its packet proof for the final
+      // chat comparison if a later output processor changes the prose.
       if(expectedScope && health?.microBoundary?.scopeKey===expectedScope.scopeKey
         && health===state.mainAfterRequestHealth && typeof options.completedResponse==='string'){
         health.microBoundary.legacyAssistantHash=completionAssistantDigest(cleanMessageText('assistant',{content:options.completedResponse}));
+        if (health.pendingMicro === state.lastRequestScope?.pendingMicro)
+          health.microBoundary.legacyPacket ??= completionPacketProof(options.completedResponse);
       }
       Promise.resolve().then(async () => {
         await new Promise(resolve => setTimeout(resolve, clamp(options.settleDelay, 40, 1200, 90)));
@@ -64525,7 +64559,10 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const pendingUserRows=rawChatMessages(context.chat)
           .slice(Number(completedPairs.at(-1)?.assistant?.endIndex ?? -1)+1)
           .filter(row=>messageRole(row)==='user');
-        const pendingUserText=pendingUserRows.map(row=>cleanMessageText('user',row)).filter(Boolean).join('\n\n');
+        const pendingUsers = pendingUserRows.map(row => ({
+          body: cleanMessageText('user', row), identity: messageIdentity(row, 0)
+        })).filter(row => row.body);
+        const pendingUserText = pendingUsers.map(row => row.body).join('\n\n');
         clearStaleMemoryInjectionDebug(context.scope, 'before_request_scope_changed');
         state.lastRequestScope = {
           at: Date.now(),
@@ -64533,7 +64570,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           scope: clone(context.scope),
           observedTurns: completedPairs.length,
           pendingMicro: pendingUserText ? {scopeKey:context.scope.scopeKey,turn:completedPairs.length+1,
-            userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs)} : null
+            userHash:digest(pendingUserText),prefixDigest:sourceDigest(completedPairs),
+            userMessageIdsHash: pendingUsers.every(row => row.identity.canonical)
+              ? stateMemoryFingerprint(JSON.stringify(pendingUsers.map(row => row.identity.id))) : ''} : null
         };
         // The lore RisuAI placed in THIS request, bound to its scope. Graph recall
         // below drops those entries instead of delivering them a second time.
@@ -64906,11 +64945,14 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         blockedReason: ''
       };
       if(mainNarrativeType){
+        const pendingMicro = expectedScope ? state.lastRequestScope?.pendingMicro : null;
         state.mainAfterRequestHealth={schema:'libra.capture_backend_health.v1',at:Date.now(),requestType,
           observedRunsAtAfter:Number(state.captureBackendObservedRuns||0),
           expectedScope:expectedScope?clone(expectedScope):null,
-          microBoundary:expectedScope&&state.lastRequestScope?.pendingMicro
-            ? {...state.lastRequestScope.pendingMicro,assistantHash:completionAssistantDigest(cleanMessageText('assistant',{content:response}))}:null};
+          pendingMicro,
+          microBoundary:pendingMicro
+            ? {...pendingMicro,assistantHash:completionAssistantDigest(cleanMessageText('assistant',{content:response})),
+              packet:completionPacketProof(response)}:null};
       }
       // Only an exact main model request may trigger automatic memory analysis.
       // Auxiliary RisuAI requests (otherax, translation, image/tool helpers, etc.)
