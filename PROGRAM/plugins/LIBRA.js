@@ -72537,6 +72537,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     const lensRecordKey = (worldlineId, turnRange) => `${string(worldlineId || 'main')}:t${Number(turnRange?.start || 0)}-t${Number(turnRange?.end || 0)}`;
 
+    const lensRecordSourceCheck = (scope, pairs, worldlineId, cutoff) => {
+      const revisions = new Map();
+      return record => {
+        if (record.inherited) return true;
+        const { start, end } = record.turnRange || {};
+        if (record.worldlineId !== worldlineId || (cutoff != null && end > cutoff)) return false;
+        const rangeKey = `${start}-${end}`;
+        if (!revisions.has(rangeKey)) {
+          const batch = pairs.filter(pair => pair.turn >= start && pair.turn <= end);
+          let revision = null;
+          if (batch.length === end - start + 1) {
+            const bodyDigest = sourceDigest(batch);
+            revision = { bodyDigest, revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}` };
+          }
+          revisions.set(rangeKey, revision);
+        }
+        const revision = revisions.get(rangeKey);
+        return revision != null && revision.bodyDigest === record.sourceDigest && revision.revisionId === record.sourceRevisionId;
+      };
+    };
+
     const loadLensScopeHead = async scope => {
       const raw = await storage.getJson(key.lensHead(scope), null);
       const valid = isPlainObject(raw) && raw.schema === LENS_SCOPE_HEAD_SCHEMA && string(raw.scopeKey || '') === string(scope?.scopeKey || '');
@@ -73470,16 +73491,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const cutoff=lensMeta?.worldlines?.[activeWorldlineId]?.cutoffTurn;
       const registry = await readLensRegistry();
       const head = await loadLensScopeHead(scope);
-      const revisionByRange = new Map();
-      const currentRevision = range => {
-        const rangeKey = `${range.start}-${range.end}`;
-        if (!revisionByRange.has(rangeKey)) {
-          const batch = pairs.filter(pair => pair.turn >= range.start && pair.turn <= range.end);
-          revisionByRange.set(rangeKey, batch.length === range.end - range.start + 1
-            ? `lrev_${digest([scope.scopeKey, activeWorldlineId, range.start, range.end, sourceDigest(batch), batch.map(pair => completedTurnRevisionId(pair))]).slice(0, 16)}` : '');
-        }
-        return revisionByRange.get(rangeKey);
-      };
+      const lensRecordStands = lensRecordSourceCheck(scope, pairs, activeWorldlineId, cutoff);
       const sourceTurns = {};
       const sourceMarks = new Map();
       const resolvePeople = await lensPeopleResolver(scope);
@@ -73494,7 +73506,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ]);
         const retained = new Set(ring.map(entry => entry.runId));
         const recordList = Object.values(records).sort((a, b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0));
-        const lensRecordStands = record => (cutoff==null||Number(record.turnRange?.end)<=Number(cutoff)) && record.worldlineId === activeWorldlineId && currentRevision(record.turnRange) === record.sourceRevisionId;
         const closedNotes = lensClosureMap(recordList.filter(lensRecordStands));
         closedByLens.set(lens.lensId, closedNotes);
         let itemCount = 0;
@@ -73666,6 +73677,45 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         scheduleGuiTraceRefresh();
         return { ok: true, lensId: targetLens, deletedCount };
       });
+    };
+
+    const deleteExcludedLensMemories = async ({ items, expectedScopeKey, expectedWorldlineId }) => {
+      const byLens = new Map();
+      for (const item of items) {
+        if (item.inherited || !item.lensId || !item.recordKey || !item.recordId || !item.itemId) continue;
+        if (!byLens.has(item.lensId)) byLens.set(item.lensId, []);
+        byLens.get(item.lensId).push(item);
+      }
+      return await enqueue(expectedScopeKey, () => withLensScopeLock(expectedScopeKey, async () => {
+        const context = await resolveContext(true);
+        const { scope } = context;
+        if (scope.scopeKey !== expectedScopeKey) throw lensError('LENS_READER_SCOPE_CHANGED', '대화가 바뀌었습니다. 다시 불러오세요.');
+        const meta = await loadStateWorldlineMeta(scope, { strict: true });
+        const worldlineId = string(meta?.activeWorldlineId || 'main');
+        if (worldlineId !== expectedWorldlineId) throw lensError('LENS_READER_WORLDLINE_CHANGED', '분기가 바뀌었습니다. 다시 불러오세요.');
+        const stands = lensRecordSourceCheck(scope, buildPairs(context.chat, scope.scopeKey), worldlineId, meta?.worldlines?.[worldlineId]?.cutoffTurn);
+        let deletedCount = 0;
+        try {
+          for (const [lensId, selected] of byLens) {
+            const records = await loadLensRecordsMap(scope, lensId);
+            let count = 0;
+            for (const item of selected) {
+              const record = records[item.recordKey];
+              if (record?.recordId !== item.recordId || stands(record)) continue;
+              const before = asArray(record.items);
+              record.items = before.filter(row => row.itemId !== item.itemId);
+              count += before.length - record.items.length;
+              if (!record.items.length && !asArray(record.closures).length) delete records[item.recordKey];
+            }
+            if (!count) continue;
+            await saveLensRecordsMap(scope, lensId, records);
+            deletedCount += count;
+          }
+          return { deletedCount };
+        } catch (error) {
+          return { deletedCount, error: string(error?.message || error) };
+        }
+      }));
     };
 
     // ---- drafting a lens by conversation -------------------------------------------------------
@@ -74036,15 +74086,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const pairs = buildPairs(context.chat, scope.scopeKey);
       const lensMeta=await loadStateWorldlineMeta(scope),worldlineId=string(lensMeta?.activeWorldlineId||'main');
       const cutoff=Math.min(lensMeta?.worldlines?.[worldlineId]?.cutoffTurn ?? Infinity, options.asOfTurn ?? Infinity);
-      const digestByRange = new Map();
-      const rangeDigest = range => {
-        const rangeKey = `${range.start}-${range.end}`;
-        if (!digestByRange.has(rangeKey)) {
-          const batch = pairs.filter(pair => pair.turn >= range.start && pair.turn <= range.end);
-          digestByRange.set(rangeKey, batch.length === range.end - range.start + 1 ? {sourceDigest:sourceDigest(batch),sourceRevisionId:`lrev_${digest([scope.scopeKey,worldlineId,range.start,range.end,sourceDigest(batch),batch.map(pair=>completedTurnRevisionId(pair))]).slice(0,16)}`} : null);
-        }
-        return digestByRange.get(rangeKey);
-      };
+      const lensRecordStands = lensRecordSourceCheck(scope, pairs, worldlineId, cutoff);
       const queryText = string(queryBundle?.query || queryBundle?.currentText || queryBundle?.queryText || queryBundle?.text || '');
       const queryTokens = new Set(tokenStream(queryText).filter(token => token.length >= 2));
       // Korean text is matched by character bigrams, so one shared bigram is too weak a signal for
@@ -74112,11 +74154,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const recentKeys = new Set(records.filter(record => record.worldlineId === worldlineId).slice(0, 2).map(record => record.recordKey));
         const inheritedRecords=inherited.rows.filter(row=>row.ref.lensId===lens.lensId).flatMap(({ref,archive})=>archive.records.map(record=>({...record,inherited:true,archiveKey:ref.archiveKey,sessionEpoch:ref.sessionEpoch,sourceScopeKey:ref.sourceScopeKey})));
         // Only a record that still stands can end a note: a re-analysed or abandoned span reopens it.
-        const closedNotes = lensClosureMap([...records, ...inheritedRecords].filter(record => (record.inherited || record.worldlineId === worldlineId) && !(!record.inherited && ((cutoff!=null&&Number(record.turnRange?.end)>Number(cutoff)) || rangeDigest(record.turnRange)?.sourceDigest !== record.sourceDigest || rangeDigest(record.turnRange)?.sourceRevisionId !== record.sourceRevisionId))));
+        const closedNotes = lensClosureMap([...records, ...inheritedRecords].filter(lensRecordStands));
         const list = [];
         for (const record of [...records,...inheritedRecords]) {
           if (!record.inherited && record.worldlineId !== worldlineId) continue;
-          if (!record.inherited && ((cutoff!=null&&Number(record.turnRange?.end)>Number(cutoff)) || rangeDigest(record.turnRange)?.sourceDigest !== record.sourceDigest || rangeDigest(record.turnRange)?.sourceRevisionId !== record.sourceRevisionId)) { for (const item of asArray(record.items)) skip(lens, item, record, 'stale_source_revision'); continue; }
+          if (!lensRecordStands(record)) { for (const item of asArray(record.items)) skip(lens, item, record, 'stale_source_revision'); continue; }
           const recency = record.inherited ? 0 : Math.min(0.25, (Number(record.turnRange?.end || 0) / Math.max(1, pairs.length)) * 0.25);
           for (const item of asArray(record.items)) {
             const closure = closedNotes.get(lensVectorEntryKey(record, item));
@@ -74281,7 +74323,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       createLens, updateLens, setLensStatus, trashLens, restoreLens, purgeTrashedLensData,
       evaluateLensCandidateItems, captureLensSourceToken, verifyLensSourceToken, validateLensHandoffArchive,
       runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
-      inspectScopeLenses, getRecentWorkOverview, getLensRawResponse, deleteLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
+      inspectScopeLenses, getRecentWorkOverview, getLensRawResponse, deleteLensMemories, deleteExcludedLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       recallLensMemories,
       refreshLensVectors: async ({ lensId = '' } = {}) => { const context = await resolveContext(); return await scheduleLensVectorRefresh(context.scope, lensSlug(lensId), '', { force: true }); },
       prewarmLensQuery: async (text = '') => { await prewarmLensQuery(await resolveContext(), text); },
@@ -81148,11 +81190,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         loading: false,
         error: '',
         data: null,
+        snapshotPairs: null,
         serial: 0,
         filterLensId: text(Gui.lensReader?.filterLensId || 'all'),
         filterEvidence: text(Gui.lensReader?.filterEvidence || 'all'),
         filterPerson: text(Gui.lensReader?.filterPerson || 'all'),
         query: text(Gui.lensReader?.query || ''),
+        category: 'current',
+        excludedSelection: new Map(),
+        deletingExcluded: false,
+        excludedNotice: '',
         runningRange: false,
         runMessage: null,
         runLensId: text(Gui.lensReader?.runLensId || ''),
@@ -81166,13 +81213,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const reader = lensReaderState();
     if (reader.loading && !force) return;
     const serial = ++reader.serial;
+    reader.snapshotPairs = LibraMemoryCore.peekSnapshot()?.pairs;
     reader.loading = true;
     reader.error = '';
     queueGuiNavigationRender();
     try {
-      const data = await LibraMemoryCore.inspectScopeLenses();
+      const data = await LibraMemoryCore.inspectScopeLenses({ expectedScopeKey: reader.scopeKey });
       if (Gui.lensReader !== reader || reader.serial !== serial) return;
       reader.data = data;
+      const excluded = new Map(guiAsArray(data.memories).filter(item => item.sourceCurrent === false).map(item => [item.id, item.recordId]));
+      for (const [id, recordId] of reader.excludedSelection) {
+        if (excluded.get(id) !== recordId) reader.excludedSelection.delete(id);
+      }
       reader.loaded = true;
     } catch (error) {
       if (Gui.lensReader === reader && reader.serial === serial) {
@@ -81188,7 +81240,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const ensureLensReaderPage = () => {
     const reader = lensReaderState();
-    if (lensReaderViewActive() && !reader.loading && !reader.loaded && !reader.error) {
+    const sourceRefreshed = reader.snapshotPairs !== LibraMemoryCore.peekSnapshot()?.pairs;
+    if (lensReaderViewActive() && !reader.loading && ((!reader.loaded && !reader.error) || sourceRefreshed)) {
+      if (sourceRefreshed) reader.data = null;
       void loadLensReaderData(false);
     }
     return reader;
@@ -84369,6 +84423,88 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         analysisStatus: text(record?.analysisStatus || '')}}, [content])]);
   };
 
+  const buildExcludedLensRecords = (reader, items) => {
+    const selection = reader.excludedSelection;
+    const status = guiEl('p', { class: 'hint', role: 'status', text: reader.excludedNotice });
+    const selectAll = guiEl('input', { type: 'checkbox', dataset: { lensExcludedSelectAll: 'true' }, onChange: event => {
+      selection.clear();
+      if (event.target.checked) for (const item of items) selection.set(item.id, item.recordId);
+      updateControls();
+    } });
+    const remove = guiEl('button', {
+      type: 'button', class: 'btn btn--sm lens-danger', text: '선택한 기록 삭제', dataset: { lensExcludedDelete: 'true' },
+      onClick: async () => {
+        if (reader.deletingExcluded || reader.loading || reader.error) return;
+        const selected = items.filter(item => selection.get(item.id) === item.recordId);
+        if (!selected.length) return;
+        const data = reader.data;
+        const approved = await confirmApprovedOperation(`제외된 렌즈 기록 ${selected.length}개를 삭제할까요?`, {
+          title: '제외된 기록 삭제', kind: '삭제', actionLabel: '삭제',
+          validate: () => Gui.lensReader === reader && reader.category === 'excluded' && reader.data === data
+            && !reader.loading && selected.length === selection.size
+            && selected.every(item => selection.get(item.id) === item.recordId)
+        });
+        if (!approved || Gui.lensReader !== reader) return;
+        reader.deletingExcluded = true;
+        updateControls();
+        try {
+          const { deletedCount, error } = await LibraMemoryCore.deleteExcludedLensMemories({
+            items: selected, expectedScopeKey: data.scopeKey, expectedWorldlineId: data.activeWorldlineId
+          });
+          reader.excludedNotice = error ? `${deletedCount}개 삭제됨 · 삭제 중 오류: ${error}`
+            : deletedCount < selected.length ? `${deletedCount}개 삭제됨 · 나머지 기록은 상태가 바뀌었습니다.`
+            : `${deletedCount}개 삭제했습니다.`;
+        } catch (error) {
+          reader.excludedNotice = `기록을 삭제하지 못했습니다. ${text(error?.message || error)}`;
+        } finally {
+          if (Gui.lensReader === reader) {
+            await loadLensReaderData(true);
+            reader.deletingExcluded = false;
+            queueGuiNavigationRender();
+          }
+        }
+      }
+    });
+    const checks = items.map(item => guiEl('input', {
+      type: 'checkbox', dataset: { lensExcludedSelect: item.id }, 'aria-label': `기록 선택 · ${item.lensName} · ${text(item.text).slice(0, 80)}`,
+      onChange: event => {
+        if (event.target.checked) selection.set(item.id, item.recordId);
+        else selection.delete(item.id);
+        updateControls();
+      }
+    }));
+    const updateControls = () => {
+      const busy = reader.loading || reader.deletingExcluded || Boolean(reader.error);
+      let count = 0;
+      checks.forEach((check, index) => {
+        const item = items[index];
+        check.checked = selection.get(item.id) === item.recordId;
+        check.disabled = busy;
+        count += Number(check.checked);
+      });
+      selectAll.checked = items.length > 0 && count === items.length;
+      selectAll.indeterminate = count > 0 && count < items.length;
+      selectAll.disabled = busy || !items.length;
+      remove.disabled = busy || !count;
+      remove.textContent = count ? `선택한 기록 ${count}개 삭제` : '선택한 기록 삭제';
+    };
+    updateControls();
+    return guiEl('div', { class: 'stack', dataset: { lensExcludedRecords: 'true' } }, [
+      guiEl('h2', { text: '제외된 렌즈 기록' }),
+      guiEl('p', { class: 'hint', text: '원문이 바뀌었거나 현재 분기에서 유효하지 않아 회상에서 제외된 기록입니다.' }),
+      items.length ? guiEl('div', { class: 'cluster' }, [
+        guiEl('label', { class: 'cluster' }, [selectAll, document.createTextNode(`전체 선택 (${items.length}개)`)]), remove
+      ]) : null,
+      status,
+      items.length ? guiEl('div', { class: 'stack lens-items' }, items.map((item, index) => guiEl('div', { class: 'stack stack--sm' }, [
+        guiEl('label', { class: 'cluster' }, [checks[index], document.createTextNode('이 기록 선택')]),
+        lensItemCard(item, { memory: true, showLens: true, onReanalyze: () => void showLibraSourceReanalysisDrawer({
+          kind: 'lens', scopeKey: reader.scopeKey, lensId: item.lensId, startTurn: item.turnRange.start, endTurn: item.turnRange.end
+        }) })
+      ]))) : guiEl('div', { class: 'empty', text: reader.loading ? '렌즈 기억을 불러오는 중…' : '제외된 기록이 없습니다.' })
+    ]);
+  };
+
   const buildBookLensReaderProjection = () => {
     const reader = ensureLensReaderPage();
     const refresh = () => void loadLensReaderData(true);
@@ -84376,7 +84512,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const registry = normalizeLensRegistry(data.registry || {});
     const lenses = registry.lenses;
     const lensIds = new Set(lenses.map(lens => lens.lensId));
-    const memories = guiAsArray(data.memories).filter(item => lensIds.has(item.lensId));
+    const registered = guiAsArray(data.memories).filter(item => lensIds.has(item.lensId));
+    const memories = registered.filter(item => item.sourceCurrent !== false);
+    const excluded = registered.filter(item => item.sourceCurrent === false);
+    const showExcluded = reader.category === 'excluded';
     const filterLensId = lensIds.has(reader.filterLensId) ? reader.filterLensId : 'all';
     const filterEvidence = ['quoted', 'interpreted'].includes(reader.filterEvidence) ? reader.filterEvidence : 'all';
     const query = text(reader.query || '').trim().toLocaleLowerCase();
@@ -84405,14 +84544,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const runLens=lenses.find(lens=>lens.lensId===filterLensId)||lenses.find(lens=>lens.status==='active')||lenses[0]||null;
     const countFor = lensId => memories.filter(item => item.lensId === lensId).length;
     const evidenceCount = level => byLens.filter(item => item.evidenceLevel === level).length;
-    const rail = guiEl('aside', { class: 'rail lens-rail', 'aria-label': '렌즈 기억 필터' }, [
-      guiEl('div', { class: 'lens-rail__head' }, [
-        guiEl('strong', { text: '렌즈' }),
-        guiEl('div', { class: 'cluster' }, [
-          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: refresh }),
-          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '렌즈 스튜디오', onClick: () => openApprovedPromptDialog() })
-        ])
-      ]),
+    const filters = showExcluded ? [] : [
       guiEl('div', { class: 'lens-filter', role: 'group', 'aria-label': '렌즈 선택' }, [['all', '모든 렌즈', memories.length, ''], ...lenses.map(lens => [lens.lensId, lens.name, countFor(lens.lensId), lens.status])].map(([id, label, count, status]) => guiEl('button', {
         type: 'button', class: 'lens-filter__item', 'aria-pressed': String(filterLensId === id), dataset: { lensFilter: id },
         onClick: () => { reader.filterLensId = id; reader.runLensId = id === 'all' ? '' : id; queueGuiNavigationRender(); }
@@ -84436,24 +84568,38 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{lensReaderReanalysis:'true'},disabled:!runLens||!Number(data.pairCount),onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:runLens.lensId})}),
         guiEl('small',{class:'hint',text:'원문 재분석에서 렌즈와 구간을 확인한 뒤 실행합니다.'})
       ]):null
+    ];
+    const rail = guiEl('aside', { class: 'rail lens-rail', 'aria-label': '렌즈 기억 필터' }, [
+      guiEl('div', { class: 'lens-rail__head' }, [
+        guiEl('strong', { text: '렌즈' }),
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '새로고침', disabled: reader.loading, onClick: refresh }),
+          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: '렌즈 스튜디오', onClick: () => openApprovedPromptDialog() })
+        ])
+      ]),
+      lensSeg(reader.category, [['current', '렌즈 기억'], ['excluded', `제외 ${excluded.length}`]], value => {
+        reader.category = value;
+        queueGuiNavigationRender();
+      }, '렌즈 기록 범주'),
+      ...filters
     ].filter(Boolean));
 
-    const stale = memories.filter(item => item.sourceCurrent === false).length;
+    const errorNote = reader.error ? guiEl('div', { class: 'note note--danger', role: 'alert' }, [
+      guiEl('p', { text: `렌즈 기록을 읽지 못했습니다: ${reader.error}` }),
+      guiEl('button', { class: 'btn btn--sm', type: 'button', text: '다시 시도', onClick: refresh })
+    ]) : null;
     const oldInstruction = memories.filter(item => item.instructionCurrent === false).length;
-    const content = guiEl('div', { class: 'stack' }, [
+    const content = showExcluded ? guiEl('div', { class: 'stack' }, [errorNote, buildExcludedLensRecords(reader, excluded)]) : guiEl('div', { class: 'stack' }, [
       guiEl('div', { class: 'lens-reader__head' }, [
         guiEl('div', {}, [
           guiEl('h2', { text: filterLensId === 'all' ? '렌즈 기억' : text(lenses.find(lens => lens.lensId === filterLensId)?.name || '렌즈 기억') }),
-          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item=>!item.inherited).length}개 · 이전 대화 ${memories.filter(item=>item.inherited).length}개${stale ? ` · 원문이 바뀐 기록 ${stale}개` : ''}${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
+          guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item=>!item.inherited).length}개 · 이전 대화 ${memories.filter(item=>item.inherited).length}개${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
         ]),
         registry.enabled === false ? libraStatusBadge('렌즈 기능 꺼짐', 'warn') : null
       ]),
       guiEl('p', { class: 'hint', text: '렌즈 기억은 정본이 아닌 보조 메모입니다. 응답할 때 별도 예산으로 참고 메모로만 전달되고, 정본 기억과 충돌하면 정본이 우선합니다.' }),
       guiAsArray(data.inheritedArchiveUnavailable).length ? guiEl('p',{class:'note note--warn',role:'status',text:'이전 대화 기록을 읽지 못함 · 무결성을 확인할 수 없는 보관은 표시·회상에서 제외했습니다.'}) : null,
-      reader.error ? guiEl('div', { class: 'note note--danger', role: 'alert' }, [
-        guiEl('p', { text: `렌즈 기록을 읽지 못했습니다: ${reader.error}` }),
-        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '다시 시도', onClick: refresh })
-      ]) : null,
+      errorNote,
       !lenses.length && reader.loaded ? guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: '아직 렌즈가 없습니다' }),
         guiEl('p', { text: '떡밥·복선, 감정선, 말투 변화처럼 원하는 관점의 렌즈를 만들면 5턴마다 이곳에 메모가 쌓입니다.' }),
@@ -84478,7 +84624,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     return guiEl('div', { class: 'grid g-side lens-reader', dataset: { lensReader: 'true' } }, [
       rail,
-      guiEl('article', { class: 'sheet-page detail-pane', style: { overflowWrap: 'anywhere', minWidth: '0' }, dataset: { lensReaderDetail: filterLensId } }, [content])
+      guiEl('article', { class: 'sheet-page detail-pane', style: { overflowWrap: 'anywhere', minWidth: '0' }, dataset: { lensReaderDetail: showExcluded ? 'excluded' : filterLensId } }, [content])
     ]);
   };
 
