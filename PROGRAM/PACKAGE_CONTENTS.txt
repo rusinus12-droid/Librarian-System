@@ -1,4 +1,4 @@
-Librarian System Server 1.1.0
+Librarian System Server 1.1.1
 
 [처음 사용하는 분]
 1. 이 ZIP을 원하는 폴더에 압축 해제합니다.
@@ -57,13 +57,13 @@ PROGRAM\서버_원격접속_열기.bat · PROGRAM/서버_원격접속_열기.sh�
 4. DATA 폴더를 임의로 삭제하거나 빈 DATA로 덮어쓰지 마세요.
 
 [현재 구성]
-- Librarian System Server 1.1.0
+- Librarian System Server 1.1.1
 - Flashback Memory 2.0.1
 - HAYAKU Locator Continuity 4.0.2
-- LIBRA 3.0.1
-- LIA Persona Linker 0.30.0
+- LIBRA 3.0.2
+- LIA Persona Linker 0.30.1
 - RE:TRACE 2.0.1
-- GRADIA 1.0.1
+- GRADIA 1.0.2
 
 [호환 정보]
 - Storage SDK 1.8.35

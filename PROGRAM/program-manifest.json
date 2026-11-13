@@ -1,9 +1,9 @@
 {
   "schema": "memory-suite.program-package.v1",
-  "packageVersion": "1.1.0",
-  "generatedAt": "2026-11-13T06:53:29+09:00",
+  "packageVersion": "1.1.1",
+  "generatedAt": "2026-11-13T20:36:50+09:00",
   "server": {
-    "version": "1.1.0",
+    "version": "1.1.1",
     "protocol": {
       "major": 1,
       "minor": 9
@@ -257,7 +257,7 @@
       "retraceBackupCatalogTargetChecksum": true
     },
     "ariadneLatestState": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "schema": "libra.continuity_state.v2",
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "commitEnvelopeSchema": "libra.canonical_commit.v1",
@@ -388,7 +388,7 @@
       ],
       "plugins": {
         "libra": {
-          "version": "3.0.1",
+          "version": "3.0.2",
           "fiveTurnCommitRevisionGate": true,
           "backendOrder": [
             "chat_output_v3",
@@ -417,7 +417,7 @@
           "legacyCandidatesRequireLiveReconcile": true
         },
         "lia": {
-          "version": "0.30.0",
+          "version": "0.30.1",
           "fiveTurnCommitRevisionGate": true,
           "inFlightRevisionRequeue": true,
           "backendOrder": [
@@ -546,7 +546,7 @@
       ]
     },
     "liaSharedServerRestore": {
-      "version": "0.30.0",
+      "version": "0.30.1",
       "fixedSharedStores": [
         "dynamicPersonaLorebookGeneratorResultVault",
         "liaPersonaLinkerWorldBlueprintVaultV1",
@@ -760,7 +760,7 @@
       "boundedMemory": true,
       "scopeSeparated": true,
       "libra": {
-        "version": "3.0.1",
+        "version": "3.0.2",
         "unchangedMessageProjectionReuse": true,
         "unchangedCompletedPairSnapshotReuse": true,
         "changedMessageOnlyRenormalized": true,
@@ -778,7 +778,7 @@
     },
     "libraClassicProvenanceRescue": {
       "schema": "libra.classic_provenance_rescue.v1",
-      "version": "3.0.1",
+      "version": "3.0.2",
       "route": "classic_only",
       "source": "validated_current_state_head_provenance_only",
       "maxRescuedCanonicalRefs": 2,
@@ -804,7 +804,7 @@
       "duplicatePluginCopies": false
     },
     "libraCanonicalCuration": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "activeManifestPointerUnchanged": true,
       "canonicalArtifactSchema": "libra.canonical_artifact.v3",
       "canonicalCommitSchema": "libra.canonical_commit.v1",
@@ -994,7 +994,7 @@
       "jobPortalDoesNotRefreshSnapshot": true
     },
     "libraPortableMemoryRecoveryUi": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "navigation": "recovery",
       "subsection": "memory_restore",
       "dedicatedHost": "data-portable-backup-host=libra",
@@ -1056,7 +1056,7 @@
       "computeModeArgumentExposed": false,
       "arbitraryCodeExecution": false,
       "liaWorldLorePilot": {
-        "version": "0.30.0",
+        "version": "0.30.1",
         "operation": "lia.world-lore-rerank.v2",
         "algorithmFingerprint": "cbd91cc90d01c8fc052669390badab3d0c2c7a52c4b6c314ac2ca61716fc7a75",
         "retired": true,
@@ -1076,7 +1076,7 @@
         ]
       },
       "libraRecallBm25fPilot": {
-        "version": "3.0.1",
+        "version": "3.0.2",
         "operation": "libra.recall-bm25f.v1",
         "algorithmFingerprint": "6a15c2189099026497c98d819b400e679ebfdb9d44b4da913ab16b7d163031c2",
         "retired": true,
@@ -1163,7 +1163,7 @@
       "libraLargeResultFullBodyHydration": "details_toggle_only"
     },
     "libraInferenceBudget": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "canonicalSchema": "libra.canonical_provider_budget.v2",
       "sgaSchema": "libra.sga_provider_budget.v2",
       "providerRetrySchema": "libra.provider_retry_governor.v1",
@@ -1187,7 +1187,7 @@
       "reasoningBudgetClampedToRemainingRunBudget": true
     },
     "libraRisuAiAuxiliaryDefault": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "presetName": "risuai_aux",
       "transport": "risuai.runLLMModel",
       "mode": "otherAx",
@@ -1203,7 +1203,7 @@
       "localStructuredValidationRequired": true
     },
     "libraUnifiedGui": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "pageCount": 12,
       "initialPage": "memory",
       "homeDashboard": false,
@@ -1275,7 +1275,7 @@
       "runLogsSeparatePage": true
     },
     "libraReaderEvidenceAndOperations": {
-      "version": "3.0.1",
+      "version": "3.0.2",
       "canonicalReaderPageSchema": "libra.canonical_reader_page.v1",
       "canonicalReaderChapterSchema": "libra.canonical_reader_chapter.v1",
       "evidenceChainSchema": "libra.evidence_chain.v1",
@@ -1311,7 +1311,7 @@
       "sourceAuthorityUntilCutover": true
     },
     "gradiaThreeOwnerRead": {
-      "pluginVersion": "1.0.1",
+      "pluginVersion": "1.0.2",
       "principal": "serial_gradation_agents_for_rp",
       "readers": [
         "libra",
@@ -1421,7 +1421,7 @@
       "physicalPendingRequestRetainedUntilSettled": true
     },
     "libraDirectMemoryRecall": {
-      "pluginVersion": "3.0.1",
+      "pluginVersion": "3.0.2",
       "schema": "libra.state_memory_query.v1",
       "allocation": "lens_40_percent_and_query_adaptive_evidence",
       "sources": [
@@ -1441,10 +1441,10 @@
   "plugins": {
     "flashback": "2.0.1",
     "hayaku": "4.0.2",
-    "libra": "3.0.1",
-    "lia": "0.30.0",
+    "libra": "3.0.2",
+    "lia": "0.30.1",
     "retrace": "2.0.1",
-    "gradia": "1.0.1"
+    "gradia": "1.0.2"
   },
   "files": {
     "_common.cmd": {
@@ -3844,7 +3844,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "95c17e319bc00df5cf72a197ac9415ab14fb20e70e80f584bbf513f192d3fb3d",
+      "sha256": "fbb29d546e5f317849f5291107110a3f5523e1f3c998d4365ebcb0ea57944c84",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4240,7 +4240,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "bdb3acc847872d9cfe9ebfb97bee21e9ef750866f0e3ccb24e90aca8ccdfd691",
+      "sha256": "6cd420c47520750bdcc3c7a052350540c27b080348fb4b70993f4b76cda8f10e",
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
@@ -4248,27 +4248,27 @@
       "bytes": 3808137
     },
     "plugins/GRADIA.js": {
-      "sha256": "036c0d4fb4378671620ea0620d9ef69b7baa5e03508e501865b6d4254bd3b3f1",
-      "bytes": 3093234
+      "sha256": "54b6fc62da7573a7cbed7aadd9b97679b59cb70e16c84248c6085d29c8270880",
+      "bytes": 3093863
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "90369dc1bd259aaf2a633d8945a4b8d6f5cf4c9f1ad607504cb7798f7db61ebb",
       "bytes": 4271274
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "2c8555f1853d817395434a0c6b744a7848789401b96ccc88694537a195bd0710",
-      "bytes": 800005
+      "sha256": "ef46e2a0d625b6de150376e52f8d13fea8d06dbab9c54846729fc3c133fbd8a5",
+      "bytes": 799627
     },
     "plugins/LIBRA.js": {
-      "sha256": "9098ea56587d1d2ed1cef089e9a8895ccca63661fe56290b2fb6c936b5bd9fea",
-      "bytes": 6524632
+      "sha256": "f9adb44a0888604183f6f8a95acab26ee93d2a501937966d3ef08e65382d7dae",
+      "bytes": 6540989
     },
     "plugins/RETRACE.js": {
       "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
       "bytes": 1247248
     },
     "release-policy.json": {
-      "sha256": "f31da2790eb7e54be6ccd6df3fd94389e04e848e65b880ae76fbc4589f549309",
+      "sha256": "1fdb79f0b10f66e4de3efe7ad63b4bfb87fc8a05deb6e30ba12bdaa6aaede3e1",
       "bytes": 215
     },
     "RisuAI_플러그인_폴더_열기.bat": {
@@ -4564,7 +4564,7 @@
       "bytes": 13552
     },
     "server/portable/logical_migration.cjs": {
-      "sha256": "1051aa3da499cb6432508141e501b5ec31cfaaf734f58dd96bbd9d940c222c1b",
+      "sha256": "22453d410d7684bbb67157e4f0f2bddec77a7625a6594e3c5731ee6d28bece63",
       "bytes": 20327
     },
     "server/portable/migration_data_policy.cjs": {
@@ -4580,7 +4580,7 @@
       "bytes": 17025
     },
     "server/portable/transfer_manager.cjs": {
-      "sha256": "cb2e3bb01af35f7275bec30b964e59bf4ba80112082a73cb63dce7e6e8e1d4b9",
+      "sha256": "8a40b6b843990f5b578abff79ee89e91865a6b2451b63e6bb6663ff7ff64d762",
       "bytes": 14858
     },
     "server/portable/transfer_worker.cjs": {
@@ -4592,7 +4592,7 @@
       "bytes": 1027
     },
     "server/server.cjs": {
-      "sha256": "1f849bf914cf8f2cd65f75a7808f912ad9bf59200c22e3d29ef791680f9ae306",
+      "sha256": "bc5ef539f7f3e5cef847f68d6c2990772a9085b7ef1fb11a21094b507645a66f",
       "bytes": 240843
     },
     "tests/_libra_rc2_commit9_repro.js": {
@@ -6760,8 +6760,8 @@
       "bytes": 5262
     },
     "tests/gradia/evidence-bridge.test.cjs": {
-      "sha256": "75f6113ac78d4d9792cf637aff2da82c36632716f73236b9bb33ec0fd11d2d36",
-      "bytes": 63355
+      "sha256": "0c0e6ba0a833713ce26a0873f3158f31b5007aa1d6822224f43f91cbc8c80411",
+      "bytes": 64108
     },
     "tests/gradia/evidence-budget-builder-v2.test.cjs": {
       "sha256": "82424d94c7aa50130fad8423d09b0819baf96b0e1084ed6a71766ecb742d6fdb",
@@ -7728,8 +7728,8 @@
       "bytes": 1081
     },
     "tests/helpers/libra_active_book_routes.cjs": {
-      "sha256": "4132bcb26b23ff0a4e0ebbb16e46dd08f9b3a002899de9c720e114fdab12b8a5",
-      "bytes": 1987
+      "sha256": "c7c40ec2844e2b219c1713a7c45a816a9027bbde510545326e16b82dcfbb6564",
+      "bytes": 2017
     },
     "tests/helpers/libra_approved_gui_contract.cjs": {
       "sha256": "9c95fe3fefb86895d684d15fb19b02c93e92214262d4c063e8d91042cf8f5e51",
@@ -7792,8 +7792,8 @@
       "bytes": 6166
     },
     "tests/lia_editor_save_host_authority_test.cjs": {
-      "sha256": "64c81fcda2788f212b3bfc2777aefa7a93b19143256012fb03d92d0ac2da5559",
-      "bytes": 10385
+      "sha256": "a0a7e1e079be3a4d873e125981db5f99eee34ee82b8dc524e12ad6f9f131b636",
+      "bytes": 12304
     },
     "tests/lia_feature_parity_test.cjs": {
       "sha256": "074d220f26d7cb2664e0e5e41169921335424d9182dcab7d9d375765f6d885cd",
@@ -7860,8 +7860,8 @@
       "bytes": 6004
     },
     "tests/lia_mockup_product_shell_test.cjs": {
-      "sha256": "7706215a26101c92479fee22d6f3928e8c2bd4fb9480efe10bd7f8fbfae09401",
-      "bytes": 4601
+      "sha256": "0e36d3ea67cec9354715330276bd1b1a489902d30baf752ba3c8de3a55c83b51",
+      "bytes": 4707
     },
     "tests/lia_mockup_settings_storage_test.cjs": {
       "sha256": "a47633ad53b5e5ea16d09a6c631e88382b5b4fa1f17a6ad1b02de2746edbb350",
@@ -8036,8 +8036,8 @@
       "bytes": 867
     },
     "tests/libra_book_reading_space_contract_test.cjs": {
-      "sha256": "a88a434a4be36b3ec3b86173fc9e8fbd12dfb786217c471ce952276460c3b755",
-      "bytes": 2644
+      "sha256": "001d6edde307fa0206a7968d05848e4339a601120f57c7ac32d2cc3eb722224e",
+      "bytes": 2666
     },
     "tests/libra_book_state_button_runtime_test.cjs": {
       "sha256": "0a50d14fd91850eac211652588cab706375ff697c9a16204ebb07e006afcdbfc",
@@ -8244,8 +8244,8 @@
       "bytes": 14060
     },
     "tests/libra_completed_turn_receipt_3mode_test.cjs": {
-      "sha256": "a77d5e49d73430aa0c5f843d74ec90e642906c3589a42d549d46ae5817c38e8e",
-      "bytes": 18559
+      "sha256": "c1dd06b0f2f53418a93a3424c583dd8fc2e1db1fa499d16a8aaec199f9d4bfc2",
+      "bytes": 21951
     },
     "tests/libra_completed_turn_scope_lifecycle_test.cjs": {
       "sha256": "136543f984ab7ab38e387b98912daac210523df37ff5148dd02cd7a181923de0",
@@ -8400,8 +8400,8 @@
       "bytes": 9718
     },
     "tests/libra_final_delivery_view_runtime_test.cjs": {
-      "sha256": "285ed158d598cc9d5c0af1a24e7870ad029cdfa76e9c75d0bf3f2bef84f57f68",
-      "bytes": 7064
+      "sha256": "9f65d75175c0e55626e5b2c63ce6d4542528f7e8452bb8d855365feaf9957385",
+      "bytes": 9432
     },
     "tests/libra_fresh_analysis_discard_runtime_test.cjs": {
       "sha256": "cac6dc584324ab813f59f79b107eb25df45ed838d098cee83a3899247adf8593",
@@ -8550,6 +8550,10 @@
     "tests/libra_lens_archive_bounds_test.cjs": {
       "sha256": "54e2200923a125e0c53a04cedb80ad4daa916a82a98fade44a8829fc12c1df52",
       "bytes": 1405
+    },
+    "tests/libra_lens_excluded_reader_runtime_test.cjs": {
+      "sha256": "0eeb6d492b065042aaebdcc0b198eb4bb91d85589a363698007377b14dbb6d3f",
+      "bytes": 5096
     },
     "tests/libra_lens_handoff_runtime_test.cjs": {
       "sha256": "88841fec909579c0f0b2e823709bead883ceff74bbf061affa15da4132448cd2",
@@ -8936,8 +8940,8 @@
       "bytes": 4736
     },
     "tests/libra_micro_overlap_reference_name_test.cjs": {
-      "sha256": "2918398544344da10d99943ae08aadaba356bbda81bb9086b08c90f216804b8f",
-      "bytes": 4234
+      "sha256": "9a098a73135f21090836833ddb24ca42a3f84021b916db800d2415249ac1f563",
+      "bytes": 4974
     },
     "tests/libra_micro_portable_graph_3mode_test.cjs": {
       "sha256": "9a66bd28ac111c4c9c3aef4fe094cff9cf98fe028172e2f6a64d19d7a5cb45c8",
@@ -8984,8 +8988,8 @@
       "bytes": 35435
     },
     "tests/libra_micro_state_admission_3mode_test.cjs": {
-      "sha256": "46c8ecfa4824aae2bff5b11ca3034587a8907038bbbab06c2d9864889496902d",
-      "bytes": 15139
+      "sha256": "7eaf29aefaf57d47c1b30c019054945ec74c966df736c10cacdb3012a9d512ab",
+      "bytes": 17014
     },
     "tests/libra_micro_state_all_fields_3mode_test.cjs": {
       "sha256": "f61c3c64ce5f10b99fb9ea1ed738a2f8cbb33adb97fdafc81ca9a2d18cdef126",
@@ -10052,16 +10056,16 @@
       "bytes": 3957
     },
     "tests/libra_world_manager_replay_v2_contract_test.cjs": {
-      "sha256": "4a3876e864b6db66fa02c4e75069def3e9bdc7f85617443bcd9d36b087be69e7",
-      "bytes": 2629
+      "sha256": "f0209f8c4e2e0d4018541240ce3c21efe7abce8645fc34d301b2071539669c2b",
+      "bytes": 2621
     },
     "tests/libra_world_manager_runtime_meta_gui_rc2_test.cjs": {
       "sha256": "0d77a2eb437812184c18e512b803f8ac95e0457fe94b091afdfac6c339dc492e",
       "bytes": 19190
     },
     "tests/libra_world_manager_shared_snapshot_rc2_test.cjs": {
-      "sha256": "2d64ad75d17347a806f076c33dc9497bb0a2f372e3aed8fa7db2eaa911af046e",
-      "bytes": 8897
+      "sha256": "59d61a1097aa307a6193cdc1568034a71a79d43ff5e209237ec1122f468be975",
+      "bytes": 8919
     },
     "tests/libra_world_manager_state_3mode_parity_test.cjs": {
       "sha256": "57cda4261130279b891bd80ffc5fb717823dab84add5864c869782e45f466b5e",
@@ -10360,8 +10364,8 @@
       "bytes": 4445
     },
     "tests/plugin_version_provenance_producer_test.cjs": {
-      "sha256": "53b57b49c07f1a7596898d65ed34a9a62d108db44ac41b49355769d28526bca8",
-      "bytes": 13057
+      "sha256": "01ab5046cc7a74671606e11c78338273b568d1bf89a604073e5d00832499bd38",
+      "bytes": 13064
     },
     "tests/plugin_zindex_limit_test.cjs": {
       "sha256": "04d50d9c5004d7570e82f5a171c6b393d4e7e5450fd485caa0592f8cb6ca56fb",
@@ -10536,8 +10540,8 @@
       "bytes": 3363
     },
     "tests/release_builder_qualification_runtime_test.cjs": {
-      "sha256": "d4f0755568f7f3c2da965486d7e1a88d64d176be92427b85f6126a5784dc10b3",
-      "bytes": 5303
+      "sha256": "930a2d231bde364328c4ee04c8a25814ab3088946af6a8024f799f39453b8fd6",
+      "bytes": 6061
     },
     "tests/release_builder_source_fixture_closure_test.cjs": {
       "sha256": "acff90c8a5239dc496171a5dfc661c3a906adeecbe71fcfcf48f049e54f01a46",
@@ -11796,8 +11800,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "61ce286f753230144a09bfbf70c6bdc08e1d4919eefef8d80c232ba590d1bc2f",
-      "bytes": 60658
+      "sha256": "350f0b2134120785e0a1d2e293a2a711f0f31a046cb19f3119637f8ced39f53d",
+      "bytes": 61230
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
@@ -11968,7 +11972,7 @@
       "bytes": 18274
     },
     "tools/portable_export_stopped.cjs": {
-      "sha256": "7ffcc6b12152547c0f79d1cfed67ac7fea610b17f0cab317ada370f20c52b9bd",
+      "sha256": "17831934722ec08e9bdac38a08a0a947b01f0c5d2cf4bf3715db0b3d426960aa",
       "bytes": 10400
     },
     "tools/prepare_data.cjs": {
@@ -12276,7 +12280,7 @@
       "bytes": 17233
     },
     "VERSION.txt": {
-      "sha256": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8",
+      "sha256": "cc52f678848b814373757b460383bf61960e4943c203735adde0a350b3e50989",
       "bytes": 6
     },
     "개발본_만들기.bat": {
@@ -12440,7 +12444,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "e83712c6a33e184f8cb8c7e33dffb7b9263fbdf5978bd12f41659fc24b751d23",
+      "sha256": "8f829bd694143268a5d5adda1706d23b2cc9da8c237db5651c5aa7b623797e67",
       "bytes": 3781
     }
   },
@@ -12482,12 +12486,12 @@
     "topLevelPluginsFolder": false,
     "profiles": {
       "release": {
-        "asset": "Librarian-System-1.1.0.zip",
+        "asset": "Librarian-System-1.1.1.zip",
         "updaterEligible": true,
         "runtimeAllowlist": true
       },
       "source": {
-        "asset": "Librarian-System-1.1.0-Source.zip",
+        "asset": "Librarian-System-1.1.1-Source.zip",
         "updaterEligible": false,
         "fullSafeSource": true
       }
