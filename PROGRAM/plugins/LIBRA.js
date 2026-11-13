@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.0.1
+//@display-name LIBRA v3.0.2
 //@api 3.0
-//@version 3.0.1
+//@version 3.0.2
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.1';
+  const PLUGIN_VERSION = '3.0.2';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -40617,6 +40617,10 @@ function createLibraReadonlySourceContext(owner) {
       await storage.setVerifiedJson(captureKey, record, scope);
       return { captureStatus: 'verified', captureKey };
     };
+    // HAYAKU's packet replacement trims line endings before appending its packet.
+    // Apply that equivalence only to completion proof, where the stored revision
+    // still comes from the exact settled chat source.
+    const completionAssistantDigest = body => digest(string(body).replace(/[ \t]+(?=\r?$)/gm, '').replace(/\r\n/g, '\n'));
     const mainAfterRequestPairProof = (context,pair,health=state.mainAfterRequestHealth) => {
       // Identity, not elapsed time, is what binds a committed output to the
       // request that produced it; the age check only bounds how long a stale
@@ -40629,7 +40633,7 @@ function createLibraReadonlySourceContext(owner) {
       if(proof.scopeKey!==context.scope.scopeKey) return {ok:false,reason:'scope_changed'};
       if(Number(pair.turn)!==proof.turn) return {ok:false,reason:'turn_mismatch'};
       if(digest(pair.user.text)!==proof.userHash) return {ok:false,reason:'user_source_changed'};
-      const assistantHash=digest(pair.assistant.text);
+      const assistantHash=completionAssistantDigest(pair.assistant.text);
       if(assistantHash!==proof.assistantHash && assistantHash!==proof.legacyAssistantHash) return {ok:false,reason:'assistant_source_changed'};
       const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
@@ -61590,7 +61594,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // user source, prefix and scope to match before admitting Micro work.
       if(expectedScope && health?.microBoundary?.scopeKey===expectedScope.scopeKey
         && health===state.mainAfterRequestHealth && typeof options.completedResponse==='string'){
-        health.microBoundary.legacyAssistantHash=digest(cleanMessageText('assistant',{content:options.completedResponse}));
+        health.microBoundary.legacyAssistantHash=completionAssistantDigest(cleanMessageText('assistant',{content:options.completedResponse}));
       }
       Promise.resolve().then(async () => {
         await new Promise(resolve => setTimeout(resolve, clamp(options.settleDelay, 40, 1200, 90)));
@@ -64906,7 +64910,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           observedRunsAtAfter:Number(state.captureBackendObservedRuns||0),
           expectedScope:expectedScope?clone(expectedScope):null,
           microBoundary:expectedScope&&state.lastRequestScope?.pendingMicro
-            ? {...state.lastRequestScope.pendingMicro,assistantHash:digest(cleanMessageText('assistant',{content:response}))}:null};
+            ? {...state.lastRequestScope.pendingMicro,assistantHash:completionAssistantDigest(cleanMessageText('assistant',{content:response}))}:null};
       }
       // Only an exact main model request may trigger automatic memory analysis.
       // Auxiliary RisuAI requests (otherax, translation, image/tool helpers, etc.)

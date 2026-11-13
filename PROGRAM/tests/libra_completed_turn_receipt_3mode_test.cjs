@@ -150,6 +150,40 @@ const waitForHistoricalUnknown = async (api, count) => {
     console.log('PASS legacy completed output reconciles T1 without waiting for T5');
   } finally { await legacy.cleanup(); }
 
+  for (const changedNarrative of [false, true]) {
+    let legacyOutput;
+    const fixture = await serverFixture({mode: 'plugin_only', host: {
+      addRisuChatListener: async () => false,
+      addRisuScriptHandler: async (kind, handler) => { if (kind === 'output') legacyOutput = handler; return true; }
+    }});
+    try {
+      const {f} = fixture;
+      await f.r.api.setSourceEditRules({version: 1, ignoredTags: [], unwrapTags: [], sourceTags: [], controls: []});
+      const user = f.chat.message[0];
+      const generated = '민아가 문을 열었다.  \r\n도서관은 조용했다.';
+      const visible = changedNarrative ? '민아가 문을 닫았다.\n도서관은 조용했다.' : '민아가 문을 열었다.\n도서관은 조용했다.';
+      f.chat.message = f.chat.messages = [user];
+      await f.control.hooks.beforeRequest([{role: 'user', content: user.data}], 'model');
+      await f.control.hooks.afterRequest(generated, 'model');
+      // The legacy hook sees the transport text. The host then commits text
+      // with HAYAKU's line-end cleanup and a complete appended packet.
+      legacyOutput(generated);
+      f.chat.message.push({role: 'assistant', chatId: 't1-a',
+        data: visible + '\n\n<!-- HAYAKU_STATE_PACKET_START\n{}\nHAYAKU_STATE_PACKET_END -->'});
+      await waitFor(() => receiptRows(localRows(fixture.local)).length === 1, 10000);
+      assert.equal(receiptRows(localRows(fixture.local))[0].value.assistant.text, visible);
+      if (changedNarrative) {
+        await waitForHistoricalUnknown(f.r.api, 1);
+        assert.equal(f.control.calls.length, 0);
+      } else {
+        await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 10000);
+        assert.equal(f.control.calls.length, 1);
+        assert.match(JSON.stringify(f.control.calls[0]), /LIBRA MICRO SOURCE CONTRACT/);
+      }
+      console.log(`PASS live legacy completion ${changedNarrative ? 'refuses changed prose' : 'accepts packet and line-end cleanup'}`);
+    } finally { await fixture.cleanup(); }
+  }
+
   let faultyListener;
   const faulty = await serverFixture({mode: 'mirror', host: {addRisuChatListener: async (_kind, handler) => { faultyListener = handler; return true; }}});
   try {
