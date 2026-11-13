@@ -125,6 +125,30 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       assert.deepEqual(afterHead, beforeHead, `${mode}: admission does not mutate Canonical State Head`);
       const repeat = await f.r.api.debugAdmitActiveMicroStateClaim(6, 0);
       assert.equal(repeat.decisionKey, admitted.decisionKey, 'duplicate reuses the immutable decision');
+      const raon = projected.head.characters.find(row => row.name === '라온');
+      const mina = beforeHead.characters.find(row => row.name === '민아');
+      const selection = {sourceId: raon.id, targetId: mina.id};
+      const preview = await f.r.api.previewWorldManagerIdentityMerge(selection);
+      assert.equal(preview.microIdentityLink.canonicalId, mina.id);
+      assert.ok(preview.microIdentityLink.aliases.includes('라온'));
+      if (mode === 'server_only') {
+        const merged = await f.r.api.mergeWorldManagerIdentity({...selection, previewDigest: preview.previewDigest});
+        assert.equal(merged.ok, true);
+        const afterMerge = await f.r.api.debugLoadContinuityStateForResponse();
+        const person = afterMerge.head.characters.find(row => row.id === mina.id);
+        assert.ok(person.aliases.includes('라온'));
+        assert.equal(afterMerge.head.characters.some(row => row.id === raon.id), false);
+        assert.equal(person.state.condition, '들어왔다');
+      } else if (mode === 'mirror') {
+        const reverse = {sourceId: mina.id, targetId: raon.id};
+        const reversePreview = await f.r.api.previewWorldManagerIdentityMerge(reverse);
+        const merged = await f.r.api.mergeWorldManagerIdentity({...reverse, previewDigest: reversePreview.previewDigest});
+        assert.equal(merged.ok, true);
+        const person = (await f.r.api.debugLoadContinuityStateForResponse()).head.characters.find(row => row.id === mina.id);
+        assert.equal(person.name, '라온');
+        assert.ok(person.aliases.includes('민아'));
+        assert.equal(person.state.condition, '들어왔다');
+      }
       if (mode === 'plugin_only') {
         const headKey = localRows(fixture.local).find(row => row.value?.schema === 'libra.continuity_state.v2')?.key;
         assert.ok(headKey);
@@ -157,6 +181,8 @@ const quoteSpan = (text, quote, messageId) => ({role: 'assistant', messageId,
       const afterEdit = await f.r.api.debugLoadContinuityStateForResponse();
       assert.equal(Object.hasOwn(afterEdit.head?.world?.find(row => row.name === '도서관')?.state || {}, 'doorStatus'), false,
         `${mode}: source edit removes the old Micro effect from the response projection`);
+      await assert.rejects(f.r.api.mergeWorldManagerIdentity({...selection, previewDigest: preview.previewDigest}),
+        /UNIFIED_MERGE_TWO_IDENTITIES_REQUIRED|UNIFIED_IDENTITY_HEAD_REQUIRED|UNIFIED_IDENTITY_HEAD_STALE/);
       console.log(`PASS source-bound Micro State admission decisions in ${mode}`);
     } finally { await fixture.cleanup(); }
   }

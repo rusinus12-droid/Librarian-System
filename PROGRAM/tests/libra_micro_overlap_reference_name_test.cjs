@@ -12,7 +12,8 @@ const context = vm.createContext({
   MICRO_WORLD_REFERENCE_FIELDS: { holderRef: ['person'], containerRef: ['world'], parentRef: ['world'] }
 });
 vm.runInContext([
-  part('const microEffectiveEntityId =', 'const repairMicroEvidence ='),
+  part('const koreanPersonGivenNameFromFull =', 'const canonicalEntityNameBoundToEvidence ='),
+  part('const microStandingEntities =', 'const repairMicroEvidence ='),
   part('const microRegistryViewWithPatch =', 'const projectActiveMicroStateForResponse ='),
   'Object.assign(globalThis,{microEffectiveEntityId,microRegistryViewWithPatch,retainMicroLocationReference});'
 ].join('\n'), context);
@@ -50,4 +51,10 @@ assert.equal(remapped.text, created.id, 'identity remapping must not rewrite pro
 assert.equal(context.microEffectiveEntityId(standing, patch, [{organizationRef: created.id}])[0].organizationRef, 'ce_world_old');
 // The registry itself is never modified by building the view.
 assert.equal(registry.entities.length, 1);
+const short = { id: 'ce_person_micro', name: '혜연', type: 'person', origin: 'micro', validated: true };
+const full = { id: 'ce_person_canonical', name: '유혜연', type: 'person', validated: true };
+const microPersonPatch = { microNewEntities: [short] };
+assert.equal(context.microEffectiveEntityId({ entities: [full] }, microPersonPatch, short.id), full.id);
+assert.equal(context.microEffectiveEntityId({ entities: [full, {...full,id:'other',name:'김혜연'}] }, microPersonPatch, short.id), short.id);
+assert.equal(context.microEffectiveEntityId({ entities: [full], splitRetiredNames: ['혜연'] }, microPersonPatch, short.id), short.id);
 console.log('PASS overlap Micro reference keeps the approved patch name; standing records win; registry untouched');

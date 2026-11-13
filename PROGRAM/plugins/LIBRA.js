@@ -52073,15 +52073,32 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return extra.length ? {...clone(candidate),claims:[...asArray(candidate.claims),...extra]} : candidate;
     };
-    // Something Micro named first keeps its own id only until a record of that name exists.
+    const microStandingEntities = (registry, name, type, excludeId = '') => {
+      const wanted = statePipelineIdentityKey(name);
+      const rows = asArray(registry?.entities).filter(row => row?.id && row.id !== excludeId && row.type === type);
+      const names = row => [row.name, ...asArray(row.aliases)];
+      const exact = rows.filter(row => names(row).some(alias => statePipelineIdentityKey(alias) === wanted));
+      if (exact.length || type !== 'person' || asArray(registry?.splitRetiredNames).some(alias =>
+        statePipelineIdentityKey(alias) === wanted || koreanPersonIdentityMatch(alias, name))) return exact;
+      return rows.filter(row => row.validated === true && row.origin !== 'micro'
+        && names(row).some(alias => koreanPersonIdentityMatch(alias, name)));
+    };
     const microEffectiveEntityId = (registryValue, patchValue, id) => {
       if (Array.isArray(id)) return id.map(item => item && typeof item === 'object' ? microEffectiveEntityId(registryValue, patchValue, item) : item);
       if (id && typeof id === 'object') return Object.fromEntries(Object.entries(id).map(([key, value]) => [key,
         (/Ref$/.test(key) || value && typeof value === 'object') ? microEffectiveEntityId(registryValue, patchValue, value) : value]));
       const created = asArray(asObject(patchValue).microNewEntities).find(row => row?.id === id);
       if (!created) return id;
-      const wanted = statePipelineIdentityKey(created.name);
-      return asArray(asObject(registryValue).entities).find(row => row?.id !== id && row?.type === created.type && [row.name, ...asArray(row.aliases)].some(alias => statePipelineIdentityKey(alias) === wanted))?.id || id;
+      const matches = microStandingEntities(registryValue, created.name, created.type, id);
+      return matches.length === 1 ? matches[0].id : id;
+    };
+    const microEffectiveRelationship = (registry, patch, id) => {
+      if (!patch.subjectId || !patch.targetId) return { id, patch };
+      const subjectId = microEffectiveEntityId(registry, patch, patch.subjectId);
+      const targetId = microEffectiveEntityId(registry, patch, patch.targetId);
+      if (subjectId === targetId) return { id: '', patch };
+      if (subjectId === patch.subjectId && targetId === patch.targetId) return { id, patch };
+      return { id: `cs_rel_${stableHash(`${subjectId}>${targetId}:${patch.dimension}`)}`, patch: { ...patch, subjectId, targetId } };
     };
     const repairMicroEvidence = (microValue, receiptValue) => {
       if (!isPlainObject(microValue) || !Array.isArray(microValue.claims)) return microValue;
@@ -53684,7 +53701,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (known || !string(name) || !wanted) return known;
         if (asArray(registry.entities).some(row => row?.type === type && [row.name, ...asArray(row.aliases)].some(alias => statePipelineIdentityKey(alias) === wanted))) return null;
         if (type === 'person' && lensNotAPerson(name)) return null;
-        // "하은" is 신하은 when the records hold one person of that given name; with two, it stays unresolved.
+        // Keep the producer decision stable for existing basis-bound records.
+        // Projection reconciles those decisions against the current identity registry.
         if (type === 'person' && wanted.length >= 2) {
           const fullNames = asArray(registry.entities).filter(row => row?.validated === true && row.type === 'person' && row.id
             && [1, 2].includes(statePipelineIdentityKey(row.name).length - wanted.length) && statePipelineIdentityKey(row.name).endsWith(wanted));
@@ -54336,16 +54354,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const additiveItems = asArray(microEffectiveEntityId(registry, firstPatch, firstPatch.microAdditive));
             const effective = (row, id) => microEffectiveEntityId(registry, row.decision.patch, id);
             const value = clearing ? null : effective(first, asObject(firstPatch.set)[field]);
-            const targetId = domain === 'narrative' ? 'current_narrative'
-              : effective(first, string(first.decision.targetIds?.[0] || ''));
+            const resolveTarget = row => {
+              const id = string(row.decision.targetIds?.[0] || '');
+              return domain === 'relationship' ? microEffectiveRelationship(registry, row.decision.patch, id).id : effective(row, id);
+            };
+            const targetId = domain === 'narrative' ? 'current_narrative' : resolveTarget(first);
             if (!['character', 'world', 'narrative', 'relationship'].includes(domain) || !field || value === undefined
               || prior.some(row => (!additiveItems.length && digest(effective(row, row.decision.patch?.set?.[field]) ?? null) !== digest(value))
-                || effective(row, string(row.decision.targetIds?.[0] || '')) !== targetId && domain !== 'narrative')
+                || resolveTarget(row) !== targetId && domain !== 'narrative')
               || domain !== 'narrative' && !targetId) {
               pendingClaims.push({ turn, claimIndex, reason: 'overlap_admission_conflict' });
               continue;
             }
-            overlap.push({ turn, claimIndex, domain, targetId, field, value, clearing, additiveItems, patch: firstPatch,
+            overlap.push({ turn, claimIndex, domain, targetId, field, value, clearing, additiveItems,
+              patch: domain === 'relationship' ? microEffectiveRelationship(registry, firstPatch, targetId).patch : firstPatch,
               decisionKey: first.decisionKey, decisionDigest: first.decision.decisionDigest,
               claimDigest: first.decision.claimDigest, claim,
               microRecordKey: active.recordKey,
@@ -54512,16 +54534,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
             pendingClaims.push({ turn, claimIndex, reason: 'admitted_target_missing' });
             continue;
           }
-          let effectiveTargetId = targetId, effectiveValue = clearing ? null : clone(set[field]);
-          for (const created of asArray(patch.microNewEntities)) {
-            const wanted = statePipelineIdentityKey(created.name);
-            const standing = asArray(registryView.entities).find(row => row?.id !== created.id && row?.type === created.type && [row.name, ...asArray(row.aliases)].some(alias => statePipelineIdentityKey(alias) === wanted));
-            if (standing) { if (effectiveTargetId === created.id) effectiveTargetId = standing.id; if (effectiveValue === created.id) effectiveValue = standing.id; }
-            else if (!asArray(registryView.entities).some(row => row?.id === created.id)) registryView.entities.push(clone(created));
+          const effective = domain === 'relationship' ? microEffectiveRelationship(registryView, patch, targetId)
+            : { id: microEffectiveEntityId(registryView, patch, targetId), patch };
+          if (!effective.id) {
+            pendingClaims.push({ turn, claimIndex, reason: 'registry_target_changed' });
+            continue;
           }
-          effectiveValue = microEffectiveEntityId(registryView, patch, effectiveValue);
-          admitted.push({ claimIndex, claim, decision, decisionKey: read.decisionKey, patch, clearing,
-            additiveItems: asArray(microEffectiveEntityId(registryView, patch, patch.microAdditive)), domain, targetId: effectiveTargetId, field, value: effectiveValue });
+          registryView.entities = microRegistryViewWithPatch(registryView, patch).entities;
+          const effectiveValue = clearing ? null : microEffectiveEntityId(registryView, patch, clone(set[field]));
+          admitted.push({ claimIndex, claim, decision, decisionKey: read.decisionKey, patch: effective.patch, clearing,
+            additiveItems: asArray(microEffectiveEntityId(registryView, patch, patch.microAdditive)), domain, targetId: effective.id, field, value: effectiveValue });
         }
         const conflicted = new Set();
         const valuesByField = new Map();
@@ -58704,11 +58726,52 @@ function mountMemorySuiteReanalysisReview(container,config) {
       unifiedAssert(head?.scopeKey===context.scope.scopeKey,'UNIFIED_IDENTITY_HEAD_REQUIRED');
       const boundary=statePipelineReplayRefs(manifest).find(r=>statePipelineCursorMatchesRef(head.reviewedThroughCanonical,r,head.worldlineId||'main'));
       unifiedAssert(boundary && correctionBasisFingerprintForCanonicalRef(manifest,boundary)===head.basis?.sourceFingerprint,'UNIFIED_IDENTITY_HEAD_STALE');
+      if (sourceId !== targetId) {
+        const source = asArray(head.characters).find(row => row.id === sourceId);
+        const target = asArray(head.characters).find(row => row.id === targetId);
+        const projectedId = source ? targetId : sourceId;
+        if (Boolean(source) !== Boolean(target) && !asArray(head.world).some(row => row.id === projectedId)) {
+          const currentHead = await loadContinuityState(context.scope, manifest, {requireCurrent: true});
+          unifiedAssert(currentHead && currentHead.basis?.sourceFingerprint === head.basis.sourceFingerprint
+            && (currentHead.worldlineId || 'main') === (head.worldlineId || 'main'), 'UNIFIED_IDENTITY_HEAD_STALE');
+          const view = await projectActiveMicroStateForResponse(context.scope, manifest,
+            responseStateAuthorityForHead(currentHead, continuityStateRefs(manifest), {exactBasis: true, sourceMode: 'current_basis'}), {context});
+          const projected = asArray(view.head?.characters).find(row => row.id === projectedId
+            && Object.values(asObject(row.fieldEvidence)).some(evidence => evidence?.schema === 'libra.micro_state_field_evidence.v1'));
+          if (projected) {
+            const canonical = source || target;
+            const name = target ? target.name : projected.name;
+            const aliases = continuityStateAliases([canonical.name, projected.name, ...asArray(canonical.aliases), ...asArray(projected.aliases)])
+              .filter(alias => statePipelineIdentityKey(alias) !== statePipelineIdentityKey(name));
+            const names = new Set([name, ...aliases].map(statePipelineIdentityKey));
+            unifiedAssert(!asArray(view.head.characters).some(row => ![sourceId, targetId].includes(row.id)
+              && [row.name, ...asArray(row.aliases)].some(alias => names.has(statePipelineIdentityKey(alias)))),
+              'UNIFIED_MERGE_THIRD_IDENTITY_COLLISION');
+            const plan = {sourceId,targetId,sourceName:source?.name || projected.name,targetName:target?.name || projected.name,
+              scopeKey:head.scopeKey,worldlineId:head.worldlineId || 'main',anchorTurn:head.throughTurn,
+              basisFingerprint:head.basis.sourceFingerprint,fieldConflicts:[],relationConflicts:[],
+              microIdentityLink:{canonicalId:canonical.id, name, aliases},
+              sourceHash:digest(source || projected),targetHash:digest(target || projected)};
+            return {...plan,previewDigest:digest(plan)};
+          }
+        }
+      }
       return unifiedIdentityMergePlan(head,sourceId,targetId);
     };
     const mergeUnifiedIdentity=async request=>{
       const plan=await previewUnifiedIdentityMerge(request);
       unifiedAssert(request.previewDigest===plan.previewDigest,'UNIFIED_IDENTITY_MERGE_PREVIEW_CHANGED');
+      if (plan.microIdentityLink) {
+        const {canonicalId, name, aliases} = plan.microIdentityLink;
+        return await appendStateCorrection({
+          anchorTurn:plan.anchorTurn,basisFingerprint:plan.basisFingerprint,worldlineId:plan.worldlineId,expectedScopeKey:plan.scopeKey,
+          target:{domain:'characters',mode:'micro_identity_link'},policy:'micro_identity_link',
+          patch:{characters:[{id:canonicalId,renameTo:name,aliases}]}
+        }, async () => {
+          const current = await previewUnifiedIdentityMerge(request);
+          unifiedAssert(current.previewDigest === plan.previewDigest,'UNIFIED_IDENTITY_MERGE_PREVIEW_CHANGED');
+        });
+      }
       return await appendStateCorrection({anchorTurn:plan.anchorTurn,basisFingerprint:plan.basisFingerprint,target:{domain:'head',mode:'identity_merge'},
         patch:{identityMerge:{sourceId:plan.sourceId,targetId:plan.targetId,previewDigest:plan.previewDigest,fieldChoices:request.fieldChoices||{},relationChoices:request.relationChoices||{}}}});
     };
@@ -70697,13 +70760,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       failed.cause=error;
       throw failed;
     };
-    const appendStateCorrection = async ({ patch = {}, anchorTurn = 0, basisFingerprint = '', worldlineId = '', target = null, policy = 'point_in_time_override', supersedes = '', resolvePendingFacts = [], expectedScopeKey: requestedScopeKey = '' } = {}) => {
+    const appendStateCorrection = async ({ patch = {}, anchorTurn = 0, basisFingerprint = '', worldlineId = '', target = null, policy = 'point_in_time_override', supersedes = '', resolvePendingFacts = [], expectedScopeKey: requestedScopeKey = '' } = {}, verifySelection = null) => {
       const initial=await resolveContext(); const expectedScopeKey=string(initial?.scope?.scopeKey||'');
       if(requestedScopeKey && requestedScopeKey!==expectedScopeKey)throw stateCorrectionFailure('STATE_CORRECTION_SCOPE_CHANGED');
       const result = await enqueue(expectedScopeKey,async()=>{
         assertPortableMemoryIdle();
         if (state.disposed || state.deletingScopes.has(expectedScopeKey)) throw stateCorrectionFailure('STATE_CORRECTION_SCOPE_UNAVAILABLE');
         const context=await resolveContext(); if(string(context?.scope?.scopeKey||'')!==expectedScopeKey) throw stateCorrectionFailure('STATE_CORRECTION_SCOPE_CHANGED');
+        if (verifySelection) await verifySelection();
         const pairs=buildPairs(context.chat,context?.scope?.scopeKey||''); const manifest=await loadManifest(context.scope,pairs.length);
         let store=await migrateLegacyContinuityOverrides(context.scope,manifest);
         const baseline={registry:await storage.getJson(key.entityRegistry(context.scope),null),journal:await storage.getJson(key.stateCorrections(context.scope),null),correctionMeta:await storage.getJson(key.stateCorrectionMeta(context.scope),null),correctionCommit:await storage.getJson(key.stateCorrectionCommit(context.scope),null),head:await storage.getJson(key.continuityState(context.scope),null),cache:await storage.getJson(key.stateReplayCache(context.scope),null),lastContinuityState:clone(state.lastContinuityState),snapshotContinuityState:sameSnapshotScope(state.snapshot?.scope,context.scope)?clone(state.snapshot?.continuityState):undefined};
@@ -81595,6 +81659,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const WORLD_MANAGER_STRUCTURAL_CORRECTION_POLICIES = new Set([
     'identity_merge',
     'identity_split',
+    'micro_identity_link',
     'explicit_fact_role_allocation',
     'worldline_fork',
     'worldline_structure'
@@ -82228,7 +82293,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         try{
           preview=await globalThis.__LIBRA__.previewWorldManagerIdentityMerge({sourceId:row.id,targetId:selected});if(!guard())throw new Error('채팅 또는 병합 대상이 바뀌었습니다.');
           fields.replaceChildren();for(const k of Object.keys(choices))delete choices[k];for(const k of Object.keys(relations))delete relations[k];
-          status.textContent=`${preview.sourceName} → ${preview.targetName}. 충돌 ${preview.fieldConflicts.length+preview.relationConflicts.length}개를 모두 선택한 뒤 확정하세요.`;
+          status.textContent=preview.microIdentityLink
+            ? `${preview.sourceName} → ${preview.targetName}. 두 이름을 같은 인물로 연결합니다. Micro 상태는 원문 근거에 따라 다시 반영됩니다.`
+            : `${preview.sourceName} → ${preview.targetName}. 충돌 ${preview.fieldConflicts.length+preview.relationConflicts.length}개를 모두 선택한 뒤 확정하세요.`;
           for(const conflict of preview.fieldConflicts){
             const canKeepBoth=domain==='characters'&&conflict.field==='knowledge'&&[conflict.source,conflict.target].every(cell=>cell?.status==='value'&&Array.isArray(cell.value)&&cell.value.every(item=>typeof item==='string'));
             const options=[['','선택 필요'],['source',`${preview.sourceName}: ${JSON.stringify(conflict.source)}`],['target',`${preview.targetName}: ${JSON.stringify(conflict.target)}`],...(canKeepBoth?[['both','둘 다 보존 · 두 지식 목록 합치기']]:[])];
@@ -82236,7 +82303,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
           for(const conflict of preview.relationConflicts)fields.appendChild(fieldNode(conflict.kind==='self'?'자기 자신을 향하게 되는 관계':'중복 방향 관계',worldManagerSelect('',[['','선택 필요'],...conflict.choices.map(id=>[id,id==='drop'?'현재 관계에서 제외':guiAsArray(view.relationships).find(r=>r.id===id)?.state?.value||id])],v=>{relations[conflict.key]=v;})));
           apply.disabled=false;
-        }catch(e){preview=null;status.textContent=String(e.code||'')+' '+String(e.message||e);}finally{busy=false;review.disabled=false;}
+        }catch(e){preview=null;status.textContent=[...new Set([e.code,e.message || String(e)].filter(Boolean))].join(' · ');}finally{busy=false;review.disabled=false;}
       }});
       const apply=guiEl('button',{class:'btn btn--primary',type:'button',text:'선택한 내용으로 병합 확정',disabled:true,onClick:async()=>{
         if(busy||!preview||!guard())return;busy=true;review.disabled=true;apply.disabled=true;
@@ -82244,7 +82311,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const result=await globalThis.__LIBRA__.mergeWorldManagerIdentity({sourceId:preview.sourceId,targetId:preview.targetId,previewDigest:preview.previewDigest,fieldChoices:choices,relationChoices:relations});
           if(result?.ok!==true)throw new Error(result?.reason||'병합 저장 확인 실패');
           if(!guard())return;await refreshGuiSnapshot(false);await renderSettingsGui();guiSetStatus('병합을 저장했습니다. 병합 되돌리기는 기록·교정에서 해당 병합 교정을 일시 중지해 실행할 수 있습니다.',false);await complete('merge',result);
-        }catch(e){status.textContent=String(e.code||'')+' '+String(e.message||e);apply.disabled=false;}finally{busy=false;review.disabled=false;}
+        }catch(e){status.textContent=[...new Set([e.code,e.message || String(e)].filter(Boolean))].join(' · ');apply.disabled=false;}finally{busy=false;review.disabled=false;}
       }});
       const partner=overlay.querySelector('#mg-partner');partner.replaceWith(select);select.id='mg-partner';select.className='select';
       const conflictFold=guiEl('details',{class:'fold'},[guiEl('summary',{text:'충돌 검토 · 기존 식별과 근거'}),guiEl('div',{class:'fold__body stack'},[status,review,fields])]);
