@@ -87949,6 +87949,10 @@ advanced
   // and the lines themselves. It reads the delivery receipt only and grants no authority.
   const BOOK_RECALL_FAMILIES = Object.freeze([['lens', '렌즈'], ['state', '상태'], ['canonical', '정본'], ['micro', 'Micro'], ['other', '기타']]);
   const BOOK_RECALL_INTENTS = Object.freeze({ current: '현재 상태 우선', history: '과거 경위 우선', detail: '정확한 발언 우선', mixed: '관련도 순' });
+  const bookDeliveryNoteKey = ({binding, delivery}) => JSON.stringify([
+    canonicalReaderBindingKey(binding), delivery.responseContextRequestId || '', delivery.at,
+    delivery.responseContextDigest || ''
+  ]);
   const bookRecallEntries = view => {
     const known = new Set(BOOK_RECALL_FAMILIES.map(row => row[0]));
     const turnText = range => { const start = Number(range?.start || 0), end = Number(range?.end || 0);
@@ -87962,9 +87966,11 @@ advanced
           text: libraGuiText(row.selectedText ?? row.text).replace(/^\[PERSPECTIVE NOTES[^\]]*\]\s*-?\s*/, '') }; })
     ].filter(entry => entry.text);
   };
-  const buildBookDeliveryNotes = view => {
+  const buildBookDeliveryNotes = (view, previousNote = null) => {
     const {status,delivery,rows,lensRows}=view;
     const verified=status==='verified',count=rows.length+lensRows.length;
+    const deliveryKey = verified ? bookDeliveryNoteKey(view) : '';
+    if (verified && previousNote?.dataset.deliveryKey === deliveryKey) return previousNote;
     const statusText={verified:'요청 메시지 주입 검증 완료',failed:'마지막 요청 전달 실패',skipped:'마지막 요청 리콜 건너뜀',unconfirmed:'마지막 요청 전달 검증 미확인',unavailable:'전달 기록 없음'}[status];
     const absence={failed:'마지막 요청의 전달 처리에 실패했습니다.',skipped:'마지막 요청에서는 리콜을 건너뛰었습니다.',unconfirmed:'마지막 요청에서 어떤 근거가 주입됐는지 최종 검증되지 않았습니다.',unavailable:'현재 채팅·세계선에서 확인된 전달 기록이 없습니다.'}[status];
     const reason=delivery.error || delivery.skipReason || delivery.finalVerification?.reason;
@@ -88004,7 +88010,7 @@ advanced
     draw();
     const mix=guiEl('div',{class:'recall-mix',role:'img','aria-label':families.map(row=>`${row.label} ${row.count}개`).join(', ')},
       families.map(row=>guiEl('span',{class:`recall-mix__part recall-tag--${row.id}`,style:{flexGrow:String(row.count)},title:`${row.label} ${row.count}개`})));
-    return guiEl('article',{class:'leaf recall-note',dataset:{deliveryNotes:status}},[...head,
+    return guiEl('article',{class:'leaf recall-note',dataset:{deliveryNotes:status,deliveryKey}},[...head,
       query?guiEl('blockquote',{class:'recall-query'},[guiEl('span',{class:'recall-query__kicker',text:'이 입력으로 찾은 기억'}),guiEl('p',{text:query}),
         intent?guiEl('span',{class:'chip',text:intent}):null]):null,
       guiEl('div',{class:'recall-summary'},[
@@ -88079,7 +88085,7 @@ advanced
     Gui.app.append(overlay);bindApprovedOverlayKeyboard(overlay,close);return true;
   };
 
-  const buildApprovedMockupDesk = () => {
+  const buildApprovedMockupDesk = previousNote => {
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
     const view = worldManagerSnapshotView();
     const narrative = guiAsObject(view.narrative);
@@ -88114,7 +88120,7 @@ advanced
           guiEl('div', { class: 'facts' }, [fact(count, '전달 근거'), fact(relationships.length, '관계 영향'), fact(world.length, '세계 항목'), fact(threads.length, '열린 줄기')]),
           guiEl('div', { class: 'cluster' }, [characters.length ? link(`인물 ${characters.length} →`, 'people') : null, relationships.length ? link(`관계 ${relationships.length} →`, 'people') : null, world.length ? link(`세계 ${world.length} →`, 'world') : null, threads.length ? link(`열린 줄기 ${threads.length} →`, 'story') : null].filter(Boolean))
         ]),
-        buildBookDeliveryNotes(finalView)
+        buildBookDeliveryNotes(finalView, previousNote)
       ]),
 
       buildBookReceiptRecoveryPanel()
@@ -88456,9 +88462,9 @@ advanced
     ]) : null;
   };
 
-  const buildApprovedMockupDestinationDetail = page => {
+  const buildApprovedMockupDestinationDetail = (page, previousNote) => {
     switch (page) {
-      case 'desk': return buildApprovedMockupDesk();
+      case 'desk': return buildApprovedMockupDesk(previousNote);
       case 'memory': return buildApprovedMockupMemory();
       // Read and manage are separate screens: the manage branch never mounts the reader beneath it.
       case 'people': return Gui.bookPeopleSection==='profile'?buildApprovedMockupPeople():buildApprovedManageView('people','인물 · 관계 관리','인물과 관계의 현재 기록을 근거와 함께 확인하고, 수정용 복사본으로 교정합니다.',[
@@ -88730,6 +88736,10 @@ advanced
     if (!current) throw new Error(`Approved LIBRA mockup destination not found: ${page}`);
     current.querySelectorAll('.page-head .seg button[data-val]').forEach(button => button.setAttribute('aria-pressed', String((button.dataset.val === 'manage') === manageMode)));
     const head = current.querySelector(':scope > .page-head');
+    const previousDeliveryNote = !viewportState?.navigation && page === 'desk'
+      ? current.querySelector('[data-delivery-notes="verified"]') : null;
+    const deliveryList = previousDeliveryNote?.querySelector('[data-recall-list]');
+    const deliveryScrollTop = deliveryList?.scrollTop || 0;
     current.replaceChildren(); if (head) current.appendChild(head);
     const headActions = head?.querySelector(':scope > .page-actions');
     headActions?.querySelector(':scope > [data-book-state-progress]')?.remove();
@@ -88739,7 +88749,8 @@ advanced
     status.className = 'hint'; status.dataset.guiStatus = 'true'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
     current.appendChild(status);
     if(page==='story'&&Gui.bookStorySection==='toc'){const notice=buildStoryMeaningNotice();if(notice)current.appendChild(notice);}
-    current.appendChild(measureRegion('main',()=>buildApprovedMockupDestinationDetail(page)));
+    current.appendChild(measureRegion('main',()=>buildApprovedMockupDestinationDetail(page, previousDeliveryNote)));
+    if (deliveryList && current.contains(deliveryList)) deliveryList.scrollTop = deliveryScrollTop;
     const correctionList=app.querySelector('#dlg-corr-life.is-open #corr-list');
     if(correctionList&&correctionList.closest('.overlay').dataset.correctionsScope===canonicalReaderBinding().scopeKey)correctionList.replaceChildren(buildWorldManagerCorrectionsPanel());
     const refreshOpenExecutionLogs=host=>{

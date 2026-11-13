@@ -2,7 +2,47 @@
 const assert=require('node:assert/strict');
 const {test}=require('node:test');
 const {JSDOM}=require('jsdom');
-const {createLibraVmHarness}=require('./fixtures/libra_vm_harness.cjs');
+const {createLibraVmHarness,waitFor}=require('./fixtures/libra_vm_harness.cjs');
+test('delivery list keeps its scroll and filter during background refreshes of the same receipt',async()=>{
+ const dom=new JSDOM('<div id="root"></div>',{pretendToBeVisual:true}),{window}=dom,{document}=window;
+ window.scrollTo=()=>{};
+ const seam='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
+ const f=await createLibraVmHarness({}, {},{
+  contextGlobals:{document,window,MutationObserver:window.MutationObserver,requestAnimationFrame:window.requestAnimationFrame.bind(window)},
+  transformSource:source=>source.replace(/\r\n/g,'\n').replace(seam,
+   '  globalThis.__deliveryUi={Gui,Runtime,LibraMemoryCore,renderSettingsGuiOnce,scheduleGuiTraceRefresh};\n'+seam)
+ });
+ try{
+  const {Gui,Runtime,LibraMemoryCore,renderSettingsGuiOnce,scheduleGuiTraceRefresh}=f.context.__deliveryUi;
+  Gui.root=document.querySelector('#root');Gui.visible=true;Gui.state={};
+  LibraMemoryCore.state.snapshot={scope:{scopeKey:'scope-a'},manifest:{activeWorldlineId:'branch-a'}};
+  const receipt={scopeKey:'scope-a',worldlineId:'branch-a',at:1,responseContextRequestId:'request-a',
+   finalVerification:{status:'verified',modelDispatchEligible:true},
+   rows:[{family:'state',text:'State evidence',injected:true},
+    ...Array.from({length:39},(_,i)=>({family:'micro',text:`Micro evidence ${i}`,injected:true}))]};
+  Runtime.lastMemoryRecallViewer=receipt;
+  assert.equal(await renderSettingsGuiOnce(),true);
+  const list=()=>Gui.root.querySelector('[data-recall-list]');
+  const original=list();
+  Gui.root.querySelector('.recall-filter button[data-val="micro"]').click();
+  original.scrollTop=350;
+  const initialRenders=Gui.renderMetrics.regionRenders.main;
+  scheduleGuiTraceRefresh();
+  await waitFor(()=>Gui.renderMetrics.regionRenders.main>initialRenders);
+  assert.equal(list(),original);
+  assert.equal(list().scrollTop,350);
+  assert.equal(list().children.length,39);
+  assert.equal(Gui.root.querySelector('.recall-filter button[data-val="micro"]').getAttribute('aria-pressed'),'true');
+
+  Runtime.lastMemoryRecallViewer={...receipt,at:2,responseContextRequestId:'request-b'};
+  Gui.invalidations.add('body');
+  assert.equal(await renderSettingsGuiOnce(),true);
+  assert.notEqual(list(),original);
+  assert.equal(list().scrollTop,0);
+  assert.equal(list().children.length,40);
+ }finally{await f.cleanup();window.close();}
+});
+
 test('final delivery GUI uses only the current receipt and never promotes selection to delivery',async()=>{
  const dom=new JSDOM('<div class="app"></div>'),document=dom.window.document;
  const seam='  const publicApi = Object.freeze({\n    getHostLineageStatus: () => LibraMemoryCore';
