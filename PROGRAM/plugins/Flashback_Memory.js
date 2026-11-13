@@ -11504,6 +11504,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   });
 
+  // Portable snapshots pick their read strategy from the cached scope mode; a forced
+  // registry reload per group would add the very round trips grouping removes.
+  const readPortableMode = async scopeInput => (await readScopeMode(normalizeScopeDescriptor(scopeInput), false)).mode;
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -15860,6 +15863,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
     readPortableServerRows,
+    readPortableMode,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,
@@ -56123,15 +56127,31 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (!keys.length) throw new Error('portable_backup_key_enumeration_unavailable');
           return { keys, bridgeKeys: new Set(bridgeKeys), rawKeys: new Set(rawKeys), compatKeys: new Set(compatKeys) };
         },
+        // Portable snapshots read in groups of 64. server_only rows come from one
+        // get-many request per group. plugin_only has no batch API in RisuAI, so a
+        // group's reads are issued together through the same accessor as get().
+        // Mirror is a transition-only state whose reads may write, so it stays serial.
         async readMany(scope, keys) {
           const unique = [...new Set(keys)];
           const values = new Map();
+          if (!unique.length) return values;
+          const modeOf = async () => {
+            if (typeof bridge?.readPortableMode === 'function') return String(await bridge.readPortableMode(scope) || '');
+            if (typeof bridge?.getScopeMode === 'function') return String((await bridge.getScopeMode(scope))?.mode || '');
+            return 'plugin_only';
+          };
+          const mode = await modeOf();
           for (let offset = 0; offset < unique.length; offset += 64) {
             const part = unique.slice(offset, offset + 64);
-            const server = await bridge?.readPortableServerRows?.(scope, part);
-            for (const key of part) {
-              values.set(key, server?.has(key) ? server.get(key) : await adapter.get(key));
+            const server = mode === 'server_only' ? await bridge?.readPortableServerRows?.(scope, part) : null;
+            const rest = part.filter(key => !server?.has(key));
+            if (mode === 'plugin_only') {
+              const read = await Promise.all(rest.map(key => adapter.get(key)));
+              rest.forEach((key, index) => values.set(key, read[index]));
+            } else {
+              for (const key of rest) values.set(key, await adapter.get(key));
             }
+            for (const key of part) if (server?.has(key)) values.set(key, server.get(key));
           }
           return values;
         },
@@ -56289,6 +56309,32 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return aliases.some(alias => alias.length >= 4 && body.includes(alias));
     };
     const keyContainsScope = (key, aliases) => aliases.some(alias => alias.length >= 4 && textValue(key).includes(alias));
+    // A chat's backup owns only that chat. The character ID is shared by every chat of the
+    // same bot, so it never proves ownership on its own; scoped storage is owned only by a
+    // manifest whose scopeKey IS this chat (or this chat's legacy Persona-split scope).
+    // Global registries list every chat and are never chat data.
+    const SCOPED_STORAGE_PREFIX = 'vector_rag_memory:scope:';
+    const scopedStorageKey = key => textValue(key).startsWith(SCOPED_STORAGE_PREFIX);
+    const scopedManifestKey = key => scopedStorageKey(key) && /:manifest(?::v\d+)?$/i.test(textValue(key));
+    const globalFlashbackKey = key => /^vector_rag_memory:(?:scope_registry|legacy_migration)(?::|$)/.test(textValue(key));
+    const chatOwnerAliases = scope => {
+      const characterIds = new Set([scope?.characterId, scope?.canonicalCharacterId].map(textValue).filter(Boolean));
+      return (Array.isArray(scope?.aliases) ? scope.aliases : []).map(textValue).filter(alias => alias && !characterIds.has(alias));
+    };
+    const manifestOwnedByScope = (value, scope) => {
+      const manifest = parsedPortableStorageValue(value);
+      if (manifest?.schema !== 'vector_rag_memory.scope_manifest.v2') return false;
+      const owner = textValue(manifest.scopeKey);
+      if (owner && [scope?.scopeKey, scope?.scopeId, scope?.canonicalScopeId].map(textValue).filter(Boolean)
+        .some(id => owner === id || owner.startsWith(`${id}|persona:`))) return true;
+      // An older scope-key format of the same chat: exact chat AND character fields, never substrings.
+      const ids = (...values) => new Set(values.map(textValue).filter(Boolean));
+      const chatIds = ids(scope?.chatId, scope?.canonicalChatId);
+      const characterIds = ids(scope?.characterId, scope?.canonicalCharacterId);
+      const sameChat = [...ids(manifest.chatId, manifest.canonicalChatId)].some(id => chatIds.has(id));
+      const sameCharacter = [...ids(manifest.characterId, manifest.canonicalCharacterId)].some(id => characterIds.has(id));
+      return sameChat && sameCharacter;
+    };
     const collectPotentialReferences = value => {
       const refs = [];
       const seen = new WeakSet();
@@ -56443,14 +56489,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return value;
       };
       const initial = new Set();
+      const ownerAliases = chatOwnerAliases(scope);
       for (const key of allKeys) {
-        if (keyContainsScope(key, scope.aliases)) initial.add(key);
+        if (!scopedStorageKey(key) && !globalFlashbackKey(key) && keyContainsScope(key, ownerAliases)) initial.add(key);
       }
-      const legacyCandidates = allKeys.filter(key => !initial.has(key)
-        && (!key.startsWith('vector_rag_memory:scope:') || /:manifest(?::v\d+)?$/i.test(key)));
+      const legacyCandidates = allKeys.filter(key => !initial.has(key) && !globalFlashbackKey(key)
+        && (!scopedStorageKey(key) || scopedManifestKey(key)));
       await preload(legacyCandidates);
       for (const key of legacyCandidates) {
-        if (valueContainsScope(values.get(key), scope.aliases)) initial.add(key);
+        const owned = scopedManifestKey(key)
+          ? manifestOwnedByScope(values.get(key), scope)
+          : valueContainsScope(values.get(key), ownerAliases);
+        if (owned) initial.add(key);
+      }
+      // An owned manifest owns its storage prefix: worldline and manifest history come with it.
+      // Record shards are left to the active-shard selection below.
+      const ownedStoragePrefixes = [...initial].filter(scopedManifestKey)
+        .map(key => textValue(key).replace(/manifest(?::v\d+)?$/i, ''));
+      for (const key of allKeys) {
+        const prefix = ownedStoragePrefixes.find(candidate => key.startsWith(candidate));
+        if (prefix && !key.slice(prefix.length).startsWith('records:')) initial.add(key);
       }
       if (!initial.size) {
         throw new Error('portable_backup_no_current_scope_records');
@@ -56487,7 +56545,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
         }
         for (const key of allKeys) {
-          if (initial.has(key)) continue;
+          if (initial.has(key) || globalFlashbackKey(key)) continue;
           if (refs.some(ref => ref === key || (ref.length >= 8 && (key.includes(ref) || ref.includes(key))))) {
             initial.add(key);
             changed = true;
@@ -57574,7 +57632,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
       }
       const sharedArchiveKey = key => [...archivePrefixes].some(prefix => key.startsWith(prefix));
-      const removableKeys = currentKeys.filter(key => !sharedArchiveKey(key));
+      // Backups made before chat ownership was exact may carry another chat of the same bot
+      // or the global scope registry. Same-chat restore writes only this chat's storage and
+      // the shared archives it links; everything else in the file is left untouched.
+      const ownedPrefixes = new Set();
+      for (const record of [...current.records, ...envelope.records]) {
+        if (scopedManifestKey(record.key) && manifestOwnedByScope(record.value, scope)) {
+          ownedPrefixes.add(textValue(record.key).replace(/manifest(?::v\d+)?$/i, ''));
+        }
+      }
+      const outsideThisChat = key => globalFlashbackKey(key) || (scopedStorageKey(key)
+        && ![...ownedPrefixes].some(prefix => key.startsWith(prefix)) && !sharedArchiveKey(key));
+      const restoreRecords = envelope.records.filter(record => !outsideThisChat(record.key));
+      const skippedOutsideChat = envelope.records.filter(record => outsideThisChat(record.key));
+      for (const key of [...backupByKey.keys()]) if (outsideThisChat(key)) backupByKey.delete(key);
+      const removableKeys = currentKeys.filter(key => !sharedArchiveKey(key) && !outsideThisChat(key));
       const targetKeys = [...new Set([...removableKeys, ...backupByKey.keys()])];
       const listedKeys = new Set(current.allKeys);
       const originals = await adapter.readMany(scope, targetKeys.filter(key => listedKeys.has(key)));
@@ -57603,7 +57675,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const readback = await RisuCompat.localGetItem(key);
           portableVectorPayloadDetails(key, readback);
         }
-        const ordered = [...envelope.records].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
+        const ordered = [...restoreRecords].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
         for (const record of ordered) {
           const incoming = decodeValue(record.value);
           const value = incoming;
@@ -57631,8 +57703,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         const verified = [];
         const physicalRecords = [];
-        const readback = await adapter.readMany(scope, envelope.records.map(record => record.key));
-        for (const record of envelope.records) {
+        const readback = await adapter.readMany(scope, restoreRecords.map(record => record.key));
+        for (const record of restoreRecords) {
           const expected = decodeValue(record.value);
           const actual = readback.get(record.key);
           const valid = equalValues(actual, expected);
@@ -57640,7 +57712,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           verified.push(record.key);
           physicalRecords.push({ ...record, value: encodeValue(actual) });
         }
-        await validatePluginGraph(physicalRecords, envelope);
+        // Skipped records were not written; the graph check still sees the file as exported.
+        await validatePluginGraph([...physicalRecords, ...skippedOutsideChat], envelope);
         const vectorVerification = await validatePortableVectorSidecars(
           envelope.records,
           localVectorSidecars,
@@ -57656,6 +57729,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           written: written.length,
           removed: removed.length,
           verified: verified.length,
+          skippedOutsideChat: skippedOutsideChat.length,
           vectorSidecars: vectorVerification.sidecarCount,
           vectorReferences: vectorVerification.referenceCount,
           envelopeDigest: envelope.integrity.digest

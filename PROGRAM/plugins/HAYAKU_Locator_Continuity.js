@@ -10137,6 +10137,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return result;
   });
 
+  // Portable snapshots pick their read strategy from the cached scope mode; a forced
+  // registry reload per group would add the very round trips grouping removes.
+  const readPortableMode = async scopeInput => (await readScopeMode(normalizeScopeDescriptor(scopeInput), false)).mode;
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -14450,6 +14453,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
     readPortableServerRows,
+    readPortableMode,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,
@@ -64506,15 +64510,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const keys = [...new Set([...compatKeys, ...rawKeys])];
           return { keys, bridgeKeys: new Set(), rawKeys: new Set(rawKeys), compatKeys: new Set(compatKeys) };
         },
+        // Portable snapshots read in groups of 64. server_only rows come from one
+        // get-many request per group. plugin_only has no batch API in RisuAI, so a
+        // group's reads are issued together through the same accessor as get().
+        // Mirror is a transition-only state whose reads may write, so it stays serial.
         async readMany(scope, keys) {
           const unique = [...new Set(keys)];
           const values = new Map();
+          if (!unique.length) return values;
+          const modeOf = async () => {
+            if (typeof bridge?.readPortableMode === 'function') return String(await bridge.readPortableMode(scope) || '');
+            if (typeof bridge?.getScopeMode === 'function') return String((await bridge.getScopeMode(scope))?.mode || '');
+            return 'plugin_only';
+          };
+          const mode = await modeOf();
           for (let offset = 0; offset < unique.length; offset += 64) {
             const part = unique.slice(offset, offset + 64);
-            const server = await bridge?.readPortableServerRows?.(scope, part);
-            for (const key of part) {
-              values.set(key, server?.has(key) ? server.get(key) : await adapter.get(key));
+            const server = mode === 'server_only' ? await bridge?.readPortableServerRows?.(scope, part) : null;
+            const rest = part.filter(key => !server?.has(key));
+            if (mode === 'plugin_only') {
+              const read = await Promise.all(rest.map(key => adapter.get(key)));
+              rest.forEach((key, index) => values.set(key, read[index]));
+            } else {
+              for (const key of rest) values.set(key, await adapter.get(key));
             }
+            for (const key of part) if (server?.has(key)) values.set(key, server.get(key));
           }
           return values;
         },
