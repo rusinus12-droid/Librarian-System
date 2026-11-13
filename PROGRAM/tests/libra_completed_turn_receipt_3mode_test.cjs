@@ -150,6 +150,57 @@ const waitForHistoricalUnknown = async (api, count) => {
     console.log('PASS legacy completed output reconciles T1 without waiting for T5');
   } finally { await legacy.cleanup(); }
 
+  for (const scenario of [
+    'line endings', 'unbound prose change', 'afterRequest packet', 'output packet',
+    'stored escape', 'foreign nonce', 'changed packet', 'changed user ID'
+  ]) {
+    let legacyOutput;
+    const fixture = await serverFixture({mode: 'plugin_only', host: {
+      addRisuChatListener: async () => false,
+      addRisuScriptHandler: async (kind, handler) => { if (kind === 'output') legacyOutput = handler; return true; }
+    }});
+    try {
+      const {f} = fixture;
+      await f.r.api.setSourceEditRules({version: 1, ignoredTags: [], unwrapTags: [], sourceTags: [], controls: []});
+      const user = f.chat.message[0];
+      const generated = '민아가 문을 열었다.  \r\n도서관은 조용했다.';
+      const visible = scenario === 'line endings' ? '민아가 문을 열었다.\n도서관은 조용했다.' : '민아가 문을 닫았다.\n도서관은 조용했다.';
+      const packet = (nonce, value = 'captured') => '\n\n<!-- HAYAKU_STATE_PACKET_START\n' + JSON.stringify({
+        meta: {schema: 'hayaku_packet_v1', packet_type: 'current_snapshot', lineage: {
+          identity_version: 2, lineage_schema: 'hayaku_request_lineage_v2',
+          request_nonce: nonce, generation_attempt_id: nonce, turn_owner_key: 'owner1', logical_turn_id: 'turn1'
+        }},
+        narrative: {value}
+      }) + '\nHAYAKU_STATE_PACKET_END -->';
+      const observedPacket = packet('h640request1');
+      const livePacket = scenario === 'foreign nonce' ? packet('h640request2')
+        : scenario === 'changed packet' ? packet('h640request1', 'changed')
+        : scenario === 'stored escape' ? observedPacket.replace(/[{}:]/g, char => ({'{':'\uE9B8','}':'\uE9B9',':':'\uE9BE'})[char])
+        : observedPacket;
+      const hasHookPacket = !['line endings', 'unbound prose change'].includes(scenario);
+      f.chat.message = f.chat.messages = [user];
+      await f.control.hooks.beforeRequest([{role: 'user', content: user.data}], 'model');
+      await f.control.hooks.afterRequest(generated + (scenario === 'afterRequest packet' ? observedPacket : ''), 'model');
+      legacyOutput(generated + (hasHookPacket && scenario !== 'afterRequest packet' ? observedPacket : ''));
+      if (scenario === 'changed user ID') f.chat.message[0] = {...user, chatId: 'different-user'};
+      f.chat.message.push({role: 'assistant', chatId: 't1-a', data: visible + livePacket});
+      await waitFor(() => receiptRows(localRows(fixture.local)).length === 1, 10000);
+      assert.equal(receiptRows(localRows(fixture.local))[0].value.assistant.text, visible);
+      if (!['line endings', 'afterRequest packet', 'output packet', 'stored escape'].includes(scenario)) {
+        await waitForHistoricalUnknown(f.r.api, 1);
+        assert.equal(f.control.calls.length, 0);
+      } else {
+        await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 10000);
+        assert.equal(f.control.calls.length, 1);
+        const request = JSON.stringify(f.control.calls[0]);
+        assert.match(request, /LIBRA MICRO SOURCE CONTRACT/);
+        assert.ok(request.includes(visible.split('\n')[0]), 'Micro analyzes the settled prose');
+        assert.ok(!request.includes('HAYAKU_STATE_PACKET_START'), 'Micro does not consume packet content');
+      }
+      console.log(`PASS live legacy completion: ${scenario}`);
+    } finally { await fixture.cleanup(); }
+  }
+
   let faultyListener;
   const faulty = await serverFixture({mode: 'mirror', host: {addRisuChatListener: async (_kind, handler) => { faultyListener = handler; return true; }}});
   try {

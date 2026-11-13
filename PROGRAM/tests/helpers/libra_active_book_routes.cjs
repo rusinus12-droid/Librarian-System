@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 
 module.exports = function assertActiveBookRoutes(source) {
-  assert.match(source, /const buildApprovedMockupDestinationDetail = page =>/);
-  assert.match(source, /case 'desk': return buildApprovedMockupDesk\(\)/);
+  assert.match(source, /const buildApprovedMockupDestinationDetail = \(page, previousNote\) =>/);
+  assert.match(source, /case 'desk': return buildApprovedMockupDesk\(previousNote\)/);
   assert.match(source, /case 'memory': return buildApprovedMockupMemory\(\)/);
   // Read and manage are separate screens: each destination renders its reader or its manage view, never both.
   assert.match(source, /case 'people': return Gui\.bookPeopleSection==='profile'\?buildApprovedMockupPeople\(\):buildApprovedManageView\('people'/);

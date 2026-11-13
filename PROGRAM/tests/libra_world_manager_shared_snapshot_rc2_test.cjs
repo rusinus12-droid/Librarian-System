@@ -69,7 +69,7 @@ assert.doesNotMatch(ownerRoutes, /buildLibraContinuityStatePanel|buildLibraStory
 
 const render = between('async function renderSettingsGuiOnce()', 'const hideSettingsGui =');
 assert.doesNotMatch(render, /buildSharedHeaderStatusPanel\(\)|buildInsightRail\(\)/);
-assert.match(render, /buildApprovedMockupDestinationDetail\(page\)/);
+assert.match(render, /buildApprovedMockupDestinationDetail\(page, previousDeliveryNote\)/);
 
 const fixture = {
   manifest: { frontiers: { observedTurn: 14, committedTurn: 10 } },

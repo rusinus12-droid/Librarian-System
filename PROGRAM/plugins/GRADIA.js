@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.0.1
+//@display-name GRADIA v1.0.2
 //@api 3.0
-//@version 1.0.1
+//@version 1.0.2
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.0.1';
+  const PLUGIN_VERSION = '1.0.2';
   
   
   
@@ -4569,9 +4569,22 @@ ${BIANCA_PERSONA_TEXT}`;
       // recovery: 'stall' resends a request that was dispatched but produced no response at all
       // (nothing was received, so there is no response to reuse); 'length' discards a provider
       // length-stopped response and asks again with a larger output budget. Each is allowed once
-      // per stage+phase that already made its own call, and at most LIB_EVIDENCE_MAX_RECOVERIES
-      // times per request. The same immutable evidence packet and the same bound prompts are
-      // re-admitted through assertPayload/assertDispatch like any other call.
+      // per stage+phase that already made its own call. AIDE patch length retries
+      // have their own allowance so one patch cannot consume the next patch's retry.
+      // Other recoveries share the request cap. All retries re-admit the same
+      // immutable evidence and bound prompts through assertPayload/assertDispatch.
+      modelRecoverySet(stage, phase, recovery) {
+        return recovery === 'length' && phase === 'patch' && CORE_AIDE_STAGE_IDS.includes(stage)
+          ? this.patchLengthRecoveries : this.recoveries;
+      },
+      canRecoverModel(stage, phase, recovery) {
+        const base = `${stage}:${phase}`;
+        const attempts = this.modelRecoverySet(stage, phase, recovery);
+        return ['stall', 'length'].includes(recovery) && this.calls.has(base)
+          && !attempts.has(`${base}:${recovery}`)
+          && (attempts !== this.recoveries || attempts.size < LIB_EVIDENCE_MAX_RECOVERIES);
+      },
+      patchLengthRecoveries: new Set(),
       async beforeModel(stage, phase, recovery = '') {
         await this.assertCurrent();
         if (recovery === 'analysis') {
@@ -4585,9 +4598,8 @@ ${BIANCA_PERSONA_TEXT}`;
         }
         if (recovery) {
           const base = `${stage}:${phase}`, key = `${base}:${recovery}`;
-          if (!['stall', 'length'].includes(recovery) || this.recoveries.has(key) || this.recoveries.size >= LIB_EVIDENCE_MAX_RECOVERIES
-            || !this.calls.has(base)) throw this.fail('LIB_READ_RETRY_DISABLED');
-          this.recoveries.add(key);
+          if (!this.canRecoverModel(stage, phase, recovery)) throw this.fail('LIB_READ_RETRY_DISABLED');
+          this.modelRecoverySet(stage, phase, recovery).add(key);
           return;
         }
         const allowed = normalizeMultiPipelineMode(settings.multiPipelineMode) === 'heavyweight'
@@ -19976,7 +19988,7 @@ ${passage.text || ''}`, 420));
       const dispatchDeadlineMs = Number(preset.timeout_ms || DEFAULT_STAGE_TIMEOUT_MS) + 5000;
       let dispatchTimer = null;
       result = evidenceRun
-        ? await evidenceRun.guardModel(dispatch, preset.timeout_ms, { stallRetryable: !options.evidenceAnalysisRetry && !options.evidenceStallRetry && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES })
+        ? await evidenceRun.guardModel(dispatch, preset.timeout_ms, { stallRetryable: !options.evidenceAnalysisRetry && !options.evidenceStallRetry && evidenceRun.canRecoverModel(stageName, promptPhase, 'stall') })
         : await Promise.race([dispatch(), new Promise((_, reject) => {
           dispatchTimer = setTimeout(() => reject(Object.assign(new Error(`${stageName} provider request timed out after ${dispatchDeadlineMs}ms`), { code: 'PROVIDER_REQUEST_TIMEOUT' })), dispatchDeadlineMs);
         })]).finally(() => clearTimeout(dispatchTimer));
@@ -20186,7 +20198,7 @@ ${passage.text || ''}`, 420));
           : 0;
         const expandedMaxTokens = Math.min(configuredCap, Math.max(effectiveOptions.maxTokens + 1024,
           Math.ceil(effectiveOptions.maxTokens * retryMultiplier), minJsonLengthRetry));
-        if (expandedMaxTokens > effectiveOptions.maxTokens && evidenceRun.recoveries.size < LIB_EVIDENCE_MAX_RECOVERIES) {
+        if (expandedMaxTokens > effectiveOptions.maxTokens && evidenceRun.canRecoverModel(stageName, promptPhase, 'length')) {
           warn('evidence_provider_length_retry', `${stageName}: provider stopped at ${lengthLimit.reason}; retrying once with ${expandedMaxTokens} output tokens`);
           return await callLLMWithPreset(settings, stageName, systemPrompt, userPromptBeforeEvidence, {
             ...options,

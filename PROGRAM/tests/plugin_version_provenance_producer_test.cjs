@@ -137,7 +137,7 @@ try {
     const source = fs.readFileSync(path.join(programRoot, '..', file), 'utf8');
     const once = renderGuide(source, metadata);
     assert.equal(renderGuide(once, metadata), once, `${file}: normal guide producer is byte-idempotent`);
-    const maskRows = value => value.replace(/^(- (?:Flashback Memory|HAYAKU Locator Continuity|LIBRA|LIA Persona Linker|RE:TRACE) )\d+\.\d+\.\d+(?=\r?$)/gm, '$1<VERSION>');
+    const maskRows = value => value.replace(/^(- (?:Flashback Memory|HAYAKU Locator Continuity|LIBRA|LIA Persona Linker|RE:TRACE|GRADIA) )\d+\.\d+\.\d+(?=\r?$)/gm, '$1<VERSION>');
     assert.equal(maskRows(once), maskRows(source), `${file}: only plugin installation inventory version rows change`);
   }
   const pins = files.map(file => sha(fs.readFileSync(path.join(scratch, file))));

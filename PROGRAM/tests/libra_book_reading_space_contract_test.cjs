@@ -30,7 +30,7 @@ assert.doesNotMatch(desk, /북쪽 정원|은색 열쇠|M-25|1,248/,
   'desk content must come from the current product snapshot and delivery receipt');
 
 const render = between('async function renderSettingsGuiOnce()', 'const hideSettingsGui =');
-assert.match(render, /buildApprovedMockupDestinationDetail\(page\)/);
+assert.match(render, /buildApprovedMockupDestinationDetail\(page, previousDeliveryNote\)/);
 // Only route pages participate in route visibility; the original drawer also
 // has a nested .page body and must remain visible through settings redraws.
 assert.match(render, /app\.querySelectorAll\('\.page\[data-page\]'\)/);

@@ -507,6 +507,25 @@ test('a provider length stop in an evidence run is discarded and asked once more
  const budget=b=>b.max_tokens??b.max_completion_tokens;assert.ok(budget(f.prompts[2])>budget(f.prompts[1]));
  assert.deepEqual(f.prompts[2].messages,f.prompts[1].messages);r.closeEvidence();
 });
+test('each AIDE patch can recover from one provider length stop in the same evidence run',async()=>{
+ const truncated=[2,4,6];
+ const f=await fixture({
+  modelContent:(n,_body,content)=>truncated.includes(n)?'':content,
+  finish:n=>truncated.includes(n)?'length':'stop'
+ });
+ const r=await f.run();
+ try {
+  assert.equal(r.ok,true);
+  assert.equal(f.recalls,1);
+  assert.equal(f.prompts.length,7);
+  for(const call of truncated){
+   const first=f.prompts[call-1], retry=f.prompts[call];
+   assert.deepEqual(retry.messages,first.messages);
+   assert.ok((retry.max_tokens??retry.max_completion_tokens)>(first.max_tokens??first.max_completion_tokens));
+  }
+  assert.ok(r.stages.every(stage=>stage.ok && !stage.fallback));
+ }finally{r.closeEvidence();}
+});
 test('stage timeout: default 300 s, runtime stage_timeout_ms and preset follow untouched slots, explicit slots win',async()=>{
  const {load}=require('./host.cjs');const host=await load();const p=host.plugin;
  await p.saveProviderPreset('main',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'k',model:'m'});
