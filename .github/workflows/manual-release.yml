@@ -225,12 +225,36 @@ jobs:
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
             PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
 
-      - name: Verify version-bumped release artifacts against reviewed RisuAI contract
+      - name: Verify packaged plugins against the reviewed RisuAI contract
         run: |
-          # Note: Authoritative upstream verification is conducted in the reusable risu-compatibility-gate.
-          # This step explicitly verifies runtime compatibility between the newly version-bumped
-          # release artifacts and the reviewed RisuAI contract pack.
+          export RELEASE_ARTIFACT_DIR="$RUNNER_TEMP/librarian-packaged-plugins"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const crypto = require("node:crypto");
+          const { readZipEntries } = require("./PROGRAM/tools/zip_writer.cjs");
+          const { PLUGINS } = require("./PROGRAM/tools/release_metadata.cjs");
+          const base = `Librarian-System-${process.env.NEXT_VERSION}`;
+          const out = path.join(process.env.RUNNER_TEMP, "librarian-release");
+          const report = JSON.parse(fs.readFileSync(path.join(out, base + ".build-report.json"), "utf8"));
+          const archive = fs.readFileSync(path.join(out, base + ".zip"));
+          const archiveSha = crypto.createHash("sha256").update(archive).digest("hex");
+          if (report.packageVersion !== process.env.NEXT_VERSION || report.releaseTag !== `v${process.env.NEXT_VERSION}`
+              || report.archiveSha256 !== archiveSha || report.archiveBytes !== archive.length) {
+            throw new Error("release_archive_report_mismatch");
+          }
+          const entries = readZipEntries(path.join(out, base + ".zip"));
+          fs.mkdirSync(process.env.RELEASE_ARTIFACT_DIR);
+          for (const [owner, [file]] of Object.entries(PLUGINS)) {
+            const matches = entries.filter(row => row.name === `${base}/PROGRAM/plugins/${file}`);
+            if (matches.length !== 1 || matches[0].sha256 !== report.pluginSha256?.[owner]) {
+              throw new Error(`release_archive_plugin_mismatch:${owner}`);
+            }
+            fs.writeFileSync(path.join(process.env.RELEASE_ARTIFACT_DIR, file), matches[0].bytes, { flag: "wx" });
+          }
+          NODE
           node PROGRAM/tools/risu_compatibility_gate.cjs \
+            --artifact-dir "$RELEASE_ARTIFACT_DIR" \
             --report "$RUNNER_TEMP/librarian-release/risu-compatibility-report.json"
 
       - name: Verify main commit unchanged before commit (Fence #2)
@@ -273,6 +297,7 @@ jobs:
           echo "RELEASE_COMMIT_SHA=$RELEASE_COMMIT_SHA" >> "$GITHUB_ENV"
 
       - name: Push release commit to main
+        if: env.RELEASE_PHASE == 'prepare'
         run: |
           git fetch origin main
           if git merge-base --is-ancestor "$RELEASE_COMMIT_SHA" origin/main; then
@@ -284,6 +309,11 @@ jobs:
       - name: Create or reuse release tag
         id: tag
         run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT_SHA" origin/main; then
+            echo "Release commit ${RELEASE_COMMIT_SHA} is no longer present on origin/main."
+            exit 1
+          fi
           TAG="v${NEXT_VERSION}"
           if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
             TAG_SHA=$(git rev-list -n 1 "${TAG}")
@@ -298,23 +328,6 @@ jobs:
             echo "Created and pushed tag ${TAG}."
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Verify release artifact integrity
-        run: |
-          node -e '
-          const fs = require("node:fs");
-          const path = require("node:path");
-          const outDir = process.env.RUNNER_TEMP + "/librarian-release";
-          const reportPath = fs.readdirSync(outDir).find(f => f.endsWith(".build-report.json"));
-          if (!reportPath) throw new Error("release_build_report_missing");
-          const report = JSON.parse(fs.readFileSync(path.join(outDir, reportPath), "utf8"));
-          if (report.packageVersion !== process.env.NEXT_VERSION || report.releaseTag !== `v${process.env.NEXT_VERSION}`) {
-            throw new Error(`release_artifact_version_mismatch:${report.packageVersion}:${report.releaseTag}`);
-          }
-          const asset = path.join(outDir, `Librarian-System-${process.env.NEXT_VERSION}.zip`);
-          if (!fs.existsSync(asset) || fs.statSync(asset).size === 0) throw new Error("release_asset_missing_or_empty");
-          console.log(`Verified ${path.basename(asset)} (${fs.statSync(asset).size} bytes).`);
-          '
 
       - name: Create GitHub Release
         env:

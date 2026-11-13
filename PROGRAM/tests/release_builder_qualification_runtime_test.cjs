@@ -17,6 +17,10 @@ test('explicit offline qualification survives a real version bump and failed-bui
  assets.writeUpdateManifest(root,{qualification:'offline_candidate',overwrite:true});
  const manifestPath=path.join(program,'program-manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
  manifest.qualification={status:'offline_candidate',updaterEligible:false,publicationReady:false};fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2)+'\n');
+ const provenancePath=path.join(program,'docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json');
+ const catalog=JSON.parse(fs.readFileSync(provenancePath,'utf8'));
+ catalog.currentRelease.plugins.libra.sha256='0'.repeat(64);
+ fs.writeFileSync(provenancePath,JSON.stringify(catalog,null,2)+'\n');
  const current=fs.readFileSync(path.join(program,'VERSION.txt'),'utf8').trim(),version=builder.nextPatchVersion(current),out=path.join(temp,'out');
  const env={...process.env,LIBRARIAN_PACKAGE_QUALIFICATION:''};
  // A normal npm toolchain contains links in .bin. Source packaging must prune
@@ -34,6 +38,11 @@ test('explicit offline qualification survives a real version bump and failed-bui
  const report=JSON.parse(fs.readFileSync(path.join(out,base+'.build-report.json'),'utf8'));
  assert.equal(report.publicationSmokePassed,false);assert.equal(report.updaterEligible,false);
  const entries=readZipEntries(path.join(out,base+'.zip'));
+ const packagedCatalog=JSON.parse(entries.find(row=>row.name.endsWith('/PLUGIN_RELEASE_PROVENANCE.json')).bytes);
+ const packagedLibra=entries.find(row=>row.name.endsWith('/PROGRAM/plugins/LIBRA.js'));
+ assert.equal(packagedCatalog.currentRelease.packageVersion,version);
+ assert.equal(packagedCatalog.currentRelease.plugins.libra.sha256,packagedLibra.sha256);
+ assert.deepEqual(packagedCatalog.releases,catalog.releases,'historical provenance is preserved');
  assert.equal(entries.some(row=>row.name.includes('/node_modules/')),false,'local toolchains are not packaged');
  const entry=entries.find(row=>row.name.endsWith('/update-manifest.json'));
  assert.ok(entry);assert.equal(JSON.parse(entry.bytes.toString('utf8')).qualification,'offline_candidate');

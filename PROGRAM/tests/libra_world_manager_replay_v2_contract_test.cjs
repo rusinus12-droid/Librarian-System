@@ -19,7 +19,7 @@ assert.doesNotMatch(source, /const buildSharedHeaderStatusPanel =|const buildSha
 // The approved GUI routes People/World destinations through one dispatcher; the
 // People route selects the characters/relationships World Manager panel from
 // Gui.bookPeopleSection and the World route mounts the World Manager world panel.
-const destinationStart = source.indexOf('const buildApprovedMockupDestinationDetail = page =>');
+const destinationStart = source.indexOf('const buildApprovedMockupDestinationDetail =');
 assert.ok(destinationStart >= 0, 'approved destination dispatcher exists');
 const destinationEnd = source.indexOf("case 'story':", destinationStart);
 assert.ok(destinationEnd > destinationStart, 'approved destination dispatcher has a story route');

@@ -9,6 +9,7 @@ const { PAYLOAD: UPDATER_REFRESH_PAYLOAD } = require('./updater-refresh.cjs');
 const { PLUGINS, syncReleaseGuides, syncRepositoryReadme, readReleaseMetadata, renderGuide, GUIDES } = require('./release_metadata.cjs');
 const { writeUpdateManifest, expectedAssetName, expectedSourceAssetName, readReleasePolicy } = require('./release_asset_contract.cjs');
 const { compareVersions, nextPatchVersion, validateTargetVersion, applyReleaseVersion } = require('./release_version.cjs');
+const { prepareSourceRefresh } = require('./plugin_version_provenance.cjs');
 const { assertPristineDistributionData } = require('./runtime_release_validation.cjs');
 
 const PRODUCT_NAME = 'Librarian System';
@@ -936,6 +937,15 @@ function restoreVersionTransactionFiles(snapshot) {
 }
 
 function refreshSourceReleaseMetadata(qualification) {
+  const provenance = prepareSourceRefresh(programDir);
+  const versionChanges = provenance.updates.filter(row => row.beforeVersion !== row.afterVersion);
+  if (versionChanges.length) {
+    throw new Error('distribution_plugin_version_collision:' +
+      versionChanges.map(row => `${row.owner}:${row.beforeVersion}->${row.afterVersion}`).join(','));
+  }
+  if (!provenance.catalogBytes.equals(provenance.afterCatalog)) {
+    fs.writeFileSync(provenance.catalogPath, provenance.afterCatalog);
+  }
   syncReleaseGuides(packageRoot);
   syncRepositoryReadme(packageRoot);
   if (fs.existsSync(path.join(packageRoot, 'update-manifest.json'))) {
