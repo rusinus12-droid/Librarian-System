@@ -22,9 +22,9 @@ assert.doesNotMatch(source, /data-portable-paste|pasteJsonDialog|doRestorePaste|
 assert.match(source, /mode === Hayaku_PORTABLE_IMPORT_MODES\.SAME_CHAT\s*\? Number\(prepared\?\.currentRecords \|\| 0\) > 0/, 'empty same-chat targets must not be blocked by an impossible safety-backup export');
 assert.match(source, /expectedTargetFingerprint:\s*prepared\.targetFingerprint/,
   'confirmed imports must carry the analyzed target fingerprint into the queued transaction');
-assert.match(source, /const exportEnvelope = async \(\) => await enqueueStorageOperation\(createEnvelope\)/,
+assert.match(source, /const exportEnvelope = async onProgress => await enqueueStorageOperation\(\(\) => createEnvelope\(onProgress\)\)/,
   'portable exports should share the storage mutation queue');
-assert.match(source, /exportCurrentScope:\s*exportEnvelope/,
+assert.match(source, /exportCurrentScope:\s*\(\) => exportEnvelope\(\)/,
   'public exports should use the serialized snapshot path');
 assert.match(source, /PORTABLE_IMPORT_TARGET_CHANGED/,
   'a target mutation after confirmation must fail closed before writes');

@@ -76,8 +76,21 @@ async function portableBackup(mode) {
     await api.runManualColdStart({});
     const portable = await portableApi(snapshot);
 
+    const requestsBeforeBackup = snapshot.requests.length;
     const envelope = await withPortableIdleRetry(
       () => portable.exportCurrentScope(), `${mode}: backup`);
+    const backupRequests = snapshot.requests.slice(requestsBeforeBackup);
+    if (mode === 'server_only') {
+      assert.ok(backupRequests.some(request => request.url.endsWith('/v1/kv/get-many')),
+        'server-only portable export uses the SDK batch endpoint');
+      const exported = new Set(envelope.records.map(record => record.key));
+      const singleReads = new Set(backupRequests.map(request => new URL(request.url))
+        .filter(url => url.pathname === '/v1/kv/get')
+        .map(url => url.searchParams.get('key'))
+        .filter(key => exported.has(key)));
+      assert.ok(singleReads.size < envelope.records.length,
+        'portable export does not fetch every exported record individually');
+    }
     const validated = await portable.validateBackup(envelope);
     const manifest = manifestValue(snapshot, mode);
     const memoryStarts = Object.keys(manifest?.memories || {}).map(Number).sort((a, b) => a - b);

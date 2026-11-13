@@ -7216,6 +7216,38 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try { return await work; } finally { ownerIOWork.delete(work); }
     });
   };
+  // Portable snapshots read the same logical routes as ordinary owner reads.
+  // Only server-authoritative rows are batched. Other modes keep their owner accessors.
+  const readPortableServerRows = async (scopeInput, keys) => await withOwnerIO('plugin', '', async () => {
+    const scope = normalizeScopeDescriptor(scopeInput);
+    const current = normalizeScopeDescriptor(await resolveCurrentScope(false));
+    if (!scope.scopeId || scope.scopeId !== current.scopeId) throw new Error('portable_backup_scope_changed');
+    const result = new Map();
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY) return result;
+    const routes = [];
+    for (const key of new Set(keys)) {
+      const route = await resolveScopedRoute('plugin', key, { scope });
+      if (route.kind === 'scope' && route.scopeId !== scope.scopeId) continue;
+      if (route.routed && route.mode === MODE_SERVER_ONLY) routes.push(route);
+    }
+    for (let offset = 0; offset < routes.length; offset += 64) {
+      const part = routes.slice(offset, offset + 64);
+      const rows = await remoteGetMany('plugin', part.map(route => route.remoteKey), {
+        allowPluginOnly: true, scope, storageMode: MODE_SERVER_ONLY, strictInventory: true
+      });
+      for (const route of part) {
+        const row = rows.values[route.remoteKey];
+        if (!row || typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean')
+          throw new Error('portable_backup_batch_row_invalid');
+        result.set(route.logicalKey, row.exists && !row.tombstone ? await routeMergeValue(route, row.value, null) : null);
+      }
+    }
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY
+      || normalizeScopeDescriptor(await resolveCurrentScope(false)).scopeId !== scope.scopeId)
+      throw new Error('portable_backup_scope_changed');
+    return result;
+  });
+
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -11290,6 +11322,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     verifyNativeBranchSourceDurability,
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
+    readPortableServerRows,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,

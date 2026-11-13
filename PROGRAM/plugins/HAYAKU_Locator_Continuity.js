@@ -10105,6 +10105,38 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try { return await work; } finally { ownerIOWork.delete(work); }
     });
   };
+  // Portable snapshots read the same logical routes as ordinary owner reads.
+  // Only server-authoritative rows are batched. Other modes keep their owner accessors.
+  const readPortableServerRows = async (scopeInput, keys) => await withOwnerIO('plugin', '', async () => {
+    const scope = normalizeScopeDescriptor(scopeInput);
+    const current = normalizeScopeDescriptor(await resolveCurrentScope(false));
+    if (!scope.scopeId || scope.scopeId !== current.scopeId) throw new Error('portable_backup_scope_changed');
+    const result = new Map();
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY) return result;
+    const routes = [];
+    for (const key of new Set(keys)) {
+      const route = await resolveScopedRoute('plugin', key, { scope });
+      if (route.kind === 'scope' && route.scopeId !== scope.scopeId) continue;
+      if (route.routed && route.mode === MODE_SERVER_ONLY) routes.push(route);
+    }
+    for (let offset = 0; offset < routes.length; offset += 64) {
+      const part = routes.slice(offset, offset + 64);
+      const rows = await remoteGetMany('plugin', part.map(route => route.remoteKey), {
+        allowPluginOnly: true, scope, storageMode: MODE_SERVER_ONLY, strictInventory: true
+      });
+      for (const route of part) {
+        const row = rows.values[route.remoteKey];
+        if (!row || typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean')
+          throw new Error('portable_backup_batch_row_invalid');
+        result.set(route.logicalKey, row.exists && !row.tombstone ? await routeMergeValue(route, row.value, null) : null);
+      }
+    }
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY
+      || normalizeScopeDescriptor(await resolveCurrentScope(false)).scopeId !== scope.scopeId)
+      throw new Error('portable_backup_scope_changed');
+    return result;
+  });
+
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -14417,6 +14449,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     verifyNativeBranchSourceDurability,
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
+    readPortableServerRows,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,
@@ -14628,6 +14661,7 @@ const memorySuiteHayakuResolveKeyScope = async ({ key, currentScope, registry })
   const scopePrefixes = [
     STORAGE_LEDGER_KEY_PREFIX,
     SOURCE_EDIT_CONSENT_KEY_PREFIX,
+    HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX,
     HAYAKU_PARTIAL_MEMORY_KEY_PREFIX,
     RECOVERY_VAULT_KEY_PREFIX,
     HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX,
@@ -15245,7 +15279,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return {label:`패킷 ${(value.records||[]).length}개 · 슬롯 ${(value.slotHeads||[]).length}개`,primary:(value.records||[]).length,secondary:(value.slotHeads||[]).length,updatedAt:value.updatedAt};
   },
   namespace:'hayaku', displayName:'HAYAKU', pluginId:HAYAKU_PLUGIN_ID, pluginVersion:PLUGIN_VERSION, managementButton:false,
-  pluginPrefixes:[RECOVERY_EVIDENCE_MANIFEST_KEY_PREFIX,RECOVERY_EVIDENCE_CHUNK_KEY_PREFIX,HAYAKU_RECALL_INDEX_KEY_PREFIX,SOURCE_EVIDENCE_KEY_PREFIX,SOURCE_EDIT_CONSENT_KEY_PREFIX,STORAGE_LEDGER_KEY_PREFIX,STORAGE_RECONCILIATION_JOURNAL_KEY,HAYAKU_PARTIAL_MEMORY_KEY_PREFIX,RECOVERY_VAULT_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_CANDIDATE_KEY_PREFIX,HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX,HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_INDEX_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_MANIFEST_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_CHUNK_KEY_PREFIX,HAYAKU_ARCHIVE_KEY_PREFIX,HAYAKU_ARCHIVE_META_KEY_PREFIX],
+  pluginPrefixes:[RECOVERY_EVIDENCE_MANIFEST_KEY_PREFIX,RECOVERY_EVIDENCE_CHUNK_KEY_PREFIX,HAYAKU_RECALL_INDEX_KEY_PREFIX,SOURCE_EVIDENCE_KEY_PREFIX,SOURCE_EDIT_CONSENT_KEY_PREFIX,STORAGE_LEDGER_KEY_PREFIX,STORAGE_RECONCILIATION_JOURNAL_KEY,HAYAKU_PARTIAL_MEMORY_KEY_PREFIX,RECOVERY_VAULT_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX,HAYAKU_NATIVE_REPAIR_CANDIDATE_KEY_PREFIX,HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX,HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_INDEX_KEY_PREFIX,HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_MANIFEST_KEY_PREFIX,HAYAKU_FAILED_ANALYSIS_CHUNK_KEY_PREFIX,HAYAKU_ARCHIVE_KEY_PREFIX,HAYAKU_ARCHIVE_META_KEY_PREFIX],
   currentScopeProvider:memorySuiteHayakuCurrentScope, resolveKeyScope:memorySuiteHayakuResolveKeyScope,
   strictPluginScopePrefixes:[RECOVERY_EVIDENCE_MANIFEST_KEY_PREFIX,RECOVERY_EVIDENCE_CHUNK_KEY_PREFIX],
   preResolveKeyScope:true,
@@ -64472,6 +64506,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const keys = [...new Set([...compatKeys, ...rawKeys])];
           return { keys, bridgeKeys: new Set(), rawKeys: new Set(rawKeys), compatKeys: new Set(compatKeys) };
         },
+        async readMany(scope, keys) {
+          const unique = [...new Set(keys)];
+          const values = new Map();
+          for (let offset = 0; offset < unique.length; offset += 64) {
+            const part = unique.slice(offset, offset + 64);
+            const server = await bridge?.readPortableServerRows?.(scope, part);
+            for (const key of part) {
+              values.set(key, server?.has(key) ? server.get(key) : await adapter.get(key));
+            }
+          }
+          return values;
+        },
         async get(key) {
           if (routed && typeof routed.getItem === 'function') return await routed.getItem(key);
           const compatMethod = ['getStorageItem', 'getItem'].find(name => typeof compat?.[name] === 'function');
@@ -64638,6 +64684,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const prefixes = [
         CAPTURE_RAW_DELTA_PREFIX,
         STORAGE_LEDGER_KEY_PREFIX,
+        SOURCE_EDIT_CONSENT_KEY_PREFIX,
+        SOURCE_EVIDENCE_KEY_PREFIX,
+        HAYAKU_RECALL_INDEX_KEY_PREFIX,
+        HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX,
         HAYAKU_PARTIAL_MEMORY_KEY_PREFIX,
     RECOVERY_VAULT_KEY_PREFIX,
         HAYAKU_NATIVE_REPAIR_RUN_KEY_PREFIX,
@@ -64705,6 +64755,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const classifyKey = key => {
       const body = textValue(key).toLowerCase();
+      if (body.startsWith(HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX)) return 'recovery';
       if (/manifest/.test(body)) return 'manifest';
       if (/ledger/.test(body)) return 'ledger';
       if (/recovery|vault/.test(body)) return 'recovery';
@@ -64725,6 +64776,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const listed = await adapter.list();
       const allKeys = listed.keys.filter(allowedKey);
       const values = new Map();
+      const preload = async keys => {
+        const missing = [...keys].filter(key => !values.has(key));
+        for (const [key, value] of await adapter.readMany(scope, missing)) values.set(key, value);
+      };
       const readValue = async key => {
         if (values.has(key)) return values.get(key);
         const value = await adapter.get(key);
@@ -64733,9 +64788,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       };
       const initial = new Set();
       const directOwnership = new Map();
-      for (const key of allKeys) {
-        const value = await readValue(key);
-        const evidence = scopeOwnershipEvidence(key, value, scope);
+      const candidates = allKeys.filter(key => scopeBoundStorageKeyMatches(key, scope) !== false);
+      await preload(candidates.filter(key => !scopeOwnershipEvidence(key, null, scope)
+        && ['ledger', 'recovery', 'worldline', 'record', 'manifest'].includes(classifyKey(key))));
+      for (const key of candidates) {
+        const evidence = scopeOwnershipEvidence(key, values.get(key), scope);
         if (!evidence) continue;
         initial.add(key);
         directOwnership.set(key, evidence);
@@ -64744,6 +64801,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // Retired/uncommitted snapshots are not live memory and may legitimately
       // reference older evidence. Do not let them break an otherwise valid export.
       const liveDebtKeys=new Set();
+      await preload(initial);
       for(const key of initial){
         if(!key.startsWith(RECOVERY_VAULT_KEY_PREFIX)||key.includes('::debt:'))continue;
         const raw=await readValue(key),index=typeof raw==='string'?safeJsonParse(raw,null):raw;
@@ -64765,6 +64823,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       while (changed) {
         changed = false;
         const refs = [];
+        await preload(initial);
         for (const key of [...initial]) {
           const value = await readValue(key);
           refs.push(...collectPotentialReferences(value));
@@ -64780,6 +64839,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       }
       const records = [];
+      await preload(initial);
       for (const key of [...initial].sort()) {
         const raw = await readValue(key);
         if (raw === undefined) continue;
@@ -64813,9 +64873,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const refs = collectPotentialReferences(decodeValue(record.value));
         for (const ref of refs) {
           if (recordKeySet.has(ref)) dependencies.add(ref);
-          for (const key of recordKeySet) {
-            if (ref === key) dependencies.add(key);
-          }
         }
       }
       return { adapter, scope, records, dependencies: [...dependencies].sort(), allKeys };
@@ -65118,6 +65175,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         else if (key.startsWith(HAYAKU_NATIVE_COLD_START_RUN_KEY_PREFIX)) expectedSchema = HAYAKU_NATIVE_COLD_START_RUN_SCHEMA;
         else if (key.startsWith(HAYAKU_NATIVE_REGEN_RUN_KEY_PREFIX)) expectedSchema = HAYAKU_NATIVE_REGEN_RUN_SCHEMA;
         else if (key.startsWith(HAYAKU_FAILED_ANALYSIS_INDEX_KEY_PREFIX)) expectedSchema = HAYAKU_FAILED_ANALYSIS_INDEX_SCHEMA;
+        else if (key.startsWith(HAYAKU_ANALYSIS_FAILURE_LOG_KEY_PREFIX)) expectedSchema = 'hayaku.analysis_failure_log.v1';
         else if (key.startsWith(HAYAKU_FAILED_ANALYSIS_MANIFEST_KEY_PREFIX)) expectedSchema = HAYAKU_FAILED_ANALYSIS_MANIFEST_SCHEMA;
         else if (key.startsWith(HAYAKU_FAILED_ANALYSIS_CHUNK_KEY_PREFIX)) expectedSchema = HAYAKU_FAILED_ANALYSIS_CHUNK_SCHEMA;
         if (!expectedSchema) continue;
@@ -65159,7 +65217,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if (!textValue(value.failureId) || !Array.isArray(value.chunks) || !textValue(value.payloadHash)) {
             throw new Error(`portable_backup_failed_analysis_manifest_invalid:${key}`);
           }
-        } else if (expectedSchema === HAYAKU_FAILED_ANALYSIS_INDEX_SCHEMA && !Array.isArray(value.entries)) {
+        } else if ((expectedSchema === HAYAKU_FAILED_ANALYSIS_INDEX_SCHEMA || expectedSchema === 'hayaku.analysis_failure_log.v1') && !Array.isArray(value.entries)) {
           throw new Error(`portable_backup_failed_analysis_index_invalid:${key}`);
         }
       }
@@ -65319,8 +65377,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         pairs
       };
     };
-    const createEnvelope = async () => {
+    const createEnvelope = async (onProgress = () => {}) => {
+      onProgress('현재 채팅의 백업 기록을 읽고 있습니다…');
       const collected = await collectRecords({});
+      onProgress('백업 기록의 무결성을 검사하고 있습니다…', 'verify');
       validatePluginGraph(collected.records);
       const transcript = await transcriptManifestFor(collected.scope);
       const inventory = {
@@ -65431,7 +65491,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Export reads span the routed key inventory, individual records, and the
     // current transcript. Serialize the snapshot with storage mutations so a
     // concurrent commit cannot produce a mixed-generation backup.
-    const exportEnvelope = async () => await enqueueStorageOperation(createEnvelope);
+    const exportEnvelope = async onProgress => await enqueueStorageOperation(() => createEnvelope(onProgress));
     const recordsForEnvelopeScope = envelope => {
       const formatVersion = Number(envelope?.formatVersion || 0);
       if (formatVersion >= 3) {
@@ -66076,10 +66136,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const currentScopeOwnedKeys = current.records
         .filter(record => record?.ownership?.kind !== 'shared-dependency')
         .map(record => record.key);
+      const originals = await adapter.readMany(scope, [...backupByKey.keys(), ...currentScopeOwnedKeys]);
       const before = new Map();
-      const captureKey = async key => {
+      const captureKey = key => {
         if (before.has(key)) return before.get(key);
-        const value = await adapter.get(key);
+        const value = originals.get(key);
         const original = {
           exists: value !== undefined && value !== null && value !== '',
           value
@@ -66094,7 +66155,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const ordered = [...backupRecords].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
         for (const record of ordered) {
           const incoming = decodeValue(record.value, formatVersion);
-          const present = await adapter.get(record.key);
+          const present = originals.get(record.key);
           const presentExists = present !== undefined && present !== null && present !== '';
           if ((record?.ownership?.kind === 'shared-dependency' || immutableSharedPortableKey(record.key)) && presentExists) {
             if (!equalValues(present, incoming)) {
@@ -66126,9 +66187,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           removed.push(key);
         }
         const verified = [];
+        const readback = await adapter.readMany(scope, backupRecords.map(record => record.key));
         for (const record of backupRecords) {
           const expected = decodeValue(record.value, formatVersion);
-          const actual = await adapter.get(record.key);
+          const actual = readback.get(record.key);
           const valid = record.mode === 'merge'
             ? containsValue(actual, expected)
             : equalValues(actual, expected);
@@ -66554,10 +66616,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         confirmLabel: '백업 파일 만들기'
       });
       if (!accepted) return;
-      setUiBusy(true, '백업 데이터를 검증하고 있습니다…');
+      setUiBusy(true, '백업을 준비하고 있습니다…');
       try {
-        const envelope = await exportEnvelope();
+        const startedAt = Date.now();
+        let collectedAt = startedAt;
+        const envelope = await exportEnvelope((message, phase) => {
+          if (phase === 'verify') collectedAt = Date.now();
+          setUiBusy(true, message);
+        });
+        const verifiedAt = Date.now();
+        setUiBusy(true, 'JSON 백업 파일을 만들고 있습니다…');
         const result = await downloadEnvelope(envelope);
+        result.timingMs = { collect: collectedAt - startedAt, verify: verifiedAt - collectedAt, prepareDownload: Date.now() - verifiedAt };
         setUiBusy(false, `백업 완료 · ${result.records}개`);
         await notice('백업 완료', `${result.filename}\n\n레코드 ${result.records.toLocaleString('ko-KR')}개\n무결성 ${result.digest}`);
       } catch (error) {
@@ -66743,7 +66813,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       schema: Hayaku_PORTABLE_BACKUP_SCHEMA,
       pluginId: config.pluginId,
       pluginVersion: config.pluginVersion,
-      exportCurrentScope: exportEnvelope,
+      exportCurrentScope: () => exportEnvelope(),
       downloadCurrentScope: doExport,
       validateBackup: validateEnvelope,
       restoreCurrentScope: envelope => importEnvelope(envelope, { mode: Hayaku_PORTABLE_IMPORT_MODES.SAME_CHAT }),

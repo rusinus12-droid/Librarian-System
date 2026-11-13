@@ -36,12 +36,15 @@ const source = fs.readFileSync(path.join(__dirname, '../plugins/HAYAKU_Locator_C
 assert.ok(source.includes(marker), 'test hook anchor exists');
 fs.writeFileSync(pluginFile, source.replace(marker, `        storageBridgeForHostTest:MemorySuiteStorageBridge,\n${marker}`));
 
-const runtimeFor = async ({ mode, url, store, characterId, chatId, characterName, messages }) => {
+const runtimeFor = async ({ mode, url, store, characterId, chatId, characterName, messages, requests = [] }) => {
   const runtime = await createHayakuRuntime({
     autoRepair: false, pluginSourceFile: pluginFile, pluginStorage: store,
     characterId, chatId, characterName, messages,
     arguments: { memory_suite_server_mode: mode, memory_suite_server_url: url },
-    nativeFetch: async (target, init) => await fetch(target, init)
+    nativeFetch: async (target, init) => {
+      requests.push(String(target));
+      return await fetch(target, init);
+    }
   });
   if (mode !== 'plugin_only') {
     const bridge = runtime.hayaku._test.storageBridgeForHostTest;
@@ -62,14 +65,19 @@ async function run(mode) {
     .prepare('SELECT key,value_json FROM kv WHERE deleted=0').all()
     .map(row => { let value = JSON.parse(row.value_json); try { value = JSON.parse(value); } catch (_) {} return { key: row.key, value }; });
   try {
-    const original = await runtimeFor({ mode, url, store, characterId: 'bot-v1', characterName: 'Archive Bot', chatId: 'bot-v1-chat', messages: sourceMessages() });
+    const requests = [];
+    const original = await runtimeFor({ mode, url, store, requests, characterId: 'bot-v1', characterName: 'Archive Bot', chatId: 'bot-v1-chat', messages: sourceMessages() });
     let envelope; let sourceKey;
     try {
       const scope = await original.hayaku._test.currentChatScope();
       const snapshot = original.hayaku._test.authoritativeChatSnapshot(scope.chatMessages, scope);
       assert.equal((await original.hayaku._test.reconcileObservedChatTopology(scope, snapshot, 'updated_bot_fixture')).durable, true);
       const portable = await waitFor(() => original.context.__HAYAKUPortableMemoryBackup, 'source portable API');
+      const beforeBackup = requests.length;
       envelope = await portable.exportCurrentScope();
+      if (mode === 'server_only') {
+        assert.ok(requests.slice(beforeBackup).some(url => url.endsWith('/v1/kv/get-many')));
+      }
       assert.equal(envelope.formatVersion, 3);
       sourceKey = `hayaku.v2.ledger.${scope.key}`;
     } finally { await original.dispose(); }

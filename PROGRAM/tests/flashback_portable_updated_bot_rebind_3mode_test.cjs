@@ -43,6 +43,7 @@ const idle = async (operation, label, attempts = 60) => {
 };
 
 async function run(mode) {
+  const requests = [];
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `flashback-updated-bot-${mode}-`));
   let app = null;
   let fixture = null;
@@ -56,7 +57,10 @@ async function run(mode) {
       characterId: 'mira-bot-v1',
       chat: { id: 'mira-v1-chat', chatId: 'mira-v1-chat', name: 'Original session', message: messages, messages },
       arguments: { memory_suite_server_mode: mode, memory_suite_server_url: url },
-      nativeFetch: fetch
+      nativeFetch: async (target, init) => {
+        requests.push(String(target));
+        return await fetch(target, init);
+      }
     });
     const { api, context, pluginStorage } = fixture;
     const bridge = context.__fixtureStorageBridge;
@@ -82,7 +86,11 @@ async function run(mode) {
     });
     assert.equal(ingested.liveChatTurns, 2, `${mode}: the original session has two memory turns`);
     const sourceScope = await api.resolveCurrentScope(true);
+    const beforeBackup = requests.length;
     const envelope = await idle(() => portable.exportCurrentScope(), `${mode}: backup`);
+    if (mode === 'server_only') {
+      assert.ok(requests.slice(beforeBackup).some(url => url.endsWith('/v1/kv/get-many')));
+    }
     assert.equal(envelope.source.scopeKey, sourceScope.scopeKey);
 
     // The same session, moved into the updated bot.

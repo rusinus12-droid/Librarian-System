@@ -11472,6 +11472,38 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     try { return await work; } finally { ownerIOWork.delete(work); }
     });
   };
+  // Portable snapshots read the same logical routes as ordinary owner reads.
+  // Only server-authoritative rows are batched. Other modes keep their owner accessors.
+  const readPortableServerRows = async (scopeInput, keys) => await withOwnerIO('plugin', '', async () => {
+    const scope = normalizeScopeDescriptor(scopeInput);
+    const current = normalizeScopeDescriptor(await resolveCurrentScope(false));
+    if (!scope.scopeId || scope.scopeId !== current.scopeId) throw new Error('portable_backup_scope_changed');
+    const result = new Map();
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY) return result;
+    const routes = [];
+    for (const key of new Set(keys)) {
+      const route = await resolveScopedRoute('plugin', key, { scope });
+      if (route.kind === 'scope' && route.scopeId !== scope.scopeId) continue;
+      if (route.routed && route.mode === MODE_SERVER_ONLY) routes.push(route);
+    }
+    for (let offset = 0; offset < routes.length; offset += 64) {
+      const part = routes.slice(offset, offset + 64);
+      const rows = await remoteGetMany('plugin', part.map(route => route.remoteKey), {
+        allowPluginOnly: true, scope, storageMode: MODE_SERVER_ONLY, strictInventory: true
+      });
+      for (const route of part) {
+        const row = rows.values[route.remoteKey];
+        if (!row || typeof row.exists !== 'boolean' || typeof row.tombstone !== 'boolean')
+          throw new Error('portable_backup_batch_row_invalid');
+        result.set(route.logicalKey, row.exists && !row.tombstone ? await routeMergeValue(route, row.value, null) : null);
+      }
+    }
+    if ((await readScopeMode(scope, false)).mode !== MODE_SERVER_ONLY
+      || normalizeScopeDescriptor(await resolveCurrentScope(false)).scopeId !== scope.scopeId)
+      throw new Error('portable_backup_scope_changed');
+    return result;
+  });
+
   const scopedGet = (...args) => withOwnerIO(args[0],args[1],()=>scopedGetImpl(...args));
   const scopedSet = (...args) => withOwnerIO(args[0],args[1],()=>scopedSetImpl(...args));
   const scopedRemove = (...args) => withOwnerIO(args[0],args[1],()=>scopedRemoveImpl(...args));
@@ -15827,6 +15859,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     verifyNativeBranchSourceDurability,
     serverGet: scopedServerGet,
     serverGetMany: scopedServerGetMany,
+    readPortableServerRows,
     serverKeys: scopedServerKeys,
     serverIntegrity: scopedServerIntegrity,
     getDiagnostics,
@@ -56077,24 +56110,38 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const bridge = bridgeValue();
       const compat = compatValue();
       const raw = rawStore();
+      const routed = raw && bridge?.createPluginStorageProxy?.(raw);
       const adapter = {
         bridge,
         raw,
         scopeRouted: Boolean(bridge && typeof bridge.getCurrentScope === 'function' && typeof bridge.keys === 'function'),
         async list() {
-          const bridgeKeys = normalizeKeys(await safeCall(bridge, ['keys'], [], []));
+          const bridgeKeys = normalizeKeys(await safeCall(bridge, ['keys'], ['plugin', ''], []));
           const rawKeys = normalizeKeys(await safeCall(raw, ['keys'], [], []));
           const compatKeys = normalizeKeys(await safeCall(compat, ['getStorageKeys', 'storageKeys', 'keys'], [], []));
           const keys = [...new Set([...bridgeKeys, ...compatKeys, ...rawKeys])];
           if (!keys.length) throw new Error('portable_backup_key_enumeration_unavailable');
           return { keys, bridgeKeys: new Set(bridgeKeys), rawKeys: new Set(rawKeys), compatKeys: new Set(compatKeys) };
         },
+        async readMany(scope, keys) {
+          const unique = [...new Set(keys)];
+          const values = new Map();
+          for (let offset = 0; offset < unique.length; offset += 64) {
+            const part = unique.slice(offset, offset + 64);
+            const server = await bridge?.readPortableServerRows?.(scope, part);
+            for (const key of part) {
+              values.set(key, server?.has(key) ? server.get(key) : await adapter.get(key));
+            }
+          }
+          return values;
+        },
         async get(key) {
+          if (routed) return await routed.getItem(key);
           let value;
           let returned = false;
           try {
             if (bridge && typeof bridge.get === 'function') {
-              value = await bridge.get(key);
+              value = await bridge.get('plugin', key);
               returned = value !== undefined && value !== null && value !== '';
             }
           } catch (_) {}
@@ -56110,8 +56157,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           return value;
         },
         async set(key, value) {
+          if (routed) return (await routed.setItem(key, value)) !== false;
           if (bridge && typeof bridge.set === 'function') {
-            const result = await bridge.set(key, value);
+            const result = await bridge.set('plugin', key, value);
             if (result !== false) return true;
           }
           try {
@@ -56125,8 +56173,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           throw new Error(`portable_backup_storage_write_unavailable:${key}`);
         },
         async remove(key) {
+          if (routed) return (await routed.removeItem(key)) !== false;
           if (bridge && typeof bridge.remove === 'function') {
-            const result = await bridge.remove(key);
+            const result = await bridge.remove('plugin', key);
             if (result !== false) return true;
           }
           try {
@@ -56383,6 +56432,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const listed = await adapter.list();
       const allKeys = listed.keys.filter(allowedKey);
       const values = new Map();
+      const preload = async keys => {
+        const missing = [...keys].filter(key => !values.has(key));
+        for (const [key, value] of await adapter.readMany(scope, missing)) values.set(key, value);
+      };
       const readValue = async key => {
         if (values.has(key)) return values.get(key);
         const value = await adapter.get(key);
@@ -56391,15 +56444,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
       const initial = new Set();
       for (const key of allKeys) {
-        if (listed.bridgeKeys.has(key) && adapter.scopeRouted) initial.add(key);
-        else if (keyContainsScope(key, scope.aliases)) initial.add(key);
+        if (keyContainsScope(key, scope.aliases)) initial.add(key);
       }
-      for (const key of allKeys) {
-        if (initial.has(key)) continue;
-        const value = await readValue(key);
-        if (valueContainsScope(value, scope.aliases)) initial.add(key);
+      const legacyCandidates = allKeys.filter(key => !initial.has(key)
+        && (!key.startsWith('vector_rag_memory:scope:') || /:manifest(?::v\d+)?$/i.test(key)));
+      await preload(legacyCandidates);
+      for (const key of legacyCandidates) {
+        if (valueContainsScope(values.get(key), scope.aliases)) initial.add(key);
       }
-      if (!initial.size && adapter.scopeRouted) allKeys.forEach(key => initial.add(key));
       if (!initial.size) {
         throw new Error('portable_backup_no_current_scope_records');
       }
@@ -56407,10 +56459,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       while (changed) {
         changed = false;
         const refs = [];
+        await preload(initial);
         for (const key of [...initial]) {
           const value = await readValue(key);
           refs.push(...collectPotentialReferences(value));
           const manifest = typeof value === 'string' ? tryJsonParse(value, null) : value;
+          if (manifest?.schema === 'vector_rag_memory.scope_manifest.v2') {
+            for (const value of [manifest.archiveRef, manifest.parentArchiveRef]) {
+              const ref = flashbackArchiveRefPointer(value);
+              if (ref) refs.push(scopeKeys.manifest(ref.archiveScopeKey));
+            }
+          }
           if (manifest && typeof manifest === 'object' && !Array.isArray(manifest)
             && textValue(manifest.schema) === 'vector_rag_memory.scope_manifest.v2'
             && textValue(manifest.storageHash) && Math.max(0, Number(manifest.shardCount || 0) || 0) > 0) {
@@ -56452,7 +56511,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const activeKeys = activeShardKeysByPrefix.get(physicalPrefix) || new Set();
         if (memorySuiteFlashbackBucketed(manifest)) {
           const candidates = [];
-          for (const candidateKey of allKeys) if (textValue(candidateKey).startsWith(physicalPrefix)) {
+          const physicalKeys = allKeys.filter(key => key.startsWith(physicalPrefix));
+          await preload(physicalKeys);
+          for (const candidateKey of physicalKeys) {
             candidates.push({key:candidateKey,value:await readValue(candidateKey)});
           }
           const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
@@ -56512,6 +56573,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
       }
       const records = [];
+      await preload(initial);
       for (const key of [...initial].sort()) {
         const raw = await readValue(key);
         if (raw === undefined) continue;
@@ -56578,6 +56640,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           throw new Error(`portable_backup_manifest_invalid:${record.key}`);
         }
         if (manifest?.schema !== 'vector_rag_memory.scope_manifest.v2') continue;
+        for (const value of [manifest.archiveRef, manifest.parentArchiveRef]) {
+          const ref = flashbackArchiveRefPointer(value);
+          if (!ref) continue;
+          const archiveKey = scopeKeys.manifest(ref.archiveScopeKey);
+          const archiveRaw = byKey.get(archiveKey);
+          const archive = typeof archiveRaw === 'string' ? tryJsonParse(archiveRaw, null) : archiveRaw;
+          if (archive?.schema !== 'vector_rag_memory.scope_manifest.v2' || archive.scopeKey !== ref.archiveScopeKey) {
+            throw new Error(`portable_backup_archive_manifest_missing_or_invalid:${archiveKey}`);
+          }
+        }
         if (memorySuiteFlashbackBucketed(manifest)) {
           const candidates = [...byKey].map(([key,value])=>({key,value}));
           const catalog = memorySuiteFlashbackBucketCatalog(manifest,candidates);
@@ -56667,10 +56739,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         };
       } catch (_) { return {}; }
     };
-    const createEnvelope = async () => {
+    const createEnvelope = async (onProgress = () => {}) => {
+      onProgress('현재 채팅의 백업 기록을 읽고 있습니다…');
       const lockedScope = await currentScope();
       return await withScopeWriteLock(lockedScope.scopeKey, async () => {
         const collected = await collectRecords({ scope: lockedScope });
+        onProgress('백업 기록의 무결성을 검사하고 있습니다…', 'verify');
         await validatePluginGraph(collected.records);
         const vectorBundle = await collectPortableVectorSidecars(collected.records);
         const liveSource = await portableLiveSourceMetadata(collected.scope);
@@ -57490,14 +57564,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       await validatePortableVectorSidecars(envelope.records, localVectorSidecars);
       const backupByKey = new Map(envelope.records.map(record => [textValue(record.key), record]));
       const currentKeys = current.records.map(record => record.key);
-      const targetKeys = [...new Set([...currentKeys, ...backupByKey.keys()])];
-      const before = new Map();
-      for (const key of targetKeys) {
-        const exists = current.allKeys.includes(key);
-        before.set(key, { exists, value: exists ? await adapter.get(key) : undefined });
+      const archivePrefixes = new Set();
+      for (const record of [...current.records, ...envelope.records]) {
+        if (!/:manifest(?::v\d+)?$/i.test(record.key)) continue;
+        const manifest = parsedPortableStorageValue(record.value);
+        if (manifest?.schema === 'vector_rag_memory.scope_manifest.v2'
+          && textValue(manifest.scopeKey).startsWith(FLASHBACK_ARCHIVE_SCOPE_PREFIX)) {
+          archivePrefixes.add(`vector_rag_memory:scope:${manifest.storageHash}:`);
+        }
       }
+      const sharedArchiveKey = key => [...archivePrefixes].some(prefix => key.startsWith(prefix));
+      const removableKeys = currentKeys.filter(key => !sharedArchiveKey(key));
+      const targetKeys = [...new Set([...removableKeys, ...backupByKey.keys()])];
+      const listedKeys = new Set(current.allKeys);
+      const originals = await adapter.readMany(scope, targetKeys.filter(key => listedKeys.has(key)));
+      const before = new Map(targetKeys.map(key => [key, { exists: originals.has(key), value: originals.get(key) }]));
       const written = [];
       const removed = [];
+      const attempted = [];
       const vectorSidecarsWritten = [];
       const rollbackErrors = [];
       const vectorBefore = new Map();
@@ -57523,14 +57607,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         for (const record of ordered) {
           const incoming = decodeValue(record.value);
           const value = incoming;
+          const previous = before.get(record.key);
+          if (sharedArchiveKey(record.key) && previous?.exists && previous.value != null && previous.value !== '') {
+            if (!equalValues(previous.value, value)) throw new Error(`portable_backup_shared_archive_conflict:${record.key}`);
+            continue;
+          }
+          attempted.push(record.key);
           if (!await adapter.set(record.key, value)) throw new Error(`portable_backup_write_rejected:${record.key}`);
           const readback = await adapter.get(record.key);
           const valid = equalValues(readback, value);
           if (!valid) throw new Error(`portable_backup_write_readback_mismatch:${record.key}`);
           written.push(record.key);
         }
-        for (const key of currentKeys) {
+        for (const key of removableKeys) {
           if (backupByKey.has(key)) continue;
+          attempted.push(key);
           if (!await adapter.remove(key)) throw new Error(`portable_backup_remove_rejected:${key}`);
           const readback = await adapter.get(key);
           if (readback !== undefined && readback !== null && readback !== '') {
@@ -57540,9 +57631,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         const verified = [];
         const physicalRecords = [];
+        const readback = await adapter.readMany(scope, envelope.records.map(record => record.key));
         for (const record of envelope.records) {
           const expected = decodeValue(record.value);
-          const actual = await adapter.get(record.key);
+          const actual = readback.get(record.key);
           const valid = equalValues(actual, expected);
           if (!valid) throw new Error(`portable_backup_post_restore_mismatch:${record.key}`);
           verified.push(record.key);
@@ -57591,7 +57683,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             rollbackErrors.push({ key, space: 'local_vector', error: compactValue(rollbackError?.message || rollbackError) });
           }
         }
-        for (const key of [...targetKeys].reverse()) {
+        for (const key of attempted.slice().reverse()) {
           const original = before.get(key);
           try {
             if (original?.exists) {
@@ -57982,9 +58074,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!accepted) return;
       try {
         const result = await runPortableOperation('backup', async () => {
-          setUiBusy(true, '백업 데이터를 검증하고 있습니다…');
-          const envelope = await createEnvelope();
-          return await downloadEnvelope(envelope);
+          setUiBusy(true, '백업을 준비하고 있습니다…');
+          const startedAt = Date.now();
+          let collectedAt = startedAt;
+          const envelope = await createEnvelope((message, phase) => {
+            if (phase === 'verify') collectedAt = Date.now();
+            setUiBusy(true, message);
+          });
+          const verifiedAt = Date.now();
+          setUiBusy(true, 'JSON 백업 파일을 만들고 있습니다…');
+          const result = await downloadEnvelope(envelope);
+          result.timingMs = { collect: collectedAt - startedAt, verify: verifiedAt - collectedAt, prepareDownload: Date.now() - verifiedAt };
+          return result;
         });
         setUiBusy(false, `백업 완료 · ${result.records}개`);
         await notice('백업 완료', `${result.filename}\n\n레코드 ${result.records.toLocaleString('ko-KR')}개\n무결성 ${result.digest}`);
@@ -58116,7 +58217,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       schema: Flashback_PORTABLE_BACKUP_SCHEMA,
       pluginId: config.pluginId,
       pluginVersion: config.pluginVersion,
-      exportCurrentScope: async () => await runPortableOperation('backup', createEnvelope),
+      exportCurrentScope: async () => await runPortableOperation('backup', () => createEnvelope()),
       downloadCurrentScope: doExport,
       validateBackup: validateEnvelope,
       inspectRestoreOptions: async envelope => await inspectPortableRestoreOptions(envelope),

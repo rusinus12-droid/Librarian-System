@@ -7,7 +7,14 @@ const rootKey='hayaku.v2.recovery_vault.'+scope.key;const old=JSON.parse(await r
 v.records[0].backgroundDecision='declined';assert.equal((await t.writeRecoveryVaultDirect(scope.key,v)).durable,true);const index=JSON.parse(await r.pluginStorage.getItem(rootKey));assert.notEqual(index.debtRefs[0].key,old.debtRefs[0].key);
 // A stale snapshot from an interrupted older operation is deliberately corrupt.
 await r.pluginStorage.setItem(old.debtRefs[0].key,'{broken stale data');
+const failureKey='hayaku.v2.analysis_failure_log.'+scope.key;
+const failureLog=JSON.stringify({schema:'hayaku.analysis_failure_log.v1',scopeKey:scope.key,entries:[{failureKey:'failure-1',turn:2}]});
+await r.pluginStorage.setItem(failureKey,failureLog);
 const portable=await waitFor(()=>r.context.__HAYAKUPortableMemoryBackup,'portable API');const backup=await portable.exportCurrentScope();
 assert.ok(backup.records.some(x=>x.key===rootKey));assert.ok(backup.records.some(x=>x.key===index.debtRefs[0].key));assert.equal(backup.records.some(x=>x.key===old.debtRefs[0].key),false,'export current published graph, not retired or uncommitted debt snapshots');
+assert.ok(backup.records.some(x=>x.key===failureKey),'backup includes analysis failure history');
+await r.pluginStorage.removeItem(failureKey);
+assert.equal((await portable.restoreCurrentScope(backup)).ok,true);
+assert.equal(await r.pluginStorage.getItem(failureKey),failureLog);
 await portable.validateBackup(backup);await r.pluginStorage.removeItem(index.debtRefs[0].key);await assert.rejects(()=>portable.exportCurrentScope(),/shard_missing/);
 console.log('hayaku_vault_portable_graph_test: PASS');}finally{await r.dispose();}})().catch(e=>{console.error(e);process.exitCode=1;});
