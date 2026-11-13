@@ -35,6 +35,30 @@ async function call(f, options = {}) {
     assert.equal(f.control.calls.length,1,'one non-canonical probe reaches the host');
     await sleep(75);
   });
+  await test('Micro expires in the OtherAx queue without submitting later', async f => {
+    let releaseHost, notifyStarted;
+    const started = new Promise(resolve => { notifyStarted = resolve; });
+    f.control.onCall = async () => {
+      notifyStarted();
+      return await new Promise(resolve => { releaseHost = resolve; });
+    };
+    const first = call(f, { deadlineAt: Date.now() + 1000 });
+    await started;
+    const executionState = {};
+    try {
+      await assert.rejects(() => call(f, { taskKind: 'micro_memory', deadlineAt: Date.now() + 40, __executionState: executionState }),
+        error => error.code === 'MICRO_HOST_QUEUE_TIMEOUT');
+      assert.equal(f.control.calls.length, 1);
+      assert.equal(executionState.ledger.snapshot().requestCount, 0);
+    } finally {
+      releaseHost({ type: 'success', result: '{"ok":true}' });
+      await first;
+    }
+    f.control.onCall = async () => ({ type: 'success', result: '{"fresh":true}' });
+    const fresh = await call(f, { taskKind: 'micro_memory', deadlineAt: Date.now() + 1000 });
+    assert.equal(fresh.content, '{"fresh":true}');
+    assert.equal(f.control.calls.length, 2, 'only the fresh Micro request reaches the host');
+  });
   await test('explicit cancellation keeps the physical queue and discards the late first result', async f => {
     let resolveHost, started;
     const ready = new Promise(resolve => { started = resolve; });

@@ -48,7 +48,7 @@ function transformSource(source) {
 const cases=[];const test=(name,fn)=>cases.push({name,fn});
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 async function fixture(fn,mode='plugin_only',options={}) {
-  const x=await serverFixture({mode,transformSource,host:options.host||{}});
+  const x=await serverFixture({mode,transformSource: source => transformSource(options.transformSource?.(source) ?? source),host:options.host||{}});
   try {
     x.f.chat.message=x.f.chat.message.slice(0,2);x.f.chat.messages=x.f.chat.message;
     const api=x.f.r.api;
@@ -79,6 +79,29 @@ const envelope=receipt=>{const quote=receipt.assistant.text.slice(0,Math.min(30,
       certainty:'confirmed',epistemicStatus:'observed',stateChangeType:'none',
       evidence:{role:'assistant',messageId:receipt.assistant.chatId,startOffset:0,
         endOffset:quote.length,exactQuote:quote}}]}})};};
+test('a submitted OtherAx Micro response past the queue deadline is verified and published once',async()=>fixture(async({x,api})=>{
+  const receipt=(await api.debugReadActiveCompletedTurnReceipt(1)).receipt;
+  x.f.control.onCall=async()=>{
+    await new Promise(resolve=>setTimeout(resolve,550));
+    return envelope(receipt);
+  };
+  const result=await api.debugMicroStageFixture('schedule');
+  assert.equal(result.status,'verified',JSON.stringify(result));
+  assert.equal((await api.debugReadActiveMicroMemory(1)).record.analysisStatus,'verified');
+  assert.equal((await api.debugMicroStageFixture('work')).physicalAttemptsUsed,1);
+  assert.equal(x.f.control.calls.length,1);
+},'plugin_only',{transformSource:source=>source.replace('const MICRO_PROVIDER_TIMEOUT_MS = 120000','const MICRO_PROVIDER_TIMEOUT_MS = 400')}));
+test('an OtherAx error records one submission and automatic scheduling does not resend',async()=>fixture(async({x,api})=>{
+  x.f.control.onCall=async()=>{throw new Error('synthetic host error');};
+  await api.debugMicroStageFixture('schedule');
+  const work=await api.debugMicroStageFixture('work');
+  assert.match(work.result.reason,/provider_error:/);
+  assert.equal(work.result.provider.execution.requestCount,1);
+  assert.equal(work.physicalAttemptsUsed,1);
+  assert.equal(work.attemptHistory.at(-1).physicalAttemptsUsed,1);
+  await api.debugMicroStageFixture('schedule');
+  assert.equal(x.f.control.calls.length,1);
+}));
 test('verified receipt has a separate never-started Micro status and read is call-free',async()=>fixture(async({x,api,input})=>{
   const status=await api.getReceiptRecoveryStatus({scope:input.scope});
   assert.equal(status.microJobs.find(row=>row.receiptRef===input.receiptRef)?.status,'never_started');
