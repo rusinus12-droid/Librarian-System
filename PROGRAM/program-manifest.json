@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.1.1",
-  "generatedAt": "2026-11-13T16:31:35.448Z",
+  "generatedAt": "2026-11-13T16:44:03.662Z",
   "server": {
     "version": "1.1.1",
     "protocol": {
@@ -3844,7 +3844,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "f9fab9e225c62536e65888c50b1e8034e05d38d286aa796249a4278aa2fdb7a4",
+      "sha256": "cf8ea4a1194c9f1bb5e3c9f9c756c5a3e1de9bea58dc002b43585408028a134e",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4260,8 +4260,8 @@
       "bytes": 799627
     },
     "plugins/LIBRA.js": {
-      "sha256": "18266b4ff7c7e491fb79f6fa4b4633c72e0f98d3e919ffdeddab4bd6a1cbe1e9",
-      "bytes": 6564814
+      "sha256": "dab4cd58f32bbb42c119c60ed9fb2e32567e6f50620931f48bba77ca21b2ad10",
+      "bytes": 6570478
     },
     "plugins/RETRACE.js": {
       "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
@@ -9284,8 +9284,8 @@
       "bytes": 55084
     },
     "tests/libra_portable_lens_registry_rollback_test.cjs": {
-      "sha256": "e395a4f6e41f33d7ad9b85550fefcf3e71c929be189a550d25ce5e1bafcb7e29",
-      "bytes": 3221
+      "sha256": "dddb128a76d30b354aac7acebc095876bed30e817f381f957dbcf218d4064de1",
+      "bytes": 4889
     },
     "tests/libra_portable_memory_families_test.cjs": {
       "sha256": "b9644d19368ec0ae19e245b8f79591f6b7d57dd21856c67aa573273d7ae955a0",
