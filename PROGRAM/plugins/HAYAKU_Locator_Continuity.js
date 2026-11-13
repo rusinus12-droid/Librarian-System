@@ -64839,24 +64839,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
         throw new Error('portable_backup_no_current_scope_records');
       }
       const referencedBy = new Map();
-      let changed = true;
-      while (changed) {
-        changed = false;
-        const refs = [];
-        await preload(initial);
-        for (const key of [...initial]) {
-          const value = await readValue(key);
-          refs.push(...collectPotentialReferences(value));
-        }
-        for (const key of allKeys) {
-          if (initial.has(key)) continue;
-          const matchedRef = refs.find(ref => ref === key);
-          if (matchedRef) {
-            initial.add(key);
-            referencedBy.set(key, matchedRef);
-            changed = true;
+      const available = new Set(allKeys);
+      let frontier = [...initial];
+      while (frontier.length) {
+        await preload(frontier);
+        const next = [];
+        for (const key of frontier) {
+          for (const ref of collectPotentialReferences(values.get(key))) {
+            if (!available.has(ref) || initial.has(ref)) continue;
+            initial.add(ref);
+            referencedBy.set(ref, ref);
+            next.push(ref);
           }
         }
+        frontier = next;
       }
       const records = [];
       await preload(initial);

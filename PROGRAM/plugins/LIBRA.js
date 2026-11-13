@@ -73037,19 +73037,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const pair = match ? pairByTurn.get(Number(match[1])) : null;
       return pair ? string(match[2] === 'u' ? pair.user?.text : pair.assistant?.text) : null;
     };
-    const buildLensHandoffArchives = async (context, transferId, {maxTurn=Infinity, preserveAll=false}={}) => {
-      const registry = await readLensRegistry({force:true}), pairs = buildPairs(context.chat,context.scope.scopeKey);
-      const worldlineId = await lensActiveWorldlineId(context.scope), archives = [];
-      for (const lens of registry.lenses) {
-        const records = Object.values(await loadLensRecordsMap(context.scope,lens.lensId))
+    const buildLensHandoffArchives = async (context, transferId, {maxTurn=Infinity, preserveAll=false, snapshot=null}={}) => {
+      const lenses = snapshot?.lenses ?? (await readLensRegistry({force:true})).lenses;
+      const pairs = buildPairs(context.chat,context.scope.scopeKey);
+      const meta = await loadStateWorldlineMeta(context.scope);
+      const worldlineId = string(meta?.activeWorldlineId || 'main'), archives = [];
+      const stands = lensRecordSourceCheck(context.scope, pairs, worldlineId, meta?.worldlines?.[worldlineId]?.cutoffTurn);
+      const pairByTurn = new Map(pairs.map(pair => [Number(pair.turn), pair]));
+      for (const lens of lenses) {
+        const stored = snapshot ? asObject(snapshot.records.get(key.lensRecords(context.scope, lens.lensId))?.records)
+          : await loadLensRecordsMap(context.scope,lens.lensId);
+        const records = Object.values(stored)
+          .filter(record => record?.schema === LENS_MEMORY_RECORD_SCHEMA)
           .filter(record => record.worldlineId===worldlineId && Number(record.turnRange?.end)<=maxTurn)
           .sort((a,b)=>Number(b.turnRange.end)-Number(a.turnRange.end)||Number(b.createdAt||0)-Number(a.createdAt||0));
         const current = [];
         for (const record of records) {
-          const token = await captureLensSourceToken(context,record.turnRange.start,record.turnRange.end);
-          if (!token || token.sourceRevisionId!==record.sourceRevisionId || token.sourceDigest!==record.sourceDigest) continue;
+          if (!stands(record)) continue;
           const historical = lens.revisionHistory.find(row=>row.revision===record.instructionRevision);
-          const sourceTurns = {}, pairByTurn = new Map(pairs.map(pair => [Number(pair.turn), pair]));
+          const sourceTurns = {};
           for (const [ref, marks] of lensItemSourceMarks(record.items)) {
             const raw = lensTurnText(pairByTurn, ref);
             if (raw != null) sourceTurns[ref] = lensBoundedExcerpt(raw, marks);
@@ -74538,10 +74544,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
       inspectScopeLenses, getRecentWorkOverview, getLensRawResponse, deleteLensMemories, deleteExcludedLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       validatePortableMicroArchive: validateMicroHandoffArchive,
-      buildPortableLensArchives: async expectedScopeKey => {
+      buildPortableLensArchives: async (expectedScopeKey, snapshot) => {
         const context = await resolveContext();
         if (context.scope.scopeKey !== expectedScopeKey) throw lensError('LENS_PORTABLE_SCOPE_CHANGED', '백업 중 채팅이 바뀌었습니다.');
-        return (await buildLensHandoffArchives(context, 'portable_snapshot', {preserveAll:true})).map(row => row.archive);
+        return (await buildLensHandoffArchives(context, 'portable_snapshot', {preserveAll:true, snapshot})).map(row => row.archive);
       },
       settlePortableMicroRestore: () => {
         // The restore generation still fences producers and planned jobs. A
@@ -79021,6 +79027,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   const runtimeForDisplay = () => ({
     version: PLUGIN_VERSION,
     memorySuite: MemorySuiteStorageBridge.getCachedDiagnostics(),
+    portableBackup: safeClone(globalThis.__LIBRAPortableMemoryBackup?.status?.().backupDiagnostics || null),
     memoryVersion: LibraMemoryCore.VERSION,
     memoryBatchSize: LibraMemoryCore.BATCH_SIZE,
     memoryStageOrder: LibraMemoryCore.STAGE_ORDER.slice(),
@@ -91815,7 +91822,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         bridge,
         raw,
         scopeRouted: Boolean(bridge && typeof bridge.getCurrentScope === 'function' && typeof bridge.keys === 'function'),
-        async list() {
+        async list(scope = null) {
           // The storage bridge exposes its internal scope-aware functions directly
           // (`keys: scopedKeys`, `get: scopedGet`, …), which take `space` as their
           // FIRST positional argument. Calling them with no arguments sends
@@ -91823,7 +91830,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
           // portable backup unable to enumerate a server-only scope at all. Pass the
           // plugin space explicitly, and read keys through the bridge's own scoped
           // inventory when the direct call fails.
-          const bridgeKeys = normalizeKeys(await bridgeKeysOf());
+          const bridgeKeys = scope && bridge?.keys
+            ? normalizeKeys((await Promise.all(exactScopeAliases(scope).map(alias =>
+              bridge.keys('plugin', `libra:v1:scope:${alias}:`, null, {scope})
+            ))).flat())
+            : normalizeKeys(await bridgeKeysOf());
           const rawKeys = normalizeKeys(await safeCall(raw, ['keys'], [], []));
           const compatKeys = normalizeKeys(await safeCall(compat, ['getStorageKeys', 'storageKeys', 'keys'], [], []));
           const keys = [...new Set([...bridgeKeys, ...compatKeys, ...rawKeys])];
@@ -92091,11 +92102,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       return { envelope: projected, skippedLensIds: [...hit].sort(), skippedKeys };
     };
     const collectPotentialReferences = value => {
-      const refs = [];
+      const refs = new Set();
       const seen = new WeakSet();
       const add = value => {
         const body = textValue(value);
-        if (body && body.length >= 6 && body.length <= 1000 && !refs.includes(body)) refs.push(body);
+        if (body && body.length >= 6 && body.length <= 1000) refs.add(body);
       };
       const walk = (node, path = '') => {
         if (node == null) return;
@@ -92110,10 +92121,14 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         if (typeof node !== 'object') return;
         if (seen.has(node)) return;
         seen.add(node);
+        if (/(?:^|\.)(?:archiveRef|parentArchiveRef|parentRef)$/.test(path)
+          && !node.manifestKey && /^[a-zA-Z0-9_.-]+$/.test(textValue(node.archiveId))) {
+          add(`libra:v1:shared-archive:${node.archiveId}:manifest`);
+        }
         for (const [key, body] of Object.entries(node)) walk(body, path ? `${path}.${key}` : key);
       };
       walk(logicalStoredValue(value));
-      return refs;
+      return [...refs];
     };
     const classifyKey = key => {
       const body = textValue(key).toLowerCase();
@@ -92134,7 +92149,8 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     const collectRecords = async options => {
       const adapter = storageAdapter();
       const scope = options?.scope || await currentScope();
-      const listed = await adapter.list();
+      const scopedExport = options?.scopedExport === true;
+      const listed = await adapter.list(scopedExport ? scope : null);
       const allKeys = listed.keys.filter(allowedKey);
       const values = new Map();
       const preload = async keys => {
@@ -92159,21 +92175,38 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       if (!initial.size) {
         throw new Error('portable_backup_no_current_scope_records');
       }
-      let changed = true;
-      while (changed) {
-        changed = false;
-        const refs = [];
-        await preload(initial);
-        for (const key of [...initial]) {
-          const value = await readValue(key);
-          refs.push(...collectPotentialReferences(value));
-        }
-        for (const key of allKeys) {
-          if (initial.has(key)) continue;
-          if ((keyOwnedByScope(key, scope) || allowedSharedDependencyKey(key))
-            && refs.some(ref => ref === key || (ref.length >= 8 && (key.includes(ref) || ref.includes(key))))) {
+      if (scopedExport) {
+        let frontier = [...initial];
+        const visited = new Set(frontier);
+        while (frontier.length) {
+          await preload(frontier);
+          const next = [];
+          for (const key of frontier) {
+            const value = values.get(key);
+            if (value === undefined || value === null || value === '') continue;
             initial.add(key);
-            changed = true;
+            for (const ref of collectPotentialReferences(value)) {
+              if (visited.has(ref) || !allowedKey(ref) || !allowedSharedDependencyKey(ref)) continue;
+              visited.add(ref);
+              next.push(ref);
+            }
+          }
+          frontier = next;
+        }
+      } else {
+        let changed = true;
+        while (changed) {
+          changed = false;
+          const refs = [];
+          await preload(initial);
+          for (const key of initial) refs.push(...collectPotentialReferences(values.get(key)));
+          for (const key of allKeys) {
+            if (initial.has(key)) continue;
+            if ((keyOwnedByScope(key, scope) || allowedSharedDependencyKey(key))
+              && refs.some(ref => ref === key || (ref.length >= 8 && (key.includes(ref) || ref.includes(key))))) {
+              initial.add(key);
+              changed = true;
+            }
           }
         }
       }
@@ -92181,7 +92214,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       await preload(initial);
       for (const key of [...initial].sort()) {
         const raw = await readValue(key);
-        if (raw === undefined) continue;
+        if (raw === undefined || (scopedExport && (raw === null || raw === ''))) continue;
         const encoded = encodeValue(raw);
         const integrity = await digestCanonical({ key, value: encoded });
         records.push({
@@ -92195,9 +92228,19 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const dependencies = new Set();
       const recordKeySet = new Set(records.map(record => record.key));
       for (const record of records) {
+        if (scopedExport) {
+          const body = logicalStoredValue(values.get(record.key));
+          const pointer = body?.schema === 'libra.manifest.v1' ? body.archiveRef
+            : body?.schema === LIBRA_SHARED_ARCHIVE_SCHEMA ? body.parentRef || body.parentArchiveRef : null;
+          if (pointer?.archiveId) {
+            const manifestKey = textValue(pointer.manifestKey || `libra:v1:shared-archive:${pointer.archiveId}:manifest`);
+            if (!recordKeySet.has(manifestKey)) throw new Error(`portable_backup_archive_manifest_missing:${manifestKey}`);
+          }
+        }
         const refs = collectPotentialReferences(decodeValue(record.value));
         for (const ref of refs) {
           if (recordKeySet.has(ref)) dependencies.add(ref);
+          if (scopedExport) continue;
           for (const key of recordKeySet) {
             if (ref.length >= 8 && (key.includes(ref) || ref.includes(key))) dependencies.add(key);
           }
@@ -92493,10 +92536,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
     };
     const createEnvelope = async (onProgress = () => {}) => {
       onProgress('현재 채팅의 백업 기록을 읽고 있습니다…');
-      const collected = await collectRecords({});
+      const collected = await collectRecords({scopedExport: true});
       onProgress('백업 기록의 무결성을 검사하고 있습니다…', 'verify');
       validatePluginGraph(collected.records);
       const lineage = await LibraMemoryCore.portableLineageSnapshot();
+      if (lineage.scopeKey !== collected.scope.scopeKey) throw new Error('portable_backup_scope_changed');
       const manifestRecord = collected.records.find(record => record.key === `libra:v1:scope:${collected.scope.scopeKey}:manifest`);
       const manifest = logicalStoredValue(decodeValue(manifestRecord?.value));
       const lensIds = portableLensIds(collected.records, collected.scope.scopeKey, manifest);
@@ -92504,7 +92548,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       const lensDefinitions = [...registry.lenses, ...registry.trash]
         .filter(lens => lensIds.has(lens.lensId)).map(portableLensDefinition);
       const portableLensArchives = lensDefinitions.length
-        ? await LibraMemoryCore.buildPortableLensArchives(collected.scope.scopeKey) : [];
+        ? await LibraMemoryCore.buildPortableLensArchives(collected.scope.scopeKey, {
+          lenses: lensDefinitions.filter(lens => lens.status !== 'trashed'),
+          records: new Map(collected.records.filter(record => record.key.endsWith(':records') && record.key.includes(':lens:'))
+            .map(record => [record.key, logicalStoredValue(decodeValue(record.value))]))
+        }) : [];
       const inventory = {
         ...inventoryFor(collected.records),
         dependencyKeys: collected.dependencies,
@@ -93484,6 +93532,11 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
       syncUi: syncPortableUiState,
       status: () => cloneJson({
         lastExport: runtime.lastExport,
+        backupDiagnostics: runtime.lastExport ? {
+          at: runtime.lastExport.at, records: runtime.lastExport.records,
+          chars: runtime.lastExport.chars, worker: runtime.lastExport.worker,
+          timingMs: runtime.lastExport.timingMs || null
+        } : null,
         lastRestore: runtime.lastRestore,
         lastRecovery: runtime.lastRecovery,
         lastError: runtime.lastError,

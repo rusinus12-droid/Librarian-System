@@ -56436,17 +56436,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const sidecars = [];
       let byteLength = 0;
       let referenceCount = 0;
-      for (const storageKey of [...groups.keys()].sort()) {
-        const refs = groups.get(storageKey) || [];
-        referenceCount += refs.length;
-        let raw = null;
-        try { raw = await RisuCompat.localGetItem(storageKey); } catch (_) { raw = null; }
-        if (raw == null || raw === '') throw new Error(`portable_backup_vector_sidecar_missing:${storageKey}`);
-        const details = portableVectorPayloadDetails(storageKey, raw, refs);
-        const encoded = encodeValue(details.parsed);
-        const integrity = await digestCanonical({ key: storageKey, value: encoded });
-        sidecars.push({ key: storageKey, kind: 'vector', mode: 'replace', value: encoded, integrity });
-        byteLength += details.byteLength;
+      const keys = [...groups.keys()].sort();
+      for (let offset = 0; offset < keys.length; offset += 4) {
+        const results = await Promise.all(keys.slice(offset, offset + 4).map(async storageKey => {
+          const refs = groups.get(storageKey);
+          let raw = null;
+          try { raw = await RisuCompat.localGetItem(storageKey); } catch (_) {}
+          if (raw == null || raw === '') throw new Error(`portable_backup_vector_sidecar_missing:${storageKey}`);
+          const details = portableVectorPayloadDetails(storageKey, raw, refs);
+          const value = encodeValue(details.parsed);
+          const integrity = await digestCanonical({ key: storageKey, value });
+          return { record: { key: storageKey, kind: 'vector', mode: 'replace', value, integrity },
+            bytes: details.byteLength, references: refs.length };
+        }));
+        for (const result of results) {
+          sidecars.push(result.record);
+          byteLength += result.bytes;
+          referenceCount += result.references;
+        }
       }
       return { groups, sidecars, byteLength, referenceCount };
     };
@@ -56493,8 +56500,31 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       for (const key of allKeys) {
         if (!scopedStorageKey(key) && !globalFlashbackKey(key) && keyContainsScope(key, ownerAliases)) initial.add(key);
       }
-      const legacyCandidates = allKeys.filter(key => !initial.has(key) && !globalFlashbackKey(key)
-        && (!scopedStorageKey(key) || scopedManifestKey(key)));
+      // The registry identifies modern scope prefixes without fetching their manifests.
+      // Unregistered legacy manifests still need exact owner verification.
+      const mode = await adapter.bridge?.readPortableMode?.(scope);
+      const registry = mode === 'plugin_only'
+        ? await safeCall(adapter.raw, ['getItem'], [STORAGE.registry], null) : null;
+      const parsedRegistry = typeof registry === 'string' ? tryJsonParse(registry, null) : registry;
+      const foreignPrefixes = new Set();
+      const ownedPrefixes = new Set([`${scopePrefix(scope.scopeKey)}:`]);
+      if (parsedRegistry?.version === 2 && Array.isArray(parsedRegistry.scopes)) {
+        for (const entry of parsedRegistry.scopes) {
+          const owner = textValue(entry?.scopeKey);
+          if (!owner || !entry.chatId || !entry.characterId) continue;
+          const prefix = `${scopePrefix(owner)}:`;
+          const manifestIdentity = { ...entry, schema: 'vector_rag_memory.scope_manifest.v2' };
+          if (manifestOwnedByScope(manifestIdentity, scope)) ownedPrefixes.add(prefix);
+          else if (scope.chatId && scope.characterId) foreignPrefixes.add(prefix);
+        }
+      }
+      const legacyCandidates = allKeys.filter(key => {
+        if (initial.has(key) || globalFlashbackKey(key)) return false;
+        if (!scopedStorageKey(key)) return true;
+        if (!scopedManifestKey(key)) return false;
+        const prefix = key.slice(0, key.indexOf(':', SCOPED_STORAGE_PREFIX.length) + 1);
+        return ownedPrefixes.has(prefix) || !foreignPrefixes.has(prefix);
+      });
       await preload(legacyCandidates);
       for (const key of legacyCandidates) {
         const owned = scopedManifestKey(key)

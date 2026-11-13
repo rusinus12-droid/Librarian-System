@@ -86,8 +86,31 @@ async function run(mode) {
     });
     assert.equal(ingested.liveChatTurns, 2, `${mode}: the original session has two memory turns`);
     const sourceScope = await api.resolveCurrentScope(true);
+    let foreignReads = 0;
+    let foreignManifestKey = '';
+    const originalGetItem = pluginStorage.getItem;
+    if (mode === 'plugin_only') {
+      const registryKey = 'vector_rag_memory:scope_registry:v2';
+      const rawRegistry = await pluginStorage.getItem(registryKey);
+      const registry = typeof rawRegistry === 'string' ? JSON.parse(rawRegistry) : rawRegistry;
+      const foreign = { scopeKey: 'portable-foreign-scope', characterId: 'foreign-bot', chatId: 'foreign-chat' };
+      let hash = 0x811c9dc5;
+      for (const char of foreign.scopeKey) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193);
+      foreignManifestKey = `vector_rag_memory:scope:${(hash >>> 0).toString(36)}:manifest:v2`;
+      await pluginStorage.setItem(foreignManifestKey, JSON.stringify({ ...foreign, schema: 'vector_rag_memory.scope_manifest.v2' }));
+      await pluginStorage.setItem(registryKey, JSON.stringify({ ...registry, scopes: [...registry.scopes, foreign] }));
+      pluginStorage.getItem = async function (key) {
+        if (key === foreignManifestKey) foreignReads++;
+        return await originalGetItem.call(this, key);
+      };
+    }
     const beforeBackup = requests.length;
     const envelope = await idle(() => portable.exportCurrentScope(), `${mode}: backup`);
+    if (mode === 'plugin_only') {
+      pluginStorage.getItem = originalGetItem;
+      assert.equal(foreignReads, 0, 'backup skips a manifest belonging to a registered foreign chat');
+      assert.ok(!envelope.records.some(record => record.key === foreignManifestKey));
+    }
     if (mode === 'server_only') {
       assert.ok(requests.slice(beforeBackup).some(url => url.endsWith('/v1/kv/get-many')));
     }

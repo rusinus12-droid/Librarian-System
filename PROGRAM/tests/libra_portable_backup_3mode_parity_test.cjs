@@ -81,6 +81,10 @@ async function portableBackup(mode) {
       () => portable.exportCurrentScope(), `${mode}: backup`);
     const backupRequests = snapshot.requests.slice(requestsBeforeBackup);
     if (mode === 'server_only') {
+      const inventory = backupRequests.map(request => new URL(request.url))
+        .filter(url => url.pathname === '/v1/kv/keys');
+      assert.ok(inventory.some(url => url.searchParams.get('prefix') === `libra:v1:scope:${envelope.source.scopeKey}:`),
+        'server-only portable export requests the current chat key prefix');
       assert.ok(backupRequests.some(request => request.url.endsWith('/v1/kv/get-many')),
         'server-only portable export uses the SDK batch endpoint');
       const exported = new Set(envelope.records.map(record => record.key));
