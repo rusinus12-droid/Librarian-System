@@ -131,8 +131,44 @@ test('cards are per chat and reach every stage with mode rules, accuracy rules a
   wireModel(other, '민아는 문 앞에 섰다.');
   await configure(other, { forced_bond_cards: JSON.stringify({ 'some-other-chat': [{ to: '준호', tones: ['hatred'] }] }) });
   await runTurn(other, '문을 연다.');
-  assert.match(systemOf(other.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /BONDS: none declared for this chat/);
-  assert.ok(!systemOf(other.prompts.find(item => stageOf(item) === 'aide_character')).includes('[FORCED BOND'), 'no cards: checkers get no bond block');
+  // Another chat's cards do not apply here; with no card of its own the chat gets auto bonds.
+  const otherBond = systemOf(other.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.doesNotMatch(otherBond, /tones: hatred/);
+  assert.match(otherBond, /- auto-1: the user persona → 민아 \(mutual\) · tones: read from canon, lore and the scene \(auto bond, no user card\)/);
+});
+
+test('with no card, 억결 binds the scene people itself, requires a beat every turn, and Plot keeps the beat', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.');
+  await configure(f);
+  await runTurn(f, '준호를 지나쳐 간다.');
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.match(bond, /- auto-1: the user persona → 민아/, 'the character card person is bound first');
+  assert.match(bond, /REQUIRED EVERY TURN: the response shows at least one visible beat that forms or moves the main bond/);
+  assert.match(bond, /Auto bonds: no user card exists, so read each bond’s tone/);
+  assert.match(bond, /if there is none, insert one \(edits must not be empty\)/);
+  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_character')), /\[FORCED BOND/, 'checkers get the bond block for auto bonds');
+  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /Bond beats placed for the main bond are intended: they are not optional cameos or arbitrary escalation/);
+  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /write at least one visible beat of it/, 'SHADOW plans the beat');
+
+  const off = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(off, '민아는 문 앞에 섰다.');
+  await configure(off, { forced_bond_auto: false });
+  await runTurn(off, '문을 연다.');
+  assert.match(systemOf(off.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /BONDS: no user card and no other person in the scene this turn/);
+  assert.ok(!systemOf(off.prompts.find(item => stageOf(item) === 'aide_character')).includes('[FORCED BOND'), 'auto off: no bond block for checkers');
+});
+
+test('bond evidence matches any alias of a person through the continuity index', async t => {
+  const chat = { id: 'h', message: [{ role: 'user', chatId: 'u1', data: '문을 두드린다.' }, { role: 'assistant', chatId: 'a1', data: '민아는 얼굴을 붉히며 시선을 피했다.' }] };
+  const character = { chaId: 'c', name: 'Minah Kim', nickname: '민아', chats: [chat], chatPage: 0, lorebook: [] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '민아는 다시 고개를 들었다.');
+  await configure(f);
+  await runTurn(f, '민아를 바라본다.');
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.match(bond, /- auto-1: the user persona → Minah Kim/);
+  assert.match(bond, /recent scene: 민아는 얼굴을 붉히며 시선을 피했다\./, 'a line naming the Korean alias counts for Minah Kim');
 });
 
 test('lightweight AIDEs return bond_check through the schema and 억결 reads the earlier checks', async t => {
@@ -198,7 +234,7 @@ test('the 억결 panel edits per-chat cards and accepts proposals as cards', asy
   const cards = stored[scopeKey];
   assert.equal(cards.length, 2);
   assert.equal(cards[0].to, '세라');
-  assert.deepEqual(cards[0].tones, ['affection', 'hatred']);
+  assert.deepEqual(cards[0].tones, ['hatred'], 'a new card has no default tone');
   assert.equal(cards[1].from, '준호');
   assert.equal(cards[1].origin, 'proposal');
   assert.deepEqual(Object.keys(stored), [scopeKey], 'cards are stored only for this chat');
@@ -241,7 +277,7 @@ test('the evidence packet puts canon, LIB and recent lines under each bond, and 
     { id: 'sera-lian', from: '세라', to: '리안', tones: ['rivalry', 'jealousy'], direction: 'mutual' }
   ];
   const withLib = f.host.plugin.debugForcedBondEvidencePacket({ recent, cards, libText: '세라는 페르소나와 헤어진 날을 아직 기억한다.\n리안은 세라의 약혼을 질투했다. 세라도 알고 있었다.' });
-  assert.match(withLib, /^Evidence source: LIB memory and recent scene\./);
+  assert.match(withLib, /^User direction this turn \(current input\): \(none\)\nEvidence source: LIB memory and recent scene\./);
   assert.match(withLib, /- persona-sera: the user persona → 세라 \(one-way\) · tones: longing/);
   assert.match(withLib, /LIB: 세라는 페르소나와 헤어진 날을 아직 기억한다\./);
   assert.match(withLib, /canon: 세라와 리안은 쌍둥이 자매다\./, 'NPC bond carries the canon fact naming both');
@@ -252,4 +288,36 @@ test('the evidence packet puts canon, LIB and recent lines under each bond, and 
   const noLib = f.host.plugin.debugForcedBondEvidencePacket({ recent: { visibleMessages: [] }, cards: [{ id: 'x', to: '미하', tones: ['guilt'] }] });
   assert.match(noLib, /recent scene signals only \(no LIB evidence/);
   assert.match(noLib, /no evidence found for this bond; only the card applies/);
+});
+
+test('억결 forms and moves relationships from recent emotional signals instead of steering to romance', async t => {
+  const chat = { id: 'h', message: [
+    { role: 'user', chatId: 'u1', data: '민아에게 길을 묻는다.' },
+    { role: 'assistant', chatId: 'a1', data: '민아는 시선을 피하며 짧게 대답했다. 잠시 후 민아는 작게 미소를 지었다.' }
+  ] };
+  const character = { chaId: 'c', name: '민아', chats: [chat], chatPage: 0, lorebook: [] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '민아는 지도를 건넸다.');
+  await configure(f);
+  await runTurn(f, '고맙다고 말한다.');
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.match(bond, /keep forming and moving the relationships below/);
+  assert.match(bond, /do not steer a bond toward romance unless the user or what has developed already points there/);
+  assert.match(bond, /recent emotional signals \(oldest → newest\): avoidance \("민아는 시선을 피하며 짧게 대답했다\."\) → warmth \("잠시 후 민아는 작게 미소를 지었다\."\)/);
+  assert.match(bond, /the main bond’s beat grows out of its latest emotional signal/);
+  assert.match(bond, /trust → relying on the other with something that matters/, 'relational tones are offered for auto bonds');
+  assert.doesNotMatch(bond, /tones: affection/, 'nothing defaults to affection');
+});
+
+test('a bond follows the user’s direction and the story, never gender, and lore is background', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.');
+  await withCards(f);
+  await runTurn(f, '준호에게 오늘은 친구로서 이야기하자고 말한다.');
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.match(bond, /Gender never decides a bond\. Different genders do not imply romance, and the same gender does not rule it out\./);
+  assert.match(bond, /WHAT DECIDES A BOND’S DIRECTION, in order: \(1\) the user’s direction/);
+  assert.match(bond, /Lore describing a character’s feelings or preferences is background, not a script/);
+  assert.match(bond, /NARRATIVE: move each bond along its own arc in this story/);
+  assert.match(bond, /User direction this turn \(current input\): 준호에게 오늘은 친구로서 이야기하자고 말한다\./);
 });

@@ -237,3 +237,36 @@ test('clicking 상태 or 억결 in the ladder switches the active detail panel a
   assert.equal(bodyDetail.classList.contains('is-on'), false);
   assert.equal(shadowDetail.classList.contains('is-on'), false);
 });
+
+test('every present character gets this turn’s baseline body signs and the stage must show one', async t => {
+  const chat = { id: 'h', message: [{ role: 'user', chatId: 'u1', data: '밤늦게 공원에 간다.' }, { role: 'assistant', chatId: 'a1', data: '밤 11시, 민아는 숨을 몰아쉬며 달려왔다.' }] };
+  const character = { chaId: 'c', name: 'Minah Kim', nickname: '민아', chats: [chat], chatPage: 0, lorebook: [] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '민아는 벤치에 주저앉았다.');
+  await configure(f);
+  await runTurn(f, '민아 옆에 앉는다.');
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  assert.match(body, /- Minah Kim:/);
+  assert.match(body, /baseline this turn \(in the scene\): night \(recent scene\) → sleepy, slower, guard lowered; exertion → breathing hard, sweat, sore muscles/);
+  assert.match(body, /REQUIRED: every present main character shows at least one bodily sign/);
+  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /give each present main character one bodily sign from the packet/, 'SHADOW plans the signs');
+});
+
+test('LIBRA story clock days drive elapsed time when present', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packet = f.host.plugin.debugBodyStatePacket({
+    characterName: '세라',
+    libText: '[STORY CLOCK] 현재: 이야기 12일째 · 저녁 · 2026-04-12\n이야기 9일째 · 아침 · 2026-04-09 세라는 감기에 걸렸다',
+    recent: { visibleMessages: [] },
+    settings: { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal' }
+  });
+  assert.match(packet, /Story clock \(LIBRA\): day 12 · 저녁 · 2026-04-12\./);
+  assert.match(packet, /Current story date: 2026-4-12 \(LIBRA story clock\)/);
+  assert.match(packet, /감기: day 4 \(confirmed \(story clock\); usual 7–10 days\) → ongoing/);
+  const estimated = f.host.plugin.debugBodyStatePacket({
+    characterName: '세라',
+    libText: '[STORY CLOCK] 현재: 이야기 5일째(추정) · 밤\n이야기 2일째 세라는 발목을 다쳤다',
+    settings: { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal' }
+  });
+  assert.match(estimated, /injury \(moderate\): day 4 \(estimated \(story clock\); usual 10–21 days\)/);
+});
