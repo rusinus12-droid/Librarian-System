@@ -248,9 +248,11 @@ test('a scene condition is tracked and the time of day is optional color, never 
   const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
   assert.match(body, /- Minah Kim:/);
   assert.match(body, /scene condition this turn: exertion → breathing hard, sweat, sore muscles/);
-  assert.match(body, /time-of-day color \(optional, never a reason to insert\): night \(recent scene\) → sleepy, slower, guard lowered/);
+  assert.match(body, /Scene time \(context only\): night \(recent scene\)/);
+  assert.doesNotMatch(body, /sleepy, slower, guard lowered/);
   assert.match(body, /For each present character with a tracked condition that the draft never shows, insert one bodily sign/);
-  assert.match(body, /Time-of-day color and an ordinary body are never a reason to insert/);
+  assert.match(body, /Time of day is scene context only\. It does not establish fatigue/);
+  assert.match(body, /remove unsupported health claims or explanations already in the draft/);
   assert.doesNotMatch(body, /edits must not be empty/);
   assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /A present character with a tracked condition in the packet shows it through one bodily sign; an ordinary body needs no added sign/, 'SHADOW plans signs only for tracked conditions');
 });

@@ -25840,12 +25840,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return { day: Number(match[1]), estimated: !!match[2], timeOfDay, date };
   };
   const BODY_STATE_TIME_OF_DAY = Object.freeze([
-    [/새벽|dawn/i, 'dawn', 'groggy, cold hands, slow to react'],
-    [/아침|morning/i, 'morning', 'stiff or slow to wake, fresher once moving'],
-    [/점심|정오|noon|lunch/i, 'midday', 'hungry before eating, drowsy after'],
-    [/오후|afternoon/i, 'afternoon', 'an after-lunch dip, then steady'],
-    [/저녁|evening|dusk/i, 'evening', 'tired from the day, looser'],
-    [/밤|자정|night|midnight/i, 'night', 'sleepy, slower, guard lowered']
+    [/새벽|dawn/i, 'dawn'],
+    [/아침|morning/i, 'morning'],
+    [/점심|정오|noon|lunch/i, 'midday'],
+    [/오후|afternoon/i, 'afternoon'],
+    [/저녁|evening|dusk/i, 'evening'],
+    [/밤|자정|night|midnight/i, 'night']
   ]);
   const BODY_STATE_BASELINE_CUES = Object.freeze([
     [/달리|달려|달렸|뛰었|뛰어|뛰어왔|숨을\s*몰아|헐떡|전력|싸우|싸웠|운동|계단|오래\s*걸|\bran\b|running|fought|sprint|climb/i, 'exertion', 'breathing hard, sweat, sore muscles'],
@@ -25879,7 +25879,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const sources = [clock?.timeOfDay || '', ...[...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])].reverse().slice(0, 4).map(message => message?.content || '')];
     for (const value of sources) {
       const hit = sceneTimeOfDay(value);
-      if (hit) return { label: hit[1], signs: hit[2], source: value === sources[0] && clock?.timeOfDay ? 'LIBRA story clock' : 'recent scene' };
+      if (hit) return { label: hit[1], source: value === sources[0] && clock?.timeOfDay ? 'LIBRA story clock' : 'recent scene' };
     }
     return null;
   };
@@ -25920,7 +25920,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
 
   const bodyStateCharacterReport = (name, entries, settings, now, gate, scopeKey, context = {}) => {
-    const { clock = null, timeOfDay = null, present = false } = context;
+    const { clock = null, present = false } = context;
     const card = bodyStateCardsForScope(settings, scopeKey).find(item => item.name && item.name === name) || null;
     const mine = entries.filter(entry => bodyStateLineMentions(entry.line, name));
     const lines = [];
@@ -26014,9 +26014,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (card?.constitution) lines.push(`  constitution (card): ${card.constitution}`);
     if (present) {
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
-      // Scene conditions are tracked conditions; the time of day is only optional color.
       if (cues.length) lines.push(`  scene condition this turn: ${cues.map(([, label, signs]) => `${label} → ${signs}`).join('; ')}`);
-      lines.push(`  time-of-day color (optional, never a reason to insert): ${timeOfDay ? `${timeOfDay.label} (${timeOfDay.source}) → ${timeOfDay.signs}` : 'not stated'}`);
     }
     if (!lines.length && !evidence.length) return '';
     return [`- ${bodyStateDisplayName(name)}:`, ...(lines.length ? lines : ['  no tracked condition']), ...evidence].join('\n');
@@ -26030,7 +26028,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const timeOfDay = bodyStateTimeOfDay(recent, clock);
     const scenePeople = extensionScenePeople(recent);
     const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
-      clock, timeOfDay,
+      clock,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
         || (name !== FORCED_BOND_PERSONA && extensionSamePerson(name, Runtime.activeCharacterName))
     })).filter(Boolean);
@@ -26038,6 +26036,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return compact([
       clock ? `Story clock (LIBRA): day ${clock.day}${clock.estimated ? ' (estimated)' : ''}${clock.timeOfDay ? ` · ${clock.timeOfDay}` : ''}${clock.date ? ` · ${clock.date}` : ''}.` : '',
       `Current story date: ${now ? `${now.y ? `${now.y}-` : ''}${now.m}-${now.d} (${clock?.date ? 'LIBRA story clock' : 'from the recent scene'})` : 'unknown — the story has not stated it'}.`,
+      timeOfDay ? `Scene time (context only): ${timeOfDay.label} (${timeOfDay.source}).` : '',
       `Evidence source: ${libHits ? 'LIB memory and recent scene' : 'recent scene signals only (no LIB evidence)'}.`,
       ...(reports.length ? reports : ['No tracked body state for the cast in play.'])
     ].filter(Boolean).join('\n'), 4200);
@@ -26050,7 +26049,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // User decision 2026-11-15 after live runs: a sign is required only for a tracked condition. The
     // earlier every-character rule made the AIDE write filler (invented stiffness, knees, a restated
     // input line) for an uninjured persona in 4 of 5 runs while the real injury was already shown.
-    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings. A tracked condition is an illness, injury, symptom, treatment, pregnancy verdict, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Time-of-day color and an ordinary body are never a reason to insert, and never add a condition the packet does not list. Return edits: [] when every tracked condition already shows (quote those lines in analysis.summary) or when no present character has one. Also fix body-state portrayal that contradicts the packet.'
+    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings from the packet. A tracked condition is an illness, injury, symptom, treatment, pregnancy verdict, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Correct contradictions and remove unsupported health claims or explanations already in the draft. Preserve ordinary gestures and scene atmosphere. Return edits: [] when the portrayal already fits (quote supporting lines in analysis.summary) or no condition needs an edit.'
   });
   const bodyStateOutputKind = (stageName, settings = {}) => {
     if (!bodyStateStageActive(settings)) return '';
@@ -26076,6 +26075,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- Numbers (days, phases, chances) come only from the packet. Do not invent a number.',
       '- When timing is unknown, do not say how long a condition has lasted.',
       '- Do not name an illness or cause that the evidence does not give.',
+      '- Time of day is scene context only. It does not establish fatigue, sleep loss, stiffness, dulled vigilance, or any other bodily or mental state. Ground body-state claims in the packet and current input.',
       '- A fixed verdict in the packet is final. Never reverse it, and reveal it only to characters who could know it now (see the awareness note).',
       '- Recovery needs evidence or an elapsed usual span; otherwise say it may be easing.',
       `STAGE DUTY: ${BODY_STATE_STAGE_DUTY[stageName]}`,
