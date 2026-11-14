@@ -42400,6 +42400,8 @@ function createLibraReadonlySourceContext(owner) {
         replayFingerprint: string(source.replayFingerprint || ''),
         reason: compact(source.reason || '', 700),
         error: compact(source.error || '', 700),
+        // Why a completed State still holds items (state_committed_with_pending); display only.
+        remainingPending: asArray(source.remainingPending).map(value => compact(value, 120)).filter(Boolean).slice(0, 16),
         createdAt: string(source.createdAt || nowIso()),
         updatedAt: string(source.updatedAt || source.createdAt || nowIso()),
         completedAt: string(source.completedAt || ''),
@@ -42500,8 +42502,19 @@ function createLibraReadonlySourceContext(owner) {
       || result?.reason === 'state_tracking_disabled'
       || result?.reason === 'already_reviewed'
       || ['complete', 'not_required'].includes(string(result?.receipt?.status || ''));
+    // A State attempt that committed a digest-verified receipt has run, even when the State it wrote
+    // still holds a pending item (an unresolved thread link, an unbound fact). The replay is local and
+    // deterministic: repeating it on every boot reproduces the same Head and can never settle it. What
+    // can resolve the pending item (a new canonical, a correction, a review) updates the State itself.
+    // A missing canonical range (pendingBoundary) or an unverifiable receipt still stays pending.
+    const stateTrackingCommittedWithPending = result => result?.ok === true && !result.pendingBoundary
+      && result.receipt?.schema === STATE_PIPELINE_RECEIPT_SCHEMA && result.receipt.status === 'partial'
+      && result.receipt.receiptDigest === statePipelineReceiptDigest(result.receipt)
+      && (!result.head || result.receipt.headDigest === digest(result.head));
     const finishStateTrackingJournalAttempt = async ({ scope, entry, result = null, error = null, rebuild = null } = {}) => {
-      const complete = stateTrackingResultComplete(result) || (rebuild?.ok === true && !!rebuild?.head);
+      const settled = stateTrackingResultComplete(result) || (rebuild?.ok === true && !!rebuild?.head);
+      const committedWithPending = !settled && !error && stateTrackingCommittedWithPending(result);
+      const complete = settled || committedWithPending;
       const receipt = asObject(result?.receipt);
       return await updateStateTrackingJournalEntry({
         scope,
@@ -42512,8 +42525,11 @@ function createLibraReadonlySourceContext(owner) {
           receiptDigest: string(receipt.receiptDigest || ''),
           headFingerprint: result?.head ? statePipelineHeadFingerprint(result.head) : (rebuild?.head ? statePipelineHeadFingerprint(rebuild.head) : ''),
           replayFingerprint: string(rebuild?.replayFingerprint || ''),
-          reason: complete ? string(result?.reason || rebuild?.reason || 'state_tracking_completed')
+          reason: committedWithPending ? 'state_committed_with_pending'
+            : complete ? string(result?.reason || rebuild?.reason || 'state_tracking_completed')
             : string(result?.reason || rebuild?.reason || 'state_tracking_pending'),
+          remainingPending: committedWithPending ? [...new Set(asArray(result.receipt.pending)
+            .map(row => string(row?.reason || '')).filter(Boolean))].slice(0, 16) : [],
           error: error ? compact(error?.message || error, 700) : '',
           completedAt: complete ? nowIso() : ''
         }
