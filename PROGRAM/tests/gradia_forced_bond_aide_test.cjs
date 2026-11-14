@@ -1,0 +1,255 @@
+'use strict';
+
+// 억결 AIDE (aide_forced_bond): relationship tension inside GRADIA's design.
+// Design record: docs/gradia/FORCED-BOND-AIDE-DESIGN-20261114.md
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { fixture } = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
+
+const systemOf = body => body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+const stageOf = body => (systemOf(body).match(/"stage":\s*"([^"]+)"/) || [])[1] || '';
+const callStages = f => f.prompts.map(stageOf);
+
+// Answers every call: drafts as plain text, analysis/patch as JSON for the stage that asked.
+// stageExtras adds stage-specific top-level fields (bond_check, bond_readings, ...).
+const wireModel = (f, draftText, stageExtras = {}) => {
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [], ...(stageExtras[stage] || {}) };
+    if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
+    else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
+    else f.controls.output = draftText;
+  };
+};
+
+const BASE = {
+  mode: 'normal', default_preset: 'writer', input_assist_mode: 'off', writing_mode: 'rp', nsfw_mode: 'off',
+  multi_pipeline_mode: 'lightweight', enable_shadow_act: true, enable_character_aide: true, enable_world_aide: true,
+  enable_plot_aide: true, enable_forced_bond_aide: true, failure_mode: 'hard', lore_activation_mode: 'off'
+};
+
+const configure = async (f, settings = {}, bondEnabled = true) => {
+  await f.host.plugin.saveRuntimeSettings({ ...await f.host.plugin.getRuntimeSettings(), ...BASE, ...settings });
+  const slots = await f.host.plugin.getAgentSlots();
+  await f.host.plugin.saveAgentSlots({ ...slots, aide_forced_bond: { ...(slots.aide_forced_bond || {}), enabled: bondEnabled } });
+};
+
+const runTurn = async (f, userText) => {
+  const id = 'u' + (f.chat.message.length + 1);
+  f.chat.message.push({ role: 'user', chatId: id, data: userText });
+  f.prompts.length = 0;
+  await f.host.hooks.beforeRequest(f.chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId })), 'model');
+};
+
+// The fixture chat names 준호 in the last scene; the card makes the persona's bond with him love-hate.
+const withCards = async (f, settings = {}, cards = [{ id: 'bond-junho', from: '@persona', to: '준호', tones: ['hatred', 'affection'], stage: 'tension', direction: 'mutual' }]) => {
+  await configure(f, settings);
+  await runTurn(f, '문 앞을 둘러본다.');
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  assert.ok(scopeKey, 'a run records the current character+chat key');
+  await configure(f, { ...settings, forced_bond_cards: JSON.stringify({ [scopeKey]: cards }) });
+  return scopeKey;
+};
+
+test('억결 is off by default and adds no call', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에서 조용히 고개를 끄덕였다.');
+  await configure(f, {}, false);
+  await runTurn(f, '문을 연다.');
+  assert.deepEqual(callStages(f).filter(Boolean).filter(stage => stage === 'aide_forced_bond'), []);
+  assert.equal(f.prompts.length, 4, 'shadow + three AIDEs');
+});
+
+test('억결 runs right before Plot AIDE in every AIDE order and follows the shared pipeline mode', async t => {
+  for (const [order, expected] of [
+    [['aide_character', 'aide_world', 'aide_plot'], ['aide_character', 'aide_world', 'aide_forced_bond', 'aide_plot']],
+    [['aide_plot', 'aide_character', 'aide_world'], ['aide_forced_bond', 'aide_plot', 'aide_character', 'aide_world']],
+    [['aide_world', 'aide_plot', 'aide_character'], ['aide_world', 'aide_forced_bond', 'aide_plot', 'aide_character']]
+  ]) {
+    const f = await fixture(t, { writingMode: 'rp', unified: false });
+    wireModel(f, '복도 끝에서 발소리가 멎었다.');
+    await configure(f, { aide_stage_order: JSON.stringify(order) });
+    await runTurn(f, '복도로 나간다.');
+    const aideStages = callStages(f).filter(stage => stage.startsWith('aide_'));
+    assert.deepEqual(aideStages, expected, JSON.stringify(order));
+  }
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '복도 끝에서 발소리가 멎었다.');
+  await configure(f, { multi_pipeline_mode: 'heavyweight' });
+  await runTurn(f, '복도로 나간다.');
+  assert.equal(callStages(f).filter(stage => stage === 'aide_forced_bond').length, 2, 'heavyweight: analysis + patch, same as every AIDE');
+});
+
+test('RP prose mode skips 억결; scene-staging mode runs it without arrivals or invented acts', async t => {
+  const prose = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(prose, '민아는 문 앞에 섰다.');
+  await withCards(prose, { rp_impersonation_scope: 'all' });
+  await runTurn(prose, '문을 연다.');
+  assert.ok(!callStages(prose).includes('aide_forced_bond'), 'prose mode: no 억결 call');
+  assert.ok(prose.prompts.every(body => !systemOf(body).includes('[FORCED BOND')), 'prose mode: no bond block anywhere');
+
+  const staging = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(staging, '민아는 문 앞에 섰다.');
+  await withCards(staging, { rp_impersonation_scope: 'persona_cast' });
+  await runTurn(staging, '문을 연다.');
+  const bondPrompt = staging.prompts.find(body => stageOf(body) === 'aide_forced_bond');
+  assert.ok(bondPrompt, 'staging mode still runs 억결');
+  const sys = systemOf(bondPrompt);
+  assert.match(sys, /Scene-staging RP mode/);
+  assert.match(sys, /Do not bring an absent character into the scene for a bond/);
+  assert.doesNotMatch(sys, /bring them in early or mid-scene/);
+});
+
+test('cards are per chat and reach every stage with mode rules, accuracy rules and recent-scene evidence', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.');
+  await withCards(f);
+  await runTurn(f, '준호를 지나쳐 간다.');
+  for (const stage of ['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_forced_bond']) {
+    const body = f.prompts.find(item => (stage === 'shadow_act' ? !stageOf(item) || stageOf(item) === 'shadow_act' : stageOf(item) === stage));
+    assert.ok(body, stage + ' was called');
+    // SHADOW carries stage guidance in its user message; the AIDEs in the system prompt.
+    const sys = body.messages.map(m => m.content).join('\n');
+    assert.match(sys, /\[FORCED BOND/, stage + ' gets the bond block');
+    assert.match(sys, /bond-junho: the user persona → 준호 \(mutual\) · tones: hatred, affection/, stage);
+    assert.match(sys, /recent signals only|recent scene signals only/, stage + ' says LIB evidence is absent');
+    assert.match(sys, /recent scene: .*준호/, stage + ' carries the recent line naming 준호');
+    assert.match(sys, /only the non-persona side of a bond/, stage + ' RP rule');
+    assert.match(sys, /Never invent a shared past/, stage + ' accuracy rule');
+  }
+  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_world')), /STAGE DUTY: World AIDE: check who is present, who could witness/);
+
+  const novel = await fixture(t, { writingMode: 'novel', unified: false });
+  wireModel(novel, '준호가 문 앞에서 기다렸다.');
+  await withCards(novel, { writing_mode: 'novel' });
+  await runTurn(novel, '준호를 지나쳐 간다.');
+  assert.match(systemOf(novel.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /Novel mode: both sides of a bond/);
+
+  const other = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(other, '민아는 문 앞에 섰다.');
+  await configure(other, { forced_bond_cards: JSON.stringify({ 'some-other-chat': [{ to: '준호', tones: ['hatred'] }] }) });
+  await runTurn(other, '문을 연다.');
+  assert.match(systemOf(other.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /BONDS: none declared for this chat/);
+  assert.ok(!systemOf(other.prompts.find(item => stageOf(item) === 'aide_character')).includes('[FORCED BOND'), 'no cards: checkers get no bond block');
+});
+
+test('lightweight AIDEs return bond_check through the schema and 억결 reads the earlier checks', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.', {
+    aide_character: { bond_check: [{ card: 'bond-junho', verdict: 'adjust', claim: '준호 is jealous of the persona and 세라', reason: '준호 never saw them together', evidence: 'recent' }] }
+  });
+  await withCards(f);
+  await runTurn(f, '준호를 지나쳐 간다.');
+  const character = f.prompts.find(item => stageOf(item) === 'aide_character');
+  assert.ok(JSON.stringify(character).includes('"bond_check"'), 'the patch schema asks for bond_check when 억결 is active');
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  assert.match(bond, /VERIFICATION NOTES FROM EARLIER STAGES/);
+  assert.match(bond, /\[aide_character\] bond-junho: adjust — 준호 is jealous of the persona and 세라 \(because 준호 never saw them together; evidence: recent\)/);
+  const plot = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
+  assert.match(plot, /\[aide_character\] bond-junho: adjust/, 'Plot AIDE, after 억결, also sees the check');
+});
+
+test('readings and proposals stay in memory for the GUI and are never written to storage', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.', {
+    aide_forced_bond: {
+      bond_readings: [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }],
+      bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호 wait for the persona' }, { from: '@persona', to: '준호', tones: ['rivalry'], why: 'already a card' }]
+    }
+  });
+  await withCards(f);
+  const keysBefore = new Set(f.values.keys());
+  await runTurn(f, '준호를 지나쳐 간다.');
+  const state = f.host.plugin.debugForcedBondState();
+  assert.deepEqual(JSON.parse(JSON.stringify(state.readings.readings)), [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }]);
+  assert.equal(state.proposals.length, 1, 'a proposal for a pair that already has a card is dropped');
+  assert.equal(state.proposals[0].to, '민아');
+  const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
+  assert.deepEqual(newKeys.filter(key => /bond|reading|proposal/i.test(key)), [], 'no bond state is persisted');
+});
+
+test('the 억결 panel edits per-chat cards and accepts proposals as cards', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.', {
+    aide_forced_bond: { bond_readings: [], bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호' }] }
+  });
+  const scopeKey = await withCards(f, {}, []);
+  await runTurn(f, '준호를 지나쳐 간다.');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="forced_bond"]');
+  assert.ok(panel.querySelector('[data-forced-bond-cards] .empty'), 'empty state before any card');
+  panel.querySelector('[data-forced-bond-action="add"]').click();
+  const to = panel.querySelector('[data-forced-bond-card-field="to"]');
+  to.value = '세라';
+  to.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
+  await f.wait(() => panel.querySelector('[data-forced-bond-card-field="to"]')?.value === '세라', 'card name kept');
+  const hatred = panel.querySelector('[data-forced-bond-card-field="tone"][data-tone="hatred"]');
+  hatred.checked = true;
+  hatred.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
+  const accept = await f.wait(() => panel.querySelector('[data-forced-bond-action="accept"]'), 'proposal shown');
+  accept.click();
+  await f.wait(() => panel.querySelectorAll('[data-forced-bond-card]').length === 2, 'proposal became a card');
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  const stored = JSON.parse((await f.host.plugin.getRuntimeSettings()).forced_bond_cards);
+  const cards = stored[scopeKey];
+  assert.equal(cards.length, 2);
+  assert.equal(cards[0].to, '세라');
+  assert.deepEqual(cards[0].tones, ['affection', 'hatred']);
+  assert.equal(cards[1].from, '준호');
+  assert.equal(cards[1].origin, 'proposal');
+  assert.deepEqual(Object.keys(stored), [scopeKey], 'cards are stored only for this chat');
+});
+
+test('the 억결 panel opens its own prompt preview instead of SHADOW', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const detail = f.document.querySelector('.stage-detail[data-detail="forced_bond"]');
+  assert.ok(detail, 'the pipeline page renders the 억결 panel');
+  detail.querySelector('[data-action="prompt-preview"]').click();
+  const title = () => f.document.querySelector('.dialog h2, .dialog [class*="title"]')?.textContent || '';
+  await f.wait(() => title().includes('프롬프트 미리보기'), 'prompt preview dialog');
+  assert.match(title(), /억결 AIDE/);
+});
+
+test('per-chat key follows the current character+chat', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f);
+  await runTurn(f, '문을 연다.');
+  const first = f.host.plugin.debugActiveScopeKey();
+  assert.match(first, /\S/);
+  await runTurn(f, '다시 문을 연다.');
+  assert.equal(f.host.plugin.debugActiveScopeKey(), first, 'same chat, same key');
+});
+
+test('the evidence packet puts canon, LIB and recent lines under each bond, and marks missing LIB evidence', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const recent = {
+    visibleMessages: [
+      { role: 'assistant', content: '세라는 리안을 노려보았다. 준호는 창밖만 보았다.' },
+      { role: 'user', content: '세라에게 말을 건다.' }
+    ],
+    relationshipCanonLock: { facts: [{ text: '세라와 리안은 쌍둥이 자매다.' }, { text: '준호는 마을 대장장이다.' }] }
+  };
+  const cards = [
+    { id: 'persona-sera', to: '세라', tones: ['longing'] },
+    { id: 'sera-lian', from: '세라', to: '리안', tones: ['rivalry', 'jealousy'], direction: 'mutual' }
+  ];
+  const withLib = f.host.plugin.debugForcedBondEvidencePacket({ recent, cards, libText: '세라는 페르소나와 헤어진 날을 아직 기억한다.\n리안은 세라의 약혼을 질투했다. 세라도 알고 있었다.' });
+  assert.match(withLib, /^Evidence source: LIB memory and recent scene\./);
+  assert.match(withLib, /- persona-sera: the user persona → 세라 \(one-way\) · tones: longing/);
+  assert.match(withLib, /LIB: 세라는 페르소나와 헤어진 날을 아직 기억한다\./);
+  assert.match(withLib, /canon: 세라와 리안은 쌍둥이 자매다\./, 'NPC bond carries the canon fact naming both');
+  assert.match(withLib, /LIB: 리안은 세라의 약혼을 질투했다\./);
+  assert.doesNotMatch(withLib.split('- sera-lian')[1], /준호/, 'lines naming only one NPC of an NPC bond are not evidence for it');
+  assert.match(withLib, /recent input: 세라에게 말을 건다\./);
+
+  const noLib = f.host.plugin.debugForcedBondEvidencePacket({ recent: { visibleMessages: [] }, cards: [{ id: 'x', to: '미하', tones: ['guilt'] }] });
+  assert.match(noLib, /recent scene signals only \(no LIB evidence/);
+  assert.match(noLib, /no evidence found for this bond; only the card applies/);
+});
