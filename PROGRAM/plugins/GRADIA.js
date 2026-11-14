@@ -18494,11 +18494,10 @@ ${passage.text || ''}`, 420));
     const reasoningAnalysisCap = reasoningActive
       ? (presetMax > MAX_ANALYSIS_RETRY_OUTPUT_TOKENS ? Math.min(presetMax - 2048, 14336) : MAX_ANALYSIS_RETRY_OUTPUT_TOKENS)
       : MAX_ANALYSIS_OUTPUT_TOKENS;
-    // With thinking room the first analysis attempt would sit at the cap; keep a step back so a length
-    // stop can still be expanded once instead of falling to the compact recovery.
-    const analysisCeiling = Math.min(reasoningAnalysisCap, presetMax);
+    // The length retry can expand to the preset ceiling. Reserve room from that ceiling so the
+    // first attempt does not lose a second reserve from the lower analysis cap.
     const analysisCap = reasoningActive
-      ? Math.max(MAX_ANALYSIS_OUTPUT_TOKENS, analysisCeiling - Math.max(1024, Math.floor(analysisCeiling * 0.2)))
+      ? Math.min(reasoningAnalysisCap, Math.max(MAX_ANALYSIS_OUTPUT_TOKENS, presetMax - Math.max(1024, Math.floor(presetMax * 0.2))))
       : MAX_ANALYSIS_OUTPUT_TOKENS;
     const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap,
       contextOutputCap || Number.MAX_SAFE_INTEGER));

@@ -7,7 +7,7 @@ const { load } = require('./gradia/host.cjs');
 const seam = '  const publicApi = Object.freeze({';
 const internals = async (api = {}) => (await load({ api, transformSource: source => {
   assert.ok(source.includes(seam));
-  return source.replace(seam, '  globalThis.__testInternals = { sceneTimeOfDay, buildDraftPatchDocument, applyDraftPatchOperations, callOllamaNative, aidePatchOutputTokenBudget };\n' + seam);
+  return source.replace(seam, '  globalThis.__testInternals = { sceneTimeOfDay, buildDraftPatchDocument, applyDraftPatchOperations, callOllamaNative, aidePatchOutputTokenBudget, stageOutputTokenBudget };\n' + seam);
 } })).internals;
 const plain = value => JSON.parse(JSON.stringify(value));
 
@@ -82,4 +82,12 @@ test('an AIDE patch with thinking gets room to think before its patch text', asy
   assert.ok(withThinking >= 12000, 'thinking budget: ' + withThinking);
   assert.ok(withThinking <= 16384, 'never above the preset max_tokens');
   assert.ok(without < 8192, 'no thinking keeps the patch-sized budget: ' + without);
+});
+
+test('reasoning analysis reserves retry room from the preset ceiling once', async () => {
+  const { stageOutputTokenBudget } = await internals();
+  const preset = { provider: 'ollama', model: 'deepseek-v4.1-flash:1017-cloud', reasoning_preset: 'ollama', reasoning_effort: 'low', max_tokens: 16384 };
+  const budget = stageOutputTokenBudget({}, 'aide_world', 'analysis phase', preset);
+  assert.equal(budget, 13108);
+  assert.ok(preset.max_tokens > budget);
 });
