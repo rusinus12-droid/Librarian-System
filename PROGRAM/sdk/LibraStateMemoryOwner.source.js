@@ -73,10 +73,17 @@
     const STATE_SEMANTIC_VECTOR_LIMIT = 128;
     const STATE_SEMANTIC_VECTOR_BYTES = 8 * 1024 * 1024;
     const STATE_SEMANTIC_DEADLINE_MS = 2500;
-    const readStateSemanticCandidates = async (context, source, queryText) => {
+    // The query may carry a second, weighted scene query. Both vectors are compared in the same
+    // single scan of the stored document vectors, so the scene lane adds no storage reads.
+    const readStateSemanticCandidates = async (context, source, queryInput) => {
+      const lanes = queryInput && typeof queryInput === 'object' ? queryInput : { text: queryInput };
+      const queryText = string(lanes.text || '');
+      const sceneText = string(lanes.sceneText || '');
+      const sceneWeight = Math.max(0, Math.min(1, Number(lanes.sceneWeight) || 0));
       const diagnostics = { status: 'off', queryCached: false, queryRequests: 0, scanned: 0, matched: 0,
-        missing: 0, incompatible: 0, failedReads: 0, limited: false, profileId: '' };
-      const empty = () => ({ scores: new Map(), matches: new Map(), diagnostics });
+        missing: 0, incompatible: 0, failedReads: 0, limited: false, profileId: '',
+        sceneQuery: sceneText && sceneWeight > 0 ? 'pending' : 'off' };
+      const empty = () => ({ scores: new Map(), sceneScores: new Map(), matches: new Map(), diagnostics });
       if (!source.semanticAllowed) return empty();
       const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
       if (!config.enabled) { diagnostics.status = 'disabled'; return empty(); }
@@ -91,14 +98,25 @@
       const controller = new AbortController();
       let readFrame = null, timer;
       const operation = async () => {
-        const query = await memoryRecallQueryVector(context.scope, queryText, { config }, STATE_SEMANTIC_DEADLINE_MS);
+        const [query, sceneVector] = await Promise.all([
+          memoryRecallQueryVector(context.scope, queryText, { config }, STATE_SEMANTIC_DEADLINE_MS),
+          diagnostics.sceneQuery === 'pending'
+            ? memoryRecallQueryVector(context.scope, sceneText, { config }, STATE_SEMANTIC_DEADLINE_MS).catch(() => null) : null
+        ]);
         if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
         if (!query) throw Error('LIBRA_SEMANTIC_QUERY_INVALID');
         diagnostics.profileId = query.profileId; diagnostics.queryCached = query.cached; diagnostics.queryRequests = query.requests;
+        // A scene vector from another profile or dimension is not comparable; the scene lane is then off.
+        const scene = sceneVector && sceneVector.profileId === query.profileId && sceneVector.unit?.length === query.unit.length ? sceneVector : null;
+        if (diagnostics.sceneQuery === 'pending') {
+          diagnostics.sceneQuery = scene ? 'ready' : 'unavailable';
+          diagnostics.queryRequests += Number(scene?.requests || 0);
+        }
+        const denseScore = cosine => cosine !== null && cosine >= 0.42 && cosine <= 1.00001 ? Math.min(1, (cosine - 0.42) / 0.18) : 0;
         const scanScope = { ...context.scope };
         readFrame = await openNativeReadFrame(scanScope);
         if (controller.signal.aborted) { readFrame.close(); throw Error('LIBRA_SEMANTIC_TIMEOUT'); }
-        const matches = new Map(), scores = new Map(); let bytes = 0;
+        const matches = new Map(), scores = new Map(), sceneScores = new Map(); let bytes = 0;
         for (let offset = 0; offset < refs.length; offset += 16) {
           if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
           const part = refs.slice(offset, offset + 16).map(ref => ({ ref,
@@ -123,15 +141,19 @@
               || record.profileId !== query.profileId || !vectorEmbeddingSpaceCompatibility(record, config).compatible) {
               diagnostics.incompatible++; continue;
             }
-            const entries = [];
+            const entries = []; let bestScene = 0;
             for (const [section, entry] of Object.entries(normalizeProjectionEntries(record))) {
               const vector = entry?.vector;
               if (!Array.isArray(vector) || vector.length !== query.unit.length || vector.some(x => typeof x !== 'number' || !Number.isFinite(x))) continue;
-              const cosine = lensCosine(query.unit, vector);
               // A positive dense signal is a ranking hint, never a new fact or a source proof.
-              if (cosine !== null && cosine >= 0.42 && cosine <= 1.00001 && entry.textHash) entries.push({ section, textHash: entry.textHash,
-                score: Math.min(1, (cosine - 0.42) / 0.18) });
+              // The current input leads; the scene contributes only up to its weight.
+              const current = denseScore(lensCosine(query.unit, vector));
+              const sceneScore = scene ? denseScore(lensCosine(scene.unit, vector)) : 0;
+              bestScene = Math.max(bestScene, sceneScore);
+              const score = Math.max(current, sceneWeight * sceneScore);
+              if (score > 0 && entry.textHash) entries.push({ section, textHash: entry.textHash, score });
             }
+            if (bestScene > 0) sceneScores.set(ref.key, bestScene);
             if (!entries.length) continue;
             scores.set(ref.key, Math.max(...entries.map(row => row.score)));
             matches.set(ref.key, { key: vectorKey, record: stored, entries });
@@ -139,7 +161,7 @@
           if (bytes > STATE_SEMANTIC_VECTOR_BYTES) break;
         }
         diagnostics.status = diagnostics.failedReads ? 'partial' : 'ready'; diagnostics.matched = matches.size;
-        return { matches, scores, diagnostics, configDigest: digest(config) };
+        return { matches, scores, sceneScores, diagnostics, configDigest: digest(config) };
       };
       try {
         // The hard deadline also handles a host/provider that ignores AbortSignal. Late

@@ -141,28 +141,59 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
   // ── Micro candidate discovery ────────────────────────────────────────────────────
   // `index` maps a turn to the search text already stored on its Micro head. Ranking it
   // lets an old turn be read because it matches, not only because it is recent.
-  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [] } = {}) => {
+  // `scene` is an optional second, weighted query ({ query, weight }). The turns each query
+  // matches are fused by weighted reciprocal rank before recency fills the rest. Completeness
+  // (matches/matchesRead) stays defined by the primary query.
+  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [], scene = null } = {}) => {
     const allowed = new Set(array(turns).map(Number)), cap = Math.max(0, Math.floor(Number(limit) || 0));
     const chosen = [], taken = new Set();
     const take = (turn, reason) => { if (chosen.length < cap && allowed.has(turn) && !taken.has(turn)) { taken.add(turn); chosen.push({ turn, reason }); } };
     const evidence = [...new Set(array(evidenceTurns).map(Number))].filter(turn => allowed.has(turn));
     for (const turn of evidence.slice(0, Math.ceil(cap / 2))) take(turn, 'state_evidence');
     const q = normalize(query).trim(), entries = index instanceof Map ? [...index].filter(([turn]) => allowed.has(Number(turn))) : [];
-    let matches = 0;
+    let matches = 0, matchedTurns = [], sceneMatches = 0;
     if (q && entries.length) {
       const docs = entries.map(([turn, text]) => ({ turn: Number(turn), body: String(text || ''), text: termFrequency(text) }));
-      const corpus = buildCorpus(docs), terms = queryTerms(q), queryEntities = mentionedEntities(q, entities);
-      const scored = docs.map(doc => ({ turn: doc.turn,
-        score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, q) }))
-        .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn);
-      matches = scored.length;
+      const corpus = buildCorpus(docs);
+      const matchOrder = queryValue => {
+        const terms = queryTerms(queryValue), queryEntities = mentionedEntities(queryValue, entities);
+        return docs.map(doc => ({ turn: doc.turn,
+          score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, queryValue) }))
+          .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn).map(row => row.turn);
+      };
+      matchedTurns = matchOrder(q);
+      matches = matchedTurns.length;
+      let order = matchedTurns, sceneOnly = new Set();
+      const sceneQuery = scene && Number(scene.weight) > 0 ? normalize(scene.query || '').trim() : '';
+      if (sceneQuery) {
+        const sceneTurns = matchOrder(sceneQuery), primary = new Set(matchedTurns);
+        sceneMatches = sceneTurns.length;
+        sceneOnly = new Set(sceneTurns.filter(turn => !primary.has(turn)));
+        order = fuseRankedLists([{ items: matchedTurns, weight: 1 }, { items: sceneTurns, weight: Number(scene.weight) }], turn => turn);
+      }
       // The newest turns keep a small floor so a fresh event is never crowded out.
       const recentFloor = Math.min(2, cap);
-      for (const row of scored) { if (chosen.length >= cap - recentFloor) break; take(row.turn, 'index_match'); }
+      for (const turn of order) { if (chosen.length >= cap - recentFloor) break; take(turn, sceneOnly.has(turn) ? 'scene_match' : 'index_match'); }
     }
     for (const turn of [...allowed].sort((a, b) => b - a)) take(turn, 'recent');
     return { turns: chosen.map(row => row.turn), reasons: Object.fromEntries(chosen.map(row => [row.turn, row.reason])),
-      indexed: entries.length, matches, matchesRead: chosen.filter(row => row.reason === 'index_match').length };
+      indexed: entries.length, matches, matchesRead: chosen.filter(row => row.reason === 'index_match').length,
+      matchedTurns, sceneMatches };
+  };
+  // Weighted reciprocal-rank fusion of ranked lists from several queries. The first list is the
+  // primary query; an item's position in any list counts, weighted by that list's weight.
+  const fuseRankedLists = (lists = [], keyOf = item => item, limit = Infinity, k = 60) => {
+    const rows = new Map();
+    array(lists).forEach(({ items = [], weight = 1 } = {}, listIndex) => {
+      array(items).forEach((item, rank) => {
+        const key = keyOf(item), row = rows.get(key) || { item, score: 0, first: [listIndex, rank] };
+        row.score += Math.max(0, Number(weight) || 0) / (k + rank + 1);
+        rows.set(key, row);
+      });
+    });
+    const ordered = [...rows.values()].sort((a, b) => b.score - a.score || a.first[0] - b.first[0] || a.first[1] - b.first[1]);
+    const cap = Number.isFinite(Number(limit)) ? Math.max(0, Math.floor(Number(limit))) : ordered.length;
+    return ordered.slice(0, cap).map(row => row.item);
   };
 
   // Standalone composite relevance score for string pairs.
@@ -332,42 +363,57 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     return rows;
   };
 
-  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [], semanticScores = new Map() } = {}) => {
+  // `scene` is an optional second, weighted query ({ query, weight, semanticScores }). The two
+  // queries' matching refs are fused by weighted reciprocal rank; refs that match neither keep
+  // the current query's order after them. Without a scene the ranking is the single-query one.
+  const rankCatalog = (refs, query, state = [], limit = 16, { entities = [], semanticScores = new Map(), scene = null } = {}) => {
     const evidenceIds = new Set(state.map(row => row.evidence?.memoryId).filter(Boolean));
     const refList = array(refs);
     if (!refList.length) return [];
-    const q = normalize(query).trim();
-    const qGrams = charNgrams(q, 40);
-    // Every ref is already in the manifest, so corpus statistics cost no read.
-    const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
-      terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
-    const corpus = q ? buildCorpus(docs, CATALOG_FIELDS) : null, terms = q ? queryTerms(q) : [];
-    const queryEntities = q ? mentionedEntities(q, entities) : new Set();
-
-    const scored = refList.map((ref, ordinal) => {
-      const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
-      const isAnchor = evidenceIds.has(ref.memoryId);
-      const anchorVal = isAnchor ? 1.0 : 0;
-      const exactVal = q ? exactSignal(textFields, q) : 0;
-      const refGrams = new Set(charNgrams(textFields, 80));
-      const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
-      const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
-      const identityVal = identitySignal(queryEntities, textFields, entities);
-      const semanticVal = Math.max(0, Math.min(1, Number(semanticScores.get(ref.key)) || 0));
-      const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
-      return {
-        ref,
-        ordinal,
-        score: base,
-        signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal, semantic: semanticVal }
-      };
-    });
-
-    const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity', 'semantic'], 60, 0.25) : scored;
-    const ranked = fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal);
+    const rankRows = (queryValue, semanticMap) => {
+      const q = normalize(queryValue).trim();
+      const qGrams = charNgrams(q, 40);
+      // Every ref is already in the manifest, so corpus statistics cost no read.
+      const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
+        terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
+      const corpus = q ? buildCorpus(docs, CATALOG_FIELDS) : null, terms = q ? queryTerms(q) : [];
+      const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+      const scored = refList.map((ref, ordinal) => {
+        const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
+        const isAnchor = evidenceIds.has(ref.memoryId);
+        const anchorVal = isAnchor ? 1.0 : 0;
+        const exactVal = q ? exactSignal(textFields, q) : 0;
+        const refGrams = new Set(charNgrams(textFields, 80));
+        const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
+        const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
+        const identityVal = identitySignal(queryEntities, textFields, entities);
+        const semanticVal = Math.max(0, Math.min(1, Number(semanticMap.get(ref.key)) || 0));
+        const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
+        return {
+          ref,
+          ordinal,
+          score: base,
+          signals: { anchor: anchorVal, exact: exactVal, charNgram: ngramVal, bm25: bm25Val, identity: identityVal, semantic: semanticVal }
+        };
+      });
+      const fused = q ? sparseRrfFusion(scored, ['anchor', 'exact', 'charNgram', 'bm25', 'identity', 'semantic'], 60, 0.25) : scored;
+      return fused.sort((a, b) => b.score - a.score || Number(b.ref.turnRange?.end || 0) - Number(a.ref.turnRange?.end || 0) || a.ordinal - b.ordinal);
+    };
+    const currentRanked = rankRows(query, semanticScores);
+    let ranked = currentRanked;
+    const sceneQuery = scene && Number(scene.weight) > 0 ? normalize(scene.query || '').trim() : '';
+    if (sceneQuery) {
+      const matching = rows => rows.filter(row => row.score > 0);
+      const fusedMatches = fuseRankedLists([{ items: matching(currentRanked), weight: 1 },
+        { items: matching(rankRows(sceneQuery, scene.semanticScores || new Map())), weight: Number(scene.weight) }], row => row.ref.key);
+      const fusedKeys = new Set(fusedMatches.map(row => row.ref.key));
+      ranked = [...fusedMatches, ...currentRanked.filter(row => !fusedKeys.has(row.ref.key))];
+    }
     // State anchors can otherwise occupy the entire shortlist, even when an older
     // foreign-language match has the highest dense relevance. Reserve within the same cap.
-    const dense = ranked.filter(row => row.signals.semantic > 0).sort((a,b) => b.signals.semantic - a.signals.semantic || b.score - a.score)
+    // The reservation reads the primary ranking, whose semantic scores already carry the
+    // scene only at its weight.
+    const dense = currentRanked.filter(row => row.signals.semantic > 0).sort((a,b) => b.signals.semantic - a.signals.semantic || b.score - a.score)
       .slice(0, Math.max(0, Math.floor(limit / 2)));
     const denseKeys = new Set(dense.map(row => row.ref.key));
     return [...dense, ...ranked.filter(row => !denseKeys.has(row.ref.key)).slice(0, Math.max(0, limit - dense.length))].map(row => row.ref);
@@ -531,6 +577,6 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     axes, labels, allocationPlan, tokens, charNgrams, exactSignal, charNgramSignal, bm25Score, score,
     termFrequency, queryTerms, buildCorpus, bm25fScore, entityTable, mentionedEntities, identitySignal, classifyAxis, rankMicroTurns,
     sparseRrfFusion, extractCanonicalSearchMetadata, upgradeCanonicalManifestSearchMetadata,
-    axisFor, stateRows, rankCatalog, select
+    axisFor, stateRows, rankCatalog, select, fuseRankedLists
   });
 };

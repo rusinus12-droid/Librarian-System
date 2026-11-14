@@ -15,6 +15,13 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       try { return await operation(); } finally { timings[phase] = (timings[phase] || 0) + now() - start; }
     };
     const queryText = String(options.queryInput?.queryText || options.queryText || '');
+    // The recent scene is a second, weighted query: a short input ("then?") is searched with the
+    // scene it continues. The current input stays the primary query. A weight of 0 (topic shift,
+    // no scene) leaves the search exactly as the single-query path.
+    const sceneText = String(options.queryInput?.sceneText || '').trim();
+    const sceneWeight = Math.max(0, Math.min(1, Number(options.queryInput?.sceneWeight) || 0));
+    const scene = queryText.trim() && sceneText && sceneWeight > 0 && sceneText !== queryText.trim()
+      ? { text: sceneText, weight: sceneWeight } : null;
     const policy = options.consumerPolicy || {};
     const maxCharacters = Math.floor(Number(policy.maxCharacters ?? frame.settings.recallMaxChars ?? 8000));
     const maxItems = Math.floor(Number(policy.maxUnits ?? frame.settings.stateMaxItems ?? 24));
@@ -26,12 +33,16 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      try { semantic = await timed('semanticMs', () => frame.semantic(queryText)); }
+      try {
+        semantic = await timed('semanticMs', () => frame.semantic(scene
+          ? { text: queryText, sceneText: scene.text, sceneWeight: scene.weight } : queryText));
+      }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
     frame.check();
     const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
-      plan.canonicalCandidates, { entities, semanticScores: semantic.scores });
+      plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
+        scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
@@ -42,7 +53,7 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     }
     frame.check();
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
-      limit: plan.microCandidates });
+      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null });
     const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;
@@ -178,6 +189,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
+        sceneQuery: scene ? { used: true, weight: scene.weight, characters: scene.text.length,
+          semantic: semantic.diagnostics?.sceneQuery || 'off', microMatches: ranked.sceneMatches || 0 } : { used: false },
         stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, timings, elapsedMs: now() - startedAt,
         stateAuthority: frame.stateAuthority || null,
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
