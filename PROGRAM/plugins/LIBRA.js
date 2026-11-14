@@ -35782,7 +35782,7 @@ function createLibraReadonlySourceContext(owner) {
         if (entry.receiptReadSet?.worldlineId && hostWorldlineIdForScope(context.scope) !== entry.receiptReadSet.worldlineId) throw consumerContractError('CONSUMER_DATA_WORLDLINE_CHANGED');
         if (entry.receiptReadSet) await assertRecentReceiptReadSetCurrent(entry.receiptReadSet);
         const archives = new Map();
-        let activeArchiveRefs = null;
+        let activeArchiveRefs = null, proofPairs = null;
         let canonicalManifestChecked = false;
         // Read every proof key of this scope in one batch through the owning frame
         // instead of one round trip per key; each check below still compares digests.
@@ -35837,7 +35837,12 @@ function createLibraReadonlySourceContext(owner) {
             if (archive.archiveDigest !== proof.archiveDigest) throw consumerContractError('CONSUMER_MICRO_ARCHIVE_CHANGED');
             current = { head: byKey.get(proof.headKey), record: byKey.get(proof.recordKey), receipt: byKey.get(proof.receiptKey) };
           } else {
-            current = await readActiveMicroMemory(context.scope, proof.worldlineId, proof.sessionEpoch, proof.turn);
+            // One host context for every Micro proof of this pass. Re-reading it per proof cost two full
+            // host character/chat reads per Micro (each a slow Tauri IPC call); the closing check
+            // below still reads the live context once more.
+            if (!proofPairs) proofPairs = buildPairs(context.chat, context.scope.scopeKey);
+            current = await readActiveMicroMemory(context.scope, proof.worldlineId, proof.sessionEpoch, proof.turn,
+              { context, pairs: proofPairs, skipFinalContextCheck: true });
             if (current.status !== 'verified' || current.headKey !== proof.headKey || current.recordKey !== proof.recordKey) {
               throw consumerContractError('CONSUMER_MICRO_CHANGED');
             }
@@ -41539,10 +41544,14 @@ function createLibraReadonlySourceContext(owner) {
           await recheckFrame.prefetch(readSet.refs.flatMap(ref => [ref.headKey, ref.receiptKey]).filter(Boolean));
         } catch (_) { recheckFrame?.close(); recheckFrame = null; }
       }
+      // The context read above is the live one for this check; one full host character/chat
+      // read per receipt (a slow Tauri IPC call each) added seconds to every recall.
+      const recheckPairs = buildPairs(recheckContext.chat, scope.scopeKey);
+      const receiptOptions = { context: { ...recheckContext, scope }, pairs: recheckPairs };
       try {
       for (const ref of readSet.refs) {
         const active = await readActiveCompletedTurnReceipt(scope, readSet.worldlineId,
-          Number(ref.sessionEpoch), Number(ref.turn));
+          Number(ref.sessionEpoch), Number(ref.turn), receiptOptions);
         const receipt = active.receipt;
         if (active.status !== 'verified' || !receipt
           || active.headKey !== ref.headKey || active.receiptKey !== ref.receiptKey

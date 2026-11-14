@@ -127,3 +127,24 @@ test('server mode: a live recall does not wait behind a Canonical batch holding 
   const phases = JSON.parse(JSON.stringify(x.f.r.core.state.lastRecallRuntime?.phases || []));
   assert.ok(phases.some(phase => phase.label === 'writer_queue_bypass'), 'the bypass is visible in the recall runtime');
 });
+
+test('server mode: one recall reads the host character/chat a bounded number of times', { timeout: 120000 }, async t => {
+  // Each context read is getCharacter + chat/character index calls over RisuAI's IPC (180–480 ms on the
+  // user's Tauri install). The delivery proofs used to re-read it per receipt and twice per Micro:
+  // 300 host calls for one recall on a 20-turn chat.
+  const { fixture: readerFixture } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
+  const x = await readerFixture({ mode: 'server_only', pauseAutomaticAnalysis: true, microCount: 20 });
+  t.after(() => x.cleanup());
+  const ask = () => x.f.control.hooks.beforeRequest([{ role: 'user', content: '은빛 열쇠는 누가 보관해?' }], 'model');
+  await ask();
+  const api = x.f.r.context.risuai, counts = {};
+  for (const name of ['getCharacter', 'getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex', 'getCharacterFromIndex', 'getCurrentChat', 'getChat']) {
+    if (typeof api[name] !== 'function') continue;
+    const original = api[name];
+    api[name] = async (...args) => { counts[name] = (counts[name] || 0) + 1; return original.apply(api, args); };
+  }
+  await ask();
+  assert.equal(x.f.r.api.getRuntime().lastMemoryInjectionMeta.finalVerification?.status, 'verified');
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  assert.ok(total <= 80, 'host context calls for one recall: ' + JSON.stringify(counts));
+});
