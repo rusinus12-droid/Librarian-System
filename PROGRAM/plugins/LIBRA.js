@@ -74907,6 +74907,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               lensId: lens.lensId, lensName: lens.name, lensStatus: lens.status, recordKey: record.recordKey, recordId: record.recordId,
               itemId: item.itemId, label: item.label, text: item.text, evidenceLevel: item.evidenceLevel,
               refs: clone(item.refs || []), quote: item.quote || '', quoteRef: item.quoteRef || '', basis: item.basis || '', extra: clone(item.extra || {}),
+              editedAt: item.editedAt || '', original: isPlainObject(item.original) ? clone(item.original) : null,
               whenTracked: record.trackedTime === true, when: item.when ? clone(item.when) : null, whenIssue: item.whenIssue || '',
               whoTracked: record.trackedSubject === true, who: clone(asArray(item.who)), whoIssue: item.whoIssue || '', people: resolvePeople(item.who),
               turnRange: clone(record.turnRange), worldlineId: record.worldlineId, createdAt: record.createdAt,
@@ -75068,6 +75069,49 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         scheduleGuiTraceRefresh();
         return { ok: true, lensId: targetLens, deletedCount };
       });
+    };
+
+    // A user correction of one stored note. Only the wording the model wrote changes (text, label,
+    // interpretation basis); the quote, refs, time and people stay as verified against the source.
+    // The item keeps its id so closures and vector entries still point at it; the vector is
+    // re-embedded because its text hash changes. The first original wording is kept once.
+    const LENS_EDIT_TEXT_MAX = 600, LENS_EDIT_LABEL_MAX = 24, LENS_EDIT_BASIS_MAX = 400;
+    const editLensMemory = async ({ memoryId = '', lensId = '', recordKey = '', recordId = '', itemId = '', text, label, basis } = {}) => {
+      let targetLens = lensSlug(lensId), targetRecord = string(recordKey || ''), targetItem = string(itemId || '');
+      if (String(memoryId).startsWith('inherited::')) throw lensError('LENS_EDIT_INHERITED_READ_ONLY', '이전 대화에서 넘어온 기록은 수정할 수 없습니다.');
+      if (memoryId && String(memoryId).includes('::')) {
+        const [idPart, recordPart, ...itemParts] = String(memoryId).split('::');
+        targetLens = targetLens || lensSlug(idPart);
+        targetRecord = targetRecord || recordPart;
+        targetItem = targetItem || itemParts.join('::');
+      }
+      if (!targetLens || !targetRecord || !targetItem) throw lensError('LENS_EDIT_TARGET_MISSING', '수정할 렌즈 기록을 찾지 못했습니다.');
+      const raw = value => String(value ?? '').replace(/\r\n?/g, '\n').trim();
+      const nextText = text === undefined ? null : raw(text);
+      const nextLabel = label === undefined ? null : raw(label);
+      const nextBasis = basis === undefined ? null : raw(basis);
+      if (nextText !== null && !nextText) throw lensError('LENS_EDIT_TEXT_EMPTY', '내용을 비워 둘 수 없습니다.');
+      if (nextText !== null && nextText.length > LENS_EDIT_TEXT_MAX) throw lensError('LENS_EDIT_TEXT_TOO_LONG', `내용은 ${LENS_EDIT_TEXT_MAX}자까지 쓸 수 있습니다.`);
+      if (nextLabel !== null && nextLabel.length > LENS_EDIT_LABEL_MAX) throw lensError('LENS_EDIT_LABEL_TOO_LONG', `라벨은 ${LENS_EDIT_LABEL_MAX}자까지 쓸 수 있습니다.`);
+      if (nextBasis !== null && nextBasis.length > LENS_EDIT_BASIS_MAX) throw lensError('LENS_EDIT_BASIS_TOO_LONG', `해석 근거는 ${LENS_EDIT_BASIS_MAX}자까지 쓸 수 있습니다.`);
+      const context = await resolveContext();
+      const result = await withLensScopeLock(context.scope.scopeKey, async () => {
+        const records = await loadLensRecordsMap(context.scope, targetLens);
+        const record = records[targetRecord];
+        if (!record || (recordId && record.recordId !== recordId)) throw lensError('LENS_EDIT_RECORD_CHANGED', '이 기록이 그사이 바뀌었습니다. 다시 불러온 뒤 수정하세요.');
+        const item = asArray(record.items).find(row => row.itemId === targetItem);
+        if (!item) throw lensError('LENS_EDIT_RECORD_CHANGED', '이 기록이 그사이 바뀌었습니다. 다시 불러온 뒤 수정하세요.');
+        const after = { text: nextText ?? string(item.text), label: (nextLabel ?? string(item.label)) || string(item.label) || '기록', basis: nextBasis ?? string(item.basis || '') };
+        if (item.evidenceLevel === 'interpreted' && !after.basis) throw lensError('LENS_EDIT_BASIS_REQUIRED', '해석 기록은 해석 근거가 있어야 합니다.');
+        const changed = after.text !== string(item.text) || after.label !== string(item.label) || after.basis !== string(item.basis || '');
+        if (!changed) return { ok: true, changed: false, lensId: targetLens, recordKey: targetRecord, itemId: targetItem, item: clone(item) };
+        if (!isPlainObject(item.original)) item.original = { text: string(item.text), label: string(item.label), basis: string(item.basis || '') };
+        item.text = after.text; item.label = after.label; item.basis = after.basis; item.editedAt = nowIso();
+        await saveLensRecordsMap(context.scope, targetLens, records);
+        return { ok: true, changed: true, lensId: targetLens, recordKey: targetRecord, itemId: targetItem, item: clone(item) };
+      });
+      if (result.changed) { void scheduleLensVectorRefresh(context.scope, targetLens, '', { force: true }); scheduleGuiTraceRefresh(); }
+      return result;
     };
 
     const deleteExcludedLensMemories = async ({ items, expectedScopeKey, expectedWorldlineId }) => {
@@ -75725,7 +75769,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       createLens, updateLens, setLensStatus, trashLens, restoreLens, purgeTrashedLensData,
       evaluateLensCandidateItems, captureLensSourceToken, verifyLensSourceToken, validateLensHandoffArchive,
       runLensForRange, runLensForTurnRange, trialRunLens, runScheduledLensesForCommittedBatch, waitForLensQueueIdle, disposeLensQueue,
-      inspectScopeLenses, getRecentWorkOverview, getLensRawResponse, deleteLensMemories, deleteExcludedLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
+      inspectScopeLenses, getRecentWorkOverview, getLensRawResponse, deleteLensMemories, editLensMemory, deleteExcludedLensMemories, draftLensWithAssistant, generateLensDefinitionFromDescription,
       validatePortableMicroArchive: validateMicroHandoffArchive,
       buildPortableLensArchives: async (expectedScopeKey, snapshot) => {
         const context = await resolveContext();
@@ -86030,6 +86074,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         filtered.some(item=>!item.inherited) ? guiEl('section',{class:'stack',dataset:{lensCurrentGroup:'true'}},[
           guiEl('h3',{text:'이 대화의 기록'}),...filtered.filter(item=>!item.inherited).map(item=>lensItemCard(item,{
             memory:true,showLens:filterLensId==='all',onReanalyze:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:item.lensId,startTurn:item.turnRange.start,endTurn:item.turnRange.end}),
+        onEdit: async draft => {
+          draft.busy = true; draft.error = ''; queueGuiNavigationRender();
+          try {
+            await LibraMemoryCore.editLensMemory({ memoryId: draft.memoryId, recordId: draft.recordId, text: draft.text, label: draft.label,
+              ...(item.evidenceLevel === 'interpreted' ? { basis: draft.basis } : {}) });
+            if (Gui.lensEditing === draft) Gui.lensEditing = null;
+            await loadLensReaderData(true);
+          } catch (error) { draft.busy = false; draft.error = text(error?.message || error); queueGuiNavigationRender(); }
+        },
         onDelete: async () => {
           if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
           try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
@@ -88989,7 +89042,8 @@ advanced
     const states = [
       memory && item.sourceCurrent === false ? libraStatusBadge('원문 변경됨 · 회상 제외', 'danger') : null,
       memory && item.instructionCurrent === false ? libraStatusBadge('이전 지침으로 생성', 'info') : null,
-      memory && item.closedBy ? libraStatusBadge(`이후 종료됨${item.closedBy.turn ? ` · T${item.closedBy.turn}` : ''} · 장면 우선 제외`, 'info') : null
+      memory && item.closedBy ? libraStatusBadge(`이후 종료됨${item.closedBy.turn ? ` · T${item.closedBy.turn}` : ''} · 장면 우선 제외`, 'info') : null,
+      memory && item.editedAt ? libraStatusBadge('직접 수정함', 'info') : null
     ].filter(Boolean);
     // An open provenance fold stays open when the reader re-renders (a background refresh).
     const provKey = text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
@@ -89015,7 +89069,8 @@ advanced
         ['생성', `${libraFormatTime(item.createdAt)}`],
         ['모델', [item.presetName ? presetDisplayName(item.presetName) : '정본 분석 연결', item.model].filter(Boolean).join(' · ')],
         ['정본 참고', item.canonicalContextIncluded ? '포함' : '포함 안 함'],
-        ['지침 버전', `${text(item.instructionRevision)}${item.instructionCurrent === false ? ' (현재 지침과 다름)' : ' (현재 지침)'}`]
+        ['지침 버전', `${text(item.instructionRevision)}${item.instructionCurrent === false ? ' (현재 지침과 다름)' : ' (현재 지침)'}`],
+        ...(item.editedAt ? [['수정', libraFormatTime(item.editedAt)], ['원래 내용', text(item.original?.text || '')]] : [])
       ].flatMap(([k, v]) => [guiEl('dt', { text: k }), guiEl('dd', { text: v || '-' })])),
       item.instructionCurrent===false && !item.recordInstructionText ? guiEl('p',{class:'hint',text:'이 기록의 원 지침은 보관 이력이 없어 비교할 수 없습니다.'}) : null,
       item.instructionCurrent === false && item.recordInstructionText ? guiEl('div', { class: 'stack stack--sm' }, [
@@ -89023,16 +89078,43 @@ advanced
         lensLineDiff(item.recordInstructionText, item.currentInstructionText)
       ]) : null
     ].filter(Boolean))]) : null;
-    const card = guiEl('article', { class: `lens-item${item.sourceCurrent === false ? ' is-stale' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
+    // Inline correction of the note's own wording; quote, refs, time and people stay as verified.
+    const editing = memory && !item.inherited && options.onEdit && Gui.lensEditing?.id === provKey ? Gui.lensEditing : null;
+    const editForm = editing ? (() => {
+      const labelInput = guiEl('input', { class: 'input', type: 'text', maxlength: '24', 'aria-label': '라벨', dataset: { lensEditLabel: 'true' }, onInput: event => { editing.label = event.target.value; } });
+      labelInput.value = editing.label;
+      const textArea = guiEl('textarea', { class: 'textarea', rows: 4, maxlength: '600', 'aria-label': '내용', dataset: { lensEditText: 'true' }, onInput: event => { editing.text = event.target.value; } });
+      textArea.value = editing.text;
+      const basisArea = item.evidenceLevel === 'interpreted' ? guiEl('textarea', { class: 'textarea', rows: 3, maxlength: '400', 'aria-label': '해석 근거', dataset: { lensEditBasis: 'true' }, onInput: event => { editing.basis = event.target.value; } }) : null;
+      if (basisArea) basisArea.value = editing.basis;
+      const field = (label, control) => guiEl('label', { class: 'field' }, [guiEl('span', { class: 'label', text: label }), control]);
+      return guiEl('div', { class: 'stack stack--sm', role: 'group', 'aria-label': '렌즈 기록 수정', dataset: { lensEditForm: 'true' } }, [
+        field('라벨', labelInput),
+        field('내용', textArea),
+        basisArea ? field('해석 근거', basisArea) : null,
+        guiEl('p', { class: 'hint', text: '인용·근거 턴·시점·인물은 원문에서 확인된 값이라 바뀌지 않습니다. 원래 내용은 “근거 · 출처 보기”에 남습니다.' }),
+        editing.error ? guiEl('p', { class: 'note note--danger', role: 'alert', text: editing.error }) : null,
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: editing.busy ? '저장 중…' : '저장', disabled: editing.busy, dataset: { lensEditSave: 'true' }, onClick: () => void options.onEdit(editing) }),
+          guiEl('button', { class: 'btn btn--sm btn--ghost', type: 'button', text: '취소', disabled: editing.busy, dataset: { lensEditCancel: 'true' }, onClick: () => { Gui.lensEditing = null; queueGuiNavigationRender(); } })
+        ])
+      ].filter(Boolean));
+    })() : null;
+    const startEdit = memory && !item.inherited && options.onEdit && !editing ? () => {
+      Gui.lensEditing = { id: provKey, memoryId: text(item.id || ''), recordId: text(item.recordId || ''), text: text(item.text), label: text(item.label || ''), basis: text(item.basis || ''), busy: false, error: '' };
+      queueGuiNavigationRender();
+    } : null;
+    const card = guiEl('article', { class: `lens-item${item.sourceCurrent === false ? ' is-stale' : ''}${editing ? ' is-editing' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
       guiEl('header', { class: 'lens-item__head' }, [guiEl('div', { class: 'lens-item__meta' }, meta), evidence]),
       personRow,
       timeRow,
-      guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
+      editForm || guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
       extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
-      states.length || (memory && !item.inherited && (options.onDelete||options.onReanalyze)) ? guiEl('footer', { class: 'lens-item__foot' }, [
+      states.length || (memory && !item.inherited && (options.onDelete||options.onReanalyze||options.onEdit)) ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
+        startEdit ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '수정', 'aria-label': `${text(item.label)} 항목 수정`, dataset: { lensItemEdit: 'true' }, onClick: startEdit }) : null,
         memory&&!item.inherited&&options.onReanalyze?guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{lensItemReanalysis:'true'},onClick:options.onReanalyze}):null,
         memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null
       ].filter(Boolean)) : null,
@@ -91750,6 +91832,7 @@ advanced
     async inspectScopeLenses(options = {}) { return safeClone(await LibraMemoryCore.inspectScopeLenses(options)); },
     async getLensRawResponse(options = {}) { return safeClone(await LibraMemoryCore.getLensRawResponse(options)); },
     async deleteLensMemories(options = {}) { return safeClone(await LibraMemoryCore.deleteLensMemories(options)); },
+    async editLensMemory(options = {}) { return safeClone(await LibraMemoryCore.editLensMemory(options)); },
     async recallLensMemories(options = {}) { return safeClone(await LibraMemoryCore.recallLensMemories(options)); },
     async getStoryClock(options = {}) { return safeClone(await LibraMemoryCore.getStoryClock(options)); },
     async setStoryClockAnchor(date = '') { return safeClone(await LibraMemoryCore.setStoryClockAnchor(date)); },
