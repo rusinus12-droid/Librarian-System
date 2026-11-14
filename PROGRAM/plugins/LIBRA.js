@@ -35750,7 +35750,11 @@ function createLibraReadonlySourceContext(owner) {
       if (options.signal) entry.consumerSignal = options.signal;
       const hardDeadline = Number(options.deadlineAt) || (options.useCapturedDeadline ? entry.consumerDeadlineAt : 0);
       const signal = options.signal || (options.useCapturedDeadline ? entry.consumerSignal : null);
-      const deadlineAt = Math.min(Date.now() + CONSUMER_REVALIDATION_BUDGET_MS, hardDeadline || Infinity);
+      // A live recall passes its own absolute deadline: the closing proof of a recall that
+      // still has budget must not fail on the fixed revalidation cap. On slow transport the
+      // 20 s read cache expires during a long State query, so this proof re-reads its keys.
+      const recallDeadlineAt = Number(options.recallDeadlineAt) > Date.now() ? Number(options.recallDeadlineAt) : 0;
+      const deadlineAt = Math.min(recallDeadlineAt || Date.now() + CONSUMER_REVALIDATION_BUDGET_MS, hardDeadline || Infinity);
       const check = () => {
         if (signal?.aborted) throw signal.reason || consumerContractError('CONSUMER_CANCELLED');
         if (Date.now() >= deadlineAt) throw consumerContractError('CONSUMER_DATA_REVALIDATION_DEADLINE');
@@ -35780,6 +35784,19 @@ function createLibraReadonlySourceContext(owner) {
         const archives = new Map();
         let activeArchiveRefs = null;
         let canonicalManifestChecked = false;
+        // Read every proof key of this scope in one batch through the owning frame
+        // instead of one round trip per key; each check below still compares digests.
+        const proofFrame = nativeReadFrames.get(context.scope);
+        if (proofFrame && !proofFrame.disabled) {
+          const proofKeys = entry.proofs.flatMap(proof => proof.kind === 'canonical-memory' ? [key.manifest(context.scope), proof.recordKey]
+            : proof.kind === 'network-source-dependency' || proof.archiveKey ? []
+            : ['micro-state-decision','network-identity-registry'].includes(proof.kind) ? [proof.recordKey]
+            : [proof.headKey, proof.recordKey, proof.receiptKey]).map(storageKey => string(storageKey || ''))
+            // A key still resident in the verified read cache is borrowed by the frame without a request.
+            .filter(storageKey => storageKey && !(Date.now() - Number(verifiedReadCache.get(storageKey)?.at || 0) < VERIFIED_READ_CACHE_TTL_MS));
+          try { await proofFrame.prefetch(proofKeys); } catch (_) { /* Each read below reports itself. */ }
+          check();
+        }
         for (const proof of entry.proofs) {
           check();
           if (proof.kind === 'canonical-memory') {
@@ -47908,7 +47925,7 @@ function createLibraReadonlySourceContext(owner) {
       settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
       abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,
       register: sources => native.register(scope, sources.flatMap(source => source.proofs), snapshot),
-      assertCurrent: async token => { check(); await native.assertCurrent(token, context, snapshot); check(); },
+      assertCurrent: async (token, proofOptions = {}) => { check(); await native.assertCurrent(token, context, snapshot, proofOptions); check(); },
       release: native.release };
   };
 });
@@ -48087,10 +48104,12 @@ function createLibraReadonlySourceContext(owner) {
     try {
       receipt = issuer?.bindSelection?.({ scope: frame.scope, generation, sourceKeys: sources.map(item => item.key), itemIds: publicItems.map(item => item.id) });
     } catch (error) { frame.release(readSet); throw error; }
-    const validatePacket = async input => {
+    // The delivering caller may pass its own deadline (the live recall's remaining
+    // budget) so the closing proof is not held to a shorter fixed cap than the recall.
+    const validatePacket = async (input, validateOptions = {}) => {
       if (closed || now() - startedAt > 600000) fail('LIBRA_STATE_SELECTION_CLOSED');
       if (input !== packet || fingerprint(JSON.stringify(input)) !== packetDigest) fail('LIBRA_STATE_PACKET_CHANGED');
-      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet));
+      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet, validateOptions));
       for (const source of sources) if (source.assertCurrent) await source.assertCurrent();
       if (receipt && issuer.verifyReceipt?.(receipt) !== true) fail('LIBRA_STATE_RECEIPT_CHANGED');
       frame.check();
@@ -65544,7 +65563,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         assertConsumedDataIdentity(receiptToken, 'unified_classic_block', digest(block));
         await runRecallStep(guard, 'unified_query_receipts', () => assertConsumedDataCurrent(receiptToken), RECALL_STEP_BUDGET_MS);
         const verified = await runRecallStep(guard, 'unified_final_consumer',
-          () => authority.validatePacket(packet), RECALL_REQUEST_BUDGET_MS);
+          () => authority.validatePacket(packet, { recallDeadlineAt: Number(guard?.deadlineAt || 0) }), RECALL_REQUEST_BUDGET_MS);
         ensureRecallGuard(guard, 'unified_final_injection');
         if (requestOwner !== latestRecallPublicationOwner) return messages;
         const finalMessages = block ? injectSystemMessage(messages, block, { injectionPosition: position,
@@ -69871,12 +69890,14 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           return registerConsumedDataReadSet(scope, mergeConsumedProofs(proofs, source.stateProofs,
             [stateDecisionConsumptionProof(source.stateKey, source.rawHead)]), null);
         },
-        async assertCurrent(token, context, source) {
+        async assertCurrent(token, context, source, proofOptions = {}) {
+          // A live recall hands over its own deadline; without one the fixed revalidation cap applies.
+          const recallDeadline = Number(proofOptions?.recallDeadlineAt) > 0 ? { recallDeadlineAt: Number(proofOptions.recallDeadlineAt) } : {};
           const prove = async readScope => {
             // With a read scope, both proofs read through its frame; the frame's own
             // batched check is what makes those shared bytes current.
             const adopt = current => readScope && sameSnapshotScope(current.scope, readScope) ? { ...current, scope: readScope } : current;
-            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt } : {});
+            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt, ...recallDeadline } : recallDeadline);
             freshReadDepth++;
             try {
               const current = adopt(await resolveContext());

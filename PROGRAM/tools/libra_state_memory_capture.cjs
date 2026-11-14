@@ -38,7 +38,7 @@ module.exports = function createLibraStateMemoryCapture(native, engine) {
       settle: typeof native.settle === 'function' ? () => native.settle(context) : null,
       abandon: typeof native.abandon === 'function' ? () => native.abandon(context) : null,
       register: sources => native.register(scope, sources.flatMap(source => source.proofs), snapshot),
-      assertCurrent: async token => { check(); await native.assertCurrent(token, context, snapshot); check(); },
+      assertCurrent: async (token, proofOptions = {}) => { check(); await native.assertCurrent(token, context, snapshot, proofOptions); check(); },
       release: native.release };
   };
 };

@@ -174,10 +174,12 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     try {
       receipt = issuer?.bindSelection?.({ scope: frame.scope, generation, sourceKeys: sources.map(item => item.key), itemIds: publicItems.map(item => item.id) });
     } catch (error) { frame.release(readSet); throw error; }
-    const validatePacket = async input => {
+    // The delivering caller may pass its own deadline (the live recall's remaining
+    // budget) so the closing proof is not held to a shorter fixed cap than the recall.
+    const validatePacket = async (input, validateOptions = {}) => {
       if (closed || now() - startedAt > 600000) fail('LIBRA_STATE_SELECTION_CLOSED');
       if (input !== packet || fingerprint(JSON.stringify(input)) !== packetDigest) fail('LIBRA_STATE_PACKET_CHANGED');
-      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet));
+      frame.check(); await timed('verificationMs', () => frame.assertCurrent(readSet, validateOptions));
       for (const source of sources) if (source.assertCurrent) await source.assertCurrent();
       if (receipt && issuer.verifyReceipt?.(receipt) !== true) fail('LIBRA_STATE_RECEIPT_CHANGED');
       frame.check();

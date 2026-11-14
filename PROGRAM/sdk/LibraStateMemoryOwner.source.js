@@ -543,12 +543,14 @@
           return registerConsumedDataReadSet(scope, mergeConsumedProofs(proofs, source.stateProofs,
             [stateDecisionConsumptionProof(source.stateKey, source.rawHead)]), null);
         },
-        async assertCurrent(token, context, source) {
+        async assertCurrent(token, context, source, proofOptions = {}) {
+          // A live recall hands over its own deadline; without one the fixed revalidation cap applies.
+          const recallDeadline = Number(proofOptions?.recallDeadlineAt) > 0 ? { recallDeadlineAt: Number(proofOptions.recallDeadlineAt) } : {};
           const prove = async readScope => {
             // With a read scope, both proofs read through its frame; the frame's own
             // batched check is what makes those shared bytes current.
             const adopt = current => readScope && sameSnapshotScope(current.scope, readScope) ? { ...current, scope: readScope } : current;
-            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt } : {});
+            await assertConsumedDataCurrent(token, readScope ? { adoptScope: adopt, ...recallDeadline } : recallDeadline);
             freshReadDepth++;
             try {
               const current = adopt(await resolveContext());

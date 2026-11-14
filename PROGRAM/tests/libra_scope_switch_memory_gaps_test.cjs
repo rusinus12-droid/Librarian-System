@@ -74,3 +74,32 @@ test('never-planned turns after the first Micro are re-opened by the receipt rec
   // A turn with an attempt in flight for its revision is not an unplanned gap.
   assert.deepEqual(await probe({ heads: [1], works: [3], options: { includeUnplanned: true } }), [2, 4]);
 });
+
+test('server mode: the final recall proof uses the recall budget, not the fixed revalidation cap', { timeout: 120000 }, async t => {
+  const { fixture: readerFixture } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
+  // The export's State query took 25 s, so the 20 s verified read cache had expired before the
+  // final proof. Expire it at that point here instead of making the fixture slow everywhere.
+  const anchor = '    const touchVerifiedRead = row =>';
+  const transformSource = source => { assert.ok(source.includes(anchor));
+    return source.replace(anchor, '    globalThis.__expireVerifiedReads = () => { for (const k of [...verifiedReadCache.keys()]) deleteVerifiedRead(k); };\n' + anchor); };
+  const x = await readerFixture({ mode: 'server_only', pauseAutomaticAnalysis: true, microCount: 8, transformSource });
+  t.after(() => x.cleanup());
+  const ask = () => x.f.control.hooks.beforeRequest([{ role: 'user', content: '은빛 열쇠는 누가 보관해?' }], 'model');
+  await ask();
+  let delayed = 0, expired = 0;
+  x.server.hooks.beforeServerRequest = async () => {
+    const stack = new Error().stack.split('\n').filter(line => /\basync\b/.test(line)).map(line => line.trim().replace(/ \(.*/, '')).join(' < ');
+    if (!expired && /assertRecentReceiptReadSetCurrent/.test(stack) && /runRecallStep/.test(stack)) { expired++; x.f.r.context.__expireVerifiedReads(); }
+    // Only the delivery proof of the live recall: slow transport longer than the 11.5 s cap.
+    if (!delayed && /assertConsumedDataCurrent/.test(stack) && /validatePacket < at async runRecallStep/.test(stack)) {
+      delayed++;
+      await new Promise(resolve => setTimeout(resolve, 12500));
+    }
+  };
+  await ask();
+  x.server.hooks.beforeServerRequest = null;
+  assert.equal(delayed, 1, 'the delivery proof read the server');
+  const meta = x.f.r.api.getRuntime().lastMemoryInjectionMeta;
+  assert.equal(meta.errorCode || '', '', 'recall is not refused: ' + (meta.errorCode || ''));
+  assert.equal(meta.finalVerification?.status, 'verified');
+});
