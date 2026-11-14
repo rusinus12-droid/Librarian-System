@@ -1195,6 +1195,15 @@
       domainQuery: 'plot event goal conflict tension promise foreshadowing unresolved consequence plan objective mystery cause payoff 사건 전개 목표 갈등 긴장 약속 복선 미해결 결과 계획 목적 수수께끼 원인 보상',
       weights: Object.freeze({ current: 0.38, terminal: 0.18, identity: 0.08, domain: 0.22, existing: 0.06, route: 0.05, source: 0.02, priority: 0.01 })
     }),
+    aide_body_state: Object.freeze({
+      label: 'Body State AIDE',
+      topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
+      absoluteFloor: 0.08,
+      relativeFloor: 0.25,
+      identityBypass: 0.80,
+      domainQuery: 'health injury wound illness sick fever cold flu pain medicine treatment recovery period cycle menstruation pregnancy contraception body condition fatigue 건강 부상 상처 질병 감기 독감 열 통증 약 치료 회복 생리 월경 주기 임신 피임 몸 상태 피로',
+      weights: Object.freeze({ current: 0.34, terminal: 0.16, identity: 0.24, domain: 0.14, existing: 0.05, route: 0.04, source: 0.02, priority: 0.01 })
+    }),
     aide_forced_bond: Object.freeze({
       label: 'Forced Bond AIDE',
       topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
@@ -1212,7 +1221,7 @@
   const SKILL_PRIORITY_MIN = 0;
   const SKILL_PRIORITY_MAX = 200;
   const DEFAULT_CUSTOM_SKILL_PRIORITY = 45;
-  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_forced_bond']);
+  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_body_state', 'aide_forced_bond']);
   const MANUAL_SKILL_MAX_CHARS = 24000;
   const MANUAL_SKILL_INPUT_SHARE = 0.20;
   const MANUAL_SKILL_MAX_PER_STAGE = 3;
@@ -1746,6 +1755,7 @@
     Object.freeze({ id: 'aide_character', label: '인물 AIDE', description: '인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안을 수정합니다.' }),
     Object.freeze({ id: 'aide_world', label: '세계관 AIDE', description: '장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안을 수정합니다.' }),
     Object.freeze({ id: 'aide_plot', label: '플롯 AIDE', description: '현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검하고 직전 초안을 수정합니다.' }),
+    Object.freeze({ id: 'aide_body_state', label: '상태 AIDE', description: '인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 억결 AIDE보다 먼저, 플롯 AIDE 앞에서 실행됩니다.' }),
     Object.freeze({ id: 'aide_forced_bond', label: '억결 AIDE', description: '페르소나 중심 관계(호감·증오·애증·미련 등)의 긴장을 장면에 엮고, 다른 AIDE의 관계 검증을 모아 이번 턴의 관계 판독을 정합니다. 플롯 AIDE 바로 앞에서 실행됩니다.' })
   ]);
   
@@ -1954,15 +1964,26 @@
   // LIB (LIBRA lenses and State) and is read back each turn.
   // Members are wrapped in arrows because their implementations are defined further down.
   const EXTENSION_AIDE_DEFS = Object.freeze({
+    // Body state comes first: relationship tension must respect what each body allows.
+    aide_body_state: Object.freeze({
+      placement: 'before_plot',
+      rank: 10,
+      isActive: settings => bodyStateStageActive(settings),
+      stageBlock: (stageName, recent, settings, ledger) => bodyStateStageBlock(stageName, recent, settings, ledger),
+      jsonProperties: (stageName, settings) => bodyStateJsonProperties(stageName, settings),
+      recordOutput: (ledger, stageName, parsed, settings) => recordBodyStateOutput(ledger, stageName, parsed, settings)
+    }),
     aide_forced_bond: Object.freeze({
       placement: 'before_plot',
+      rank: 20,
       isActive: settings => forcedBondStageActive(settings),
       stageBlock: (stageName, recent, settings, ledger, phase) => forcedBondStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => forcedBondJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordForcedBondOutput(ledger, stageName, parsed, settings)
     })
   });
-  const EXTENSION_AIDE_STAGE_IDS = Object.freeze(Object.keys(EXTENSION_AIDE_DEFS));
+  const EXTENSION_AIDE_STAGE_IDS = Object.freeze(Object.keys(EXTENSION_AIDE_DEFS)
+    .sort((left, right) => Number(EXTENSION_AIDE_DEFS[left].rank || 0) - Number(EXTENSION_AIDE_DEFS[right].rank || 0)));
   const isExtensionAideStage = stageId => EXTENSION_AIDE_STAGE_IDS.includes(stageId);
   const extensionAideActive = (stageId, settings = {}) => !!EXTENSION_AIDE_DEFS[stageId]?.isActive(settings);
   const activeExtensionAideStages = (settings = {}) => EXTENSION_AIDE_STAGE_IDS.filter(stageId => extensionAideActive(stageId, settings));
@@ -3770,6 +3791,8 @@ ${BIANCA_PERSONA_TEXT}`;
     // Last bond readings and AI proposals per chat, for the settings GUI only. Never persisted.
     forcedBondReadings: {},
     forcedBondProposals: {},
+    activeCharacterName: '',
+    bodyStateReadings: {},
     last: null,
     lastAuxiliarySkip: null,
     lastBeforeContext: null,
@@ -3884,6 +3907,7 @@ ${BIANCA_PERSONA_TEXT}`;
     aide_character: 'Character AIDE: check what each character knows, remembers, feels toward others, and has promised against it. Repair only contradictions inside the draft.',
     aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
     aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
+    aide_body_state: 'Body State AIDE: read dated health, injury, illness, cycle, and pregnancy records as evidence for each character’s current body state. Missing records stay missing.',
     aide_forced_bond: 'Forced Bond AIDE: read remembered history between the bond parties as evidence for this turn’s bond reading. It never licenses inventing a shared past.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
@@ -5174,7 +5198,7 @@ ${BIANCA_PERSONA_TEXT}`;
     'max_previous_stage_chars', 'max_injection_chars', 'gradation_mode', 'output_mode',
     'internal_draft_language', 'built_in_style_preset', 'injection_position', 'failure_mode',
     'stage_timeout_ms', 'provider_presets_risuai_enabled', 'default_preset',
-    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset',
+    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset', 'body_state_aide_preset',
     'arc_director_enabled', 'arc_director_preset', 'arc_horizon_turns', 'arc_auto_replan', 'arc_novelty_level',
     'input_assist_preset', 'user_intent_ooc_preset', 'input_assist_mode', 'input_assist_scope',
     'input_assist_target_chars', 'input_assist_confirmation_mode', 'input_assist_lore_activation_mode',
@@ -5182,10 +5206,10 @@ ${BIANCA_PERSONA_TEXT}`;
     'lore_reranker_top_k', 'skill_router_enabled', 'skill_router_top_k',
     'skill_router_references', 'selected_module_lore_ids', 'excluded_module_lore_ids', 'excluded_character_lore_ids',
     'aide_stage_order', 'enable_shadow_act',
-    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'shadow_prompt_extra',
-    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'shadow_prompt_mode',
-    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'shadow_prompt_custom',
-    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'debug_log',
+    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'enable_body_state_aide', 'shadow_prompt_extra',
+    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'body_state_prompt_extra', 'shadow_prompt_mode',
+    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'body_state_prompt_mode', 'shadow_prompt_custom',
+    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'body_state_prompt_custom', 'debug_log',
     'shadow_include_risu_context', 'shadow_risu_context_max_chars',
     'enable_gui', 'quick_profile',
     'target_draft_min_chars', 'target_draft_max_chars', 'writer_enabled',
@@ -6202,7 +6226,8 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_character: stageBase('aide_character', flat.enable_character_aide ?? flat.enableCharacterAide, flat.character_aide_preset ?? flat.characterAidePreset),
         aide_world: stageBase('aide_world', flat.enable_world_aide ?? flat.enableWorldAide, flat.world_aide_preset ?? flat.worldAidePreset),
         aide_plot: stageBase('aide_plot', flat.enable_plot_aide ?? flat.enablePlotAide, flat.plot_aide_preset ?? flat.plotAidePreset),
-        aide_forced_bond: stageBase('aide_forced_bond', flat.enable_forced_bond_aide ?? flat.enableForcedBondAide ?? false, flat.forced_bond_aide_preset ?? flat.forcedBondAidePreset)
+        aide_forced_bond: stageBase('aide_forced_bond', flat.enable_forced_bond_aide ?? flat.enableForcedBondAide ?? false, flat.forced_bond_aide_preset ?? flat.forcedBondAidePreset),
+        aide_body_state: stageBase('aide_body_state', flat.enable_body_state_aide ?? flat.enableBodyStateAide ?? false, flat.body_state_aide_preset ?? flat.bodyStateAidePreset)
       },
       prompts: {
         before: {
@@ -6210,7 +6235,8 @@ ${BIANCA_PERSONA_TEXT}`;
           aide_character: { mode: flat.character_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.character_prompt_custom || '', extraPrompt: flat.character_prompt_extra || '' },
           aide_world: { mode: flat.world_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.world_prompt_custom || '', extraPrompt: flat.world_prompt_extra || '' },
           aide_plot: { mode: flat.plot_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.plot_prompt_custom || '', extraPrompt: flat.plot_prompt_extra || '' },
-          aide_forced_bond: { mode: flat.forced_bond_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.forced_bond_prompt_custom || '', extraPrompt: flat.forced_bond_prompt_extra || '' }
+          aide_forced_bond: { mode: flat.forced_bond_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.forced_bond_prompt_custom || '', extraPrompt: flat.forced_bond_prompt_extra || '' },
+          aide_body_state: { mode: flat.body_state_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.body_state_prompt_custom || '', extraPrompt: flat.body_state_prompt_extra || '' }
         }
       }
     };
@@ -6235,7 +6261,8 @@ ${BIANCA_PERSONA_TEXT}`;
       aide_character: { enabled: 'enable_character_aide', preset: 'character_aide_preset' },
       aide_world: { enabled: 'enable_world_aide', preset: 'world_aide_preset', defaultEnabled: 'true' },
       aide_plot: { enabled: 'enable_plot_aide', preset: 'plot_aide_preset', defaultEnabled: 'true' },
-      aide_forced_bond: { enabled: 'enable_forced_bond_aide', preset: 'forced_bond_aide_preset', defaultEnabled: 'false' }
+      aide_forced_bond: { enabled: 'enable_forced_bond_aide', preset: 'forced_bond_aide_preset', defaultEnabled: 'false' },
+      aide_body_state: { enabled: 'enable_body_state_aide', preset: 'body_state_aide_preset', defaultEnabled: 'false' }
     };
     const refs = legacy.risuEnabled
       ? defaultRisuReferencesForStage('shadow_act')
@@ -6747,7 +6774,8 @@ ${BIANCA_PERSONA_TEXT}`;
       ['aide_character', 'character_prompt_custom', 'character_prompt_extra'],
       ['aide_world', 'world_prompt_custom', 'world_prompt_extra'],
       ['aide_plot', 'plot_prompt_custom', 'plot_prompt_extra'],
-      ['aide_forced_bond', 'forced_bond_prompt_custom', 'forced_bond_prompt_extra']
+      ['aide_forced_bond', 'forced_bond_prompt_custom', 'forced_bond_prompt_extra'],
+      ['aide_body_state', 'body_state_prompt_custom', 'body_state_prompt_extra']
     ];
     for (const [stage, customArg, extraArg] of beforePromptSpec) {
       const custom = mergeCreativeDirectionText(
@@ -6811,6 +6839,7 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_world: compact(await slotCfg('aide_world', 'preset', 'world_aide_preset', ''), 120),
         aide_plot: compact(await slotCfg('aide_plot', 'preset', 'plot_aide_preset', ''), 120),
         aide_forced_bond: compact(await slotCfg('aide_forced_bond', 'preset', 'forced_bond_aide_preset', ''), 120),
+        aide_body_state: compact(await slotCfg('aide_body_state', 'preset', 'body_state_aide_preset', ''), 120),
         [WRITER_STAGE_ID]: compact(await slotCfg(WRITER_STAGE_ID, 'preset', 'writer_preset', ''), 120),
         [USER_INTENT_AIDE_STAGE_ID]: compact(
           await slotCfg(
@@ -6838,6 +6867,9 @@ ${BIANCA_PERSONA_TEXT}`;
       enableWorldAide: asBool(await slotCfg('aide_world', 'enabled', 'enable_world_aide', 'true'), true),
       enablePlotAide: asBool(await slotCfg('aide_plot', 'enabled', 'enable_plot_aide', 'true'), true),
       enableForcedBondAide: asBool(await slotCfg('aide_forced_bond', 'enabled', 'enable_forced_bond_aide', 'false'), false),
+      enableBodyStateAide: asBool(await slotCfg('aide_body_state', 'enabled', 'enable_body_state_aide', 'false'), false),
+      bodyStateReproduction: asBool(await runtimeCfg('body_state_reproduction', 'false'), false),
+      bodyStateCards: normalizeBodyStateCardMap(await runtimeCfg('body_state_cards', {})),
       forcedBondForceAppearance: asBool(await runtimeCfg('forced_bond_force_appearance', 'true'), true),
       forcedBondCards: normalizeForcedBondCardMap(await runtimeCfg('forced_bond_cards', {})),
       shadowExtra: beforeExtraPrompts.shadow_act,
@@ -6845,6 +6877,7 @@ ${BIANCA_PERSONA_TEXT}`;
       worldExtra: beforeExtraPrompts.aide_world,
       plotExtra: beforeExtraPrompts.aide_plot,
       forcedBondExtra: beforeExtraPrompts.aide_forced_bond,
+      bodyStateExtra: beforeExtraPrompts.aide_body_state,
       beforeCustomPrompts,
       beforePromptModes,
       beforeExtraPrompts,
@@ -6866,6 +6899,7 @@ ${BIANCA_PERSONA_TEXT}`;
             : def.id === 'aide_world' ? settings.enableWorldAide
               : def.id === 'aide_plot' ? settings.enablePlotAide
                 : def.id === 'aide_forced_bond' ? settings.enableForcedBondAide
+                : def.id === 'aide_body_state' ? settings.enableBodyStateAide
                 : def.id === WRITER_STAGE_ID ? settings.writerEnabled
                   : true,
         preset: settings.stagePresetNames?.[def.id] || '',
@@ -11176,6 +11210,7 @@ function summarizeAgentCbsTag(rawContent) {
     const loreContinuityScope = loreContinuityScopeKey(character, chatInfo.chat);
     Runtime.activeScopeKey = loreContinuityScope;
     Runtime.activePersonaName = compact(persona?.name || persona?.nickname || '', 80);
+    Runtime.activeCharacterName = compact(character?.name || character?.nickname || '', 80);
     const inputAssistTerminalPath = settings?.activeStageName === INPUT_ASSIST_STAGE_ID
       && ragRecent?.inputAssistTerminalOnly === true;
     const loreContinuityActiveIds = inputAssistTerminalPath ? [] : readLoreContinuityIds(loreContinuityScope);
@@ -13972,7 +14007,7 @@ ${passage.text || ''}`, 420));
     if (stageName === 'aide_character') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.42 : 0.25;
     if (stageName === 'aide_world') return lore.sourceType === 'module' ? 1 : lore.sourceType === 'character' ? 0.34 : 0.25;
     if (stageName === 'aide_plot') return lore.sourceType === 'module' ? 0.72 : lore.sourceType === 'character' ? 0.48 : 0.30;
-    if (stageName === 'aide_forced_bond') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.45 : 0.25;
+    if (stageName === 'aide_body_state' || stageName === 'aide_forced_bond') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.45 : 0.25;
     return 0.55;
   };
 
@@ -23807,6 +23842,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       bondCheck: normalizeForcedBondCheck(parsed.bond_check),
       bondReadings: normalizeForcedBondReadings(parsed.bond_readings),
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
+      stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
+      stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       edits
     };
   };
@@ -24655,6 +24692,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       reinforcement_opportunities: stringArrayJsonSchema(),
       unsupported_inventions_to_remove: stringArrayJsonSchema()
     });
+    if (stageName === 'aide_body_state') return closedJsonObject({
+      condition_changes: { type: 'string' },
+      reaction_fit: { type: 'string' },
+      agency_check: { type: 'string' }
+    });
     if (stageName === 'aide_forced_bond') return closedJsonObject({
       main_bond: { type: 'string' },
       ripple_bond: { type: 'string' },
@@ -25002,6 +25044,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     "overresolution_or_derailment_risks": ["forced closure, arbitrary escalation, fake cliffhanger, scene replacement, optional cameo/cutaway, or writing-mode authority violation"],
     "next_turn_openings": ["${playerControlled ? 'the seed left for the next player choice after this response' : 'what stays unresolved inside the scene for the next turn'}"]
   }`;
+    if (stageName === 'aide_body_state') return `"domain": {
+    "condition_changes": "body-state changes this response shows, each tied to packet evidence",
+    "reaction_fit": "where reactions do or do not fit the computed body states",
+    "agency_check": "${playerControlled ? 'the persona’s body state is only what the input states' : 'explicit author direction is respected'}"
+  }`;
     if (stageName === 'aide_forced_bond') return `"domain": {
     "main_bond": "card id of this turn’s main bond",
     "ripple_bond": "card id of the ripple bond, or empty",
@@ -25123,6 +25170,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that force the user character’s next action or hidden feelings.'
         : 'Repair repetition, premature resolution, arbitrary escalation, fake cliffhangers, exposition drag, endings that wrap up the whole arc when the author did not ask for it, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
       'Improve pacing and payoff only where needed, preserve unaffected blocks exactly, and expose only the required compact patch JSON. Do not append a sequel scene.'
+    ],
+    aide_body_state: [
+      'ROLE: Body State AIDE (상태 AIDE) — body-state patch editor, running before the Forced Bond and Plot AIDEs.',
+      'Make each character’s body state in CURRENT_SAME_TURN_DRAFT match the BODY STATE block: its packet, mode rules, and accuracy rules.',
+      'Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
     ],
     aide_forced_bond: [
       'ROLE: Forced Bond AIDE (억결 AIDE) — relationship tension patch editor, running right before Plot AIDE.',
@@ -25266,6 +25318,327 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   // Checks travel between stages in this run's ledger only; readings and proposals go to
   // the settings GUI through Runtime. Nothing is written to storage.
+  // ===================== 상태 AIDE (aide_body_state) =====================
+  // Tracks character body state from LIB records (LIBRA lenses) and the recent scene, and
+  // computes elapsed days, phases and verdicts each turn. Nothing is stored: the same
+  // evidence always yields the same result, and probabilistic verdicts use a fixed seed.
+  // Design record: docs/gradia/STATE-AIDE-DESIGN-20261114.md. Tables are fixed code
+  // constants and fiction-grade approximations, not medical claims.
+  const BODY_STATE_INJURY_HEAL_DAYS = Object.freeze({ mild: [3, 7], moderate: [10, 21], severe: [30, 90] });
+  const BODY_STATE_ILLNESS = Object.freeze({
+    cold: Object.freeze({ label: '감기', days: [7, 10], pattern: /감기|콧물|cold\b/i, signs: 'runny nose, sore throat, tiredness' }),
+    flu: Object.freeze({ label: '독감', days: [5, 7], pattern: /독감|인플루엔자|influenza|\bflu\b/i, signs: 'high fever, body aches, heavy fatigue; a cough may linger two weeks' }),
+    fever: Object.freeze({ label: '발열', days: [2, 4], pattern: /열이|발열|고열|미열|fever/i, signs: 'heat, chills, low energy' }),
+    stomach: Object.freeze({ label: '장염·식중독', days: [1, 3], pattern: /장염|식중독|배탈|구토|설사|food poisoning|stomach bug/i, signs: 'nausea, cramps, weakness, poor appetite' }),
+    migraine: Object.freeze({ label: '편두통', days: [1, 1], pattern: /편두통|migraine/i, signs: 'light and noise sensitivity, wants to lie down' }),
+    sprain: Object.freeze({ label: '염좌', days: [7, 21], pattern: /삐었|염좌|접질|sprain/i, signs: 'swelling, favors the joint' }),
+    fracture: Object.freeze({ label: '골절', days: [42, 56], pattern: /골절|부러졌|부러진|fracture|broken bone/i, signs: 'immobilized limb, sharp pain on movement' })
+  });
+  const BODY_STATE_INJURY_RE = /다쳤|다친|부상|상처|베였|찰과상|멍이|타박|화상|피가\s*나|injur|wound|bruise|cut\b|burn/i;
+  const BODY_STATE_SYMPTOM_RE = /아프|통증|두통|어지러|기침|열이|미열|오한|메스꺼|구토|피곤|피로|몸살|쑤시|저리|pain|ache|dizzy|cough|nausea|fatigue/i;
+  const BODY_STATE_RECOVERY_RE = /나았|회복|완치|열이\s*내렸|괜찮아졌|아물|recovered|healed/i;
+  const BODY_STATE_MEDICATION_RE = /약을|복용|진통제|해열제|처방|병원|치료|붕대|깁스|medicine|pill\b|bandage|cast\b/i;
+  const BODY_STATE_PERIOD_START_RE = /생리(?:를|가)?\s*(?:시작|터졌)|월경\s*시작|period\s+(?:started|began)/i;
+  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|slept together|had sex|intercourse/i;
+  const BODY_STATE_CONTRACEPTION = Object.freeze({
+    // Multiplier on the per-act conception chance under typical use.
+    none: Object.freeze({ label: '피임 안 함', factor: 1, pattern: /피임\s*(?:안|없이|하지)|콘돔\s*없이|without (?:a )?condom|no protection/i }),
+    condom: Object.freeze({ label: '콘돔', factor: 0.15, pattern: /콘돔|condom/i }),
+    pill: Object.freeze({ label: '경구피임약', factor: 0.07, pattern: /피임약|경구피임|the pill|birth control pill/i }),
+    iud: Object.freeze({ label: '자궁내장치', factor: 0.01, pattern: /루프|자궁내장치|미레나|\biud\b/i }),
+    implant: Object.freeze({ label: '피하이식', factor: 0.001, pattern: /임플라논|피하이식|implant/i }),
+    withdrawal: Object.freeze({ label: '질외사정', factor: 0.2, pattern: /질외사정|withdrawal/i }),
+    emergency: Object.freeze({ label: '응급피임약', factor: 0.3, pattern: /사후피임|응급피임|morning.after/i })
+  });
+  // Conception chance for one act by day relative to ovulation (fiction-grade approximation).
+  const BODY_STATE_CONCEPTION_BY_OVULATION_DAY = Object.freeze({ '-5': 0.1, '-4': 0.16, '-3': 0.14, '-2': 0.27, '-1': 0.31, '0': 0.33, '1': 0.1 });
+  const BODY_STATE_DEFAULT_CYCLE = 28;
+  // Weeks after conception when a character could notice: a missed period, then symptoms.
+  const BODY_STATE_PREGNANCY_AWARENESS = Object.freeze({ missedPeriodDays: 14, testReliableDays: 14, symptomsDays: 28 });
+  const BODY_STATE_RELATIVE_DAYS = Object.freeze([
+    [/그저께|엊그제/, 2], [/어제|yesterday/i, 1], [/이틀\s*(?:전|째)/, 2], [/사흘\s*(?:전|째)/, 3], [/나흘\s*(?:전|째)/, 4],
+    [/닷새\s*(?:전|째)/, 5], [/엿새\s*(?:전|째)/, 6], [/일주일\s*(?:전|째)|a week ago/i, 7], [/보름\s*(?:전|째)/, 15]
+  ]);
+
+  const bodyStateDisplayName = name => (name === FORCED_BOND_PERSONA ? (Runtime.activePersonaName || 'the user persona') : name);
+  const bodyStateParseDate = value => {
+    const textValue = String(value || '');
+    let match = textValue.match(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/);
+    if (match) return { y: Number(match[1]), m: Number(match[2]), d: Number(match[3]) };
+    match = textValue.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+    if (match) return { y: 0, m: Number(match[1]), d: Number(match[2]) };
+    match = textValue.match(/(?<![\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/);
+    if (match && Number(match[1]) <= 12 && Number(match[2]) <= 31) return { y: 0, m: Number(match[1]), d: Number(match[2]) };
+    return null;
+  };
+  const bodyStateDaysBetween = (from, to) => {
+    if (!from || !to) return null;
+    const year = from.y && to.y ? null : 2001;
+    const start = Date.UTC(year || from.y, from.m - 1, from.d);
+    const end = Date.UTC(year || to.y, to.m - 1, to.d);
+    let days = Math.round((end - start) / 86400000);
+    if (year && days < 0) days += 365;
+    return days >= 0 && days < 3660 ? days : null;
+  };
+  const bodyStateRelativeDays = value => {
+    const textValue = String(value || '');
+    const numeric = textValue.match(/(\d{1,3})\s*일\s*(?:전|째)/) || textValue.match(/(\d{1,3})\s*days?\s*ago/i);
+    if (numeric) return Number(numeric[1]);
+    const weeks = textValue.match(/(\d{1,2})\s*주\s*(?:전|째)/) || textValue.match(/(\d{1,2})\s*weeks?\s*ago/i);
+    if (weeks) return Number(weeks[1]) * 7;
+    for (const [pattern, days] of BODY_STATE_RELATIVE_DAYS) if (pattern.test(textValue)) return days;
+    return null;
+  };
+
+  // Per-chat body state cards: user defaults the story does not state (cycle length, last
+  // period start, constitution, usual contraception). Configuration, not memory.
+  const normalizeBodyStateCard = raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const name = forcedBondPerson(raw.name || '');
+    if (!name) return null;
+    const cycleLength = Number(raw.cycleLength);
+    return {
+      name,
+      cycleLength: Number.isFinite(cycleLength) && cycleLength >= 21 && cycleLength <= 40 ? Math.round(cycleLength) : 0,
+      lastPeriodStart: compact(raw.lastPeriodStart || '', 40),
+      constitution: compact(raw.constitution || '', 160),
+      contraception: Object.prototype.hasOwnProperty.call(BODY_STATE_CONTRACEPTION, raw.contraception) ? raw.contraception : ''
+    };
+  };
+  const normalizeBodyStateCardMap = value => {
+    const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [rawKey, entry] of Object.entries(parsed)) {
+      const scopeKey = compact(rawKey, 512);
+      const cards = (Array.isArray(entry) ? entry : entry?.cards || []).map(normalizeBodyStateCard).filter(Boolean).slice(0, FORCED_BOND_MAX_CARDS);
+      if (scopeKey && cards.length) out[scopeKey] = cards;
+    }
+    return out;
+  };
+  const bodyStateCardsForScope = (settings = {}, scopeKey = '') => (scopeKey ? (normalizeBodyStateCardMap(settings?.bodyStateCards)[scopeKey] || []) : []);
+
+  // Same writing-mode rules as 억결: prose mode skips; staging colors only what is recorded.
+  const bodyStateModeGate = settings => forcedBondModeGate(settings);
+  const bodyStateStageActive = settings => settings?.enableBodyStateAide === true
+    && settings?.mode !== 'off'
+    && bodyStateModeGate(settings) !== 'skip';
+  const bodyStateIsPersona = name => {
+    const persona = compact(Runtime.activePersonaName || '', 80);
+    return name === FORCED_BOND_PERSONA || (!!persona && name === persona);
+  };
+  const bodyStateCast = (settings = {}) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const names = [
+      ...bodyStateCardsForScope(settings, scopeKey).map(card => card.name),
+      ...forcedBondCardsForScope(settings, scopeKey).flatMap(card => [card.from, card.to]),
+      compact(Runtime.activeCharacterName || '', 80),
+      compact(Runtime.activePersonaName || '', 80)
+    ].filter(Boolean).map(name => (bodyStateIsPersona(name) ? FORCED_BOND_PERSONA : name));
+    return Array.from(new Set(names)).slice(0, FORCED_BOND_MAX_CARDS);
+  };
+  const bodyStateLineMentions = (line, name) => (name === FORCED_BOND_PERSONA
+    ? (!!Runtime.activePersonaName && line.includes(Runtime.activePersonaName))
+    : line.includes(name));
+  const bodyStateSeedRoll = key => {
+    const digest = createTextHasher().update(String(key || '')).digest();
+    return parseInt(String(digest).replace(/[^0-9a-f]/gi, '').slice(0, 8) || '0', 16) / 0xffffffff;
+  };
+
+  // Evidence lines carry where they came from and how sure their timing is.
+  const bodyStateEvidenceLines = (recent = {}, settings = {}) => {
+    const lib = forcedBondSentences(libEvidencePrompt(settings)).map(line => ({ source: 'LIB', line, relative: null }));
+    const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
+    const scene = messages.flatMap(message => forcedBondSentences(message?.content).map(line => ({ source: 'recent', line, relative: bodyStateRelativeDays(line) })));
+    return [...lib, ...scene];
+  };
+  const bodyStateCurrentDate = (recent = {}) => {
+    const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const date = bodyStateParseDate(messages[index]?.content);
+      if (date) return date;
+    }
+    return null;
+  };
+  // Elapsed days for an evidence line: confirmed from two absolute dates, estimated from a
+  // relative phrase in the recent scene, otherwise unknown.
+  const bodyStateElapsed = (entry, now) => {
+    const date = bodyStateParseDate(entry.line);
+    const exact = date && now ? bodyStateDaysBetween(date, now) : null;
+    if (exact !== null) return { days: exact, confidence: 'confirmed' };
+    if (entry.source === 'recent' && entry.relative !== null) return { days: entry.relative, confidence: 'estimated' };
+    return { days: null, confidence: 'unknown' };
+  };
+  const bodyStateCyclePhase = (cycleDay, length) => {
+    const ovulation = length - 14;
+    if (cycleDay <= 5) return { phase: 'menstrual', signs: 'cramps, low energy, wants warmth and rest' };
+    if (cycleDay < ovulation - 1) return { phase: 'follicular', signs: 'energy and mood rising' };
+    if (cycleDay <= ovulation + 1) return { phase: 'ovulatory', signs: 'peak energy, more outgoing' };
+    if (cycleDay > length - 5) return { phase: 'late luteal', signs: 'irritable or tearful, bloating, breast tenderness' };
+    return { phase: 'luteal', signs: 'calmer, a little tired' };
+  };
+
+  const bodyStateCharacterReport = (name, entries, settings, now, gate, scopeKey) => {
+    const card = bodyStateCardsForScope(settings, scopeKey).find(item => item.name === name) || null;
+    const mine = entries.filter(entry => bodyStateLineMentions(entry.line, name));
+    const lines = [];
+    const evidence = mine.slice(-6).map(entry => `  ${entry.source}: ${compact(entry.line, 220)}`);
+    if (bodyStateIsPersona(name) && gate !== 'novel') {
+      return [`- ${bodyStateDisplayName(name)} (persona): RP — use only what the user input states about the persona's body. No judgment, no calculation, no new condition.`, ...evidence].join('\n');
+    }
+    const latest = pattern => [...mine].reverse().find(entry => pattern.test(entry.line)) || null;
+    // An onset is the latest mention that is not itself a recovery line.
+    const latestOnset = pattern => [...mine].reverse().find(entry => pattern.test(entry.line) && !BODY_STATE_RECOVERY_RE.test(entry.line)) || null;
+    const recovered = latest(BODY_STATE_RECOVERY_RE);
+    const describe = (entry, label, range) => {
+      const elapsed = bodyStateElapsed(entry, now);
+      if (recovered && mine.indexOf(recovered) > mine.indexOf(entry)) return `${label}: recovery recorded after onset (${recovered.source})`;
+      if (elapsed.days === null) return `${label}: onset recorded, day unknown — do not state how long it has lasted`;
+      const stage = range
+        ? (elapsed.days < range[0] ? 'ongoing' : elapsed.days <= range[1] ? 'likely easing' : 'expected to be over unless the story says otherwise')
+        : 'ongoing';
+      return `${label}: day ${elapsed.days + 1} (${elapsed.confidence}${range ? `; usual ${range[0]}–${range[1]} days` : ''}) → ${stage}`;
+    };
+    for (const [id, def] of Object.entries(BODY_STATE_ILLNESS)) {
+      const entry = latestOnset(def.pattern);
+      if (entry) lines.push(`  ${describe(entry, def.label, def.days)}; signs: ${def.signs} [${id}]`);
+    }
+    const injury = latestOnset(BODY_STATE_INJURY_RE);
+    if (injury) {
+      const severity = /심한|깊은|크게|severe|deep|badly/i.test(injury.line) ? 'severe' : /살짝|가볍|경미|약간|slight|minor/i.test(injury.line) ? 'mild' : 'moderate';
+      lines.push(`  ${describe(injury, `injury (${severity})`, BODY_STATE_INJURY_HEAL_DAYS[severity])}`);
+    }
+    const symptom = latestOnset(BODY_STATE_SYMPTOM_RE);
+    if (symptom && !lines.length) lines.push(`  ${describe(symptom, 'symptom', null)}`);
+    const medication = latest(BODY_STATE_MEDICATION_RE);
+    if (medication) lines.push(`  treatment recorded (${medication.source})`);
+
+    const length = card?.cycleLength || BODY_STATE_DEFAULT_CYCLE;
+    const periodEntry = latest(BODY_STATE_PERIOD_START_RE);
+    const periodDate = card?.lastPeriodStart ? bodyStateParseDate(card.lastPeriodStart) : null;
+    let cycleDay = null;
+    let cycleConfidence = 'unknown';
+    if (periodEntry) {
+      const elapsed = bodyStateElapsed(periodEntry, now);
+      if (elapsed.days !== null) { cycleDay = (elapsed.days % length) + 1; cycleConfidence = elapsed.confidence; }
+    } else if (periodDate && now) {
+      const days = bodyStateDaysBetween(periodDate, now);
+      if (days !== null) { cycleDay = (days % length) + 1; cycleConfidence = 'confirmed (card)'; }
+    }
+    if (cycleDay !== null) {
+      const phase = bodyStateCyclePhase(cycleDay, length);
+      lines.push(`  cycle: day ${cycleDay} of ${length} (${cycleConfidence}) → ${phase.phase}; signs: ${phase.signs}`);
+    }
+
+    if (settings.bodyStateReproduction === true && gate !== 'staging') {
+      const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line));
+      for (const exposure of exposures.slice(-3)) {
+        const method = Object.entries(BODY_STATE_CONTRACEPTION).find(([, def]) => def.pattern.test(exposure.line))?.[0] || card?.contraception || '';
+        const elapsed = bodyStateElapsed(exposure, now);
+        if (cycleDay === null || elapsed.days === null) {
+          lines.push(`  sexual contact recorded (${exposure.source}); conception cannot be judged: cycle day or date unknown — do not decide a pregnancy`);
+          continue;
+        }
+        const exposureCycleDay = ((cycleDay - 1 - elapsed.days) % length + length) % length + 1;
+        const fromOvulation = exposureCycleDay - (length - 14);
+        const base = BODY_STATE_CONCEPTION_BY_OVULATION_DAY[String(fromOvulation)] || 0;
+        const factor = method ? BODY_STATE_CONTRACEPTION[method].factor : 1;
+        const chance = base * factor;
+        const pregnant = chance > 0 && bodyStateSeedRoll(`${scopeKey}|${name}|${normalizeForLoreMatch(exposure.line)}`) < chance;
+        const aware = elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays
+          ? 'symptoms may show (nausea, fatigue)'
+          : elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
+        lines.push(`  sexual contact ${elapsed.days} days ago (${elapsed.confidence}), cycle day ${exposureCycleDay} then, ${method ? BODY_STATE_CONTRACEPTION[method].label : 'contraception unknown, treated as none'} → chance ${(chance * 100).toFixed(1)}% → ${pregnant ? `PREGNANT (fixed verdict); ${aware}` : 'not pregnant (fixed verdict)'}`);
+      }
+    }
+    if (card?.constitution) lines.push(`  constitution (card): ${card.constitution}`);
+    if (!lines.length && !evidence.length) return '';
+    return [`- ${bodyStateDisplayName(name)}:`, ...(lines.length ? lines : ['  no tracked condition']), ...evidence].join('\n');
+  };
+  const bodyStatePacket = (recent = {}, settings = {}) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const gate = bodyStateModeGate(settings);
+    const now = bodyStateCurrentDate(recent);
+    const entries = bodyStateEvidenceLines(recent, settings);
+    const reports = bodyStateCast(settings).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey)).filter(Boolean);
+    const libHits = entries.some(entry => entry.source === 'LIB');
+    return compact([
+      `Current story date: ${now ? `${now.y ? `${now.y}-` : ''}${now.m}-${now.d} (from the recent scene)` : 'unknown — the story has not stated it recently'}.`,
+      `Evidence source: ${libHits ? 'LIB memory and recent scene' : 'recent scene signals only (no LIB evidence)'}.`,
+      ...(reports.length ? reports : ['No tracked body state for the cast in play.'])
+    ].join('\n'), 4200);
+  };
+  const BODY_STATE_STAGE_DUTY = Object.freeze({
+    shadow_act: 'SHADOW: plan the scene inside what each body allows (movement, stamina, how much a sick or hurt character talks).',
+    aide_character: 'Character AIDE: check that reactions fit each body state and that a character is aware only of conditions they could know or feel at this point.',
+    aide_world: 'World AIDE: check that actions are physically possible for injured or ill characters and that elapsed time fits recovery or progression.',
+    aide_plot: 'Plot AIDE: check that no illness or injury is resolved in one turn without cause, and that a body-state change does not become the ending.',
+    aide_body_state: 'Body State AIDE: read the verification notes, settle this turn’s body-state readings, and patch only body-state descriptions that are missing or contradict the packet.'
+  });
+  const bodyStateOutputKind = (stageName, settings = {}) => {
+    if (!bodyStateStageActive(settings)) return '';
+    if (stageName === 'aide_body_state') return 'readings';
+    return FORCED_BOND_CHECK_STAGES.includes(stageName) ? 'check' : '';
+  };
+  const bodyStateStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+    if (!bodyStateStageActive(settings) || !BODY_STATE_STAGE_DUTY[stageName]) return '';
+    const gate = bodyStateModeGate(settings);
+    const priorChecks = (Array.isArray(ledger?.bodyStateChecks) ? ledger.bodyStateChecks : [])
+      .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.character}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
+      .slice(-16);
+    const kind = bodyStateOutputKind(stageName, settings);
+    return [
+      '[BODY STATE (상태) — CHARACTER CONDITION]',
+      'Keep each character’s body state alive in the scene: health signals, injuries, illness, cycle, and (when enabled) pregnancy, as the packet computes them.',
+      gate === 'novel'
+        ? '- Novel mode: any character’s body state may be portrayed within the author’s direction.'
+        : gate === 'staging'
+          ? '- Scene-staging RP mode: add no new condition and no new verdict. Only color the staging of stated acts by states already recorded.'
+          : '- RP mode: never judge, decide, or confirm the persona’s body state; use only what the input states about it. NPC states follow the packet, and NPCs react to the persona’s stated condition.',
+      'ACCURACY:',
+      '- Numbers (days, phases, chances) come only from the packet. Do not invent a number.',
+      '- When timing is unknown, do not say how long a condition has lasted.',
+      '- Do not name an illness or cause that the evidence does not give.',
+      '- A fixed verdict in the packet is final. Never reverse it, and reveal it only to characters who could know it now (see the awareness note).',
+      '- Recovery needs evidence or an elapsed usual span; otherwise say it may be easing.',
+      `STAGE DUTY: ${BODY_STATE_STAGE_DUTY[stageName]}`,
+      `BODY STATE PACKET:\n${bodyStatePacket(recent, settings)}`,
+      priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
+      kind === 'check'
+        ? 'OUTPUT: add a top-level "state_check" array with one item per character whose body state this draft touches, judged only from your own duty. Item fields: character; verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when none is touched.'
+        : kind === 'readings'
+          ? 'OUTPUT: add a top-level "state_readings" array, one item per character in play, with fields character and summary (one short line of the current body state).'
+          : ''
+    ].filter(Boolean).join('\n');
+  };
+  const bodyStateJsonProperties = (stageName, settings = {}) => {
+    const kind = bodyStateOutputKind(stageName, settings);
+    const str = { type: 'string' };
+    if (kind === 'check') return { state_check: { type: 'array', items: closedJsonObject({ character: str, verdict: { type: 'string', enum: ['confirm', 'adjust', 'uncertain'] }, claim: str, reason: str }) } };
+    if (kind === 'readings') return { state_readings: { type: 'array', items: closedJsonObject({ character: str, summary: str }) } };
+    return {};
+  };
+  const normalizeBodyStateChecks = value => (Array.isArray(value) ? value : []).map(item => ({
+    character: compact(item?.character || '', 80),
+    verdict: ['confirm', 'adjust', 'uncertain'].includes(item?.verdict) ? item.verdict : 'uncertain',
+    claim: compact(item?.claim || '', 240),
+    reason: compact(item?.reason || '', 240)
+  })).filter(item => item.character && item.claim).slice(0, 8);
+  const recordBodyStateOutput = (ledger, stageName, parsed = {}, settings = {}) => {
+    if (!ledger || !bodyStateStageActive(settings)) return;
+    const checks = normalizeBodyStateChecks(parsed?.stateCheck);
+    if (checks.length) {
+      if (!Array.isArray(ledger.bodyStateChecks)) ledger.bodyStateChecks = [];
+      ledger.bodyStateChecks.push({ stage: stageName, items: checks });
+    }
+    if (stageName !== 'aide_body_state') return;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const readings = (Array.isArray(parsed?.stateReadings) ? parsed.stateReadings : [])
+      .map(item => ({ character: compact(item?.character || '', 80), summary: compact(item?.summary || '', 240) }))
+      .filter(item => item.character && item.summary).slice(0, FORCED_BOND_MAX_CARDS);
+    if (scopeKey && readings.length) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
+  };
+
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
     const checks = normalizeForcedBondCheck(parsed?.bondCheck);
@@ -25938,6 +26311,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'Recommend direction only inside this same response. next_turn_openings are natural remaining possibilities, not instructions to write the next scene now.',
         'Do not write or revise the response draft. Return precise plot notes and direct rewrite actions.'
       ],
+      aide_body_state: [
+        'ROLE: Body State AIDE (상태 AIDE) — body-state analysis, before the Forced Bond and Plot AIDEs.',
+        'Read the BODY STATE packet and the verification notes. Decide this turn’s body-state readings and where the draft’s body-state portrayal is missing or wrong.',
+        'Do not write or revise the response draft. Return concise body-state analysis and direct rewrite directives.'
+      ],
       aide_forced_bond: [
         'ROLE: Forced Bond AIDE (억결 AIDE) — relationship tension analysis, right before Plot AIDE.',
         'Read the bonds, their evidence, and the verification notes in the FORCED BOND block. Decide this turn’s bond readings and how the main bond’s tension should be strengthened inside this same response.',
@@ -26267,6 +26645,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       bondCheck: normalizeForcedBondCheck(parsed.bond_check),
       bondReadings: normalizeForcedBondReadings(parsed.bond_readings),
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
+      stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
+      stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       doNotReveal: normalizeStringArray(parsed.do_not_reveal || parsed.doNotReveal, 24, 420),
       povLimits: normalizeStringArray(parsed.pov_limits || parsed.povLimits, 24, 420),
       beats: normalizeStringArray(
@@ -27064,6 +27444,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Do not append a sequel scene, revive an older thread without a present bridge, or decide the user character’s next action.'
         : 'Do not append a sequel scene or revive an older thread without a present bridge. Novel mode may author the user persona’s next action inside the current scene when it serves the authorial brief and does not violate an explicit reservation.'
     ],
+    aide_body_state: [
+      'ROLE: Body State AIDE (상태 AIDE) — body-state patch editor, before the Forced Bond and Plot AIDEs.',
+      'Inspect the latest draft against the BODY STATE block. Patch only body-state portrayal that is missing or contradicts the packet, and preserve unaffected blocks exactly.'
+    ],
     aide_forced_bond: [
       'ROLE: Forced Bond AIDE (억결 AIDE) — relationship tension patch editor, right before Plot AIDE.',
       'Inspect the latest draft against the FORCED BOND block. Patch only the paragraphs needed for this turn’s main bond (and at most one ripple bond), and preserve unaffected blocks exactly.'
@@ -27555,10 +27939,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         beats: patch.beats,
         bondCheck: patch.bondCheck,
         bondReadings: patch.bondReadings,
-        bondProposals: patch.bondProposals
+        bondProposals: patch.bondProposals,
+        stateCheck: patch.stateCheck,
+        stateReadings: patch.stateReadings
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals }
+        ? { ...precomputedAnalysis, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -27813,6 +28199,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     aide_character: 'Character behavior and voice',
     aide_world: 'Setting and world continuity',
     aide_plot: 'Causality and open plot movement',
+    aide_body_state: 'Character body state and readings',
     aide_forced_bond: 'Relationship tension and bond readings'
   }[stageName] || 'Scene continuity');
 
@@ -40217,6 +40604,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     biancaInject: settings.biancaInject === true,
     forcedBondForceAppearance: settings.forcedBondForceAppearance !== false,
     forcedBondCards: normalizeForcedBondCardMap(settings.forcedBondCards),
+    bodyStateReproduction: settings.bodyStateReproduction === true,
+    bodyStateCards: normalizeBodyStateCardMap(settings.bodyStateCards),
     loreActivationMode: normalizeLoreActivationMode(settings.loreActivationMode),
     loreRerankerTopK: clampInt(settings.loreRerankerTopK, 1, 32, DEFAULT_STAGE_LORE_RERANK_TOP_K),
     skillStageSelections: normalizeSkillStageSelections(settings.skillStageSelections),
@@ -40286,6 +40675,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     aide_world: guiSlotFromSettings(settings, 'aide_world', settings.enableWorldAide),
     aide_plot: guiSlotFromSettings(settings, 'aide_plot', settings.enablePlotAide),
     aide_forced_bond: guiSlotFromSettings(settings, 'aide_forced_bond', settings.enableForcedBondAide),
+    aide_body_state: guiSlotFromSettings(settings, 'aide_body_state', settings.enableBodyStateAide),
     [USER_INTENT_OOC_STAGE_ID]: guiSlotFromSettings(settings, USER_INTENT_OOC_STAGE_ID, true)
   });
 
@@ -40503,6 +40893,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       nsfwInjectFinalRequest: runtime.nsfwInjectFinalRequest === true,
       biancaInject: runtime.biancaInject === true,
       enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true,
+      enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true,
+      bodyStateReproduction: runtime.bodyStateReproduction === true,
+      bodyStateCards: normalizeBodyStateCardMap(runtime.bodyStateCards),
       forcedBondForceAppearance: runtime.forcedBondForceAppearance !== false,
       forcedBondCards: normalizeForcedBondCardMap(runtime.forcedBondCards),
       builtInStylePreset: normalizeBuiltInStylePreset(runtime.builtInStylePreset),
@@ -40592,6 +40985,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         bianca_inject: String(runtime.biancaInject === true),
         forced_bond_force_appearance: String(runtime.forcedBondForceAppearance !== false),
         forced_bond_cards: JSON.stringify(normalizeForcedBondCardMap(runtime.forcedBondCards)),
+        body_state_reproduction: String(runtime.bodyStateReproduction === true),
+        body_state_cards: JSON.stringify(normalizeBodyStateCardMap(runtime.bodyStateCards)),
         lore_activation_mode: normalizeLoreActivationMode(runtime.loreActivationMode),
         lore_reranker_top_k: String(clampInt(runtime.loreRerankerTopK, 1, 32, DEFAULT_STAGE_LORE_RERANK_TOP_K)),
         skill_stage_selections: normalizeSkillStageSelections(runtime.skillStageSelections),
@@ -43396,7 +43791,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       enableCharacterAide: Gui.state?.agents?.aide_character?.enabled === true,
       enableWorldAide: Gui.state?.agents?.aide_world?.enabled === true,
       enablePlotAide: Gui.state?.agents?.aide_plot?.enabled === true,
-      enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true });
+      enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true,
+      enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true });
   };
   const mockupSyncAideOrder = () => {
     const app=Gui.app;if(!app)return;
@@ -47336,6 +47732,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugForcedBondEvidencePacket({ recent = {}, libText = '', cards = [] } = {}) {
       return forcedBondEvidencePacket(recent, { [LIB_EVIDENCE_CONTEXT]: { block: libText } }, normalizeForcedBondCardList(cards));
+    },
+    debugBodyStatePacket({ recent = {}, libText = '', settings = {}, personaName = '', characterName = '', scopeKey = 'debug-scope' } = {}) {
+      const saved = { persona: Runtime.activePersonaName, character: Runtime.activeCharacterName, scope: Runtime.activeScopeKey };
+      Object.assign(Runtime, { activePersonaName: personaName, activeCharacterName: characterName, activeScopeKey: scopeKey });
+      try {
+        return bodyStatePacket(recent, { ...settings, bodyStateCards: normalizeBodyStateCardMap(settings.bodyStateCards), [LIB_EVIDENCE_CONTEXT]: { block: libText } });
+      } finally {
+        Object.assign(Runtime, { activePersonaName: saved.persona, activeCharacterName: saved.character, activeScopeKey: saved.scope });
+      }
     },
     debugForcedBondState() {
       const scopeKey = Runtime.activeScopeKey || '';
