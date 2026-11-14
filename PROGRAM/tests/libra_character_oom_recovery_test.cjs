@@ -2,12 +2,12 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {fixture}=require('./fixtures/libra_unified_runtime_fixture.cjs');
-const {fiveMore}=require('./fixtures/libra_server_runtime_fixture.cjs');
+const {fiveMore,serverFixture}=require('./fixtures/libra_server_runtime_fixture.cjs');
 const {waitFor}=require('./fixtures/libra_vm_harness.cjs');
-const expose=s=>s.replace('    const memoryGraphSourceFingerprint =',`
+const expose=s=>s.replace('    const exportCurrentScope = async () => {',`
     globalThis.__oom={settled:stateTrackingReplaySettled,seal:statePipelineReceiptDigest,digest,
-      core:()=>({refreshSnapshot,resolveContext,recoverPendingStateTrackingJournal})};
-    const memoryGraphSourceFingerprint =`).replace(
+      core:()=>({refreshSnapshot,resolveContext,recoverPendingStateTrackingJournal,snapshot:()=>state.snapshot})};
+    const exportCurrentScope = async () => {`).replace(
     'const refreshSerial = ++state.snapshotRefreshSerial;',
     'const refreshSerial = ++state.snapshotRefreshSerial; if(globalThis.__snapshotGate)await globalThis.__snapshotGate();');
 const gate=()=>{let release;const promise=new Promise(r=>release=r);return {promise,release};};
@@ -67,4 +67,57 @@ test('direct snapshot callers serialize; queued identical calls merge without sh
  hold.release();const results=await Promise.all([first,second,third]);
  assert.equal(peak,1);assert.equal(calls,2,'one active projection plus one merged fresh follow-up');
  assert.notEqual(results[1],results[2]);results[1].error='changed by caller';assert.notEqual(results[2].error,results[1].error);
+});
+
+test('server chat switching paints only the selected summary while State verification is queued',async t=>{
+ let selected=0, chats;
+ const server=await serverFixture({transformSource:expose,host:{
+  getCurrentChatIndex:async()=>selected,
+  getChatFromIndex:async(_character,index)=>chats?.[index]
+ }});
+ const {f}=server;
+ t.after(()=>server.cleanup());
+ await f.run();
+ chats=[f.chat,{id:'snapshot-chat-b',chatId:'snapshot-chat-b',name:'B',message:[],messages:[]}];
+ f.character.chats=chats;
+ const core=f.r.context.__oom.core();
+ const hold=gate();
+ t.after(()=>hold.release());
+ let calls=0;
+ f.r.context.__snapshotGate=async()=>{calls++;if(calls===1)await hold.promise;};
+ const request=()=>{
+  const summaries=[],timings={};
+  const done=core.refreshSnapshot(undefined,{summaryOnly:true,skipNativeCopyAdoption:true,
+    suppressGuiSchedule:true,onProvisional:snapshot=>summaries.push(snapshot),timings});
+  return {summaries,timings,done};
+ };
+ try {
+  const first=request();
+  await waitFor(()=>calls===1);
+  assert.ok(first.summaries[0].memories.length);
+  selected=1;f.character.chatPage=1;
+  const second=request();
+  await waitFor(()=>second.summaries.length===1);
+  assert.equal(core.snapshot().scope.chatId,'snapshot-chat-b');
+  assert.equal(core.snapshot().memories.length,0);
+  assert.equal(core.snapshot().continuityState,null);
+  assert.equal(core.snapshot().currentStateView.authority.pending,true);
+  selected=0;f.character.chatPage=0;
+  const third=request();
+  await waitFor(()=>third.summaries.length===1);
+  assert.equal(core.snapshot().scope.chatId,f.chat.id);
+  assert.ok(third.summaries[0].memories.length);
+  assert.equal(calls,1);
+  hold.release();
+  const [a,b,c]=await Promise.all([first.done,second.done,third.done]);
+  assert.equal(a.superseded,true);
+  assert.equal(b.superseded,true);
+  assert.equal(c.scope.chatId,f.chat.id);
+  assert.equal(c.error,'');
+  assert.equal(core.snapshot().scope.chatId,f.chat.id);
+  assert.equal(calls,2,'the superseded queued verification was skipped');
+  for(const key of ['scopeMs','manifestMs','provisionalMs','queueMs','verificationMs','stateProjectionMs']){
+   assert.ok(Number.isFinite(third.timings[key]),key);
+  }
+ }finally{hold.release();}
 });

@@ -109,6 +109,13 @@ async function run(mode) {
         'a failed final verification rolls back and clears its journal');
     }
 
+    const sourceStart = Number(preview.matchedStarts[0]);
+    const occupiedKey = `libra:v1:scope:${preview.target.scopeKey}:memory:${sourceStart}:r1`;
+    const occupiedBody = {schema:'libra.canonical_memory.v1',scopeKey:preview.target.scopeKey,
+      memoryId:`mem_${String(sourceStart).padStart(6,'0')}`,revision:1,status:'committed',
+      turnRange:{start:sourceStart,end:sourceStart+4},sourceDigest:'earlier-branch',text:'keep this previous revision'};
+    if(mode!=='plugin_only')await snapshot.mutate(occupiedKey,occupiedBody);
+    if(mode!=='server_only')snapshot.local.set(occupiedKey,JSON.stringify(occupiedBody));
     const beforeRebindRequests = snapshot.requests.length;
     const result = await idle(() => portable.rebindToUpdatedBot(envelope), `${mode}: rebind`);
     assert.equal(result.ok, true, `${mode}: rebind succeeds`);
@@ -117,6 +124,7 @@ async function run(mode) {
     assert.equal(result.receipt.targetCharacterId, 'unified-char-v2');
     assert.equal(result.receipt.targetScopeKey, String(preview.target.scopeKey));
     assert.deepEqual(Array.from(result.copiedStarts), Array.from(preview.matchedStarts));
+    assert.equal(result.receipt.reboundRevisions[sourceStart].targetRevision,2);
 
     const targetScopeKey = String(preview.target.scopeKey);
     const checkStore = (rows, label) => {
@@ -124,6 +132,9 @@ async function run(mode) {
       assert.ok(manifest, `${mode}: ${label} holds the moved chat's manifest`);
       assert.equal(manifest.value.scopeKey, targetScopeKey);
       assert.ok(manifest.key.startsWith(`libra:v1:scope:${targetScopeKey}:`), `${mode}: ${label} manifest key uses the new scope`);
+      assert.equal(manifest.value.memories[String(sourceStart)].revision,2);
+      assert.ok(manifest.value.memories[String(sourceStart)].history.some(ref=>ref.key===occupiedKey));
+      assert.deepEqual(rows.find(row=>row.key===occupiedKey)?.value,occupiedBody);
       for (const start of preview.matchedStarts) {
         const ref = manifest.value.memories[String(start)];
         assert.equal(ref?.status, 'committed', `${mode}: ${label} T${start} is committed`);

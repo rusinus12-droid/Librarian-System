@@ -1765,9 +1765,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const readbackOptions = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode };
     const confirmSuperseded = () => statusReadback(id, readbackOptions);
+    // These immutable undo entries use the server's durable write receipt.
+    // The server checks the stored bytes in the same transaction.
+    const journalDigest = kind === 'set' && mutateOptions.portableUndoEntry === true
+      ? await fastContentDigest(value) : '';
+    const verifyWrite = async payload => {
+      const receipt = verifyReceipt(payload, id, space, key);
+      if (!journalDigest) return await verifyStored(receipt);
+      if (receipt.kind !== 'set' || receipt.tombstone !== false || receipt.digest !== journalDigest)
+        throw new Error('memory_suite_end_to_end_readback_mismatch');
+      setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
+      return receipt;
+    };
     try {
       const payload = await request('POST', `/v1/kv/${kind}`, body, { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode });
-      return await verifyStored(verifyReceipt(payload, id, space, key));
+      return await verifyWrite(payload);
     } catch (error) {
       // A lost response may hide a committed write. The request path has already opened
       // the shared outage circuit, so the operation lookup forces a fresh bootstrap.
@@ -1776,7 +1788,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (lifecycle.disposed) break;
         try {
           const status = await statusReadback(id, { ...readbackOptions, forceBootstrap:true });
-          if (status) return await verifyStored(verifyReceipt(status, id, space, key));
+          if (status) return await verifyWrite(status);
           break;
         } catch (readbackError) {
           if (readbackError?.message === 'memory_suite_end_to_end_readback_mismatch' || readbackError?.status === 403) break;
@@ -7036,7 +7048,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
     if (!route.routed || route.mode === MODE_PLUGIN_ONLY) return typeof legacySet === 'function' ? await legacySet(value) : false;
     const projected = await routeProjectValue(route, value);
+    const portableUndoEntry = operationOptions.portableUndoEntry === true
+      && /^libra:v1:scope:.+:portable-import-journal:[^:]+:entry:\d{8}$/.test(key);
     if (authoritativeMirrorRoute(route)) {
+      if (portableUndoEntry) return await serializeMutation(space, route.remoteKey, async () => {
+        await remoteMutate('set', space, route.remoteKey, projected, {
+          allowPluginOnly: true, scope: route.scope, storageMode: route.mode, portableUndoEntry
+        });
+        return typeof legacySet === 'function' && await legacySet(value);
+      });
       const mirrored=await serializeMutation(space,route.remoteKey,async()=>{
         await remoteMutate('set',space,route.remoteKey,projected,{allowPluginOnly:true,scope:route.scope,storageMode:route.mode});
         return await mirrorServerRow(space,key,route,await remoteGet(space,route.remoteKey,{allowPluginOnly:true,scope:route.scope,storageMode:route.mode}));
@@ -7048,7 +7068,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const localOk = typeof legacySet === 'function' ? await legacySet(value) : false;
       if (!localOk) return false;
       try {
-        await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode }));
+        await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode, portableUndoEntry }));
         setStatus('synced', '', { scopeId: route.scopeId, mode: route.mode, key: compact(key, 160), space });
       } catch (error) {
         setStatus('local_ahead', error?.message || error, { scopeId: route.scopeId, mode: route.mode, key: compact(key, 160), space });
@@ -7057,7 +7077,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       return true;
     }
-    await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode }));
+    await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode, portableUndoEntry }));
     return true;
   };
 
@@ -7271,7 +7291,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           return false;
         }
       ),
-      setItem: async (key, value) => await scopedSet(space, String(key), value, async next => typeof legacy.setItem === 'function' ? (await legacy.setItem(key, next)) !== false : false),
+      setItem: async (key, value, options) => await scopedSet(space, String(key), value, async next => typeof legacy.setItem === 'function' ? (await legacy.setItem(key, next)) !== false : false, options),
       removeItem: async key => await scopedRemove(
         space, String(key),
         async () => typeof legacy.getItem === 'function' ? await legacy.getItem(key) : null,
@@ -9226,6 +9246,124 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
     ));
   };
+  const previewScopeCatalog = async () => {
+    const [current,registry] = await Promise.all([resolveCurrentScope(),loadScopeRegistry(false, true)]);
+    const scopes = new Map(Object.values(registry.entries).filter(row=>!isRemovedScopeRow(row) && !isGlobalScopeId(row.scopeId))
+      .map(row=>[row.scopeId,row]));
+    if(current?.scopeId && !isGlobalScopeId(current.scopeId) && !scopes.has(current.scopeId)) scopes.set(current.scopeId,current);
+    return {completeKnownScopes:false,preview:true,unresolved:[],blockers:[],rows:[...scopes.values()].map(scope=>({
+      scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName,chatTitle:scope.chatTitle,
+      label:scope.label||scope.scopeKey||scope.scopeId,current:scope.scopeId===current?.scopeId,
+      mode:registryScopeMode(registry,scope.scopeId),issues:[],keys:[],locations:[],unavailable:true
+    }))};
+  };
+  const summarizeScopeStorage = (scope,records) => {
+    let dataSummary='',dataMetrics={primary:null,secondary:null,updatedAt:null};
+    try{
+      const summary=options.scopeDataSummary?.({scope,records});
+      dataSummary=String(summary&&typeof summary==='object'?summary.label||'':summary||'').slice(0,240);
+      if(summary&&typeof summary==='object'){
+        for(const key of ['primary','secondary'])if(Number.isSafeInteger(summary[key])&&summary[key]>=0)dataMetrics[key]=summary[key];
+        const at=typeof summary.updatedAt==='number'?summary.updatedAt:typeof summary.updatedAt==='string'?Date.parse(summary.updatedAt):NaN;
+        if(Number.isFinite(at)&&at>0&&at<=8640000000000000)dataMetrics.updatedAt=at;
+      }
+    }catch(_){}
+    return {dataSummary,dataMetrics};
+  };
+  const readScopeListSummary = async (deleteTarget,publish,isCurrent) => {
+    requireScopeManagement();
+    const current=await resolveCurrentScope();
+    const pluginStore=rawPluginStorage(),blockers=[],scopes=new Map();
+    const rawRegistry=await pluginStore?.getItem(SCOPE_ROUTING_LOCAL_KEY);
+    const device=rawRegistry==null?await rawDeviceStorage().catch(()=>null):null;
+    const registry=globalReadRegistry(rawRegistry??await device?.getItem?.(SCOPE_ROUTING_LOCAL_KEY),device?'device':'plugin',blockers);
+    const legacyMode=normalizeMode(await getArgumentValue(modeArguments,MODE_PLUGIN_ONLY));
+    const scopedMode=id=>registryScopeMode(registry,id,legacyMode);
+    const addScope=entry=>{
+      if(!entry?.scopeId||isGlobalScopeId(entry.scopeId)||isRemovedScopeRow(registry.entries[entry.scopeId]))return;
+      const previous=scopes.get(entry.scopeId);
+      scopes.set(entry.scopeId,{...entry,...previous});
+    };
+    for(const entry of Object.values(registry.entries))addScope(entry);
+    addScope(current);
+    const keyed=new Map(),checked=new Set();
+    const hydrated=new Map();
+    const snapshot=(loading=false)=>({
+      summaryOnly:true,loading,completeKnownScopes:false,blockers:[...blockers],unresolved:[],
+      rows:[...scopes.values()].map(scope=>{
+        const mode=scopedMode(scope.scopeId),records=keyed.get(scope.scopeId)||[];
+        const local=records.filter(row=>row.location==='plugin'),remote=records.filter(row=>row.location==='server');
+        const keys=[...new Set(records.map(row=>row.logicalKey))];
+        return {scopeId:scope.scopeId,scopeKey:scope.scopeKey,characterName:scope.characterName,chatTitle:scope.chatTitle,
+          label:scope.label||scope.scopeKey||scope.scopeId,current:scope.scopeId===current?.scopeId,mode,modeLabel:modeLabel(mode),
+          issues:[],keys,locations:[...new Set(records.map(row=>row.location))],matchedKeys:keys.length||null,
+          localRecords:checked.has('plugin')?local.length:null,serverRecords:checked.has('server')?remote.length:null,
+          serverChecked:checked.has('server'),...hydrated.get(scope.scopeId)};
+      })
+    });
+    publish(snapshot(true));
+    if(!isCurrent())return;
+    const readOptions={allowPluginOnly:true,storageMode:MODE_SERVER_ONLY,strictInventory:true};
+    const scanServer=deleteTarget!=='local'||scopedMode(current?.scopeId)!==MODE_PLUGIN_ONLY||
+      [...scopes.keys()].some(id=>scopedMode(id)!==MODE_PLUGIN_ONLY)||registry.globalMigrationRemoteHistory===true||!!dataBinding.dataInstanceId;
+    const pluginKeys=Promise.resolve().then(()=>pluginStore.keys());
+    const serverKeys=scanServer?remoteKeys('plugin',options.scopeListServerPrefix||'',readOptions):null;
+    const results=await Promise.allSettled([pluginKeys,serverKeys]);
+    if(!isCurrent())return;
+    for(const [index,location] of ['plugin','server'].entries()){
+      const result=results[index];
+      if(result.status==='rejected'||index===0&&!Array.isArray(result.value)){
+        blockers.push({code:'scope_summary_keys_unavailable',location});
+        continue;
+      }
+      if(!result.value)continue;
+      const keys=index===0?result.value:result.value.keys,metadata=index===0?null:new Map(result.value.records.map(row=>[row.key,row]));
+      checked.add(location);
+      for(const key of keys){
+        if(chunkOwnerKey(key))continue;
+        const {logicalKey,scopeId:routeId}=scopedRemoteKeyInfo(key);
+        if(!matchesRoute('plugin',logicalKey))continue;
+        const match=options.classifyScopeListKey(logicalKey);
+        if(!match)continue;
+        if(routeId&&routeId!==match.scopeId)continue;
+        const scopeId=match.scopeId;
+        if(!scopeId||isGlobalScopeId(scopeId)||isRemovedScopeRow(registry.entries[scopeId]))continue;
+        if(!scopes.has(scopeId))addScope({scopeId,scopeKey:scopeId});
+        if(!keyed.has(scopeId))keyed.set(scopeId,[]);
+        keyed.get(scopeId).push({scopeId,location,key,logicalKey,root:match.root,metadata:metadata?.get(key)});
+      }
+    }
+    publish(snapshot(true));
+    const roots=[];
+    for(const [scopeId,records] of keyed){
+      const mode=scopedMode(scopeId);
+      const location=mode===MODE_SERVER_ONLY?'server':'plugin';
+      const matching=records.filter(row=>row.root&&row.location===location);
+      if(matching.length===1)roots.push(matching[0]);
+    }
+    // Hydrate registered/recovered rows in small batches. Only the owner's
+    // manifest/ledger is read. Memory, vector and dependency bodies stay untouched.
+    for(let offset=0;offset<roots.length&&isCurrent();offset+=16){
+      const batch=roots.slice(offset,offset+16),remote=batch.filter(row=>row.location==='server');
+      const [localReads,serverRead]=await Promise.all([
+        Promise.allSettled(batch.filter(row=>row.location==='plugin').map(async row=>[row,await pluginStore.getItem(row.key)])),
+        remote.length?remoteGetMany('plugin',remote.map(row=>row.key),readOptions).then(value=>value.values,()=>null):null
+      ]);
+      if(!isCurrent())return;
+      const values=localReads.filter(result=>result.status==='fulfilled'&&result.value[1]!=null).map(result=>result.value);
+      for(const row of remote){
+        const value=serverRead?.[row.key];
+        if(value?.exists===true&&value.tombstone!==true&&value.revision===row.metadata?.revision&&value.digest===row.metadata?.digest)values.push([row,value.value]);
+      }
+      if(values.length<batch.length)blockers.push({code:'scope_summary_root_read_incomplete'});
+      for(const [row,value] of values){
+        if(value==null)continue;
+        const records=keyed.get(row.scopeId).map(item=>item===row?{...item,value}:item);
+        hydrated.set(row.scopeId,summarizeScopeStorage({...scopes.get(row.scopeId),sourceMode:scopedMode(row.scopeId)},records));
+      }
+    }
+    return snapshot();
+  };
   const scopeCatalogFromInventory = async inventory => {
     const current=await resolveCurrentScope(true).catch(()=>null);
     const activeMode=current?inventory.scopes.find(scope=>scope.scopeId===current.scopeId)?.sourceMode:null;
@@ -9242,16 +9380,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const keys=[...new Set(live.map(row=>row.logicalKey))].sort();
       const locations=[...new Set(live.map(row=>row.location))].sort();
       const plan=localScopeDataPlan(inventory,scope),serverPlan=serverScopeDataPlan(inventory,scope);
-      let dataSummary='',dataMetrics={primary:null,secondary:null,updatedAt:null};
-      try{if(typeof options.scopeDataSummary==='function'){
-        const summary=options.scopeDataSummary({scope,records:live});
-        dataSummary=String(summary&&typeof summary==='object'?summary.label||'':summary||'').slice(0,240);
-        if(summary&&typeof summary==='object'){
-          for(const key of ['primary','secondary'])if(Number.isSafeInteger(summary[key])&&summary[key]>=0)dataMetrics[key]=summary[key];
-          const at=typeof summary.updatedAt==='number'?summary.updatedAt:typeof summary.updatedAt==='string'?Date.parse(summary.updatedAt):NaN;
-          if(Number.isFinite(at)&&at>0&&at<=8640000000000000)dataMetrics.updatedAt=at;
-        }
-      }}catch(_){}
+      const {dataSummary,dataMetrics}=summarizeScopeStorage(scope,live);
       const eligible=inventory.completeKnownScopes&&!!current?.scopeId&&[MODE_PLUGIN_ONLY,MODE_SERVER_ONLY].includes(activeMode)
         &&[MODE_PLUGIN_ONLY,MODE_SERVER_ONLY].includes(scope.sourceMode)&&!!scope.characterId&&!!scope.chatId&&current.scopeId!==scope.scopeId;
       const localPresent=plan.owned.length>0||plan.registryEdits.length>0,serverPresent=serverPlan.owned.length>0||serverPlan.registryEdits.length>0;
@@ -9503,7 +9632,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       control.style.backgroundColor=palette?.backgroundColor||'#111a2a';control.style.color=palette?.color||'#e8eefc';
       control.style.border='1px solid #526273';control.style.borderRadius='8px';control.style.padding='10px';
     }
-    let catalog=null,busy=false,limit=50,serial=0;const selected=new Set();
+    let catalog=null,busy=false,checking=false,checkError='',limit=50,serial=0;const selected=new Set();
+    const summaryEnabled=typeof options.classifyScopeListKey==='function';
     const filtered=()=>{const term=q('[data-scope-search]').value.trim().toLocaleLowerCase(),filter=q('[data-scope-filter]').value;
       return (catalog?.rows||[]).filter(row=>(!term||[row.characterName,row.chatTitle,row.scopeKey,row.scopeId].join(' ').toLocaleLowerCase().includes(term))
         &&(filter==='all'||filter==='issues'&&(row.issues.length>0||row.unavailable)||filter==='memory'&&row.ownedRecordCount>0&&!row.detached||filter==='detached'&&row.detached&&row.ownedRecordCount>0||filter==='empty'&&row.ownedRecordCount===0&&!row.unavailable&&row.issues.length===0&&catalog.completeKnownScopes||row.mode===filter)).sort((x,y)=>Number(y.current===true)-Number(x.current===true));};
@@ -9513,12 +9643,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const targetLabel=()=>({local:'플러그인 데이터 삭제',server:'서버 데이터 삭제',both:'둘 다 삭제'})[deleteTarget()];
     const canDeleteSelected=row=>!row.current&&!row.unavailable&&catalog?.completeKnownScopes&&({local:row.canDeleteLocal,server:row.canDeleteServer,both:row.canDeleteBoth})[deleteTarget()];
     const actionable=row=>!row.current&&(row.canDeleteLocal||row.canManage&&row.mode===MODE_PLUGIN_ONLY);
-    const selectable=row=>!row.current&&!row.unavailable&&(canDeleteSelected(row)||deleteTarget()==='local'&&(row.mode===MODE_PLUGIN_ONLY||row.localRecords>0||row.registryEntries>0))&&!readOnlyCrypto();
+    const selectable=row=>!row.current&&!row.unavailable&&(catalog?.summaryOnly||(canDeleteSelected(row)||deleteTarget()==='local'&&(row.mode===MODE_PLUGIN_ONLY||row.localRecords>0||row.registryEntries>0)))&&!readOnlyCrypto();
     const permitted=(row,action)=>action==='export'?actionable(row)&&row.mode===MODE_PLUGIN_ONLY:action==='prune'?!!row.canDeleteLocal&&!row.current&&row.ownedLocalRecords===0:canDeleteSelected(row);
     // Why a row cannot be selected, in the user's words: a silently disabled box looks broken.
     const readOnlyCrypto=()=>!!catalog?.blockers?.some(issue=>issue.code==='scope_catalog_read_only_crypto_unavailable');
     const blockReason=row=>row.current?'현재 열려 있는 채팅은 선택할 수 없습니다.'
       :readOnlyCrypto()?'보안 연결이 아니어서 목록 보기만 가능합니다. https 또는 localhost 주소로 접속하세요.'
+      :catalog?.preview?'저장 항목과 참조 관계를 확인하고 있습니다.'
+      :catalog?.summaryOnly?'작업 전에 소유권과 참조 관계를 검사합니다.'
       :row.unavailable?'조회하지 못해 보존합니다. 새로고침 후 다시 확인하세요.'
       :row.issues.length?'확인이 필요한 항목이 있어 보존합니다. 상세에서 확인하세요.'
       :(deleteTarget()!=='server'&&row.localReferenced||deleteTarget()!=='local'&&row.serverReferenced)?'다른 스코프가 참조 중이므로 삭제·정리에서는 제외합니다. 백업은 가능합니다.'
@@ -9527,26 +9659,30 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       :!catalog?.completeKnownScopes?'전체 목록 확인이 끝나지 않았습니다. 새로고침 후 다시 확인하세요.'
       :'선택한 위치에 삭제할 자료가 없거나 소유권 검증이 필요합니다.';
     const updateSelection=()=>{
-      const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||rows.length===0;
+      const rows=filtered().filter(selectable),all=q('[data-scope-select-all]');all.disabled=busy||checking||rows.length===0;
       all.checked=rows.length>0&&rows.every(row=>selected.has(row.scopeId));all.indeterminate=!all.checked&&rows.some(row=>selected.has(row.scopeId));
       q('[data-scope-selection]').textContent=`선택 ${selected.size}개`;
       const chosen=(catalog?.rows||[]).filter(row=>selected.has(row.scopeId));
-      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||!chosen.length||!chosen.some(row=>permitted(row,action));});
-      root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy;});
-      q('[data-scope-delete-target]').disabled=busy;
+      root.querySelectorAll('[data-scope-action]').forEach(button=>{const action=button.getAttribute('data-scope-action');button.disabled=busy||checking||!chosen.length||!catalog?.summaryOnly&&!chosen.some(row=>permitted(row,action));});
+      root.querySelectorAll('[data-scope-pick],[data-scope-inspect]').forEach(button=>{button.disabled=busy||checking;});
+      q('[data-scope-delete-target]').disabled=busy||checking;
     };
     const render=()=>{
-      const rows=filtered();q('[data-scope-readonly]').hidden=!readOnlyCrypto();q('[data-scope-summary]').textContent=catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…';
+      const rows=filtered();q('[data-scope-readonly]').hidden=!readOnlyCrypto();q('[data-scope-summary]').textContent=checkError||(checking&&!catalog?.preview?'전체 스코프의 소유권과 참조 관계를 확인하고 있습니다…':catalog?.summaryOnly
+        ? '스코프 '+catalog.rows.length+'개 · 표시 '+rows.length+'개'+(catalog.loading?' · 저장 정보 조회 중…':'')+(catalog.blockers.length?' · 일부 저장소 조회 실패':'')+' · 소유권·참조는 목록 상태 검사에서 확인'
+        :catalog?.preview
+        ? `등록된 스코프 ${catalog.rows.length}개 · 저장 항목과 참조 관계를 확인하고 있습니다…`
+        : catalog?`확인된 스코프 ${catalog.rows.length}개 · 표시 ${rows.length}개 · 미해결 ${catalog.blockers.length}개${catalog.completeKnownScopes?'':' · 전체 확인 미완료'}`:'목록을 확인하고 있습니다…');
       q('[data-scope-rows]').innerHTML=rows.slice(0,limit).map(row=>{
-        const status=row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
+        const status=catalog?.summaryOnly?(row.current?'현재':row.mode===MODE_SERVER_ONLY?'서버 관리':'목록 조회'):catalog?.preview?'확인 중':row.unavailable?'조회 미확인':row.issues.length?'확인 필요':row.current?'현재':row.mode!==MODE_PLUGIN_ONLY?'서버 관리':row.referenced?'참조 중':row.detached&&row.ownedRecordCount?'고아 데이터':row.ownedRecordCount?'저장 자료':row.registryEntries?'목록 잔재':'자료 없음';
         const at=row.unavailable?null:row.dataMetrics?.updatedAt;
         const updated=at?new Date(at).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'—';
         const note=blockReason(row),why=selectable(row)?'':note;
         return `<tr data-scope-row="${esc(row.scopeId)}" data-current="${row.current?'true':'false'}" data-selectable="${why?'false':'true'}">
-        <td data-scope-select-cell ${why?`title="${esc(why)}" data-scope-why="${esc(why)}"`:''}><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택${why?' · '+esc(why):''}" ${selected.has(row.scopeId)?'checked':''} ${busy||!selectable(row)?'disabled':''}></td>
+        <td data-scope-select-cell ${why?`title="${esc(why)}" data-scope-why="${esc(why)}"`:''}><input type="checkbox" data-scope-select="${esc(row.scopeId)}" aria-label="${esc(row.label)} 선택${why?' · '+esc(why):''}" ${selected.has(row.scopeId)?'checked':''} ${busy||checking||!selectable(row)?'disabled':''}></td>
         <td class="scope-data-name"><b>${esc(row.characterName||row.label)}</b><span>${esc(row.chatTitle||'채팅 이름 미확인')}</span>${note?`<small class="scope-data-reason" data-scope-reason>${esc(note)}</small>`:''}
-        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||'저장 항목 없음')}</div><div>플러그인 ${row.localRecords} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
-        <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':row.ownedRecordCount}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||!canDeleteSelected(row)?'disabled':''}>삭제</button></td></tr>`;
+        <details data-scope-detail><summary>상세</summary><div>${esc(row.scopeKey)}</div><div>${esc(row.modeLabel)}</div><div>${esc(row.dataSummary)}</div><div>${esc(row.locations.map(location=>({plugin:'플러그인 저장소',device:'기기 저장소',server:'서버'})[location]||location).join(' · ')||(catalog?.summaryOnly?'상세 검사 필요':'저장 항목 없음'))}</div><div>플러그인 ${row.localRecords??'미확인'} / 서버 ${row.unavailable?'미확인':row.serverChecked?row.serverRecords:'미조회'}</div><div>${esc(row.deleteBlockedReason||'확인 후 선택 자료 삭제 가능')}</div><pre>${esc(row.issues.map(issue=>[issue.code,issue.key,issue.detail].filter(Boolean).join(' · ')).join('\n')||'확인된 오류 없음')}</pre><details><summary>저장 키 ${row.keys.length}개</summary><pre>${esc(row.keys.join('\n'))}</pre></details></details></td>
+        <td title="${esc(row.dataSummary)}" data-scope-counts>${row.unavailable?'—':row.dataMetrics?.primary??'—'} / ${row.unavailable?'—':row.dataMetrics?.secondary??'—'}</td><td>${row.unavailable?'—':(catalog?.summaryOnly?row.matchedKeys:row.ownedRecordCount)??'—'}</td><td><span class="scope-data-state">${status}</span></td><td><time ${at?'datetime="'+new Date(at).toISOString()+'"':''}>${updated}</time></td><td><button type="button" data-scope-delete-one="${esc(row.scopeId)}" aria-label="${esc(row.label)} 삭제" ${busy||checking||!(catalog?.summaryOnly?selectable(row):canDeleteSelected(row))?'disabled':''}>삭제</button></td></tr>`;
       }).join('')||'<tr><td colspan="7" class="muted">표시할 스코프가 없습니다.</td></tr>';
       q('[data-scope-more]').hidden=rows.length<=limit;
       if(catalog){q('[data-scope-diagnostics-text]').value=JSON.stringify(catalog,null,2);
@@ -9555,25 +9691,54 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       updateSelection();
     };
     const refresh=async()=>{
-      const ticket=++serial;q('[data-scope-refresh]').disabled=true;q('[data-scope-summary]').textContent='전체 스코프와 저장 항목을 확인하고 있습니다…';
+      const ticket=++serial;checking=true;checkError='';q('[data-scope-refresh]').disabled=true;q('[data-scope-summary]').textContent='전체 스코프와 저장 항목을 확인하고 있습니다…';
+      updateSelection();
+      if(!catalog)void previewScopeCatalog().then(preview=>{
+        if(ticket===serial&&root.isConnected&&!catalog&&preview.rows.length&&q('[data-scope-refresh]').disabled){
+          catalog=preview;render();
+        }
+      }).catch(()=>{});
+      if(catalog)render();else updateSelection();
       try{const next=await inspectScopeCatalog({deleteTarget:deleteTarget()});if(ticket!==serial||!root.isConnected)return;
         if(!next.completeKnownScopes&&catalog){for(const old of catalog.rows)if(!next.rows.some(row=>row.scopeId===old.scopeId))next.rows.push({...old,canManage:false,canDelete:false,unavailable:true,issues:[{code:'scope_not_observed_in_incomplete_refresh'}]});}
-        catalog=next;for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&selectable(row)))selected.delete(id);render();
-      }catch(error){if(ticket===serial&&root.isConnected){q('[data-scope-summary]').textContent=`목록 확인 실패 · 이전 목록을 보존합니다: ${error.code||error.message}`;if(catalog){catalog={...catalog,completeKnownScopes:false,rows:catalog.rows.map(row=>({...row,unavailable:true,canManage:false,canDelete:false}))};selected.clear();render();q('[data-scope-result]').textContent=String(error.code||error.message);}}}
-      finally{if(ticket===serial&&root.isConnected)q('[data-scope-refresh]').disabled=false;}
+        catalog=next;for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&selectable(row)))selected.delete(id);return true;
+      }catch(error){if(ticket===serial&&root.isConnected){
+        if(catalog)catalog={...catalog,preview:false,loading:false,completeKnownScopes:false,rows:catalog.rows.map(row=>({...row,unavailable:true,canManage:false,canDelete:false}))};
+        selected.clear();checkError='목록 검사 실패 · '+(error.code||error.message);
+      }}
+      finally{if(ticket===serial&&root.isConnected){checking=false;q('[data-scope-refresh]').disabled=false;render();}}
     };
-    q('[data-scope-delete-target]').onchange=()=>{if(!busy){selected.clear();void refresh();}};
-    q('[data-scope-refresh]').onclick=()=>{if(!busy)void refresh();};
-    q('[data-scope-inspect]').onclick=async()=>{if(busy)return;await refresh();q('[data-scope-diagnostics]').open=true;};
-    root.addEventListener('click',event=>{const button=event.target.closest?.('[data-scope-delete-one]');if(!button||button.disabled||busy)return;selected.clear();selected.add(button.getAttribute('data-scope-delete-one'));render();void q('[data-scope-action=delete]').onclick();});
-    q('[data-scope-search]').oninput=q('[data-scope-filter]').onchange=()=>{limit=50;render();};
+    const refreshSummary=async()=>{
+      const ticket=++serial,isCurrent=()=>ticket===serial&&root.isConnected;
+      checkError='';
+      try {
+        const next=await readScopeListSummary(deleteTarget(),value=>{if(isCurrent()){catalog=value;render();}},isCurrent);
+        if(!isCurrent()||!next)return;
+        catalog=next;
+        for(const id of selected)if(!catalog.rows.some(row=>row.scopeId===id&&selectable(row)))selected.delete(id);
+        render();
+      }catch(error){if(isCurrent()){catalog=null;selected.clear();checkError='목록 조회 실패 · '+(error.code||error.message);render();}}
+    };
+    const refreshList=()=>summaryEnabled?refreshSummary():refresh();
+    q('[data-scope-delete-target]').onchange=()=>{if(!busy&&!checking){selected.clear();void refreshList();}};
+    q('[data-scope-refresh]').onclick=()=>{if(!busy&&!checking)void refreshList();};
+    q('[data-scope-inspect]').onclick=async()=>{if(busy||checking)return;await refresh();q('[data-scope-diagnostics]').open=true;};
+    root.addEventListener('click',event=>{const button=event.target.closest?.('[data-scope-delete-one]');if(!button||button.disabled||busy||checking)return;selected.clear();selected.add(button.getAttribute('data-scope-delete-one'));render();void q('[data-scope-action=delete]').onclick();});
+    q('[data-scope-search]').oninput=()=>{limit=50;render();};
+    q('[data-scope-filter]').onchange=()=>{
+      limit=50;render();
+      if(!busy&&!checking&&summaryEnabled&&(!catalog||catalog.summaryOnly)&&['issues','memory','detached','empty'].includes(q('[data-scope-filter]').value))void refresh();
+    };
     q('[data-scope-more]').onclick=()=>{limit+=50;render();};
     q('[data-scope-select-all]').onchange=event=>{for(const row of filtered().filter(selectable)){if(event.target.checked)selected.add(row.scopeId);else selected.delete(row.scopeId);}render();};
     root.addEventListener('click',event=>{const cell=event.target.closest?.('td[data-scope-select-cell]');if(!cell||!cell.getAttribute('data-scope-why'))return;
       q('[data-scope-result]').textContent='선택할 수 없음 · '+cell.getAttribute('data-scope-why');});
-    root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&row&&selectable(row)){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
-    for(const button of root.querySelectorAll('[data-scope-pick]'))button.onclick=()=>{
-      if(busy)return;const orphan=button.getAttribute('data-scope-pick')==='orphan';
+    root.addEventListener('change',event=>{const id=event.target.getAttribute?.('data-scope-select');if(!id)return;const row=catalog?.rows.find(row=>row.scopeId===id);if(!busy&&!checking&&row&&selectable(row)){if(event.target.checked)selected.add(id);else selected.delete(id);}updateSelection();});
+    for(const button of root.querySelectorAll('[data-scope-pick]'))button.onclick=async()=>{
+      if(busy||checking)return;
+      if(summaryEnabled&&(!catalog||catalog.summaryOnly)&&!(await refresh()))return;
+      if(!catalog)return;
+      const orphan=button.getAttribute('data-scope-pick')==='orphan';
       q('[data-scope-filter]').value=orphan?'detached':'empty';selected.clear();limit=50;
       for(const row of filtered())if(canDeleteSelected(row))selected.add(row.scopeId);render();
       q('[data-scope-result]').textContent='정리 후보를 선택했습니다. 아직 삭제하지 않았습니다.';
@@ -9584,8 +9749,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     q('[data-scope-approve]').onclick=()=>{if(!q('[data-scope-approve]').disabled)finishConfirmation(true);};q('[data-scope-cancel]').onclick=()=>finishConfirmation(false);
     root.addEventListener('keydown',event=>{if(event.key==='Escape'&&confirmation){event.preventDefault();event.stopPropagation();finishConfirmation(false);}});
     for(const button of root.querySelectorAll('[data-scope-action]'))button.onclick=async()=>{
-      if(busy||!selected.size)return;
-      const action=button.getAttribute('data-scope-action'),chosen=catalog.rows.filter(row=>selected.has(row.scopeId));
+      if(busy||checking||!selected.size)return;
+      const requested=new Set(selected);
+      if(catalog?.summaryOnly&&!(await refresh()))return;
+      const action=button.getAttribute('data-scope-action'),chosen=catalog.rows.filter(row=>requested.has(row.scopeId));
       const destructive=action==='delete'||action==='prune',chosenTarget=deleteTarget();
       const rows=chosen.filter(row=>permitted(row,action)),skipped=chosen.filter(row=>!permitted(row,action));
       const skipReason=row=>(action==='prune'&&row.canDeleteLocal&&row.ownedLocalRecords>0?'자료가 있어 목록 정리 대상이 아닙니다. 선택 삭제를 사용하세요.':blockReason(row))||'권한을 확인할 수 없어 보존합니다.';
@@ -9609,7 +9776,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }catch(error){if(root.isConnected)q('[data-scope-result]').textContent=`작업 보류 · ${error.deletionResult?.partial?'부분 완료: 서버 삭제 완료 / 플러그인 삭제 실패 · ':''}${error.code||error.message}${error.rollback?.restored===false?' · 일부 값 복구 미완료: '+error.rollback.failures.join(', '):error.rollback?.restored===true?' · 플러그인 변경을 원래대로 복구했습니다.':''}`;}
       finally{busy=false;if(root.isConnected)await refresh();}
     };
-    await refresh();return true;
+    await refreshList();return true;
   };
   // END OWNER SCOPE MANAGEMENT v1
 
