@@ -9667,13 +9667,33 @@ ${revisionText}`);
   // Image provider architecture and provider-specific request handling follow the implementation pattern used by Eros Tower, reused with the author's permission for LIA Persona Asset Studio. LIA's default emotion-asset path intentionally uses prompt-only generation locks and does not require reference-image/custom identity nodes.
 
 
+  let liaStatusToastTimer = null;
   function setStatus(message, tone = "info") {
     document.getElementById("dpg-status")?.removeAttribute("data-idle");
     appendOperationLog("status", message, { workspace: activeWorkspaceTab, editorSection: preservedEditorSection }, tone === "ok" ? "ok" : tone === "error" ? "error" : "info");
     const el = document.getElementById("dpg-status");
-    if (!el) return;
-    el.textContent = message;
-    el.dataset.tone = tone;
+    if (el) {
+      el.textContent = message;
+      el.dataset.tone = tone;
+    }
+    const toasts = (typeof document !== "undefined" ? (document.querySelector("#dpg-preview-root .toasts") || document.querySelector(".toasts")) : null);
+    if (toasts && message) {
+      let toast = toasts.querySelector("[data-lia-status-toast]");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.className = "toast";
+        toast.setAttribute("data-lia-status-toast", "");
+        toasts.append(toast);
+      }
+      toast.textContent = message;
+      toast.dataset.tone = tone;
+      toast.style.borderLeft = tone === "error" ? "3px solid #f87171" : tone === "ok" ? "3px solid #4ade80" : tone === "warn" ? "3px solid #fbbf24" : "3px solid #60a5fa";
+      toast.hidden = false;
+      if (liaStatusToastTimer) clearTimeout(liaStatusToastTimer);
+      liaStatusToastTimer = setTimeout(() => {
+        if (toast.isConnected) toast.hidden = true;
+      }, tone === "error" ? 8000 : 4500);
+    }
   }
   function findExistingGeneratedPersonaForResult(ctx, result) {
     const personas = asArray(ctx?.db?.personas);
@@ -9878,12 +9898,20 @@ ${revisionText}`);
     const testButton = document.getElementById("dpg-test-llm");
     testButton?.addEventListener("click", async () => {
       testButton.disabled = true;
+      const stateEl = document.getElementById("lia-provider-state");
       setStatus("프로바이더 연결을 테스트하는 중...", "info");
+      if (stateEl) stateEl.textContent = "연결 테스트 중...";
       try {
         const response = await testProviderConnection(readLLMConfig());
         const config = readLLMConfig();
-        setStatus(`연결 성공 · ${providerDisplayLabel(config.provider)}${response ? ` · ${response}` : ""}`, "ok");
-      } catch (error) { setStatus(`연결 테스트 실패: ${error?.message || error}`, "error"); }
+        const msg = `연결 성공 · ${providerDisplayLabel(config.provider)}${response ? ` · ${response}` : ""}`;
+        setStatus(msg, "ok");
+        if (stateEl) stateEl.textContent = msg;
+      } catch (error) {
+        const msg = `연결 테스트 실패: ${error?.message || error}`;
+        setStatus(msg, "error");
+        if (stateEl) stateEl.textContent = msg;
+      }
       finally { if (testButton.isConnected) testButton.disabled = false; }
     });
   }
@@ -10262,9 +10290,15 @@ ${revisionText}`);
           setStatus("텍스트 AI 설정을 저장하고 저장값을 재확인했습니다.","ok");
         }
       } else if (action === "run-evolution") {
-        const result=await runPersonaEvolution();
-        await refreshPreview({skipCapture:true});
-        setStatus(`User 작성 메시지 변화 후보 ${result.evolution.suggestions.length}개를 분석했습니다. 아직 초안에는 반영하지 않았습니다.`,"ok");
+        try {
+          const result=await runPersonaEvolution();
+          await refreshPreview({skipCapture:true});
+          setStatus(`User 작성 메시지 변화 후보 ${result.evolution.suggestions.length}개를 분석했습니다. 아직 초안에는 반영하지 않았습니다.`,"ok");
+        } catch (evoError) {
+          const box = document.getElementById("lia-evolution-results");
+          if (box) box.innerHTML = `<div class="empty"><b>변화 후보 분석 실패</b><span>${htmlEscape(evoError?.message || evoError)}</span></div>`;
+          throw evoError;
+        }
       } else if (action === "apply-evolution") {
         const result=await applySelectedPersonaEvolution();
         liaMockupEditorDraftDirty=false;
