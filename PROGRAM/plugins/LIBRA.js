@@ -32983,8 +32983,33 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
             }
             return MemorySuiteExecutionContract.inputLimits(provider, model).perInputTokens;
         };
-        const splitEmbeddingInputByTokenBudget = (value = '', maxTokens = 0) =>
-            MemorySuiteExecutionContract.splitSource(value, maxTokens, estimateEmbeddingTokens).map(part => part.text);
+        // Each part is the longest prefix within the token budget (as before), then moved back to the
+        // best boundary in its last 40%: a line break, else a sentence end, else whitespace.
+        const splitEmbeddingInputByTokenBudget = (value = '', maxTokens = 0) => {
+            const source = String(value ?? '');
+            const whole = MemorySuiteExecutionContract.splitSource(source, maxTokens, estimateEmbeddingTokens);
+            if (whole.length <= 1) return whole.map(part => part.text);
+            const boundaries = [/\n+/gu, /[.!?。！？…](?=\s|$)/gu, /\s+/gu];
+            const out = [];
+            let start = 0;
+            while (start < source.length) {
+                const first = MemorySuiteExecutionContract.splitSource(source.slice(start), maxTokens, estimateEmbeddingTokens)[0];
+                let end = start + first.end;
+                if (end < source.length) {
+                    const floor = start + Math.floor((end - start) * 0.6);
+                    const window = source.slice(floor, end);
+                    for (const pattern of boundaries) {
+                        let cut = -1;
+                        for (const match of window.matchAll(pattern)) cut = match.index + match[0].length;
+                        if (cut > 0) { end = floor + cut; break; }
+                    }
+                }
+                const piece = source.slice(start, end);
+                if (piece.trim()) out.push(piece);
+                start = end;
+            }
+            return out.length ? out : whole.map(part => part.text);
+        };
         const combineEmbeddingPartVectors = (parts = [], normalize = true) => MemorySuiteExecutionContract.pool(parts, normalize);
         const retryAfterMsFromResponse = response => {
             try {
@@ -34877,7 +34902,9 @@ function createLibraReadonlySourceContext(owner) {
     const STORY_ARC_MAX_LOCKS = 18;
     const STORY_ARC_MAX_HISTORY = 12;
     const STORY_ARC_MAX_BEATS = 5;
-        const RETRIEVAL_PROJECTION_VERSION = 'libra.retrieval_projection.v2';
+        // v3: embedded text drops empty-section placeholders and evidence refs, and the recall
+        // keys lead the global text. Changing it re-embeds through the projection upgrade paths.
+        const RETRIEVAL_PROJECTION_VERSION = 'libra.retrieval_projection.v3';
     const EMBEDDING_PROJECTION_SCHEMA = 'libra.embedding_projection.v2';
     const EMBEDDING_PROJECTION_LAYOUT_VERSION = 'libra.embedding_projection_layout.v3';
     const BRANCH_DEEP_AUDIT_INTERVAL_MS = 5 * 60 * 1000;
@@ -47888,6 +47915,15 @@ function createLibraReadonlySourceContext(owner) {
       `[검색 영역: ${RETRIEVAL_SECTION_LABELS[sectionKey] || sectionKey}]\n${sectionText}`
     ].filter(Boolean).join('\n\n');
 
+    // The rendered canonical writes a fixed line for a section with nothing new, and appends
+    // "(근거: t2-a, …)" to each line. Neither is meaning to search by: placeholders made every
+    // empty section an identical vector, and the refs were noise tokens in every line.
+    const CANONICAL_EMPTY_SECTION_LINE = /^-\s*(?:[^:\n]{1,60}:\s*)?(?:이번 배치에서 (?:새로 )?확정된 .{0,40}없음\.?|별도로 표시할 불확실 정보 없음\.?|해당 TURN 범위)\s*$/u;
+    const CANONICAL_EVIDENCE_REFS = /\s*\(근거:[^)\n]*\)/gu;
+    const canonicalEmbeddingText = value => String(value || '').split('\n')
+      .map(line => line.replace(CANONICAL_EVIDENCE_REFS, '').trimEnd())
+      .filter(line => line.trim() && !CANONICAL_EMPTY_SECTION_LINE.test(line.trim()))
+      .join('\n').trim();
     const buildMemoryRetrievalProjection = memory => {
       if (unifiedArtifactSchemaReadable(memory?.canonicalArtifact?.schema)) {
         const expected = renderUnifiedArtifact(memory.canonicalArtifact);
@@ -47896,17 +47932,20 @@ function createLibraReadonlySourceContext(owner) {
       const sections = splitMemorySections(memory?.text || '');
       const anchors = extractMemoryAnchors(memory, sections);
       const sparseFields = buildSparseFields(memory, sections, anchors);
+      const embeddedSections = Object.fromEntries(RETRIEVAL_SECTION_ORDER.map(keyName => [keyName, canonicalEmbeddingText(sections[keyName])]));
+      // The recall keys lead, so a provider that has to split a long text keeps them in the first part.
       const embeddingTexts = {
         global: [
-          memory.summary || sections.summary,
-          ...RETRIEVAL_SECTION_ORDER.map(keyName => sections[keyName]).filter(Boolean),
           asArray(anchors.recallKeys).length
             ? `[회상 키] ${asArray(anchors.recallKeys).join(', ')}`
-            : ''
+            : '',
+          canonicalEmbeddingText(memory.summary || sections.summary),
+          ...RETRIEVAL_SECTION_ORDER.map(keyName => embeddedSections[keyName]).filter(Boolean)
         ].filter(Boolean).join('\n\n')
       };
+      // A section with nothing new after cleaning has no vector of its own.
       for (const sectionKey of RETRIEVAL_SECTION_ORDER) {
-        const sectionText = String(sections[sectionKey] || '').trim();
+        const sectionText = embeddedSections[sectionKey];
         if (sectionText.length >= 24) embeddingTexts[sectionKey] = contextualSectionText(memory, sectionKey, sectionText);
       }
       const textHashes = Object.fromEntries(Object.entries(embeddingTexts).map(([keyName, value]) => [keyName, digest(value)]));
@@ -60990,6 +61029,33 @@ function mountMemorySuiteReanalysisReview(container,config) {
         return {ok:completed===refs.length,attempted:refs.length,completed,results};
       });
     };
+    // Explicit maintenance: re-embed committed canonicals built under an older retrieval
+    // projection through the same path the live scan uses for two at a time.
+    const upgradeCanonicalVectorProjections = async (contextValue, { limit = 64 } = {}) => {
+      const context = contextValue || await resolveContext();
+      return await enqueue(context.scope.scopeKey, async () => {
+        const live = await resolveContext();
+        if (live.scope.scopeKey !== context.scope.scopeKey) return { ok: false, reason: 'scope_changed', attempted: 0, upgraded: 0, failed: 0 };
+        const observedTurns = buildPairs(live.chat, live.scope.scopeKey).length;
+        let manifest = await loadManifest(live.scope, observedTurns);
+        const planned = Object.values(asObject(manifest.memories))
+          .filter(ref => ref?.status === 'committed' && string(ref.retrievalVersion || '') !== RETRIEVAL_PROJECTION_VERSION)
+          .sort((a, b) => Number(a?.turnRange?.start || 0) - Number(b?.turnRange?.start || 0)).slice(0, limit);
+        let upgraded = 0, failed = 0;
+        for (const plannedRef of planned) {
+          manifest = await loadManifest(live.scope, observedTurns, { requireExisting: true });
+          const ref = memoryRefForStart(manifest, Number(plannedRef.turnRange?.start));
+          if (ref?.status !== 'committed' || ref.key !== plannedRef.key) continue;
+          if (string(ref.retrievalVersion || '') === RETRIEVAL_PROJECTION_VERSION) { upgraded++; continue; }
+          try {
+            await retryEmbeddingForMemory(live, manifest, ref, true);
+            const after = memoryRefForStart(await loadManifest(live.scope, observedTurns, { requireExisting: true }), Number(ref.turnRange?.start));
+            if (string(after?.retrievalVersion || '') === RETRIEVAL_PROJECTION_VERSION) upgraded++; else failed++;
+          } catch (_) { failed++; }
+        }
+        return { ok: failed === 0, attempted: planned.length, upgraded, failed };
+      });
+    };
     const scheduleUnifiedDerivedVectors = context => {
       state.unifiedVectorTimers=state.unifiedVectorTimers || new Map();
       if(state.disposed || state.unifiedVectorTimers.has(context.scope.scopeKey))return;
@@ -61105,11 +61171,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         try {
           const context = await resolveContext();
           if (!sameSnapshotScope(context.scope, requested)) return;
-          await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
           // The State changed: embed its changed rows in the background (large States only),
-          // and the search texts of new or changed Micro turns.
+          // and the search texts of new or changed Micro turns. Independent of the GUI refresh.
           void refreshStateVectorsForContext(context).catch(() => null);
           void refreshMicroVectorsForContext(context).catch(() => null);
+          await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
         } catch (_) { /* A later explicit refresh still revalidates all State evidence. */ }
         finally{
           currentStateSnapshotRefreshRunning=false;
@@ -68981,11 +69047,12 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         return { ok: true, embedded, total: Object.keys(entries).length };
       };
       const refreshes = new Map(), failedAt = new Map();
-      const schedule = (scope, texts) => {
+      // `force` (explicit maintenance) skips the failure cooldown; it still joins a running refresh.
+      const schedule = (scope, texts, { force = false } = {}) => {
         const scopeKey = string(scope?.scopeKey);
         if (!scopeKey) return Promise.resolve({ ok: false, reason: 'scope_missing' });
         if (refreshes.has(scopeKey)) return refreshes.get(scopeKey);
-        if (Date.now() - Number(failedAt.get(scopeKey) || 0) < ROW_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
+        if (!force && Date.now() - Number(failedAt.get(scopeKey) || 0) < ROW_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
         const job = refresh({ ...scope }, texts).catch(error => ({ ok: false, reason: string(error?.message || error) }))
           .then(result => {
             if (result?.ok || ['embedding_disabled', 'no_rows'].includes(result?.reason)) failedAt.delete(scopeKey);
@@ -69008,7 +69075,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     // as large as the runtime's STATE_SEMANTIC_MIN_ROWS (24) gets its changed rows embedded.
     const STATE_VECTOR_MIN_ROWS = 24;
     let stateVectorRowEngine = null;
-    const refreshStateVectorsForContext = async context => {
+    const refreshStateVectorsForContext = async (context, options = {}) => {
       if (!await lensEmbeddingConfig()) return { ok: false, reason: 'embedding_disabled' };
       const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
       const manifest = await loadManifest(scope, pairs.length);
@@ -69016,17 +69083,17 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       stateVectorRowEngine ||= createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const texts = [...new Set(stateVectorRowEngine.stateRows(projected?.head || null).map(row => string(row.text).trim()).filter(Boolean))];
       if (texts.length < STATE_VECTOR_MIN_ROWS) return { ok: true, skipped: 'small_state', rows: texts.length };
-      return await scheduleStateVectorRefresh(scope, texts);
+      return await scheduleStateVectorRefresh(scope, texts, options);
     };
     // Micro vectors follow a Micro publication the same way: the turns' stored search texts are
     // embedded in the background, changed or new turns only.
-    const refreshMicroVectorsForContext = async context => {
+    const refreshMicroVectorsForContext = async (context, options = {}) => {
       if (!await lensEmbeddingConfig()) return { ok: false, reason: 'embedding_disabled' };
       const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
       const { entries } = await readMicroIndexEntries(scope, pairs.map(pair => Number(pair.turn)), pairs);
       const texts = [...new Set([...entries.values()].map(text => string(text).trim()).filter(Boolean))];
       if (!texts.length) return { ok: true, skipped: 'no_micro', rows: 0 };
-      return await microVectorStore.schedule(scope, texts);
+      return await microVectorStore.schedule(scope, texts, options);
     };
     // How many of the given Micro turns have a vector in the current embedding profile.
     const countMicroVectors = async (scope, pairs, turns) => {
@@ -74967,7 +75034,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       retryFailedEmbeddingRebuild, cleanupQuarantinedVectors, runAutomaticLegacyVectorMigration, scheduleAutomaticLegacyVectorMigration, purgeLegacyWorldAdditionalData,
       readonlySourceContext,
       resolveContext, buildPairs, pairRevisionProjection, pairRevisionCacheKeyForChat, sourceDigest, transcript, buildAriadneReferenceContext, buildItoLoreReferenceContext, rerankMemoryLoreForStage, executeStage, scan, scheduleScan, scheduleLegacyOutputBoundaryScan, beforeRequest, afterRequest,
-      recoverPendingStateTrackingJournal, flushUnifiedDerivedVectors, unifiedStateReadProjection, unifiedWorldReadContext,
+      recoverPendingStateTrackingJournal, flushUnifiedDerivedVectors, upgradeCanonicalVectorProjections,
+      refreshMicroVectorsForContext, refreshStateVectorsForContext, unifiedStateReadProjection, unifiedWorldReadContext,
       listReanalysisRanges,readReanalysisTurn,reanalyzeSelectedRanges,retiredManualReanalysis,
       listCanonicalBatchRanges, startSelectedCanonicalBatches, failureDiagnostic: libraMemoryFailureDiagnostic, unwrapTypedResponse: unwrapLibraTypedResponse,
       startManualColdStart, startManualCanonicalScan, startFailedRetry, deleteFailedRun, getCanonicalJobStatus, listCanonicalJobs, cancelCanonicalJob, resumeCanonicalJob, recoverCanonicalJobAtStartup,
@@ -87263,6 +87331,29 @@ advanced
           : `임베딩 후처리 ${Number(flushed.completed || 0)}/${attempted}개 처리 완료`);
       } catch (err) {
         actionsTaken.push(`임베딩 후처리 경고: ${err.message || err}`);
+      }
+      try {
+        progress('embedding', 'running', '정본 검색 투영 최신화 확인 중');
+        const upgraded = await LibraMemoryCore.upgradeCanonicalVectorProjections(await LibraMemoryCore.resolveContext());
+        if (Number(upgraded?.attempted || 0) > 0) actionsTaken.push(upgraded.failed
+          ? `정본 검색 투영 최신화 경고: ${Number(upgraded.upgraded || 0)}/${upgraded.attempted}개 처리`
+          : `정본 검색 투영 ${Number(upgraded.upgraded || 0)}개 최신화 완료`);
+      } catch (err) {
+        actionsTaken.push(`정본 검색 투영 최신화 경고: ${err.message || err}`);
+      }
+      try {
+        progress('embedding', 'running', '미크로·State 벡터 확인 중');
+        const vectorContext = await LibraMemoryCore.resolveContext();
+        const [microVectors, stateVectors] = await Promise.all([
+          LibraMemoryCore.refreshMicroVectorsForContext(vectorContext, { force: true }),
+          LibraMemoryCore.refreshStateVectorsForContext(vectorContext, { force: true })
+        ]);
+        for (const [label, result] of [['미크로', microVectors], ['State', stateVectors]]) {
+          if (result?.ok && Number(result.embedded || 0) > 0) actionsTaken.push(`${label} 벡터 ${Number(result.embedded)}개 생성`);
+          else if (result?.ok === false && !['embedding_disabled', 'no_rows'].includes(string(result.reason))) actionsTaken.push(`${label} 벡터 경고: ${result.reason}`);
+        }
+      } catch (err) {
+        actionsTaken.push(`미크로·State 벡터 경고: ${err.message || err}`);
       }
       if (effectiveVectorFailed > 0) {
         try {

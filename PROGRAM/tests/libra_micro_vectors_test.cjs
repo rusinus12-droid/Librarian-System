@@ -87,3 +87,29 @@ test('a Micro publication produces vectors in the background; recall uses them w
   assert.equal(result.diagnostics.microVectors.missing, 0);
   assert.deepEqual(embedded.slice(beforeRecall), ['열쇠는 지금 누가 보관하지?'], 'recall embeds only its query');
 });
+
+test('one-touch recovery rebuilds missing Micro vectors', async t => {
+  const { fixture } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
+  const x = await fixture({
+    mode: 'plugin_only',
+    transformSource: source => {
+      const marker = '    // END LIBRA STATE OWNER';
+      return source.replace(marker, '    globalThis.__microVectors = { microVectorStore, resolveContext };\n' + marker);
+    },
+    embeddingConfig: { enabled: true, provider: 'openai', url: 'https://synthetic.invalid/v1/embeddings',
+      model: 'text-embedding-3-small', key: 'synthetic-only-not-real', dimensions: 256, maxRetries: 0 },
+    embeddingFetch: async (_url, init) => {
+      const inputs = [].concat(JSON.parse(init.body).input);
+      return new Response(JSON.stringify({ data: inputs.map((text, index) => ({ index, embedding: vectorFor(text) })) }), { status: 200 });
+    }
+  });
+  t.after(() => x.cleanup());
+  const mv = x.f.r.context.__microVectors, scope = (await mv.resolveContext()).scope, values = x.f.r.values;
+  await waitFor(async () => Object.keys((await mv.microVectorStore.load(scope)).entries).length > 0);
+  // As after an embedding-model change or a store lost to a storage reset.
+  for (const storageKey of [...values.keys()]) if (storageKey.includes(':micro-vector:store:v1')) values.delete(storageKey);
+  assert.equal(Object.keys((await mv.microVectorStore.load(scope)).entries).length, 0);
+  const result = await x.f.r.api.runMemoryMaintenance('full', {});
+  assert.ok(Object.keys((await mv.microVectorStore.load(scope)).entries).length > 0, 'recovery rebuilt the Micro vectors');
+  assert.ok((result.actionsTaken || []).some(line => /미크로 벡터 \d+개 생성/.test(line)), JSON.stringify(result.actionsTaken));
+});

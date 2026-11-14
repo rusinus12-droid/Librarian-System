@@ -14,13 +14,13 @@ const expose=source=>{
 const hash=values=>crypto.createHash('sha256').update(JSON.stringify([...values].sort(([a],[b])=>a.localeCompare(b)))).digest('hex');
 // The exact empty startup completion marker is global metadata, excluded from
 // both the archive and dependency set. No other host mutation is permitted.
-const emptyMarkerKey='libra:v1:local-vector-migration:48b4e542';
+const emptyMarkerKey='libra:v1:local-vector-migration:a8a475eb';
 const withoutEmptyMarker=values=>new Map([...values].filter(([key])=>key!==emptyMarkerKey));
 const assertEmptyMarker=value=>{
  if(value===undefined)return;
  const parsed=typeof value==='string'?JSON.parse(value):value;
  const {startedAt,finishedAt,...body}=JSON.parse(JSON.stringify(parsed));
- assert.deepEqual(body,{schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:require('./fixtures/release_versions.cjs').releaseVersion('libra'),targetSignature:'ec2917fe:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false});
+ assert.deepEqual(body,{schema:'libra.embedding_vector_migration_marker.v1',pluginVersion:require('./fixtures/release_versions.cjs').releaseVersion('libra'),targetSignature:'533a8ea1:1349',providerProfileId:'mep_a4ccc727f9674d23',reason:'embedding_startup_probe',scanned:0,candidates:0,migrated:0,alreadyCurrent:0,missingPayload:0,incompatibleSpace:0,failures:0,bytesPromoted:0,complete:true,errors:[],interrupted:false});
  assert(Number.isFinite(Date.parse(startedAt)));assert(Number.isFinite(Date.parse(finishedAt)));
 };
 

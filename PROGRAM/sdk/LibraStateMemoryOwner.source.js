@@ -222,11 +222,12 @@
         return { ok: true, embedded, total: Object.keys(entries).length };
       };
       const refreshes = new Map(), failedAt = new Map();
-      const schedule = (scope, texts) => {
+      // `force` (explicit maintenance) skips the failure cooldown; it still joins a running refresh.
+      const schedule = (scope, texts, { force = false } = {}) => {
         const scopeKey = string(scope?.scopeKey);
         if (!scopeKey) return Promise.resolve({ ok: false, reason: 'scope_missing' });
         if (refreshes.has(scopeKey)) return refreshes.get(scopeKey);
-        if (Date.now() - Number(failedAt.get(scopeKey) || 0) < ROW_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
+        if (!force && Date.now() - Number(failedAt.get(scopeKey) || 0) < ROW_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
         const job = refresh({ ...scope }, texts).catch(error => ({ ok: false, reason: string(error?.message || error) }))
           .then(result => {
             if (result?.ok || ['embedding_disabled', 'no_rows'].includes(result?.reason)) failedAt.delete(scopeKey);
@@ -249,7 +250,7 @@
     // as large as the runtime's STATE_SEMANTIC_MIN_ROWS (24) gets its changed rows embedded.
     const STATE_VECTOR_MIN_ROWS = 24;
     let stateVectorRowEngine = null;
-    const refreshStateVectorsForContext = async context => {
+    const refreshStateVectorsForContext = async (context, options = {}) => {
       if (!await lensEmbeddingConfig()) return { ok: false, reason: 'embedding_disabled' };
       const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
       const manifest = await loadManifest(scope, pairs.length);
@@ -257,17 +258,17 @@
       stateVectorRowEngine ||= createLibraStateMemoryEngine({ fingerprint: stateMemoryFingerprint, tokenizer: tokenStream });
       const texts = [...new Set(stateVectorRowEngine.stateRows(projected?.head || null).map(row => string(row.text).trim()).filter(Boolean))];
       if (texts.length < STATE_VECTOR_MIN_ROWS) return { ok: true, skipped: 'small_state', rows: texts.length };
-      return await scheduleStateVectorRefresh(scope, texts);
+      return await scheduleStateVectorRefresh(scope, texts, options);
     };
     // Micro vectors follow a Micro publication the same way: the turns' stored search texts are
     // embedded in the background, changed or new turns only.
-    const refreshMicroVectorsForContext = async context => {
+    const refreshMicroVectorsForContext = async (context, options = {}) => {
       if (!await lensEmbeddingConfig()) return { ok: false, reason: 'embedding_disabled' };
       const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
       const { entries } = await readMicroIndexEntries(scope, pairs.map(pair => Number(pair.turn)), pairs);
       const texts = [...new Set([...entries.values()].map(text => string(text).trim()).filter(Boolean))];
       if (!texts.length) return { ok: true, skipped: 'no_micro', rows: 0 };
-      return await microVectorStore.schedule(scope, texts);
+      return await microVectorStore.schedule(scope, texts, options);
     };
     // How many of the given Micro turns have a vector in the current embedding profile.
     const countMicroVectors = async (scope, pairs, turns) => {
