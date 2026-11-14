@@ -167,6 +167,17 @@ jobs:
             console.error("Missing storage mode round-trip verification for the packaged plugins.");
             mismatch = true;
           }
+          const { PLUGINS } = require("./PROGRAM/tools/release_metadata.cjs");
+          for (const owner of Object.keys(PLUGINS)) {
+            if (!report.pluginSha256?.[owner]) {
+              console.error(`Missing pluginSha256 entry for ${owner}`);
+              mismatch = true;
+            }
+          }
+          if (report.packageVersion !== process.env.NEXT_VERSION || report.releaseTag !== `v${process.env.NEXT_VERSION}`) {
+            console.error(`Build report version mismatch: ${report.packageVersion} / ${report.releaseTag} (expected ${process.env.NEXT_VERSION})`);
+            mismatch = true;
+          }
           if (mismatch) process.exit(1);
           console.log("Build report publication contract verified successfully.");
           '
@@ -213,6 +224,8 @@ jobs:
 
       - name: Run required release regressions
         id: regressions
+        env:
+          NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
         run: |
           node --test --test-concurrency=1 \
             PROGRAM/tests/release_transaction_test.cjs \
@@ -223,7 +236,19 @@ jobs:
             PROGRAM/tests/gradia/native-host-id-binding.test.cjs \
             PROGRAM/tests/gradia/server-read-adapter.test.cjs \
             PROGRAM/tests/distribution_updater_migration_file_test.cjs \
-            PROGRAM/tests/remote_update_release_zip_runtime_test.cjs
+            PROGRAM/tests/remote_update_release_zip_runtime_test.cjs \
+            PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
+            PROGRAM/tests/gradia_body_state_aide_test.cjs \
+            PROGRAM/tests/libra_story_clock_accumulation_runtime_test.cjs \
+            PROGRAM/tests/libra_story_clock_gradia_read_test.cjs \
+            PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
+            PROGRAM/tests/lia_settings_save_in_place_test.cjs \
+            PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
+            PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
+            PROGRAM/tests/flashback_chat_output_live_confirmation_runtime_test.cjs \
+            PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs \
+            PROGRAM/tests/compute_gui_and_libra_open_latency_contract_test.cjs \
+            PROGRAM/tests/libra_micro_unproven_diagnostic_test.cjs
 
       - name: Verify packaged plugins against the reviewed RisuAI contract
         run: |

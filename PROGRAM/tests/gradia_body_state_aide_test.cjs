@@ -217,3 +217,23 @@ test('the 상태 panel opens its own prompt preview and sits before 억결 in th
   await f.wait(() => title().includes('프롬프트 미리보기'), 'prompt preview dialog');
   assert.match(title(), /상태 AIDE/);
 });
+
+test('clicking 상태 or 억결 in the ladder switches the active detail panel away from SHADOW ACT', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const shadowDetail = f.document.querySelector('.stage-detail[data-detail="shadow"]');
+  const bodyDetail = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  const bondDetail = f.document.querySelector('.stage-detail[data-detail="forced_bond"]');
+  assert.equal(shadowDetail.classList.contains('is-on'), true);
+
+  f.document.querySelector('#ladder .node[data-select-row="body_state"]').click();
+  assert.equal(bodyDetail.classList.contains('is-on'), true);
+  assert.equal(shadowDetail.classList.contains('is-on'), false);
+  assert.equal(bondDetail.classList.contains('is-on'), false);
+
+  f.document.querySelector('#ladder .node[data-select-row="forced_bond"]').click();
+  assert.equal(bondDetail.classList.contains('is-on'), true);
+  assert.equal(bodyDetail.classList.contains('is-on'), false);
+  assert.equal(shadowDetail.classList.contains('is-on'), false);
+});

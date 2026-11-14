@@ -44130,7 +44130,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const node = target.closest('.node[data-select-row]');
       if (node) {
         const id = node.dataset.selectRow;
-        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', main:'main' })[id] || 'shadow';
+        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', body_state:'body_state', forced_bond:'forced_bond', main:'main' })[id] || 'shadow';
         app.querySelectorAll('.node[data-select-row]').forEach(item => item.classList.toggle('is-on', item === node));
         app.querySelectorAll('.stage-detail[data-detail]').forEach(item => item.classList.toggle('is-on', item.dataset.detail === detail));
         const selectedAide=({char:'aide_character',world:'aide_world',plot:'aide_plot'})[id];
@@ -45327,7 +45327,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const mode=normalizeChoice(runtime.mode==='full'?'normal':runtime.mode,['off','lite','normal'],'normal');
     const ids=['shadow_act','aide_character','aide_world','aide_plot','aide_forced_bond','aide_body_state'];
     const detailKeys=['shadow','char','world','plot','forced_bond','body_state'];
-    ids.forEach((id,index)=>{const detailKey=detailKeys[index];const node=app.querySelector('[data-detail="'+detailKey+'"]');if(!node)return;const slot=Gui.state.agents?.[id]||{};const toggle=node.querySelector('#on-s'+(index+1));if(toggle)toggle.checked=isExtensionAideStage(id)?slot.enabled===true:slot.enabled!==false;const prompt=node.querySelector('[data-stage-ins]');if(prompt)prompt.value=Gui.state.prompts?.[id]?.customPrompt||'';const trace=latestTraceForStage(id);const info=traceStateInfo(trace,{enabled:id==='aide_forced_bond'?slot.enabled===true:slot.enabled!==false,isLiteSkip:mode==='lite'&&(id==='aide_character'||id==='aide_world')});const badge=app.querySelector('#lb-'+detailKey);if(badge){badge.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');badge.className='badge '+(info.className==='good'?'badge--ok':info.className==='warn'?'badge--warn':info.className==='danger'?'badge--danger':'');}});
+    ids.forEach((id,index)=>{const detailKey=detailKeys[index];const node=app.querySelector('[data-detail="'+detailKey+'"]');if(!node)return;const slot=Gui.state.agents?.[id]||{};const toggle=node.querySelector('#on-s'+(index+1));if(toggle)toggle.checked=isExtensionAideStage(id)?slot.enabled===true:slot.enabled!==false;const prompt=node.querySelector('[data-stage-ins]');if(prompt)prompt.value=Gui.state.prompts?.[id]?.customPrompt||'';const trace=latestTraceForStage(id);const info=traceStateInfo(trace,{enabled:isExtensionAideStage(id)?slot.enabled===true:slot.enabled!==false,isLiteSkip:mode==='lite'&&(id==='aide_character'||id==='aide_world')});const badge=app.querySelector('#lb-'+detailKey);if(badge){badge.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');badge.className='badge '+(info.className==='good'?'badge--ok':info.className==='warn'?'badge--warn':info.className==='danger'?'badge--danger':'');}});
     renderForcedBondPanel(app, runtime);
     renderBodyStatePanel(app, runtime);
     const shadowPreview=app.querySelector('[data-detail="shadow"] details.fold .fold__body pre');

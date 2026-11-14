@@ -88,9 +88,37 @@ jobs:
             console.error("Missing storage mode round-trip verification for the packaged plugins.");
             mismatch = true;
           }
+          const { PLUGINS } = require("./PROGRAM/tools/release_metadata.cjs");
+          for (const owner of Object.keys(PLUGINS)) {
+            if (!report.pluginSha256?.[owner]) {
+              console.error(`Missing pluginSha256 entry for ${owner}`);
+              mismatch = true;
+            }
+          }
+          if (!report.packageVersion || report.releaseTag !== `v${report.packageVersion}`) {
+            console.error(`Invalid packageVersion/releaseTag: ${report.packageVersion} / ${report.releaseTag}`);
+            mismatch = true;
+          }
           if (mismatch) process.exit(1);
           console.log("Build report publication contract verified successfully.");
           '
+
+      - name: Run current plugin feature and fix regressions
+        env:
+          NODE_PATH: ${{ github.workspace }}/PROGRAM/build-support/node_modules
+        run: |
+          node --test --test-concurrency=2 \
+            PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
+            PROGRAM/tests/gradia_body_state_aide_test.cjs \
+            PROGRAM/tests/lia_settings_save_in_place_test.cjs \
+            PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
+            PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
+            PROGRAM/tests/flashback_chat_output_live_confirmation_runtime_test.cjs \
+            PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs \
+            PROGRAM/tests/compute_gui_and_libra_open_latency_contract_test.cjs \
+            PROGRAM/tests/libra_micro_unproven_diagnostic_test.cjs \
+            PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
+            PROGRAM/tests/libra_story_clock_accumulation_runtime_test.cjs
 
       - name: Verify clean working tree
         run: |
