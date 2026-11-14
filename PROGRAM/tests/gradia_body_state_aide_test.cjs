@@ -238,7 +238,7 @@ test('clicking 상태 or 억결 in the ladder switches the active detail panel a
   assert.equal(shadowDetail.classList.contains('is-on'), false);
 });
 
-test('every present character gets this turn’s baseline body signs and the stage must show one', async t => {
+test('a scene condition is tracked and the time of day is optional color, never a required insert', async t => {
   const chat = { id: 'h', message: [{ role: 'user', chatId: 'u1', data: '밤늦게 공원에 간다.' }, { role: 'assistant', chatId: 'a1', data: '밤 11시, 민아는 숨을 몰아쉬며 달려왔다.' }] };
   const character = { chaId: 'c', name: 'Minah Kim', nickname: '민아', chats: [chat], chatPage: 0, lorebook: [] };
   const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
@@ -247,9 +247,12 @@ test('every present character gets this turn’s baseline body signs and the sta
   await runTurn(f, '민아 옆에 앉는다.');
   const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
   assert.match(body, /- Minah Kim:/);
-  assert.match(body, /baseline this turn \(in the scene\): night \(recent scene\) → sleepy, slower, guard lowered; exertion → breathing hard, sweat, sore muscles/);
-  assert.match(body, /REQUIRED: every present main character shows at least one bodily sign/);
-  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /give each present main character one bodily sign from the packet/, 'SHADOW plans the signs');
+  assert.match(body, /scene condition this turn: exertion → breathing hard, sweat, sore muscles/);
+  assert.match(body, /time-of-day color \(optional, never a reason to insert\): night \(recent scene\) → sleepy, slower, guard lowered/);
+  assert.match(body, /For each present character with a tracked condition that the draft never shows, insert one bodily sign/);
+  assert.match(body, /Time-of-day color and an ordinary body are never a reason to insert/);
+  assert.doesNotMatch(body, /edits must not be empty/);
+  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /A present character with a tracked condition in the packet shows it through one bodily sign; an ordinary body needs no added sign/, 'SHADOW plans signs only for tracked conditions');
 });
 
 test('LIBRA story clock days drive elapsed time when present', async t => {

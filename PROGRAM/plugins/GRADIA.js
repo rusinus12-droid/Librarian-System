@@ -18474,9 +18474,11 @@ ${passage.text || ''}`, 420));
     const reasoningActive = reasoningPreview.reasoningAllowed === true;
     // max_tokens / max_completion_tokens is a combined completion envelope on reasoning models.
     // Keep the old visible-output target, then reserve extra room so hidden thinking cannot consume it all.
+    // Analysis JSON is short but the thinking before it is not: live heavyweight runs
+    // (deepseek-v4.1-flash, low) ended analysis calls at the ~6.8k limit and retried in most stages.
     const reasoningHeadroom = reasoningActive
       ? (isAnalysis
-          ? Math.max(1536, Math.ceil(visibleWanted * 0.65))
+          ? Math.max(10240, Math.ceil(visibleWanted * 0.65))
           : Math.max(2048, Math.ceil(visibleWanted * 0.75)))
       : 0;
     const wanted = visibleWanted + reasoningHeadroom;
@@ -18492,7 +18494,12 @@ ${passage.text || ''}`, 420));
     const reasoningAnalysisCap = reasoningActive
       ? (presetMax > MAX_ANALYSIS_RETRY_OUTPUT_TOKENS ? Math.min(presetMax - 2048, 14336) : MAX_ANALYSIS_RETRY_OUTPUT_TOKENS)
       : MAX_ANALYSIS_OUTPUT_TOKENS;
-    const analysisCap = reasoningActive ? reasoningAnalysisCap : MAX_ANALYSIS_OUTPUT_TOKENS;
+    // With thinking room the first analysis attempt would sit at the cap; keep a step back so a length
+    // stop can still be expanded once instead of falling to the compact recovery.
+    const analysisCeiling = Math.min(reasoningAnalysisCap, presetMax);
+    const analysisCap = reasoningActive
+      ? Math.max(MAX_ANALYSIS_OUTPUT_TOKENS, analysisCeiling - Math.max(1024, Math.floor(analysisCeiling * 0.2)))
+      : MAX_ANALYSIS_OUTPUT_TOKENS;
     const granted = Math.max(384, Math.min(presetMax, wanted, isAnalysis ? analysisCap : reasoningDraftCap,
       contextOutputCap || Number.MAX_SAFE_INTEGER));
     // Shows when a draft target cannot fit the preset's own max_tokens.
@@ -19893,10 +19900,19 @@ ${passage.text || ''}`, 420));
     if (options.jsonMode === true) body.format = 'json';
     const autoCtx = nextPowerOfTwo(contextFit.promptTokensAfter + Math.min(predictTokens, 8192) + 1024);
     body.options.num_ctx = evidenceContext ? contextTokens : Math.min(contextTokens, Math.max(4096, autoCtx));
-    if (ollamaFamily === 'ollama' && ollamaBudget.transformActive) {
-      if (!ollamaBudget.reasoningAllowed) body.think = false;
-      else if (preset.reasoning_effort && preset.reasoning_effort !== 'none') body.think = preset.reasoning_effort;
-      else body.think = true;
+    // Native Ollama always states thinking. A thinking model left without `think` reasons at full
+    // length by its own default, whatever family the model name maps to (a DeepSeek model detects as
+    // 'deepseek', not 'ollama'), while the output budget was sized from this same policy. Live run
+    // 2026-11-15 (deepseek-v4.1-flash via Ollama, reasoning off): every AIDE thought anyway, ran out of
+    // its no-reasoning budget and needed two retries. A model without thinking accepts false, and a
+    // level it rejects falls back through the thinking-unsupported retry.
+    {
+      const effort = String(preset.reasoning_effort || '').trim().toLowerCase();
+      body.think = !ollamaBudget.reasoningAllowed ? false
+        : ['low', 'medium', 'high'].includes(effort) ? effort
+          : effort === 'minimal' ? 'low'
+            : ['xhigh', 'max'].includes(effort) ? 'high'
+              : true;
     }
     body = applyPresetExtraBody(body, preset);
     if (options.suppressThink || options.forceNoThinking) {
@@ -23896,6 +23912,47 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     )) || null;
   };
 
+  // The patch document is built fresh for the call that answers it, so an expected_hash that belongs
+  // to another block of that same document is a copying slip, not a stale draft. Live run 2026-11-15:
+  // the Character AIDE cited p005's hash for p006 and the whole transaction, including a valid second
+  // edit, was rolled back. Resolve only when the intent is clear; otherwise keep the strict skip.
+  const draftPatchBigrams = value => {
+    const textValue = normalizeDraftPatchComparisonText(value).replace(/\s+/g, '');
+    const grams = new Map();
+    for (let index = 0; index < textValue.length - 1; index += 1) {
+      const gram = textValue.slice(index, index + 2);
+      grams.set(gram, (grams.get(gram) || 0) + 1);
+    }
+    return grams;
+  };
+  const draftPatchSimilarity = (left, right) => {
+    const a = draftPatchBigrams(left), b = draftPatchBigrams(right);
+    let total = 0, shared = 0;
+    for (const count of a.values()) total += count;
+    for (const count of b.values()) total += count;
+    for (const [gram, count] of a) shared += Math.min(count, b.get(gram) || 0);
+    return total ? (2 * shared) / total : 0;
+  };
+  const resolveDraftPatchHashSlip = (blocks, nodes, edit, idIndex) => {
+    const candidates = blocks.filter(block => (block.originalHash || block.hash || stableDraftHash(block.text)) === edit.expectedHash);
+    if (candidates.length !== 1) return null;
+    const hashBlock = candidates[0];
+    const idBlock = blocks.find(block => block.id === edit.target);
+    const hashIndex = nodes.findIndex(node => node.id === hashBlock.id);
+    if (!idBlock || hashIndex < 0 || hashIndex === idIndex) return null;
+    if (edit.operation === 'replace') {
+      const byId = draftPatchSimilarity(edit.content, idBlock.text);
+      const byHash = draftPatchSimilarity(edit.content, hashBlock.text);
+      if (byId >= 0.45 && byId - byHash >= 0.15) return { index: idIndex, resolvedBy: 'id_content_match' };
+      if (byHash >= 0.45 && byHash - byId >= 0.15) return { index: hashIndex, resolvedBy: 'hash_content_match' };
+      return null;
+    }
+    if (['insert_after', 'insert_before'].includes(edit.operation) && Math.abs(blocks.indexOf(hashBlock) - blocks.indexOf(idBlock)) === 1) {
+      return { index: idIndex, resolvedBy: 'id_adjacent_hash' };
+    }
+    return null;
+  };
+
   const applyDraftPatchOperations = (documentValue, editValues = []) => {
     const document = typeof documentValue === 'string'
       ? buildDraftPatchDocument(documentValue)
@@ -23911,16 +23968,23 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     const nextGeneratedId = () => `x${String(++generatedIndex).padStart(3, '0')}`;
     const findIndex = id => nodes.findIndex(node => node.id === id);
 
-    for (const edit of Array.isArray(editValues) ? editValues : []) {
-      const targetIndex = findIndex(edit.target);
+    for (const editValue of Array.isArray(editValues) ? editValues : []) {
+      let edit = editValue;
+      let targetIndex = findIndex(edit.target);
       if (targetIndex < 0) {
         skipped.push({ ...edit, skipReason: 'target_not_found' });
         continue;
       }
-      const target = nodes[targetIndex];
+      let target = nodes[targetIndex];
       if (edit.expectedHash && edit.expectedHash !== (target.originalHash || stableDraftHash(target.text))) {
-        skipped.push({ ...edit, skipReason: 'target_hash_mismatch' });
-        continue;
+        const slip = resolveDraftPatchHashSlip(document.blocks, nodes, edit, targetIndex);
+        if (!slip) {
+          skipped.push({ ...edit, skipReason: 'target_hash_mismatch' });
+          continue;
+        }
+        targetIndex = slip.index;
+        target = nodes[targetIndex];
+        edit = { ...edit, target: target.id, expectedHash: target.originalHash || stableDraftHash(target.text), hashSlipResolved: slip.resolvedBy };
       }
       if (edit.operation === 'replace') {
         if (normalizeDraftPatchComparisonText(edit.content) === normalizeDraftPatchComparisonText(target.text)) {
@@ -25201,7 +25265,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'a non-persona character moves away from the exchange (another part of the room, the window, the door) and keeps talking from there'
     ]),
     world: Object.freeze([
-      'a phone buzzes with a message unrelated to the scene',
+      'a familiar background sound stops at an unexpected moment',
       'a sound from outside (a car, voices, construction) cuts in',
       'the weather or the light shifts',
       'a small object falls, spills, or breaks',
@@ -25282,6 +25346,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : stageName === 'aide_plot'
           ? '- The draft carries this variable on purpose. It is not arbitrary escalation or a random interruption: keep it, and only make sure it does not become the ending.'
           : '- The draft carries this variable on purpose: keep it, and only make it fit the character and the scene.');
+      lines.push('- Ground the variable in an established person, object, or feature of the setting. Give it one small effect on what happens next without inventing new lore, technology, or obligations to make it fit.');
       lines.push(gate === 'novel'
         ? '- It may belong to any character, the protagonist included, unless the author reserved that choice.'
         : gate === 'staging'
@@ -25452,11 +25517,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ].join('\n'), 3600);
   };
   const FORCED_BOND_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: choose this turn’s main bond and at most one ripple bond from the cards and evidence, and write at least one visible beat of it, placed early or mid-scene, into the first draft.',
+    shadow_act: 'SHADOW: when the scene gives the main bond an opening, choose it and at most one ripple bond from the cards and evidence. Write one visible beat early or mid-scene into the first draft. Keep a closed or explicitly excluded thread out of this turn.',
     aide_character: 'Character AIDE: check that each character shows their bond tones in a way that fits their personality, history, and what they could know or witness. A user card counts as established; do not flatten it, and do not let a hated character turn warm without a cause.',
     aide_world: 'World AIDE: check who is present, who could witness what, whether the place, time, and social setting can hold the occasion or an arrival, and whether enough time has passed for tones such as longing.',
-    aide_plot: 'Plot AIDE: check that every tone change has a cause in the scene, that no bond is resolved or settled in one turn, and that the bond tension is left as a seed rather than an ending. An arrival must not be the ending. Bond beats placed for the main bond are intended: they are not optional cameos or arbitrary escalation, so keep them unless they break player agency or causality.',
-    aide_forced_bond: 'Forced Bond AIDE: read the verification notes and decide this turn’s bond readings. Make sure the required bond beat is in the draft and strong enough for its pace: if there is none, insert one (edits must not be empty). Return edits: [] only when the draft already has a clear beat, and quote that line in analysis.summary. Propose a new bond only when the scene clearly shows one that no card covers.'
+    aide_plot: 'Plot AIDE: check that every tone change has a cause in the scene, that no bond is resolved or settled in one turn, and that the bond tension is left as a seed rather than an ending. An arrival must not be the ending. Keep earned bond beats that respect the user’s focus, player agency and causality.',
+    aide_forced_bond: 'Forced Bond AIDE: read the verification notes and decide this turn’s bond readings. If the scene gives the main bond a natural opening and its beat is missing, add one that fits the pace. If a clear beat already exists, return edits: [] and quote it in analysis.summary. When there is no opening or the user has closed or excluded the thread, do not add a beat or recruit a substitute bond. Remove an existing forced beat that contradicts that direction. If the user closes the relationship and limits this turn to unrelated business, return empty bond_readings and bond_proposals. An ordinary answer, warning or service is not evidence of a new bond by itself.'
   });
   const FORCED_BOND_CHECK_STAGES = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot']);
   // Without user cards (and unless the user turned it off), 억결 binds the persona to the
@@ -25523,7 +25588,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- RECENT EMOTIONAL SIGNALS: the main bond’s beat grows out of its latest emotional signal in the packet, continuing its direction or turning it with a cause in the scene. Prefer as main bond the one with the freshest signal. A bond with no signal yet starts with one small, readable signal rather than a big move.',
       ...forcedBondModeLines(settings),
       '- Per turn: one main bond plus at most one ripple bond it touches. Leave every other bond untouched.',
-      '- REQUIRED EVERY TURN: the response shows at least one visible beat that forms or moves the main bond (an act, a line, a glance, a physical tell, or a situation between them), scaled to its pace. A response with no bond beat fails the bond.',
+      '- When there is a natural opening this turn, show one visible beat that forms or moves the main bond (an act, a line, a glance, a physical tell, or a situation between them), scaled to its pace.',
+      '- If the user closes or explicitly excludes a relationship thread, keep it out of the scene, including indirect callbacks through other people or objects. If the current scene offers no opening, leave the relationship alone this turn. Do not promote an incidental exchange to a new bond just to satisfy this instruction.',
       hasAuto ? '- Auto bonds: no user card exists, so read each bond’s tone (trust, wariness, curiosity, rivalry, debt, affection, hatred, or a mix) from the user’s direction and what has developed in the story first, then canon and lore, and move it as firmly as a card would.' : '',
       '- Pace: subtle = noticing and small shifts; situational = the situation forces them together; explicit = the bond surfaces openly, still with a cause in the scene.',
       tones.length ? `- Occasions that fit the tones: ${tones.map(tone => `${tone} → ${FORCED_BOND_TONES[tone].occasion}`).join('; ')}.` : '',
@@ -25782,17 +25848,37 @@ Begin directly with the in-world response and finish the complete same-turn draf
     [/밤|자정|night|midnight/i, 'night', 'sleepy, slower, guard lowered']
   ]);
   const BODY_STATE_BASELINE_CUES = Object.freeze([
-    [/달리|달려|달렸|뛰었|뛰어|뛰어왔|숨을s*몰아|헐떡|전력|싸우|싸웠|운동|계단|오래\s*걸|\bran\b|running|fought|sprint|climb/i, 'exertion', 'breathing hard, sweat, sore muscles'],
+    [/달리|달려|달렸|뛰었|뛰어|뛰어왔|숨을\s*몰아|헐떡|전력|싸우|싸웠|운동|계단|오래\s*걸|\bran\b|running|fought|sprint|climb/i, 'exertion', 'breathing hard, sweat, sore muscles'],
     [/빗속|비에\s*젖|젖은|추위|추워|눈이\s*내|soaked|freezing|\bcold\b/i, 'cold or wet', 'shivering, cold fingers, wants warmth'],
     [/더위|더워|땀이|뙤약볕|\bhot\b|heat/i, 'heat', 'sweating, flushed, thirsty'],
     [/술을|취했|취한|맥주|소주|와인|drunk|wine|beer/i, 'alcohol', 'flushed, looser speech, unsteady'],
     [/배고|굶|공복|hungry|starving/i, 'hunger', 'stomach rumbling, short patience'],
     [/못\s*잤|밤새|잠을\s*설|sleepless|all night/i, 'sleep loss', 'heavy eyelids, slower thought, irritable']
   ]);
+  // A time named for another day or as a span edge ("내일 아침", "아침부터", "tomorrow morning") is not
+  // the scene's present. Live run 2026-11-15: "내일 아침 비가 그치면" in a night scene made the packet say
+  // "morning: stiff", and the 상태 AIDE wrote morning stiffness into a stormy night.
+  const BODY_STATE_NOT_NOW_TIME = /(?:내일|모레|글피|어제|그제|그저께|다음\s*날|이튿날|전날|지난|tomorrow|yesterday|next|last)\s*(?:새벽|아침|점심|정오|오후|저녁|밤|자정|dawn|morning|noon|lunch|afternoon|evening|dusk|night|midnight)|(?:새벽|아침|점심|오후|저녁|밤)(?:부터|까지)|(?:새벽|아침|점심|저녁|밤)(?:이|가)?\s*(?:오려면|오면|오기|올\s*때|밝으면|되면|될\s*때|되기)/gi;
+  const BODY_STATE_CLOCK_HOUR = /^\s*(?:\d{1,2}|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열(?:[한두])?)\s*시(?!간)/;
+  const sceneTimeOfDay = value => {
+    const present = String(value || '').replace(BODY_STATE_NOT_NOW_TIME, ' ');
+    let latest = null;
+    let latestClock = null;
+    // An explicit clock time can establish the scene before a bare reference to an earlier event.
+    for (const entry of BODY_STATE_TIME_OF_DAY) {
+      const pattern = new RegExp(entry[0].source, entry[0].flags.includes('g') ? entry[0].flags : entry[0].flags + 'g');
+      for (const match of present.matchAll(pattern)) {
+        const hit = { index: match.index, entry };
+        if (!latest || hit.index > latest.index) latest = hit;
+        if (BODY_STATE_CLOCK_HOUR.test(present.slice(hit.index + match[0].length)) && (!latestClock || hit.index > latestClock.index)) latestClock = hit;
+      }
+    }
+    return (latestClock || latest)?.entry || null;
+  };
   const bodyStateTimeOfDay = (recent = {}, clock = null) => {
     const sources = [clock?.timeOfDay || '', ...[...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])].reverse().slice(0, 4).map(message => message?.content || '')];
     for (const value of sources) {
-      const hit = BODY_STATE_TIME_OF_DAY.find(([pattern]) => pattern.test(value));
+      const hit = sceneTimeOfDay(value);
       if (hit) return { label: hit[1], signs: hit[2], source: value === sources[0] && clock?.timeOfDay ? 'LIBRA story clock' : 'recent scene' };
     }
     return null;
@@ -25928,11 +26014,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (card?.constitution) lines.push(`  constitution (card): ${card.constitution}`);
     if (present) {
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
-      const parts = [
-        timeOfDay ? `${timeOfDay.label} (${timeOfDay.source}) → ${timeOfDay.signs}` : '',
-        ...cues.map(([, label, signs]) => `${label} → ${signs}`)
-      ].filter(Boolean);
-      lines.push(`  baseline this turn (in the scene): ${parts.length ? parts.join('; ') : 'ordinary body; still show one small physical sign (breath, posture, hands, pace)'}`);
+      // Scene conditions are tracked conditions; the time of day is only optional color.
+      if (cues.length) lines.push(`  scene condition this turn: ${cues.map(([, label, signs]) => `${label} → ${signs}`).join('; ')}`);
+      lines.push(`  time-of-day color (optional, never a reason to insert): ${timeOfDay ? `${timeOfDay.label} (${timeOfDay.source}) → ${timeOfDay.signs}` : 'not stated'}`);
     }
     if (!lines.length && !evidence.length) return '';
     return [`- ${bodyStateDisplayName(name)}:`, ...(lines.length ? lines : ['  no tracked condition']), ...evidence].join('\n');
@@ -25959,11 +26043,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ].filter(Boolean).join('\n'), 4200);
   };
   const BODY_STATE_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: plan the scene inside what each body allows (movement, stamina, how much a sick or hurt character talks), and give each present main character one bodily sign from the packet.',
+    shadow_act: 'SHADOW: plan the scene inside what each body allows (movement, stamina, how much a sick or hurt character talks). A present character with a tracked condition in the packet shows it through one bodily sign; an ordinary body needs no added sign.',
     aide_character: 'Character AIDE: check that reactions fit each body state and that a character is aware only of conditions they could know or feel at this point.',
     aide_world: 'World AIDE: check that actions are physically possible for injured or ill characters and that elapsed time fits recovery or progression.',
     aide_plot: 'Plot AIDE: check that no illness or injury is resolved in one turn without cause, and that a body-state change does not become the ending.',
-    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings. REQUIRED: every present main character shows at least one bodily sign that fits the packet (a tracked condition or this turn’s baseline), through action, breath, posture or pace, never as a report. Insert one where the draft has none (edits must not be empty); return edits: [] only when each present character already shows one, and quote those lines in analysis.summary. Also fix body-state portrayal that contradicts the packet.'
+    // User decision 2026-11-15 after live runs: a sign is required only for a tracked condition. The
+    // earlier every-character rule made the AIDE write filler (invented stiffness, knees, a restated
+    // input line) for an uninjured persona in 4 of 5 runs while the real injury was already shown.
+    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings. A tracked condition is an illness, injury, symptom, treatment, pregnancy verdict, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Time-of-day color and an ordinary body are never a reason to insert, and never add a condition the packet does not list. Return edits: [] when every tracked condition already shows (quote those lines in analysis.summary) or when no present character has one. Also fix body-state portrayal that contradicts the packet.'
   });
   const bodyStateOutputKind = (stageName, settings = {}) => {
     if (!bodyStateStageActive(settings)) return '';
@@ -27993,14 +28080,21 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const forWholeDraft = Math.ceil(draftChars / draftCharsPerToken(settings)) + 768;
     const wanted = Math.max(forEdits, Math.min(AIDE_PATCH_WHOLE_DRAFT_MAX_TOKENS, forWholeDraft));
     const reasoningFamily = preset ? effectiveReasoningFamilyForPreset(preset) : '';
-    const reasoningActive = preset
-      ? resolveProviderOutputBudget(preset, { maxTokens: presetMax || preset.max_tokens }, reasoningFamily).reasoningAllowed === true
-      : false;
+    const reasoningActive = Boolean(preset && reasoningFamily !== 'custom'
+      && resolveProviderOutputBudget(preset, { maxTokens: presetMax || preset.max_tokens }, reasoningFamily).reasoningAllowed);
+    // Thinking spends from the same budget before any patch text. Live runs (deepseek-v4.1-flash, low)
+    // used 1.2k–8.9k tokens per AIDE call, mostly thinking; a ~6k first attempt ended at the length
+    // limit in 1–2 AIDEs per turn and each cost a full retry. Unused budget costs nothing.
     const reasoningHeadroom = reasoningActive
-      ? Math.max(2048, Math.ceil(wanted * 0.75))
+      ? Math.max(10240, Math.ceil(wanted * 0.75))
       : 0;
     const totalWanted = wanted + reasoningHeadroom;
-    return Math.max(forEdits + reasoningHeadroom, presetMax > 0 ? Math.min(totalWanted, presetMax) : totalWanted);
+    if (!reasoningHeadroom) return Math.max(forEdits, presetMax > 0 ? Math.min(totalWanted, presetMax) : totalWanted);
+    // Keep part of the preset's max_tokens back so a length stop can still be retried with a larger
+    // budget; a first attempt already at the ceiling has nothing left to grow into.
+    const retryRoom = presetMax > 0 ? Math.max(1024, Math.floor(presetMax * 0.2)) : 0;
+    const ceiling = presetMax > 0 ? Math.max(Math.min(wanted, presetMax), presetMax - retryRoom) : totalWanted;
+    return Math.min(totalWanted, ceiling);
   };
 
   const aidePatchPrompt = (stageName, recent, previous, settings, ledger, precomputedAnalysis = null) => {
@@ -28155,7 +28249,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     // The patch call may return a whole-draft replacement, so its output budget is sized against
     // the draft and capped by the preset's own max_tokens.
     const patchPresetResolved = resolvePreset(settings, stageName);
-    const patchPreset = patchPresetResolved?.preset;
+    // Size the budget for the effort the call will actually send. The quick profile adds one (balanced:
+    // low for patches) that the stage preset does not carry; without it the budget assumed no thinking
+    // while the request thought, and live runs ran out in 2 of 5 AIDEs per turn.
+    const patchPresetBase = patchPresetResolved?.preset ? sanitizePreset(patchPresetResolved.preset) : null;
+    const patchPolicy = patchPresetBase ? resolveStageReasoningPolicy(settings, stageName, 'patch', patchPresetBase) : null;
+    const patchPreset = patchPresetBase ? { ...patchPresetBase, reasoning_effort: patchPolicy?.effort || patchPresetBase.reasoning_effort } : null;
     const patchPresetMax = Number(patchPreset?.max_tokens);
     const maxTokens = aidePatchOutputTokenBudget(settings, prompts.previousDraft,
       Number.isFinite(patchPresetMax) && patchPresetMax > 0 ? patchPresetMax : 0, patchPreset);

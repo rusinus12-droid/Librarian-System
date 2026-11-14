@@ -68,7 +68,8 @@ test('the roll can skip a turn, off adds nothing, staging uses the world only, N
   wire(staging);
   staging.host.plugin.debugSetSceneVarianceRandom([0.1, 0.99, 0.0]);
   await run(staging, { scene_variance: 'medium', rp_impersonation_scope: 'persona_cast' });
-  assert.match(shadowText(staging), /THIS TURN’S VARIABLE \(world\): a phone buzzes/);
+  assert.match(shadowText(staging), /THIS TURN’S VARIABLE \(world\): a familiar background sound stops/);
+  assert.match(shadowText(staging), /Ground the variable in an established person, object, or feature of the setting/);
   assert.match(shadowText(staging), /It is a change in the world only/);
 
   const novel = await fixture(t, { writingMode: 'novel', unified: false });
