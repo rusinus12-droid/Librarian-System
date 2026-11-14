@@ -168,3 +168,52 @@ test('checkers return state_check and later stages read it; readings stay in mem
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });
+
+test('the 상태 panel turns the stage on, edits per-chat cards, saves the reproduction toggle and shows readings', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_body_state: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
+  await configure(f);
+  await runTurn(f, '민아에게 다가간다.');
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  await configure(f, {}, { body: false, bond: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  assert.ok(panel, 'the pipeline page renders the 상태 panel');
+  assert.match(panel.querySelector('[data-body-state-readings]').textContent, /민아.*발목 염좌 3일째/, 'last run readings show');
+  const change = node => node.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
+  const toggle = panel.querySelector('#on-s6');
+  assert.equal(toggle.checked, false);
+  toggle.checked = true; change(toggle);
+  const reproduction = panel.querySelector('[data-body-state-field="reproduction"]');
+  reproduction.checked = true; change(reproduction);
+  panel.querySelector('[data-body-state-action="add"]').click();
+  const name = await f.wait(() => panel.querySelector('[data-body-state-card-field="name"]'), 'card editor');
+  name.value = '민아'; change(name);
+  const cycle = await f.wait(() => panel.querySelector('[data-body-state-card-field="cycleLength"]'), 'cycle field');
+  cycle.value = '30'; change(cycle);
+  const contraception = await f.wait(() => panel.querySelector('[data-body-state-card-field="contraception"]'), 'contraception field');
+  contraception.value = 'pill'; change(contraception);
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  const runtime = await f.host.plugin.getRuntimeSettings();
+  assert.equal(String(runtime.body_state_reproduction), 'true');
+  const cards = JSON.parse(runtime.body_state_cards)[scopeKey];
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].name, '민아');
+  assert.equal(cards[0].cycleLength, 30);
+  assert.equal(cards[0].contraception, 'pill');
+  assert.equal((await f.host.plugin.getAgentSlots()).aide_body_state.enabled, true);
+});
+
+test('the 상태 panel opens its own prompt preview and sits before 억결 in the ladder', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
+  assert.ok(rows.indexOf('body_state') < rows.indexOf('forced_bond') && rows.indexOf('forced_bond') < rows.indexOf('plot'), rows.join(' > '));
+  f.document.querySelector('.stage-detail[data-detail="body_state"] [data-action="prompt-preview"]').click();
+  const title = () => f.document.querySelector('.dialog h2, .dialog [class*="title"]')?.textContent || '';
+  await f.wait(() => title().includes('프롬프트 미리보기'), 'prompt preview dialog');
+  assert.match(title(), /상태 AIDE/);
+});
