@@ -148,7 +148,7 @@ test('pregnancy is a fixed verdict behind its own toggle, only for NPCs in RP', 
     personaName: '하준', characterName: '세라', scopeKey: 'other', settings: on,
     recent: { visibleMessages: [{ role: 'assistant', content: '세라는 하준과 관계를 가졌다.' }] }
   });
-  assert.match(noCycle, /conception cannot be judged: cycle day or date unknown — do not decide a pregnancy/);
+  assert.match(noCycle, /whether this person can conceive is unknown \(no card setting, no profile gender\) — do not decide a pregnancy/);
 });
 
 test('checkers return state_check and later stages read it; readings stay in memory', async t => {
@@ -269,4 +269,49 @@ test('LIBRA story clock days drive elapsed time when present', async t => {
     settings: { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal' }
   });
   assert.match(estimated, /injury \(moderate\): day 4 \(estimated \(story clock\); usual 10–21 days\)/);
+});
+
+test('automatic cycle and conception: card first, then profile gender; same contact keeps one verdict', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const base = { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true };
+  const run = (libText, recent, extra = {}) => f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey: 's', libText, recent, settings: { ...base, ...extra },
+    profileGenders: { 세라: 'female', 준호: 'male' }
+  });
+  const contactNow = run('[STORY CLOCK] 현재: 이야기 10일째 · 밤', { visibleMessages: [{ role: 'assistant', content: '세라는 하준과 관계를 가졌다.' }] });
+  assert.match(contactNow, /cycle: day \d+ of (2[6-9]|3[0-2]) \(auto \(fixed seed, story clock\)\)/, 'an automatic cycle for a female profile');
+  const verdictNow = contactNow.match(/sexual contact 0 days ago \(estimated \(recent scene\)\), cycle day (\d+) then, contraception unknown, treated as none → chance ([\d.]+)% → (PREGNANT \(fixed verdict\)|not pregnant \(fixed verdict\))[^\n]*\[can conceive: profile: female\]/);
+  assert.ok(verdictNow, contactNow);
+  assert.equal(run('[STORY CLOCK] 현재: 이야기 10일째 · 밤', { visibleMessages: [{ role: 'assistant', content: '세라는 하준과 관계를 가졌다.' }] }), contactNow, 'the automatic cycle is stable');
+
+  // Twenty days later the same contact reaches GRADIA only as a LIBRA lens note stamped with its day.
+  const later = run('[STORY CLOCK] 현재: 이야기 30일째 · 아침\n이야기 10일째 · 밤 세라는 하준과 관계를 가졌다', { visibleMessages: [] });
+  const verdictLater = later.match(/sexual contact 20 days ago \(confirmed \(story clock\)\), cycle day (\d+) then, contraception unknown, treated as none → chance ([\d.]+)% → (PREGNANT \(fixed verdict\)|not pregnant \(fixed verdict\))/);
+  assert.ok(verdictLater, later);
+  assert.deepEqual(verdictLater.slice(1, 4), verdictNow.slice(1, 4), 'same contact day → same cycle day, chance and verdict');
+
+  const male = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '준호', scopeKey: 's', settings: base, profileGenders: { 준호: 'male' },
+    libText: '[STORY CLOCK] 현재: 이야기 10일째 · 밤', recent: { visibleMessages: [{ role: 'assistant', content: '준호는 하준과 관계를 가졌다.' }] }
+  });
+  assert.doesNotMatch(male, /cycle:|sexual contact|PREGNANT/, 'a male profile gets no cycle and no pregnancy judgment');
+
+  const cardNo = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey: 's', settings: { ...base, bodyStateCards: { s: [{ name: '세라', canConceive: 'no' }] } },
+    profileGenders: { 세라: 'female' }, libText: '[STORY CLOCK] 현재: 이야기 10일째 · 밤',
+    recent: { visibleMessages: [{ role: 'assistant', content: '세라는 하준과 관계를 가졌다.' }] }
+  });
+  assert.doesNotMatch(cardNo, /cycle:|sexual contact|PREGNANT/, 'the card overrides the profile');
+});
+
+test('a real run reads conception eligibility from the character card profile', async t => {
+  const chat = { id: 'h', message: [{ role: 'user', chatId: 'u1', data: '민아와 밤을 보낸다.' }, { role: 'assistant', chatId: 'a1', data: '4월 3일 밤, 민아는 하준과 관계를 가졌다.' }] };
+  const character = { chaId: 'c', name: 'Minah Kim', nickname: '민아', desc: 'Name: Minah Kim\nGender: Female\nAge: 24', description: 'Name: Minah Kim\nGender: Female\nAge: 24', chats: [chat], chatPage: 0, lorebook: [] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '민아는 창밖을 보았다.');
+  await configure(f, { body_state_reproduction: true });
+  await runTurn(f, '민아 곁에 눕는다.');
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  assert.match(body, /- Minah Kim:\n *cycle: day \d+ of \d+ \(auto \(fixed seed, story date\)\)/);
+  assert.match(body, /sexual contact \d+ days ago [^\n]*\[can conceive: profile: female\]/);
 });
