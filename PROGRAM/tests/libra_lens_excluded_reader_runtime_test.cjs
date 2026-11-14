@@ -66,8 +66,12 @@ test('lens reader keeps excluded notes in a separate selectable list and deletes
     Gui.visible = true;
     remove().click();
     Gui.app.querySelector('[data-operation-confirm-execute]').click();
-    await waitFor(() => Gui.lensReader.excludedNotice && !Gui.lensReader.deletingExcluded);
-    render();
+    // Rendering can start a second read if the snapshot changed during the deletion refresh.
+    await waitFor(() => {
+      if (!Gui.lensReader.excludedNotice || Gui.lensReader.deletingExcluded || Gui.lensReader.loading) return false;
+      render();
+      return !Gui.lensReader.loading;
+    });
     assert.equal(cards().length, 1, Gui.lensReader.excludedNotice);
     const remaining = await f.api.inspectScopeLenses();
     assert.ok(!remaining.memories.some(item => item.id === selectedId));
