@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.1.1",
-  "generatedAt": "2026-11-14T02:22:47.103Z",
+  "generatedAt": "2026-11-14T02:25:49.517Z",
   "server": {
     "version": "1.1.1",
     "protocol": {
@@ -8098,6 +8098,10 @@
     "tests/libra_canonical_coverage_audit_test.cjs": {
       "sha256": "6ff23fa6d7c85f800dcdf0c4cd249965291fa37fcb8de75998a1f1bda7bcf511",
       "bytes": 3943
+    },
+    "tests/libra_canonical_embedding_projection_v3_test.cjs": {
+      "sha256": "d690dd3e48d833ddea60ab928cd8727b5ef13cb8701a9175c2dec6059e1bad8c",
+      "bytes": 6437
     },
     "tests/libra_canonical_job_result_layout_test.cjs": {
       "sha256": "6e810541df02a55db7a7769208a243ad38b6b6dd6b990bf1b76684f712c1e1c4",
