@@ -35,12 +35,22 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     // one sends its row texts with the query, so stored row vectors can rank the anchors.
     const stateTexts = stateRows.length >= STATE_SEMANTIC_MIN_ROWS
       ? [...new Set(stateRows.map(row => String(row.text || '').trim()).filter(Boolean))] : [];
+    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
+    // It is read before the dense lane, which scores the same texts' stored Micro vectors.
+    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
+    if (frame.microIndex) {
+      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
+      catch (error) { microIndexError = String(error.code || error.message || error); }
+    }
+    frame.check();
+    const microTexts = [...microIndex.entries];
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      const lanes = scene || stateTexts.length ? { text: queryText,
+      const lanes = scene || stateTexts.length || microTexts.length ? { text: queryText,
         ...(scene ? { sceneText: scene.text, sceneWeight: scene.weight } : {}),
-        ...(stateTexts.length ? { stateTexts } : {}) } : queryText;
+        ...(stateTexts.length ? { stateTexts } : {}),
+        ...(microTexts.length ? { microTexts } : {}) } : queryText;
       try { semantic = await timed('semanticMs', () => frame.semantic(lanes)); }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
@@ -57,15 +67,9 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
-    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
-    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
-    if (frame.microIndex) {
-      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
-      catch (error) { microIndexError = String(error.code || error.message || error); }
-    }
-    frame.check();
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
-      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null });
+      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
+      semanticScores: semantic.microScores || null });
     const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;
@@ -201,6 +205,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
+        microVectors: microTexts.length && semantic.diagnostics?.microVectors ? { used: true, ...semantic.diagnostics.microVectors }
+          : { used: false, turns: microTexts.length },
         stateVectors: stateTexts.length ? { used: true, ...(semantic.diagnostics?.stateVectors || { status: semantic.diagnostics?.status || 'off' }) }
           : { used: false, rows: stateRows.length },
         sceneQuery: scene ? { used: true, weight: scene.weight, characters: scene.text.length,

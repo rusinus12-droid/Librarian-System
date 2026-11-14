@@ -143,8 +143,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
   // lets an old turn be read because it matches, not only because it is recent.
   // `scene` is an optional second, weighted query ({ query, weight }). The turns each query
   // matches are fused by weighted reciprocal rank before recency fills the rest. Completeness
-  // (matches/matchesRead) stays defined by the primary query.
-  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [], scene = null } = {}) => {
+  // (matches/matchesRead) stays defined by the primary query. `semanticScores` (turn -> 0..1) are
+  // stored Micro vector scores, already fused with the scene; they join the primary match score.
+  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [], scene = null, semanticScores = null } = {}) => {
     const allowed = new Set(array(turns).map(Number)), cap = Math.max(0, Math.floor(Number(limit) || 0));
     const chosen = [], taken = new Set();
     const take = (turn, reason) => { if (chosen.length < cap && allowed.has(turn) && !taken.has(turn)) { taken.add(turn); chosen.push({ turn, reason }); } };
@@ -155,13 +156,15 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     if (q && entries.length) {
       const docs = entries.map(([turn, text]) => ({ turn: Number(turn), body: String(text || ''), text: termFrequency(text) }));
       const corpus = buildCorpus(docs);
-      const matchOrder = queryValue => {
+      const dense = turn => semanticScores instanceof Map ? Math.max(0, Math.min(1, Number(semanticScores.get(turn)) || 0)) : 0;
+      const matchOrder = (queryValue, withDense = false) => {
         const terms = queryTerms(queryValue), queryEntities = mentionedEntities(queryValue, entities);
         return docs.map(doc => ({ turn: doc.turn,
-          score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, queryValue) }))
+          score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, queryValue)
+            + (withDense ? 2 * dense(doc.turn) : 0) }))
           .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn).map(row => row.turn);
       };
-      matchedTurns = matchOrder(q);
+      matchedTurns = matchOrder(q, true);
       matches = matchedTurns.length;
       let order = matchedTurns, sceneOnly = new Set();
       const sceneQuery = scene && Number(scene.weight) > 0 ? normalize(scene.query || '').trim() : '';

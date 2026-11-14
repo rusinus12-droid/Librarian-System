@@ -46997,8 +46997,9 @@ function createLibraReadonlySourceContext(owner) {
   // lets an old turn be read because it matches, not only because it is recent.
   // `scene` is an optional second, weighted query ({ query, weight }). The turns each query
   // matches are fused by weighted reciprocal rank before recency fills the rest. Completeness
-  // (matches/matchesRead) stays defined by the primary query.
-  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [], scene = null } = {}) => {
+  // (matches/matchesRead) stays defined by the primary query. `semanticScores` (turn -> 0..1) are
+  // stored Micro vector scores, already fused with the scene; they join the primary match score.
+  const rankMicroTurns = ({ turns = [], index = null, query = '', evidenceTurns = [], limit = 12, entities = [], scene = null, semanticScores = null } = {}) => {
     const allowed = new Set(array(turns).map(Number)), cap = Math.max(0, Math.floor(Number(limit) || 0));
     const chosen = [], taken = new Set();
     const take = (turn, reason) => { if (chosen.length < cap && allowed.has(turn) && !taken.has(turn)) { taken.add(turn); chosen.push({ turn, reason }); } };
@@ -47009,13 +47010,15 @@ function createLibraReadonlySourceContext(owner) {
     if (q && entries.length) {
       const docs = entries.map(([turn, text]) => ({ turn: Number(turn), body: String(text || ''), text: termFrequency(text) }));
       const corpus = buildCorpus(docs);
-      const matchOrder = queryValue => {
+      const dense = turn => semanticScores instanceof Map ? Math.max(0, Math.min(1, Number(semanticScores.get(turn)) || 0)) : 0;
+      const matchOrder = (queryValue, withDense = false) => {
         const terms = queryTerms(queryValue), queryEntities = mentionedEntities(queryValue, entities);
         return docs.map(doc => ({ turn: doc.turn,
-          score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, queryValue) }))
+          score: bm25fScore(terms, doc, corpus) + 0.5 * identitySignal(queryEntities, doc.body, entities) + 0.25 * exactSignal(doc.body, queryValue)
+            + (withDense ? 2 * dense(doc.turn) : 0) }))
           .filter(row => row.score > 0.02).sort((a, b) => b.score - a.score || b.turn - a.turn).map(row => row.turn);
       };
-      matchedTurns = matchOrder(q);
+      matchedTurns = matchOrder(q, true);
       matches = matchedTurns.length;
       let order = matchedTurns, sceneOnly = new Set();
       const sceneQuery = scene && Number(scene.weight) > 0 ? normalize(scene.query || '').trim() : '';
@@ -47513,12 +47516,22 @@ function createLibraReadonlySourceContext(owner) {
     // one sends its row texts with the query, so stored row vectors can rank the anchors.
     const stateTexts = stateRows.length >= STATE_SEMANTIC_MIN_ROWS
       ? [...new Set(stateRows.map(row => String(row.text || '').trim()).filter(Boolean))] : [];
+    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
+    // It is read before the dense lane, which scores the same texts' stored Micro vectors.
+    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
+    if (frame.microIndex) {
+      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
+      catch (error) { microIndexError = String(error.code || error.message || error); }
+    }
+    frame.check();
+    const microTexts = [...microIndex.entries];
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      const lanes = scene || stateTexts.length ? { text: queryText,
+      const lanes = scene || stateTexts.length || microTexts.length ? { text: queryText,
         ...(scene ? { sceneText: scene.text, sceneWeight: scene.weight } : {}),
-        ...(stateTexts.length ? { stateTexts } : {}) } : queryText;
+        ...(stateTexts.length ? { stateTexts } : {}),
+        ...(microTexts.length ? { microTexts } : {}) } : queryText;
       try { semantic = await timed('semanticMs', () => frame.semantic(lanes)); }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
@@ -47535,15 +47548,9 @@ function createLibraReadonlySourceContext(owner) {
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
     const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
-    // Search text stored on Micro heads. Without it the choice falls back to evidence and recency.
-    let microIndex = { entries: new Map(), known: 0 }, microIndexError = '';
-    if (frame.microIndex) {
-      try { microIndex = await timed('microIndexMs', () => frame.microIndex()); }
-      catch (error) { microIndexError = String(error.code || error.message || error); }
-    }
-    frame.check();
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
-      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null });
+      limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
+      semanticScores: semantic.microScores || null });
     const turns = ranked.turns;
     const keep = item => {
       const bytes = new TextEncoder().encode(JSON.stringify(item.rows)).length;
@@ -47679,6 +47686,8 @@ function createLibraReadonlySourceContext(owner) {
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
+        microVectors: microTexts.length && semantic.diagnostics?.microVectors ? { used: true, ...semantic.diagnostics.microVectors }
+          : { used: false, turns: microTexts.length },
         stateVectors: stateTexts.length ? { used: true, ...(semantic.diagnostics?.stateVectors || { status: semantic.diagnostics?.status || 'off' }) }
           : { used: false, rows: stateRows.length },
         sceneQuery: scene ? { used: true, weight: scene.weight, characters: scene.text.length,
@@ -61097,8 +61106,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           const context = await resolveContext();
           if (!sameSnapshotScope(context.scope, requested)) return;
           await refreshSnapshot(context, { limits: state.guiSnapshotLimits || LIBRA_SNAPSHOT_PAGE_LIMITS, summaryOnly: true });
-          // The State changed: embed its changed rows in the background (large States only).
+          // The State changed: embed its changed rows in the background (large States only),
+          // and the search texts of new or changed Micro turns.
           void refreshStateVectorsForContext(context).catch(() => null);
+          void refreshMicroVectorsForContext(context).catch(() => null);
         } catch (_) { /* A later explicit refresh still revalidates all State evidence. */ }
         finally{
           currentStateSnapshotRefreshRunning=false;
@@ -68821,125 +68832,177 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     const STATE_SEMANTIC_VECTOR_LIMIT = 128;
     const STATE_SEMANTIC_VECTOR_BYTES = 8 * 1024 * 1024;
     const STATE_SEMANTIC_DEADLINE_MS = 2500;
-    // State row vectors, one store per chat. The runtime asks for them only when the State is
-    // large enough that its anchor selection has to choose. Entries are keyed by a hash of the
-    // row text, so an unchanged row keeps its vector across Head revisions and only changed
-    // rows are embedded. A vector is a ranking hint; it never adds, changes or confirms a row.
-    const STATE_VECTOR_STORE_SCHEMA = 'libra.state_vector_store.v1', STATE_VECTOR_PAGE_SCHEMA = 'libra.state_vector_page.v1';
-    const STATE_VECTOR_MAX_ENTRIES = 2000, STATE_VECTOR_BATCH = 32, STATE_VECTOR_PAGE_BYTES = 192 * 1024;
-    const STATE_VECTOR_MAX_PAGES = 32, STATE_VECTOR_RETRY_MS = 60000;
-    const stateVectorKey = scope => `${PREFIX}:scope:${scope.scopeKey}:state-vector:v1`;
-    const stateVectorHash = text => digest(string(text).trim()).slice(0, 24);
-    const loadStateVectorStore = async (scope, readFrame = null) => {
-      const empty = { profileId: '', dimensions: 0, entries: {}, pages: [] };
-      const index = await storage.getVerifiedJson(stateVectorKey(scope), scope, null).catch(() => null);
-      if (index?.schema !== STATE_VECTOR_STORE_SCHEMA || index.scopeKey !== scope.scopeKey || !string(index.profileId)
-        || !Number.isInteger(index.dimensions) || index.dimensions < 1 || index.dimensions > 65536
-        || !Array.isArray(index.pages) || index.pages.length > STATE_VECTOR_MAX_PAGES * 2) return empty;
-      const refs = index.pages.filter(ref => /^[a-zA-Z0-9_.:-]{1,128}$/.test(ref?.id || ''));
-      const keys = refs.map(ref => `${stateVectorKey(scope)}:page:${ref.id}`);
-      // One request when the caller owns a read frame for this scope.
-      if (readFrame) { try { await readFrame.prefetch(keys); } catch (_) { /* Each read below reports itself. */ } }
-      const loaded = await Promise.all(refs.map(async (ref, index_) => {
+    // Search text per Micro turn, from the projection each Micro head already stores (cached per
+    // scope and source revision). Recall screens Micro turns with it, and Micro vectors embed it.
+    const readMicroIndexEntries = async (scope, turns, pairs) => {
+      const worldline = hostWorldlineIdForScope(scope);
+      const cacheKey = string(scope.scopeKey) + '\u0000' + worldline, generation = Number(state.microRestoreGeneration || 0);
+      let cache = stateMicroIndexes.get(cacheKey);
+      if (!cache || cache.generation !== generation) cache = { generation, turns: new Map() };
+      stateMicroIndexes.delete(cacheKey); stateMicroIndexes.set(cacheKey, cache);
+      while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
+      const allowed = new Set(asArray(turns).map(Number));
+      const revisions = new Map(asArray(pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
+      for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
+      const at = Date.now();
+      // An entry is reused only while its turn still has the source revision it was read for.
+      const pending = [...allowed].filter(turn => {
+        const entry = cache.turns.get(turn);
+        return !entry || entry.revision !== revisions.get(turn) || entry.text === null && at - entry.at > STATE_MICRO_INDEX_ABSENT_RECHECK_MS;
+      }).sort((a, b) => b - a).slice(0, STATE_MICRO_INDEX_SCAN_TURNS);
+      if (pending.length) {
+        // Heads are small: one request carries 32 of them. They are hints, so this frame
+        // is separate from the query's proof frame and is closed without a proof.
+        const scanScope = { ...scope }, frame = await openNativeReadFrame(scanScope);
         try {
-          const page = await storage.getVerifiedJson(keys[index_], scope, null);
-          if (page?.schema !== STATE_VECTOR_PAGE_SCHEMA || page.scopeKey !== scope.scopeKey || page.profileId !== index.profileId
-            || page.dimensions !== index.dimensions || !isPlainObject(page.entries) || digest(page) !== ref.id
-            || Object.keys(page.entries).length !== Number(ref.count)) return null;
-          return { ref, page };
-        } catch (_) { return null; }
-      }));
-      const entries = {}, pages = [];
-      for (const row of loaded) {
-        if (!row || Object.keys(entries).length + row.ref.count > STATE_VECTOR_MAX_ENTRIES) continue;
-        Object.assign(entries, row.page.entries); pages.push(row.ref);
+          const keys = pending.map(turn => key.microMemoryHead(scanScope, worldline, 0, turn));
+          await frame.prefetch(keys);
+          for (const [index, turn] of pending.entries()) {
+            const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
+            const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
+              && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
+            cache.turns.set(turn, { revision: revisions.get(turn), at,
+              text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
+          }
+        } finally { frame.close(); }
+        while (cache.turns.size > STATE_MICRO_INDEX_TURNS) cache.turns.delete(cache.turns.keys().next().value);
       }
-      return { profileId: string(index.profileId), dimensions: index.dimensions, entries, pages };
+      const entries = new Map(); let known = 0;
+      for (const turn of allowed) {
+        const entry = cache.turns.get(turn);
+        if (entry?.revision !== revisions.get(turn)) continue;
+        known++; if (entry.text) entries.set(turn, entry.text);
+      }
+      return { entries, known };
     };
-    // Immutable byte-bounded pages are written before the index that names them.
-    const writeStateVectorPages = async (scope, profileId, dimensions, rows) => {
-      const envelope = { schema: STATE_VECTOR_PAGE_SCHEMA, scopeKey: scope.scopeKey, profileId, dimensions, entries: {} };
-      const overhead = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(envelope)), refs = [];
-      let entries = {}, bytes = overhead, count = 0;
-      const flush = async () => {
-        if (!count) return;
-        const page = { ...envelope, entries }, ref = { id: digest(page), count };
-        await storage.setVerifiedJson(`${stateVectorKey(scope)}:page:${ref.id}`, page, scope);
-        refs.push(ref); entries = {}; bytes = overhead; count = 0;
-      };
-      for (const [hash, entry] of Object.entries(rows)) {
-        const cost = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(hash)) + 1 + MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(entry)) + 1;
-        if (count && bytes + cost > STATE_VECTOR_PAGE_BYTES) await flush();
-        entries[hash] = entry; bytes += cost; count += 1;
-      }
-      await flush();
-      return refs;
-    };
-    // Embeds the given State row texts that have no vector in the current embedding profile and
-    // drops vectors of rows that are gone. Runs in the background; recall uses what is stored.
-    const refreshStateVectors = async (scope, texts) => {
-      const embedding = await lensEmbeddingConfig();
-      if (!embedding) return { ok: false, reason: 'embedding_disabled' };
-      const wanted = new Map();
-      for (const value of asArray(texts)) {
-        const text = string(value).trim();
-        if (text && wanted.size < STATE_VECTOR_MAX_ENTRIES) wanted.set(stateVectorHash(text), text);
-      }
-      const store = await loadStateVectorStore(scope);
-      const configured = store.dimensions > 0 ? lensResultProfile(embedding, null, store.dimensions) : '';
-      let profileId = configured && configured === store.profileId ? store.profileId : '';
-      let dimensions = profileId ? store.dimensions : 0;
-      let entries = profileId ? Object.fromEntries(Object.entries(store.entries).filter(([hash]) => wanted.has(hash))) : {};
-      const stale = profileId ? Object.keys(store.entries).length - Object.keys(entries).length : 0;
-      // Rewrite every page when gone rows dominate or pages pile up; otherwise only append.
-      let repack = !profileId || stale > Object.keys(entries).length || store.pages.length >= STATE_VECTOR_MAX_PAGES;
-      const missing = [...wanted].filter(([hash]) => !entries[hash]);
-      let added = {}, embedded = 0;
-      for (let offset = 0; offset < missing.length; offset += STATE_VECTOR_BATCH) {
-        const batch = missing.slice(offset, offset + STATE_VECTOR_BATCH);
-        const result = await trackEmbeddingWork('state', batch.length, () => EmbeddingProviderRegistry.embedTexts(embedding.config,
-          batch.map(([, text]) => text), { purpose: 'document', maxRequests: 4 }), scope.scopeKey);
-        const resultProfile = lensResultProfile(embedding, result, asArray(result?.vectors?.[0]).length);
-        if (!resultProfile) return { ok: false, reason: 'embedding_profile_unknown', embedded };
-        if (resultProfile !== profileId) {
-          if (embedded) return { ok: false, reason: 'embedding_profile_changed', embedded };
-          // First answer in another space: every stored vector belongs to another profile.
-          profileId = resultProfile; entries = {}; added = {}; dimensions = 0; repack = true;
+    // Row vectors: one paged store per chat and kind. Entries are keyed by a hash of the row
+    // text, so an unchanged row keeps its vector across revisions and only changed rows are
+    // embedded. A vector is a ranking hint; it never adds, changes or confirms a record.
+    //  - state: State rows, used only when the State is large enough that its anchor selection
+    //    has to choose (STATE_VECTOR_MIN_ROWS).
+    //  - micro: each Micro turn's stored search text (the text the Micro index screens).
+    const ROW_VECTOR_BATCH = 32, ROW_VECTOR_PAGE_BYTES = 192 * 1024, ROW_VECTOR_MAX_PAGES = 32, ROW_VECTOR_RETRY_MS = 60000;
+    const rowVectorHash = text => digest(string(text).trim()).slice(0, 24);
+    const createRowVectorStore = ({ kind, keyTail, maxEntries }) => {
+      const storeSchema = `libra.${kind}_vector_store.v1`, pageSchema = `libra.${kind}_vector_page.v1`;
+      const storeKey = scope => `${PREFIX}:scope:${scope.scopeKey}:${keyTail}`;
+      const load = async (scope, readFrame = null) => {
+        const empty = { profileId: '', dimensions: 0, entries: {}, pages: [] };
+        const index = await storage.getVerifiedJson(storeKey(scope), scope, null).catch(() => null);
+        if (index?.schema !== storeSchema || index.scopeKey !== scope.scopeKey || !string(index.profileId)
+          || !Number.isInteger(index.dimensions) || index.dimensions < 1 || index.dimensions > 65536
+          || !Array.isArray(index.pages) || index.pages.length > ROW_VECTOR_MAX_PAGES * 2) return empty;
+        const refs = index.pages.filter(ref => /^[a-zA-Z0-9_.:-]{1,128}$/.test(ref?.id || ''));
+        const keys = refs.map(ref => `${storeKey(scope)}:page:${ref.id}`);
+        // One request when the caller owns a read frame for this scope.
+        if (readFrame) { try { await readFrame.prefetch(keys); } catch (_) { /* Each read below reports itself. */ } }
+        const loaded = await Promise.all(refs.map(async (ref, index_) => {
+          try {
+            const page = await storage.getVerifiedJson(keys[index_], scope, null);
+            if (page?.schema !== pageSchema || page.scopeKey !== scope.scopeKey || page.profileId !== index.profileId
+              || page.dimensions !== index.dimensions || !isPlainObject(page.entries) || digest(page) !== ref.id
+              || Object.keys(page.entries).length !== Number(ref.count)) return null;
+            return { ref, page };
+          } catch (_) { return null; }
+        }));
+        const entries = {}, pages = [];
+        for (const row of loaded) {
+          if (!row || Object.keys(entries).length + row.ref.count > maxEntries) continue;
+          Object.assign(entries, row.page.entries); pages.push(row.ref);
         }
-        batch.forEach(([hash], index) => {
-          const vector = result?.vectors?.[index];
-          if (!Array.isArray(vector) || !vector.length) return;
-          dimensions = vector.length; entries[hash] = lensEncodeVector(vector); added[hash] = entries[hash]; embedded += 1;
-        });
-      }
-      if (!profileId || !dimensions) return { ok: false, reason: wanted.size ? 'nothing_embedded' : 'no_rows', embedded };
-      if (!embedded && !repack) return { ok: true, embedded: 0, total: Object.keys(entries).length };
-      const written = await writeStateVectorPages(scope, profileId, dimensions, repack ? entries : added);
-      const pages = repack ? written : [...store.pages, ...written];
-      await storage.setVerifiedJson(stateVectorKey(scope), { schema: STATE_VECTOR_STORE_SCHEMA, scopeKey: scope.scopeKey,
-        profileId, dimensions, pages, updatedAt: nowIso() }, scope);
-      const keep = new Set(pages.map(ref => ref.id));
-      for (const ref of store.pages) if (!keep.has(ref.id)) {
-        try { await storage.remove(`${stateVectorKey(scope)}:page:${ref.id}`); } catch (_) { /* An unreferenced page is ignored. */ }
-      }
-      return { ok: true, embedded, total: Object.keys(entries).length };
+        return { profileId: string(index.profileId), dimensions: index.dimensions, entries, pages };
+      };
+      // Immutable byte-bounded pages are written before the index that names them.
+      const writePages = async (scope, profileId, dimensions, rows) => {
+        const envelope = { schema: pageSchema, scopeKey: scope.scopeKey, profileId, dimensions, entries: {} };
+        const overhead = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(envelope)), refs = [];
+        let entries = {}, bytes = overhead, count = 0;
+        const flush = async () => {
+          if (!count) return;
+          const page = { ...envelope, entries }, ref = { id: digest(page), count };
+          await storage.setVerifiedJson(`${storeKey(scope)}:page:${ref.id}`, page, scope);
+          refs.push(ref); entries = {}; bytes = overhead; count = 0;
+        };
+        for (const [hash, entry] of Object.entries(rows)) {
+          const cost = MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(hash)) + 1 + MemorySuiteExecutionContract.utf8Bytes(JSON.stringify(entry)) + 1;
+          if (count && bytes + cost > ROW_VECTOR_PAGE_BYTES) await flush();
+          entries[hash] = entry; bytes += cost; count += 1;
+        }
+        await flush();
+        return refs;
+      };
+      // Embeds the given texts that have no vector in the current embedding profile and drops
+      // vectors of texts that are gone. Runs in the background; recall uses what is stored.
+      const refresh = async (scope, texts) => {
+        const embedding = await lensEmbeddingConfig();
+        if (!embedding) return { ok: false, reason: 'embedding_disabled' };
+        const wanted = new Map();
+        for (const value of asArray(texts)) {
+          const text = string(value).trim();
+          if (text && wanted.size < maxEntries) wanted.set(rowVectorHash(text), text);
+        }
+        const store = await load(scope);
+        const configured = store.dimensions > 0 ? lensResultProfile(embedding, null, store.dimensions) : '';
+        let profileId = configured && configured === store.profileId ? store.profileId : '';
+        let dimensions = profileId ? store.dimensions : 0;
+        let entries = profileId ? Object.fromEntries(Object.entries(store.entries).filter(([hash]) => wanted.has(hash))) : {};
+        const stale = profileId ? Object.keys(store.entries).length - Object.keys(entries).length : 0;
+        // Rewrite every page when gone rows dominate or pages pile up; otherwise only append.
+        let repack = !profileId || stale > Object.keys(entries).length || store.pages.length >= ROW_VECTOR_MAX_PAGES;
+        const missing = [...wanted].filter(([hash]) => !entries[hash]);
+        let added = {}, embedded = 0;
+        for (let offset = 0; offset < missing.length; offset += ROW_VECTOR_BATCH) {
+          const batch = missing.slice(offset, offset + ROW_VECTOR_BATCH);
+          const result = await trackEmbeddingWork(kind, batch.length, () => EmbeddingProviderRegistry.embedTexts(embedding.config,
+            batch.map(([, text]) => text), { purpose: 'document', maxRequests: 4 }), scope.scopeKey);
+          const resultProfile = lensResultProfile(embedding, result, asArray(result?.vectors?.[0]).length);
+          if (!resultProfile) return { ok: false, reason: 'embedding_profile_unknown', embedded };
+          if (resultProfile !== profileId) {
+            if (embedded) return { ok: false, reason: 'embedding_profile_changed', embedded };
+            // First answer in another space: every stored vector belongs to another profile.
+            profileId = resultProfile; entries = {}; added = {}; dimensions = 0; repack = true;
+          }
+          batch.forEach(([hash], index) => {
+            const vector = result?.vectors?.[index];
+            if (!Array.isArray(vector) || !vector.length) return;
+            dimensions = vector.length; entries[hash] = lensEncodeVector(vector); added[hash] = entries[hash]; embedded += 1;
+          });
+        }
+        if (!profileId || !dimensions) return { ok: false, reason: wanted.size ? 'nothing_embedded' : 'no_rows', embedded };
+        if (!embedded && !repack) return { ok: true, embedded: 0, total: Object.keys(entries).length };
+        const written = await writePages(scope, profileId, dimensions, repack ? entries : added);
+        const pages = repack ? written : [...store.pages, ...written];
+        await storage.setVerifiedJson(storeKey(scope), { schema: storeSchema, scopeKey: scope.scopeKey,
+          profileId, dimensions, pages, updatedAt: nowIso() }, scope);
+        const keep = new Set(pages.map(ref => ref.id));
+        for (const ref of store.pages) if (!keep.has(ref.id)) {
+          try { await storage.remove(`${storeKey(scope)}:page:${ref.id}`); } catch (_) { /* An unreferenced page is ignored. */ }
+        }
+        return { ok: true, embedded, total: Object.keys(entries).length };
+      };
+      const refreshes = new Map(), failedAt = new Map();
+      const schedule = (scope, texts) => {
+        const scopeKey = string(scope?.scopeKey);
+        if (!scopeKey) return Promise.resolve({ ok: false, reason: 'scope_missing' });
+        if (refreshes.has(scopeKey)) return refreshes.get(scopeKey);
+        if (Date.now() - Number(failedAt.get(scopeKey) || 0) < ROW_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
+        const job = refresh({ ...scope }, texts).catch(error => ({ ok: false, reason: string(error?.message || error) }))
+          .then(result => {
+            if (result?.ok || ['embedding_disabled', 'no_rows'].includes(result?.reason)) failedAt.delete(scopeKey);
+            else failedAt.set(scopeKey, Date.now());
+            return result;
+          })
+          .finally(() => refreshes.delete(scopeKey));
+        refreshes.set(scopeKey, job);
+        return job;
+      };
+      return { kind, storeKey, load, refresh, schedule };
     };
-    const stateVectorRefreshes = new Map(), stateVectorRefreshFailedAt = new Map();
-    const scheduleStateVectorRefresh = (scope, texts) => {
-      const scopeKey = string(scope?.scopeKey);
-      if (!scopeKey) return Promise.resolve({ ok: false, reason: 'scope_missing' });
-      if (stateVectorRefreshes.has(scopeKey)) return stateVectorRefreshes.get(scopeKey);
-      if (Date.now() - Number(stateVectorRefreshFailedAt.get(scopeKey) || 0) < STATE_VECTOR_RETRY_MS) return Promise.resolve({ ok: false, reason: 'retry_cooldown' });
-      const job = refreshStateVectors({ ...scope }, texts).catch(error => ({ ok: false, reason: string(error?.message || error) }))
-        .then(result => {
-          if (result?.ok || ['embedding_disabled', 'no_rows'].includes(result?.reason)) stateVectorRefreshFailedAt.delete(scopeKey);
-          else stateVectorRefreshFailedAt.set(scopeKey, Date.now());
-          return result;
-        })
-        .finally(() => stateVectorRefreshes.delete(scopeKey));
-      stateVectorRefreshes.set(scopeKey, job);
-      return job;
-    };
+    const stateVectorStore = createRowVectorStore({ kind: 'state', keyTail: 'state-vector:v1', maxEntries: 2000 });
+    // The micro-vector key family already belongs to every chat scope; the store sits inside it.
+    const microVectorStore = createRowVectorStore({ kind: 'micro', keyTail: 'micro-vector:store:v1', maxEntries: STATE_MICRO_INDEX_TURNS });
+    const loadStateVectorStore = stateVectorStore.load, refreshStateVectors = stateVectorStore.refresh;
+    const scheduleStateVectorRefresh = stateVectorStore.schedule, stateVectorHash = rowVectorHash;
     // Production runs after the State changes, never on the recall path: the response State
     // (stored Head plus approved Micro projections) is turned into rows, and a State at least
     // as large as the runtime's STATE_SEMANTIC_MIN_ROWS (24) gets its changed rows embedded.
@@ -68955,6 +69018,24 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       if (texts.length < STATE_VECTOR_MIN_ROWS) return { ok: true, skipped: 'small_state', rows: texts.length };
       return await scheduleStateVectorRefresh(scope, texts);
     };
+    // Micro vectors follow a Micro publication the same way: the turns' stored search texts are
+    // embedded in the background, changed or new turns only.
+    const refreshMicroVectorsForContext = async context => {
+      if (!await lensEmbeddingConfig()) return { ok: false, reason: 'embedding_disabled' };
+      const scope = context.scope, pairs = buildPairs(context.chat, scope.scopeKey);
+      const { entries } = await readMicroIndexEntries(scope, pairs.map(pair => Number(pair.turn)), pairs);
+      const texts = [...new Set([...entries.values()].map(text => string(text).trim()).filter(Boolean))];
+      if (!texts.length) return { ok: true, skipped: 'no_micro', rows: 0 };
+      return await microVectorStore.schedule(scope, texts);
+    };
+    // How many of the given Micro turns have a vector in the current embedding profile.
+    const countMicroVectors = async (scope, pairs, turns) => {
+      const embedding = await lensEmbeddingConfig();
+      const store = await microVectorStore.load(scope);
+      if (!embedding || !store.dimensions || lensResultProfile(embedding, null, store.dimensions) !== store.profileId) return 0;
+      const { entries } = await readMicroIndexEntries(scope, turns, pairs);
+      return asArray(turns).filter(turn => { const text = entries.get(Number(turn)); return !!text && !!store.entries[rowVectorHash(text)]; }).length;
+    };
     // The query may carry a second, weighted scene query. Both vectors are compared in the same
     // single scan of the stored document vectors, so the scene lane adds no storage reads.
     const readStateSemanticCandidates = async (context, source, queryInput) => {
@@ -68963,11 +69044,15 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       const sceneText = string(lanes.sceneText || '');
       const sceneWeight = Math.max(0, Math.min(1, Number(lanes.sceneWeight) || 0));
       const stateTexts = [...new Set(asArray(lanes.stateTexts).map(value => string(value).trim()).filter(Boolean))];
+      // [turn, stored Micro search text] pairs from the Micro index.
+      const microTexts = asArray(lanes.microTexts).map(row => [Number(asArray(row)[0]), string(asArray(row)[1]).trim()])
+        .filter(([turn, text]) => Number.isInteger(turn) && turn > 0 && text);
       const diagnostics = { status: 'off', queryCached: false, queryRequests: 0, scanned: 0, matched: 0,
         missing: 0, incompatible: 0, failedReads: 0, limited: false, profileId: '',
         sceneQuery: sceneText && sceneWeight > 0 ? 'pending' : 'off' };
       if (stateTexts.length) diagnostics.stateVectors = { rows: stateTexts.length, scored: 0, missing: 0, status: 'off' };
-      const empty = () => ({ scores: new Map(), sceneScores: new Map(), stateScores: new Map(), matches: new Map(), diagnostics });
+      if (microTexts.length) diagnostics.microVectors = { rows: microTexts.length, scored: 0, missing: 0, status: 'off' };
+      const empty = () => ({ scores: new Map(), sceneScores: new Map(), stateScores: new Map(), microScores: new Map(), matches: new Map(), diagnostics });
       if (!source.semanticAllowed) return empty();
       const config = normalizeEmbeddingSettings((await LibraProviderBridge.getConfig())?.embed || DEFAULT_EMBEDDING);
       if (!config.enabled) { diagnostics.status = 'disabled'; return empty(); }
@@ -68975,7 +69060,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       // The manifest already identifies ready document vectors. No canonical-body scan or
       // namespace enumeration, and no embedding/rebuild job, is required for this lane.
       const ready = source.refs.filter(ref => ref.embeddingStatus === 'ready' && /:memory:/.test(ref.key));
-      if (!ready.length && !stateTexts.length) { diagnostics.status = 'no_vectors'; return empty(); }
+      if (!ready.length && !stateTexts.length && !microTexts.length) { diagnostics.status = 'no_vectors'; return empty(); }
       const refs = ready.slice().sort((a,b) => Number(b.turnRange?.end || 0) - Number(a.turnRange?.end || 0)).slice(0, STATE_SEMANTIC_VECTOR_LIMIT);
       diagnostics.limited = refs.length < ready.length;
       diagnostics.total = ready.length;
@@ -69001,24 +69086,25 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         readFrame = await openNativeReadFrame(scanScope);
         if (controller.signal.aborted) { readFrame.close(); throw Error('LIBRA_SEMANTIC_TIMEOUT'); }
         const matches = new Map(), scores = new Map(), sceneScores = new Map(), stateScores = new Map(); let bytes = 0;
-        if (stateTexts.length) {
-          // The State store is read through the same frame. A row without a vector in this
-          // profile simply has no dense score.
-          const stateDiagnostics = diagnostics.stateVectors;
-          const store = await loadStateVectorStore(scanScope, readFrame);
+        // Row stores (State rows, Micro turns) are read through the same frame. A row without a
+        // vector in this profile simply has no dense score; recall never embeds it.
+        const scoreRows = async (rowStore, rows, rowDiagnostics, out) => {
+          const store = await rowStore.load(scanScope, readFrame);
           if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
           const comparable = store.profileId === query.profileId && store.dimensions === query.unit.length;
-          for (const text of stateTexts) {
-            const entry = comparable ? store.entries[stateVectorHash(text)] : null;
+          for (const [rowKey, text] of rows) {
+            const entry = comparable ? store.entries[rowVectorHash(text)] : null;
             const vector = entry ? lensDecodeVector(entry) : null;
-            if (!vector || vector.length !== query.unit.length) { stateDiagnostics.missing++; continue; }
+            if (!vector || vector.length !== query.unit.length) { rowDiagnostics.missing++; continue; }
             const score = Math.max(denseScore(lensCosine(query.unit, vector)),
               scene ? sceneWeight * denseScore(lensCosine(scene.unit, vector)) : 0);
-            if (score > 0) { stateScores.set(text, score); stateDiagnostics.scored++; }
+            if (score > 0) { out.set(rowKey, Math.max(Number(out.get(rowKey)) || 0, score)); rowDiagnostics.scored++; }
           }
-          // Recall only reads; missing rows are embedded after the next State change.
-          stateDiagnostics.status = comparable ? 'ready' : store.profileId ? 'profile_mismatch' : 'no_vectors';
-        }
+          rowDiagnostics.status = comparable ? 'ready' : store.profileId ? 'profile_mismatch' : 'no_vectors';
+        };
+        const microScores = new Map();
+        if (stateTexts.length) await scoreRows(stateVectorStore, stateTexts.map(text => [text, text]), diagnostics.stateVectors, stateScores);
+        if (microTexts.length) await scoreRows(microVectorStore, microTexts, diagnostics.microVectors, microScores);
         for (let offset = 0; offset < refs.length; offset += 16) {
           if (controller.signal.aborted) throw Error('LIBRA_SEMANTIC_TIMEOUT');
           const part = refs.slice(offset, offset + 16).map(ref => ({ ref,
@@ -69063,7 +69149,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           if (bytes > STATE_SEMANTIC_VECTOR_BYTES) break;
         }
         diagnostics.status = diagnostics.failedReads ? 'partial' : 'ready'; diagnostics.matched = matches.size;
-        return { matches, scores, sceneScores, stateScores, diagnostics, configDigest: digest(config) };
+        return { matches, scores, sceneScores, stateScores, microScores, diagnostics, configDigest: digest(config) };
       };
       try {
         // The hard deadline also handles a host/provider that ignores AbortSignal. Late
@@ -69136,47 +69222,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           source.semanticAttempt = result.diagnostics.status;
           return result;
         },
-        async microIndex(context, source) {
-          const scope = context.scope, worldline = hostWorldlineIdForScope(scope);
-          const cacheKey = string(scope.scopeKey) + '\u0000' + worldline, generation = Number(state.microRestoreGeneration || 0);
-          let cache = stateMicroIndexes.get(cacheKey);
-          if (!cache || cache.generation !== generation) cache = { generation, turns: new Map() };
-          stateMicroIndexes.delete(cacheKey); stateMicroIndexes.set(cacheKey, cache);
-          while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
-          const allowed = new Set(source.turns);
-          const revisions = new Map(asArray(source.pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
-          for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
-          const at = Date.now();
-          // An entry is reused only while its turn still has the source revision it was read for.
-          const pending = [...allowed].filter(turn => {
-            const entry = cache.turns.get(turn);
-            return !entry || entry.revision !== revisions.get(turn) || entry.text === null && at - entry.at > STATE_MICRO_INDEX_ABSENT_RECHECK_MS;
-          }).sort((a, b) => b - a).slice(0, STATE_MICRO_INDEX_SCAN_TURNS);
-          if (pending.length) {
-            // Heads are small: one request carries 32 of them. They are hints, so this frame
-            // is separate from the query's proof frame and is closed without a proof.
-            const scanScope = { ...scope }, frame = await openNativeReadFrame(scanScope);
-            try {
-              const keys = pending.map(turn => key.microMemoryHead(scanScope, worldline, 0, turn));
-              await frame.prefetch(keys);
-              for (const [index, turn] of pending.entries()) {
-                const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
-                const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
-                  && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
-                cache.turns.set(turn, { revision: revisions.get(turn), at,
-                  text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
-              }
-            } finally { frame.close(); }
-            while (cache.turns.size > STATE_MICRO_INDEX_TURNS) cache.turns.delete(cache.turns.keys().next().value);
-          }
-          const entries = new Map(); let known = 0;
-          for (const turn of allowed) {
-            const entry = cache.turns.get(turn);
-            if (entry?.revision !== revisions.get(turn)) continue;
-            known++; if (entry.text) entries.set(turn, entry.text);
-          }
-          return { entries, known };
-        },
+        async microIndex(context, source) { return await readMicroIndexEntries(context.scope, source.turns, source.pairs); },
         fingerprint: value => stateMemoryFingerprint(JSON.stringify(value)),
         check(scope, guard) { ensureRecallGuard(guard, 'state_memory_read'); if (state.disposed || state.deletingScopes.has(scope.scopeKey)) throw Error('LIBRA_STATE_OWNER_CLOSED'); },
         snapshot,
@@ -74148,7 +74194,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const microRead = await attempt(async () => {
         const page = await listMicroReaderTurns({limit:20,expectedScopeKey:scopeKey});
         const verified = asArray(page.items).filter(row => row.status === 'verified');
-        return {rows:verified.length,stored:0,lastTurn:Math.max(0,...verified.map(row=>Number(row.turn||0)))};
+        const verifiedTurns = verified.map(row => Number(row.turn || 0)).filter(turn => turn > 0);
+        // Micro vectors exist for turns whose stored search text was embedded in this profile.
+        const stored = embeddingOn ? await countMicroVectors(scope, pairs, verifiedTurns) : 0;
+        return {rows:verified.length,stored,lastTurn:Math.max(0,...verifiedTurns)};
       });
       const publication = state.lastMicroPublication?.scopeKey === scopeKey ? state.lastMicroPublication : null;
       const microRows = Number(microRead.value?.rows || 0), microFailed = !!publication && !['verified', 'pending'].includes(string(publication.status)) && !!publication.reason;
