@@ -43,3 +43,34 @@ test('a Canonical batch commits for its own chat when the user opens another cha
   assert.equal(x.getManifest().memories['1'].key.includes(':memory:1:'), true);
   assert.equal(Object.keys(x.getManifest().failedBatches || {}).length, 0, 'no failure is recorded for a view change');
 });
+
+const gapProbe = source => {
+  const anchor = '    const repairMicroGapsAfterPublication = async scope => {';
+  assert.ok(source.includes(anchor));
+  return source.replace(anchor, `    globalThis.__microGapProbe = async ({ heads = [], works = [], options = {} } = {}) => {
+      receiptGapScannedAt = 0; receiptGapAttempts.clear();
+      const context = await resolveContext(true), pairs = buildPairs(context.chat, context.scope.scopeKey);
+      const worldlineId = hostWorldlineIdForScope(context.scope);
+      for (const turn of heads) await storage.setJson(key.microMemoryHead(context.scope, worldlineId, 0, turn), { schema: 'gap_probe_head' });
+      for (const turn of works) await storage.setJson(key.microWork(context.scope, worldlineId, 0, turn,
+        completedTurnRevisionId(pairs[turn - 1]), microProducerVersion), { schema: 'gap_probe_work', status: 'reserved', phase: 'invoking', leaseExpiresAt: Date.now() + 60000 });
+      return (await findCompletedTurnGaps(context, pairs, pairs.slice(-1), options)).map(pair => Number(pair.turn));
+    };
+` + anchor);
+};
+
+test('never-planned turns after the first Micro are re-opened by the receipt reconcile, earlier history is not', async t => {
+  const x = await fixture({ transformSource: gapProbe });
+  t.after(() => x.r.cleanup());
+  const probe = async options => JSON.parse(JSON.stringify(await x.r.context.__microGapProbe(options)));
+  // Five pairs; the newest is the tail. T1 has Micro, T2–T4 have neither Micro nor any attempt.
+  assert.deepEqual(await probe({ heads: [1], options: { includeUnplanned: true } }), [2, 3, 4]);
+  // The post-publication repair cannot capture a receipt, so it keeps the old rule.
+  assert.deepEqual(await probe({ heads: [1] }), []);
+  // A chat with no Micro at all is history backfill, never automatic.
+  const empty = await fixture({ transformSource: gapProbe });
+  t.after(() => empty.r.cleanup());
+  assert.deepEqual(JSON.parse(JSON.stringify(await empty.r.context.__microGapProbe({ options: { includeUnplanned: true } }))), []);
+  // A turn with an attempt in flight for its revision is not an unplanned gap.
+  assert.deepEqual(await probe({ heads: [1], works: [3], options: { includeUnplanned: true } }), [2, 4]);
+});

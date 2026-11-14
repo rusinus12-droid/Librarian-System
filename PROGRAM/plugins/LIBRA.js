@@ -41986,7 +41986,7 @@ function createLibraReadonlySourceContext(owner) {
     const RECEIPT_GAP_REPAIR_LIMIT = 4, RECEIPT_GAP_SCAN_INTERVAL_MS = 30000;
     const receiptGapAttempts = new Set();
     let receiptGapScannedAt = 0;
-    const findCompletedTurnGaps = async (context, pairs, tail) => {
+    const findCompletedTurnGaps = async (context, pairs, tail, options = {}) => {
       if (Date.now() - receiptGapScannedAt < RECEIPT_GAP_SCAN_INTERVAL_MS) return [];
       const scopeKey = string(context?.scope?.scopeKey || ''), worldlineId = hostWorldlineIdForScope(context.scope);
       const inTail = new Set(asArray(tail).map(pair => Number(pair.turn)));
@@ -42004,11 +42004,25 @@ function createLibraReadonlySourceContext(owner) {
         match = rest.match(microWork); if (match) works.set(`${match[1]}:${match[2]}`, storageKey);
       }
       const gaps = [];
+      // Turns before the chat's first Micro predate Micro for this chat (history
+      // backfill stays a manual job). After it, a turn with neither a Micro nor any
+      // attempt for its current revision was never planned: its capture ran without
+      // a matching main-request boundary (silent output listener, failover
+      // reconcile, a reconciled tail turn). No provider call happened for it, so
+      // re-open it here; skipping it left a stretch of turns without Micro for good.
+      const firstMicroTurn = micros.size ? Math.min(...micros) : Infinity;
       for (const pair of older) {
         if (gaps.length >= RECEIPT_GAP_REPAIR_LIMIT) break;
         const turn = Number(pair.turn), revisionId = completedTurnRevisionId(pair);
         const attempt = `${scopeKey}:${worldlineId}:${turn}:${revisionId}`, workKey = works.get(`${turn}:${revisionId}`);
-        if (micros.has(turn) || !workKey || receiptGapAttempts.has(attempt)) continue;
+        if (micros.has(turn) || receiptGapAttempts.has(attempt)) continue;
+        if (!workKey) {
+          // Only a caller that captures the receipt first can produce an unplanned turn.
+          if (options.includeUnplanned !== true || turn <= firstMicroTurn || state.microJobs.has([scopeKey, worldlineId, 0, turn, revisionId].join(':'))) continue;
+          receiptGapAttempts.add(attempt);
+          gaps.push(pair);
+          continue;
+        }
         let work = null;
         try { work = await storage.getStoredJson(workKey, null); } catch (_) { continue; }
         // An invoking attempt whose lease expired and that is not running here was left
@@ -42078,7 +42092,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       if (!historical) {
         try {
-          const gapPairs = await findCompletedTurnGaps(context, pairs, candidates);
+          const gapPairs = await findCompletedTurnGaps(context, pairs, candidates, { includeUnplanned: true });
           if (gapPairs.length) { candidates = [...gapPairs, ...candidates]; result.examined = candidates.length; result.gapRepairs = gapPairs.map(pair => Number(pair.turn)); }
         } catch (error) { result.gaps.push({ turn: 0, reason: `gap_scan:${compact(error?.message || error, 200)}` }); }
       }
