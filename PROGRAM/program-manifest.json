@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.1.1",
-  "generatedAt": "2026-11-14T00:46:00.958Z",
+  "generatedAt": "2026-11-14T01:06:12.690Z",
   "server": {
     "version": "1.1.1",
     "protocol": {
@@ -3844,7 +3844,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "d14627bb77f8e5f4464fa49b2317809ee25d19f61a56eb6e9ebbc1461f101b75",
+      "sha256": "7967606517c315ff5e356384796f0b349145b24d56947161fbf37cdee06c5728",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4260,8 +4260,8 @@
       "bytes": 799627
     },
     "plugins/LIBRA.js": {
-      "sha256": "f3a5647ac577ee9c4e2bb31f25cdd98039b2363365428b20b7bcdcd225fc8c4b",
-      "bytes": 6585940
+      "sha256": "1c873f3f7d912730a098d36c313213dc482d2e80d5ca379d36b19de68acee7ed",
+      "bytes": 6598674
     },
     "plugins/RETRACE.js": {
       "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
@@ -4296,8 +4296,8 @@
       "bytes": 11467
     },
     "sdk/LibraStateMemoryOwner.source.js": {
-      "sha256": "986caa679126a298b964e43671ebeea2f9e298e461ae604781cd37cd971a0b64",
-      "bytes": 27894
+      "sha256": "64667e1acdec08510348f4863f5e37481ef1577c5ffa3766fa64cdd40fa173c6",
+      "bytes": 39242
     },
     "sdk/MemorySuiteComputeClient.source.js": {
       "sha256": "edd6f287b24337a4f534b9a226f3de79949cd991fe1e85ff6661413dbd7bec60",
@@ -9883,6 +9883,10 @@
       "sha256": "6d3eb2a189704bb128e78e7e1998bb1753f8ea80c775650da6165594a8e33547",
       "bytes": 10055
     },
+    "tests/libra_state_memory_state_vectors_test.cjs": {
+      "sha256": "08484752510b668f0a641360a3e58eeb3f4ba089f0313132496f3eacc26b6010",
+      "bytes": 6611
+    },
     "tests/libra_state_no_count_pruning_test.cjs": {
       "sha256": "227e0e2b2802d961218e6fa0a216d799550d71e77e8046c7401b7758a1fc1454",
       "bytes": 3056
@@ -11972,8 +11976,8 @@
       "bytes": 38580
     },
     "tools/libra_state_memory_runtime.cjs": {
-      "sha256": "3674e70ebf0b8699baf3f0414be5bc04870351fdfbcd0b9cf1016d4c2624f53b",
-      "bytes": 16655
+      "sha256": "82f812aa92d369ba5f3c3fe3615f2b997c9c6be89685cc60f6bc770cfd346ba1",
+      "bytes": 17847
     },
     "tools/llm_fail_gate_unit_test.js": {
       "sha256": "cae70ac4a93fe34c81df139b8ecc15583ee1297adc7873d23b164ffb9972d67c",

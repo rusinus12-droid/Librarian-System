@@ -1,6 +1,9 @@
 'use strict';
 module.exports = function createLibraStateMemoryRuntime({ engine, capture, fingerprint, authorityStore, now = Date.now }) {
   const fail = code => { throw Object.assign(Error(code), { code }); };
+  // Anchors hold up to 12 State rows with per-axis minimums; below twice that the selection
+  // keeps most of the State anyway, so row vectors are neither produced nor read.
+  const STATE_SEMANTIC_MIN_ROWS = 24;
   // The capture may hold a shared read frame. It is settled once the first proof passes
   // and abandoned on every failure, so no frame outlives its query.
   const query = async (options = {}, guard = null, issuer = null) => {
@@ -28,18 +31,27 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40, { maxItems,
       canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12 });
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
-    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
-      maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
+    // A State small enough for its anchors to hold most of it needs no dense signal. A larger
+    // one sends its row texts with the query, so stored row vectors can rank the anchors.
+    const stateTexts = stateRows.length >= STATE_SEMANTIC_MIN_ROWS
+      ? [...new Set(stateRows.map(row => String(row.text || '').trim()).filter(Boolean))] : [];
     // Dense retrieval is optional. It reads stored vectors; document production never runs here.
     let semantic = { scores: new Map(), diagnostics: { status: 'off' } };
     if (frame.semantic && options.semantic !== false && queryText.trim()) {
-      try {
-        semantic = await timed('semanticMs', () => frame.semantic(scene
-          ? { text: queryText, sceneText: scene.text, sceneWeight: scene.weight } : queryText));
-      }
+      const lanes = scene || stateTexts.length ? { text: queryText,
+        ...(scene ? { sceneText: scene.text, sceneWeight: scene.weight } : {}),
+        ...(stateTexts.length ? { stateTexts } : {}) } : queryText;
+      try { semantic = await timed('semanticMs', () => frame.semantic(lanes)); }
       catch (error) { semantic = { scores: new Map(), diagnostics: { status: 'failed', reason: String(error.code || error.message) } }; }
     }
     frame.check();
+    // A row vector only ranks the row; it never adds, changes or confirms State.
+    for (const row of stateRows) {
+      const dense = Number(semantic.stateScores?.get(String(row.text || '').trim())) || 0;
+      if (dense > 0) row.semanticScore = Math.max(Number(row.semanticScore) || 0, Math.min(1, dense));
+    }
+    const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
+      maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
     const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
@@ -189,6 +201,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       corpusRead: { mode: 'direct_existing_records', graphBuilds: 0 },
       diagnostics: { engine: 'state_first', axes: selected.coverage, failures, payloadBytes, payloadLimited,
         semantic: { ...semantic.diagnostics, selected: selected.items.filter(item => item.family === 'canonical' && item.semanticScore > 0).length },
+        stateVectors: stateTexts.length ? { used: true, ...(semantic.diagnostics?.stateVectors || { status: semantic.diagnostics?.status || 'off' }) }
+          : { used: false, rows: stateRows.length },
         sceneQuery: scene ? { used: true, weight: scene.weight, characters: scene.text.length,
           semantic: semantic.diagnostics?.sceneQuery || 'off', microMatches: ranked.sceneMatches || 0 } : { used: false },
         stateAsOfTurn, latestTurn, headFreshness, turnLag, pointInTimeNotice, timings, elapsedMs: now() - startedAt,
