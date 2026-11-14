@@ -61617,7 +61617,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (status) status.textContent = ledger?.enabled
         ? '조회·관리 · pluginStorage 원장'
         : `조회 실패 · ${ledger?.reason || 'storage_unavailable'}`;
-      return clone({ scope, ledger }, null);
+      return { scope, ledger };
     } catch (error) {
       if (!stillOpen()) return null;
       viewer.scope = readScope;
@@ -61816,6 +61816,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     hayakuHealthRecovery.clear();
     
     Memory.ledgerViewer.visible = false;
+    Memory.ledgerViewer.ledger = null;
+    Memory.ledgerViewer.recordsFilterCache = null;
+    Memory.ledgerViewer.partialRecords = [];
+    Memory.ledgerViewer.continuitySnapshot = null;
     HayakuCurrentStatus.stop();
     try { globalThis.__memorySuiteTheme?.stop?.(); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('hayaku', 'theme.bridge.stop', _e); } catch (__) {} }
     Memory.ledgerViewer.settingsOpenSerial = Number(Memory.ledgerViewer.settingsOpenSerial || 0) + 1;

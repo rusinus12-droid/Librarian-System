@@ -65671,7 +65671,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         const runs = runSlots.filter(Boolean);
         const nextSnapshot = {
           scope: clone(context.scope), hostLineage: MemorySuiteHostLineage.inspect(context.character, context.chat), manifest: clone(manifest),
-          continuityState: continuityState ? clone(continuityState) : null, currentStateView: null, pairs: clone(pairs), memories, runs,
+          continuityState: continuityState ? clone(continuityState) : null, currentStateView: null, pairs, memories, runs,
           totals: { memories: memoryRefs.length, runs: runIds.length },
           refreshedAt: Date.now(), error: ''
         };

@@ -39993,7 +39993,8 @@ const MemorySuiteHealthRecovery = (() => {
     const userMessagePosition = targetPair
       ? Number(targetPair.userPosition || 0)
       : (latestUserPositionInLiveMessages(liveMessages, latestUser, captureLineage.requestUser)
-        || Number(currentUserResolution.liveUserPosition || 0));
+        || Number(currentUserResolution.liveUserPosition || 0)
+        || (!awaitingBinding && expectedAssistantPosition > 1 ? expectedAssistantPosition - 1 : 0));
     const expectedPairIndex = awaitingBinding ? 0 : (Number(captureLineage.pairIndex || 0) || Number(liveState.pairCount || 0) + 1);
     const baselineAssistantText = targetPair ? canonicalChatResponseText(targetPair.assistantText || '') : '';
     const pending = enqueuePendingTurn({
@@ -42272,6 +42273,20 @@ const MemorySuiteHealthRecovery = (() => {
       const expiry = current ? finalizedCaptureMonitorExpiry(state, current) : null;
       if (!current || expiry?.expired) {
         if (current) {
+          try {
+            const finalSnapshot = await loadRisuCaptureSnapshot();
+            if (captureSnapshotMatchesScope(current.scope, finalSnapshot)) {
+              const finalLive = liveChatReadState(finalSnapshot.chat || {}, current?.scope?.scopeKey || '');
+              const finalCandidate = finalLive.known ? authoritativeFinalizedCandidate(finalLive.normalized, current) : null;
+              if (finalCandidate) {
+                const liveSettings = await loadSettings(true).catch(() => settings);
+                if (await saveFinalizedChatCapture(current, finalCandidate, finalSnapshot, liveSettings)) {
+                  stopFinalizedCaptureMonitor(pendingId);
+                  return;
+                }
+              }
+            }
+          } catch (_) {}
           const completedCandidate = Runtime.afterRequestCaptureCandidates.get(pendingId) || Runtime.chatOutputCaptureCandidates.get(pendingId) || null;
           const provisionalPreserved = Number(completedCandidate?.provisionalSavedAt || 0) > 0;
           const previousCapture = Runtime.lastCapture?.pendingId === pendingId ? Runtime.lastCapture : {};
