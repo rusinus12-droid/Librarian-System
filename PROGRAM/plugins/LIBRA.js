@@ -40288,6 +40288,31 @@ function createLibraReadonlySourceContext(owner) {
       const current = await resolveContext();
       return { ...current, outputCapture: expected.outputCapture || null, hostLocation: expected.hostLocation || null };
     };
+    // A canonical job belongs to the chat it was started in. Its source checks used
+    // to read whichever chat is on screen, so stepping into another chat while a
+    // batch was analysed refused the finished batch as a changed source
+    // (raw_packet_current_source_changed) and dropped its Canonical. Bind the job to
+    // the host position it was resolved at; refreshBoundOutputContext still refuses
+    // a position that now holds a different character or chat.
+    const jobHostLocation = context => {
+      const bound = asObject(context?.hostLocation);
+      if (Number.isInteger(Number(bound.characterIndex)) && Number.isInteger(Number(bound.chatIndex))
+        && string(bound.characterIndex) !== '' && string(bound.chatIndex) !== '') return { characterIndex: Number(bound.characterIndex), chatIndex: Number(bound.chatIndex) };
+      const match = /^(\d+):(\d+)$/.exec(string(context?.identity || ''));
+      return match ? { characterIndex: Number(match[1]), chatIndex: Number(match[2]) } : null;
+    };
+    const bindJobContext = context => {
+      if (!context?.scope?.scopeKey || context.hostLocation) return context;
+      const location = jobHostLocation(context);
+      return location ? { ...context, hostLocation: location } : context;
+    };
+    const resolveJobContext = async context => {
+      const bound = bindJobContext(context);
+      if (!bound?.hostLocation) return resolveContext();
+      const current = await refreshBoundOutputContext(bound);
+      // Same scope as the job; the shared scope key decides storage identity.
+      return { ...current, scope: { ...asObject(current.scope), scopeKey: string(bound.scope.scopeKey) } };
+    };
 
     const outputRevisionStillCurrent = (expectedContext, startTurn = 0) => {
       const capture = asObject(expectedContext?.outputCapture);
@@ -40962,7 +40987,7 @@ function createLibraReadonlySourceContext(owner) {
         // Archival-only carriers are absent from the sanitized completed-turn
         // revision. They still must match the current original source before an
         // existing immutable packet can authorize acknowledgement or analysis.
-        const context = await resolveContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
+        const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
         if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
           || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId) || sourceDigest([pair]) !== receipt.sourceDigest)
@@ -57622,7 +57647,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(basis.serverReadSet)await MemorySuiteStorageBridge.assertConditionalReadSet(basis.serverReadSet);
       if(checkManifest && basis.serverActiveReadSet)await MemorySuiteStorageBridge.assertConditionalReadSet(basis.serverActiveReadSet);
       if(basis.policyDigest && phase!=='state_prepare')unifiedAssert(digest(await loadSettings())===basis.policyDigest, `UNIFIED_POLICY_CHANGED:${phase}`);
-      const currentContext = await resolveContext();
+      const currentContext = await resolveJobContext(context);
       unifiedAssert(currentContext?.scope?.scopeKey === basis.scopeKey, `UNIFIED_SCOPE_CHANGED:${phase}`);
       const head = await storage.getJson(key.continuityState(context.scope),null), registry = await storage.getJson(key.entityRegistry(context.scope),null);
       unifiedAssert(digest(head)===basis.headDigest && digest(registry)===basis.registryDigest, `UNIFIED_STATE_BASELINE_CHANGED:${phase}`);
@@ -58054,15 +58079,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       'WORLD IDENTITY: fictional world identity is content, not the host chat worldline. Separate containment, membership and scene time. Physical containment is not membership; a thread is not a future plan.'
     ].join('\n');
 
-    const readCanonicalRawBatch = async (expectedBatch, expectedRefs = null) => {
-      const context=await resolveContext(), scope=context.scope, worldlineId=hostWorldlineIdForScope(scope);
+    const readCanonicalRawBatch = async (expectedBatch, expectedRefs = null, jobContext = null) => {
+      const context=jobContext ? await resolveJobContext(jobContext) : await resolveContext(), scope=context.scope, worldlineId=hostWorldlineIdForScope(scope);
       return withBackgroundReadJob(scope,async scope=>{
       unifiedAssert(asArray(expectedBatch).length===BATCH_SIZE,'CANONICAL_COMPLETED_RECEIPT_BATCH_INVALID');
       // Join the five independent physical reads before admitting any result.
       // The final live-source check still binds the complete ordered batch.
       if(expectedRefs)unifiedAssert(asArray(expectedRefs).length===BATCH_SIZE,'CANONICAL_ORIGINAL_RAW_REFS_INVALID');
       const rows=await Promise.all(expectedBatch.map(async (pair,index)=>{
-        const active=await readActiveCompletedTurnReceipt(scope,worldlineId,0,Number(pair.turn),{allowProjectedEquivalent:true});
+        const active=await readActiveCompletedTurnReceipt(scope,worldlineId,0,Number(pair.turn),{allowProjectedEquivalent:true,...(jobContext?{context}:{})});
         unifiedAssert(active.status==='verified'&&sourceDigest([pair])===active.receipt?.sourceDigest,
           'CANONICAL_COMPLETED_RECEIPT_UNAVAILABLE:'+active.reason);
         const expectedRef=expectedRefs?.[index]||null;
@@ -58080,13 +58105,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         // Revalidate the exact immutable capture consumed by this analysis. A
         // newer tag-only capture may become active without rebasing this job.
-        const raw=await readVerifiedCompletedTurnRawPacket(receipt,receiptKey,{allowProjectedEquivalent:true,expectedRef});
+        const raw=await readVerifiedCompletedTurnRawPacket(receipt,receiptKey,{allowProjectedEquivalent:true,expectedRef,jobContext});
         unifiedAssert(raw.status==='verified','CANONICAL_ORIGINAL_RAW_UNAVAILABLE:'+raw.reason);
         return {ref:clone(raw.rawPacketRef),pair:{turn:receipt.turn,user:clone(receipt.user),assistant:clone(receipt.assistant)}};
       }));
       const refs=rows.map(row=>row.ref),batch=rows.map(row=>row.pair);
       if(expectedRefs)unifiedAssert(JSON.stringify(refs)===JSON.stringify(expectedRefs),'CANONICAL_ORIGINAL_RAW_VARIANT_CHANGED');
-      const final=await resolveContext(),pairs=buildPairs(final.chat,final.scope.scopeKey);
+      const final=jobContext ? await resolveJobContext(jobContext) : await resolveContext(),pairs=buildPairs(final.chat,final.scope.scopeKey);
       unifiedAssert(final.scope.scopeKey===scope.scopeKey && hostWorldlineIdForScope(final.scope)===worldlineId
         && expectedBatch.every(pair=>{const current=pairs[Number(pair.turn)-1];return current&&sourceDigest([current])===sourceDigest([pair])
           && digest(sourcePairs([current]))===digest(sourcePairs([pair]));}),
@@ -58105,8 +58130,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         digest(await storage.getVerifiedJson(ref.recordKey, scope, null)) === ref.recordDigest, 'CANONICAL_MICRO_INPUT_CHANGED');
       return true;
     };
-    const readCanonicalMicroInputs = async (batch, rawRefs) => {
-      const context = await resolveContext(), scope = context.scope;
+    const readCanonicalMicroInputs = async (batch, rawRefs, jobContext = null) => {
+      const context = jobContext ? await resolveJobContext(jobContext) : await resolveContext(), scope = context.scope;
       const worldlineId = hostWorldlineIdForScope(scope), turns = [], refs = [];
       for (const pair of batch) {
         const expected = asArray(rawRefs).find(ref => Number(ref.turn) === Number(pair.turn));
@@ -58147,7 +58172,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // same source may finish concurrently; it cannot rewrite these inputs.
       // Source changes are separately rejected by readCanonicalRawBatch.
       const validate = async () => {
-        const current = await resolveContext();
+        const current = jobContext ? await resolveJobContext(jobContext) : await resolveContext();
         unifiedAssert(current.scope.scopeKey === scope.scopeKey
           && hostWorldlineIdForScope(current.scope) === worldlineId, 'CANONICAL_MICRO_SCOPE_CHANGED');
         return await validateCanonicalMicroInputs(scope, provenance);
@@ -58538,10 +58563,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       let responseDiagnostic=null;
       try {
       if(stageName!==LIBRARIAN_STAGE_ID)throw retiredAnalyzerError(stageName);
-      const capturedRaw=await readCanonicalRawBatch(batch);
+      const jobContext=options.jobContext||null;
+      const capturedRaw=await readCanonicalRawBatch(batch,null,jobContext);
       batch=capturedRaw.batch;
-      const microInputs=await readCanonicalMicroInputs(batch,capturedRaw.refs);
-      const validateOriginalRaw=async()=>{await readCanonicalRawBatch(batch,capturedRaw.refs);await microInputs.validate();return true;};
+      const microInputs=await readCanonicalMicroInputs(batch,capturedRaw.refs,jobContext);
+      const validateOriginalRaw=async()=>{await readCanonicalRawBatch(batch,capturedRaw.refs,jobContext);await microInputs.validate();return true;};
       const started=Date.now(),runtimeSettings=options.policySnapshot || await loadSettings();
       if(runtimeSettings.librarianPolicy?.reviewRequired)throw new Error('LIBRARIAN_CONFIGURATION_REVIEW_REQUIRED');
       const compiled=await compileMemoryPromptProfile(LIBRARIAN_STAGE_ID,runtimeSettings?.beforeCustomPrompts?.librarian || '');
@@ -60406,6 +60432,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
 
     const processBatch = async (context, manifest, pairs, startTurn, options = {}) => {
+      // Every source check of this batch reads the chat it started in, not the one on screen.
+      context = bindJobContext(context);
       const candidateOnly = options.candidateOnly === true;
       const forceRegenerate = candidateOnly || options.forceRegenerate === true;
       const abortIfRequested = () => {
@@ -60567,6 +60595,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
       );
         const pipelineResult = await runPipeline({
+            jobContext: context,
             engineVersion: work.engineVersion, unifiedBasis: work.unifiedBasis, settings: unified ? policySnapshot : undefined,
             validateRecoverySource:async()=>{abortIfRequested();await options.sourceEditValidate?.();await assertUnifiedBasis(context,work.unifiedBasis,'recovery');unifiedAssert((await verifyBatchStillCurrent(context,startTurn,sourceHash)).ok,'UNIFIED_SOURCE_CHANGED_BEFORE_RECOVERY');return true;},
             batch,
@@ -60777,7 +60806,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
         await options.sourceEditValidate?.();
         unifiedAssert(asArray(memory.rawPacketRefs).length===BATCH_SIZE,'CANONICAL_ANALYSIS_RAW_PROVENANCE_UNAVAILABLE');
-        await readCanonicalRawBatch(batch,memory.rawPacketRefs);
+        await readCanonicalRawBatch(batch,memory.rawPacketRefs,context);
         await validateCanonicalMicroInputs(context.scope,memory.promptProvenance?.stages?.[LIBRARIAN_STAGE_ID]?.microInputs);
         const finalCommitVerification = await verifyBatchStillCurrent(context, startTurn, sourceHash);
         markCommitStep('rawSourceRechecked');
@@ -60937,11 +60966,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           manifest.branchGuard=normalizeBranchGuard(manifest.branchGuard);manifest.failedBatches=normalizeFailedCanonicalBatches(manifest.failedBatches);manifest.updatedAt=nowIso();
           await activateUnifiedServerCanonical({context,manifest,basis:work.unifiedBasis,memoryKey,validate:async()=>{
             abortIfRequested();await options.sourceEditValidate?.();await assertUnifiedBasis(context,work.unifiedBasis,'server_activate');
-            await readCanonicalRawBatch(batch,memory.rawPacketRefs);
+            await readCanonicalRawBatch(batch,memory.rawPacketRefs,context);
             await validateCanonicalMicroInputs(context.scope,memory.promptProvenance?.stages?.[LIBRARIAN_STAGE_ID]?.microInputs);
             unifiedAssert((await verifyBatchStillCurrent(context,startTurn,sourceHash)).ok,'UNIFIED_SOURCE_CHANGED_BEFORE_ACTIVATE');
           }});
-        }else {await readCanonicalRawBatch(batch,memory.rawPacketRefs);await validateCanonicalMicroInputs(context.scope,memory.promptProvenance?.stages?.[LIBRARIAN_STAGE_ID]?.microInputs);await saveManifest(context.scope, manifest);}
+        }else {await readCanonicalRawBatch(batch,memory.rawPacketRefs,context);await validateCanonicalMicroInputs(context.scope,memory.promptProvenance?.stages?.[LIBRARIAN_STAGE_ID]?.microInputs);await saveManifest(context.scope, manifest);}
         if (unified) {
           const persisted=await storage.getJson(key.manifest(context.scope),null);
           unifiedAssert(persisted?.memories?.[String(startTurn)]?.key===memoryKey && persisted.memories[String(startTurn)].artifactDigest===memory.artifactDigest,'UNIFIED_ACTIVE_READBACK');
@@ -76054,7 +76083,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try {
         if (job.signal?.aborted) throw new DOMException('Canonical job cancelled.', 'AbortError');
         const execute = LibraMemoryCore.executeUnifiedStage;
-        const outcome = await execute(stageName, job.batch || [], currentStage, { signal: job.signal, providerBudget: job.providerBudget, unifiedBasis:job.unifiedBasis, policySnapshot:pipelineSettings,validateRecoverySource:job.validateRecoverySource });
+        const outcome = await execute(stageName, job.batch || [], currentStage, { signal: job.signal, providerBudget: job.providerBudget, unifiedBasis:job.unifiedBasis, policySnapshot:pipelineSettings,validateRecoverySource:job.validateRecoverySource, jobContext:job.jobContext||null });
         currentStage = outcome?.stage || currentStage;
         if (!currentStage) throw new Error(`LIBRA ${stageName} returned no stage result.`);
         stages.push(currentStage);
