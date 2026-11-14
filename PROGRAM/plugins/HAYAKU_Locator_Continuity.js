@@ -58254,6 +58254,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const viewerBindConfirmDialogKeys = (overlay, dialog, onEscape, initialSelector = '', returnFocusOverride = null) => {
     const doc = overlay?.ownerDocument || dialog?.ownerDocument || null;
     const returnFocus = returnFocusOverride || doc?.activeElement || null;
+    const focusNoScroll = el => {
+      try { el?.focus?.({ preventScroll: true }); } catch (_) { try { el?.focus?.(); } catch (__) {} }
+    };
     const selector = 'button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],[tabindex]:not([tabindex="-1"])';
     const focusables = () => [...(dialog?.querySelectorAll?.(selector) || [])].filter(node =>
       !node.hidden && node.getAttribute?.('aria-hidden') !== 'true' && !node.closest?.('[hidden],[inert],[aria-hidden="true"]')
@@ -58270,29 +58273,29 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (!items.length) {
         event.preventDefault();
         if (dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
-        try { dialog?.focus?.(); } catch (_) {}
+        focusNoScroll(dialog);
         return;
       }
       const first = items[0], last = items[items.length - 1], active = doc?.activeElement;
       if (event.shiftKey && (active === first || !dialog?.contains?.(active))) {
-        event.preventDefault(); last.focus?.();
+        event.preventDefault(); focusNoScroll(last);
       } else if (!event.shiftKey && (active === last || !dialog?.contains?.(active))) {
-        event.preventDefault(); first.focus?.();
+        event.preventDefault(); focusNoScroll(first);
       }
     };
     doc?.addEventListener?.('keydown', onKeydown, true);
     const initial = (initialSelector && dialog?.querySelector?.(initialSelector)) || focusables()[0] || dialog;
     if (initial === dialog && dialog && !dialog.hasAttribute('tabindex')) dialog.setAttribute('tabindex', '-1');
-    try { initial?.focus?.(); } catch (_) {}
+    focusNoScroll(initial);
     let disposed = false;
     return () => {
       if (disposed) return;
       disposed = true;
       try { doc?.removeEventListener?.('keydown', onKeydown, true); } catch (_) {}
-      const target = returnFocus && returnFocus.isConnected && !returnFocus.closest?.('[hidden],[inert],[aria-hidden="true"]')
+      const target = returnFocus && returnFocus !== doc?.body && returnFocus.isConnected && !returnFocus.closest?.('[hidden],[inert],[aria-hidden="true"]')
         ? returnFocus
         : Memory.ledgerViewer.root?.querySelector?.('[data-hayaku-viewer-tab][aria-selected="true"]');
-      try { target?.focus?.(); } catch (_) {}
+      focusNoScroll(target);
     };
   };
   // Render only changing text on the existing header indicator; never block chat.
@@ -66540,6 +66543,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       panel.setAttribute('aria-labelledby', heading.id);
       const content = document.createElement('p');
       content.className = danger ? 'note note--danger' : 'note';
+      content.style.whiteSpace = 'pre-wrap';
       content.textContent = body;
       const actions = document.createElement('div');
       actions.className = 'dialog__actions';
@@ -66861,15 +66865,24 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await notice('복원 차단', `백업 데이터가 허용 크기를 넘습니다.\n${String(raw).length.toLocaleString('ko-KR')} chars`, true);
         return;
       }
+      const pageBody = document.querySelector?.('.app .page-body') || null;
+      const savedScrollTop = pageBody ? Number(pageBody.scrollTop || 0) : 0;
+      const restorePageScroll = () => {
+        if (pageBody && savedScrollTop > 0 && Number(pageBody.scrollTop || 0) !== savedScrollTop) {
+          pageBody.scrollTop = savedScrollTop;
+        }
+      };
       setUiBusy(true, '백업 파일의 무결성을 검사하고 있습니다…');
       try {
         const envelope = await validateEnvelope(await parsePortableJson(raw));
         const scope = await currentScope();
         const mode = await chooseImportMode(envelope, scope);
+        restorePageScroll();
         if (!mode) { setUiBusy(false, '복원을 취소했습니다.'); return; }
         const prepared = await preparePortableImport(envelope, mode);
         const storageTarget = await portableStorageTargetText();
         setUiBusy(false, '복원 준비 완료');
+        restorePageScroll();
         const accepted = await modal({
           title: 'HAYAKU JSON 기억 복원',
           body: previewText(envelope, prepared, storageTarget),
