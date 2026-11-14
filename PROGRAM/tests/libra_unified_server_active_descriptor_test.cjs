@@ -5,12 +5,62 @@ const {test} = require('node:test');
 const {serverFixture, fiveMore} = require('./fixtures/libra_server_runtime_fixture.cjs');
 
 const transformSource = source => source.replace('    const unifiedServerReadKeys =',
-  '    globalThis.__descriptorTest = {requireUnifiedStorageBackend, unifiedServerManifestIdentity, resolveContext, reconcileCanonicalBranchBeforeRecall, rebuildUnifiedStateForWorldline: options => rebuildUnifiedStateForWorldline(options)};\n'
+  '    globalThis.__descriptorTest = {requireUnifiedStorageBackend, unifiedServerManifestIdentity, unifiedMigrationRef, unifiedMigrationDigest, digest, resolveContext, reconcileCanonicalBranchBeforeRecall, rebuildUnifiedStateForWorldline: options => rebuildUnifiedStateForWorldline(options)};\n'
   + '    const unifiedServerReadKeys =');
 const active = fixture => fixture.getRecords('libra.unified_server_active.v1')[0];
 const manifest = fixture => fixture.storedRows().find(row => row.key.endsWith(':manifest'));
 
 for (const mode of ['server_only', 'mirror']) {
+  test(`${mode}: a verified v3 boundary permits replay of the typed suffix`, async t => {
+    const fixture = await serverFixture({mode, transformSource});
+    t.after(() => fixture.cleanup());
+    const {f} = fixture;
+    assert.equal((await f.run()).completed, 1);
+    fiveMore(f);
+    assert.equal((await f.run()).completed, 1);
+    const core = f.r.context.__descriptorTest;
+    const row = manifest(fixture);
+    const legacyRef = row.value.memories['1'];
+    const legacyMemory = fixture.getMemory(1);
+    const canonicalArtifact = {schema:'libra.canonical_artifact.v3'};
+    const artifactDigest = core.digest(canonicalArtifact);
+    Object.assign(legacyMemory, {artifactSchema:canonicalArtifact.schema, canonicalArtifact, artifactDigest});
+    Object.assign(legacyRef, {artifactSchema:canonicalArtifact.schema, artifactDigest});
+    const set = async (key, value) => {
+      await fixture.mutate(key, value);
+      if (mode === 'mirror') fixture.local.set(key, JSON.stringify(value));
+    };
+    await set(legacyRef.key, legacyMemory);
+    await set(row.key, row.value);
+    const descriptor = active(fixture);
+    await fixture.mutate(descriptor.key, null, 'remove');
+    fixture.local.delete(descriptor.key);
+    const calls = f.control.calls.length;
+    const refused = await f.r.api.rebuildWorldManagerState();
+    assert.equal(refused.code, 'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED', JSON.stringify(refused));
+    assert.equal(active(fixture), undefined);
+    const migrationKey = row.key.replace(/manifest$/, 'unified-migration:v1');
+    const migration = {schema:'libra.unified_migration.v1', scopeKey:row.value.scopeKey,
+      mode:'preserve_legacy_readonly', selectionPolicy:'evidence_selected_v1',
+      legacyRefs:[core.unifiedMigrationRef(legacyRef)], recordDigest:'invalid'};
+    await set(migrationKey, migration);
+    const invalid = await f.r.api.rebuildWorldManagerState();
+    assert.match(invalid.error, /digest_mismatch/);
+    assert.equal(active(fixture), undefined);
+    migration.recordDigest = core.unifiedMigrationDigest(migration);
+    await set(migrationKey, migration);
+    const legacyBefore = fixture.storedRows().find(record => record.key === legacyRef.key).raw;
+    const replay = await f.r.api.rebuildWorldManagerState();
+    assert.equal(replay.ok, true, replay.error);
+    assert.equal(fixture.getHead().throughTurn, 10);
+    assert.equal(fixture.getHead().unifiedCoverage.legacyCount, 1);
+    assert.equal(fixture.getHead().unifiedCoverage.typedCount, 1);
+    assert.equal(fixture.storedRows().find(record => record.key === legacyRef.key).raw, legacyBefore);
+    assert.equal(f.control.calls.length, calls);
+    const replayErrors = fixture.storedRows().find(record => record.key.endsWith(':state-replay-errors:v1')).value.records;
+    assert.ok(replayErrors.some(error => error.code === 'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED' && error.resolvedAt));
+  });
+
   test(`${mode}: branch rollback writes the manifest and descriptor in one batch`, async t => {
     const fixture = await serverFixture({mode, transformSource});
     t.after(() => fixture.cleanup());

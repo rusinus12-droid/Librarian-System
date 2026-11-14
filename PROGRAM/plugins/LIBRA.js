@@ -56659,8 +56659,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(memory.canonicalArtifact && memory.artifactDigest)unifiedAssert(digest(memory.canonicalArtifact)===memory.artifactDigest,'UNIFIED_LEGACY_ARTIFACT_MISMATCH');
       return memory;
     };
-    const loadUnifiedMigration=async(scope,manifest)=>{
-      const record=await storage.getJson(unifiedMigrationKey(scope),null),refs=fullContinuityRefs(manifest),legacy=refs.filter(r=>!unifiedRefIsReadableUnified(r));
+    const loadUnifiedMigration=async(scope,manifest,{record:checkedRecord,readMemory}={})=>{
+      const record=checkedRecord??await storage.getJson(unifiedMigrationKey(scope),null),refs=fullContinuityRefs(manifest),legacy=refs.filter(r=>!unifiedRefIsReadableUnified(r));
       if(!legacy.length)return null;
       const transitionError=!record?'missing_record':record.schema!==UNIFIED_MIGRATION_SCHEMA?'schema_mismatch':record.scopeKey!==scope.scopeKey?'scope_mismatch':record.mode!=='preserve_legacy_readonly'?'mode_mismatch':record.recordDigest!==unifiedMigrationDigest(record)?'digest_mismatch':'';
       unifiedAssert(!transitionError,'UNIFIED_EXPLICIT_LEGACY_TRANSITION_REQUIRED:'+transitionError);
@@ -56669,7 +56669,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(unifiedRefIsReadableUnified(ref)){typedSeen=true;continue;}
         unifiedAssert(!typedSeen||record.selectionPolicy==='evidence_selected_v1','UNIFIED_LEGACY_PREFIX_REQUIRED');
         unifiedAssert(asArray(record.legacyRefs).some(old=>digest(old)===digest(unifiedMigrationRef(ref))),'UNIFIED_LEGACY_BOUNDARY_CHANGED');
-        await unifiedLegacyMemoryCheck(ref);
+        await unifiedLegacyMemoryCheck(ref,readMemory);
       }
       return {...clone(record),activeLegacyRefs:legacy.map(unifiedMigrationRef)};
     };
@@ -57032,19 +57032,26 @@ function mountMemorySuiteReanalysisReview(container,config) {
         && await verifiedPortablePredecessorServerLineage(context.scope, saved);
       unifiedAssert((!saved?.archiveRef && !asArray(saved?.inheritedMemories).length && !saved?.nativeChatCopy)
         || nativeCopyServerLineage || predecessorServerLineage,'UNIFIED_SERVER_LINEAGE_NOT_SUPPORTED');
-      // "No LEGACY record on the server": the check is the TYPED predicate (v4 or
-      // v5), not an exact-v4 comparison. Testing exact-v4 made a v5 record look
-      // legacy and failed the whole server batch, which is the opposite of the
-      // intent its own comment states. Name the blocking refs: an unexplained
-      // legacy ref leaves State Tracking pending with no way to find the record.
-      const unifiedUnreadableRefs = manifest => fullContinuityRefs(manifest || {})
-        .filter(ref => !unifiedRefIsReadableUnified(ref));
-      const unifiedUnreadableRefsDetail = refs => refs.slice(0, 8).map(ref =>
-        `${string(ref.memoryId || ref.key)}@${string(ref.artifactSchema || 'none')}`).join(',')
-        + (refs.length > 8 ? `,+${refs.length - 8}` : '');
-      const savedUnreadableRefs = unifiedUnreadableRefs(saved);
-      unifiedAssert(!savedUnreadableRefs.length,
-        `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${unifiedUnreadableRefsDetail(savedUnreadableRefs)}`);
+      const migrationKey = unifiedMigrationKey(context.scope);
+      const validateLegacy = async value => {
+        const refs = fullContinuityRefs(value).filter(ref => !unifiedRefIsReadableUnified(ref));
+        if (!refs.length) return;
+        const detail = refs.slice(0, 8).map(ref =>
+          `${string(ref.memoryId || ref.key)}@${string(ref.artifactSchema || 'none')}`).join(',')
+          + (refs.length > 8 ? `,+${refs.length - 8}` : '');
+        const read = k => storage.getVerifiedJson(k, context.scope, null);
+        const record = await read(migrationKey);
+        unifiedAssert(record, `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${detail}`);
+        await loadUnifiedMigration(context.scope, value, {record,readMemory:async ref=>{
+          const memory=await read(ref.key);
+          const physicalScope=ref.archiveShared===true ? `archive:${ref.archiveId}` : context.scope.scopeKey;
+          unifiedAssert(memory?.scopeKey===physicalScope && (memory.artifactSchema||'')===(ref.artifactSchema||'')
+            && (memory.artifactDigest||'')===(ref.artifactDigest||''),'UNIFIED_LEGACY_REF_MISMATCH');
+          return memory;
+        }});
+        return record;
+      };
+      const migration = await validateLegacy(saved);
       const durableManifest=await storage.getJson(key.manifest(context.scope),null);
       let active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       const meta=await storage.getJson(key.stateWorldlineMeta(context.scope),null);
@@ -57061,13 +57068,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         && active.manifestIdentity !== unifiedServerManifestIdentity(durableManifest)
         && provesUnifiedServerBranchDeactivation(durableManifest, active);
       if((activationRequired || branchRepairRequired) && initializeImported){
-        // Same intent, same correction: every durable ref must be a TYPED record.
-        const durableUnreadableRefs = unifiedUnreadableRefs(durableManifest);
-        unifiedAssert(!durableUnreadableRefs.length,
-          `UNIFIED_SERVER_LEGACY_NOT_SUPPORTED:${unifiedUnreadableRefsDetail(durableUnreadableRefs)}`);
+        const durableMigration = await validateLegacy(durableManifest);
         const descriptor=unifiedServerDescriptorForManifest(context.scope, durableManifest,
           branchRepairRequired ? 'verified_branch_deactivation' : 'verified_storage_mode_import');
         const conditions=[{key:key.manifest(context.scope),expected:{exists:true,value:JSON.stringify(durableManifest)}}];
+        if (durableMigration) conditions.push({key:migrationKey,expected:unifiedServerExpected(durableMigration)});
         for(const k of unifiedServerReadKeys(context.scope)){
           const before=k===key.stateWorldlineMeta(context.scope)?meta:await storage.getJson(k,null);
           conditions.push({key:k,expected:unifiedServerExpected(before)});
@@ -57081,8 +57086,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         active=await storage.getJson(unifiedServerActiveKey(context.scope),null);
       }
       unifiedAssert((!active && (!fullContinuityRefs(durableManifest||{}).length || activationRequired&&!initializeImported)) || isUnifiedServerActiveDescriptor(active, context.scope) && active.manifestIdentity===unifiedServerManifestIdentity(durableManifest),'UNIFIED_SERVER_ACTIVE_DESCRIPTOR_MISMATCH');
-      if(activationRequired&&!initializeImported)return {...boundary,activationRequired:true};
-      return boundary;
+      if(activationRequired&&!initializeImported)return {...boundary,activationRequired:true,...(migration?{legacyMigration:true}:{})};
+      return migration ? {...boundary,legacyMigration:true} : boundary;
     };
     const unifiedServerReadKeys = scope => [key.continuityState(scope),key.entityRegistry(scope),key.stateWorldlineMeta(scope),key.stateCorrections(scope),key.stateCorrectionMeta(scope),key.stateCorrectionCommit(scope)];
     const unifiedServerExpected = value => value==null?{exists:false}:{exists:true,value:JSON.stringify(value)};
@@ -59484,7 +59489,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const checked=async()=>{for(const k of grouped.keys())awaitedValues.set(k,await storage.getJson(k,null));await guard();};
       if(await requireUnifiedStorageBackend(context)){
         await checked();
-        await commitUnifiedServerGroup({context,txKey,tx,operations:tx.operations,conditionKeys:[unifiedServerActiveKey(context.scope),key.stateWorldlineMeta(context.scope)],readSet:tx.serverReadSet||null,validate:checked});
+        const conditionKeys=[unifiedServerActiveKey(context.scope),key.stateWorldlineMeta(context.scope)];
+        const migrationKey=unifiedMigrationKey(context.scope);
+        if(asArray(tx.serverReadSet?.records).some(row=>row.key===migrationKey))conditionKeys.push(migrationKey);
+        await commitUnifiedServerGroup({context,txKey,tx,operations:tx.operations,conditionKeys,readSet:tx.serverReadSet||null,validate:checked});
         await checked();
         await storage.remove(txKey);unifiedAssert((await storage.getJson(txKey,null))==null,'UNIFIED_SERVER_REPLAY_CLEANUP');
         state.lastContinuityState=clone(tx.result.head);
@@ -59566,7 +59574,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
             });
           } catch (error) { warn('LIBRA descriptor error resolution readback failed',error); }
         }
-        const serverReadSet=serverBackend?await MemorySuiteStorageBridge.captureConditionalReadSet([hkey,rkey,jkey,mkey,ckey,cacheKey,unifiedServerActiveKey(context.scope),key.stateWorldlineMeta(context.scope)]):null;
+        const serverReadSet=serverBackend?await MemorySuiteStorageBridge.captureConditionalReadSet([hkey,rkey,jkey,mkey,ckey,cacheKey,unifiedServerActiveKey(context.scope),key.stateWorldlineMeta(context.scope),
+          ...(serverBackend.legacyMigration ? [unifiedMigrationKey(context.scope)] : [])]):null;
         const keys=[hkey,rkey,jkey,mkey,ckey,cacheKey],before=new Map();for(const k of keys)before.set(k,await storage.getJson(k,null));
         const worldlineDigest=digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null)),manifestDigest=(serverBackend?unifiedServerManifestIdentity:unifiedManifestIdentity)(manifest);
         const candidate=await buildUnifiedReplayCandidate({context,manifest,cutoffTurn:cutoff,signal,store:storeOverride,allowIncompletePrefix});
@@ -59608,7 +59617,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const tx={serverReadSet,schema:'libra.unified_replay_tx.v1',scopeKey:context.scope.scopeKey,manifestDigest,worldlineDigest,operations,result};tx.payloadDigest=unifiedReplayTxDigest(tx);
         await storage.setJson(unifiedReplayTxKey(context.scope),tx);
         unifiedAssert(digest(await storage.getJson(unifiedReplayTxKey(context.scope),null))===digest(tx),'UNIFIED_REPLAY_TX_READBACK');
-        return await commitUnifiedReplayTransaction(context,tx,{signal});
+        const committed = await commitUnifiedReplayTransaction(context,tx,{signal});
+        if (committed.ok && serverBackend) {
+          try {
+            await resolveStateReplayErrors(context.scope, {
+              worldlineId:activeId, code:'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED', checkedSince:descriptorCheckStartedAt,
+              resolutionReason:'server_legacy_replay_verified'
+            });
+          } catch (error) { warn('LIBRA legacy replay error resolution readback failed',error); }
+        }
+        return committed;
       }catch(error){
         await recordStateReplayError(context.scope,error,{reason,worldlineId:worldlineId||'main',rollbackIncomplete:error.rollbackIncomplete===true}).catch(()=>{});
         return {ok:false,code:string(error.code||'UNIFIED_REPLAY_FAILED'),error:string(error.message||error),head:clone(previousHead),providerCalls:0,restoredPrevious:!error.rollbackIncomplete&&!error.storageMutationCommitted&&!error.storageMutationIndeterminate,storageMutationCommitted:error.storageMutationCommitted===true,storageMutationIndeterminate:error.storageMutationIndeterminate===true,rollbackIncomplete:error.rollbackIncomplete===true,reason};
@@ -71019,7 +71037,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       existing.schema=STATE_REPLAY_ERROR_SCHEMA; existing.scopeKey=string(scope.scopeKey); existing.records=[...asArray(existing.records),rec].slice(-64); existing.updatedAt=nowIso();
       await storage.setJson(keyName,existing); await assertStateStoredValue(keyName,existing,'STATE_REPLAY_ERROR_READBACK_FAILED'); touchWorldManagerRuntimeMeta(); return rec;
     };
-    const resolveStateReplayErrors = async (scope,{worldlineId='',replayFingerprint='',throughTurn=0,at='',code='',checkedSince=''}={}) => {
+    const resolveStateReplayErrors = async (scope,{worldlineId='',replayFingerprint='',throughTurn=0,at='',code='',checkedSince='',resolutionReason='server_descriptor_verified'}={}) => {
       const keyName=key.stateReplayErrors(scope); const existing=await storage.getJson(keyName,null);
       if (existing==null) return {resolved:0};
       if (existing.schema!==STATE_REPLAY_ERROR_SCHEMA || string(existing.scopeKey||'')!==string(scope.scopeKey)) throw stateCorrectionFailure('WORLD_MANAGER_REPLAY_ERROR_STORE_INVALID');
@@ -71031,7 +71049,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const cutoffMs=Date.parse(checkedSince||resolvedAt); const errorAtMs=Date.parse(string(row?.at||''));
         if (rollbackIncomplete || !errorWorldline || errorWorldline!==string(worldlineId||'') || !Number.isFinite(cutoffMs) || !Number.isFinite(errorAtMs) || cutoffMs<=errorAtMs) return row;
         resolved+=1;
-        const resolution=code ? {worldlineId, reason:'server_descriptor_verified'}
+        const resolution=code ? {worldlineId, reason:resolutionReason}
           : {worldlineId:string(worldlineId||''),replayFingerprint:string(replayFingerprint||''),throughTurn:Number(throughTurn||0)};
         return {...clone(row),resolvedAt,resolution};
       });
