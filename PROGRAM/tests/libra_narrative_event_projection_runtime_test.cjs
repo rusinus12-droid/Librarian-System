@@ -7,7 +7,8 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const source=fs.readFileSync(process.env.LIBRA_TEST_PLUGIN||path.join(__dirname,'../plugins/LIBRA.js'),'utf8');
 const slice=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert.ok(start>=0&&end>start,`source anchors not found: ${a} .. ${b}`);return source.slice(start,end);};
 const modelSource=slice('const BOOK_NARRATIVE_GROUPS =','const buildBookHostLineagePanel =');
-const storySource=slice('const buildApprovedMockupStory = () => {','const buildApprovedMockupDestinationDetail =');
+// The story page includes the story clock card, which is built just before it.
+const storySource=slice('const storyClockPanelState = () => {','const buildApprovedMockupDestinationDetail =');
 let narrative={events:[{id:'e',turn:5,text:'도서관 문이 열렸다.'}]};
 const el=(tag,attrs={},children=[])=>({tag,...attrs,children:(Array.isArray(children)?children:[children]).filter(Boolean)});
 const ctx=vm.createContext({LibraMemoryCore:{peekSnapshot:()=>({})},canonicalReaderBinding:()=>({scopeKey:'test'}),
@@ -15,7 +16,7 @@ const ctx=vm.createContext({LibraMemoryCore:{peekSnapshot:()=>({})},canonicalRea
   worldManagerSnapshotView:()=>({narrative,throughTurn:5}),guiAsObject:v=>v&&typeof v==='object'&&!Array.isArray(v)?v:{},guiAsArray:v=>Array.isArray(v)?v:[],
   text:v=>String(v??''),compact:(value,max)=>String(value??'').slice(0,max),narrativeDirectionScopeKey:()=>'',
   loadNarrativeDirectionDraft:async()=>{},saveNarrativeDirectionDraft:async()=>{},clearNarrativeDirectionDraft:async()=>{},
-  queueGuiNavigationRender:()=>{},bookSelectStorySection:()=>{},bookNavigate:()=>{},guiEl:el,JSON,Promise,Number,String,Math,Set,Map,Object});
+  queueGuiNavigationRender:()=>{},STORY_CLOCK_TIME_LABELS:{},__LIBRA__:{getStoryClock:async()=>({entries:[],corrections:{},current:null})},bookSelectStorySection:()=>{},bookNavigate:()=>{},guiEl:el,JSON,Promise,Number,String,Math,Set,Map,Object});
 vm.runInContext(modelSource+'\n'+storySource+';globalThis.build=buildApprovedMockupStory;',ctx);
 const flat=x=>[x,...(x.children||[]).flatMap(flat)];
 const EMPTY='기록된 서사 항목이 없습니다';
