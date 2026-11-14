@@ -16,8 +16,11 @@ assert.match(source, /같은 채팅은 교체 복원, 다른 채팅은 이사\/�
 assert.match(source, /백업 파일에는 역할극 원문과 비공개 기억이 포함될 수 있습니다/);
 assert.match(source, /↓ JSON 백업 다운로드/);
 assert.match(source, /↑ JSON 백업에서 복원/);
+assert.match(source, /title: '기억 복원 방식 선택'/);
+assert.match(source, /label: '같은 채팅 되돌리기'/);
 assert.match(source, /label: '새 채팅으로 이사'/);
 assert.match(source, /label: '복사된 채팅 복구'/);
+assert.match(source, /label: '업데이트된 봇으로 이어하기'/);
 assert.doesNotMatch(source, /data-portable-paste|pasteJsonDialog|doRestorePaste|JSON 직접 붙여넣기/);
 assert.match(source, /mode === Hayaku_PORTABLE_IMPORT_MODES\.SAME_CHAT\s*\? Number\(prepared\?\.currentRecords \|\| 0\) > 0/, 'empty same-chat targets must not be blocked by an impossible safety-backup export');
 assert.match(source, /expectedTargetFingerprint:\s*prepared\.targetFingerprint/,
