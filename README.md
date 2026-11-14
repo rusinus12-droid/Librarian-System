@@ -1,6 +1,6 @@
 # 📚 Librarian System
 
-[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/rusinus12-droid/Librarian-System)
+[![Version](https://img.shields.io/badge/version-1.1.2-blue.svg)](https://github.com/rusinus12-droid/Librarian-System)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![RisuAI](https://img.shields.io/badge/Host-RisuAI_Plugin_Suite-purple.svg)](https://github.com/kwaroran/RisuAI)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-red.svg)](./LICENSE)
@@ -55,7 +55,7 @@ flowchart TB
         GRADIA -->|검증된 근거 읽기| LIBRA & FB & HAYAKU
     end
 
-    subgraph Server["Librarian System Data Server v1.1.1 (127.0.0.1:47630)"]
+    subgraph Server["Librarian System Data Server v1.1.2 (127.0.0.1:47630)"]
         Router["Authenticated HTTP Router<br/>(Scoped Capability Auth / CAS)"]
         Coord["Authority Coordinator & Writer Fence"]
         SQLite[("DATA/stores/*.sqlite<br/>(WAL Mode / Tombstone / Revision)")]
@@ -70,11 +70,11 @@ flowchart TB
 
 ---
 
-## 📦 구성 컴포넌트 (v1.1.1 기준)
+## 📦 구성 컴포넌트 (v1.1.2 기준)
 
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
-| **Librarian System Server** | `1.1.1` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
+| **Librarian System Server** | `1.1.2` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
 | **LIBRA** | `3.0.3` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
 | **Flashback Memory** | `2.0.2` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
 | **HAYAKU Locator Continuity** | `4.0.3` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
