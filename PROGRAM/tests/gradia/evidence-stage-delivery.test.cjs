@@ -33,7 +33,9 @@ const systemText=body=>body.messages.filter(message=>message.role==='system').ma
 
 test('each stage fits the full packet to its own model instead of inheriting an earlier smaller fit',async()=>{
  const items=['libra','hayaku','flashback'].map((owner,i)=>({owner,id:'i'+i,key:'k'+i,content:'ITEM_'+i+'_ '+('memory'+i+' ').repeat(200)}));
- const f=await stageFixture({items,presets:{offline:preset(128000),small:preset(20000)},stagePresets:{shadow_act:'small'}});
+ // The small window must still leave room for one item after SHADOW ACT's own guidance (about 31 KB of
+ // text here); 20 000 stopped fitting any once CAUSAL REALISM was added to the shared draft guidance.
+ const f=await stageFixture({items,presets:{offline:preset(128000),small:preset(24000)},stagePresets:{shadow_act:'small'}});
  const r=await f.runConversation();assert.equal(r.ok,true);assert.equal(f.prompts.length,4);
  const counts=f.prompts.map(body=>items.filter((_,i)=>userText(body).includes('ITEM_'+i+'_')).length);
  assert.ok(counts.every(count=>count>0),JSON.stringify(counts));

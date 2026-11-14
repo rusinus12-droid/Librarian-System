@@ -25238,7 +25238,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const sceneMotifTokens = value => (String(value || '').replace(/<[^>]*>/g, ' ').match(/[가-힣]{2,8}|[A-Za-z]{4,}/g) || [])
     .map(token => token.toLowerCase().replace(/(?:에서|으로|에게|한테|까지|부터|처럼|보다|이랑|은|는|이|가|을|를|에|로|와|과|도|만|의|랑)$/, ''))
     .filter(token => token.length >= 2 && !SCENE_MOTIF_STOPWORDS.has(token) && !/(?:다|요|죠|네|까|지|고|며|서|면|게|던|데|니|자|야|어|아)$/.test(token));
-  const sceneRepetitionReport = (recent = {}) => {
+  const sceneRepetitionReport = (recentValue = {}) => {
+    // Draft callers without recent dialogue pass null; a default parameter only covers undefined.
+    const recent = recentValue || {};
     const assistants = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .filter(message => message?.role === 'assistant').slice(-3).map(message => String(message?.content || ''));
     if (!assistants.length) return { questions: 0, motifs: [] };
@@ -25265,8 +25267,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .map(([token]) => token);
     return { questions, motifs };
   };
-  const sceneVarianceBlock = (stageName, recent = {}, settings = {}) => {
+  const sceneVarianceBlock = (stageName, recentValue = {}, settingsValue = {}) => {
     if (!isDraftPipelineStage(stageName)) return '';
+    const recent = recentValue || {}, settings = settingsValue || {};
     const gate = forcedBondModeGate(settings);
     if (gate === 'skip') return '';
     const run = sceneVarianceForRun(recent, settings);

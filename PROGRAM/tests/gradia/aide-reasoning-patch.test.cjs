@@ -156,15 +156,17 @@ test('results page places input assist next to plot, and defaults to SHADOW ACT 
     assert.ok(results, 'results page renders');
 
     const tabs = [...results.querySelectorAll('[data-subtabs="rs"] [data-subtab]')];
-    assert.equal(tabs.length, 5, 'five tabs in results');
+    assert.equal(tabs.length, 7, 'seven tabs in results');
 
-    // Tab order should be: s (SHADOW ACT), c (인물), w (세계관), p (플롯), i (입력 도우미)
+    // Tab order: s (SHADOW ACT), c (인물), w (세계관), f (억결), b (상태), p (플롯), i (입력 도우미).
+    // 억결 and 상태 are the extension AIDEs; their place after 세계관 was set in 037f6e97.
     const tabKeys = tabs.map(t => t.dataset.subtab);
-    assert.deepEqual(tabKeys, ['s', 'c', 'w', 'p', 'i'], 'tab order: SHADOW ACT, 인물, 세계관, 플롯, 입력 도우미');
+    assert.deepEqual(tabKeys, ['s', 'c', 'w', 'f', 'b', 'p', 'i'], 'tab order: SHADOW ACT, 인물, 세계관, 억결, 상태, 플롯, 입력 도우미');
+    const inputTab = tabs[tabKeys.indexOf('i')];
 
     // SHADOW ACT tab should be active by default
     assert.equal(tabs[0].getAttribute('aria-selected'), 'true', 'SHADOW ACT is selected by default');
-    assert.equal(tabs[4].getAttribute('aria-selected'), 'false', '입력 도우미 is not selected by default');
+    assert.equal(inputTab.getAttribute('aria-selected'), 'false', '입력 도우미 is not selected by default');
 
     // SHADOW ACT panel should be active
     const shadowPanel = results.querySelector('[data-subpanel="s"]');
@@ -173,9 +175,9 @@ test('results page places input assist next to plot, and defaults to SHADOW ACT 
     assert.equal(inputPanel?.classList.contains('is-active'), false, '입력 도우미 panel is not active by default');
 
     // Clicking 입력 도우미 tab activates it
-    tabs[4].click();
+    inputTab.click();
     await sleep(20);
-    assert.equal(tabs[4].getAttribute('aria-selected'), 'true', '입력 도우미 is selected after click');
+    assert.equal(inputTab.getAttribute('aria-selected'), 'true', '입력 도우미 is selected after click');
     assert.equal(tabs[0].getAttribute('aria-selected'), 'false', 'SHADOW ACT is deselected after click');
     assert.equal(inputPanel?.classList.contains('is-active'), true, '입력 도우미 panel is active after click');
     assert.equal(shadowPanel?.classList.contains('is-active'), false, 'SHADOW ACT panel is inactive after click');
