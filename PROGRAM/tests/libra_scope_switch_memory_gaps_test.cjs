@@ -103,3 +103,27 @@ test('server mode: the final recall proof uses the recall budget, not the fixed 
   assert.equal(meta.errorCode || '', '', 'recall is not refused: ' + (meta.errorCode || ''));
   assert.equal(meta.finalVerification?.status, 'verified');
 });
+
+test('server mode: a live recall does not wait behind a Canonical batch holding the scope writer queue', { timeout: 120000 }, async t => {
+  // Export libra-debug-2026-11-14 (5): startup recovery re-ran T16–20 and held the queue for its
+  // model call; the first request's recall queued behind it until the 90 s deadline.
+  const { fixture: readerFixture } = require('./fixtures/libra_direct_memory_reader_fixture.cjs');
+  const anchor = '    const enqueueReceipt = (scopeKey, task) =>';
+  const transformSource = source => { assert.ok(source.includes(anchor));
+    return source.replace(anchor, '    globalThis.__holdScopeQueue = scopeKey => { let release; const held = new Promise(resolve => { release = resolve; }); enqueue(scopeKey, () => held); return release; };\n' + anchor); };
+  const x = await readerFixture({ mode: 'server_only', pauseAutomaticAnalysis: true, microCount: 8, transformSource });
+  let release = () => {};
+  t.after(async () => { release(); await x.cleanup(); });
+  release = x.f.r.context.__holdScopeQueue(x.scopeKey);
+  const startedAt = Date.now();
+  const outcome = await Promise.race([
+    x.f.control.hooks.beforeRequest([{ role: 'user', content: '은빛 열쇠는 누가 보관해?' }], 'model').then(() => 'delivered'),
+    new Promise(resolve => setTimeout(() => resolve('still_waiting'), 30000))
+  ]);
+  assert.equal(outcome, 'delivered', 'the request hook returned while the queue was still held');
+  assert.ok(Date.now() - startedAt < 30000);
+  const meta = x.f.r.api.getRuntime().lastMemoryInjectionMeta;
+  assert.equal(meta.finalVerification?.status, 'verified');
+  const phases = JSON.parse(JSON.stringify(x.f.r.core.state.lastRecallRuntime?.phases || []));
+  assert.ok(phases.some(phase => phase.label === 'writer_queue_bypass'), 'the bypass is visible in the recall runtime');
+});

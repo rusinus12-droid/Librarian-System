@@ -61575,6 +61575,37 @@ function mountMemorySuiteReanalysisReview(container,config) {
       queues.set(scopeKey, next);
       return next;
     };
+    // A live recall used to queue behind whatever held this scope's writer queue. A scan
+    // holds it for a whole Canonical batch, model call included (minutes on the user's
+    // install), so the request hook waited until the 90 s recall deadline and delivered
+    // nothing (2026-11-14: unified_source_publication 85 s, no State query ever started).
+    // Wait briefly for the queue; past that, read outside it. The recall's final physical
+    // proof still refuses a read set that a concurrent publication changed.
+    const RECALL_WRITER_QUEUE_WAIT_MS = 4000;
+    const enqueueRecall = (scopeKey, task, guard = null, maxWaitMs = RECALL_WRITER_QUEUE_WAIT_MS) => {
+      if (!state.queues.has(scopeKey)) return enqueue(scopeKey, task);
+      return new Promise((resolve, reject) => {
+        let started = false, timer = null;
+        const run = () => Promise.resolve().then(task).then(resolve, reject);
+        const queuedAt = Date.now();
+        void enqueue(scopeKey, async () => {
+          if (started) return null;
+          started = true; clearTimeout(timer);
+          // Inside the queue: hold it until the recall settles, as before.
+          await run().catch(() => null);
+          return null;
+        });
+        timer = setTimeout(() => {
+          if (started) return;
+          started = true;
+          const note = { label: 'writer_queue_bypass', startedOffsetMs: guard ? queuedAt - guard.startedAt : 0,
+            elapsedMs: Date.now() - queuedAt, ok: true };
+          if (guard) guard.phases.push(note);
+          state.lastRecallWriterQueueBypass = { at: Date.now(), scopeKey, waitedMs: note.elapsedMs };
+          void run();
+        }, Math.max(0, Number(maxWaitMs) || 0));
+      });
+    };
     const enqueueReceipt = (scopeKey, task) => enqueue(scopeKey, () => {
       if (state.disposed) throw new Error('LIBRA_RECEIPT_RUNTIME_DISPOSED');
       if (state.deletingScopes.has(scopeKey)) throw new Error('LIBRA_RECEIPT_SCOPE_DELETING');
@@ -65518,7 +65549,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // Scan/vector publication already uses this scope's writer queue. Keep
         // selection and its final physical proof in one queue entry so a queued
         // manifest publication cannot revoke the read set between those steps.
-        return await runRecallStep(guard, 'unified_source_publication', () => enqueue(context.scope.scopeKey, async () => {
+        return await runRecallStep(guard, 'unified_source_publication', () => enqueueRecall(context.scope.scopeKey, async () => {
         ensureRecallGuard(guard, 'unified_source_publication');
         queryBundle.deferFrameProof = true;
         let result = await recall(context, queryBundle, guard);
@@ -65642,7 +65673,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         Runtime.lastInjection = block; scheduleGuiTraceRefresh();
         selectionTransferred = true;
         return finalMessages;
-        }), RECALL_REQUEST_BUDGET_MS);
+        }, guard), RECALL_REQUEST_BUDGET_MS);
       } catch (error) {
         // A superseded asynchronous failure must not erase a newer request's
         // delivery diagnostics, including when both requests share a scope.
