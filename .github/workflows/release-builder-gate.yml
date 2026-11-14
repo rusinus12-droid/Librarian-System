@@ -118,7 +118,12 @@ jobs:
             PROGRAM/tests/compute_gui_and_libra_open_latency_contract_test.cjs \
             PROGRAM/tests/libra_micro_unproven_diagnostic_test.cjs \
             PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
-            PROGRAM/tests/libra_story_clock_accumulation_runtime_test.cjs
+            PROGRAM/tests/libra_story_clock_accumulation_runtime_test.cjs \
+            PROGRAM/tests/libra_story_clock_gradia_read_test.cjs \
+            PROGRAM/tests/gradia_scene_variance_test.cjs \
+            PROGRAM/tests/libra_scope_switch_memory_gaps_test.cjs \
+            PROGRAM/tests/libra_lens_memory_edit_runtime_test.cjs \
+            PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs
 
       - name: Verify clean working tree
         run: |
