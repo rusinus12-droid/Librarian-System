@@ -82675,11 +82675,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     }
     return Gui.lensReader;
   };
+  // Whether a note is current also depends on the State head (a rollback or worldline change),
+  // which can change while the chat pairs stay the same object.
+  const lensReaderStateKey = snapshot => {
+    const head = snapshot?.continuityState?.head || snapshot?.continuityState || null;
+    return head ? JSON.stringify([text(head.scopeKey || ''), text(head.worldlineId || ''), head.throughTurn ?? null,
+      text(head.basis?.replayFingerprint || ''), text(head.updatedAt || '')]) : '';
+  };
   const loadLensReaderData = async (force = false) => {
     const reader = lensReaderState();
     if (reader.loading && !force) return;
     const serial = ++reader.serial;
-    reader.snapshotPairs = LibraMemoryCore.peekSnapshot()?.pairs;
+    const snapshot = LibraMemoryCore.peekSnapshot();
+    reader.snapshotPairs = snapshot?.pairs;
+    reader.snapshotStateKey = lensReaderStateKey(snapshot);
     reader.loading = true;
     reader.error = '';
     queueGuiNavigationRender();
@@ -82706,10 +82715,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const ensureLensReaderPage = () => {
     const reader = lensReaderState();
-    const sourceRefreshed = reader.snapshotPairs !== LibraMemoryCore.peekSnapshot()?.pairs;
-    if (lensReaderViewActive() && !reader.loading && ((!reader.loaded && !reader.error) || sourceRefreshed)) {
-      if (sourceRefreshed) reader.data = null;
-      void loadLensReaderData(false);
+    const snapshot = LibraMemoryCore.peekSnapshot();
+    const started = reader.loaded || reader.loading;
+    const sourceRefreshed = started && (reader.snapshotPairs !== snapshot?.pairs
+      || (reader.snapshotStateKey ?? '') !== lensReaderStateKey(snapshot));
+    // Notes read before a rollback or source change are stale even while a load that started
+    // before it is still running: drop them now and restart, which supersedes that load.
+    if (sourceRefreshed) { reader.data = null; reader.loaded = false; }
+    if (lensReaderViewActive() && (sourceRefreshed || (!reader.loading && !reader.loaded && !reader.error))) {
+      void loadLensReaderData(sourceRefreshed);
     }
     return reader;
   };
