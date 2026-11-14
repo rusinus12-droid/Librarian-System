@@ -85,6 +85,31 @@ async function run(mode) {
     await assert.rejects(portable.reconstructCopiedChat(envelope), /portable_chat_copy_blocked:character_mismatch/,
       `${mode}: the existing copy path still refuses another character`);
 
+    if (mode === 'plugin_only') {
+      const targetPrefix = `libra:v1:scope:${preview.target.scopeKey}:`;
+      const setItem = snapshot.backend.setItem;
+      let droppedMemory = '';
+      snapshot.backend.setItem = async (storageKey, value) => {
+        const saved = await setItem(storageKey, value);
+        const manifest = storageKey === `${targetPrefix}manifest` ? parse(value) : null;
+        if (!droppedMemory && manifest?.portableImports?.some(receipt => receipt.updatedBotRebind && receipt.durable)) {
+          droppedMemory = manifest.memories[String(preview.matchedStarts[0])].key;
+          snapshot.local.delete(droppedMemory);
+        }
+        return saved;
+      };
+      try {
+        await assert.rejects(idle(() => portable.rebindToUpdatedBot(envelope), 'rebind with missing record'),
+          /portable_chat_copy_completion_readback_failed/);
+      } finally {
+        snapshot.backend.setItem = setItem;
+      }
+      assert.ok(droppedMemory, 'a restored record was removed before the final verification');
+      assert.ok([...snapshot.local.keys()].every(key => !key.startsWith(`${targetPrefix}portable-import-journal:`)),
+        'a failed final verification rolls back and clears its journal');
+    }
+
+    const beforeRebindRequests = snapshot.requests.length;
     const result = await idle(() => portable.rebindToUpdatedBot(envelope), `${mode}: rebind`);
     assert.equal(result.ok, true, `${mode}: rebind succeeds`);
     assert.equal(result.receipt.updatedBotRebind, true);
@@ -111,6 +136,22 @@ async function run(mode) {
       }
     };
     if (mode !== 'plugin_only') checkStore(snapshot.storedRows(), 'server');
+    if (mode !== 'plugin_only') {
+      const requestLog = snapshot.requests.slice(beforeRebindRequests);
+      assert.ok(requestLog.some(request => request.url.endsWith('/v1/kv/set')),
+        `${mode}: the restore exercised the server write route`);
+      assert.ok(requestLog.some(request => /\/v1\/kv\/get\?/.test(request.url)
+        && decodeURIComponent(request.url).includes(':portable-import-journal:')
+        && /:entry:\d{8}(?:&|$)/.test(decodeURIComponent(request.url))),
+        `${mode}: undo cleanup exercised the server route`);
+      // Deletes have their own readback. Before cleanup starts, the server's
+      // durable write receipt is sufficient to advance past each undo entry.
+      const cleanupStart = requestLog.findIndex(request => request.url.endsWith('/v1/kv/remove'));
+      assert.ok(cleanupStart > 0, `${mode}: undo cleanup ran`);
+      assert.equal(requestLog.slice(0, cleanupStart).some(request => /\/v1\/kv\/get\?/.test(request.url)
+        && /:portable-import-journal:[^:]+:entry:\d{8}(?:&|$)/.test(decodeURIComponent(request.url))), false,
+        `${mode}: no per-entry server readback before journal cleanup`);
+    }
     if (mode !== 'server_only') checkStore(localRows(snapshot), 'pluginStorage');
     if (mode === 'server_only') {
       assert.equal(manifestFor(localRows(snapshot), 'unified-chat-moved'), null,

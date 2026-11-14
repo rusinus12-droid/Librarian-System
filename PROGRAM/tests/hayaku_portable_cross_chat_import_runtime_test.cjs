@@ -157,6 +157,25 @@ const createSourceEnvelope = async (pluginStorage = createStore()) => {
     same.setMessages(sourceMessages());
 
     const originalSet = same.pluginStorage.setItem.bind(same.pluginStorage);
+    const ledgerKey = `hayaku.v2.ledger.${sameScope.key}`;
+    const originalLedger = await same.pluginStorage.getItem(ledgerKey);
+    let corruptedLedger = false;
+    same.pluginStorage.setItem = async (key, value) => {
+      if (key === ledgerKey && !corruptedLedger) {
+        corruptedLedger = true;
+        return await originalSet(key, 'invalid-restore-ledger');
+      }
+      return await originalSet(key, value);
+    };
+    try {
+      await assert.rejects(portable.restoreCurrentScope(envelope), error =>
+        error?.code === 'PORTABLE_RESTORE_FAILED_ROLLED_BACK' && /portable_backup_post_restore_mismatch/.test(error.message));
+    } finally {
+      same.pluginStorage.setItem = originalSet;
+    }
+    assert.ok(corruptedLedger, 'a bad ledger reached final verification');
+    assert.equal(await same.pluginStorage.getItem(ledgerKey), originalLedger);
+
     let activeWrites = 0;
     let maxConcurrentWrites = 0;
     same.pluginStorage.setItem = async (key, value) => {

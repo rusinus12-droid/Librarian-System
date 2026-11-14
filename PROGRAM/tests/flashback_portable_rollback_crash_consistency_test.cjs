@@ -217,6 +217,28 @@ const danglingReferences = store => {
   assert.ok(shardKeys.length >= 1, `the target must have shard keys on disk (keys: ${[...pluginStorage.values.keys()].join(', ')})`);
   const baselineShards = new Map(shardKeys.map(k => [k, pluginStorage.values.get(k)]));
 
+  const setItem = pluginStorage.setItem.bind(pluginStorage);
+  const droppedKey = shardKeys[0];
+  const originalShard = baselineShards.get(droppedKey);
+  let dropped = false;
+  pluginStorage.setItem = async (key, value) => {
+    if (key === droppedKey && !dropped) {
+      dropped = true;
+      pluginStorage.values.set(key, 'invalid-restore-shard');
+      return true;
+    }
+    return await setItem(key, value);
+  };
+  try {
+    await assert.rejects(portable.restoreCurrentScope(envelope), error =>
+      error?.code === 'PORTABLE_RESTORE_FAILED_ROLLED_BACK' && /portable_backup_post_restore_mismatch/.test(error.message));
+  } finally {
+    pluginStorage.setItem = setItem;
+  }
+  assert.ok(dropped, 'a bad shard reached final verification');
+  assert.equal(pluginStorage.values.get(droppedKey), originalShard);
+  assert.equal(pluginStorage.values.get(manifestKeyOf), goodManifest);
+
   // ---- crash sweep ---------------------------------------------------------------------
   // Sweep the point at which manifest publication becomes impossible. The rollback removes the
   // target's shards using the manifest that is on disk, then republishes the snapshot manifest;

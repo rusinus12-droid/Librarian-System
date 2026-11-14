@@ -5389,9 +5389,21 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     };
     const readbackOptions = { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode };
     const confirmSuperseded = () => statusReadback(id, readbackOptions);
+    // These immutable undo entries use the server's durable write receipt.
+    // The server checks the stored bytes in the same transaction.
+    const journalDigest = kind === 'set' && mutateOptions.portableUndoEntry === true
+      ? await fastContentDigest(value) : '';
+    const verifyWrite = async payload => {
+      const receipt = verifyReceipt(payload, id, space, key);
+      if (!journalDigest) return await verifyStored(receipt);
+      if (receipt.kind !== 'set' || receipt.tombstone !== false || receipt.digest !== journalDigest)
+        throw new Error('memory_suite_end_to_end_readback_mismatch');
+      setStatus('durable', '', { operationId: id, revision: receipt.revision, key: compact(key, 180), space });
+      return receipt;
+    };
     try {
       const payload = await request('POST', `/v1/kv/${kind}`, body, { allowPluginOnly: mutateOptions.allowPluginOnly === true, scope:mutateOptions.scope, storageMode:mutateOptions.storageMode });
-      return await verifyStored(verifyReceipt(payload, id, space, key));
+      return await verifyWrite(payload);
     } catch (error) {
       // A lost response may hide a committed write. The request path has already opened
       // the shared outage circuit, so the operation lookup forces a fresh bootstrap.
@@ -5400,7 +5412,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         if (lifecycle.disposed) break;
         try {
           const status = await statusReadback(id, { ...readbackOptions, forceBootstrap:true });
-          if (status) return await verifyStored(verifyReceipt(status, id, space, key));
+          if (status) return await verifyWrite(status);
           break;
         } catch (readbackError) {
           if (readbackError?.message === 'memory_suite_end_to_end_readback_mismatch' || readbackError?.status === 403) break;
@@ -10660,7 +10672,15 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
     if (!route.routed || route.mode === MODE_PLUGIN_ONLY) return typeof legacySet === 'function' ? await legacySet(value) : false;
     const projected = await routeProjectValue(route, value);
+    const portableUndoEntry = operationOptions.portableUndoEntry === true
+      && /^libra:v1:scope:.+:portable-import-journal:[^:]+:entry:\d{8}$/.test(key);
     if (authoritativeMirrorRoute(route)) {
+      if (portableUndoEntry) return await serializeMutation(space, route.remoteKey, async () => {
+        await remoteMutate('set', space, route.remoteKey, projected, {
+          allowPluginOnly: true, scope: route.scope, storageMode: route.mode, portableUndoEntry
+        });
+        return typeof legacySet === 'function' && await legacySet(value);
+      });
       const mirrored=await serializeMutation(space,route.remoteKey,async()=>{
         await remoteMutate('set',space,route.remoteKey,projected,{allowPluginOnly:true,scope:route.scope,storageMode:route.mode});
         return await mirrorServerRow(space,key,route,await remoteGet(space,route.remoteKey,{allowPluginOnly:true,scope:route.scope,storageMode:route.mode}));
@@ -10672,7 +10692,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const localOk = typeof legacySet === 'function' ? await legacySet(value) : false;
       if (!localOk) return false;
       try {
-        await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode }));
+        await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode, portableUndoEntry }));
         setStatus('synced', '', { scopeId: route.scopeId, mode: route.mode, key: compact(key, 160), space });
       } catch (error) {
         setStatus('local_ahead', error?.message || error, { scopeId: route.scopeId, mode: route.mode, key: compact(key, 160), space });
@@ -10681,7 +10701,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       return true;
     }
-    await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode }));
+    await serializeMutation(space, route.remoteKey, () => remoteMutate('set', space, route.remoteKey, projected, { allowPluginOnly: true, scope:route.scope, storageMode:route.mode, portableUndoEntry }));
     return true;
   };
 
@@ -10895,7 +10915,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           return false;
         }
       ),
-      setItem: async (key, value) => await scopedSet(space, String(key), value, async next => typeof legacy.setItem === 'function' ? (await legacy.setItem(key, next)) !== false : false),
+      setItem: async (key, value, options) => await scopedSet(space, String(key), value, async next => typeof legacy.setItem === 'function' ? (await legacy.setItem(key, next)) !== false : false, options),
       removeItem: async key => await scopedRemove(
         space, String(key),
         async () => typeof legacy.getItem === 'function' ? await legacy.getItem(key) : null,
@@ -36860,13 +36880,14 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const beginFencedMemoryStorageWrite = (storageKey, serialized, fence, revision, repair = false) => {
+      const writeOptions = fence.writeOptions;
       fence.pending = Math.max(0, Number(fence.pending || 0)) + 1;
       state.storageWriteStats.writes += 1;
       state.receiptRecoverySettledWrites.delete(storageKey);
       invalidateVerifiedRead(storageKey);
       const operation = Promise.resolve().then(async () => {
         await closeBackgroundReadFramesForWrite(storageKey);
-        return LibraProviderBridge.storage.setItem(storageKey, serialized);
+        return LibraProviderBridge.storage.setItem(storageKey, serialized, writeOptions);
       });
       operation.then(() => invalidateVerifiedRead(storageKey), () => invalidateVerifiedRead(storageKey));
       // Join the already admitted write; never replace its SDK owner/drain path.
@@ -36911,12 +36932,13 @@ function createLibraReadonlySourceContext(owner) {
       });
       return operation;
     };
-    const fencedMemoryStorageSet = async (storageKey, serialized) => {
+    const fencedMemoryStorageSet = async (storageKey, serialized, writeOptions) => {
       const lease = state.unifiedWriterLeases?.get(storageKey);
       if (lease !== undefined && !(Array.isArray(lease) ? lease.includes(serialized) : lease === serialized)) throw new Error('UNIFIED_WRITER_BUSY');
       const fence = state.storageWriteFence.get(storageKey) || { revision: 0, serialized: '', pending: 0 };
       fence.revision = Math.max(0, Number(fence.revision || 0)) + 1;
       fence.serialized = serialized;
+      fence.writeOptions = writeOptions;
       state.storageWriteFence.set(storageKey, fence);
       const revision = fence.revision;
       const ok = await beginFencedMemoryStorageWrite(storageKey, serialized, fence, revision, false);
@@ -37447,7 +37469,7 @@ function createLibraReadonlySourceContext(owner) {
         if(frame?.background)frame.acceptOwnWrite(storageKey);
         return true;
       },
-      async setJson(storageKey, value) {
+      async setJson(storageKey, value, writeOptions) {
         let storedValue = value;
         if (value?.schema === EMBEDDING_PROJECTION_SCHEMA && projectionHasVectorPayload(value)) {
           const packed = packProjectionForLocalStorage(storageKey, value);
@@ -37473,7 +37495,7 @@ function createLibraReadonlySourceContext(owner) {
             }
           }
         }
-        return await fencedMemoryStorageSet(storageKey, JSON.stringify(storedValue));
+        return await fencedMemoryStorageSet(storageKey, JSON.stringify(storedValue), writeOptions);
       },
       // A prefix keeps the listing to one family of one scope instead of the whole namespace.
       async keys(prefix = '') {
@@ -43223,7 +43245,7 @@ function createLibraReadonlySourceContext(owner) {
 
     const cloneNativeCopyMicroGraph = async ({ sourceScope, targetScope, sourcePairs, targetPairs,
       sourceRows, pendingRows = [], writtenKeys, sourceOptions = {}, beforeWrite = null,
-      verifyOnly = false }) => {
+      verifyOnly = false, deferReadback = false }) => {
       const targetWorldlineId = hostWorldlineIdForScope(targetScope);
       const sourcePrefix = `${PREFIX}:scope:${sourceScope.scopeKey}:`;
       const sourceKeys = sourceOptions.keys || await storage.keys();
@@ -43234,6 +43256,10 @@ function createLibraReadonlySourceContext(owner) {
       const expectedOwnerRecords = new Map();
       const writeNew = async (storageKey, value) => {
         const valueDigest = digest(value);
+        if ((deferReadback || verifyOnly) && expectedOwnerRecords.has(storageKey)) {
+          if (expectedOwnerRecords.get(storageKey) !== valueDigest) throw new Error(`LIBRA_NATIVE_COPY_MICRO_TARGET_CONFLICT:${storageKey}`);
+          return;
+        }
         const prior = await storage.getVerifiedJson(storageKey, targetScope, null);
         if (prior) {
           if (digest(prior) !== valueDigest) throw new Error(`LIBRA_NATIVE_COPY_MICRO_TARGET_CONFLICT:${storageKey}`);
@@ -43243,7 +43269,8 @@ function createLibraReadonlySourceContext(owner) {
         if (verifyOnly) throw new Error(`LIBRA_NATIVE_COPY_MICRO_TARGET_MISSING:${storageKey}`);
         if (beforeWrite) await beforeWrite(storageKey);
         writtenKeys.push(storageKey);
-        await storage.setVerifiedJson(storageKey, value, targetScope);
+        if (deferReadback) await storage.setJson(storageKey, value);
+        else await storage.setVerifiedJson(storageKey, value, targetScope);
         expectedOwnerRecords.set(storageKey, valueDigest);
       };
       for (const source of sourceRows) {
@@ -44802,6 +44829,7 @@ function createLibraReadonlySourceContext(owner) {
 
     const ensureNativeChatCopyAdopted = async (context, options = {}) => {
       if (!context?.scope?.scopeKey || state.disposed) return { ok: false, skipped: true, reason: 'context_unavailable' };
+      if (state.portableMemoryActiveOperationId) return { ok: false, skipped: true, reason: 'portable_operation_active' };
       const scopeKey = string(context.scope.scopeKey);
       const now = Date.now();
       const cached = state.nativeCopyChecks.get(scopeKey);
@@ -71121,10 +71149,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           sessionEpoch: -1, handoffTransferId: bundle.importId
         } });
       }
-      if (refs.length) await storeLensHandoffArchives(refs, context.scope, [], null, rollback.capture);
+      if (refs.length) await storeLensHandoffArchives(refs, context.scope, [], null, rollback.capture,
+        rollback.deferReadback === true);
       const keys = new Set(refs.map(row => row.ref.archiveKey));
       manifest.inheritedLensArchives = [...asArray(manifest.inheritedLensArchives).filter(ref => !keys.has(ref.archiveKey)),
         ...refs.map(row => row.ref)];
+      return refs.map(row => row.ref);
     };
 
     const portableMicroArchivePlan = (bundle, targetScope, options = {}) => {
@@ -71288,36 +71318,75 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
 
     const PORTABLE_IMPORT_JOURNAL_SCHEMA = 'libra.portable_import_journal.v1';
+    const PORTABLE_IMPORT_SPLIT_JOURNAL_SCHEMA = 'libra.portable_import_journal.v2';
+    const PORTABLE_IMPORT_JOURNAL_ENTRY_SCHEMA = 'libra.portable_import_journal_entry.v1';
+    const removePortableImportJournal = async (journalKey, entryKeys) => {
+      for (const entryKey of entryKeys) {
+        if (await LibraProviderBridge.storage.removeItem(entryKey) === false) throw new Error('portable_import_journal_entry_cleanup_failed');
+      }
+      if (await storage.remove(journalKey) === false || await storage.getJson(journalKey, null) != null) {
+        throw new Error('portable_import_journal_cleanup_readback_mismatch');
+      }
+    };
     const recoverInterruptedPortableImports = async (scopeValue = null, onlyImportId = '') => {
       const activeScope = scopeValue || (await resolveContext()).scope;
       const prefix = `${PREFIX}:scope:${activeScope.scopeKey}:portable-import-journal:`;
-      const journalKeys = (await storage.keys()).filter(storageKey => string(storageKey).startsWith(prefix));
+      const journalKeys = [];
+      const entryKeysByJournal = new Map();
+      for (const storageKey of await storage.keys(prefix)) {
+        if (storageKey.includes('::chunk:v1:')) continue;
+        const entryKey = storageKey.match(/^(.*):entry:(\d{8})$/);
+        if (!entryKey) { journalKeys.push(storageKey); continue; }
+        const keys = entryKeysByJournal.get(entryKey[1]) || [];
+        keys.push(storageKey);
+        entryKeysByJournal.set(entryKey[1], keys);
+      }
       const reports = [];
       for (const journalKey of journalKeys) {
+        if (onlyImportId && journalKey !== key.portableImportJournal(activeScope, onlyImportId)) continue;
         const journal = await storage.getJson(journalKey, null).catch(() => null);
         const importId = string(journal?.importId || journalKey.slice(prefix.length));
         if (onlyImportId && importId !== string(onlyImportId)) continue;
-        if (!journal || journal.schema !== PORTABLE_IMPORT_JOURNAL_SCHEMA
+        const split = journal?.schema === PORTABLE_IMPORT_SPLIT_JOURNAL_SCHEMA;
+        const entryKeys = entryKeysByJournal.get(journalKey) || [];
+        if (!journal || (!split && journal.schema !== PORTABLE_IMPORT_JOURNAL_SCHEMA)
           || string(journal.scopeKey || '') !== string(activeScope.scopeKey || '')) {
           reports.push({ importId, journalKey, ok: false, error: 'portable_import_journal_invalid' });
           continue;
         }
         if (['completed', 'rolled_back', 'recovered_after_interruption'].includes(string(journal.state || ''))) {
           try {
-            await storage.remove(journalKey);
-            if (await storage.getJson(journalKey, null) != null) throw new Error('portable_import_journal_cleanup_readback_mismatch');
+            await removePortableImportJournal(journalKey, entryKeys);
             reports.push({ importId, journalKey, ok: true, cleaned: true });
           } catch (error) { reports.push({ importId, journalKey, ok: false, error: compact(error?.message || error, 500) }); }
           continue;
         }
         const entries = asArray(journal.entries);
+        if (split) {
+          try {
+            const seen = new Set();
+            for (const entryKey of entryKeys.sort()) {
+              const entry = await storage.getJson(entryKey, null);
+              if (entry?.schema !== PORTABLE_IMPORT_JOURNAL_ENTRY_SCHEMA || entry.journalKey !== journalKey
+                || entry.entryDigest !== digest(entry.snapshot) || typeof entry.snapshot?.exists !== 'boolean'
+                || seen.has(entry.snapshot.key)) {
+                throw new Error('portable_import_journal_entry_invalid');
+              }
+              seen.add(entry.snapshot.key);
+              entries.push(entry.snapshot);
+            }
+          } catch (error) {
+            reports.push({ importId, journalKey, ok: false, error: compact(error?.message || error, 500) });
+            continue;
+          }
+        }
         const entryValidationErrors = [];
         for (const entry of entries) {
           const targetKey = string(entry?.key || '');
           const localSuffix = targetKey.startsWith(`${PREFIX}:scope:${activeScope.scopeKey}:`)
             ? targetKey.slice(`${PREFIX}:scope:${activeScope.scopeKey}:`.length)
             : '';
-          const localAllowed = !!localSuffix && /^(?:manifest$|continuity-state$|story-arc$|canonical-variants:v1$|memory:|vector:|continuity-delta:)/.test(localSuffix);
+          const localAllowed = /^(?:manifest$|continuity-state$|story-arc$|canonical-variants:v1$|memory:|vector:|continuity-delta:|source-evidence:v1:|source-receipt(?:-head|-capture)?:|person-span-inventory(?:-head)?:|micro-(?:work|memory(?:-head)?|vector|state-admission|handoff-archive):|entity-(?:registry|admission):|manual-state-disposition:|state-(?:corrections|correction-meta|correction-commit|worldline-meta|replay-cache|replay-errors|observation|pipeline-receipt|tracking-journal):|unified-migration:v1$)/.test(localSuffix);
           const sharedMatch = targetKey.match(/^libra:v1:shared-archive:([^:]+):(manifest$|memory:([^:]+):r(\d+)$|vector:([^:]+):r(\d+):([^:]+)$)/);
           let sharedAllowed = false;
           if (sharedMatch && ['import_as_predecessor_archive', 'reconstruct_native_copy'].includes(string(journal.mode || ''))) {
@@ -71345,6 +71414,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             else sharedAllowed = candidate?.schema === EMBEDDING_PROJECTION_SCHEMA
               && string(candidate.archiveId || '') === string(sharedMatch[1]) && string(candidate.archiveCanonicalId || '') === string(sharedMatch[5]);
           }
+          if (!sharedAllowed && ['import_as_predecessor_archive', 'reconstruct_native_copy'].includes(string(journal.mode || ''))) {
+            const lens = targetKey.match(/^libra:v1:lens-handoff-archive:[^:]+:([^:]+)$/);
+            const evidence = targetKey.match(/^libra:v1:scope:(archive:[^:]+):source-evidence:v1:[^:]+$/);
+            if ((lens || evidence) && entry?.exists === false) {
+              const candidate = await storage.getStoredJson(targetKey, null).catch(() => undefined);
+              sharedAllowed = candidate === null || (lens
+                ? candidate?.schema === LENS_HANDOFF_ARCHIVE_SCHEMA && candidate.lensId === lens[1]
+                : candidate?.schema === 'memory-suite.source-evidence.v1' && candidate.binding?.owner === 'libra'
+                  && candidate.binding.scopeKey === evidence[1]);
+            }
+          }
           if (!targetKey || targetKey === journalKey || (!localAllowed && !sharedAllowed)) {
             entryValidationErrors.push({ key: targetKey, error: 'portable_import_journal_entry_out_of_scope' });
           }
@@ -71369,13 +71449,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         const terminal = { ...journal, state: errors.length ? 'recovery_failed' : 'recovered_after_interruption', recoveryErrors: errors, recoveredAt: nowIso(), updatedAt: nowIso() };
         try {
-          await storage.setJson(journalKey, terminal);
+          await storage.setJson(journalKey, terminal, { requireDurableMirror: true });
           const readback = await storage.getJson(journalKey, null);
           if (digest(readback) !== digest(terminal)) throw new Error('portable_import_recovery_journal_readback_mismatch');
-          if (!errors.length) {
-            await storage.remove(journalKey);
-            if (await storage.getJson(journalKey, null) != null) throw new Error('portable_import_recovery_journal_cleanup_failed');
-          }
+          if (!errors.length) await removePortableImportJournal(journalKey, entryKeys);
         } catch (error) { errors.push({ key: journalKey, error: compact(error?.message || error, 500) }); }
         reports.push({ importId, journalKey, ok: errors.length === 0, recovered: errors.length === 0, errors });
       }
@@ -71386,46 +71463,53 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const snapshots = new Map();
       const order = [];
       const journalKey = key.portableImportJournal(scope, importId);
-      let journalWriteTail = Promise.resolve();
-      const persistJournal = (stateValue, details = {}) => {
-        const write = journalWriteTail.then(async () => {
-          const journal = {
-            schema: PORTABLE_IMPORT_JOURNAL_SCHEMA, importId: string(importId || ''), mode: string(mode || ''),
-            scopeKey: string(scope?.scopeKey || ''), state: stateValue, updatedAt: nowIso(),
-            entries: order.map(targetKey => ({ key: targetKey, exists: snapshots.get(targetKey)?.exists === true, rawValue: snapshots.get(targetKey)?.rawValue ?? null })),
-            ...clone(details)
-          };
-          await storage.setJson(journalKey, journal);
+      const entryKeys = [];
+      const journalWriteOptions = { requireDurableMirror: true };
+      // An acknowledged snapshot precedes its mutation. A separate key keeps
+      // the write-ahead log linear in the number and size of captured records.
+      const persistJournal = async (stateValue, details = {}, verify = true) => {
+        const journal = {
+          schema: PORTABLE_IMPORT_SPLIT_JOURNAL_SCHEMA, importId: string(importId || ''), mode: string(mode || ''),
+          scopeKey: string(scope?.scopeKey || ''), state: stateValue, updatedAt: nowIso(),
+          ...clone(details)
+        };
+        await storage.setJson(journalKey, journal, journalWriteOptions);
+        if (verify) {
           const readback = await storage.getJson(journalKey, null);
           if (digest(readback) !== digest(journal)) throw new Error('portable_import_journal_readback_mismatch');
-          return journal;
-        });
-        journalWriteTail = write.catch(() => {});
-        return write;
+        }
       };
-      await persistJournal('writing', { createdAt: nowIso() });
+      await persistJournal('writing', { createdAt: nowIso() }, false);
       const capture = async storageKey => {
         const targetKey = string(storageKey || '');
         if (!targetKey || targetKey === journalKey) return null;
-        if (snapshots.has(targetKey)) return snapshots.get(targetKey);
-        const rawValue = await LibraProviderBridge.storage.getItem(targetKey);
-        const exists = rawValue !== null && rawValue !== undefined;
-        let parsedValue = null;
-        if (exists) {
-          try { parsedValue = portableParsedRawValue(rawValue, targetKey); } catch (_) {}
-        }
-        const snapshot = { exists, rawValue, value: parsedValue };
-        snapshots.set(targetKey, snapshot);
-        order.push(targetKey);
-        await persistJournal('writing');
-        return snapshot;
+        if (snapshots.has(targetKey)) return await snapshots.get(targetKey);
+        const pending = (async () => {
+          const rawValue = await LibraProviderBridge.storage.getItem(targetKey);
+          const exists = rawValue !== null && rawValue !== undefined;
+          let value = null;
+          if (exists) {
+            try { value = portableParsedRawValue(rawValue, targetKey); } catch (_) {}
+          }
+          const snapshot = { key: targetKey, exists, rawValue: rawValue ?? null };
+          const entryKey = `${journalKey}:entry:${String(entryKeys.length).padStart(8, '0')}`;
+          entryKeys.push(entryKey);
+          await storage.setJson(entryKey, {
+            schema: PORTABLE_IMPORT_JOURNAL_ENTRY_SCHEMA, journalKey, snapshot, entryDigest: digest(snapshot)
+          }, { ...journalWriteOptions, portableUndoEntry: true });
+          order.push(snapshot);
+          return { ...snapshot, value };
+        })();
+        snapshots.set(targetKey, pending);
+        return await pending;
       };
       const restore = async () => {
         const errors = [];
-        try { await persistJournal('rolling_back'); }
+        try { await persistJournal('rolling_back', {}, false); }
         catch (error) { errors.push({ key: journalKey, error: compact(error?.message || error, 500) }); }
-        for (const targetKey of order.slice().reverse()) {
-          const snapshot = snapshots.get(targetKey);
+        await Promise.allSettled(snapshots.values());
+        for (const snapshot of order.slice().reverse()) {
+          const targetKey = snapshot.key;
           try {
             if (snapshot?.exists) {
               await restorePortableRawValue(targetKey, snapshot.rawValue);
@@ -71438,24 +71522,21 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         try {
           await persistJournal(errors.length ? 'rollback_incomplete' : 'rolled_back', { rollbackErrors: clone(errors), rolledBackAt: nowIso() });
-          if (!errors.length) {
-            await storage.remove(journalKey);
-            if (await storage.getJson(journalKey, null) != null) throw new Error('portable_import_journal_cleanup_readback_mismatch');
-          }
+          if (!errors.length) await removePortableImportJournal(journalKey, entryKeys);
         } catch (error) { errors.push({ key: journalKey, error: compact(error?.message || error, 500) }); }
         return errors;
       };
       const complete = async details => {
+        // A terminal marker must be durable before dropping any undo records.
         await persistJournal('completed', { completedAt: nowIso(), result: clone(details || {}) });
         try {
-          await storage.remove(journalKey);
-          if (await storage.getJson(journalKey, null) != null) throw new Error('portable_import_journal_cleanup_readback_mismatch');
+          await removePortableImportJournal(journalKey, entryKeys);
           return { cleaned: true };
         } catch (error) {
           return { cleaned: false, error: compact(error?.message || error, 500) };
         }
       };
-      return { capture, restore, complete, journalKey };
+      return { capture, restore, complete, journalKey, deferReadback: mode === 'reconstruct_native_copy' };
     };
 
     const capturePortableStateDerivedRollback = async ({ rollback, scope, manifest } = {}) => {
@@ -71528,7 +71609,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return !!head;
     };
 
-    const portableImportReceiptReadbackUnsafe = async ({ receipt, context, manifest, pairs, bundle }) => {
+    const portableImportReceiptReadbackUnsafe = async ({ receipt, context, manifest, pairs, bundle, copiedMicro, lensRefs }) => {
       if (!receipt || receipt.verified !== true || receipt.durable !== true) return false;
       if (string(receipt.targetScopeKey || '') !== string(context?.scope?.scopeKey || '')) return false;
       if (receipt.mode === 'import_as_predecessor_archive') {
@@ -71658,13 +71739,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             }
           }
         }
-        const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts);
-        const verifiedMicro = await cloneNativeCopyMicroGraph({
-          sourceScope: bundle.source, targetScope: context.scope,
-          sourcePairs: nativeMicro.sourcePairs, targetPairs: pairs,
-          sourceRows: nativeMicro.sourceRows, pendingRows: nativeMicro.pendingRows,
-          sourceOptions: nativeMicro.sourceOptions, writtenKeys: [], verifyOnly: true
-        });
+        let verifiedMicro = copiedMicro;
+        if (verifiedMicro) {
+          const matches = await mapWithConcurrency(verifiedMicro.ownerRecords, async ({ storageKey, valueDigest }) => {
+            const stored = await storage.getVerifiedJson(storageKey, context.scope, null);
+            return stored !== null && digest(stored) === valueDigest;
+          }, 8);
+          if (!matches.every(Boolean)) return false;
+        } else {
+          const nativeMicro = await portableNativeMicroInput(bundle, pairs, starts);
+          verifiedMicro = await cloneNativeCopyMicroGraph({
+            sourceScope: bundle.source, targetScope: context.scope,
+            sourcePairs: nativeMicro.sourcePairs, targetPairs: pairs,
+            sourceRows: nativeMicro.sourceRows, pendingRows: nativeMicro.pendingRows,
+            sourceOptions: nativeMicro.sourceOptions, writtenKeys: [], verifyOnly: true
+          });
+        }
         if (Number(receipt.microOwnerRecords) !== verifiedMicro.ownerRecords.length
           || string(receipt.microOwnerGraphDigest || '') !== digest(verifiedMicro.ownerRecords)
           || Number(receipt.microActiveRecords) !== verifiedMicro.activeRows.length
@@ -71683,6 +71773,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           validateMicroHandoffArchive(stored, row.ref);
           if (digest(stored) !== digest(row.archive)) return false;
         }
+        const storedLensRefs = asArray(manifest.inheritedLensArchives).filter(ref => ref?.handoffTransferId === bundle.importId);
+        if (lensRefs && digest(lensRefs) !== digest(storedLensRefs)) return false;
+        for (const ref of storedLensRefs) await readLensHandoffArchive(ref, context.scope);
         return await validatePortableStateTransferReceiptReadback({ receipt, context, manifest });
       }
       return false;
@@ -71966,16 +72059,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (string(preview.target?.scopeKey || '') !== string(context.scope?.scopeKey || '')) throw new Error('portable_chat_copy_target_changed');
       const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
       const rollback = await createPortableWriteRollback({ scope: context.scope, importId: bundle.importId, mode: 'reconstruct_native_copy' });
-      await rollback.capture(key.manifest(context.scope));
-      await rollback.capture(key.continuityState(context.scope));
-      await rollback.capture(key.canonicalVariantIndex(context.scope));
-      const targetManifest = await loadManifest(context.scope, pairs.length);
-      const repairReceipt = preview.priorReceiptReadbackFailed && preview.priorReceipt?.mode === 'reconstruct_native_copy' ? preview.priorReceipt : null;
-      const repairStarts = new Set(repairReceipt ? asArray(preview.matchedStarts).map(Number).filter(value => value > 0) : []);
-      if (repairReceipt) targetManifest.portableImports = asArray(targetManifest.portableImports).filter(item => string(item?.importId || '') !== bundle.importId);
       const writtenKeys = [];
       let archiveResult = null;
       try {
+        await rollback.capture(key.manifest(context.scope));
+        await rollback.capture(key.continuityState(context.scope));
+        await rollback.capture(key.canonicalVariantIndex(context.scope));
+        const targetManifest = await loadManifest(context.scope, pairs.length);
+        const repairReceipt = preview.priorReceiptReadbackFailed && preview.priorReceipt?.mode === 'reconstruct_native_copy' ? preview.priorReceipt : null;
+        const repairStarts = new Set(repairReceipt ? asArray(preview.matchedStarts).map(Number).filter(value => value > 0) : []);
+        if (repairReceipt) targetManifest.portableImports = asArray(targetManifest.portableImports).filter(item => string(item?.importId || '') !== bundle.importId);
         const nativeMicro = await portableNativeMicroInput(bundle, pairs, preview.matchedStarts);
         const inheritedMicroPlan = portableMicroArchivePlan(bundle, context.scope,
           {includeDirect: false, sessionEpochDelta: 0});
@@ -72074,7 +72167,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           sourceScope: bundle.source, targetScope: context.scope,
           sourcePairs: nativeMicro.sourcePairs, targetPairs: pairs,
           sourceRows: nativeMicro.sourceRows, pendingRows: nativeMicro.pendingRows,
-          sourceOptions: nativeMicro.sourceOptions, beforeWrite: rollback.capture,
+          sourceOptions: nativeMicro.sourceOptions, beforeWrite: rollback.capture, deferReadback: true,
           writtenKeys
         });
         for (const row of inheritedMicroPlan.archives) {
@@ -72082,15 +72175,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (prior?.exists && digest(prior.value) !== digest(row.archive)) {
             throw new Error(`portable_chat_copy_micro_archive_conflict:${row.ref.archiveKey}`);
           }
-          if (!prior?.exists) await storage.setVerifiedJson(row.ref.archiveKey, row.archive, context.scope);
-          await readMicroHandoffArchive(row.ref, context.scope);
+          if (!prior?.exists) await storage.setJson(row.ref.archiveKey, row.archive);
         }
         targetManifest.inheritedMicroArchives = [
           ...asArray(targetManifest.inheritedMicroArchives).filter(ref =>
             string(ref?.handoffTransferId || '') !== bundle.importId),
           ...inheritedMicroPlan.refs
         ];
-        await linkPortableLensArchives({bundle, context, manifest: targetManifest, rollback});
+        const lensRefs = await linkPortableLensArchives({bundle, context, manifest: targetManifest, rollback});
         const receipt = portableImportReceipt({ bundle, context, mode: 'reconstruct_native_copy', details: {
           copiedStarts, matchedMemories: copiedStarts.length, divergenceTurn: preview.divergenceTurn || 0,
           inheritedRecords: bundle.inheritedRefs.length,
@@ -72150,18 +72242,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           storyArcRebuild = await rebuildStoryArc({ context, manifest: persisted, pairs, reason: 'portable_chat_copy', forceMode: 'derived', allowDisabled: true, skipStateRebuild: true, seedArc: seed });
         } catch (error) { storyArcRebuild = { ok: false, reason: compact(error?.message || error, 500) }; }
         const readback = await loadManifest(context.scope, pairs.length);
-        for (const startTurn of copiedStarts) {
-          const ref = memoryRefForStart(readback, startTurn);
-          const memory = ref?.key ? await storage.getJson(ref.key, null) : null;
-          const sourceMemory = bundle.memoryForRef(sourceRefs.get(startTurn));
-          if (!memory || string(memory.scopeKey || '') !== string(context.scope.scopeKey)
-            || string(memory.sourceDigest || '') !== sourceDigest(batchForStart(pairs, startTurn))
-            || string(memory.memoryId || '') !== string(sourceMemory.memoryId || '')
-            || Number(memory.revision || 0) !== Number(sourceMemory.revision || 0)
-            || digest(asArray(memory.sourcePairs)) !== digest(sourcePairs(batchForStart(pairs, startTurn)))
-            || string(memory.branchId || '') !== sourceDigest(batchForStart(pairs, startTurn))
-            || portableMemorySemanticFingerprint(memory) !== portableMemorySemanticFingerprint(sourceMemory)) throw new Error(`portable_chat_copy_readback_failed:t${startTurn}`);
-        }
         const completedWithWarnings = storyArcRebuild?.ok === false || continuityWarnings.length > 0;
         const completedReceipt = {
           ...receipt,
@@ -72180,7 +72260,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         await saveManifest(context.scope, readback);
         const completionReadback = await loadManifest(context.scope, pairs.length);
         if (!asArray(completionReadback.portableImports).some(item => string(item?.importId || '') === completedReceipt.importId && item?.verified === true && item?.durable === true)) throw new Error('portable_chat_copy_receipt_readback_failed');
-        if (!await portableImportReceiptReadback({ receipt: completedReceipt, context, manifest: completionReadback, pairs, bundle })) throw new Error('portable_chat_copy_completion_readback_failed');
+        if (!await portableImportReceiptReadback({ receipt: completedReceipt, context, manifest: completionReadback, pairs, bundle, copiedMicro, lensRefs })) throw new Error('portable_chat_copy_completion_readback_failed');
 
         await refreshSnapshot(context);
         if (bundle.lensDefinitions.length) addedLensIds = await mergePortableLensDefinitions(bundle.lensDefinitions);
@@ -73104,13 +73184,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       return archives;
     };
-    const storeLensHandoffArchives = async (rows, scope, writtenKeys=[], ownedValues=null, beforeWrite=null) => {
+    const storeLensHandoffArchives = async (rows, scope, writtenKeys=[], ownedValues=null, beforeWrite=null, deferReadback=false) => {
       for(const {ref,archive} of rows){
         validateLensHandoffArchive(archive, ref);
         const previous=await storage.getVerifiedJson(ref.archiveKey,scope,null);
         if(previous&&digest(previous)!==digest(archive))throw lensError('LENS_ARCHIVE_IMMUTABLE_CONFLICT','기존 렌즈 승계 보관과 충돌합니다.');
-        if(!previous){await beforeWrite?.(ref.archiveKey);writtenKeys.push(ref.archiveKey);ownedValues?.set(ref.archiveKey,digest(archive));await storage.setVerifiedJson(ref.archiveKey,archive,scope);}
-        await readLensHandoffArchive(ref,scope);
+        if(!previous){
+          await beforeWrite?.(ref.archiveKey);
+          writtenKeys.push(ref.archiveKey);
+          ownedValues?.set(ref.archiveKey,digest(archive));
+          if(deferReadback)await storage.setJson(ref.archiveKey,archive);
+          else await storage.setVerifiedJson(ref.archiveKey,archive,scope);
+        }
+        if(!deferReadback)await readLensHandoffArchive(ref,scope);
       }
     };
     const lensPurgeCleanupJobs=new Map();
@@ -93181,7 +93267,7 @@ const Libra_PORTABLE_BACKUP_CONFIG = Object.freeze({"prefix":"Libra","old":"2.3.
         throw error;
       }
       if (LibraMemoryCore.state.queues.size > 0 || LibraMemoryCore.state.receiptQueues.size > 0
-        || LibraMemoryCore.state.microQueues.size > 0) {
+        || LibraMemoryCore.state.microQueues.size > 0 || LibraMemoryCore.state.nativeCopyInFlight.size > 0) {
         const error = new Error('월드 매니저 또는 기억 정본 transaction이 실행 중입니다. 현재 작업이 끝난 뒤 다시 시도해 주세요.');
         error.code = 'LIBRA_WORLD_MANAGER_BUSY';
         throw error;

@@ -24763,6 +24763,7 @@ const MemorySuiteSnapshotCache = (() => {
     let corruptShards = 0;
     const missingShardIndexes = [];
     const corruptShardIndexes = [];
+    let vectorPayloadMissing = 0;
     if (manifest.shardCount > 0) {
       const shards = await mapOrderedWithConcurrency(
         Array.from({ length: manifest.shardCount }, (_, index) => index),
@@ -24778,6 +24779,7 @@ const MemorySuiteSnapshotCache = (() => {
       );
       for (let i = 0; i < manifest.shardCount; i += 1) {
         const shard = shards[i];
+        vectorPayloadMissing += Number(shard.vectorPayloadMissing || 0);
         if (shard.missing) {
           missingShards += 1;
           missingShardIndexes.push(i);
@@ -24800,6 +24802,7 @@ const MemorySuiteSnapshotCache = (() => {
         corruptShards,
         missingShardIndexes,
         corruptShardIndexes,
+        vectorPayloadMissing,
         recordCountMismatch
       },
       records
@@ -25434,8 +25437,11 @@ const MemorySuiteSnapshotCache = (() => {
     const publicationExpectedRaw = publicationBoundary ? new Map(shardWriteResults.flatMap((result, index) =>
       clean.slice(index * shardSize, (index + 1) * shardSize).some(record => saveOptions.publicationSourceHashes.has(record.sourceHash))
         ? [[index, result.archiveCompression.serialized]] : [])) : null;
-    const publicationReadback = await verifyScopeCommitReadbackBeforeManifestSwap(scope, savedManifest, clean.length,
-      { ...physicalReaders(saveOptions),expectedRaw: publicationExpectedRaw, sourceHashes: saveOptions.publicationSourceHashes });
+    // Portable copy performs this physical read after publishing its final
+    // manifest and worldline. Keep the pre-swap candidate verification above.
+    const publicationReadback = saveOptions.portableCopyFinalReadback === true ? null
+      : await verifyScopeCommitReadbackBeforeManifestSwap(scope, savedManifest, clean.length,
+        { ...physicalReaders(saveOptions),expectedRaw: publicationExpectedRaw, sourceHashes: saveOptions.publicationSourceHashes });
     if (!recovery && !rawPageAppend && !saveOptions.retainPreviousGeneration) await cleanupExtraScopeShards(scope.scopeKey, shardCount, oldManifest);
     // Other commit IDs may belong to a writer in another runtime. A normal
     // commit has no authority to garbage-collect an unobserved generation.
@@ -25463,7 +25469,7 @@ const MemorySuiteSnapshotCache = (() => {
         } : null
       }
     };
-    if (publicationReadback.publicationPages?.length
+    if (publicationReadback?.publicationPages?.length
       && publicationReadback.publicationPages.flatMap(page => page.records).every(isPendingVectorlessPublicationRecord)) {
       const currentBoundary = await readRawPublicationBoundary(scope, cfg);
       if (sameRawPublicationBoundary(publicationBoundary, currentBoundary)) rawPublicationReceipts.set(saved, {
@@ -57194,13 +57200,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const portableTargetSnapshots = async scopeKey => {
       const manifestKey = scopeKeys.manifest(scopeKey);
       const worldlineKey = scopeKeys.worldline(scopeKey);
+      const previousManifestKey = `${manifestKey}:previous:v1`;
       const manifest = await RisuCompat.getItem(manifestKey);
       const worldline = await RisuCompat.getItem(worldlineKey);
+      const previousManifest = await RisuCompat.getItem(previousManifestKey);
       return {
         manifestKey,
         worldlineKey,
+        previousManifestKey,
         manifest: { exists: manifest !== undefined && manifest !== null && manifest !== '', value: manifest },
-        worldline: { exists: worldline !== undefined && worldline !== null && worldline !== '', value: worldline }
+        worldline: { exists: worldline !== undefined && worldline !== null && worldline !== '', value: worldline },
+        previousManifest: { exists: previousManifest !== undefined && previousManifest !== null && previousManifest !== '', value: previousManifest }
       };
     };
     const assertPortableTargetStillEmpty = async (target, operation) => {
@@ -57226,10 +57236,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     const rollbackPortableTargetScope = async (scopeKey, snapshots) => {
       const manifest = await loadScopeManifest(scopeKey).catch(() => null);
-      if (manifest) await removeScopeShardSet(scopeKey, manifest).catch(error => warn('portable target rollback shard cleanup failed', error));
-      await cleanupListedScopeShardOrphans(scopeKey, '').catch(error => warn('portable target rollback orphan cleanup failed', error));
+      const previous = parsedPortableStorageValue(snapshots.manifest.value);
+      const previousCommitId = textValue(previous?.commitId);
+      await restorePortableRawKey(snapshots.previousManifestKey, snapshots.previousManifest, 'portable_target_previous_manifest_rollback');
       await restorePortableRawKey(snapshots.manifestKey, snapshots.manifest, 'portable_target_manifest_rollback');
       await restorePortableRawKey(snapshots.worldlineKey, snapshots.worldline, 'portable_target_worldline_rollback');
+      if (manifest?.commitId && textValue(manifest.commitId) !== previousCommitId) {
+        await removeCommitShardSet(scopeKey, manifest.commitId, manifest.shardCount)
+          .catch(error => warn('portable target rollback shard cleanup failed', error));
+      }
     };
     const cleanupPortableArchiveScope = async scopeKey => {
       const manifest = await loadScopeManifest(scopeKey).catch(() => null);
@@ -57262,6 +57277,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const archiveExisted = archiveBefore.manifestRawPresent === true;
       const targetSnapshots = await portableTargetSnapshots(target.scope.scopeKey);
       const importedAt = nowIso();
+      let targetWriteStarted = false;
       try {
         await assertPortableTargetStillEmpty(target, 'portable archive migration target revalidation');
         let archiveRef = null;
@@ -57355,6 +57371,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
         const linked = await withScopeWriteLock(target.scope.scopeKey, async () => {
           await assertPortableTargetStillEmpty(target, 'portable archive migration target commit');
+          targetWriteStarted = true;
           await saveTurnWorldline(target.scope.scopeKey, emptyTurnWorldline(target.scope.scopeKey));
           return await saveScopeManifest({
             ...target.manifest,
@@ -57380,9 +57397,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }, target.scope);
         });
         const durable = await loadScopeManifest(target.scope);
-        const durableArchive = await loadFlashbackArchiveManifestSummary(durable.archiveRef);
-        if (durableArchive.verified !== true
-          || durableArchive.records !== archiveVerification.records
+        if (!equalValues(normalizeFlashbackArchiveRef(durable.archiveRef), archiveRef)
           || textValue(durable.portableImportId) !== importId
           || textValue(linked.scopeKey) !== textValue(target.scope.scopeKey)) {
           throw portableRestoreError('FLASHBACK_PORTABLE_MIGRATION_READBACK_FAILED', '채팅 이사 manifest의 durable readback이 일치하지 않습니다.');
@@ -57407,8 +57422,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         };
       } catch (error) {
         const rollbackErrors = [];
-        try { await rollbackPortableTargetScope(target.scope.scopeKey, targetSnapshots); } catch (rollbackError) { rollbackErrors.push(formatErrorMessage(rollbackError, 500)); }
-        if (!archiveExisted) {
+        let targetRestored = !targetWriteStarted;
+        if (targetWriteStarted) {
+          try {
+            await rollbackPortableTargetScope(target.scope.scopeKey, targetSnapshots);
+            targetRestored = true;
+          } catch (rollbackError) { rollbackErrors.push(formatErrorMessage(rollbackError, 500)); }
+        }
+        if (!archiveExisted && targetRestored) {
           try { await cleanupPortableArchiveScope(archiveScopeKey); } catch (rollbackError) { rollbackErrors.push(formatErrorMessage(rollbackError, 500)); }
         }
         if (rollbackErrors.length) error.rollbackErrors = rollbackErrors;
@@ -57509,6 +57530,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         );
       }
       const targetSnapshots = await portableTargetSnapshots(target.scope.scopeKey);
+      let targetWriteStarted = false;
       try {
         const committed = await withScopeWriteLock(target.scope.scopeKey, async () => {
           await assertPortableTargetStillEmpty(target, 'portable chat copy target commit');
@@ -57527,7 +57549,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             if (!node) throw portableRestoreError('FLASHBACK_PORTABLE_CHAT_COPY_WORLDLINE_MISMATCH', `기억 턴 ${finiteTurnIndex(record) || '-'}의 월드라인 노드를 만들 수 없습니다.`);
             return annotateWorldlineRecords([record], node, 'active')[0];
           });
-          const saved = await saveScopeRecords(target.scope, rebound, settings, target.scope, { verifyCommitReadbackBeforeManifestSwap: true });
+          targetWriteStarted = true;
+          const saved = await saveScopeRecords(target.scope, rebound, settings, target.scope, { portableCopyFinalReadback: true });
           const worldline = await saveTurnWorldline(target.scope.scopeKey, reconciled.worldline);
           const marked = await saveScopeManifest({
             ...saved.manifest,
@@ -57551,8 +57574,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
             portableRestoreMode: mode,
             portableEnvelopeDigest: textValue(envelope.integrity?.digest)
           }, target.scope);
-          const durable = await loadScopeRecordsRaw(target.scope.scopeKey);
+          const durable = await loadScopeRecordsRaw(target.scope.scopeKey, {
+            verifyPhysicalVectorPayload: true, shardReadConcurrency: RECALL_SHARD_READ_CONCURRENCY
+          });
           assertCompleteScopeLoad(durable, 'portable chat copy durable verification');
+          const rawWorldline = await RisuCompat.getItem(scopeKeys.worldline(target.scope.scopeKey));
+          if (durable.manifest.commitId !== marked.commitId || durable.records.length !== saved.records.length
+            || durable.manifest.vectorPayloadMissing || rawWorldline !== serializeTurnWorldline(worldline)) {
+            throw portableRestoreError('FLASHBACK_PORTABLE_CHAT_COPY_READBACK_FAILED', '복사된 기억, 벡터 또는 월드라인을 최종 검증하지 못했습니다.');
+          }
           return { saved, worldline, marked, durable };
         });
         const durable = committed.durable;
@@ -57594,8 +57624,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           ...updatedBotDetails
         };
       } catch (error) {
-        try { await rollbackPortableTargetScope(target.scope.scopeKey, targetSnapshots); }
-        catch (rollbackError) { error.rollbackErrors = [formatErrorMessage(rollbackError, 500)]; }
+        if (targetWriteStarted) {
+          try { await rollbackPortableTargetScope(target.scope.scopeKey, targetSnapshots); }
+          catch (rollbackError) { error.rollbackErrors = [formatErrorMessage(rollbackError, 500)]; }
+        }
         throw error;
       }
     };
@@ -57698,12 +57730,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const key = textValue(sidecar.key);
           const incoming = decodeValue(sidecar.value);
           const details = portableVectorPayloadDetails(key, incoming);
+          vectorSidecarsWritten.push(key);
           const ok = await RisuCompat.localSetItem(key, details.parsed);
           if (ok === false) throw new Error(`portable_backup_vector_sidecar_write_rejected:${key}`);
-          vectorSidecarsWritten.push(key);
           invalidateFlashbackVectorShardCache(key);
-          const readback = await RisuCompat.localGetItem(key);
-          portableVectorPayloadDetails(key, readback);
         }
         const ordered = [...restoreRecords].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
         for (const record of ordered) {
@@ -57716,24 +57746,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           }
           attempted.push(record.key);
           if (!await adapter.set(record.key, value)) throw new Error(`portable_backup_write_rejected:${record.key}`);
-          const readback = await adapter.get(record.key);
-          const valid = equalValues(readback, value);
-          if (!valid) throw new Error(`portable_backup_write_readback_mismatch:${record.key}`);
           written.push(record.key);
         }
         for (const key of removableKeys) {
           if (backupByKey.has(key)) continue;
           attempted.push(key);
           if (!await adapter.remove(key)) throw new Error(`portable_backup_remove_rejected:${key}`);
-          const readback = await adapter.get(key);
-          if (readback !== undefined && readback !== null && readback !== '') {
-            throw new Error(`portable_backup_remove_readback_mismatch:${key}`);
-          }
           removed.push(key);
         }
         const verified = [];
         const physicalRecords = [];
-        const readback = await adapter.readMany(scope, restoreRecords.map(record => record.key));
+        const readback = await adapter.readMany(scope, [...backupByKey.keys(), ...removed]);
         for (const record of restoreRecords) {
           const expected = decodeValue(record.value);
           const actual = readback.get(record.key);
@@ -57741,6 +57764,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (!valid) throw new Error(`portable_backup_post_restore_mismatch:${record.key}`);
           verified.push(record.key);
           physicalRecords.push({ ...record, value: encodeValue(actual) });
+        }
+        for (const key of removed) {
+          const actual = readback.get(key);
+          if (actual !== undefined && actual !== null && actual !== '') throw new Error(`portable_backup_remove_readback_mismatch:${key}`);
         }
         // Skipped records were not written; the graph check still sees the file as exported.
         await validatePluginGraph([...physicalRecords, ...skippedOutsideChat], envelope);

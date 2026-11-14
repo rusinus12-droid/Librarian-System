@@ -71,19 +71,19 @@ const worldlineSuffix = worldlineId => worldlineId === 'main' ? '' : `:worldline
 const key = {
   portableImportJournal: (_scope, importId) => `${base}:portable-import-journal:${importId}`,
   continuityState: () => `${base}:continuity-state`,
-  entityRegistry: () => `${base}:entity-registry`,
-  stateCorrections: () => `${base}:state-corrections`,
-  stateCorrectionMeta: () => `${base}:state-correction-meta`,
-  stateCorrectionCommit: () => `${base}:state-correction-commit`,
-  stateWorldlineMeta: () => `${base}:state-worldlines`,
-  stateReplayCache: () => `${base}:state-replay-cache`,
-  stateReplayErrors: () => `${base}:state-replay-errors`,
-  manualStateDisposition: (_scope, memoryId, revision) => `${base}:manual:${memoryId}:r${revision}`,
-  entityAdmission: (_scope, memoryId, revision) => `${base}:admission:${memoryId}:r${revision}`,
+  entityRegistry: () => `${base}:entity-registry:v2`,
+  stateCorrections: () => `${base}:state-corrections:v2`,
+  stateCorrectionMeta: () => `${base}:state-correction-meta:v1`,
+  stateCorrectionCommit: () => `${base}:state-correction-commit:v1`,
+  stateWorldlineMeta: () => `${base}:state-worldline-meta:v1`,
+  stateReplayCache: () => `${base}:state-replay-cache:v1`,
+  stateReplayErrors: () => `${base}:state-replay-errors:v1`,
+  manualStateDisposition: (_scope, memoryId, revision) => `${base}:manual-state-disposition:${memoryId}:r${revision}`,
+  entityAdmission: (_scope, memoryId, revision) => `${base}:entity-admission:${memoryId}:r${revision}`,
   statePipelineReceipt: (_scope, memoryId, revision, worldlineId = 'main') =>
-    `${base}:receipt:${memoryId}:r${revision}${worldlineSuffix(worldlineId)}`,
+    `${base}:state-pipeline-receipt:${memoryId}:r${revision}${worldlineSuffix(worldlineId)}`,
   stateObservation: (_scope, memoryId, revision, domain, worldlineId = 'main') =>
-    `${base}:observation:${memoryId}:r${revision}:${domain}${worldlineSuffix(worldlineId)}`
+    `${base}:state-observation:${memoryId}:r${revision}:${domain}${worldlineSuffix(worldlineId)}`
 };
 const entityAdmissionStorageKey = (scopeValue, memoryId, revision) =>
   key.entityAdmission(scopeValue, memoryId, revision);
@@ -94,22 +94,32 @@ const statePipelineReplayRefs = manifest => [
     || Number(left?.turnRange?.start || 0) - Number(right?.turnRange?.start || 0));
 
 const raw = new Map();
+const journalReads = [];
+const journalWrites = [];
 const parseStoredJson = (value, storageKey = '', fallback = null) => {
   try { return typeof value === 'string' ? JSON.parse(value) : clone(value); }
   catch (error) { if (fallback !== null) return clone(fallback); throw new Error(`invalid_json:${storageKey}`); }
 };
 const storage = {
   async getJson(storageKey, fallback = null) {
+    if (storageKey.includes(':portable-import-journal:')) journalReads.push(storageKey);
     return raw.has(storageKey) ? parseStoredJson(raw.get(storageKey), storageKey, fallback) : clone(fallback);
   },
   async getStoredJson(storageKey, fallback = null) {
     return raw.has(storageKey) ? parseStoredJson(raw.get(storageKey), storageKey, fallback) : clone(fallback);
   },
-  async setJson(storageKey, value) { raw.set(storageKey, JSON.stringify(value)); return true; },
+  async setJson(storageKey, value) {
+    if (storageKey.includes(':portable-import-journal:')) journalWrites.push(storageKey);
+    raw.set(storageKey, JSON.stringify(value));
+    return true;
+  },
   async remove(storageKey) { raw.delete(storageKey); return true; },
-  async keys() { return [...raw.keys()]; }
+  async keys(prefix = '') { return [...raw.keys()].filter(storageKey => storageKey.startsWith(prefix)); }
 };
-const LibraProviderBridge = { storage: { async getItem(storageKey) { return raw.has(storageKey) ? raw.get(storageKey) : null; } } };
+const LibraProviderBridge = { storage: {
+  async getItem(storageKey) { return raw.has(storageKey) ? raw.get(storageKey) : null; },
+  removeItem: storage.remove
+} };
 const fencedMemoryStorageSet = async (storageKey, serialized) => { raw.set(storageKey, serialized); return true; };
 const clearPortableVectorCacheForStoredValue = async () => {};
 
@@ -123,7 +133,7 @@ const context = {
   LIBRA_SHARED_ARCHIVE_SCHEMA: 'unused', MEMORY_SCHEMA: 'unused', EMBEDDING_PROJECTION_SCHEMA: 'unused'
 };
 vm.createContext(context);
-vm.runInContext(`${rollbackRuntimeSource}\nthis.api = { createPortableWriteRollback, capturePortableStateDerivedRollback };`,
+vm.runInContext(`${rollbackRuntimeSource}\nthis.api = { createPortableWriteRollback, capturePortableStateDerivedRollback, recoverInterruptedPortableImports };`,
   context, { filename: 'libra-portable-multiverse-derived-rollback-p1.js', timeout: 5000 });
 
 (async () => {
@@ -177,8 +187,12 @@ vm.runInContext(`${rollbackRuntimeSource}\nthis.api = { createPortableWriteRollb
   await context.api.capturePortableStateDerivedRollback({ rollback, scope, manifest });
 
   const journalKey = key.portableImportJournal(scope, 'import-p1');
-  const journal = await storage.getJson(journalKey, null);
-  const captured = new Set(journal.entries.map(entry => entry.key));
+  assert.deepEqual(journalReads, [], 'the capture path does not read back the journal or its entries');
+  assert.equal(journalWrites.filter(storageKey => storageKey === journalKey).length, 1,
+    'each capture appends one entry without rewriting the journal');
+  const entryKeys = [...raw.keys()].filter(storageKey => storageKey.startsWith(`${journalKey}:entry:`));
+  const captured = new Set(entryKeys.map(storageKey => JSON.parse(raw.get(storageKey)).snapshot.key));
+  assert.equal(entryKeys.length, expectedKeys.length, 'one journal row per captured key');
   assert.equal(captured.size, expectedKeys.length, 'rollback journal must capture every expected key exactly once');
   for (const storageKey of expectedKeys) assert.ok(captured.has(storageKey), `rollback key missing: ${storageKey}`);
   for (const worldlineId of ['main', 'branch-child']) {
@@ -208,6 +222,17 @@ vm.runInContext(`${rollbackRuntimeSource}\nthis.api = { createPortableWriteRollb
     else assert.equal(raw.get(storageKey), original, `exact raw rollback mismatch: ${storageKey}`);
   }
   assert.equal(raw.has(journalKey), false, 'a completely verified rollback must clean its journal');
+  assert.ok(entryKeys.every(storageKey => !raw.has(storageKey)), 'rollback cleans the split entries');
+
+  const interrupted = await context.api.createPortableWriteRollback({
+    scope, importId: 'interrupted', mode: 'reconstruct_native_copy'
+  });
+  await context.api.capturePortableStateDerivedRollback({ rollback: interrupted, scope, manifest });
+  for (const storageKey of expectedKeys) await storage.setJson(storageKey, { storageKey });
+  const recovered = await context.api.recoverInterruptedPortableImports(scope, 'interrupted');
+  assert.equal(recovered.recovered, 1, JSON.stringify(recovered));
+  for (const [storageKey, original] of originalRaw) assert.equal(raw.get(storageKey) ?? null, original);
+  assert.ok([...raw.keys()].every(storageKey => !storageKey.startsWith(interrupted.journalKey)));
 
   process.stdout.write('libra_portable_multiverse_derived_rollback_p1_test: PASS\n');
 })().catch(error => {

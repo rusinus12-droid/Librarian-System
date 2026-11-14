@@ -41477,12 +41477,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!existingValid) {
       if (typeof options?.beforeWrite === 'function') await options.beforeWrite(storageKey);
       const saved = await RisuCompat.setStorageItem(storageKey, serialized);
-      const readback = saved ? await RisuCompat.getStorageItem(storageKey, null) : null;
-      const verifiedReadback = saved ? await decodeHayakuArchiveStorage(storageKey, readback) : { parsed: null };
-      if (!saved
-        || !objectish(verifiedReadback.parsed)
-        || compact(verifiedReadback.parsed.archiveId || '', 128) !== archiveId
-        || stableHash64(JSON.stringify(verifiedReadback.parsed)) !== encodedArchive.rawHash) {
+      const readback = saved && options.deferReadback !== true
+        ? await decodeHayakuArchiveStorage(storageKey, await RisuCompat.getStorageItem(storageKey, null)) : null;
+      if (!saved || (readback && (!objectish(readback.parsed)
+        || compact(readback.parsed.archiveId || '', 128) !== archiveId
+        || stableHash64(JSON.stringify(readback.parsed)) !== encodedArchive.rawHash))) {
         const error = new Error('hayaku_shared_archive_write_failed');
         error.code = 'HAYAKU_SHARED_ARCHIVE_WRITE_FAILED';
         throw error;
@@ -41491,8 +41490,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const metaSerialized = JSON.stringify(meta);
     if (typeof options?.beforeWrite === 'function') await options.beforeWrite(metaKey);
     const metaSaved = await RisuCompat.setStorageItem(metaKey, metaSerialized);
-    const metaReadback = metaSaved ? await RisuCompat.getStorageItem(metaKey, null) : null;
-    if (!metaSaved || typeof metaReadback !== 'string' || stableHash64(metaReadback) !== stableHash64(metaSerialized)) {
+    const metaReadback = metaSaved && options.deferReadback !== true ? await RisuCompat.getStorageItem(metaKey, null) : null;
+    if (!metaSaved || (options.deferReadback !== true
+      && (typeof metaReadback !== 'string' || stableHash64(metaReadback) !== stableHash64(metaSerialized)))) {
       const error = new Error('hayaku_shared_archive_meta_write_failed');
       error.code = 'HAYAKU_SHARED_ARCHIVE_META_WRITE_FAILED';
       throw error;
@@ -41512,7 +41512,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       updatedAt: archivedAt,
       parentRef: existingRef ? hayakuArchiveRefPointer(existingRef) : null
     };
-    return { archiveRef, archive, records: prepared, recordCount: memberIds.length, memberIds, changed: true, deltaRecords: prepared.length };
+    return { archiveRef, archive, records: prepared, recordCount: memberIds.length, memberIds, changed: true, deltaRecords: prepared.length,
+      ...(options.deferReadback === true ? {
+        expectedStorage: new Map([[storageKey, existingValid ? existingRaw : serialized], [metaKey, metaSerialized]])
+      } : {}) };
   };
 
   const normalizeStorageLedger = (value, scope) => {
@@ -44379,6 +44382,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }catch(error){return {durable:false,saved:false,storageState:'rejected',reason:compact(error?.message||error,180),ledger:next,
         rawMigrationWrites:referenceContext?.writes||0,rawMigrationWriteChars:referenceContext?.writeChars||0};}
     }
+    options.validatePreparedLedger?.(next);
     const serialized = JSON.stringify(physical);
     const totalPacketChars = next.records.reduce((sum, record) => sum + record.raw.length, 0);
     const protectedRetentionTargetExceeded = next.records.length > STORAGE_LEDGER_MAX_RECORDS
@@ -65328,17 +65332,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       return incoming;
     };
-    const containsValue = (actual, expected) => {
-      if (Array.isArray(expected)) {
-        if (!Array.isArray(actual)) return false;
-        return expected.every(item => actual.some(candidate => equalValues(candidate, item)));
-      }
-      if (expected && typeof expected === 'object') {
-        if (!actual || typeof actual !== 'object') return false;
-        return Object.entries(expected).every(([key, value]) => key in actual && containsValue(actual[key], value));
-      }
-      return equalValues(actual, expected);
-    };
     const exactScopeCompatible = (current, source) => {
       const currentScopeKey = textValue(current?.scopeKey || current?.scopeId);
       const sourceScopeKey = textValue(source?.scopeKey || source?.scopeId);
@@ -65849,16 +65842,28 @@ function mountMemorySuiteReanalysisReview(container,config) {
       importedAt: Date.now(),
       ...extra
     });
+    const verifyPortableArchive = async (archiveRef, expectedStorage) => {
+      const read = async key => {
+        const value = await RisuCompat.getStorageItem(key, null);
+        if (expectedStorage?.has(key) && !equalValues(value, expectedStorage.get(key))) {
+          throw new Error(`portable_import_archive_readback_mismatch:${key}`);
+        }
+        return value;
+      };
+      if (expectedStorage?.has(archiveRef.metaKey)) await read(archiveRef.metaKey);
+      return await readHayakuSharedArchive(archiveRef, { fresh: true, read });
+    };
     const executePortableMigrationUnsafe = async (envelope, preparedValue = null, transaction = null) => {
       const prepared = preparedValue || await preparePortableImport(envelope, Hayaku_PORTABLE_IMPORT_MODES.MIGRATION);
       const archive = await ensureHayakuSharedArchive(prepared.ledger, prepared.sourceScopeKey, {
-        beforeWrite: transaction?.captureKey
+        beforeWrite: transaction?.captureKey, deferReadback: true
       });
       if (!archive?.archiveRef || Number(archive.recordCount || 0) < 1) throw new Error('portable_migration_archive_empty');
       const receipt = portableImportReceipt(prepared, envelope, {
         archivedRecords: Number(archive.recordCount || 0),
-        verified: false,
-        durable: false
+        archiveId: textValue(archive.archiveRef?.archiveId),
+        verified: true,
+        durable: true
       });
       const nextLedger = {
         ...emptyStorageLedger(prepared.targetScope),
@@ -65872,26 +65877,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         portableImport: receipt,
         records: []
       };
-      const commit = await writeStorageLedgerDirect(prepared.targetScope, nextLedger, 'portable_chat_migration');
-      if (commit?.durable !== true) throw new Error(commit?.reason || 'portable_migration_target_commit_failed');
-      const durable = await loadStorageLedger(prepared.targetScope, { hydrateArchive: true });
-      if (durable?.enabled !== true
-        || durable?.archiveVerified !== true
-        || Number(durable?.archiveRecords || 0) !== Number(archive.recordCount || 0)) {
-        throw new Error(durable?.archiveReason || 'portable_migration_archive_readback_failed');
+      const durable = await verifyPortableArchive(nextLedger.archiveRef, archive.expectedStorage);
+      if (durable?.verified !== true || durable.records.length !== Number(archive.recordCount || 0)) {
+        throw new Error(durable?.reason || 'portable_migration_archive_readback_failed');
       }
-      const finalReceipt = portableImportReceipt(prepared, envelope, {
-        archivedRecords: Number(archive.recordCount || 0),
-        archiveId: textValue(archive.archiveRef?.archiveId),
-        verified: true,
-        durable: true
-      });
-      const proofCommit = await writeStorageLedgerDirect(prepared.targetScope, {
-        ...durable,
-        records: ensureArray(durable.records).filter(record => record?.archiveReferenceOnly !== true),
-        portableImport: finalReceipt
-      }, 'portable_chat_migration_proof');
-      if (proofCommit?.durable !== true) throw new Error('portable_migration_receipt_not_durable');
+      const commit = await writeStorageLedgerDirect(prepared.targetScope, nextLedger, 'portable_chat_migration_proof');
+      if (commit?.durable !== true) throw new Error(commit?.reason || 'portable_migration_receipt_not_durable');
       await assertPortableTargetTranscriptUnchanged(prepared);
       invalidateExternalLedgerCaches(prepared.targetScope.key);
       return {
@@ -65901,7 +65892,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         matched: 0,
         verified: true,
         durable: true,
-        receipt: finalReceipt
+        receipt
       };
     };
     const executePortableCopyRecoveryUnsafe = async (envelope, preparedValue = null, transaction = null) => {
@@ -65914,6 +65905,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       } : {};
       let archiveRef = normalizeHayakuArchiveRef(prepared.targetLedger?.archiveRef);
       let archivedRecords = 0;
+      let expectedArchiveStorage;
       if (prepared.historicalRecords.length) {
         const archiveSource = {
           ...prepared.ledger,
@@ -65922,10 +65914,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
           slotHeads: []
         };
         const archive = await ensureHayakuSharedArchive(archiveSource, prepared.sourceScopeKey, {
-          beforeWrite: transaction?.captureKey
+          beforeWrite: transaction?.captureKey, deferReadback: true
         });
         archiveRef = normalizeHayakuArchiveRef({ ...archive.archiveRef, localOverlapCount: 0 });
         archivedRecords = Number(archive.recordCount || 0);
+        expectedArchiveStorage = archive.expectedStorage;
       }
       const cloned = [];
       for (const [index, record] of prepared.matchedRecords.entries()) {
@@ -65969,8 +65962,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         archivedRecords,
         ambiguousPairs: prepared.ambiguousPairs,
         unmatchedPairs: prepared.unmatchedPairs,
-        verified: false,
-        durable: false
+        verified: true,
+        durable: true,
+        ...updatedBotDetails
       });
       workingLedger = {
         ...heads.ledger,
@@ -65978,37 +65972,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
         worldline: targetWorldline,
         portableImport: receipt
       };
-      const commit = await writeStorageLedgerDirect(prepared.targetScope, workingLedger, 'portable_chat_copy_recovery');
-      if (commit?.durable !== true) throw new Error(commit?.reason || 'portable_copy_target_commit_failed');
-      const durable = await loadStorageLedger(prepared.targetScope, { hydrateArchive: Boolean(archiveRef) });
-      const durableRecords = ensureArray(durable?.records);
-      const verifiedImported = cloned.filter(record => durableRecords.some(candidate => (
-        candidate?.hash === record.hash
-        && candidate?.packetType === record.packetType
-        && Number(candidate?.targetPairIndex || 0) === Number(record.targetPairIndex || 0)
-        && candidate?.recordState === 'active'
-        && Boolean(candidate?.ownerTurnNodeId)
-      ))).length;
-      if (durable?.enabled !== true || verifiedImported !== cloned.length
-        || (archiveRef && durable?.archiveVerified !== true)) {
+      if (archiveRef && !(await verifyPortableArchive(archiveRef, expectedArchiveStorage)).verified) {
         throw new Error('portable_copy_readback_verification_failed');
       }
-      const finalReceipt = portableImportReceipt(prepared, envelope, {
-        matchedPairs: prepared.matchedPairs,
-        importedRecords: cloned.length,
-        archivedRecords,
-        ambiguousPairs: prepared.ambiguousPairs,
-        unmatchedPairs: prepared.unmatchedPairs,
-        verified: true,
-        durable: true,
-        ...updatedBotDetails
+      const identity = record => JSON.stringify([record.hash, record.packetType, Number(record.targetPairIndex || 0)]);
+      const commit = await writeStorageLedgerDirect(prepared.targetScope, workingLedger, 'portable_chat_copy_recovery_proof', {
+        validatePreparedLedger(ledger) {
+          const activeIdentities = new Set(ledger.records
+            .filter(record => record.recordState === 'active' && record.ownerTurnNodeId).map(identity));
+          if (!cloned.every(record => activeIdentities.has(identity(record)))) throw new Error('portable_copy_record_verification_failed');
+        }
       });
-      const proofCommit = await writeStorageLedgerDirect(prepared.targetScope, {
-        ...durable,
-        records: durableRecords.filter(record => record?.archiveReferenceOnly !== true),
-        portableImport: finalReceipt
-      }, 'portable_chat_copy_recovery_proof');
-      if (proofCommit?.durable !== true) throw new Error('portable_copy_receipt_not_durable');
+      if (commit?.durable !== true) throw new Error(commit?.reason || 'portable_copy_receipt_not_durable');
       await assertPortableTargetTranscriptUnchanged(prepared);
       invalidateExternalLedgerCaches(prepared.targetScope.key);
       return {
@@ -66021,7 +65996,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unmatchedPairs: prepared.unmatchedPairs,
         verified: true,
         durable: true,
-        receipt: finalReceipt,
+        receipt,
         ...updatedBotDetails
       };
     };
@@ -66166,6 +66141,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       };
       const written = [];
       const removed = [];
+      const mergedValues = new Map();
       const rollbackErrors = [];
       try {
         const ordered = [...backupRecords].sort((left, right) => recordRank(left) - recordRank(right) || left.key.localeCompare(right.key));
@@ -66183,45 +66159,40 @@ function mountMemorySuiteReanalysisReview(container,config) {
           let value = incoming;
           if (record.mode === 'merge') {
             value = deepMerge(original.value, incoming);
+            mergedValues.set(record.key, value);
           }
           if (!await adapter.set(record.key, value)) throw new Error(`portable_backup_write_rejected:${record.key}`);
-          const readback = await adapter.get(record.key);
-          const valid = record.mode === 'merge'
-            ? containsValue(readback, incoming)
-            : equalValues(readback, value);
-          if (!valid) throw new Error(`portable_backup_write_readback_mismatch:${record.key}`);
           written.push(record.key);
         }
         for (const key of currentScopeOwnedKeys) {
           if (backupByKey.has(key)) continue;
           await captureKey(key);
           if (!await adapter.remove(key)) throw new Error(`portable_backup_remove_rejected:${key}`);
-          const readback = await adapter.get(key);
-          if (readback !== undefined && readback !== null && readback !== '') {
-            throw new Error(`portable_backup_remove_readback_mismatch:${key}`);
-          }
           removed.push(key);
         }
         const verified = [];
-        const readback = await adapter.readMany(scope, backupRecords.map(record => record.key));
+        const readback = await adapter.readMany(scope, [...backupByKey.keys(), ...removed]);
         for (const record of backupRecords) {
-          const expected = decodeValue(record.value, formatVersion);
+          const expected = mergedValues.has(record.key) ? mergedValues.get(record.key) : decodeValue(record.value, formatVersion);
           const actual = readback.get(record.key);
-          const valid = record.mode === 'merge'
-            ? containsValue(actual, expected)
-            : equalValues(actual, expected);
-          if (!valid) throw new Error(`portable_backup_post_restore_mismatch:${record.key}`);
+          if (!equalValues(actual, expected)) throw new Error(`portable_backup_post_restore_mismatch:${record.key}`);
           verified.push(record.key);
+        }
+        for (const key of removed) {
+          const actual = readback.get(key);
+          if (actual !== undefined && actual !== null && actual !== '') throw new Error(`portable_backup_remove_readback_mismatch:${key}`);
         }
         const canonicalLedgerKey = `${STORAGE_LEDGER_KEY_PREFIX}${textValue(envelope.source?.scopeKey || envelope.source?.scopeId)}`;
         if (backupByKey.has(canonicalLedgerKey)) {
-          const rawLedger = await adapter.get(canonicalLedgerKey);
+          const rawLedger = readback.get(canonicalLedgerKey);
           const parsedLedger = typeof rawLedger === 'string' ? safeJsonParse(rawLedger, null) : rawLedger;
           const archiveRef = normalizeHayakuArchiveRef(parsedLedger?.archiveRef);
           if (parsedLedger?.archiveRef && !archiveRef) throw new Error('portable_backup_archive_post_restore_ref_invalid');
           if (archiveRef) {
             invalidatePortableArchiveCaches();
-            const physicalArchive = await readHayakuSharedArchive(archiveRef);
+            const physicalArchive = await readHayakuSharedArchive(archiveRef, {
+              fresh: true, read: key => readback.has(key) ? readback.get(key) : adapter.get(key)
+            });
             if (physicalArchive?.verified !== true) {
               throw new Error(`portable_backup_archive_post_restore_verification_failed:${physicalArchive?.reason || 'unknown'}`);
             }
