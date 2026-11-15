@@ -43711,6 +43711,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
             ? (asBool(importedLegacyTwoCall, true) ? 'heavyweight' : 'lightweight')
             : current.multiPipelineMode || 'lightweight'
       ),
+      draftBudgetPreset: normalizeDraftBudgetPreset(pick('draft_budget_preset', 'draftBudgetPreset', current.draftBudgetPreset)),
       gradationMode: pick('gradation_mode', 'gradationMode', current.gradationMode || 'full_draft'),
       outputMode: normalizeChoice(pick('output_mode', 'outputMode', current.outputMode || 'draft_guided'), OUTPUT_MODES, 'draft_guided'),
       internalDraftLanguage: normalizeInternalDraftLanguage(
