@@ -41732,19 +41732,25 @@ function createLibraReadonlySourceContext(owner) {
       const scope = cleanReceiptRecoveryScope(scopeValue || (await resolveContext(true)).scope);
       let reason='';
       try { await loadReceiptRecoveryJobs(scope); } catch (_) { reason='journal_read_unavailable'; }
-       const microJobs=[],receiptStages=[];
+       let microJobs=[],receiptStages=[];
        try {
          let microEnabled=true,microSettingsError=false;
          try {microEnabled=(await loadMemorySettings()).enabled!==false;}
          catch (_) {microSettingsError=true;}
-         const context=await resolveContext(true);
-        if(context.scope.scopeKey===scope.scopeKey){
+         // One host read serves the whole scan. Reading the host again for every turn copied the
+         // entire character once or twice per turn: a 150-turn chat cost about 300 full copies
+         // per status poll, repeated while the home screen stayed open (Android OOM reports).
+         // Each turn still passes the same binding checks against this context; one closing
+         // read after the scan catches a chat that changed meanwhile.
+         const scan=async context=>{
+           microJobs=[];receiptStages=[];
+           if(context.scope.scopeKey!==scope.scopeKey)return null;
            const pairs=buildPairs(context.chat,scope.scopeKey);
            for(const pair of pairs){
               const identity=receiptRecoveryIdentity(context,pair);
               const jobId='receipt_'+digest(identity),job=state.receiptRecoveryJobs.get(jobId);
               let active;
-              try {active=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn);}
+              try {active=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn,{context,pairs});}
               catch (_) {active={status:'unavailable',reason:'receipt_status_read_unavailable'};}
               receiptStages.push({turn:pair.turn,scopeKey:scope.scopeKey,jobId,
                 identity,receiptRef:active.status==='verified'?active.receiptKey:null,
@@ -41765,6 +41771,14 @@ function createLibraReadonlySourceContext(owner) {
                     :{...stage,scopeKey:scope.scopeKey,status:'OFF',reason:'memory_disabled'});
              }
           }
+           return sourceDigest(pairs);
+         };
+         const scanned=await scan(await resolveContext(true));
+         if(scanned!==null){
+           // The chat can change during the storage reads above. Scan once more from the newer
+           // chat rather than report statuses that mix two revisions.
+           const closing=await resolveContext(true);
+           if(closing.scope.scopeKey!==scope.scopeKey||sourceDigest(buildPairs(closing.chat,scope.scopeKey))!==scanned)await scan(closing);
          }
        } catch (_) { if(!reason)reason='micro_status_unavailable'; }
        const covered=new Set(receiptStages.map(row=>Number(row.turn)));
