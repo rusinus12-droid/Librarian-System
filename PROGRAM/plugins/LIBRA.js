@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.0.5
+//@display-name LIBRA v3.0.6
 //@api 3.0
-//@version 3.0.5
+//@version 3.0.6
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.5';
+  const PLUGIN_VERSION = '3.0.6';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';

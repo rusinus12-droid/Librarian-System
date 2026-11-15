@@ -34,6 +34,37 @@ test('the panel shows each model and what it needs, and choosing a scale never t
     assert.equal(JSON.parse(f.store.get(PROVIDERS)).small?.max_tokens ?? JSON.parse(f.store.get(PROVIDERS)).presets?.small?.max_tokens, 4096);
   } finally { await f.close(); }
 });
+test('초안 예산 프리셋 is saved and follows the current pipeline mode', async () => {
+  const f = await gradia();
+  try {
+    await preset(f, 'deepseek', {
+      provider: 'ollama', url: 'http://127.0.0.1:11434', model: 'deepseek-v4.1-flash:1017-cloud', max_tokens: 4096
+    });
+    await f.plugin.saveRuntimeSettings({ ...await f.plugin.getRuntimeSettings(), default_preset: 'deepseek', multi_pipeline_mode: 'lightweight' });
+    await open(f);
+    const control = () => f.doc.querySelector('[data-work-scale-field="draftBudgetPreset"]');
+    const pick = async id => {
+      const select = control();
+      select.value = id;
+      select.dispatchEvent(new f.doc.defaultView.Event('change', { bubbles: true }));
+      await wait(() => control().value === id && f.plugin.debugGuiStateInfo().dirty, 'budget selection');
+    };
+    await pick('minimum');
+    assert.match(f.doc.querySelector('[data-work-scale-stage="shadow_act"]').textContent, /맥스 12,288 .*low 추론/);
+    await save(f);
+    assert.equal((await f.plugin.getRuntimeSettings()).draft_budget_preset, 'minimum');
+    f.doc.querySelectorAll('#q-weight .choice')[1].click();
+    await wait(() => f.doc.querySelector('[data-work-scale-stage="shadow_act"]').textContent.includes('16,384'), 'heavyweight budget');
+    assert.equal(control().value, 'minimum');
+    assert.match(f.doc.querySelector('[data-work-scale-stage="shadow_act"]').textContent, /맥스 16,384 .*low 추론/);
+    await pick('maximum');
+    await save(f);
+    const saved = await f.plugin.getRuntimeSettings();
+    assert.equal(saved.draft_budget_preset, 'maximum');
+    assert.equal(Number(saved.target_draft_max_chars), 12000);
+    assert.equal((await f.plugin.listProviderPresets()).deepseek.max_tokens, 4096);
+  } finally { await f.close(); }
+});
 test('권장안 lists the model change, and only the second click applies it', async () => {
   const f = await gradia();
   try {

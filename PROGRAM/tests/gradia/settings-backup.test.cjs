@@ -4,24 +4,57 @@ const {JSDOM}=require('jsdom');
 const {load}=require('./host.cjs');
 const prefix='serial_gradation_agents_for_rp:';
 const wait=async fn=>{const start=Date.now();while(Date.now()-start<6000){const result=fn();if(result)return result;await new Promise(r=>setTimeout(r,10));}throw Error('GUI action did not settle');};
-async function gui(t){
+async function gui(t,provider={}){
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'}),store=new Map(),writes=[],unloads=[];
  let failPrompt=false,hidden=false,clipboard=null;
  const storage={getItem:async k=>store.get(k)??null,setItem:async(k,v)=>{writes.push(k);if(failPrompt&&k===prefix+'prompt_overrides:v2'){failPrompt=false;throw Error('SIMULATED_SETTINGS_WRITE_FAILURE');}store.set(k,v);},removeItem:async k=>{writes.push(k);store.delete(k);}};
  const host=await load({api:{pluginStorage:storage,onUnload:async fn=>unloads.push(fn),hideContainer:async()=>{hidden=true;},showContainer:async()=>{hidden=false;}},testGlobals:{window:dom.window,Element:dom.window.Element,navigator:{clipboard:{writeText:async value=>{clipboard=value;}}},document:dom.window.document,getComputedStyle:dom.window.getComputedStyle.bind(dom.window),MutationObserver:dom.window.MutationObserver,requestAnimationFrame:dom.window.requestAnimationFrame.bind(dom.window),cancelAnimationFrame:dom.window.cancelAnimationFrame.bind(dom.window)}});
  t.after(async()=>{await host.plugin.closeSettingsGui();for(const fn of unloads)await fn();dom.window.close();});
- await host.plugin.saveProviderPreset('default',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',model:'test-offline',key:'CREDENTIAL_SENTINEL',extra_headers_json:'{"Authorization":"Bearer HEADER_SECRET","HTTP-Referer":"https://example.test"}'});
+ await host.plugin.saveProviderPreset('default',{provider:'openai',url:'https://api.openai.com/v1/chat/completions',model:'test-offline',key:'CREDENTIAL_SENTINEL',extra_headers_json:'{"Authorization":"Bearer HEADER_SECRET","HTTP-Referer":"https://example.test"}',...provider});
  await host.plugin.saveProviderPreset('my-secret-model',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',model:'named-provider',key:'NAMED_SECRET_SENTINEL'});
  await host.plugin.savePromptOverrides({before:{shadow_act:{mode:'replace',customPrompt:'Plain prompt: preserve the word token.\nKeep "quoted text".',extraPrompt:''}}});
  await host.plugin.openSettingsGui();await host.plugin.debugNavigateGui('transfer','flow');
  const doc=dom.window.document;
  const button=text=>{const found=[...doc.querySelectorAll('button')].find(b=>b.textContent.trim()===text);assert.ok(found,text);return found;};
  const input=payload=>{const box=doc.querySelector('#mockup-import-text');assert.ok(box);box.value=typeof payload==='string'?payload:JSON.stringify(payload);box.dispatchEvent(new dom.window.Event('input',{bubbles:true}));};
- const exportAll=async()=>{clipboard=null;doc.querySelector('[data-export-scope="all"]').click();doc.querySelector('[data-manage-action="export-copy"]').click();return await wait(()=>clipboard&&JSON.parse(clipboard));};
+ const exportPayload=async(scope='all')=>{clipboard=null;doc.querySelector(`[data-export-scope="${scope}"]`).click();doc.querySelector('[data-manage-action="export-copy"]').click();return await wait(()=>clipboard&&JSON.parse(clipboard));};
+ const exportAll=()=>exportPayload('all');
  const importPayload=async()=>{doc.querySelector('[data-manage-action="import-replace"]').click();const confirm=doc.querySelector('.overlay.is-open .dialog button.btn--primary');if(confirm){confirm.click();await new Promise(r=>setTimeout(r,80));}};
 
- return {...host,store,writes,doc,button,input,exportAll,importPayload,isHidden:()=>hidden,failPromptOnce:()=>{failPrompt=true;}};
+ return {...host,store,writes,doc,button,input,exportAll,exportPayload,importPayload,isHidden:()=>hidden,failPromptOnce:()=>{failPrompt=true;}};
 }
+for(const scope of ['all','flow'])test(`${scope} backup restores draft budget selection, output cap and length after saving`,async t=>{
+ const h=await gui(t,{provider:'ollama',url:'http://127.0.0.1:11434',model:'deepseek-v4.1-flash:1017-cloud',max_tokens:4096,reasoning_preset:'off'});
+ const save=async()=>{await wait(()=>!h.doc.querySelector('#savebar [data-save]').disabled);h.doc.querySelector('#savebar [data-save]').click();await wait(()=>!h.plugin.debugGuiStateInfo().dirty);};
+ const selectBudget=async id=>{
+  await h.plugin.debugNavigateGui('quick','flow');
+  const control=h.doc.querySelector('[data-work-scale-field="draftBudgetPreset"]');assert.ok(control);
+  control.value=id;control.dispatchEvent(new h.doc.defaultView.Event('change',{bubbles:true}));
+  await save();await h.plugin.debugNavigateGui('transfer','flow');
+ };
+ await selectBudget('maximum');
+ const payload=await h.exportPayload(scope);
+ assert.equal(payload.runtime.draftBudgetPreset,'maximum');
+ let manualPayload;
+ for(const previous of ['manual','minimum']){
+  await selectBudget(previous);
+  if(previous==='manual')manualPayload=await h.exportPayload(scope);
+  h.input(payload);await h.importPayload();await save();
+  const stored=await h.plugin.getRuntimeSettings(),restored=await h.exportPayload(scope);
+  assert.equal(stored.draft_budget_preset,'maximum',`replaces previous ${previous}`);
+  assert.equal(restored.runtime.draftBudgetPreset,'maximum');
+  assert.equal(Number(stored.target_draft_min_chars),8000);assert.equal(Number(stored.target_draft_max_chars),12000);
+  assert.equal(Number(stored.max_previous_stage_chars),30000);assert.equal(Number(stored.max_injection_chars),30000);
+  const stage=h.plugin.debugInspectWorkScale().stages.find(stage=>stage.id==='shadow_act');
+  assert.equal(stage.maxTokens,24576);assert.equal(stage.draftBudgetApplied,true);
+ }
+ h.input(manualPayload);await h.importPayload();await save();
+ assert.equal((await h.plugin.getRuntimeSettings()).draft_budget_preset,'manual');
+ const stage=h.plugin.debugInspectWorkScale().stages.find(stage=>stage.id==='shadow_act');
+ assert.equal(stage.maxTokens,4096);assert.equal(stage.draftBudgetApplied,false);
+ assert.equal((await h.plugin.listProviderPresets()).default.max_tokens,4096);
+ assert.equal(h.getCalls(),0);
+});
 test('safe full settings backup includes plain custom prompts but no credential fields or secret headers',async t=>{
  const h=await gui(t),payload=await h.exportAll(),text=JSON.stringify(payload);
  assert.equal(payload.includesSecrets,false);assert.ok(payload.promptOverrides.before.shadow_act.customPrompt.includes('word token'));

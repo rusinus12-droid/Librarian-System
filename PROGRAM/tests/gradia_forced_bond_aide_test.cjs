@@ -137,19 +137,22 @@ test('cards are per chat and reach every stage with mode rules, accuracy rules a
   assert.match(otherBond, /- auto-1: the user persona → 민아 \(mutual\) · tones: read from canon, lore and the scene \(auto bond, no user card\)/);
 });
 
-test('with no card, 억결 binds the scene people itself, requires a beat every turn, and Plot keeps the beat', async t => {
+test('with no card, 억결 binds scene people and asks for a beat only when the scene gives it an opening', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await configure(f);
   await runTurn(f, '준호를 지나쳐 간다.');
   const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
   assert.match(bond, /- auto-1: the user persona → 민아/, 'the character card person is bound first');
-  assert.match(bond, /REQUIRED EVERY TURN: the response shows at least one visible beat that forms or moves the main bond/);
+  assert.match(bond, /When there is a natural opening this turn, show one visible beat that forms or moves the main bond/);
+  assert.match(bond, /If the user closes or explicitly excludes a relationship thread, keep it out of the scene/);
   assert.match(bond, /Auto bonds: no user card exists, so read each bond’s tone/);
-  assert.match(bond, /if there is none, insert one \(edits must not be empty\)/);
+  assert.match(bond, /If the scene gives the main bond a natural opening and its beat is missing, add one/);
+  assert.match(bond, /do not add a beat or recruit a substitute bond/);
+  assert.match(bond, /return empty bond_readings and bond_proposals/);
   assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_character')), /\[FORCED BOND/, 'checkers get the bond block for auto bonds');
-  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /Bond beats placed for the main bond are intended: they are not optional cameos or arbitrary escalation/);
-  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /write at least one visible beat of it/, 'SHADOW plans the beat');
+  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /Keep earned bond beats that respect the user’s focus, player agency and causality/);
+  assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /Write one visible beat early or mid-scene/, 'SHADOW plans the beat');
 
   const off = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(off, '민아는 문 앞에 섰다.');

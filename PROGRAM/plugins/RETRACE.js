@@ -1,7 +1,7 @@
 //@name flashback_hayaku_bridge
 //@display-name RE:TRACE
 //@api 3.0
-//@version 2.0.1
+//@version 2.0.2
 /* Retired standalone owner viewers, packet deletion/navigation, and HAYAKU ledger-backup APIs are removed. Legacy capsule reads support handoff only; existing stored artifacts remain available to guarded server management. */
 //@allowed-ipc libra
 //@allowed-ipc flashback_memory
@@ -7730,7 +7730,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 };
 
   const PLUGIN_NAME = 'RE:TRACE';
-const PLUGIN_VERSION = '2.0.1';
+const PLUGIN_VERSION = '2.0.2';
   const RETRACE_SETTING_UI_ID = 'retrace-main-setting';
   const RETRACE_HAMBURGER_UI_ID = 'retrace-main-hamburger';
   const HANDOFF_SCHEMA = 'memory-session-bridge-v2';

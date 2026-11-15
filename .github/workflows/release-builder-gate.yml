@@ -110,6 +110,7 @@ jobs:
           node --test --test-concurrency=2 \
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
+            PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
             PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
             PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
