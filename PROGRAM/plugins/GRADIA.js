@@ -1195,6 +1195,15 @@
       domainQuery: 'plot event goal conflict tension promise foreshadowing unresolved consequence plan objective mystery cause payoff 사건 전개 목표 갈등 긴장 약속 복선 미해결 결과 계획 목적 수수께끼 원인 보상',
       weights: Object.freeze({ current: 0.38, terminal: 0.18, identity: 0.08, domain: 0.22, existing: 0.06, route: 0.05, source: 0.02, priority: 0.01 })
     }),
+    aide_world_dynamics: Object.freeze({
+      label: 'World Dynamics AIDE',
+      topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
+      absoluteFloor: 0.095,
+      relativeFloor: 0.28,
+      identityBypass: 0.84,
+      domainQuery: 'offscreen faction organization pursuit order deadline schedule rumor message consequence delay supply patrol investigation institution process elapsed time 장면 밖 세력 조직 추격 명령 기한 일정 소문 전갈 여파 지연 보급 순찰 수사 절차 경과 시간 움직임',
+      weights: Object.freeze({ current: 0.32, terminal: 0.12, identity: 0.10, domain: 0.28, existing: 0.07, route: 0.05, source: 0.05, priority: 0.01 })
+    }),
     aide_body_state: Object.freeze({
       label: 'Body State AIDE',
       topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
@@ -1221,7 +1230,7 @@
   const SKILL_PRIORITY_MIN = 0;
   const SKILL_PRIORITY_MAX = 200;
   const DEFAULT_CUSTOM_SKILL_PRIORITY = 45;
-  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_body_state', 'aide_forced_bond']);
+  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_body_state', 'aide_forced_bond', 'aide_world_dynamics']);
   const MANUAL_SKILL_MAX_CHARS = 24000;
   const MANUAL_SKILL_INPUT_SHARE = 0.20;
   const MANUAL_SKILL_MAX_PER_STAGE = 3;
@@ -1756,7 +1765,8 @@
     Object.freeze({ id: 'aide_world', label: '세계관 AIDE', description: '장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안을 수정합니다.' }),
     Object.freeze({ id: 'aide_plot', label: '플롯 AIDE', description: '현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검하고 직전 초안을 수정합니다.' }),
     Object.freeze({ id: 'aide_body_state', label: '상태 AIDE', description: '인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 억결 AIDE보다 먼저, 플롯 AIDE 앞에서 실행됩니다.' }),
-    Object.freeze({ id: 'aide_forced_bond', label: '억결 AIDE', description: '페르소나 중심의 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 최근 감정 신호를 따라 장면에 엮고, 다른 AIDE의 관계 검증을 모아 이번 턴의 관계 판독을 정합니다. 플롯 AIDE 바로 앞에서 실행됩니다.' })
+    Object.freeze({ id: 'aide_forced_bond', label: '억결 AIDE', description: '페르소나 중심의 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 최근 감정 신호를 따라 장면에 엮고, 다른 AIDE의 관계 검증을 모아 이번 턴의 관계 판독을 정합니다. 플롯 AIDE 바로 앞에서 실행됩니다.' }),
+    Object.freeze({ id: 'aide_world_dynamics', label: '세계 동역학 AIDE', description: '이미 움직이기 시작한 장면 밖의 일(명령·추격·기한·소문·기관의 절차)이 장면이 다른 곳을 보는 동안에도 계속 진행되게 합니다. 근거가 있는 움직임만 간접 경로로 드러내며, 확장 AIDE 중 가장 먼저(상태·억결 AIDE 앞, 플롯 AIDE 앞) 실행됩니다.' })
   ]);
   
   const INPUT_ASSIST_STAGE_DEF = Object.freeze({
@@ -1973,6 +1983,15 @@
   // LIB (LIBRA lenses and State) and is read back each turn.
   // Members are wrapped in arrows because their implementations are defined further down.
   const EXTENSION_AIDE_DEFS = Object.freeze({
+    // World movement comes first: it sets the situation that bodies and bonds then react to.
+    aide_world_dynamics: Object.freeze({
+      placement: 'before_plot',
+      rank: 5,
+      isActive: settings => worldDynamicsStageActive(settings),
+      stageBlock: (stageName, recent, settings, ledger) => worldDynamicsStageBlock(stageName, recent, settings, ledger),
+      jsonProperties: (stageName, settings) => worldDynamicsJsonProperties(stageName, settings),
+      recordOutput: (ledger, stageName, parsed, settings) => recordWorldDynamicsOutput(ledger, stageName, parsed, settings)
+    }),
     // Body state comes first: relationship tension must respect what each body allows.
     aide_body_state: Object.freeze({
       placement: 'before_plot',
@@ -3953,6 +3972,7 @@ ${BIANCA_PERSONA_TEXT}`;
     aide_world: 'World AIDE: check locations, objects, injuries, time, and world-state changes against it. Repair only contradictions inside the draft.',
     aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
     aide_body_state: 'Body State AIDE: read dated health, injury, illness, cycle, and pregnancy records as evidence for each character’s current body state. Missing records stay missing.',
+    aide_world_dynamics: 'World Dynamics AIDE: read remembered orders, pursuits, deadlines, promises, and faction or institution moves as evidence of what is already in motion off-scene. A movement with no remembered cause does not exist.',
     aide_forced_bond: 'Forced Bond AIDE: read remembered history between the bond parties as evidence for this turn’s bond reading. It never licenses inventing a shared past.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
@@ -5243,7 +5263,7 @@ ${BIANCA_PERSONA_TEXT}`;
     'max_previous_stage_chars', 'max_injection_chars', 'gradation_mode', 'output_mode',
     'internal_draft_language', 'built_in_style_preset', 'injection_position', 'failure_mode',
     'stage_timeout_ms', 'provider_presets_risuai_enabled', 'default_preset',
-    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset', 'body_state_aide_preset',
+    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset', 'body_state_aide_preset', 'world_dynamics_aide_preset',
     'arc_director_enabled', 'arc_director_preset', 'arc_horizon_turns', 'arc_auto_replan', 'arc_novelty_level',
     'input_assist_preset', 'user_intent_ooc_preset', 'input_assist_mode', 'input_assist_scope',
     'input_assist_target_chars', 'input_assist_confirmation_mode', 'input_assist_lore_activation_mode',
@@ -5251,10 +5271,10 @@ ${BIANCA_PERSONA_TEXT}`;
     'lore_reranker_top_k', 'skill_router_enabled', 'skill_router_top_k',
     'skill_router_references', 'selected_module_lore_ids', 'excluded_module_lore_ids', 'excluded_character_lore_ids',
     'aide_stage_order', 'enable_shadow_act',
-    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'enable_body_state_aide', 'shadow_prompt_extra',
-    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'body_state_prompt_extra', 'shadow_prompt_mode',
-    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'body_state_prompt_mode', 'shadow_prompt_custom',
-    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'body_state_prompt_custom', 'debug_log',
+    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'enable_body_state_aide', 'enable_world_dynamics_aide', 'shadow_prompt_extra',
+    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'body_state_prompt_extra', 'world_dynamics_prompt_extra', 'shadow_prompt_mode',
+    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'body_state_prompt_mode', 'world_dynamics_prompt_mode', 'shadow_prompt_custom',
+    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'body_state_prompt_custom', 'world_dynamics_prompt_custom', 'debug_log',
     'shadow_include_risu_context', 'shadow_risu_context_max_chars',
     'enable_gui', 'quick_profile',
     'target_draft_min_chars', 'target_draft_max_chars', 'writer_enabled',
@@ -6282,7 +6302,8 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_world: stageBase('aide_world', flat.enable_world_aide ?? flat.enableWorldAide, flat.world_aide_preset ?? flat.worldAidePreset),
         aide_plot: stageBase('aide_plot', flat.enable_plot_aide ?? flat.enablePlotAide, flat.plot_aide_preset ?? flat.plotAidePreset),
         aide_forced_bond: stageBase('aide_forced_bond', flat.enable_forced_bond_aide ?? flat.enableForcedBondAide ?? false, flat.forced_bond_aide_preset ?? flat.forcedBondAidePreset),
-        aide_body_state: stageBase('aide_body_state', flat.enable_body_state_aide ?? flat.enableBodyStateAide ?? false, flat.body_state_aide_preset ?? flat.bodyStateAidePreset)
+        aide_body_state: stageBase('aide_body_state', flat.enable_body_state_aide ?? flat.enableBodyStateAide ?? false, flat.body_state_aide_preset ?? flat.bodyStateAidePreset),
+        aide_world_dynamics: stageBase('aide_world_dynamics', flat.enable_world_dynamics_aide ?? flat.enableWorldDynamicsAide ?? false, flat.world_dynamics_aide_preset ?? flat.worldDynamicsAidePreset)
       },
       prompts: {
         before: {
@@ -6291,7 +6312,8 @@ ${BIANCA_PERSONA_TEXT}`;
           aide_world: { mode: flat.world_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.world_prompt_custom || '', extraPrompt: flat.world_prompt_extra || '' },
           aide_plot: { mode: flat.plot_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.plot_prompt_custom || '', extraPrompt: flat.plot_prompt_extra || '' },
           aide_forced_bond: { mode: flat.forced_bond_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.forced_bond_prompt_custom || '', extraPrompt: flat.forced_bond_prompt_extra || '' },
-          aide_body_state: { mode: flat.body_state_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.body_state_prompt_custom || '', extraPrompt: flat.body_state_prompt_extra || '' }
+          aide_body_state: { mode: flat.body_state_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.body_state_prompt_custom || '', extraPrompt: flat.body_state_prompt_extra || '' },
+          aide_world_dynamics: { mode: flat.world_dynamics_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.world_dynamics_prompt_custom || '', extraPrompt: flat.world_dynamics_prompt_extra || '' }
         }
       }
     };
@@ -6317,7 +6339,8 @@ ${BIANCA_PERSONA_TEXT}`;
       aide_world: { enabled: 'enable_world_aide', preset: 'world_aide_preset', defaultEnabled: 'true' },
       aide_plot: { enabled: 'enable_plot_aide', preset: 'plot_aide_preset', defaultEnabled: 'true' },
       aide_forced_bond: { enabled: 'enable_forced_bond_aide', preset: 'forced_bond_aide_preset', defaultEnabled: 'false' },
-      aide_body_state: { enabled: 'enable_body_state_aide', preset: 'body_state_aide_preset', defaultEnabled: 'false' }
+      aide_body_state: { enabled: 'enable_body_state_aide', preset: 'body_state_aide_preset', defaultEnabled: 'false' },
+      aide_world_dynamics: { enabled: 'enable_world_dynamics_aide', preset: 'world_dynamics_aide_preset', defaultEnabled: 'false' }
     };
     const refs = legacy.risuEnabled
       ? defaultRisuReferencesForStage('shadow_act')
@@ -6830,7 +6853,8 @@ ${BIANCA_PERSONA_TEXT}`;
       ['aide_world', 'world_prompt_custom', 'world_prompt_extra'],
       ['aide_plot', 'plot_prompt_custom', 'plot_prompt_extra'],
       ['aide_forced_bond', 'forced_bond_prompt_custom', 'forced_bond_prompt_extra'],
-      ['aide_body_state', 'body_state_prompt_custom', 'body_state_prompt_extra']
+      ['aide_body_state', 'body_state_prompt_custom', 'body_state_prompt_extra'],
+      ['aide_world_dynamics', 'world_dynamics_prompt_custom', 'world_dynamics_prompt_extra']
     ];
     for (const [stage, customArg, extraArg] of beforePromptSpec) {
       const custom = mergeCreativeDirectionText(
@@ -6896,6 +6920,7 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_plot: compact(await slotCfg('aide_plot', 'preset', 'plot_aide_preset', ''), 120),
         aide_forced_bond: compact(await slotCfg('aide_forced_bond', 'preset', 'forced_bond_aide_preset', ''), 120),
         aide_body_state: compact(await slotCfg('aide_body_state', 'preset', 'body_state_aide_preset', ''), 120),
+        aide_world_dynamics: compact(await slotCfg('aide_world_dynamics', 'preset', 'world_dynamics_aide_preset', ''), 120),
         [WRITER_STAGE_ID]: compact(await slotCfg(WRITER_STAGE_ID, 'preset', 'writer_preset', ''), 120),
         [USER_INTENT_AIDE_STAGE_ID]: compact(
           await slotCfg(
@@ -6924,6 +6949,7 @@ ${BIANCA_PERSONA_TEXT}`;
       enablePlotAide: asBool(await slotCfg('aide_plot', 'enabled', 'enable_plot_aide', 'true'), true),
       enableForcedBondAide: asBool(await slotCfg('aide_forced_bond', 'enabled', 'enable_forced_bond_aide', 'false'), false),
       enableBodyStateAide: asBool(await slotCfg('aide_body_state', 'enabled', 'enable_body_state_aide', 'false'), false),
+      enableWorldDynamicsAide: asBool(await slotCfg('aide_world_dynamics', 'enabled', 'enable_world_dynamics_aide', 'false'), false),
       bodyStateReproduction: asBool(await runtimeCfg('body_state_reproduction', 'false'), false),
       bodyStateCards: normalizeBodyStateCardMap(await runtimeCfg('body_state_cards', {})),
       forcedBondForceAppearance: asBool(await runtimeCfg('forced_bond_force_appearance', 'true'), true),
@@ -6936,6 +6962,7 @@ ${BIANCA_PERSONA_TEXT}`;
       plotExtra: beforeExtraPrompts.aide_plot,
       forcedBondExtra: beforeExtraPrompts.aide_forced_bond,
       bodyStateExtra: beforeExtraPrompts.aide_body_state,
+      worldDynamicsExtra: beforeExtraPrompts.aide_world_dynamics,
       beforeCustomPrompts,
       beforePromptModes,
       beforeExtraPrompts,
@@ -6958,6 +6985,7 @@ ${BIANCA_PERSONA_TEXT}`;
               : def.id === 'aide_plot' ? settings.enablePlotAide
                 : def.id === 'aide_forced_bond' ? settings.enableForcedBondAide
                 : def.id === 'aide_body_state' ? settings.enableBodyStateAide
+                : def.id === 'aide_world_dynamics' ? settings.enableWorldDynamicsAide
                 : def.id === WRITER_STAGE_ID ? settings.writerEnabled
                   : true,
         preset: settings.stagePresetNames?.[def.id] || '',
@@ -14065,7 +14093,7 @@ ${passage.text || ''}`, 420));
 
   const loreRerankerSourceAffinity = (stageName, lore = {}) => {
     if (stageName === 'aide_character') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.42 : 0.25;
-    if (stageName === 'aide_world') return lore.sourceType === 'module' ? 1 : lore.sourceType === 'character' ? 0.34 : 0.25;
+    if (stageName === 'aide_world' || stageName === 'aide_world_dynamics') return lore.sourceType === 'module' ? 1 : lore.sourceType === 'character' ? 0.34 : 0.25;
     if (stageName === 'aide_plot') return lore.sourceType === 'module' ? 0.72 : lore.sourceType === 'character' ? 0.48 : 0.30;
     if (stageName === 'aide_body_state' || stageName === 'aide_forced_bond') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.45 : 0.25;
     return 0.55;
@@ -17668,6 +17696,20 @@ ${passage.text || ''}`, 420));
       ]),
       example: '한 턴 안에 갈등을 완전히 해결하지 마. 현재 문제는 분명히 조금 진전시키되 새로운 선택이나 미해결 질문을 하나 남기고, 억지 반전이나 근거 없는 새 사건으로 긴장감을 만들지 마.',
       placeholder: '예: 현재 갈등은 조금 진전시키되 완결하지 말고, 자연스러운 다음 선택이나 미해결 질문을 남겨줘.'
+    }),
+    aide_world_dynamics: Object.freeze({
+      focus: '장면 밖에서 이미 움직이기 시작한 일(명령·추격·기한·소문·기관의 절차)이 이번 장면에 닿을지, 닿는다면 어떤 경로와 세기로 드러날지 정합니다.',
+      adaptation: '넓은 요청을 드러낼 흐름의 범위, 드러나는 경로(전갈·소문·흔적·부재), 한 턴에 다루는 수, 진행 속도로 변환합니다.',
+      keyQuestion: '장면이 다른 곳을 보는 동안, 이미 시작된 일은 지금 어디까지 와 있을까?',
+      compilationRules: Object.freeze([
+        'Translate the user’s goal into off-scene movement rules: which ongoing threads may surface, through which channels, how often, and how fast they progress.',
+        'Use only movements whose cause is established in canon, memory, or the recent scene; never invent a faction, pursuer, deadline, or crisis.',
+        'Use only elapsed time the story states; when timing is unknown, do not claim how far a movement has progressed.',
+        'Respect the active writing mode: in RP the persona’s reaction and next act stay the user’s, and in scene-staging mode no new development is surfaced and nobody is brought in.',
+        'Do not resolve an off-scene thread in one turn, and do not use an arrival or a revealed crisis as the ending.'
+      ]),
+      example: '추격대는 계속 따라오고 있다는 걸 잊지 마. 직접 등장시키지는 말고, 며칠이 지났으면 검문 강화나 소문 같은 흔적으로만 보여줘. 한 턴에 한 가지 흐름만.',
+      placeholder: '예: 길드의 조사는 느리게 진행되게 하고, 소문이나 공문 같은 간접 경로로만 드러내줘.'
     }),
     aide_body_state: Object.freeze({
       focus: '인물의 건강 신호, 부상, 질병, 생체 주기와 (켜져 있으면) 임신 상태가 장면의 행동·말·반응에 어떻게 드러날지 정합니다.',
@@ -24836,6 +24878,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
       reinforcement_opportunities: stringArrayJsonSchema(),
       unsupported_inventions_to_remove: stringArrayJsonSchema()
     });
+    if (stageName === 'aide_world_dynamics') return closedJsonObject({
+      surfaced_movement: { type: 'string' },
+      channel: { type: 'string' },
+      cause_evidence: { type: 'string' },
+      reach_check: { type: 'string' },
+      agency_check: { type: 'string' }
+    });
     if (stageName === 'aide_body_state') return closedJsonObject({
       condition_changes: { type: 'string' },
       reaction_fit: { type: 'string' },
@@ -25188,6 +25237,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     "overresolution_or_derailment_risks": ["forced closure, arbitrary escalation, fake cliffhanger, scene replacement, optional cameo/cutaway, or writing-mode authority violation"],
     "next_turn_openings": ["${playerControlled ? 'the seed left for the next player choice after this response' : 'what stays unresolved inside the scene for the next turn'}"]
   }`;
+    if (stageName === 'aide_world_dynamics') return `"domain": {
+    "surfaced_movement": "the one off-scene movement this response surfaces, or empty when none is due",
+    "channel": "how it reaches the scene (message, rumor, trace, changed schedule or price, absence); empty when none",
+    "cause_evidence": "the established cause, tagged canon, LIB, or recent; empty when none",
+    "reach_check": "why it can or cannot reach this place by now, using only stated time and distance",
+    "agency_check": "${playerControlled ? 'the persona’s reaction, knowledge, and next act are left to the user' : 'explicit author direction and reserved choices are respected'}"
+  }`;
     if (stageName === 'aide_body_state') return `"domain": {
     "condition_changes": "body-state changes this response shows, each tied to packet evidence",
     "reaction_fit": "where reactions do or do not fit the computed body states",
@@ -25454,6 +25510,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Repair repetition, premature resolution, arbitrary escalation, optional cameos/cutaways, fake cliffhangers, exposition drag, sequel-scene appendices, and endings that force the user character’s next action or hidden feelings.'
         : 'Repair repetition, premature resolution, arbitrary escalation, fake cliffhangers, exposition drag, endings that wrap up the whole arc when the author did not ask for it, and endings that contradict explicit author direction or close a choice/outcome the author explicitly reserved.',
       'Improve pacing and payoff only where needed, preserve unaffected blocks exactly, and expose only the required compact patch JSON. Do not append a sequel scene.'
+    ],
+    aide_world_dynamics: [
+      'ROLE: World Dynamics AIDE (세계 동역학 AIDE) — off-scene movement patch editor, running before the Body State, Forced Bond, and Plot AIDEs.',
+      'Make CURRENT_SAME_TURN_DRAFT agree with the WORLD DYNAMICS block: an established off-scene movement that is due may surface once through an indirect channel, and nothing unestablished surfaces at all.',
+      'Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
     ],
     aide_body_state: [
       'ROLE: Body State AIDE (상태 AIDE) — body-state patch editor, running before the Forced Bond and Plot AIDEs.',
@@ -26162,6 +26223,47 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (scopeKey && readings.length) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
   };
 
+  // ===================== 세계 동역학 AIDE (aide_world_dynamics) =====================
+  // Off-scene movement: what was already set in motion (orders, pursuits, deadlines, rumors,
+  // institutional processes) keeps moving while the scene looks elsewhere. Like every extension
+  // AIDE this stage stores nothing. It works from evidence already in the prompt; elapsed-time
+  // calculation and cross-stage verification notes are separate later steps.
+  const worldDynamicsModeGate = settings => forcedBondModeGate(settings);
+  const worldDynamicsStageActive = settings => settings?.enableWorldDynamicsAide === true
+    && settings?.mode !== 'off'
+    && worldDynamicsModeGate(settings) !== 'skip';
+  const WORLD_DYNAMICS_STAGE_DUTY = Object.freeze({
+    shadow_act: 'SHADOW: when the evidence shows something already in motion off-scene that would plausibly reach this scene by now, let at most one such movement surface through an indirect channel, placed early or mid-scene. When nothing is due, surface nothing.',
+    aide_character: 'Character AIDE: check that characters react only to off-scene movement they could have learned of through an established path.',
+    aide_world: 'World AIDE: check that a surfaced movement could reach this place by now given stated distance, elapsed time, authority, and resources. Lower it to a fainter trace when it could not.',
+    aide_plot: 'Plot AIDE: check that an off-scene movement does not end the turn, is not resolved in one turn, and does not take the next choice from the user.',
+    aide_world_dynamics: 'World Dynamics AIDE: look for an off-scene movement with an established cause that is due to reach this scene. If one is due and the draft never shows it, insert one indirect sign of it early or mid-scene. Remove or soften any off-scene development in the draft that has no established cause. Return edits: [] when nothing is due or the draft already fits, and say which in analysis.summary.'
+  });
+  const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+    if (!worldDynamicsStageActive(settings) || !WORLD_DYNAMICS_STAGE_DUTY[stageName]) return '';
+    const gate = worldDynamicsModeGate(settings);
+    return [
+      '[WORLD DYNAMICS (세계 동역학) — OFF-SCENE MOVEMENT]',
+      'The world outside the scene is not frozen. What was already set in motion (an order, a pursuit, a deadline, a rumor, an institution’s process) keeps moving on its own terms while the scene looks elsewhere.',
+      gate === 'novel'
+        ? '- Novel mode: off-scene actors may move and reach the scene within the author’s direction. Choices the author reserved stay open.'
+        : gate === 'staging'
+          ? '- Scene-staging RP mode: surface no new off-scene development and bring nobody in. Only keep consequences the input or the record already states consistent.'
+          : '- RP mode: the world and NPCs move on their own terms. Never decide the persona’s reaction, knowledge, or next act; an off-scene movement reaches the persona only as something to respond to.',
+      'ACCURACY:',
+      '- A movement exists only when its cause is established in canon, LIB evidence, or the recent scene. Never invent a faction, pursuer, deadline, or crisis.',
+      '- Use only elapsed time the evidence states. When timing is unknown, do not claim how far a movement has progressed.',
+      '- Surface at most one movement per turn, with at most one side effect of it.',
+      '- Prefer indirect channels: a message, a rumor, a trace, a changed schedule or price, someone’s absence. Nobody arrives without an established path and enough time.',
+      '- An off-scene movement never ends the turn and is never resolved in one turn.',
+      '- Surfacing nothing is the correct result whenever nothing is due.',
+      `STAGE DUTY: ${WORLD_DYNAMICS_STAGE_DUTY[stageName]}`
+    ].filter(Boolean).join('\n');
+  };
+  // No extra output fields yet: cross-stage verification notes arrive with the verification chain.
+  const worldDynamicsJsonProperties = () => ({});
+  const recordWorldDynamicsOutput = () => {};
+
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
     const checks = normalizeForcedBondCheck(parsed?.bondCheck);
@@ -26838,6 +26940,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
           : 'Identify repetition, exposition drag, arbitrary escalation, premature resolution, forced reconciliation, fake cliffhangers, endings that wrap up the whole arc when the author did not ask for it, and endings that violate explicit author direction or consume a decision/outcome the author explicitly reserved.',
         'Recommend direction only inside this same response. next_turn_openings are natural remaining possibilities, not instructions to write the next scene now.',
         'Do not write or revise the response draft. Return precise plot notes and direct rewrite actions.'
+      ],
+      aide_world_dynamics: [
+        'ROLE: World Dynamics AIDE (세계 동역학 AIDE) — off-scene movement analysis, before the Body State, Forced Bond, and Plot AIDEs.',
+        'Read the WORLD DYNAMICS block and the evidence already in this prompt. Decide whether one established off-scene movement is due to reach this scene, and where the draft freezes the outside world or surfaces something unestablished.',
+        'Do not write or revise the response draft. Return concise off-scene movement analysis and direct rewrite directives.'
       ],
       aide_body_state: [
         'ROLE: Body State AIDE (상태 AIDE) — body-state analysis, before the Forced Bond and Plot AIDEs.',
@@ -27975,6 +28082,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Do not append a sequel scene, revive an older thread without a present bridge, or decide the user character’s next action.'
         : 'Do not append a sequel scene or revive an older thread without a present bridge. Novel mode may author the user persona’s next action inside the current scene when it serves the authorial brief and does not violate an explicit reservation.'
     ],
+    aide_world_dynamics: [
+      'ROLE: World Dynamics AIDE (세계 동역학 AIDE) — off-scene movement patch editor, before the Body State, Forced Bond, and Plot AIDEs.',
+      'Inspect the latest draft against the WORLD DYNAMICS block. Patch only where an established off-scene movement is due and missing, or where the draft surfaces a movement with no established cause, and preserve unaffected blocks exactly.'
+    ],
     aide_body_state: [
       'ROLE: Body State AIDE (상태 AIDE) — body-state patch editor, before the Forced Bond and Plot AIDEs.',
       'Inspect the latest draft against the BODY STATE block. Patch only body-state portrayal that is missing or contradicts the packet, and preserve unaffected blocks exactly.'
@@ -28744,6 +28855,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     aide_world: 'Setting and world continuity',
     aide_plot: 'Causality and open plot movement',
     aide_body_state: 'Character body state and readings',
+    aide_world_dynamics: 'Off-scene movement reaching the scene',
     aide_forced_bond: 'Relationship tension and bond readings'
   }[stageName] || 'Scene continuity');
 
@@ -41224,6 +41336,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     aide_plot: guiSlotFromSettings(settings, 'aide_plot', settings.enablePlotAide),
     aide_forced_bond: guiSlotFromSettings(settings, 'aide_forced_bond', settings.enableForcedBondAide),
     aide_body_state: guiSlotFromSettings(settings, 'aide_body_state', settings.enableBodyStateAide),
+    aide_world_dynamics: guiSlotFromSettings(settings, 'aide_world_dynamics', settings.enableWorldDynamicsAide),
     [USER_INTENT_OOC_STAGE_ID]: guiSlotFromSettings(settings, USER_INTENT_OOC_STAGE_ID, true)
   });
 
@@ -41443,6 +41556,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       biancaInject: runtime.biancaInject === true,
       enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true,
       enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true,
+      enableWorldDynamicsAide: Gui.state?.agents?.aide_world_dynamics?.enabled === true,
       bodyStateReproduction: runtime.bodyStateReproduction === true,
       bodyStateCards: normalizeBodyStateCardMap(runtime.bodyStateCards),
       forcedBondForceAppearance: runtime.forcedBondForceAppearance !== false,
@@ -44343,7 +44457,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       enableWorldAide: Gui.state?.agents?.aide_world?.enabled === true,
       enablePlotAide: Gui.state?.agents?.aide_plot?.enabled === true,
       enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true,
-      enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true });
+      enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true,
+      enableWorldDynamicsAide: Gui.state?.agents?.aide_world_dynamics?.enabled === true });
   };
   const mockupSyncAideOrder = () => {
     const app=Gui.app;if(!app)return;
