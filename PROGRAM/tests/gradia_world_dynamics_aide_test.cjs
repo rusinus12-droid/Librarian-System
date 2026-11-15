@@ -1,8 +1,9 @@
 'use strict';
 
 // 세계 동역학 AIDE (aide_world_dynamics): an optional extension AIDE that lets off-scene
-// movement with an established cause reach the scene. This file covers its registration:
-// default off, execution order, writing-mode gates, and that it stores nothing.
+// movement with an established cause reach the scene. This file covers its registration
+// (default off, execution order, writing-mode gates, storing nothing) and the packet that
+// computes elapsed days and due verdicts from LIBRA's story clock, dated notes, and the scene.
 // Design record: docs/gradia/FORCED-BOND-AIDE-DESIGN-20261114.md §14 (extension AIDE frame).
 
 const { test } = require('node:test');
@@ -77,7 +78,7 @@ test('when on, the stage runs and every draft stage carries the block with its o
   assert.match(systemOf(plot), /STAGE DUTY: Plot AIDE: check that an off-scene movement does not end the turn/);
   const character = f.prompts.find(body => stageOf(body) === 'aide_character');
   assert.match(systemOf(character), /STAGE DUTY: Character AIDE: check that characters react only to off-scene movement they could have learned of/);
-  assert.ok(f.prompts.some(body => !stageOf(body).startsWith('aide_') && textOf(body).includes('STAGE DUTY: SHADOW: when the evidence shows something already in motion off-scene')), 'SHADOW gets its duty');
+  assert.ok(f.prompts.some(body => !stageOf(body).startsWith('aide_') && textOf(body).includes('STAGE DUTY: SHADOW: when the packet offers a candidate that would plausibly reach this scene by now')), 'SHADOW gets its duty');
 });
 
 test('세계 동역학 runs before 상태 and 억결, and all three run right before Plot AIDE', async t => {
@@ -135,4 +136,100 @@ test('the enabled flag survives a settings round trip', async t => {
   assert.equal(slots.aide_world_dynamics?.enabled, true);
   await f.host.plugin.saveRuntimeSettings({ ...await f.host.plugin.getRuntimeSettings() });
   assert.equal((await f.host.plugin.getAgentSlots()).aide_world_dynamics?.enabled, true);
+});
+
+// ---- World packet: computed each turn from the record, never stored ----
+
+const packetOf = async (t, libText, lines = []) => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const args = { libText, recent: { visibleMessages: lines.map(content => ({ role: 'assistant', content })) } };
+  const packet = f.host.plugin.debugWorldDynamicsPacket(args);
+  assert.equal(f.host.plugin.debugWorldDynamicsPacket(args), packet, 'the same record gives the same packet');
+  return packet;
+};
+
+test('story clock and dated notes give confirmed elapsed days, and a passed span comes first', async t => {
+  const packet = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁 · 2026-04-17',
+    '이야기 16일째 세라가 시장에 소문을 퍼뜨렸다',
+    '이야기 12일째 · 아침 · 2026-04-12 기사단이 사흘 뒤 도착하도록 추격대를 보냈다',
+    '이야기 17일째 세라는 빵을 먹었다'
+  ].join('\n'));
+  assert.match(packet, /Story clock \(LIBRA\): day 17/);
+  assert.match(packet, /1\. \[pursuit\] in motion for 5 days \(confirmed \(story clock\)\); stated span 3 days → 2 days past it\n\s+evidence \(LIB\): 이야기 12일째/);
+  assert.match(packet, /2\. \[rumor\] in motion for 1 day \(confirmed \(story clock\)\); no stated span/);
+  assert.match(packet, /Candidate this turn: #1\./);
+  assert.doesNotMatch(packet, /빵을 먹었다/, 'an ordinary line is not a movement');
+});
+
+test('a span that has not run out is listed but is not the candidate', async t => {
+  const packet = await packetOf(t, '[STORY CLOCK] 현재: 이야기 13일째 · 밤\n이야기 12일째 전령이 닷새 뒤 도착할 예정으로 왕도를 떠났다');
+  assert.match(packet, /in motion for 1 day \(confirmed \(story clock\)\); stated span 5 days → 4 days left/);
+  assert.match(packet, /No listed movement has come due\. Surface nothing unless the current input itself reaches one of them\./);
+  assert.doesNotMatch(packet, /Candidate this turn/);
+});
+
+test('an estimated clock keeps its day counts marked as approximate', async t => {
+  const packet = await packetOf(t, '[STORY CLOCK] 현재: 이야기 5일째(추정) · 밤\n이야기 2일째 전령이 왕도로 떠났다');
+  assert.match(packet, /Story clock \(LIBRA\): day 5 \(estimated\)/);
+  assert.match(packet, /\[travel or approach\] in motion for about 3 days \(estimated \(story clock\)\)/);
+});
+
+test('a date followed by 까지 is a deadline: counted against today, never read as the start or as today', async t => {
+  const ahead = await packetOf(t, '[STORY CLOCK] 현재: 이야기 17일째 · 저녁 · 2026-04-17\n이야기 15일째 길드는 하준에게 4월 20일까지 빚을 갚기로 약속받았다');
+  assert.match(ahead, /\[deadline or promise\] in motion for 2 days \(confirmed \(story clock\)\); deadline in 3 days/);
+  assert.doesNotMatch(ahead, /Candidate this turn/);
+
+  const passed = await packetOf(t, '[STORY CLOCK] 현재: 이야기 17일째 · 저녁 · 2026-04-17\n이야기 10일째 길드는 하준에게 4월 15일까지 빚을 갚기로 약속받았다');
+  assert.match(passed, /deadline passed 2 days ago/);
+  assert.match(passed, /Candidate this turn: #1\./);
+
+  const scene = await packetOf(t, '', ['4월 10일 아침이다.', '하준은 4월 12일까지 돌아오기로 했다.']);
+  assert.match(scene, /started at an unknown time; deadline in 2 days/, 'the deadline date is not taken for today');
+});
+
+test('without a clock: relative phrases estimate, and unknown timing gives no day count', async t => {
+  const packet = await packetOf(t, '', ['어제 영주는 병사들을 파견했다.', '상인은 물건을 가져오기로 약속했다.', '민아는 창밖을 보았다.']);
+  assert.match(packet, /Story clock: none\./);
+  assert.match(packet, /Evidence source: recent scene signals only \(no LIB evidence\)\./);
+  assert.match(packet, /\[order or dispatch\] in motion for about 1 day \(estimated\); no stated span/);
+  assert.match(packet, /\[deadline or promise\] started at an unknown time; timing unknown: do not say how far it has progressed/);
+  assert.doesNotMatch(packet, /창밖/);
+});
+
+test('a later recorded ending of the same kind takes the movement out of the running', async t => {
+  const packet = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 10일째 조사관이 수사를 시작했다',
+    '이야기 14일째 조사관의 수사가 끝났다'
+  ].join('\n'));
+  assert.match(packet, /\[inquiry or procedure\] a later ending of this kind is on record: treat it as ended/);
+  assert.match(packet, /Recorded endings[^\n]*\n- \(LIB\) 이야기 14일째 조사관의 수사가 끝났다/);
+  assert.doesNotMatch(packet, /Candidate this turn/);
+
+  const reopened = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 14일째 조사관의 수사가 끝났다',
+    '이야기 16일째 다른 조사관이 수사를 시작했다'
+  ].join('\n'));
+  assert.match(reopened, /1\. \[inquiry or procedure\] in motion for 1 day/, 'a movement recorded after the ending is still under way');
+  assert.match(reopened, /Candidate this turn: #1\./);
+});
+
+test('nothing on record: the packet says to surface nothing', async t => {
+  const packet = await packetOf(t, '', ['민아는 문을 열었다.']);
+  assert.match(packet, /No off-scene movement on record\. Surface nothing\./);
+  assert.doesNotMatch(packet, /Candidate this turn|No listed movement/);
+});
+
+test('every draft stage receives the packet built from the recent scene', async t => {
+  const f = await start(t);
+  f.chat.message.push({ role: 'char', chatId: 'a-world', data: '어제 영주는 성문으로 병사들을 파견했다.' });
+  await runTurn(f, '문을 연다.');
+  const withBlock = f.prompts.filter(body => textOf(body).includes(BLOCK));
+  assert.ok(withBlock.length >= 3, 'SHADOW and the AIDEs carry the block');
+  for (const body of withBlock) assert.match(textOf(body), /WORLD DYNAMICS PACKET:\n/);
+  const own = textOf(f.prompts.find(body => stageOf(body) === STAGE));
+  assert.match(own, /\[order or dispatch\] in motion for about 1 day \(estimated\); no stated span\n\s+evidence \(recent\): 어제 영주는 성문으로 병사들을 파견했다\./);
+  assert.match(own, /Day counts and due verdicts come only from the packet/);
 });

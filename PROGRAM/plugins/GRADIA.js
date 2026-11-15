@@ -26226,19 +26226,153 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // ===================== 세계 동역학 AIDE (aide_world_dynamics) =====================
   // Off-scene movement: what was already set in motion (orders, pursuits, deadlines, rumors,
   // institutional processes) keeps moving while the scene looks elsewhere. Like every extension
-  // AIDE this stage stores nothing. It works from evidence already in the prompt; elapsed-time
-  // calculation and cross-stage verification notes are separate later steps.
+  // AIDE this stage stores nothing. Each turn it rebuilds a packet from LIB evidence (LIBRA's
+  // story clock and dated lens notes) and the recent scene: which movements are on record, how
+  // long each has been in motion, and whether a stated span or deadline has come. The model
+  // gets the numbers; it never makes them.
   const worldDynamicsModeGate = settings => forcedBondModeGate(settings);
   const worldDynamicsStageActive = settings => settings?.enableWorldDynamicsAide === true
     && settings?.mode !== 'off'
     && worldDynamicsModeGate(settings) !== 'skip';
   const WORLD_DYNAMICS_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: when the evidence shows something already in motion off-scene that would plausibly reach this scene by now, let at most one such movement surface through an indirect channel, placed early or mid-scene. When nothing is due, surface nothing.',
+    shadow_act: 'SHADOW: when the packet offers a candidate that would plausibly reach this scene by now, let at most one such movement surface through an indirect channel, placed early or mid-scene. When nothing is due, surface nothing.',
     aide_character: 'Character AIDE: check that characters react only to off-scene movement they could have learned of through an established path.',
     aide_world: 'World AIDE: check that a surfaced movement could reach this place by now given stated distance, elapsed time, authority, and resources. Lower it to a fainter trace when it could not.',
     aide_plot: 'Plot AIDE: check that an off-scene movement does not end the turn, is not resolved in one turn, and does not take the next choice from the user.',
-    aide_world_dynamics: 'World Dynamics AIDE: look for an off-scene movement with an established cause that is due to reach this scene. If one is due and the draft never shows it, insert one indirect sign of it early or mid-scene. Remove or soften any off-scene development in the draft that has no established cause. Return edits: [] when nothing is due or the draft already fits, and say which in analysis.summary.'
+    aide_world_dynamics: 'World Dynamics AIDE: judge the packet’s candidate against its evidence line and the scene. If it is due, can reach this scene, and the draft never shows it, insert one indirect sign of it early or mid-scene. Remove or soften any off-scene development in the draft that has no established cause. Return edits: [] when nothing is due or the draft already fits, and say which in analysis.summary.'
   });
+  // A movement is a line saying something was set in motion and is still under way.
+  const WORLD_DYNAMICS_KINDS = Object.freeze([
+    ['pursuit', /추격|뒤쫓|쫓고|쫓아|쫓기|추적|수배|현상금|pursu|chasing|hunting for|bounty|wanted/i],
+    ['deadline or promise', /기한|마감|까지\s|(?:하|만나|돌아오|갚|끝내|넘기|전하|가져오|찾아오)기로|약속했|deadline|due (?:in|by)|promised to|agreed to/i],
+    ['inquiry or procedure', /수사|조사\s*(?:중|를|가|에)|심문|재판|감사를|고발|신고했|investigat|inquiry|trial|audit/i],
+    ['order or dispatch', /파견|출동|(?:명령|지시|지령)(?:을|를)?\s*(?:내렸|내리|받았|전했)|소집|보냈|보내왔|dispatched|was sent|ordered/i],
+    ['travel or approach', /오는\s*중|향하고|향했|출발했|떠났|이동\s*중|돌아오는|진군|on (?:the|his|her|their) way|heading (?:for|to)|set out|marching|en route/i],
+    ['rumor', /소문|풍문|입소문|rumou?r/i],
+    ['scheme or preparation', /음모|모의|계획(?:을|이)?\s*(?:세웠|꾸미|진행)|노리고|준비\s*(?:중|하고)|plotting|scheming|preparing/i]
+  ]);
+  // A line that says the movement ended is a record of an ending, not a movement.
+  const WORLD_DYNAMICS_ENDED_RE = /취소|철회|무산|끝났|마무리|해결됐|해결되|체포됐|붙잡혔|잡혔|도착했|완료|지켰|갚았|called off|cancel|resolved|arrived|caught|completed|fulfilled/i;
+  const WORLD_DYNAMICS_SPAN_TAIL = '\\s*(?:뒤|후|안에|안으로|이내|내로|내에|걸|만에)';
+  const WORLD_DYNAMICS_SPAN_WORDS = Object.freeze([
+    ['하루', 1], ['이틀', 2], ['사흘', 3], ['나흘', 4], ['닷새', 5], ['엿새', 6], ['이레', 7], ['일주일', 7], ['열흘', 10], ['보름', 15], ['한\\s*달', 30]
+  ].map(([word, days]) => [new RegExp(word + WORLD_DYNAMICS_SPAN_TAIL), days]));
+  // How long the line says the movement takes, in days, counted from when the line was true.
+  const worldDynamicsSpanDays = line => {
+    const value = String(line || '');
+    let match = value.match(new RegExp('(\\d{1,3})\\s*일' + WORLD_DYNAMICS_SPAN_TAIL))
+      || value.match(/(?:in|within)\s+(\d{1,3})\s+days?/i) || value.match(/(\d{1,3})\s+days?\s+(?:later|from now)/i);
+    if (match) return Number(match[1]);
+    match = value.match(new RegExp('(\\d{1,2})\\s*주(?:일)?' + WORLD_DYNAMICS_SPAN_TAIL)) || value.match(/(?:in|within)\s+(\d{1,2})\s+weeks?/i);
+    if (match) return Number(match[1]) * 7;
+    for (const [pattern, days] of WORLD_DYNAMICS_SPAN_WORDS) if (pattern.test(value)) return days;
+    if (/(?:in|within) a week/i.test(value)) return 7;
+    if (/글피/.test(value)) return 3;
+    if (/모레|day after tomorrow/i.test(value)) return 2;
+    if (/내일|tomorrow/i.test(value)) return 1;
+    return null;
+  };
+  // A date followed by 까지 / "by" is a deadline, not the day the line happened.
+  const WORLD_DYNAMICS_DEADLINE_DATE_RE = /((?:\d{4}\s*[-./년]\s*)?\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?)\s*까지|by\s+(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2})/i;
+  const worldDynamicsDeadline = (line, now) => {
+    const match = String(line || '').match(WORLD_DYNAMICS_DEADLINE_DATE_RE);
+    const date = match ? bodyStateParseDate(match[1] || match[2]) : null;
+    if (!date) return null;
+    const rest = String(line).replace(match[0], ' ');
+    if (!now) return { rest, known: false };
+    // A date with no year wraps around the calendar: read it as the nearer of "ahead" and "behind".
+    const ahead = bodyStateDaysBetween(now, date);
+    const behind = bodyStateDaysBetween(date, now);
+    if (ahead === 0 || behind === 0) return { rest, known: true, left: 0 };
+    if (behind !== null && (ahead === null || behind < ahead)) return { rest, known: true, left: -behind };
+    return ahead === null ? { rest, known: false } : { rest, known: true, left: ahead };
+  };
+  // "Today" from the recent scene, skipping dates that are deadlines rather than the present.
+  const worldDynamicsCurrentDate = (recent = {}) => {
+    const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const date = bodyStateParseDate(String(messages[index]?.content || '').replace(new RegExp(WORLD_DYNAMICS_DEADLINE_DATE_RE.source, 'gi'), ' '));
+      if (date) return date;
+    }
+    return null;
+  };
+  const WORLD_DYNAMICS_RANK = Object.freeze({ overdue: 0, due: 1, in_motion: 2, not_due: 3, unknown: 4, ended: 5 });
+  const WORLD_DYNAMICS_MAX_MOVEMENTS = 6;
+  const worldDynamicsReadLine = (entry, now, clock) => {
+    if (WORLD_DYNAMICS_ENDED_RE.test(entry.line)) return null;
+    const kind = WORLD_DYNAMICS_KINDS.find(([, pattern]) => pattern.test(entry.line));
+    if (!kind) return null;
+    const deadline = worldDynamicsDeadline(entry.line, now);
+    const elapsed = bodyStateElapsed(deadline ? { ...entry, line: deadline.rest } : entry, now, clock);
+    const span = worldDynamicsSpanDays(entry.line);
+    const about = elapsed.confidence.startsWith('estimated') ? 'about ' : '';
+    const days = count => `${count} day${count === 1 ? '' : 's'}`;
+    const started = elapsed.days === null ? 'started at an unknown time' : `in motion for ${about}${days(elapsed.days)} (${elapsed.confidence})`;
+    let state = 'unknown';
+    let verdict = 'timing unknown: do not say how far it has progressed';
+    if (deadline?.known) {
+      state = deadline.left < 0 ? 'overdue' : deadline.left === 0 ? 'due' : 'not_due';
+      verdict = deadline.left < 0 ? `deadline passed ${days(-deadline.left)} ago` : deadline.left === 0 ? 'deadline is today' : `deadline in ${days(deadline.left)}`;
+    } else if (span !== null && elapsed.days !== null) {
+      state = elapsed.days > span ? 'overdue' : elapsed.days === span ? 'due' : 'not_due';
+      verdict = `stated span ${days(span)} → ${state === 'overdue' ? `${about}${days(elapsed.days - span)} past it` : state === 'due' ? `${about}due now` : `${about}${days(span - elapsed.days)} left`}`;
+    } else if (elapsed.days !== null) {
+      state = 'in_motion';
+      verdict = 'no stated span';
+    } else if (span !== null) {
+      verdict = `stated span ${days(span)}, but when it started is unknown: do not say how far it has progressed`;
+    }
+    return { kind: kind[0], state, elapsedDays: elapsed.days, source: entry.source, line: compact(entry.line, 220), text: `[${kind[0]}] ${started}; ${verdict}` };
+  };
+  const worldDynamicsNoteDay = line => {
+    const match = String(line || '').match(BODY_STATE_NOTE_DAY_RE);
+    return match ? Number(match[1]) : null;
+  };
+  const worldDynamicsPacket = (recent = {}, settings = {}) => {
+    const clock = bodyStateStoryClock(settings);
+    const now = (clock?.date ? bodyStateParseDate(clock.date) : null) || worldDynamicsCurrentDate(recent);
+    const entries = bodyStateEvidenceLines(recent, settings);
+    const seen = new Set();
+    const unique = entries.filter(entry => {
+      const key = normalizeContinuityAlias(entry.line);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line),
+      kinds: WORLD_DYNAMICS_ENDED_RE.test(entry.line) ? WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) : [] }))
+      .filter(item => item.kinds.length);
+    // An ending of the same kind recorded later (by story day, else by order) most likely closes
+    // the movement. It stays listed, last and never as the candidate, so the model can still tell
+    // two separate matters of one kind apart.
+    const endedBy = (kind, index, day) => endings.some(end => end.kinds.includes(kind)
+      && (day !== null && end.day !== null ? end.day >= day : end.index > index));
+    const movements = unique.map((entry, index) => {
+      const read = worldDynamicsReadLine(entry, now, clock);
+      if (!read) return null;
+      return endedBy(read.kind, index, worldDynamicsNoteDay(entry.line))
+        ? { ...read, index, state: 'ended', text: `[${read.kind}] a later ending of this kind is on record: treat it as ended unless the evidence shows it is a separate matter` }
+        : { ...read, index };
+    }).filter(Boolean)
+      // Most pressing first; among equals the longer-running, then the later record.
+      .sort((left, right) => (WORLD_DYNAMICS_RANK[left.state] - WORLD_DYNAMICS_RANK[right.state])
+        || ((right.elapsedDays ?? -1) - (left.elapsedDays ?? -1)) || (right.index - left.index))
+      .slice(0, WORLD_DYNAMICS_MAX_MOVEMENTS);
+    // Only a movement whose time has come, or one that has run at least a day, is offered.
+    const candidate = movements.findIndex(item => item.state === 'overdue' || item.state === 'due' || (item.state === 'in_motion' && item.elapsedDays >= 1));
+    return compact([
+      clock ? `Story clock (LIBRA): day ${clock.day}${clock.estimated ? ' (estimated)' : ''}${clock.timeOfDay ? ` · ${clock.timeOfDay}` : ''}${clock.date ? ` · ${clock.date}` : ''}.` : 'Story clock: none. Elapsed days are known only where the story states dates or relative days.',
+      `Evidence source: ${entries.some(entry => entry.source === 'LIB') ? 'LIB memory and recent scene' : 'recent scene signals only (no LIB evidence)'}.`,
+      movements.length ? 'Off-scene movements on record, most pressing first:' : 'No off-scene movement on record. Surface nothing.',
+      ...movements.map((item, index) => `${index + 1}. ${item.text}\n   evidence (${item.source}): ${item.line}`),
+      endings.length ? `Recorded endings (a movement one of these ends is no longer in motion):\n${endings.slice(-3).map(end => `- (${end.entry.source}) ${compact(end.entry.line, 220)}`).join('\n')}` : '',
+      movements.length
+        ? (candidate >= 0
+          ? `Candidate this turn: #${candidate + 1}. Surface it only if it can reach this scene and no recorded ending covers it; when the current input touches another listed movement, prefer that one.`
+          : 'No listed movement has come due. Surface nothing unless the current input itself reaches one of them.')
+        : ''
+    ].filter(Boolean).join('\n'), 3600);
+  };
   const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
     if (!worldDynamicsStageActive(settings) || !WORLD_DYNAMICS_STAGE_DUTY[stageName]) return '';
     const gate = worldDynamicsModeGate(settings);
@@ -26252,12 +26386,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
           : '- RP mode: the world and NPCs move on their own terms. Never decide the persona’s reaction, knowledge, or next act; an off-scene movement reaches the persona only as something to respond to.',
       'ACCURACY:',
       '- A movement exists only when its cause is established in canon, LIB evidence, or the recent scene. Never invent a faction, pursuer, deadline, or crisis.',
-      '- Use only elapsed time the evidence states. When timing is unknown, do not claim how far a movement has progressed.',
+      '- Day counts and due verdicts come only from the packet. Do not invent a number, and when the packet says timing is unknown, do not claim how far a movement has progressed.',
+      '- A packet line is a candidate read from the record by keyword, not proof. Check its evidence line: if it is not actually something under way off-scene, ignore it.',
       '- Surface at most one movement per turn, with at most one side effect of it.',
       '- Prefer indirect channels: a message, a rumor, a trace, a changed schedule or price, someone’s absence. Nobody arrives without an established path and enough time.',
       '- An off-scene movement never ends the turn and is never resolved in one turn.',
       '- Surfacing nothing is the correct result whenever nothing is due.',
-      `STAGE DUTY: ${WORLD_DYNAMICS_STAGE_DUTY[stageName]}`
+      `STAGE DUTY: ${WORLD_DYNAMICS_STAGE_DUTY[stageName]}`,
+      `WORLD DYNAMICS PACKET:\n${worldDynamicsPacket(recent, settings)}`
     ].filter(Boolean).join('\n');
   };
   // No extra output fields yet: cross-stage verification notes arrive with the verification chain.
@@ -48541,6 +48677,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } finally {
         Object.assign(Runtime, { activePersonaName: saved.persona, activeCharacterName: saved.character, activeScopeKey: saved.scope, activeProfileGenders: saved.genders });
       }
+    },
+    debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
+      return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });
     },
     debugSetSceneVarianceRandom(values = null) {
       const queue = Array.isArray(values) ? values.slice() : null;
