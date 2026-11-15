@@ -3,7 +3,8 @@
 // 세계 동역학 AIDE (aide_world_dynamics): an optional extension AIDE that lets off-scene
 // movement with an established cause reach the scene. This file covers its registration
 // (default off, execution order, writing-mode gates, storing nothing) and the packet that
-// computes elapsed days and due verdicts from LIBRA's story clock, dated notes, and the scene.
+// computes elapsed days and due verdicts from LIBRA's story clock, dated notes, and the scene,
+// and the verification chain (world_check notes from the other stages, world_readings here).
 // Design record: docs/gradia/FORCED-BOND-AIDE-DESIGN-20261114.md §14 (extension AIDE frame).
 
 const { test } = require('node:test');
@@ -16,11 +17,12 @@ const systemOf = body => body.messages.filter(m => m.role === 'system').map(m =>
 const textOf = body => body.messages.map(m => m.content).join('\n');
 const stageOf = body => (systemOf(body).match(/"stage":\s*"([^"]+)"/) || [])[1] || '';
 
-const wireModel = (f, draftText) => {
+// stageExtras adds stage-specific top-level fields (world_check, world_readings).
+const wireModel = (f, draftText, stageExtras = {}) => {
   f.controls.onModel = (_idx, body) => {
     const sys = systemOf(body);
     const stage = stageOf(body);
-    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [] };
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [], ...(stageExtras[stage] || {}) };
     if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
     else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
     else f.controls.output = draftText;
@@ -232,4 +234,68 @@ test('every draft stage receives the packet built from the recent scene', async 
   const own = textOf(f.prompts.find(body => stageOf(body) === STAGE));
   assert.match(own, /\[order or dispatch\] in motion for about 1 day \(estimated\); no stated span\n\s+evidence \(recent\): 어제 영주는 성문으로 병사들을 파견했다\./);
   assert.match(own, /Day counts and due verdicts come only from the packet/);
+});
+
+// ---- Verification chain: other stages leave world_check notes, this stage settles readings ----
+
+// The plugin runs in its own realm, so its objects are compared by value.
+const plain = value => JSON.parse(JSON.stringify(value ?? null));
+
+const chainRun = async (t, stageExtras, settings = {}) => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.', stageExtras);
+  await configure(f, settings);
+  f.chat.message.push({ role: 'char', chatId: 'a-world', data: '어제 영주는 성문으로 병사들을 파견했다.' });
+  return f;
+};
+
+test('checkers return world_check and later stages read the notes; readings stay in memory', async t => {
+  const f = await chainRun(t, {
+    aide_character: { world_check: [{ movement: '영주의 병사 파견', verdict: 'adjust', claim: '민아 already knows the soldiers are coming', reason: 'nobody told her and she saw nothing' }] },
+    aide_world_dynamics: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }] }
+  });
+  const keysBefore = new Set([...f.values.keys(), ...f.local.keys()].map(String));
+  await runTurn(f, '문을 연다.');
+
+  const character = f.prompts.find(body => stageOf(body) === 'aide_character');
+  assert.ok(JSON.stringify(character).includes('"world_check"'), 'a checking stage is asked for world_check');
+  assert.ok(!JSON.stringify(character).includes('"world_readings"'), 'a checking stage is not asked for readings');
+  assert.doesNotMatch(systemOf(character), /VERIFICATION NOTES FROM EARLIER STAGES/, 'the first checker has no earlier note');
+
+  const own = f.prompts.find(body => stageOf(body) === STAGE);
+  assert.ok(JSON.stringify(own).includes('"world_readings"'), 'the stage is asked for world_readings');
+  assert.ok(!JSON.stringify(own).includes('"world_check"'), 'the stage settles readings instead of leaving a note');
+  assert.match(systemOf(own), /VERIFICATION NOTES FROM EARLIER STAGES \(this run\):\n- \[aide_character\] 영주의 병사 파견: adjust — 민아 already knows the soldiers are coming \(because nobody told her and she saw nothing\)/);
+  assert.match(systemOf(own), /An "adjust" note lowers the movement to a fainter trace or holds it back/);
+  assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /\[aide_character\] 영주의 병사 파견: adjust/, 'Plot AIDE, running last, also sees the note');
+
+  const state = f.host.plugin.debugWorldDynamicsState();
+  assert.deepEqual(plain(state.readings?.readings), [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }]);
+  const added = [...new Set([...f.values.keys(), ...f.local.keys()].map(String))].filter(key => !keysBefore.has(key));
+  assert.deepEqual(added.filter(key => /world.?dynamics|world_read|world_check/i.test(key)), [], 'no reading or note is persisted');
+  for (const [key, value] of [...f.values, ...f.local]) {
+    if (keysBefore.has(String(key))) continue;
+    assert.ok(!String(typeof value === 'string' ? value : JSON.stringify(value)).includes('하루째 이동 중, 민아는 아직 모름'), `reading text is not written under ${key}`);
+  }
+});
+
+test('malformed notes and readings are dropped or normalized, never passed along raw', async t => {
+  const f = await chainRun(t, {
+    aide_character: { world_check: [
+      { movement: '', verdict: 'confirm', claim: 'no movement named', reason: '' },
+      { movement: '소문', verdict: 'certainly', claim: 'the rumor reached the gate', reason: '' }
+    ] },
+    aide_world_dynamics: { world_readings: [{ movement: '소문', status: 'exploded', summary: '성문까지 퍼짐' }, { movement: '이름만', status: 'held', summary: '' }] }
+  });
+  await runTurn(f, '문을 연다.');
+  const own = systemOf(f.prompts.find(body => stageOf(body) === STAGE));
+  assert.match(own, /- \[aide_character\] 소문: uncertain — the rumor reached the gate/, 'an unknown verdict becomes uncertain');
+  assert.doesNotMatch(own, /no movement named/, 'a note without a movement is dropped');
+  assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
+});
+
+test('with the stage off no other stage is asked for world_check', async t => {
+  const f = await start(t, {}, { world: false });
+  await runTurn(f, '문을 연다.');
+  assert.ok(f.prompts.every(body => !JSON.stringify(body).includes('world_check') && !JSON.stringify(body).includes('world_readings')));
 });

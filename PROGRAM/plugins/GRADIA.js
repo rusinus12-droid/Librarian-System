@@ -3857,6 +3857,7 @@ ${BIANCA_PERSONA_TEXT}`;
     // This run's random scene variable (shared by all stages); not stored.
     sceneVarianceRun: null,
     bodyStateReadings: {},
+    worldDynamicsReadings: {},
     last: null,
     lastAuxiliarySkip: null,
     lastBeforeContext: null,
@@ -23982,6 +23983,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
       stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
+      worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
+      worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       edits
     };
   };
@@ -26229,7 +26232,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // AIDE this stage stores nothing. Each turn it rebuilds a packet from LIB evidence (LIBRA's
   // story clock and dated lens notes) and the recent scene: which movements are on record, how
   // long each has been in motion, and whether a stated span or deadline has come. The model
-  // gets the numbers; it never makes them.
+  // gets the numbers; it never makes them. The other stages each check the candidate from their
+  // own ground (world_check), and this stage settles the turn's readings from those notes.
   const worldDynamicsModeGate = settings => forcedBondModeGate(settings);
   const worldDynamicsStageActive = settings => settings?.enableWorldDynamicsAide === true
     && settings?.mode !== 'off'
@@ -26239,7 +26243,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     aide_character: 'Character AIDE: check that characters react only to off-scene movement they could have learned of through an established path.',
     aide_world: 'World AIDE: check that a surfaced movement could reach this place by now given stated distance, elapsed time, authority, and resources. Lower it to a fainter trace when it could not.',
     aide_plot: 'Plot AIDE: check that an off-scene movement does not end the turn, is not resolved in one turn, and does not take the next choice from the user.',
-    aide_world_dynamics: 'World Dynamics AIDE: judge the packet’s candidate against its evidence line and the scene. If it is due, can reach this scene, and the draft never shows it, insert one indirect sign of it early or mid-scene. Remove or soften any off-scene development in the draft that has no established cause. Return edits: [] when nothing is due or the draft already fits, and say which in analysis.summary.'
+    aide_world_dynamics: 'World Dynamics AIDE: judge the packet’s candidate against its evidence line and the scene. Read the verification notes first, then settle this turn’s readings. If it is due, can reach this scene, no note holds it back, and the draft never shows it, insert one indirect sign of it early or mid-scene. Remove or soften any off-scene development in the draft that has no established cause. Return edits: [] when nothing is due or the draft already fits, and say which in analysis.summary.'
   });
   // A movement is a line saying something was set in motion and is still under way.
   const WORLD_DYNAMICS_KINDS = Object.freeze([
@@ -26376,6 +26380,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
     if (!worldDynamicsStageActive(settings) || !WORLD_DYNAMICS_STAGE_DUTY[stageName]) return '';
     const gate = worldDynamicsModeGate(settings);
+    const priorChecks = (Array.isArray(ledger?.worldDynamicsChecks) ? ledger.worldDynamicsChecks : [])
+      .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.movement}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
+      .slice(-16);
+    const kind = worldDynamicsOutputKind(stageName, settings);
     return [
       '[WORLD DYNAMICS (세계 동역학) — OFF-SCENE MOVEMENT]',
       'The world outside the scene is not frozen. What was already set in motion (an order, a pursuit, a deadline, a rumor, an institution’s process) keeps moving on its own terms while the scene looks elsewhere.',
@@ -26393,12 +26401,53 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- An off-scene movement never ends the turn and is never resolved in one turn.',
       '- Surfacing nothing is the correct result whenever nothing is due.',
       `STAGE DUTY: ${WORLD_DYNAMICS_STAGE_DUTY[stageName]}`,
-      `WORLD DYNAMICS PACKET:\n${worldDynamicsPacket(recent, settings)}`
+      `WORLD DYNAMICS PACKET:\n${worldDynamicsPacket(recent, settings)}`,
+      priorChecks.length
+        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note lowers the movement to a fainter trace or holds it back; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
+        : '',
+      kind === 'check'
+        ? 'OUTPUT: add a top-level "world_check" array with one item per off-scene movement this draft surfaces or the packet offers as the candidate, judged only from your own duty. Item fields: movement (a short name for it); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is none.'
+        : kind === 'readings'
+          ? 'OUTPUT: add a top-level "world_readings" array, one item per movement you considered this turn, with fields movement (a short name), status (surfaced, held, not_due, ended, or unsupported), and summary (one short line). Use an empty array when nothing is on record.'
+          : ''
     ].filter(Boolean).join('\n');
   };
-  // No extra output fields yet: cross-stage verification notes arrive with the verification chain.
-  const worldDynamicsJsonProperties = () => ({});
-  const recordWorldDynamicsOutput = () => {};
+  const WORLD_DYNAMICS_VERDICTS = Object.freeze(['confirm', 'adjust', 'uncertain']);
+  const WORLD_DYNAMICS_STATUSES = Object.freeze(['surfaced', 'held', 'not_due', 'ended', 'unsupported']);
+  // The stage itself settles readings; SHADOW and the core AIDEs leave verification notes.
+  const worldDynamicsOutputKind = (stageName, settings = {}) => {
+    if (!worldDynamicsStageActive(settings)) return '';
+    if (stageName === 'aide_world_dynamics') return 'readings';
+    return FORCED_BOND_CHECK_STAGES.includes(stageName) ? 'check' : '';
+  };
+  const worldDynamicsJsonProperties = (stageName, settings = {}) => {
+    const kind = worldDynamicsOutputKind(stageName, settings);
+    const str = { type: 'string' };
+    if (kind === 'check') return { world_check: { type: 'array', items: closedJsonObject({ movement: str, verdict: { type: 'string', enum: [...WORLD_DYNAMICS_VERDICTS] }, claim: str, reason: str }) } };
+    if (kind === 'readings') return { world_readings: { type: 'array', items: closedJsonObject({ movement: str, status: { type: 'string', enum: [...WORLD_DYNAMICS_STATUSES] }, summary: str }) } };
+    return {};
+  };
+  const normalizeWorldDynamicsChecks = value => (Array.isArray(value) ? value : []).map(item => ({
+    movement: compact(item?.movement || '', 120),
+    verdict: WORLD_DYNAMICS_VERDICTS.includes(item?.verdict) ? item.verdict : 'uncertain',
+    claim: compact(item?.claim || '', 240),
+    reason: compact(item?.reason || '', 240)
+  })).filter(item => item.movement && item.claim).slice(0, 8);
+  // Notes go to this run's ledger; readings stay in memory for display. Nothing is stored.
+  const recordWorldDynamicsOutput = (ledger, stageName, parsed = {}, settings = {}) => {
+    if (!ledger || !worldDynamicsStageActive(settings)) return;
+    const checks = normalizeWorldDynamicsChecks(parsed?.worldCheck);
+    if (checks.length) {
+      if (!Array.isArray(ledger.worldDynamicsChecks)) ledger.worldDynamicsChecks = [];
+      ledger.worldDynamicsChecks.push({ stage: stageName, items: checks });
+    }
+    if (stageName !== 'aide_world_dynamics') return;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const readings = (Array.isArray(parsed?.worldReadings) ? parsed.worldReadings : [])
+      .map(item => ({ movement: compact(item?.movement || '', 120), status: WORLD_DYNAMICS_STATUSES.includes(item?.status) ? item.status : 'held', summary: compact(item?.summary || '', 240) }))
+      .filter(item => item.movement && item.summary).slice(0, WORLD_DYNAMICS_MAX_MOVEMENTS);
+    if (scopeKey && readings.length) Runtime.worldDynamicsReadings[scopeKey] = { at: Date.now(), readings };
+  };
 
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
@@ -27418,6 +27467,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
       stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
+      worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
+      worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       doNotReveal: normalizeStringArray(parsed.do_not_reveal || parsed.doNotReveal, 24, 420),
       povLimits: normalizeStringArray(parsed.pov_limits || parsed.povLimits, 24, 420),
       beats: normalizeStringArray(
@@ -28732,10 +28783,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         bondReadings: patch.bondReadings,
         bondProposals: patch.bondProposals,
         stateCheck: patch.stateCheck,
-        stateReadings: patch.stateReadings
+        stateReadings: patch.stateReadings,
+        worldCheck: patch.worldCheck,
+        worldReadings: patch.worldReadings
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings }
+        ? { ...precomputedAnalysis, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -48680,6 +48733,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
       return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });
+    },
+    debugWorldDynamicsState() {
+      const scopeKey = Runtime.activeScopeKey || '';
+      return cloneJson({ scopeKey, readings: Runtime.worldDynamicsReadings?.[scopeKey] || null });
     },
     debugSetSceneVarianceRandom(values = null) {
       const queue = Array.isArray(values) ? values.slice() : null;
