@@ -17749,6 +17749,27 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
     },
     {
+      // GRADIA's 세계 동역학 AIDE reads these notes with each note's story day and computes how
+      // long each movement has run and whether a stated span has come. The note records only what
+      // the source says; subjects are not tracked because the mover is often an organization.
+      templateId: 'starter_offscene_movement',
+      name: '장면 밖 흐름 · 진행 중인 일',
+      description: '장면 밖에서 시작되어 아직 진행 중인 일(추격, 명령·파견, 수사·절차, 이동, 소문, 준비)과 그 일이 끝난 순간을 기록합니다.',
+      labels: ['추격', '명령·파견', '수사·절차', '이동', '소문', '준비', '종결'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: true,
+      trackSubject: false,
+      instruction: {
+        goal: '지금 장면 밖에서 시작되어 아직 끝나지 않은 일을 기록하라: 누가(인물·세력·기관) 무엇을 시작했는지, 원문이 말한 소요 기간이나 도착 예정, 그리고 그 일이 끝나거나 취소된 순간. 하나의 일은 한 문장으로, 시작과 종결은 서로 다른 기록으로 남긴다.',
+        includeRules: ['추격·수배·현상금이 시작됐다는 서술', '명령, 파견, 소집, 전령이나 서신을 보낸 일', '수사, 조사, 재판, 심사 같은 절차가 시작되거나 진행 중이라는 서술', '인물이나 무리가 어딘가로 출발했거나 오는 중이라는 서술', '소문이 퍼지기 시작했다는 서술', '원문이 말한 소요 기간이나 도착 예정("사흘 뒤 도착", "보름 걸린다")', '위의 일이 끝남, 도착, 취소, 실패한 순간'],
+        excludeRules: ['지금 장면 안에서 바로 끝난 행동', '인물끼리 정한 약속과 기한(약속 · 일정 렌즈가 기록)', '농담·가정·추측·소망으로만 나온 일', '원문에 없는 날짜 계산, 진행 정도나 도착 여부의 추정', '원문이 밝히지 않은 배후나 목적'],
+        outputHint: '누가 무엇을 시작했는지(또는 끝났는지) 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 기간이나 도착 예정을 말하면 그 표현을 그대로 남기세요.',
+        extraFieldsNote: 'extra에 actor, kind(pursuit/order/procedure/travel/rumor/preparation), span(원문 표현 그대로), status(진행/종결/취소)를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 4 }
+    },
+    {
       templateId: 'starter_relationship_shift',
       name: '관계 변화 · 호감도',
       description: '인물 사이의 신뢰, 호감, 갈등이 달라진 계기와 현재 거리를 기록합니다.',
