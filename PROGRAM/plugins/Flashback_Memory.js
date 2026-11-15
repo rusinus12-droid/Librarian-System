@@ -1819,6 +1819,12 @@ const PLUGIN_VERSION = '2.0.4';
   const SCOPE_REGISTRY_REMEMBER_TTL_MS = 30000;
   const CLONE_SOURCE_VECTOR_FAILURE_TTL_MS = 10 * 60 * 1000;
   const NATIVE_COPY_OBSERVER_POLL_MS = 1800;
+  // The observer runs for the plugin's whole life, so its steady cost matters most on phones.
+  // After a quiet stretch it checks less often; any change brings the short interval back.
+  const NATIVE_COPY_OBSERVER_IDLE_POLL_MS = 5400;
+  const NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS = 10;
+  // How long a character id read for one character index is reused before it is read again.
+  const NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS = 30000;
   const NATIVE_COPY_OBSERVER_FOLLOWUP_MS = Object.freeze([900, 3200]);
 
 
@@ -1981,6 +1987,9 @@ const PLUGIN_VERSION = '2.0.4';
       lastAt: 0,
       checks: 0,
       changes: 0,
+      quietChecks: 0,
+      hiddenSkips: 0,
+      characterId: null,
       adoptions: 0,
       lastReason: '',
       lastResult: null,
@@ -26813,12 +26822,34 @@ const MemorySuiteSnapshotCache = (() => {
     chat.filename
   ], 24);
 
+  // The host returns a full copy of whatever is asked for, and a character carries every one of
+  // its chats. Reading the character on every poll copied all chats every 1.8 seconds for as long
+  // as the plugin was loaded (Android OOM reports). The identity needs only the open chat's id
+  // and the character's id, so the chat is read alone and the character id is kept per character
+  // index for a short time. A different chat always has a different chat id, so a stale character
+  // id can only delay noticing a duplicate character that reuses chat ids, by at most the TTL.
   const lightweightNativeCopyObserverIdentity = async () => {
-    const {character}=await loadCurrentCharacter();if(!character)return '';
-    const {chat}=await loadCurrentChat(character,{preferDirect:true});
-    const charId=firstFilled(character.chaId,character.characterId,character.id),chatId=firstFilled(chat?.id,chat?.chatId,chat?._id);
-    return charId&&chatId?`${charId}:${chatId}:${firstFilled(chat.bindedPersona,chat.personaId,chat.selectedPersonaId)}`:'';
+    const observer=Runtime.nativeCopyObserver;
+    const api=getLiveApi(['getChatFromIndex'])||getLiveApi();
+    const chatAlone=['getCurrentCharacterIndex','getCurrentChatIndex','getChatFromIndex'].every(name=>typeof api?.[name]==='function');
+    if(!chatAlone){
+      const {character}=await loadCurrentCharacter();if(!character)return '';
+      const {chat}=await loadCurrentChat(character,{preferDirect:true});
+      const charId=firstFilled(character.chaId,character.characterId,character.id),chatId=firstFilled(chat?.id,chat?.chatId,chat?._id);
+      return charId&&chatId?`${charId}:${chatId}:${firstFilled(chat.bindedPersona,chat.personaId,chat.selectedPersonaId)}`:'';
+    }
+    const {chat,charIndex}=await loadCurrentChat(null,{preferDirect:true});
+    const chatId=firstFilled(chat?.id,chat?.chatId,chat?._id);
+    if(!chatId)return '';
+    let known=observer.characterId;
+    if(!known||known.charIndex!==charIndex||Date.now()-known.at>=NATIVE_COPY_OBSERVER_CHARACTER_ID_TTL_MS){
+      const {character}=await loadCurrentCharacter();if(!character){observer.characterId=null;return '';}
+      known=observer.characterId={charIndex,id:firstFilled(character.chaId,character.characterId,character.id),at:Date.now()};
+    }
+    return known.id?`${known.id}:${chatId}:${firstFilled(chat.bindedPersona,chat.personaId,chat.selectedPersonaId)}`:'';
   };
+  // A page the user cannot see cannot have a chat copied or switched in it.
+  const nativeCopyObserverPageHidden = () => { try { return typeof document !== 'undefined' && document.visibilityState === 'hidden'; } catch (_) { return false; } };
 
   const runNativeCopyObserverAdoptionProbe = async (reason = 'observer') => {
     const observer = Runtime.nativeCopyObserver;
@@ -26873,16 +26904,24 @@ const MemorySuiteSnapshotCache = (() => {
   const startNativeCopyObserver = () => {
     const observer=Runtime.nativeCopyObserver;if(observer.running||Runtime.unloaded)return false;observer.running=true;
     const poll=async()=>{
-      if(Runtime.unloaded||!observer.running)return;observer.checks++;
+      if(Runtime.unloaded||!observer.running)return;
+      if(nativeCopyObserverPageHidden()){
+        // No host read while hidden; the next visible poll runs at the short interval.
+        observer.hiddenSkips++;observer.quietChecks=0;
+        observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_POLL_MS);return;
+      }
+      observer.checks++;
       try{
         const identity=await lightweightNativeCopyObserverIdentity();
+        if(identity&&identity===observer.lastIdentity)observer.quietChecks++;else observer.quietChecks=0;
         if(!identity&&observer.lastIdentity){observer.lastIdentity='';applyCurrentScope({available:false,scopeKey:'',reason:'no_active_chat'});}
         if(identity&&identity!==observer.lastIdentity&&!observer.inFlight){
           const first=!observer.lastIdentity;observer.lastIdentity=identity;observer.changes++;
           await runNativeCopyObserverAdoptionProbe(first?'observer_initial_scope':'observer_scope_changed');scheduleNativeCopyObserverFollowups(first?'observer_initial_scope':'observer_scope_changed');
         }else if(identity)await refreshNativeCopyObserverSources();
       }catch(error){observer.lastError=formatErrorMessage(error,500);warn('native copy observer poll failed',error);}
-      finally{if(!Runtime.unloaded&&observer.running)observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},NATIVE_COPY_OBSERVER_POLL_MS);}
+      finally{if(!Runtime.unloaded&&observer.running)observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer poll failed',error));},
+        observer.quietChecks>=NATIVE_COPY_OBSERVER_IDLE_AFTER_CHECKS?NATIVE_COPY_OBSERVER_IDLE_POLL_MS:NATIVE_COPY_OBSERVER_POLL_MS);}
     };
     observer.timer=scheduleTimer(()=>{poll().catch(error=>warn('native copy observer startup failed',error));},250);return true;
   };
