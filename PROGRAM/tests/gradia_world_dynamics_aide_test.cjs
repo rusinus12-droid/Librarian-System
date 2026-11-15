@@ -299,3 +299,42 @@ test('with the stage off no other stage is asked for world_check', async t => {
   await runTurn(f, '문을 연다.');
   assert.ok(f.prompts.every(body => !JSON.stringify(body).includes('world_check') && !JSON.stringify(body).includes('world_readings')));
 });
+
+// ---- Settings GUI: turn the stage on, see this turn's readings, find it in the ladder ----
+
+test('the 세계 동역학 panel shows the last readings, turns the stage on and saves it', async t => {
+  const f = await chainRun(t, { aide_world_dynamics: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 아직 성문에 닿지 않음' }] } });
+  await runTurn(f, '문을 연다.');
+  await configure(f, {}, { world: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="world_dynamics"]');
+  assert.ok(panel, 'the pipeline page renders the 세계 동역학 panel');
+  assert.match(panel.querySelector('[data-world-dynamics-readings]').textContent, /영주의 병사 파견 · 보류.*하루째 이동 중/, 'last run readings show with their status');
+  const toggle = panel.querySelector('#on-s7');
+  assert.equal(toggle.checked, false);
+  toggle.checked = true;
+  toggle.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
+  // The save button is enabled once the change is counted.
+  const save = await f.wait(() => { const node = f.document.querySelector('#savebar [data-save]'); return node && !node.disabled ? node : null; }, 'save enabled');
+  save.click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  assert.equal((await f.host.plugin.getAgentSlots()).aide_world_dynamics.enabled, true);
+  const runtime = await f.host.plugin.getRuntimeSettings();
+  assert.ok(Object.keys(runtime).every(key => !/world_?dynamics_read/i.test(key)), 'readings are not written to settings');
+});
+
+test('with no run yet the panel says so, and the stage sits first among the extension AIDEs in the ladder', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="world_dynamics"]');
+  assert.match(panel.querySelector('[data-world-dynamics-readings]').textContent, /아직 판독이 없습니다/);
+  assert.equal(panel.querySelector('#on-s7').checked, false, 'off by default');
+  const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
+  assert.ok(rows.indexOf('world_dynamics') >= 0 && rows.indexOf('world_dynamics') < rows.indexOf('body_state')
+    && rows.indexOf('body_state') < rows.indexOf('forced_bond') && rows.indexOf('forced_bond') < rows.indexOf('plot'), rows.join(' > '));
+  assert.ok(f.document.querySelector('[data-subtab="d"]'), 'the results page has a 세계 동역학 tab');
+  assert.ok(f.document.querySelector('[data-subpanel="d"]'), 'and its panel');
+  assert.ok(f.document.querySelector('#mini-s4w'), 'the home overview lists the stage');
+});
