@@ -284,34 +284,34 @@
     "artifact": "Librarian-System-1.1.2-Source.zip",
     "plugins": {
       "flashback": {
-        "version": "2.0.3",
-        "sha256": "6b64684379407e36a7dbcd679b3b7321545fcfd5281869778ecb86ba84677a33",
+        "version": "2.0.4",
+        "sha256": "7a252ecec58753a76677776539c385774b5cb9c38078410f5ae4df2768395fd9",
         "bytes": 3829915
       },
       "hayaku": {
-        "version": "4.0.4",
-        "sha256": "ef22212d03c958b88646c8d6826508c0985b5b1aed43e18c242d61a80ec2ebc0",
+        "version": "4.0.5",
+        "sha256": "73a1307258934b7020dae022ad120c56185a2eb9410fa6335c38d20057887a25",
         "bytes": 4297900
       },
       "libra": {
-        "version": "3.0.5",
-        "sha256": "708e7f0a9631e3cd8439e18ae4f9a389d9ebec5c559b2ba6402804e1457e1a9a",
+        "version": "3.0.6",
+        "sha256": "0577fed5fb0d442ddebb75ece8e75b92382001cf71cc87e8347c62f763b106d4",
         "bytes": 6680396
       },
       "lia": {
-        "version": "0.30.2",
-        "sha256": "4f19cc0c0b89102bf18018d73c39864302e08c6eb0ced804937ef4210106149f",
+        "version": "0.30.3",
+        "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
         "bytes": 801200
       },
       "retrace": {
-        "version": "2.0.1",
-        "sha256": "625c8c2908dd038dbdf9e89877d7b35c2a79fdd798c4948820b0f168371bad3d",
+        "version": "2.0.2",
+        "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
         "bytes": 1247248
       },
       "gradia": {
-        "version": "1.1.1",
-        "sha256": "c7592573efeaab8dd3f23ffa9e46f176606c1655a3b223d5e91e74be4cd15f6a",
-        "bytes": 3219491
+        "version": "1.1.2",
+        "sha256": "a2629d609f74ae62c4098a54cc011e2c03253a302fd60250475e2b84e0900ed6",
+        "bytes": 3232469
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

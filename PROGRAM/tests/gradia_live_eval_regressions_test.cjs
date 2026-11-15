@@ -5,10 +5,11 @@ const assert = require('node:assert/strict');
 const { load } = require('./gradia/host.cjs');
 
 const seam = '  const publicApi = Object.freeze({';
-const internals = async (api = {}) => (await load({ api, transformSource: source => {
+const liveHost = (api = {}) => load({ api, transformSource: source => {
   assert.ok(source.includes(seam));
-  return source.replace(seam, '  globalThis.__testInternals = { sceneTimeOfDay, buildDraftPatchDocument, applyDraftPatchOperations, callOllamaNative, aidePatchOutputTokenBudget, stageOutputTokenBudget };\n' + seam);
-} })).internals;
+  return source.replace(seam, '  globalThis.__testInternals = { sceneTimeOfDay, buildDraftPatchDocument, applyDraftPatchOperations, callOllamaNative, aidePatchOutputTokenBudget, stageOutputTokenBudget, loadSettings, resolvePreset, callLLMWithPreset };\n' + seam);
+} });
+const internals = async api => (await liveHost(api)).internals;
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('상태 time of day ignores times named for another day or as a span edge', async () => {
@@ -90,4 +91,42 @@ test('reasoning analysis reserves retry room from the preset ceiling once', asyn
   const budget = stageOutputTokenBudget({}, 'aide_world', 'analysis phase', preset);
   assert.equal(budget, 13108);
   assert.ok(preset.max_tokens > budget);
+});
+
+test('saved draft budget presets supply the mode-specific cap and low effort to native Ollama', async () => {
+  const bodies = [];
+  const nativeFetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return { ok: true, status: 200, text: async () => JSON.stringify({ message: { content: 'ok' }, done: true, done_reason: 'stop' }) };
+  };
+  const { plugin, internals: { loadSettings, resolvePreset, callLLMWithPreset } } = await liveHost({ nativeFetch, fetch: nativeFetch });
+  await plugin.saveProviderPreset('writer', {
+    provider: 'ollama', url: 'http://127.0.0.1:11434', model: 'deepseek-v4.1-flash:1017-cloud',
+    context_window: 256000, max_tokens: 4096, reasoning_preset: 'off', thinking_type: 'disabled',
+    extra_body: { think: false, options: { num_predict: 600, top_k: 20 } }
+  });
+  for (const [id, lightweight, heavyweight, min, max] of [
+    ['minimum', 12288, 16384, 3000, 5000],
+    ['balanced', 16384, 20480, 5000, 7000],
+    ['maximum', 24576, 32768, 8000, 12000]
+  ]) {
+    for (const [mode, cap] of [['lightweight', lightweight], ['heavyweight', heavyweight]]) {
+      await plugin.saveRuntimeSettings({ default_preset: 'writer', multi_pipeline_mode: mode, quick_profile: 'quality', draft_budget_preset: id });
+      const settings = await loadSettings();
+      assert.equal(settings.targetDraftMinChars, min);
+      assert.equal(settings.targetDraftMaxChars, max);
+      for (const [stage, phase] of [['shadow_act', 'draft'], ['aide_world', 'analysis'], ['aide_body_state', 'patch']]) {
+        assert.equal(resolvePreset(settings, stage).preset.max_tokens, cap);
+        const result = await callLLMWithPreset(settings, stage, 'system', 'user', { promptPhase: phase, maxTokens: 40000 });
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.equal(bodies.at(-1).think, 'low');
+        assert.equal(bodies.at(-1).options.num_predict, cap);
+        assert.equal(bodies.at(-1).options.top_k, 20);
+      }
+      assert.equal(resolvePreset(settings, 'input_assist').preset.max_tokens, 4096);
+      assert.equal(settings.presets.writer.max_tokens, 4096);
+    }
+  }
+  await plugin.saveProviderPreset('other', { provider: 'ollama', model: 'qwen3:8b', max_tokens: 6000 });
+  assert.equal(resolvePreset({ ...await loadSettings(), defaultPresetName: 'other' }, 'shadow_act').preset.max_tokens, 6000);
 });

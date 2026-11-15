@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.1.1
+//@display-name GRADIA v1.1.2
 //@api 3.0
-//@version 1.1.1
+//@version 1.1.2
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.1.1';
+  const PLUGIN_VERSION = '1.1.2';
   
   
   
@@ -2494,6 +2494,34 @@
       meta: '내부 안전 상한 20,000자'
     })
   ]);
+  // The minimum uses the no-retry DeepSeek V4.1 Flash measurements for both
+  // pipeline modes. The longer tiers increase the output budget at the same effort.
+  const DRAFT_BUDGET_PRESETS = Object.freeze({
+    minimum: Object.freeze({ label: '최솟값', lightweight: 12288, heavyweight: 16384, min: 3000, max: 5000, supportChars: 14000 }),
+    balanced: Object.freeze({ label: '밸런스드', lightweight: 16384, heavyweight: 20480, min: 5000, max: 7000, supportChars: 20000 }),
+    maximum: Object.freeze({ label: '최대', lightweight: 24576, heavyweight: 32768, min: 8000, max: 12000, supportChars: 30000 })
+  });
+  const DRAFT_BUDGET_REASONING_EFFORT = 'low';
+  const normalizeDraftBudgetPreset = value => normalizeChoice(value, ['manual', ...Object.keys(DRAFT_BUDGET_PRESETS)], 'manual');
+  const draftBudgetForStage = (settings, stage, preset) => {
+    if (!isDraftPipelineStage(stage) || canonicalProvider(preset?.provider) !== 'ollama'
+      || !/^deepseek-v4\.1-flash(?::|$)/i.test(text(preset?.model).trim())) return null;
+    return DRAFT_BUDGET_PRESETS[normalizeDraftBudgetPreset(settings?.draftBudgetPreset)] || null;
+  };
+  const applyDraftBudgetToStagePreset = (preset, budget, pipelineMode) => budget ? {
+    ...preset,
+    max_tokens: budget[normalizeMultiPipelineMode(pipelineMode)],
+    reasoning_preset: 'ollama',
+    reasoning_effort: DRAFT_BUDGET_REASONING_EFFORT,
+    reasoning_budget_tokens: 0,
+    thinking_type: 'enabled'
+  } : preset;
+  const setDraftLengthValues = (runtime, length) => {
+    runtime.targetDraftMinChars = length.min;
+    runtime.targetDraftMaxChars = length.max;
+    runtime.maxPreviousStageChars = length.supportChars;
+    runtime.maxInjectionChars = length.supportChars;
+  };
   const SIMPLE_PRIORITY_DEFS = Object.freeze({
     character: Object.freeze({ label: '인물과 감정 먼저', description: '말투·감정·관계가 중요한 장면', order: Object.freeze(['aide_character', 'aide_world', 'aide_plot']) }),
     world: Object.freeze({ label: '상황과 연속성 먼저', description: '위치·행동·물리적 연결이 중요한 장면', order: Object.freeze(['aide_world', 'aide_character', 'aide_plot']) }),
@@ -3718,6 +3746,7 @@ ${BIANCA_PERSONA_TEXT}`;
     if (family === 'gemini_flash' && profile === 'balanced') effort = 'medium';
     if (family === 'deepseek' && phase === 'analysis' && (!preset?.reasoning_effort || preset?.reasoning_effort === 'none')) effort = 'medium';
     if (family === 'gpt56' && effort === 'max') effort = 'high';
+    if (draftBudgetForStage(settings, stageName, preset)) effort = DRAFT_BUDGET_REASONING_EFFORT;
     if (repair) effort = 'minimal';
     const alwaysThinking = family === 'claude_fable5' || family === 'kimi';
     const disableRequested = repair && !alwaysThinking;
@@ -5752,7 +5781,7 @@ ${BIANCA_PERSONA_TEXT}`;
       responseImprovementProfile: 'response_improvement_profile', responseImprovementToggles: 'response_improvement_toggles',
       selectedModuleLoreIds: 'selected_module_lore_ids', excludedModuleLoreIds: 'excluded_module_lore_ids',
       loreActivationMode: 'lore_activation_mode', loreRerankerTopK: 'lore_reranker_top_k', skillStageSelections: 'skill_stage_selections', skillStageReferences: 'skill_stage_references', skillLegacyRouterSettings: 'skill_router_legacy_archive', skillCustomLibrary: 'skill_custom_library', skillRouterEnabled: 'skill_router_enabled', skillRouterTopK: 'skill_router_top_k', skillRouterReferences: 'skill_router_references', skillPriorityOverrides: 'skill_priority_overrides',
-      excludedCharacterLoreIds: 'excluded_character_lore_ids',
+      excludedCharacterLoreIds: 'excluded_character_lore_ids', draftBudgetPreset: 'draft_budget_preset',
     };
     const out = {};
     for (const [key, value] of Object.entries(source || {})) {
@@ -5766,6 +5795,16 @@ ${BIANCA_PERSONA_TEXT}`;
     delete out.inputAssistAlwaysTranslateEnglish;
     if (text(out.mode).trim().toLowerCase() === 'full') out.mode = 'normal';
     if (Object.prototype.hasOwnProperty.call(out, 'aide_stage_order')) out.aide_stage_order = normalizeAideStageOrder(out.aide_stage_order);
+    if (Object.prototype.hasOwnProperty.call(out, 'draft_budget_preset')) {
+      out.draft_budget_preset = normalizeDraftBudgetPreset(out.draft_budget_preset);
+      const budget = DRAFT_BUDGET_PRESETS[out.draft_budget_preset];
+      if (budget) {
+        out.target_draft_min_chars = budget.min;
+        out.target_draft_max_chars = budget.max;
+        out.max_previous_stage_chars = budget.supportChars;
+        out.max_injection_chars = budget.supportChars;
+      }
+    }
     return out;
   };
 
@@ -6844,6 +6883,7 @@ ${BIANCA_PERSONA_TEXT}`;
       defaultPresetName: compact(await runtimeCfg('default_preset', 'default'), 120) || 'default',
       aideStageOrder: normalizeAideStageOrder(await runtimeCfg('aide_stage_order', DEFAULT_AIDE_STAGE_ORDER)),
       quickProfile: normalizeChoice(await runtimeCfg('quick_profile', 'balanced'), QUICK_PROFILE_IDS, 'balanced'),
+      draftBudgetPreset: normalizeDraftBudgetPreset(runtimeStored.draft_budget_preset),
       selectedModuleLoreIds: normalizeSelectedModuleLoreIds(await runtimeCfg('selected_module_lore_ids', runtimeStored.selected_module_lore_ids || [])),
       excludedModuleLoreIds: normalizeExcludedModuleLoreIds(await runtimeCfg('excluded_module_lore_ids', runtimeStored.excluded_module_lore_ids || [])),
       excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(await runtimeCfg('excluded_character_lore_ids', runtimeStored.excluded_character_lore_ids || [])),
@@ -6953,7 +6993,9 @@ ${BIANCA_PERSONA_TEXT}`;
     const requestedName = stagePreset || defaultName;
     const candidateNames = Array.from(new Set([requestedName, defaultName, 'default'].filter(Boolean)));
     const resolvedName = candidateNames.find(name => settings.presets?.[name]) || requestedName;
-    return { name: resolvedName, preset: sanitizePreset(settings.presets?.[resolvedName] || {}) };
+    const preset = sanitizePreset(settings.presets?.[resolvedName] || {});
+    const budget = draftBudgetForStage(settings, stageName, preset);
+    return { name: resolvedName, preset: applyDraftBudgetToStagePreset(preset, budget, settings.multiPipelineMode) };
   };
 
   // A slot/preset timeout equal to the current or the previous built-in default is a value
@@ -19914,6 +19956,10 @@ ${passage.text || ''}`, 420));
               : true;
     }
     body = applyPresetExtraBody(body, preset);
+    if (options.draftBudgetApplied) {
+      body.think = ollamaBudget.reasoningAllowed ? DRAFT_BUDGET_REASONING_EFFORT : false;
+      body.options = { ...body.options, num_predict: predictTokens };
+    }
     if (options.suppressThink || options.forceNoThinking) {
       // Ollama enables thinking by model default when the field is omitted.
       // Explicit false is required for a real no-thinking retry.
@@ -20203,6 +20249,7 @@ ${passage.text || ''}`, 420));
     const mode = modeForProvider(provider);
     const effectiveOptions = {
       ...options,
+      draftBudgetApplied: Boolean(draftBudgetForStage(settings, stageName, preset)),
       ...(evidenceRun ? { [LIB_EVIDENCE_CONTEXT]: evidenceRun } : {}),
       promptPhase,
       ...(reasoningPolicy.disableRequested
@@ -30383,6 +30430,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const simple = {
       mode: settings?.mode,
       multiPipelineMode: normalizeMultiPipelineMode(settings?.multiPipelineMode),
+      draftBudgetPreset: normalizeDraftBudgetPreset(settings?.draftBudgetPreset),
       outputMode: settings?.outputMode,
       internalDraftLanguage: normalizeInternalDraftLanguage(settings?.internalDraftLanguage),
       nsfwMode: normalizeNsfwMode(settings?.nsfwMode),
@@ -41119,6 +41167,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     defaultPresetName: settings.defaultPresetName,
     aideStageOrder: normalizeAideStageOrder(settings.aideStageOrder),
     quickProfile: normalizeChoice(settings.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
+    draftBudgetPreset: normalizeDraftBudgetPreset(settings.draftBudgetPreset),
     selectedModuleLoreIds: normalizeSelectedModuleLoreIds(settings.selectedModuleLoreIds),
     excludedModuleLoreIds: normalizeExcludedModuleLoreIds(settings.excludedModuleLoreIds),
     excludedCharacterLoreIds: normalizeExcludedCharacterLoreIds(settings.excludedCharacterLoreIds),
@@ -41382,6 +41431,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ...base,
       mode: normalizeChoice(runtime.mode === 'full' ? 'normal' : runtime.mode, ['off', 'lite', 'normal'], 'normal'),
       multiPipelineMode: normalizeMultiPipelineMode(runtime.multiPipelineMode),
+      draftBudgetPreset: normalizeDraftBudgetPreset(runtime.draftBudgetPreset),
       writingMode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)),
       shadowDraftMode: normalizeWritingMode(runtime.writingMode, writingModeFromDraftMode(runtime.shadowDraftMode)) === 'rp' ? 'author_directed' : normalizeNovelShadowDraftMode(runtime.shadowDraftMode),
       gradationMode: runtime.gradationMode || 'full_draft',
@@ -41504,6 +41554,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         default_preset: runtime.defaultPresetName,
         aide_stage_order: normalizeAideStageOrder(runtime.aideStageOrder),
         quick_profile: normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'),
+        draft_budget_preset: normalizeDraftBudgetPreset(runtime.draftBudgetPreset),
         selected_module_lore_ids: JSON.stringify(normalizeSelectedModuleLoreIds(runtime.selectedModuleLoreIds)),
         excluded_module_lore_ids: JSON.stringify(normalizeExcludedModuleLoreIds(runtime.excludedModuleLoreIds)),
         excluded_character_lore_ids: JSON.stringify(normalizeExcludedCharacterLoreIds(runtime.excludedCharacterLoreIds)),
@@ -43232,10 +43283,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const choice = SIMPLE_LENGTH_CHOICES.find(item => item.id === choiceId);
     if (!choice) return;
     const runtime = Gui.state.runtime || (Gui.state.runtime = {});
-    runtime.targetDraftMinChars = choice.min;
-    runtime.targetDraftMaxChars = choice.max;
-    runtime.maxPreviousStageChars = choice.supportChars;
-    runtime.maxInjectionChars = choice.supportChars;
+    runtime.draftBudgetPreset = 'manual';
+    setDraftLengthValues(runtime, choice);
     markGuiDirty();
     renderSettingsGui();
   };
@@ -43481,10 +43530,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       agents[INPUT_ASSIST_STAGE_ID].risuRefs = defaultRisuReferencesForStage(INPUT_ASSIST_STAGE_ID);
     }
     const standardLength = SIMPLE_LENGTH_CHOICES.find(choice => choice.id === 'standard');
-    runtime.targetDraftMinChars = standardLength.min;
-    runtime.targetDraftMaxChars = standardLength.max;
-    runtime.maxPreviousStageChars = standardLength.supportChars;
-    runtime.maxInjectionChars = standardLength.supportChars;
+    runtime.draftBudgetPreset = 'manual';
+    setDraftLengthValues(runtime, standardLength);
     applyQuickProfileValues('balanced', runtime, agents);
     return state;
   };
@@ -44181,7 +44228,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const guiRecommendedChangeLabel = parts => {
     if (parts.some(guiPrivateChangeField)) return '인증 정보';
     const runtimeLabels = {
-      mode: '실행 모드', aideStageOrder: 'AIDE 실행 순서', quickProfile: '작업 규모',
+      mode: '실행 모드', aideStageOrder: 'AIDE 실행 순서', quickProfile: '작업 규모', draftBudgetPreset: '초안 예산 프리셋',
       inputAssistMode: '인풋 관리자 · 방식', inputAssistScope: '인풋 관리자 · 적용 범위',
       inputAssistTargetChars: '인풋 관리자 · 목표 글자 수', inputAssistConfirmationMode: '인풋 관리자 · 확인 방식',
       inputAssistLoreActivationMode: '인풋 관리자 · 로어 검색', informationTransferMode: '정보 전달 방식',
@@ -44337,14 +44384,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     for (const def of BEFORE_STAGE_DEFS) {
       const slot = agents[def.id] || {};
       if (slot.enabled === false || (lite && ['aide_character', 'aide_world'].includes(def.id))) continue;
-      const presetName = compact(slot.presetName || runtime.defaultPresetName || '', 120), preset = providers[presetName];
-      if (!preset || providerConfigurationIssues(preset).length) {
+      const presetName = compact(slot.presetName || runtime.defaultPresetName || '', 120), storedPreset = providers[presetName];
+      if (!storedPreset || providerConfigurationIssues(storedPreset).length) {
         stages.push({ id: def.id, label: def.label, presetName, model: '', maxTokens: 0, need: 0, ok: false });
         note('error', `${def.label}: AI 연결을 확인할 수 없습니다.`);
         continue;
       }
+      const budget = draftBudgetForStage(runtime, def.id, storedPreset);
+      const preset = applyDraftBudgetToStagePreset(storedPreset, budget, runtime.multiPipelineMode);
       const maxTokens = clampInt(preset.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), need = workScaleOutputNeed(def.id, preset, runtime);
-      stages.push({ id: def.id, label: def.label, presetName, model: preset.model || '', maxTokens, need, ok: maxTokens >= need });
+      stages.push({ id: def.id, label: def.label, presetName, model: preset.model || '', maxTokens, need, ok: maxTokens >= need, draftBudgetApplied: Boolean(budget) });
       if (maxTokens < need) note('warn', `${def.label}: ${presetName} 맥스 토큰 ${maxTokens.toLocaleString('ko-KR')} / 필요 ${need.toLocaleString('ko-KR')}. 응답이 잘릴 수 있습니다.`);
       // 같은 문맥 예산으로 실제 적용값을 계산한다. 저장된 상한이 문맥보다 크면 여기서 줄어든다.
       const stageBudget = workScaleContextBudget(runtime, preset, profileId);
@@ -44383,7 +44432,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const target = profileId === 'custom' ? 'balanced' : profileId;
     const raises = new Map();
     for (const stage of inspectWorkScale(runtime, agents, providers).stages) {
-      if (stage.need > stage.maxTokens && stage.need) raises.set(stage.presetName, Math.max(raises.get(stage.presetName) || 0, stage.need));
+      if (!stage.draftBudgetApplied && stage.need > stage.maxTokens && stage.need) raises.set(stage.presetName, Math.max(raises.get(stage.presetName) || 0, stage.need));
     }
     const lengthChoice = SIMPLE_LENGTH_CHOICES.find(item => item.min === Number(runtime.targetDraftMinChars) && item.max === Number(runtime.targetDraftMaxChars));
     return { target, raises: [...raises].map(([presetName, to]) => ({ presetName, from: clampInt(providers[presetName]?.max_tokens, 64, 200000, DEFAULT_MAX_STAGE_TOKENS), to })), supportChars: lengthChoice?.supportChars || 0 };
@@ -44417,12 +44466,28 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       panel.addEventListener('change', event => {
         const input = event.target.closest?.('[data-work-scale-field]');
         if (!input) return;
-        const runtime = Gui.state.runtime || (Gui.state.runtime = {}), agents = Gui.state.agents || (Gui.state.agents = {}), field = input.dataset.workScaleField, value = Number(input.value);
+        const runtime = Gui.state.runtime || (Gui.state.runtime = {}), agents = Gui.state.agents || (Gui.state.agents = {}), field = input.dataset.workScaleField;
+        if (field === 'draftBudgetPreset') {
+          runtime.draftBudgetPreset = normalizeDraftBudgetPreset(input.value);
+          const budget = DRAFT_BUDGET_PRESETS[runtime.draftBudgetPreset];
+          if (budget) setDraftLengthValues(runtime, budget);
+          markGuiDirty();
+          renderSettingsGui();
+          return;
+        }
+        const value = Number(input.value);
         if (!Number.isFinite(value)) return;
         if (field === 'turns' || field === 'reference') {
           for (const def of BEFORE_STAGE_DEFS) { const slot = agents[def.id] || (agents[def.id] = {}); if (field === 'turns') slot.turnWindow = clampInt(value, 1, 64, DEFAULT_RECENT_TURNS); else slot.maxChars = clampInt(value, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, REFERENCE_PROFILE_CAPS.balanced); }
         } else if (field === 'memory') runtime.memoryBudgetChars = clampInt(value, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, MEMORY_PROFILE_CAPS.balanced);
-        else if (field === 'maxTokens') { const name = input.dataset.workScalePreset; if (Gui.state.providers?.[name]) Gui.state.providers[name] = { ...Gui.state.providers[name], max_tokens: clampInt(value, 64, 200000, DEFAULT_MAX_STAGE_TOKENS) }; }
+        else if (field === 'maxTokens') {
+          const name = input.dataset.workScalePreset;
+          const stored = Gui.state.providers?.[name];
+          if (stored) {
+            if (draftBudgetForStage(runtime, 'shadow_act', stored)) runtime.draftBudgetPreset = 'manual';
+            Gui.state.providers[name] = { ...stored, max_tokens: clampInt(value, 64, 200000, DEFAULT_MAX_STAGE_TOKENS) };
+          }
+        }
         if (field !== 'maxTokens') runtime.quickProfile = inferQuickProfileFromGuiState({ ...runtime, quickProfile: 'custom' }, agents);
         markGuiDirty();
         renderSettingsGui();
@@ -44436,10 +44501,26 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const nodes = [mockupNode('p', 'hint', profileId === 'custom'
       ? `직접 조정 · 최근 ${firstAgent.turnWindow || DEFAULT_RECENT_TURNS}턴 · 참조 ${Number(firstAgent.maxChars || 0).toLocaleString('ko-KR')}자 · 기억 ${Number(runtime.memoryBudgetChars || MEMORY_PROFILE_CAPS.custom).toLocaleString('ko-KR')}자`
       : simpleProfileSummary(profileId))];
+    const budgetField = mockupNode('label', 'field');
+    budgetField.append(mockupNode('span', 'label', '초안 예산 프리셋'));
+    const budgetSelect = mockupNode('select', 'input');
+    budgetSelect.dataset.workScaleField = 'draftBudgetPreset';
+    const manualBudget = mockupNode('option', '', '직접 조정');
+    manualBudget.value = 'manual';
+    budgetSelect.append(manualBudget);
+    for (const [id, budget] of Object.entries(DRAFT_BUDGET_PRESETS)) {
+      const tokens = budget[normalizeMultiPipelineMode(runtime.multiPipelineMode)].toLocaleString('ko-KR');
+      const option = mockupNode('option', '', `${budget.label} · ${tokens}토큰 · ${budget.min.toLocaleString('ko-KR')}~${budget.max.toLocaleString('ko-KR')}자`);
+      option.value = id;
+      budgetSelect.append(option);
+    }
+    budgetSelect.value = normalizeDraftBudgetPreset(runtime.draftBudgetPreset);
+    budgetField.append(budgetSelect, mockupNode('span', 'hint', '토큰 상한과 low 추론은 Ollama의 DeepSeek V4.1 Flash에 적용됩니다.'));
+    nodes.push(budgetField);
     const check = mockupNode('div', 'stack stack--sm'); check.dataset.workScaleCheck = 'true';
     for (const stage of inspection.stages) {
       const row = mockupNode('p', 'hint', stage.need
-        ? `${stage.ok ? '✓' : '⚠'} ${stage.label} · ${stage.model || stage.presetName} · 맥스 ${stage.maxTokens.toLocaleString('ko-KR')} / 필요 ${stage.need.toLocaleString('ko-KR')}`
+        ? `${stage.ok ? '✓' : '⚠'} ${stage.label} · ${stage.model || stage.presetName} · 맥스 ${stage.maxTokens.toLocaleString('ko-KR')} / 필요 ${stage.need.toLocaleString('ko-KR')}${stage.draftBudgetApplied ? ' · low 추론' : ''}`
         : `✖ ${stage.label} · AI 연결 없음`);
       row.dataset.workScaleStage = stage.id; check.append(row);
     }
@@ -44853,6 +44934,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return;
     }
     if (control.matches?.('[data-len]')) {
+      runtime.draftBudgetPreset = 'manual';
       runtime[control.dataset.len === 'min' ? 'targetDraftMinChars' : 'targetDraftMaxChars'] = clampInt(control.value, control.dataset.len === 'min' ? 100 : 500, 60000, control.dataset.len === 'min' ? DEFAULT_TARGET_DRAFT_MIN_CHARS : DEFAULT_TARGET_DRAFT_MAX_CHARS);
       markGuiDirty(); if (!inputEvent) mockupRefreshStatus(); return;
     }
