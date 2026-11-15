@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.2.0",
-  "generatedAt": "2026-11-15T22:12:12.016Z",
+  "generatedAt": "2026-11-15T22:36:21.505Z",
   "server": {
     "version": "1.2.0",
     "protocol": {
@@ -3852,7 +3852,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "1530a8ac9592daf87451abf0cbe8adfe990e2c1056a8e8f6bb9b3f53d955a188",
+      "sha256": "ca0cc63ba1b3f36d7d7ea322b222df5fb6543ae3c0d4bc3ce984e6b5c812cc8a",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4256,8 +4256,8 @@
       "bytes": 3829915
     },
     "plugins/GRADIA.js": {
-      "sha256": "fc1ca5e464ec492f85e3ae833105ac25ef6919ea17949374b32dd7e3e784bce7",
-      "bytes": 3260113
+      "sha256": "75080d4f131a6435e9bd2ebbbbb008f65025236bf13182eae8e66888e8d82d40",
+      "bytes": 3265426
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "73a1307258934b7020dae022ad120c56185a2eb9410fa6335c38d20057887a25",
@@ -4268,8 +4268,8 @@
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "0577fed5fb0d442ddebb75ece8e75b92382001cf71cc87e8347c62f763b106d4",
-      "bytes": 6680396
+      "sha256": "51db6205675c8f13d845bf0e53bb67b66e64e603f89a7d02a7b95c4cfa5c97a9",
+      "bytes": 6682932
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -6760,8 +6760,8 @@
       "bytes": 8753
     },
     "tests/gradia_world_dynamics_aide_test.cjs": {
-      "sha256": "69955ed59132109c868f7ac1eb1c17ab8c03ef674c93c9fd5f41bebf210e3c75",
-      "bytes": 19428
+      "sha256": "3f92ef68720e010a647c0f2020e84d0f5146c1e6a001b2e02c66a5b74f87eefa",
+      "bytes": 22345
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",
@@ -8360,8 +8360,8 @@
       "bytes": 6797
     },
     "tests/libra_custom_memory_lens_runtime_test.cjs": {
-      "sha256": "0e63c4bb4fbdc6d94175a9f2593f8c0bc6a8b97f9e706022db906f71f962867b",
-      "bytes": 19020
+      "sha256": "c02f6c9733c71f42f8e1f737785439d20e64275ec168b06b2d094b7096f15bc0",
+      "bytes": 19120
     },
     "tests/libra_custom_memory_lens_server_runtime_test.cjs": {
       "sha256": "8f1486b314be16e781fecb3ae1900f87692d915ee19bbdbfd427559ba2823884",
