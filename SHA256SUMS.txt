@@ -714,7 +714,7 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516  ./PROGRAM/plugins/LIA_Persona_Linker.js
 51db6205675c8f13d845bf0e53bb67b66e64e603f89a7d02a7b95c4cfa5c97a9  ./PROGRAM/plugins/LIBRA.js
 e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9  ./PROGRAM/plugins/RETRACE.js
-bce4e01eaddabd8d4b4bc833e678c2605640efe2b863ec5047b99954bfa0eda8  ./PROGRAM/program-manifest.json
+2c6341df83fec91bd2d3f2b4a6473bcbbc51a245d619942db5d978a7f42b521f  ./PROGRAM/program-manifest.json
 0a7983a907171a3ea70463626c086252be4caa8068e68b0e55002becea45784e  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -1340,7 +1340,7 @@ e39c45b904a862a3adf3d4ea3eb9a852cdc65ac4b4f671d5062b773862735a51  ./PROGRAM/test
 11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c  ./PROGRAM/tests/gradia_writing_mode_authority_test.cjs
 d57bfa75ec47ecc39698ea33185463b24707d718e787e64ca39f37ea4b08b523  ./PROGRAM/tests/gradia/aide-full-draft-recovery-gui.test.cjs
 e13f4eade5c5f4373802de39ae06d5debe9d5b302e6f99835a9d913b3723b597  ./PROGRAM/tests/gradia/aide-full-draft-recovery.test.cjs
-a5de3fa10b14c2326e5899491968c5c6c8e59dfba568f540f2301029ac24cfab  ./PROGRAM/tests/gradia/aide-reasoning-patch.test.cjs
+92bcbd059789563c46b6a597ef2b8e949bbf6d24eeb98cf5414bcfaed627cbbd  ./PROGRAM/tests/gradia/aide-reasoning-patch.test.cjs
 e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829  ./PROGRAM/tests/gradia/bianca-injection-gui.test.cjs
 f0579d1bdb8894764de4413430b8b8db570f9e0960296d488d6d01f96ff69633  ./PROGRAM/tests/gradia/bianca-injection.test.cjs
 f43bc307820740eb81965bf1664d31156237656a1f7f30fa19f6c73dbc2738ef  ./PROGRAM/tests/gradia/context-degradation-gui.test.cjs

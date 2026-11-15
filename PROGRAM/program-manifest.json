@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.2.0",
-  "generatedAt": "2026-11-15T22:36:21.505Z",
+  "generatedAt": "2026-11-15T23:12:04.317Z",
   "server": {
     "version": "1.2.0",
     "protocol": {
@@ -6776,8 +6776,8 @@
       "bytes": 31532
     },
     "tests/gradia/aide-reasoning-patch.test.cjs": {
-      "sha256": "a5de3fa10b14c2326e5899491968c5c6c8e59dfba568f540f2301029ac24cfab",
-      "bytes": 10319
+      "sha256": "92bcbd059789563c46b6a597ef2b8e949bbf6d24eeb98cf5414bcfaed627cbbd",
+      "bytes": 10382
     },
     "tests/gradia/bianca-injection-gui.test.cjs": {
       "sha256": "e8692fff9787c35a6897064b930ec617380fe2e72eab53cce81030a26e141829",
