@@ -55655,6 +55655,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     let changed = ledger.illustrationIdentityReconciled === true || bridgeIdentityRepair.changed || identityRepair.changed;
     let ownerRebindings = 0;
     let staleOwnerDetections = 0;
+    // First node, in worldline order, that owns or quarantines each packet hash. Searching every
+    // node for every record grew with the square of the chat length. Nodes are not changed below.
+    const activeAcceptedOwnerByPacketHash = new Map();
+    const quarantineNodeByPacketHash = new Map();
+    for (const node of nodes) {
+      if (node?.status === 'active' && node?.packetLineageStatus !== 'quarantined') {
+        for (const hash of ensureArray(node?.packetHashes)) if (!activeAcceptedOwnerByPacketHash.has(hash)) activeAcceptedOwnerByPacketHash.set(hash, node);
+      }
+      for (const hash of ensureArray(node?.quarantinedPacketHashes)) if (!quarantineNodeByPacketHash.has(hash)) quarantineNodeByPacketHash.set(hash, node);
+    }
     for (const record of records) {
       if (record.inheritedSessionHistory === true) {
         record.slotId = storageRecordSlotId(record);
@@ -55707,14 +55717,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // that exact packet. An active accepted owner is authoritative; stale audit
       // quarantine from another node must not re-quarantine the durable record.
       const activeAcceptedPacketOwner = record?.hash
-        ? nodes.find(node => (
-            node?.status === 'active'
-            && node?.packetLineageStatus !== 'quarantined'
-            && ensureArray(node?.packetHashes).includes(record.hash)
-          ))
+        ? (activeAcceptedOwnerByPacketHash.get(record.hash) || null)
         : null;
       const packetLineageQuarantine = !activeAcceptedPacketOwner && record?.hash
-        ? nodes.find(node => ensureArray(node?.quarantinedPacketHashes).includes(record.hash))
+        ? (quarantineNodeByPacketHash.get(record.hash) || null)
         : null;
       if (packetLineageQuarantine) {
         if (record.recordState !== 'quarantined'
@@ -57125,11 +57131,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const hayakuCanonicalTopologySnapshot = (snapshot,ledger,requestOwnedTargetPairIndex=0) => {
     const records=ensureArray(ledger?.records),tombstones=new Map(ensureArray(ledger?.tombstones).filter(t=>t?.active).map(t=>[t.slotId,t]));
     let canonicalIdentityUnresolved=false;
+    // Group the eligible records by turn once. Filtering every record again for every pair made
+    // this pass grow with the square of the chat length (160,000 checks at 400 turns).
+    const recordsAtTurn=new Map();
+    for(const record of records){
+      if(record.inheritedSessionHistory||record.auditRetained||!['active','unbound'].includes(record.recordState))continue;
+      const turn=Number(record.targetPairIndex);
+      if(Number.isNaN(turn))continue;
+      const bucket=recordsAtTurn.get(turn);
+      if(bucket)bucket.push(record);else recordsAtTurn.set(turn,[record]);
+    }
     const pairs=ensureArray(snapshot?.conversationPairs).map(pair=>{
       // Only an internal pending request may exempt its exact target from the
       // ordinary projection. Packet-carried nonce claims never choose this index.
       if(Number(requestOwnedTargetPairIndex)>0&&Number(pair.pairIndex)===Number(requestOwnedTargetPairIndex))return pair;
-      const atTurn=records.filter(record=>Number(record.targetPairIndex)===Number(pair.pairIndex)&&!record.inheritedSessionHistory&&!record.auditRetained&&['active','unbound'].includes(record.recordState));
+      const atTurn=recordsAtTurn.get(Number(pair.pairIndex))||[];
       if(pair.userMessageIdentityStable!==true||pair.assistantMessageIdentityStable!==true||!pair.userMessageIdHash||!pair.assistantMessageIdHash){if(atTurn.length)canonicalIdentityUnresolved=true;return pair;}
       const candidates=atTurn.filter(record=>record.userMessageIdHash===pair.userMessageIdHash&&record.assistantMessageIdHash===pair.assistantMessageIdHash
         &&!storageRecordSuppressedByTombstone(record,tombstones.get(storageRecordSlotId(record))));
