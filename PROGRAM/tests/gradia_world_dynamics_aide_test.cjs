@@ -205,7 +205,7 @@ test('a later recorded ending of the same kind takes the movement out of the run
     '이야기 10일째 조사관이 수사를 시작했다',
     '이야기 14일째 조사관의 수사가 끝났다'
   ].join('\n'));
-  assert.match(packet, /\[inquiry or procedure\] a later ending of this kind is on record: treat it as ended/);
+  assert.match(packet, /\[inquiry or procedure\] a later ending of this matter is on record: treat it as ended/);
   assert.match(packet, /Recorded endings[^\n]*\n- \(LIB\) 이야기 14일째 조사관의 수사가 끝났다/);
   assert.doesNotMatch(packet, /Candidate this turn/);
 
@@ -216,6 +216,39 @@ test('a later recorded ending of the same kind takes the movement out of the run
   ].join('\n'));
   assert.match(reopened, /1\. \[inquiry or procedure\] in motion for 1 day/, 'a movement recorded after the ending is still under way');
   assert.match(reopened, /Candidate this turn: #1\./);
+});
+
+test('an ending closes only the matter it names, not every movement of its kind', async t => {
+  const packet = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 북부 기사단이 추격대를 보냈다',
+    '이야기 13일째 남부 경비대가 추격대를 보냈다',
+    '이야기 15일째 남부 경비대의 추격이 취소됐다'
+  ].join('\n'));
+  assert.match(packet, /1\. \[pursuit\] in motion for 5 days[^\n]*\n\s+evidence \(LIB\): 이야기 12일째 북부 기사단이 추격대를 보냈다/, 'the northern pursuit is still under way');
+  assert.match(packet, /\[pursuit\] a later ending of this matter is on record[^\n]*\n\s+evidence \(LIB\): 이야기 13일째 남부 경비대가 추격대를 보냈다/, 'only the southern pursuit ended');
+  assert.match(packet, /Candidate this turn: #1\./);
+  assert.match(packet, /Recorded endings \(each ends only the matter it names\):/);
+});
+
+test('an ending that names nobody closes a movement only when it is the only one of its kind', async t => {
+  const single = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 북부 기사단이 추격대를 보냈다',
+    '이야기 15일째 추격이 취소됐다'
+  ].join('\n'));
+  assert.match(single, /\[pursuit\] a later ending of this matter is on record/);
+  assert.doesNotMatch(single, /Candidate this turn/);
+
+  const several = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 북부 기사단이 추격대를 보냈다',
+    '이야기 13일째 남부 경비대가 추격대를 보냈다',
+    '이야기 15일째 추격이 취소됐다'
+  ].join('\n'));
+  assert.doesNotMatch(several, /a later ending of this matter is on record/, 'it cannot tell which pursuit ended, so neither is closed');
+  assert.match(several, /Candidate this turn: #1\./);
+  assert.match(several, /Recorded endings[^\n]*\n- \(LIB\) 이야기 15일째 추격이 취소됐다/, 'the ending is still shown for the model to weigh');
 });
 
 test('nothing on record: the packet says to surface nothing', async t => {

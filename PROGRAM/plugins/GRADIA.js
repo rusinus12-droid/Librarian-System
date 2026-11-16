@@ -26328,6 +26328,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return { kind: kind[0], state, elapsedDays: elapsed.days, source: entry.source, line: compact(entry.line, 220), text: `[${kind[0]}] ${started}; ${verdict}` };
   };
+  // Who or what a line is about: its words with Korean particles removed, leaving out the story
+  // day prefix, numbers, time words, verbs, and the words that only name the kind or the ending.
+  const WORLD_DYNAMICS_PARTICLE_RE = /(?:에게서|으로부터|이라고|에게|에서|으로|까지|부터|께서|한테|라고|은|는|이|가|을|를|의|에|로|와|과|도|만)$/;
+  const WORLD_DYNAMICS_NOT_SUBJECT_RE = /^(?:이야기|추정|아침|점심|저녁|새벽|오전|오후|어제|오늘|내일|모레|글피|하루|이틀|사흘|나흘|닷새|엿새|이레|일주일|열흘|보름|다른|모든|그리고|그러나|하지만|다시|이미|아직|결국|the|and|was|were|has|had|have|been|for|from|with|that|this|their|his|her|its|after|before|into|out|off|day|days|week|weeks|ago|later|today|tomorrow|yesterday)$/i;
+  const worldDynamicsSubjectWords = line => {
+    const words = new Set();
+    const body = String(line || '').replace(/이야기\s*\d+일째(?:\(추정\))?/g, ' ').replace(/\d{4}-\d{1,2}-\d{1,2}/g, ' ');
+    for (const raw of body.split(/[^0-9A-Za-z\u3131-\u318E\uAC00-\uD7A3]+/)) {
+      if (!raw || /\d/.test(raw)) continue;
+      const hangul = /[\uAC00-\uD7A3]/.test(raw);
+      // A conjugated verb says what happened, not who it happened to.
+      if (hangul && /(?:다|요|고|며|서|면|도록|지만|는데|니까)$/.test(raw) && raw.length >= 3) continue;
+      const stem = hangul ? raw.replace(WORLD_DYNAMICS_PARTICLE_RE, '') : raw.toLowerCase();
+      const word = stem.length >= 2 ? stem : raw;
+      if (word.length < (hangul ? 2 : 3) || WORLD_DYNAMICS_NOT_SUBJECT_RE.test(word)) continue;
+      if (WORLD_DYNAMICS_ENDED_RE.test(word) || WORLD_DYNAMICS_KINDS.some(([, pattern]) => pattern.test(word + ' '))) continue;
+      words.add(word);
+    }
+    return words;
+  };
   const worldDynamicsNoteDay = line => {
     const match = String(line || '').match(BODY_STATE_NOTE_DAY_RE);
     return match ? Number(match[1]) : null;
@@ -26343,21 +26363,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
       seen.add(key);
       return true;
     });
-    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line),
+    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line),
       kinds: WORLD_DYNAMICS_ENDED_RE.test(entry.line) ? WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) : [] }))
       .filter(item => item.kinds.length);
-    // An ending of the same kind recorded later (by story day, else by order) most likely closes
-    // the movement. It stays listed, last and never as the candidate, so the model can still tell
-    // two separate matters of one kind apart.
-    const endedBy = (kind, index, day) => endings.some(end => end.kinds.includes(kind)
-      && (day !== null && end.day !== null ? end.day >= day : end.index > index));
-    const movements = unique.map((entry, index) => {
-      const read = worldDynamicsReadLine(entry, now, clock);
-      if (!read) return null;
-      return endedBy(read.kind, index, worldDynamicsNoteDay(entry.line))
-        ? { ...read, index, state: 'ended', text: `[${read.kind}] a later ending of this kind is on record: treat it as ended unless the evidence shows it is a separate matter` }
-        : { ...read, index };
-    }).filter(Boolean)
+    const read = unique.map((entry, index) => {
+      const row = worldDynamicsReadLine(entry, now, clock);
+      return row ? { ...row, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
+    }).filter(Boolean);
+    const later = (end, item) => (item.day !== null && end.day !== null ? end.day >= item.day : end.index > item.index);
+    // An ending closes a movement only when it is the same matter: same kind, recorded later
+    // (by story day, else by order), and naming the same party. The kind alone is not enough:
+    // calling off the southern guard's pursuit does not end the northern order's. An ending
+    // that names nobody closes a movement only when it is the one such movement before it.
+    const endedBy = item => endings.some(end => end.kinds.includes(item.kind) && later(end, item)
+      && (end.subjects.size
+        ? [...end.subjects].some(word => item.subjects.has(word))
+        : read.filter(other => other.kind === item.kind && later(end, other)).length === 1));
+    const movements = read.map(item => (endedBy(item)
+      ? { ...item, state: 'ended', text: `[${item.kind}] a later ending of this matter is on record: treat it as ended unless the evidence shows otherwise` }
+      : item))
       // Most pressing first; among equals the longer-running, then the later record.
       .sort((left, right) => (WORLD_DYNAMICS_RANK[left.state] - WORLD_DYNAMICS_RANK[right.state])
         || ((right.elapsedDays ?? -1) - (left.elapsedDays ?? -1)) || (right.index - left.index))
@@ -26369,7 +26393,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `Evidence source: ${entries.some(entry => entry.source === 'LIB') ? 'LIB memory and recent scene' : 'recent scene signals only (no LIB evidence)'}.`,
       movements.length ? 'Off-scene movements on record, most pressing first:' : 'No off-scene movement on record. Surface nothing.',
       ...movements.map((item, index) => `${index + 1}. ${item.text}\n   evidence (${item.source}): ${item.line}`),
-      endings.length ? `Recorded endings (a movement one of these ends is no longer in motion):\n${endings.slice(-3).map(end => `- (${end.entry.source}) ${compact(end.entry.line, 220)}`).join('\n')}` : '',
+      endings.length ? `Recorded endings (each ends only the matter it names):\n${endings.slice(-3).map(end => `- (${end.entry.source}) ${compact(end.entry.line, 220)}`).join('\n')}` : '',
       movements.length
         ? (candidate >= 0
           ? `Candidate this turn: #${candidate + 1}. Surface it only if it can reach this scene and no recorded ending covers it; when the current input touches another listed movement, prefer that one.`
