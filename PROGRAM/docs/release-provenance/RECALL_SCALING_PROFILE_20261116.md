@@ -74,3 +74,13 @@ Warm `beforeRequest` recall-path CPU profiling and scaling optimization across *
     - `createLibraStateMemoryEngine` (`N = 800`, median of 5, exact equivalence verified): `select` `19.67 ms` -> `11.60 ms` (-41.0%), `rankCatalog` `23.33 ms` -> `12.70 ms` (-45.6%)
     - `createLibraStateMemoryEngine` (`N = 1600`, median of 5, exact equivalence verified): `select` `38.14 ms` -> `21.53 ms` (-43.5%), `rankCatalog` `43.08 ms` -> `25.33 ms` (-41.2%)
 
+---
+
+### 5. HAYAKU Dead-Code Removal & Lightweight 3-Field BM25F Upgrade
+- **Dead 8-Field BM25F Deletion (`HAYAKU_Locator_Continuity.js`)**: Removed ~880 lines of unconnected 8-field BM25F/contextual/sparse-RRF-candidate/retrieval-gate code (`SPARSE_HYBRID_TUNING`, `buildRetrievalBm25DocumentRaw`, `retrievalBm25Document`, `sparseFieldValuesForRow`, `buildSparseBm25fCorpus`, `sparseBm25fScore`, `sparseCandidateSignalsForRow`, `applyUnifiedContextualBm25f`, `applyUnifiedAssociationActivation`, `applyUnifiedMemoryCandidateSignals`, `rankSparseCandidates`, `buildRetrievalCorpus`, `scoreRowWithStrengthenedJaccard`, `rowPassesRetrievalGate`) and trimmed those unused entries from `_test`. Active tests/callers (`attachUnifiedMemoryAssociations`, `applyRrfFusion`, `applyHierarchicalEpisodeRouting`, `applyHayakuRecallStability`) remain intact.
+- **Lightweight 3-Field BM25F (`localRecallRank` + `PROGRAM/sdk/MemorySuiteSearchKernel.source.cjs`)**:
+  - Replaced single-body BM25 under `hayaku.evidence-lexical.v1` with a parity-verified 3-field BM25F (`body` `1.0x / b=0.75`, `identity` `+1.5x -> 2.5x / b=0.30` parsed from `name/title/subject/speaker/owner/holder/location/place/scene/character/entity/target:` lines, and `alias` `0.85x / b=0.35` on trailing alias lines; `Memory.lastLocalRecallRank.rankingModel = 'bm25f_3field_v1'`).
+  - Verified exact parity (`remote.rankings` == `localRecallRank`), identity-field precision ranking (`char-mira-identity` #1 above longer `summary-mira-long`), and zero latency regression (`258b50b1` `294.81 ms` -> `bm25f_3field` `280.56 ms` median over 5 warm `beforeRequest` calls at `n = 200` / 1,868 rows).
+- **Temporal Quota Default Recommendation**: Kept `hayakuTemporalPolicy` `'unset'` by default to protect core recall accuracy and avoid query-blind turn pruning when short/medium/long history distribution varies.
+
+

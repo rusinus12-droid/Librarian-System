@@ -1112,33 +1112,6 @@ const MemorySuiteExecutionContract = (() => {
     channelBoost: 1.30,
     channelDamp: 0.85
   });
-  const SPARSE_HYBRID_TUNING = Object.freeze({
-    candidateLimits: Object.freeze({ fast: 16, balanced: 32, deep: 64 }),
-    bm25fK1: 1.2,
-    bm25fFieldWeights: Object.freeze({
-      canonical: 4.0,
-      identity: 3.4,
-      relation: 2.8,
-      state: 2.2,
-      event: 1.9,
-      context: 1.35,
-      temporal: 1.2,
-      summary: 0.65
-    }),
-    bm25fFieldLengthNorm: Object.freeze({
-      canonical: 0.15,
-      identity: 0.25,
-      relation: 0.35,
-      state: 0.72,
-      event: 0.68,
-      context: 0.48,
-      temporal: 0.35,
-      summary: 0.82
-    }),
-    candidateRrfK: 52,
-    rerankJaccardWeight: 0.09,
-    candidateEvidenceFloor: 0.018
-  });
   const UNIFIED_MEMORY_TUNING = Object.freeze({
     maxAssociationsPerRow: 24,
     maxBucketFanout: 18,
@@ -23755,6 +23728,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   
   const localRecallBody = row => [row.publicText,row.publicProfile].filter(value=>typeof value==='string').join('\n').trim();
+  const localRecallIdentityText = evidenceBody => {
+    const parts=[];
+    for(const match of String(evidenceBody||'').matchAll(/^(?:name|title|subject|speaker|owner|holder|location|place|scene|character|entity|target)\s*:\s*(.+)$/gimu)){
+      const value=match[1].trim();
+      if(value)parts.push(value);
+    }
+    return parts.join('\n');
+  };
   // Search metadata never becomes rendered evidence, a body identity, or a budget charge.
   const localRecallSearchBody = row => {
     const body=localRecallBody(row),aliases=row._recallSearchAliases,locator=row.locator||{};
@@ -23774,7 +23755,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(!rowList.length){
       Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
         compiledIndexHit:false,verificationRows:0,documentTokenizations:0,fullTermScans:0,informationTermScans:0,candidateVisits:0,scoredRows:0,
-        questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
+        rankingModel:'bm25f_3field_v1',questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
       return [];
     }
     let priorIndex=localRecallRankIndex?.docs.length===rowList.length?localRecallRankIndex:null;
@@ -23790,9 +23771,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // eviction. Current eligibility, source identity and exact body still run.
       let doc=prior?.key===key&&prior.doc.body===body&&prior.doc.evidenceBody===evidenceBody?prior.doc:localRecallDocuments.get(body);
       if(!doc || doc.body!==body || doc.evidenceBody!==evidenceBody){
-        const terms=localRecallTerms(evidenceBody),evidenceTf=new Map();terms.forEach(term=>evidenceTf.set(term,(evidenceTf.get(term)||0)+1));
-        const tf=new Map(evidenceTf);for(const term of localRecallTerms(body))if(!tf.has(term))tf.set(term,1);
-        doc={body,evidenceBody,evidenceTf,tf,length:terms.length};localRecallDocuments.set(body,doc);documentTokenizations++;
+        const terms=localRecallTerms(evidenceBody),evidenceTf=new Map();
+        for(const term of terms)evidenceTf.set(term,(evidenceTf.get(term)||0)+1);
+        const idText=localRecallIdentityText(evidenceBody),identityTf=new Map();
+        const idTerms=idText?localRecallTerms(idText):[];
+        for(const term of idTerms)identityTf.set(term,(identityTf.get(term)||0)+1);
+        const aliasSource=body.startsWith(evidenceBody)?body.slice(evidenceBody.length):body;
+        const aliasTf=new Map();
+        if(aliasSource){for(const term of localRecallTerms(aliasSource))if(!evidenceTf.has(term))aliasTf.set(term,1);}
+        const tf=new Map(evidenceTf);
+        for(const term of aliasTf.keys())tf.set(term,1);
+        for(const [term,count] of identityTf)if(!tf.has(term))tf.set(term,count);
+        doc={body,evidenceBody,evidenceTf,identityTf,aliasTf,tf,length:terms.length,identityLength:idTerms.length,aliasLength:aliasTf.size};
+        localRecallDocuments.set(body,doc);documentTokenizations++;
       }
       return {row,doc,key};
     });
@@ -23819,8 +23810,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(!compiled){
       const postings=new Map();docs.forEach(({doc},index)=>doc.tf.forEach((_,term)=>{const ids=postings.get(term)||[];ids.push(index);postings.set(term,ids);fullTermScans++;}));
       const averageLength=docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length);
-      const docNorms=docs.map(({doc})=>1.2*(.25+.75*doc.length/Math.max(1,averageLength)));
-      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:averageLength,docNorms};
+      let identityTotal=0,identityCount=0,aliasTotal=0,aliasCount=0;
+      for(const {doc} of docs){
+        if(doc.identityLength>0){identityTotal+=doc.identityLength;identityCount++;}
+        if(doc.aliasLength>0){aliasTotal+=doc.aliasLength;aliasCount++;}
+      }
+      const identityAverage=identityCount?identityTotal/identityCount:1;
+      const aliasAverage=aliasCount?aliasTotal/aliasCount:1;
+      const bodyNorms=docs.map(({doc})=>.25+.75*doc.length/Math.max(1,averageLength));
+      const identityNorms=docs.map(({doc})=>.70+.30*doc.identityLength/Math.max(1,identityAverage));
+      const aliasNorms=docs.map(({doc})=>.65+.35*doc.aliasLength/Math.max(1,aliasAverage));
+      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:averageLength,identityAverage,aliasAverage,bodyNorms,identityNorms,aliasNorms,docNorms:bodyNorms};
       // Repeated templates must not crowd distinct facts out of a broad
       // collection query. Derive information from this exact eligible corpus,
       // without topic dictionaries, question rules, or answer identities.
@@ -23844,7 +23844,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
     }
     const average=compiled.average;
-    const docNorms=compiled.docNorms||docs.map(({doc})=>1.2*(.25+.75*doc.length/Math.max(1,average)));
+    const identityAverage=compiled.identityAverage||1;
+    const aliasAverage=compiled.aliasAverage||1;
+    const bodyNorms=compiled.bodyNorms||docs.map(({doc})=>.25+.75*doc.length/Math.max(1,average));
+    const identityNorms=compiled.identityNorms||docs.map(({doc})=>.70+.30*doc.identityLength/Math.max(1,identityAverage));
+    const aliasNorms=compiled.aliasNorms||docs.map(({doc})=>.65+.35*doc.aliasLength/Math.max(1,aliasAverage));
     const best=new Map();
     const queryInputs = ensureArray(inputs).map(localRecallQueryText).map(value => value.trim()).filter(Boolean);
     for(const input of new Set(queryInputs)){
@@ -23859,9 +23863,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const idf=Math.log(1+(docs.length-frequency+.5)/(frequency+.5));
         const isWord=term.startsWith('w:');
         for(const index of post){
-          const tf=docs[index].doc.tf.get(term)||0;
-          if(!tf)continue;
-          const contribution=idf*(tf*2.2)/(tf+docNorms[index]);
+          const d=docs[index].doc;
+          const bodyTf=d.evidenceTf.get(term)||0;
+          const idTf=d.identityTf.get(term)||0;
+          const alTf=d.aliasTf.get(term)||0;
+          const weightedTf=(bodyTf?bodyTf/bodyNorms[index]:0)+(idTf?1.5*(idTf/identityNorms[index]):0)+(!bodyTf&&alTf?0.85*(alTf/aliasNorms[index]):0);
+          if(!(weightedTf>0))continue;
+          const contribution=idf*(weightedTf*2.2)/(weightedTf+1.2);
           scoreMap.set(index,(scoreMap.get(index)||0)+contribution);
           if(isWord)wordScoreMap.set(index,(wordScoreMap.get(index)||0)+contribution);
         }
@@ -23881,7 +23889,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
       compiledIndexHit,verificationRows:docs.length,documentTokenizations,fullTermScans,informationTermScans,candidateVisits,scoredRows,
-      questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
+      rankingModel:'bm25f_3field_v1',questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
     return [...best.values()].sort((a,b)=>a.rank-b.rank||a.key.localeCompare(b.key)).map(hit=>hit.row);
   };
   const localRecallFairMerge = (queues, limit) => {
@@ -34038,381 +34046,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       reason: text(contextFocus.reason || '')
     };
   };
-  const buildRetrievalBm25DocumentRaw = row => {
-    const r = row.retrieval || {};
-    const out = [];
-    const pushToken = (token, weight = 1) => {
-      const key = normalizeKey(token);
-      if (!key) return;
-      const count = Math.max(1, Math.min(5, Math.floor(Number(weight) || 1)));
-      for (let i = 0; i < count; i += 1) out.push(key);
-    };
-    const pushValue = (value, weight = 1, limit = 180) => {
-      const walk = source => {
-        if (source == null) return;
-        if (Array.isArray(source)) {
-          source.forEach(walk);
-          return;
-        }
-        if (objectish(source)) {
-          const body = itemText(source);
-          if (body) bm25DocumentTokens(body, limit).forEach(token => pushToken(token, weight));
-          return;
-        }
-        const body = text(source);
-        if (!body.trim()) return;
-        pushToken(body, weight);
-        bm25DocumentTokens(body, limit).forEach(token => pushToken(token, weight));
-      };
-      walk(value);
-    };
-    pushValue([r.canonicalAnchors, r.crossLingualTokens], 4, 160);
-    pushValue(row.memoryNote?.retrievalAliases, 3, 180);
-    pushValue([r.subjectTokens, r.relationEndpoints, r.entityNames, r.subject], 3, 160);
-    pushValue([r.priorityTerms, r.locatorTokens, row.publicRef], 2, 220);
-    pushValue([r.surfaceTokens, r.tokens, row.publicText, row.publicProfile], 1, 360);
-    pushValue([r.conceptTokens, r.semanticFrameTokens, r.sourceEvidenceTokens], 1, 220);
-    pushValue([
-      row.memoryNote?.title,
-      row.memoryNote?.location,
-      row.memoryNote?.characters,
-      row.memoryNote?.sectionLabel,
-      row.memoryNote?.sectionText,
-      row.memoryNote?.coreMemory,
-      row.memoryNote?.recallAnchors
-    ], 1, 260);
-    return out.slice(0, 900);
-  };
-  const retrievalBm25Document = (row, settings = Memory.settings) => requestCachedRowFeature(
-    settings, row, 'retrieval_bm25_document', () => buildRetrievalBm25DocumentRaw(row)
-  );
-  const SPARSE_BM25F_FIELD_NAMES = Object.freeze(Object.keys(SPARSE_HYBRID_TUNING.bm25fFieldWeights));
-  const sparseFieldValuesForRow = (row = {}, preserveFrequency = false) => {
-    const r = row.retrieval || {};
-    const atomic = r.atomicRecord || sparseAtomicRecordFor(row, row.item || {});
-    const visibility = atomic.visibility || row.visibility || {};
-    const collect = (values, limit) => preserveFrequency
-      ? ensureArray(values).flat(Infinity).map(value => text(value).trim()).filter(Boolean).slice(0, limit * 2)
-      : mergeValues(values, limit);
-    return {
-      canonical: collect([
-        r.canonicalAnchors,
-        r.crossLingualTokens,
-        row.links?.canonicalAnchors,
-        row.memoryNote?.retrievalAliases
-      ], 160),
-      identity: collect([
-        row.publicRef,
-        row.id,
-        atomic.subjectRefs,
-        r.subject,
-        r.subjectTokens,
-        r.entityNames
-      ], 180),
-      relation: collect([
-        atomic.participants,
-        r.relationEndpoints,
-        row.visibility?.ownerEntityId,
-        visibility.visibleToEntityIds,
-        visibility.deniedToEntityIds
-      ], 160),
-      state: collect([
-        atomic.predicate,
-        row.publicText,
-        row.category === 'character' || row.category === 'current_state' ? row.publicText : '',
-        r.tokens,
-        r.surfaceTokens,
-        r.priorityTerms
-      ], 220),
-      event: collect([
-        atomic.kind === 'event' || atomic.kind === 'constraint' ? row.publicText : '',
-        atomic.kind,
-        atomic.predicate,
-        atomic.kind === 'event' || atomic.kind === 'constraint' ? r.tokens : [],
-        r.semanticFrameTokens,
-        r.conceptTokens,
-        r.storyTags,
-        r.narrativeTags
-      ], 180),
-      context: collect([
-        row.memoryNote?.title,
-        row.memoryNote?.location,
-        row.memoryNote?.characters,
-        row.memoryNote?.memoryType,
-        row.memoryNote?.promotion,
-        row.memoryNote?.sectionLabel,
-        row.memoryNote?.sectionText,
-        row.memoryNote?.coreMemory,
-        row.memoryNote?.recallAnchors,
-        row.memoryNote?.criticalDialogue,
-        row.memoryNote?.unsupportedInferences,
-        row.memoryNote?.compressionSeed
-      ], 220),
-      temporal: collect([
-        atomic.status,
-        atomic.validTime,
-        atomic.eventTime,
-        row.sourceTime,
-        row.scene_id,
-        row.sceneRelation,
-        r.timeTags
-      ], 100),
-      summary: collect([
-        row.category === 'summary_memory' ? row.publicText : '',
-        row.publicProfile,
-        r.tokens,
-        r.sourceEvidenceTokens,
-        row.category !== 'summary_memory' ? row.publicText : ''
-      ], 220)
-    };
-  };
-  const sparseFieldDocumentTokens = (values = [], limit = 360) => {
-    const sources = ensureArray(values).flat().map(value => text(value).trim()).filter(Boolean);
-    return uniq(sources.map(normalizeKey).filter(Boolean), limit);
-  };
-  const sparseFieldTermFrequency = (values = [], limit = 360) => {
-    const tf = new Map();
-    let length = 0;
-    const sources = ensureArray(values).flat().map(value => normalizeKey(text(value).trim())).filter(Boolean);
-    for (const token of sources.slice(0, limit * 3)) {
-      const next = Math.min(3, Number(tf.get(token) || 0) + 1);
-      length += next > Number(tf.get(token) || 0) ? 1 : 0;
-      tf.set(token, next);
-    }
-    return { tf, length: Math.max(1, length), sourceCount: sources.length };
-  };
-  const buildSparseBm25fDocumentRaw = row => {
-    const fields = sparseFieldValuesForRow(row);
-    const frequencyFields = sparseFieldValuesForRow(row, true);
-    const document = {};
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      const limit = field === 'summary' || field === 'state' ? 420 : 260;
-      document[field] = sparseFieldDocumentTokens(fields[field], limit);
-    });
-    document._fieldTf = Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => [
-      field,
-      sparseFieldTermFrequency(frequencyFields[field], field === 'summary' || field === 'state' ? 420 : 260)
-    ]));
-    return document;
-  };
-  const sparseBm25fDocument = (row, settings = Memory.settings) => requestCachedRowFeature(
-    settings, row, 'sparse_bm25f_document_v3', () => buildSparseBm25fDocumentRaw(row)
-  );
-  const buildSparseBm25fCorpus = (rows = [], settings = Memory.settings) => {
-    const docs = ensureArray(rows).map(row => sparseBm25fDocument(row, settings));
-    const docFreq = new Map();
-    const avgFieldLength = Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => [field, 1]));
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      let total = 0;
-      docs.forEach(doc => {
-        total += Math.max(1, Number(doc?._fieldTf?.[field]?.length || ensureArray(doc[field]).length || 1));
-      });
-      avgFieldLength[field] = docs.length ? Math.max(1, total / docs.length) : 1;
-    });
-    docs.forEach(doc => {
-      const unique = new Set(SPARSE_BM25F_FIELD_NAMES.flatMap(field => ensureArray(doc[field])));
-      unique.forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    });
-    return { docs, docFreq, avgFieldLength, size: docs.length };
-  };
-  const sparseBm25fQueryTokens = (signature = {}) => uniq([
-    ...bm25DocumentTokens(signature.expandedText || signature.rawQuery || '', 180),
-    ...ensureArray(signature.canonicalTokens),
-    ...ensureArray(signature.entityTokens),
-    ...ensureArray(signature.surfaceQueryTokens)
-  ].map(normalizeKey).filter(Boolean), 220);
-  const sparseBm25fScore = (queryTokens = [], document = {}, corpus = {}) => {
-    const query = uniq(queryTokens.map(normalizeKey).filter(Boolean), 120);
-    if (!query.length) return 0;
-    const docCount = Math.max(1, Number(corpus.size || 1));
-    const k1 = SPARSE_HYBRID_TUNING.bm25fK1;
-    const fieldTf = document._fieldTf || Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => {
-      const tokens = ensureArray(document[field]).map(normalizeKey).filter(Boolean);
-      const tf = new Map();
-      tokens.forEach(token => tf.set(token, (tf.get(token) || 0) + 1));
-      return [field, { tf, length: tokens.length }];
-    }));
-    let raw = 0;
-    let maxRaw = 0;
-    query.forEach(token => {
-      const df = Math.max(0, Number(corpus.docFreq?.get(token) || 0));
-      const idf = Math.log(1 + ((docCount - df + 0.5) / (df + 0.5)));
-      let weightedTf = 0;
-      SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-        const weight = Number(SPARSE_HYBRID_TUNING.bm25fFieldWeights[field] || 1);
-        const b = Number(SPARSE_HYBRID_TUNING.bm25fFieldLengthNorm[field] || 0.75);
-        const entry = fieldTf[field];
-        const freq = entry.tf.get(token) || 0;
-        if (!freq) return;
-        const avg = Math.max(1, Number(corpus.avgFieldLength?.[field] || 1));
-        const norm = Math.max(0.15, 1 - b + b * (entry.length / avg));
-        weightedTf += weight * (freq / norm);
-      });
-      if (weightedTf > 0) raw += idf * ((weightedTf * (k1 + 1)) / (weightedTf + k1));
-      maxRaw += idf * (k1 + 1);
-    });
-    return clamp(maxRaw > 0 ? raw / maxRaw : 0, 0, 1, 0);
-  };
-  const sparseExactCoverage = (queryTokens = [], documentTokens = []) => {
-    const query = new Set(ensureArray(queryTokens).map(normalizeKey).filter(Boolean));
-    const document = new Set(ensureArray(documentTokens).map(normalizeKey).filter(Boolean));
-    if (!query.size || !document.size) return 0;
-    let overlap = 0;
-    query.forEach(token => { if (document.has(token)) overlap += 1; });
-    return overlap / query.size;
-  };
-  const sparseCandidateSignalsForRow = (row = {}, rowIndex = 0, signature = {}, corpus = {}, settings = Memory.settings) => {
-    const doc = corpus.docs?.[rowIndex] || sparseBm25fDocument(row, settings);
-    const queryTokens = corpus.queryTokens || sparseBm25fQueryTokens(signature);
-    const identitySignal = Math.max(
-      sparseExactCoverage(signature.entityTokens, doc.identity),
-      queryMentionsAny(signature.rawQuery, doc.identity) ? 1 : 0
-    );
-    // Broad discourse tags such as `info:memory` describe the query form, not
-    // the remembered fact. Let only specific anchors participate in the exact
-    // canonical channel so a generic "remember" query cannot outrank its
-    // explicitly named subject/owner.
-    const specificQueryCanonical = ensureArray(signature.canonicalTokens).filter(packetCoverageSpecificCanonical);
-    const specificDocCanonical = ensureArray(doc.canonical).filter(packetCoverageSpecificCanonical);
-    const canonicalExactSignal = sparseExactCoverage(specificQueryCanonical, specificDocCanonical);
-    const lexicalCoverageSignal = sparseExactCoverage(signature.tokens, mergeValues([doc.state, doc.event, doc.context, doc.summary], 900));
-    const charNgramSignal = Math.max(
-      weightedJaccard(signature.charTokens, mergeValues([doc.identity, doc.state, doc.event, doc.context], 900)).coverage,
-      0
-    );
-    const phraseSignal = lexicalStats(signature.phraseBigrams || [], bigramTokens(row?.retrieval?.tokens || [], 220)).coverage;
-    const bm25fSignal = sparseBm25fScore(queryTokens, doc, corpus);
-    const sparseEvidence = Math.max(
-      bm25fSignal,
-      identitySignal,
-      canonicalExactSignal,
-      charNgramSignal * 0.82,
-      lexicalCoverageSignal * 0.78,
-      phraseSignal * 0.72
-    );
-    return {
-      ...row,
-      retrievalEngine: RETRIEVAL_ENGINE_VERSION,
-      scoreBreakdown: {
-        ...(row.scoreBreakdown || {}),
-        retrievalEngine: RETRIEVAL_ENGINE_VERSION,
-        bm25fSignal: Number(bm25fSignal.toFixed(4)),
-        identitySignal: Number(identitySignal.toFixed(4)),
-        canonicalExactSignal: Number(canonicalExactSignal.toFixed(4)),
-        charNgramSignal: Number(charNgramSignal.toFixed(4)),
-        lexicalCoverageSignal: Number(lexicalCoverageSignal.toFixed(4)),
-        sparsePhraseSignal: Number(phraseSignal.toFixed(4)),
-        sparseEvidence: Number(sparseEvidence.toFixed(4))
-      }
-    };
-  };
-  const unifiedMemoryContextualDocument = (rowIndex, rows = [], corpus = {}, queryTokens = []) => {
-    const row = rows[rowIndex];
-    const sourceDoc = corpus.docs?.[rowIndex];
-    if (!row || !sourceDoc) return { document: sourceDoc || {}, sources: 0, totalWeight: 0 };
-    const keyToIndex = corpus.unifiedMemoryKeyToIndex || new Map(rows.map((candidate, index) => [
-      candidate.unifiedMemoryKey || unifiedMemoryKeyFor(candidate),
-      index
-    ]));
-    corpus.unifiedMemoryKeyToIndex = keyToIndex;
-    const queryFieldMatches = corpus.unifiedQueryFieldMatches || [];
-    const sourceMatches = queryFieldMatches[rowIndex];
-    const fieldTf = {};
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      const direct = sourceDoc?._fieldTf?.[field] || { tf: new Map(), length: 1 };
-      const tf = new Map(ensureArray(sourceMatches?.[field]).map(match => [match.token, match.frequency]));
-      fieldTf[field] = { tf, length: Math.max(1, Number(direct.length || 1)) };
-    });
-    let sources = 0;
-    let totalWeight = 0;
-    for (const edge of ensureArray(row?.retrieval?.unifiedAssociations)) {
-      const targetIndex = keyToIndex.get(edge.targetMemoryKey);
-      if (!Number.isInteger(targetIndex) || targetIndex === rowIndex) continue;
-      const neighbor = rows[targetIndex];
-      const neighborDoc = corpus.docs?.[targetIndex];
-      if (!neighbor || !neighborDoc) continue;
-      const breakdown = neighbor.scoreBreakdown || {};
-      const exact = Math.max(Number(breakdown.identitySignal || 0), Number(breakdown.canonicalExactSignal || 0));
-      const directEvidence = Math.max(
-        Number(breakdown.sparseEvidence || 0),
-        Number(breakdown.bm25fSignal || 0),
-        Number(breakdown.charNgramSignal || 0)
-      );
-      if (exact <= 0 && directEvidence < UNIFIED_MEMORY_TUNING.minContextEvidence) continue;
-      const semanticGate = exact > 0 ? 1 : clamp(directEvidence * 1.35, 0, 0.85, 0);
-      const edgeWeight = clamp(edge.weight, 0, 1, 0) * semanticGate;
-      if (edgeWeight <= 0) continue;
-      sources += 1;
-      totalWeight += edgeWeight;
-      SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-        const transfer = Number(UNIFIED_MEMORY_TUNING.contextualFieldTransfer[field] || 0);
-        if (transfer <= 0) return;
-        const neighborEntry = neighborDoc?._fieldTf?.[field];
-        if (!neighborEntry) return;
-        const contribution = edgeWeight * transfer;
-        fieldTf[field].length += Number(neighborEntry.length || 0) * contribution;
-        ensureArray(queryFieldMatches[targetIndex]?.[field]).forEach(match => {
-          fieldTf[field].tf.set(
-            match.token,
-            Number(fieldTf[field].tf.get(match.token) || 0) + Number(match.frequency || 0) * contribution
-          );
-        });
-      });
-    }
-    return {
-      document: { ...sourceDoc, _fieldTf: fieldTf },
-      sources,
-      totalWeight: Number(totalWeight.toFixed(4))
-    };
-  };
-  const applyUnifiedContextualBm25f = (rows = [], signature = {}, corpus = {}) => {
-    const queryTokens = corpus.queryTokens || sparseBm25fQueryTokens(signature);
-    corpus.unifiedMemoryKeyToIndex = new Map(rows.map((row, index) => [row.unifiedMemoryKey || unifiedMemoryKeyFor(row), index]));
-    // Cache only query-matching field entries once per request. Contextual
-    // transfer then walks sparse matches instead of every query token for every
-    // field of every relation edge.
-    corpus.unifiedQueryFieldMatches = ensureArray(corpus.docs).map(document => Object.fromEntries(
-      SPARSE_BM25F_FIELD_NAMES.map(field => {
-        const entry = document?._fieldTf?.[field];
-        const matches = [];
-        ensureArray(queryTokens).forEach(token => {
-          const frequency = Number(entry?.tf?.get(token) || 0);
-          if (frequency > 0) matches.push({ token, frequency });
-        });
-        return [field, matches];
-      })
-    ));
-    return ensureArray(rows).map((row, rowIndex) => {
-      const directBm25f = Number(row?.scoreBreakdown?.bm25fSignal || 0);
-      const contextual = unifiedMemoryContextualDocument(rowIndex, rows, corpus, queryTokens);
-      const rawContextualBm25f = sparseBm25fScore(queryTokens, contextual.document, corpus);
-      const contextualLift = clamp(
-        rawContextualBm25f - directBm25f,
-        0,
-        UNIFIED_MEMORY_TUNING.maxContextualBm25fLift,
-        0
-      );
-      const contextualBm25fSignal = clamp(directBm25f + contextualLift, 0, 1, directBm25f);
-      const directEvidence = Number(row?.scoreBreakdown?.sparseEvidence || 0);
-      const sparseEvidence = Math.max(directEvidence, contextualBm25fSignal);
-      return {
-        ...row,
-        retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-          directBm25fSignal: Number(directBm25f.toFixed(4)),
-          contextualBm25fSignal: Number(contextualBm25fSignal.toFixed(4)),
-          contextualBm25fLift: Number(contextualLift.toFixed(4)),
-          contextualSourceCount: contextual.sources,
-          contextualSourceWeight: contextual.totalWeight,
-          bm25fSignal: Number(contextualBm25fSignal.toFixed(4)),
-          directSparseEvidence: Number(directEvidence.toFixed(4)),
-          sparseEvidence: Number(sparseEvidence.toFixed(4))
-        }
-      };
-    });
-  };
   const hierarchicalEpisodeBroadQuery = (signature = {}) => {
     const intent = explicitQueryIntentOf(signature);
     return isPastStateLookupQuery(signature)
@@ -34621,487 +34254,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       topScore: Number(Number(scored[0]?.detail?.score || 0).toFixed(4)), selectedEpisodes: selectedDiagnostics,
       reason: signals.size ? 'episode_router_applied_recursive_memory_lane_v1' : 'episode_match_without_child_evidence' };
     return output;
-  };
-
-  const unifiedMemoryTemporalTransition = (source = {}, target = {}, signature = {}) => {
-    const sourceDistance = Number(source?.locator?.distanceFromLatest ?? source?.retrieval?.distanceFromLatest);
-    const targetDistance = Number(target?.locator?.distanceFromLatest ?? target?.retrieval?.distanceFromLatest);
-    if (!Number.isFinite(sourceDistance) || !Number.isFinite(targetDistance)) return 1;
-    const gap = Math.abs(sourceDistance - targetDistance);
-    let factor = gap <= COMPOSITE_RECALL_HORIZONS.shortMaxMessageDistance
-      ? 1
-      : (gap < COMPOSITE_RECALL_HORIZONS.longMinMessageDistance ? 0.72 : 0.5);
-    if (isPastStateLookupQuery(signature.rawQuery || '')) factor = Math.min(1, factor + 0.18);
-    if (signature.presentStateQuery && targetDistance >= COMPOSITE_RECALL_HORIZONS.longMinMessageDistance) factor *= 0.62;
-    return clamp(factor, 0.2, 1, 1);
-  };
-  const applyUnifiedAssociationActivation = (rows = [], signature = {}, store = {}) => {
-    const input = ensureArray(rows);
-    if (!input.length) return input;
-    const keyToIndex = new Map(input.map((row, index) => [row.unifiedMemoryKey || unifiedMemoryKeyFor(row), index]));
-    const frontier = new Map();
-    input.forEach((row, index) => {
-      const breakdown = row.scoreBreakdown || {};
-      const exact = Math.max(Number(breakdown.identitySignal || 0), Number(breakdown.canonicalExactSignal || 0));
-      const evidence = Math.max(
-        Number(breakdown.directSparseEvidence || 0),
-        Number(breakdown.directBm25fSignal || 0),
-        Number(breakdown.charNgramSignal || 0) * 0.82,
-        Number(breakdown.sparsePhraseSignal || 0) * 0.72
-      );
-      if (exact <= 0 && evidence < UNIFIED_MEMORY_TUNING.minSeedEvidence) return;
-      frontier.set(index, { value: clamp(Math.max(exact, evidence), 0, 1, 0), path: [] });
-    });
-    const best = input.map(() => ({ value: 0, hop: 0, path: [] }));
-    let active = frontier;
-    for (let hop = 1; hop <= UNIFIED_MEMORY_TUNING.maxPropagationHops && active.size; hop += 1) {
-      const next = new Map();
-      active.forEach((sourceState, sourceIndex) => {
-        const source = input[sourceIndex];
-        ensureArray(source?.retrieval?.unifiedAssociations).forEach(edge => {
-          const targetIndex = keyToIndex.get(edge.targetMemoryKey);
-          if (!Number.isInteger(targetIndex) || targetIndex === sourceIndex) return;
-          const target = input[targetIndex];
-          const transition = unifiedMemoryTemporalTransition(source, target, signature);
-          const value = clamp(
-            Number(sourceState.value || 0)
-              * Number(edge.weight || 0)
-              * UNIFIED_MEMORY_TUNING.hopDecay
-              * transition,
-            0,
-            UNIFIED_MEMORY_TUNING.maxAssociationSignal,
-            0
-          );
-          if (value <= 0.006 || value <= Number(best[targetIndex]?.value || 0)) return;
-          const path = [...ensureArray(sourceState.path), {
-            from: source.unifiedMemoryKey || unifiedMemoryKeyFor(source),
-            to: target.unifiedMemoryKey || unifiedMemoryKeyFor(target),
-            type: edge.type,
-            weight: Number(edge.weight || 0)
-          }].slice(-UNIFIED_MEMORY_TUNING.maxPropagationHops);
-          best[targetIndex] = { value, hop, path };
-          const previous = next.get(targetIndex);
-          if (!previous || value > previous.value) next.set(targetIndex, { value, path });
-        });
-      });
-      active = next;
-    }
-    return input.map((row, index) => {
-      const directEvidence = Number(row?.scoreBreakdown?.sparseEvidence || 0);
-      const associationSignal = Number(best[index]?.value || 0);
-      const unifiedEvidence = clamp(Math.max(
-        directEvidence,
-        associationSignal * 0.92,
-        directEvidence + associationSignal * 0.22
-      ), 0, 1, directEvidence);
-      return {
-        ...row,
-        retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-          associationSignal: Number(associationSignal.toFixed(4)),
-          associationHop: Number(best[index]?.hop || 0),
-          associationPath: ensureArray(best[index]?.path),
-          directSparseEvidence: Number(directEvidence.toFixed(4)),
-          sparseEvidence: Number(unifiedEvidence.toFixed(4)),
-          unifiedMemoryEvidence: Number(unifiedEvidence.toFixed(4))
-        }
-      };
-    });
-  };
-  const applyUnifiedMemoryCandidateSignals = (rows = [], signature = {}, corpus = {}, store = {}) => {
-    const episodeRouted = applyHierarchicalEpisodeRouting(rows, signature, store, signature?.settings || Memory.settings || DEFAULT_SETTINGS);
-    const contextualized = applyUnifiedContextualBm25f(episodeRouted, signature, corpus);
-    const associated = applyUnifiedAssociationActivation(contextualized, signature, store);
-    return applyLatentEpisodicReactivation(associated, signature, store);
-  };
-  const sparseCandidateForceKeep = (row = {}, signature = {}) => {
-    const category = text(row.category || '');
-    const lifecycle = row?._memoryLifecycle || {};
-    if (lifecycle.tier === 'hot' && lifecycle.mustCarryClass) return true;
-    if (Number(row.importance || 0) >= 0.92) return true;
-    if (signature.explicitContinuityIntent && /continuity_lock|do_not_resolve_yet|open_invitation/i.test(category)) return true;
-    if (signature.presentStateQuery && /character|current_state|active_event/i.test(category)) return true;
-    return false;
-  };
-  const packetMemoryPreRankDecayPenalty = (row = {}, signature = {}) => {
-    const lifecycle = objectish(row?._memoryLifecycle) ? row._memoryLifecycle : {};
-    const decay = ledgerRev2Clamp(lifecycle.decay, 0, 1, 1);
-    const maxPenalty = Math.max(0, Number(lifecycle.decayPenaltyMax || 0));
-    if (!maxPenalty || lifecycle.mustCarryClass) return 0;
-    const pastLookup = ledgerRev2IsPastLookup(signature?.rawQuery || signature?.expandedText || '');
-    const evidence = ledgerRev2Clamp(row?.scoreBreakdown?.sparseEvidence ?? row?.scoreBreakdown?.relevanceEvidence ?? 0, 0, 1, 0);
-    const evidenceRelief = Math.max(0.40, 1 - evidence * 0.60);
-    const episodicCue = ledgerRev2Clamp(row?.scoreBreakdown?.episodicCueSignal, 0, 1, 0);
-    const cueRelief = episodicCue > 0 ? Math.max(0.12, 1 - episodicCue * 0.88) : 1;
-    const lookupRelief = pastLookup ? 0.10 : 0.48;
-    return maxPenalty * Math.max(0, 1 - decay) * evidenceRelief * cueRelief * lookupRelief;
-  };
-  const rankSparseCandidates = (rows = [], signature = {}, mode = 'balanced') => {
-    if (!rows.length) return rows;
-    const signals = ['bm25fSignal', 'identitySignal', 'canonicalExactSignal', 'episodeRouterSignal', 'associationSignal', 'episodicCueSignal', 'charNgramSignal', 'lexicalCoverageSignal', 'sparsePhraseSignal'];
-    const ranks = {};
-    signals.forEach(signal => {
-      const sorted = [...rows]
-        .filter(row => Number(row.scoreBreakdown?.[signal] || 0) > 0)
-        .sort((a, b) => Number(b.scoreBreakdown?.[signal] || 0) - Number(a.scoreBreakdown?.[signal] || 0));
-      ranks[signal] = new Map(sorted.map((row, index) => [row, index + 1]));
-    });
-    let maxRrf = 0;
-    const computed = rows.map(row => {
-      let rrf = 0;
-      signals.forEach(signal => {
-        const rank = ranks[signal].get(row);
-        if (rank !== undefined) rrf += 1 / (SPARSE_HYBRID_TUNING.candidateRrfK + rank);
-      });
-      maxRrf = Math.max(maxRrf, rrf);
-      return { row, rrf };
-    }).map(({ row, rrf }) => {
-      const normalizedRrf = maxRrf > 0 ? rrf / maxRrf : 0;
-      const evidence = Number(row.scoreBreakdown?.sparseEvidence || 0);
-      const bm25f = Number(row.scoreBreakdown?.bm25fSignal || 0);
-      const ageDecayPenalty = packetMemoryPreRankDecayPenalty(row, signature);
-      const rankScore = normalizedRrf * 0.52 + evidence * 0.34 + bm25f * 0.14 - ageDecayPenalty;
-      return {
-        ...row,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          sparseCandidateRrf: Number(normalizedRrf.toFixed(4)),
-          sparseCandidateAgeDecayPenalty: Number(ageDecayPenalty.toFixed(4)),
-          sparseCandidateRank: Number(rankScore.toFixed(4))
-        }
-      };
-    });
-    const limit = Math.max(12, Number(SPARSE_HYBRID_TUNING.candidateLimits[mode] || SPARSE_HYBRID_TUNING.candidateLimits.balanced));
-    const forcedLimit = Math.max(4, Math.floor(limit * 0.35));
-    const forced = computed.filter(row => sparseCandidateForceKeep(row, signature))
-      .sort((a, b) => Number(b.scoreBreakdown?.sparseEvidence || 0) - Number(a.scoreBreakdown?.sparseEvidence || 0)
-        || Number(b.importance || 0) - Number(a.importance || 0)
-        || Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-      .slice(0, forcedLimit);
-    const ranked = computed
-      .filter(row => Number(row.scoreBreakdown?.sparseEvidence || 0) >= SPARSE_HYBRID_TUNING.candidateEvidenceFloor || sparseCandidateForceKeep(row, signature))
-      .sort((a, b) => Number(b.scoreBreakdown?.sparseCandidateRank || 0) - Number(a.scoreBreakdown?.sparseCandidateRank || 0)
-        || Number(b.importance || 0) - Number(a.importance || 0)
-        || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-    const selected = [];
-    const seen = new Set();
-    const add = row => {
-      const key = rowIdentityKey(row) || `${row.axis}|${row.category}|${row.publicRef}`;
-      if (key && seen.has(key)) return;
-      if (key) seen.add(key);
-      selected.push(row);
-    };
-    forced.forEach(add);
-    ranked.forEach(row => { if (selected.length < limit) add(row); });
-    return selected;
-  };
-  const buildRetrievalCorpus = (rows, settings = Memory.settings) => {
-    const docs = ensureArray(rows).map(row => retrievalBm25Document(row, settings));
-    const docFreq = new Map();
-    docs.forEach(doc => {
-      new Set(doc).forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    });
-    const avgDocLen = docs.length
-      ? docs.reduce((sum, doc) => sum + doc.length, 0) / docs.length
-      : 1;
-    return { docs, docFreq, avgDocLen, size: docs.length };
-  };
-  const retrievalBm25Weight = (settings = Memory.settings || DEFAULT_SETTINGS) => {
-    if (settings?.bm25Channel === false) return 0;
-    return clamp(settings?.bm25Weight, 0, 0.25, DEFAULT_SETTINGS.bm25Weight);
-  };
-  const retrievalRowPressure = r => Math.max(
-    Number(r.pressure || 0),
-    Number(r.emotionProfile?.intensity || 0),
-    Number(r.emotionProfile?.relationImpact || 0),
-    Number(r.worldProfile?.pressure || 0),
-    Number(r.storyProfile?.priority || 0)
-  );
-  const scoreRowWithStrengthenedJaccard = (store, row, rowIndex, signature, corpus, profile, settings = Memory.settings) => {
-    const r = row.retrieval || {};
-    const sparseBreakdown = row.scoreBreakdown || {};
-    const hasSparseCandidateSignals = Object.prototype.hasOwnProperty.call(sparseBreakdown, 'sparseEvidence');
-    const lexical = lexicalStats(signature.tokens, r.tokens || []);
-    const subjectStats = lexicalStats(signature.tokens, r.subjectTokens || tokenize(r.subject || '', 48));
-    const subjectMatch = r.subject && normalizeKey(signature.rawQuery).includes(normalizeKey(r.subject)) ? 1 : 0;
-    const pressure = retrievalRowPressure(r);
-    const tagScores = {
-      branch: jaccard(signature.branchTags, r.branchTags || []),
-      emotion: Math.max(jaccard(signature.emotionTags, r.emotionTags || []), jaccard(signature.relationTags, r.relationTags || [])),
-      world: Math.max(jaccard(signature.worldTags, r.worldTags || []), jaccard(signature.tokens, r.worldProfile?.locationTokens || []), jaccard(signature.tokens, r.worldProfile?.factionTokens || [])),
-      narrative: Math.max(jaccard(signature.narrativeTags, r.narrativeTags || []), jaccard(signature.storyTags, r.storyTags || [])),
-      time: jaccard(signature.timeTags, r.timeTags || []),
-      locator: locatorScoreFor(signature.rawQuery, row, signature.tokens, !hasSparseCandidateSignals)
-    };
-    const priorityBoost = priorityBoostFor(signature.expandedText, r.priorityTerms || [], signature.tokens, signature.conceptTokens, !hasSparseCandidateSignals);
-    const contextFocus = requestContextFocusSignalForRow(row, signature.contextFocus, settings);
-    const freshness = hayakuTimeFreshness(store, row, settings);
-    const lifecycleLift = lifecycleRelevanceLift(row, signature.expandedText);
-    const lifecycleMultiplier = lifecycleScoreMultiplier(row, signature.expandedText);
-    // Character n-grams already provide fuzzy recall during sparse candidate
-    // generation. On that path, exact weighted Jaccard is the bounded reranker;
-    // repeating edit-distance matching for every field caused quadratic search
-    // latency without adding independent evidence.
-    const rerankJaccard = hasSparseCandidateSignals ? weightedJaccard : softWeightedJaccard;
-    const wordJaccard = rerankJaccard(signature.tokens, r.tokens || []);
-    const charJaccard = hasSparseCandidateSignals
-      ? {
-          jaccard: Number(sparseBreakdown.charNgramSignal || 0),
-          coverage: Number(sparseBreakdown.charNgramSignal || 0),
-          overlap: Number(sparseBreakdown.charNgramSignal || 0) > 0 ? 1 : 0
-        }
-      : rerankJaccard(signature.charTokens, charNgramTokens([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '), 260));
-    const entityJaccard = rerankJaccard(signature.entityTokens, mergeValues([r.subjectTokens, r.relationEndpoints, r.subject], 120));
-    const conceptJaccard = rerankJaccard(signature.conceptTokens, conceptTokensForRetrieval(r));
-    const canonicalJaccard = rerankJaccard(
-      ensureArray(signature.canonicalTokens),
-      mergeValues([r.canonicalAnchors, r.crossLingualTokens], 160).filter(token => CANONICAL_RECALL_TOKEN_PREFIX_RE.test(token))
-    );
-    const canonicalSignal = Math.max(canonicalJaccard.jaccard, canonicalJaccard.coverage);
-    const frameJaccard = rerankJaccard(signature.semanticFrameTokens, r.semanticFrameTokens || semanticFrameTokensForText(row.publicText || ''));
-    const locatorJaccard = rerankJaccard(signature.tokens, r.locatorTokens || []);
-    const bm25Raw = hasSparseCandidateSignals
-      ? Number(sparseBreakdown.bm25fSignal || 0)
-      : bm25Score(signature.tokens, corpus.docs[rowIndex] || [], corpus.docFreq, Math.max(1, corpus.size), corpus.avgDocLen);
-    const bm25Weight = retrievalBm25Weight(settings);
-    const bm25Signal = clamp(bm25Raw * bm25Weight, 0, 0.25, 0);
-    const entitySignal = Math.max(entityJaccard.jaccard, entityJaccard.coverage, subjectStats.coverage, subjectMatch);
-    const conceptSignal = Math.max(
-      conceptJaccard.jaccard,
-      conceptJaccard.coverage,
-      tagScores.branch,
-      tagScores.emotion,
-      tagScores.world,
-      tagScores.narrative,
-      tagScores.time
-    );
-    const frameSignal = Math.max(frameJaccard.jaccard, frameJaccard.coverage);
-    const locatorSignal = Math.max(locatorJaccard.jaccard, locatorJaccard.coverage, tagScores.locator);
-    const specificConceptStats = rerankJaccard(
-      ensureArray(signature.conceptTokens).filter(isSpecificConceptToken),
-      mergeValues([r.crossLingualTokens, r.relationTags?.map(tag => `relation:${tag}`)], 128).filter(isSpecificConceptToken)
-    );
-    const specificConceptSignal = Math.max(specificConceptStats.jaccard, specificConceptStats.coverage);
-    const specificFrameStats = rerankJaccard(
-      ensureArray(signature.semanticFrameTokens).filter(isSpecificFrameToken),
-      ensureArray(r.semanticFrameTokens).filter(isSpecificFrameToken)
-    );
-    const specificFrameSignal = Math.max(specificFrameStats.jaccard, specificFrameStats.coverage);
-    const phraseStats = lexicalStats(signature.phraseBigrams || [], bigramTokens(r.tokens || [], 220));
-    const phraseSignal = Math.max(phraseStats.jaccard, phraseStats.coverage * 0.82);
-    const surfaceQueryTokens = ensureArray(signature.surfaceQueryTokens);
-    const surfaceRowTokens = surfaceSpecificTokensOf([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '));
-    const surfaceOverlap = surfaceQueryTokens.filter(token => surfaceRowTokens.includes(token)).length;
-    const surfaceSpecificSignal = surfaceOverlap > 0
-      ? Math.min(0.42, 0.18 + (surfaceOverlap / Math.max(1, surfaceQueryTokens.length)) * 0.34)
-      : 0;
-    const explicitContinuityIntent = Boolean(signature.explicitContinuityIntent);
-    const cw = signature.channelWeights || { entity: 1, world: 1, narrative: 1, planner: 1, locator: 1, frame: 1, concept: 1, lexical: 1 };
-    const directSpecificity = Math.max(
-      entitySignal,
-      locatorSignal,
-      specificConceptSignal,
-      specificFrameSignal,
-      canonicalSignal,
-      surfaceSpecificSignal,
-      phraseSignal,
-      contextFocus.signal * 0.88,
-      Number(lifecycleLift || 0) > 0 ? 0.2 : 0,
-      subjectStats.coverage,
-      subjectMatch,
-      lexical.coverage,
-      wordJaccard.coverage,
-      Number(lexical.overlap || 0) >= 2 ? 0.35 : 0,
-      Number(priorityBoost || 0) >= 0.14 ? 0.3 : 0
-    );
-    const genericConceptOnly = directSpecificity < JACCARD_TUNING.specificGateFloor && !(row.axis === 'planner' && explicitContinuityIntent);
-    const effectiveConceptSignal = genericConceptOnly ? Math.min(conceptSignal, JACCARD_TUNING.genericConceptCap) : conceptSignal;
-    const effectiveFrameSignal = genericConceptOnly ? Math.min(frameSignal, JACCARD_TUNING.genericConceptCap) : frameSignal;
-    const memoryStrength = clamp(
-      Number(row.importance || 0) * 0.35
-      + Number(r.salience || 0) * 0.25
-      + Number(r.impression || 0) * 0.20
-      + Number(r.confidence || 0.5) * 0.20,
-      0, 1, 0.4
-    );
-    const lexicalScore = clamp(
-      Math.max(wordJaccard.jaccard, wordJaccard.coverage * 0.74, lexical.jaccard) * 0.32
-      + Math.max(charJaccard.jaccard, charJaccard.coverage * 0.58) * 0.20
-      + Math.max(entityJaccard.jaccard, entityJaccard.coverage * 0.82, subjectStats.coverage, subjectMatch) * 0.26
-      + Math.max(locatorJaccard.jaccard, locatorJaccard.coverage * 0.78) * 0.12,
-      0, 1, 0
-    );
-    const strengthenedJaccard = clamp(
-      Math.max(wordJaccard.jaccard, wordJaccard.coverage * 0.74, lexical.jaccard) * 0.46
-      + Math.max(charJaccard.jaccard, charJaccard.coverage * 0.58) * 0.20
-      + effectiveFrameSignal * 0.14 * cw.frame
-      + locatorSignal * 0.10 * cw.locator
-      + phraseSignal * 0.10,
-      0, 1, 0
-    );
-    const sparseBm25f = Number(sparseBreakdown.bm25fSignal || 0);
-    const sparseIdentity = Number(sparseBreakdown.identitySignal || 0);
-    const sparseCanonical = Number(sparseBreakdown.canonicalExactSignal || 0);
-    const sparseAssociation = Number(sparseBreakdown.associationSignal || 0);
-    const sparseChar = Number(sparseBreakdown.charNgramSignal || 0);
-    const sparseLexicalCoverage = Number(sparseBreakdown.lexicalCoverageSignal || 0);
-    const sparsePhrase = Number(sparseBreakdown.sparsePhraseSignal || 0);
-    const sparsePrimaryScore = hasSparseCandidateSignals
-      ? clamp(
-          sparseBm25f * 0.40
-          + sparseIdentity * 0.20
-          + sparseCanonical * 0.14
-          + sparseAssociation * 0.12
-          + sparseChar * 0.06
-          + sparseLexicalCoverage * 0.05
-          + sparsePhrase * 0.03,
-          0, 1, 0
-        )
-      : clamp(lexicalScore * 0.52 + entitySignal * 0.20 + canonicalSignal * 0.12 + bm25Signal * 0.16, 0, 1, 0);
-    const sparseEvidence = hasSparseCandidateSignals
-      ? Number(sparseBreakdown.sparseEvidence || 0)
-      : Math.max(sparsePrimaryScore, lexicalScore, entitySignal, canonicalSignal, bm25Signal);
-    const relevanceEvidence = clamp(
-      (Math.max(sparseEvidence, sparsePrimaryScore, strengthenedJaccard, entitySignal, effectiveConceptSignal, effectiveFrameSignal, canonicalSignal, locatorSignal, priorityBoost, contextFocus.signal * 0.78, directSpecificity * 0.4, phraseSignal * 0.5) + lifecycleLift) * lifecycleMultiplier,
-      0, 1, 0
-    );
-    const relevanceGate = clamp(relevanceEvidence * 1.85, 0, 1, 0);
-    const axisChannelBoost = row.axis === 'world' ? (cw.world || 1) : row.axis === 'narrative' ? (cw.narrative || 1) : 1;
-    const axisPrior = clamp((signature.axisWeights[row.axis] || 0) * axisChannelBoost * Math.max(strengthenedJaccard, entitySignal, effectiveConceptSignal, locatorSignal), 0, 1, 0);
-    const pressurePrior = clamp(pressure * relevanceGate, 0, 1, 0);
-    const memoryPrior = clamp(memoryStrength * (0.18 + relevanceGate * 0.82), 0, 1, 0);
-    const freshnessPrior = clamp(freshness * (0.22 + relevanceGate * 0.78), 0, 1, 0);
-    const priorityPrior = clamp(priorityBoost * (0.35 + relevanceGate * 0.65), 0, 1, 0);
-    const freshnessWeight = signature.presentStateQuery ? JACCARD_TUNING.presentStateFreshnessWeight : JACCARD_TUNING.defaultFreshnessWeight;
-    const importantRecallLift = clamp(
-      (
-        Math.max(0, Number(row.importance || 0) - 0.78) * 0.62
-        + Math.max(0, memoryStrength - 0.78) * 0.34
-      ) * relevanceGate,
-      0, relevanceEvidence >= 0.045 ? 0.20 : 0.06, 0
-    );
-    const plannerCoordinationLift = row.axis === 'planner'
-      ? clamp(
-        (0.035 + memoryStrength * 0.025 + pressure * 0.025) * (0.35 + relevanceGate * 0.65) * (cw.planner || 1),
-        0, 0.08, 0
-      )
-      : 0;
-    const score = clamp(
-      (sparsePrimaryScore * 0.72
-      + strengthenedJaccard * SPARSE_HYBRID_TUNING.rerankJaccardWeight
-      + effectiveConceptSignal * 0.025 * cw.concept
-      + effectiveFrameSignal * 0.035 * cw.frame
-      + locatorSignal * 0.035 * cw.locator
-      + phraseSignal * 0.02
-      + priorityPrior * 0.04
-      + pressurePrior * 0.015
-      + memoryPrior * 0.025
-      + freshnessPrior * freshnessWeight
-      + axisPrior * 0.025
-      + contextFocus.boost
-      + importantRecallLift
-      + plannerCoordinationLift) * lifecycleMultiplier,
-      0, 1.35, 0
-    );
-    return {
-      ...row,
-      score,
-      retrievalEngine: signature.engine,
-      scoreBreakdown: {
-        ...(row.scoreBreakdown || {}),
-        retrievalEngine: signature.engine,
-        lexical: Number(lexicalScore.toFixed(4)),
-        strengthenedJaccard: Number(strengthenedJaccard.toFixed(4)),
-        sparsePrimaryScore: Number(sparsePrimaryScore.toFixed(4)),
-        associationSignal: Number(sparseAssociation.toFixed(4)),
-        sparseEvidence: Number(sparseEvidence.toFixed(4)),
-        relevanceEvidence: Number(relevanceEvidence.toFixed(4)),
-        jaccard: Number(lexical.jaccard.toFixed(4)),
-        wordJaccard: Number(wordJaccard.jaccard.toFixed(4)),
-        charJaccard: Number(charJaccard.jaccard.toFixed(4)),
-        entityJaccard: Number(entityJaccard.jaccard.toFixed(4)),
-        conceptJaccard: Number(conceptJaccard.jaccard.toFixed(4)),
-        canonicalJaccard: Number(canonicalJaccard.jaccard.toFixed(4)),
-        canonicalSignal: Number(canonicalSignal.toFixed(4)),
-        specificConceptSignal: Number(specificConceptSignal.toFixed(4)),
-        frameJaccard: Number(frameJaccard.jaccard.toFixed(4)),
-        specificFrameSignal: Number(specificFrameSignal.toFixed(4)),
-        surfaceSpecificSignal: Number(surfaceSpecificSignal.toFixed(4)),
-        phraseSignal: Number(phraseSignal.toFixed(4)),
-        phraseJaccard: Number(phraseStats.jaccard.toFixed(4)),
-        presentStateQuery: Boolean(signature.presentStateQuery),
-        channelWeights: cw,
-        locatorJaccard: Number(locatorJaccard.jaccard.toFixed(4)),
-        bm25: Number(bm25Raw.toFixed(4)),
-        bm25Signal: Number(bm25Signal.toFixed(4)),
-        bm25Weight: Number(bm25Weight.toFixed(4)),
-        bm25Enabled: bm25Weight > 0,
-        coverage: Number(lexical.coverage.toFixed(4)),
-        overlap: lexical.overlap,
-        subject: Number(Math.max(subjectStats.coverage, subjectMatch).toFixed(4)),
-        axis: Number((signature.axisWeights[row.axis] || 0).toFixed(4)),
-        branch: Number(tagScores.branch.toFixed(4)),
-        emotion: Number(tagScores.emotion.toFixed(4)),
-        world: Number(tagScores.world.toFixed(4)),
-        narrative: Number(tagScores.narrative.toFixed(4)),
-        time: Number(tagScores.time.toFixed(4)),
-        locator: Number(tagScores.locator.toFixed(4)),
-        entitySignal: Number(entitySignal.toFixed(4)),
-        conceptSignal: Number(conceptSignal.toFixed(4)),
-        effectiveConceptSignal: Number(effectiveConceptSignal.toFixed(4)),
-        frameSignal: Number(frameSignal.toFixed(4)),
-        effectiveFrameSignal: Number(effectiveFrameSignal.toFixed(4)),
-        locatorSignal: Number(locatorSignal.toFixed(4)),
-        relevanceGate: Number(relevanceGate.toFixed(4)),
-        directSpecificity: Number(directSpecificity.toFixed(4)),
-        genericConceptCap: genericConceptOnly,
-        axisPrior: Number(axisPrior.toFixed(4)),
-        pressurePrior: Number(pressurePrior.toFixed(4)),
-        memoryPrior: Number(memoryPrior.toFixed(4)),
-        freshnessPrior: Number(freshnessPrior.toFixed(4)),
-        priorityPrior: Number(priorityPrior.toFixed(4)),
-        pressure: Number(pressure.toFixed(4)),
-        memoryStrength: Number(memoryStrength.toFixed(4)),
-        salience: Number(Number(r.salience || 0).toFixed(4)),
-        impression: Number(Number(r.impression || 0).toFixed(4)),
-        confidence: Number(Number(r.confidence || 0).toFixed(4)),
-        priorityBoost: Number(priorityBoost.toFixed(4)),
-        contextFocusSignal: Number(contextFocus.signal.toFixed(4)),
-        contextFocusBoost: Number(contextFocus.boost.toFixed(4)),
-        contextFocusPrimary: Number(contextFocus.primary.toFixed(4)),
-        contextFocusSupport: Number(contextFocus.support.toFixed(4)),
-        contextFocusTopic: Number(contextFocus.topic.toFixed(4)),
-        importantRecallLift: Number(importantRecallLift.toFixed(4)),
-        plannerCoordinationLift: Number(plannerCoordinationLift.toFixed(4)),
-        lifecycleLift: Number(lifecycleLift.toFixed(4)),
-        lifecycleMultiplier: Number(lifecycleMultiplier.toFixed(4)),
-        recency: Number(freshness.toFixed(4))
-      }
-    };
-  };
-  const rowPassesRetrievalGate = (row, profile) => {
-    const breakdown = row.scoreBreakdown || {};
-    const relevanceEvidence = Number(breakdown.relevanceEvidence || 0);
-    const historicalIntentBoost = Number(breakdown?.packetLedgerV2?.historicalIntentBoost || 0);
-    const episodicCueSignal = Number(breakdown.episodicCueSignal || 0);
-    const memoryLifecycle = breakdown.packetMemoryLifecycle || row?._memoryLifecycle || {};
-    if (memoryLifecycle.tier === 'disputed' && memoryLifecycle.disputeIntent !== true && relevanceEvidence < 0.1) return false;
-    if (episodicCueSignal >= LATENT_EPISODIC_REACTIVATION_TUNING.minCueSignal && relevanceEvidence >= 0.025) return true;
-    if (memoryLifecycle.tier === 'archived' && memoryLifecycle.pastLookup !== true && historicalIntentBoost <= 0 && relevanceEvidence < 0.08) return false;
-    if (Number(breakdown.lifecycleMultiplier || 1) < 0.5 && historicalIntentBoost <= 0) return false;
-    if (historicalIntentBoost > 0 && relevanceEvidence >= 0.01) return true;
-    return (row.score > profile.threshold && relevanceEvidence >= JACCARD_TUNING.gateRelevanceFloor)
-      || Number(breakdown.strengthenedJaccard || 0) >= JACCARD_TUNING.strongJaccardFloor
-      || relevanceEvidence >= JACCARD_TUNING.gateHighRelevanceFloor
-      || (row.importance >= 0.82 && relevanceEvidence >= JACCARD_TUNING.importantRelevanceFloor)
-      || Number(breakdown.locatorSignal || 0) >= JACCARD_TUNING.locatorSignalFloor
-      || Number(breakdown.priorityBoost || 0) >= JACCARD_TUNING.priorityBoostFloor
-      || (Number(breakdown.directSpecificity || 0) >= JACCARD_TUNING.specificGateFloor && relevanceEvidence >= JACCARD_TUNING.gateSpecificRelevanceFloor)
-      || Number(breakdown.phraseSignal || 0) >= JACCARD_TUNING.gatePhraseSignalFloor
-      || (Number(breakdown.contextFocusSignal || 0) >= 0.48 && relevanceEvidence >= 0.02)
-      || (row.axis === 'planner' && row.score > profile.threshold * JACCARD_TUNING.gatePlannerThresholdRatio && relevanceEvidence >= JACCARD_TUNING.gatePlannerRelevanceFloor);
   };
   // Query intent is accepted only from structured caller metadata or an
   // explicit namespace marker (for example `time:past`). Natural-language
@@ -64388,19 +63540,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ensureHayakuTransitionCoverage,
         crossLingualTokensForText,
         multilingualRecallAliasesForValue,
-        buildRetrievalCorpus,
         sparseAtomicRecordFor,
         buildHayakuMemoryNote,
         formatHayakuMemoryNote,
         memoryNoteContextForRow,
-        buildSparseBm25fCorpus,
-        sparseBm25fScore,
-        sparseCandidateSignalsForRow,
-        applyUnifiedContextualBm25f,
-        applyUnifiedAssociationActivation,
-        applyUnifiedMemoryCandidateSignals,
         attachUnifiedMemoryAssociations,
-        rankSparseCandidates,
         viewerRecordPairLabel,
         viewerRecordOrigin,
         viewerRecordStateLabel,
@@ -64426,13 +63570,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         resolvePacketLedgerRev2Supersessions,
         packetMemoryLifecycleFor,
         packetMemoryDecayClassFor,
-        packetMemoryPreRankDecayPenalty,
         applyPacketMemoryLifecycleScoring,
         decayCharacterStateProjectionItem,
         decayCharacterStateProjectionsForRecall,
         buildDerivedEventMemoryRows,
-        scoreRowWithStrengthenedJaccard,
-        rowPassesRetrievalGate,
         explicitQueryIntentOf,
         isCurrentStateQuery,
         isPastStateLookupQuery,
@@ -64472,8 +63613,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         packetCoverageAuditQuerySignal,
         selectPacketCoverageFallbackRows,
         createRequestRetrievalCache,
-        requestRetrievalCacheSnapshot,
-        retrievalBm25Document
+        requestRetrievalCacheSnapshot
       }
     };
     Memory.exposedApi = exposedApi;
