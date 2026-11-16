@@ -6781,7 +6781,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
 
   const nativeBranchScopeChatId = scope => String(scope?.chatId || scope?.canonicalChatId || '').trim();
-  const nativeBranchScopeCharacterId = scope => String(scope?.characterId || scope?.canonicalCharacterId || '').trim();
+  // Host lineage names the character by its host id (chaId). Flashback's own scope characterId
+  // is a storage label that falls back to the character's name when the host object has no
+  // `id` field, which is every real RisuAI character; its canonicalCharacterId is the host id.
+  // Comparing the label against the lineage rejected every real native branch.
+  const nativeBranchScopeCharacterId = scope => String(scope?.canonicalCharacterId || scope?.characterId || '').trim();
   const createNativeBranchScopeCapability = input => {
     const value = input && typeof input === 'object' ? input : {};
     const lineage = value.lineage && typeof value.lineage === 'object' ? value.lineage : {};

@@ -4,6 +4,9 @@ const {createFixture}=require('./fixtures/flashback_native_runtime_fixture.cjs')
 const {clone,parent,branch}=require('./fixtures/native_branch_fixture.cjs');
 (async()=>{
  const f=await createFixture();try{
+ // Real RisuAI characters carry chaId and no `id`; the fixture's default has both and equal.
+ // native_branch_flashback_real_character_test.cjs reruns this whole file in that shape.
+ if(process.env.FLASHBACK_REAL_CHARACTER_SHAPE==='1'){delete f.character.id;f.character.chaId='0b7e4c1a-9d2f-4c6e-8a11-real-risu-chaid';f.character.name='세라';}
  const t=f.api._test,p=parent('fb-parent',8);Object.assign(f.currentChat,p);f.character.chats=[f.currentChat];
  const snapshot=chat=>({character:clone(f.character),chat:clone(chat),db:{personas:[],selectedPersona:''},chatInfo:{characterIndex:0,chatIndex:0}});
  const from=t.resolveScopeFromSnapshot(snapshot(f.currentChat));const cfg=t.normalizeSettings({embeddingProvider:'hash',hashDimensions:8,shardSize:50});
