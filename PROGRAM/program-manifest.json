@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.2.0",
-  "generatedAt": "2026-11-16T00:02:32.330Z",
+  "generatedAt": "2026-11-16T05:18:13.022Z",
   "server": {
     "version": "1.2.0",
     "protocol": {
@@ -3852,7 +3852,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "7c1f0e5dbbdf761a40be5d270cc64487a7b30facb6aac5e18b1537326d567d3e",
+      "sha256": "d30abfd945cbd5646e4b4f8b4b9b72e62efee4934b84a23f398df5ec8a512e57",
       "bytes": 11829
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
@@ -4256,8 +4256,8 @@
       "bytes": 3832762
     },
     "plugins/GRADIA.js": {
-      "sha256": "75080d4f131a6435e9bd2ebbbbb008f65025236bf13182eae8e66888e8d82d40",
-      "bytes": 3265426
+      "sha256": "dd0cd55cb5de7deb14a3e92862e5e9d848a4aafba1417f23e652eea452326d6f",
+      "bytes": 3267683
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "73a1307258934b7020dae022ad120c56185a2eb9410fa6335c38d20057887a25",
@@ -4268,8 +4268,8 @@
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "c6a3cbfe4d25b0dea030ac23555d475b897c0574ad3e67e35550a13563cb6da3",
-      "bytes": 6683944
+      "sha256": "97d93b8dc08522991fdf9ff5a253d3d2aeab741ab8cd45aff7455c2499ae2e89",
+      "bytes": 6684498
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -6764,8 +6764,8 @@
       "bytes": 8753
     },
     "tests/gradia_world_dynamics_aide_test.cjs": {
-      "sha256": "3f92ef68720e010a647c0f2020e84d0f5146c1e6a001b2e02c66a5b74f87eefa",
-      "bytes": 22345
+      "sha256": "6d8278289b4fae5dc00ee4f2a5c5a9530a2344d73ac9eed37a4fefc658f97d9d",
+      "bytes": 24432
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",
@@ -9628,8 +9628,8 @@
       "bytes": 3738
     },
     "tests/libra_receipt_status_read_volume_test.cjs": {
-      "sha256": "9bec4b833dd416770c1b0f44624d21fe1b69a5d1e508acef82a6d568cd0f70b5",
-      "bytes": 5955
+      "sha256": "2ae01211f9dc1be571b285b44131880701fb7e97cd9a3079bce0668840738451",
+      "bytes": 7938
     },
     "tests/libra_recent_work_runtime_test.cjs": {
       "sha256": "f8eef30db94f4ca9f58d2bc7140bf135830b1d485bc2bca5fb43935f1ac5a2dd",
