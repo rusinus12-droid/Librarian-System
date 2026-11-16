@@ -41742,6 +41742,9 @@ function createLibraReadonlySourceContext(owner) {
          // per status poll, repeated while the home screen stayed open (Android OOM reports).
          // Each turn still passes the same binding checks against this context; one closing
          // read after the scan catches a chat that changed meanwhile.
+         // What the scan depended on: each turn's revision (raw text and payload) and the
+         // sanitized text. A whitespace-only edit changes the revision but not the sanitized text.
+         const scanSignature=pairs=>digest({revisions:pairs.map(completedTurnRevisionId),source:sourceDigest(pairs)});
          const scan=async context=>{
            microJobs=[];receiptStages=[];
            if(context.scope.scopeKey!==scope.scopeKey)return null;
@@ -41761,7 +41764,7 @@ function createLibraReadonlySourceContext(owner) {
                 writeOutcome:string(job?.writeOutcome||'not_started')});
              if(active.status==='verified'){
                let stage;
-               try {stage=await readMicroStageStatus(scope,active);}
+               try {stage=await readMicroStageStatus(scope,active,{context,pairs});}
                catch (_) {stage={receiptRef:active.receiptKey,revisionId:active.receipt.revisionId,
                  sourceDigest:active.receipt.sourceDigest,turn:active.receipt.turn,
                  status:'unavailable',reason:'micro_status_read_unavailable'};}
@@ -41771,14 +41774,14 @@ function createLibraReadonlySourceContext(owner) {
                     :{...stage,scopeKey:scope.scopeKey,status:'OFF',reason:'memory_disabled'});
              }
           }
-           return sourceDigest(pairs);
+           return scanSignature(pairs);
          };
          const scanned=await scan(await resolveContext(true));
          if(scanned!==null){
            // The chat can change during the storage reads above. Scan once more from the newer
            // chat rather than report statuses that mix two revisions.
            const closing=await resolveContext(true);
-           if(closing.scope.scopeKey!==scope.scopeKey||sourceDigest(buildPairs(closing.chat,scope.scopeKey))!==scanned)await scan(closing);
+           if(closing.scope.scopeKey!==scope.scopeKey||scanSignature(buildPairs(closing.chat,scope.scopeKey))!==scanned)await scan(closing);
          }
        } catch (_) { if(!reason)reason='micro_status_unavailable'; }
        const covered=new Set(receiptStages.map(row=>Number(row.turn)));
@@ -53283,7 +53286,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 15000;
     const microInvocationsInFlight = new Set();
-    const readMicroStageStatus = async (scope, active) => {
+    // hostSource ({context, pairs}) lets a caller that already read the host share that read with
+    // the Micro reader's own source checks instead of having each of them read the host again.
+    const readMicroStageStatus = async (scope, active, hostSource = {}) => {
       const receipt=active.receipt;
       const workKey=key.microWork(scope,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId,microProducerVersion);
@@ -53294,7 +53299,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       catch (_) {reason='work_copy_unavailable';}
       // Reuse this poll's verified receipt and work read instead of fetching both again.
       const published=await readActiveMicroMemory(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,
-        {verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
+        {...hostSource,verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
       const jobKey=[scope.scopeKey,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId].join(':');
       const inFlight = microInvocationsInFlight.has(workKey) || (work?.phase === 'invoking' && Number(work?.leaseExpiresAt || 0) > Date.now());
