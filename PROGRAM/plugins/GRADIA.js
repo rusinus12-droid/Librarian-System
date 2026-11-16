@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.1.2
+//@display-name GRADIA v1.1.3
 //@api 3.0
-//@version 1.1.2
+//@version 1.1.3
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.1.2';
+  const PLUGIN_VERSION = '1.1.3';
   
   
   
