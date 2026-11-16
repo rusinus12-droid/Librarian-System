@@ -16887,6 +16887,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   })();
 
   const compact = (value = '', max = 240) => {
+    if (typeof value === 'string') {
+      const requested = Number(max);
+      const limit = Number.isFinite(requested) ? Math.max(0, requested) : 240;
+      if (limit <= 0) return '';
+      if (value.length <= limit && !/[\r\n\t\f\v]|  |^\s|\s$/.test(value)) return value;
+    }
     const source = text(value).replace(/\s+/g, ' ').trim();
     const requested = Number(max);
     const limit = Number.isFinite(requested) ? Math.max(0, requested) : 240;
@@ -23726,7 +23732,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return '';
   };
-  const localRecallSourceKey = row => [row.packetHash || row.locator?.sourceHash || '', row.axis || '', row.id || row.publicRef || '', row.publicText || ''].join('\u0001');
+  const localRecallSourceKeyCache = new WeakMap();
+  const localRecallSourceKey = row => {
+    if (row && typeof row === 'object') {
+      const cached = localRecallSourceKeyCache.get(row);
+      if (cached !== undefined) return cached;
+      const key = [row.packetHash || row.locator?.sourceHash || '', row.axis || '', row.id || row.publicRef || '', row.publicText || ''].join('\u0001');
+      localRecallSourceKeyCache.set(row, key);
+      return key;
+    }
+    return [row?.packetHash || row?.locator?.sourceHash || '', row?.axis || '', row?.id || row?.publicRef || '', row?.publicText || ''].join('\u0001');
+  };
   const localRecallWords = value => localRecallQueryText(value).normalize('NFKC').toLocaleLowerCase('und').match(/[\p{L}\p{N}_]+/gu) || [];
   const localRecallTerms = value => {
     const terms=[];
@@ -23774,7 +23790,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let compiled=compiledIndexHit?localRecallRankIndex:null;
     if(!compiled){
       const postings=new Map();docs.forEach(({doc},index)=>doc.tf.forEach((_,term)=>{const ids=postings.get(term)||[];ids.push(index);postings.set(term,ids);fullTermScans++;}));
-      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length)};
+      const averageLength=docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length);
+      const docNorms=docs.map(({doc})=>1.2*(.25+.75*doc.length/Math.max(1,averageLength)));
+      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:averageLength,docNorms};
       // Repeated templates must not crowd distinct facts out of a broad
       // collection query. Derive information from this exact eligible corpus,
       // without topic dictionaries, question rules, or answer identities.
@@ -23792,35 +23810,45 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       localRecallRankIndex=docs.length<=8192?compiled:null;
     }
     const average=compiled.average;
+    const docNorms=compiled.docNorms||docs.map(({doc})=>1.2*(.25+.75*doc.length/Math.max(1,average)));
     const best=new Map();
     const queryInputs = ensureArray(inputs).map(localRecallQueryText).map(value => value.trim()).filter(Boolean);
     for(const input of new Set(queryInputs)){
       const terms=[...new Set(localRecallTerms(input))];
       const wordFrequencies=terms.filter(term=>term.startsWith('w:')).map(term=>compiled.postings.get(term)?.length||0).filter(Boolean);
       const broadness=wordFrequencies.length?Math.min(...wordFrequencies)/Math.max(1,docs.length):0;
-      const visited=new Set();for(const term of terms)for(const index of compiled.postings.get(term)||[])visited.add(index);
-      candidateVisits+=visited.size;
-      const ranked=[...visited].map(index=>{const {row,doc}=docs[index];
-        let score=0,wordScore=0;
-        for(const term of terms){const tf=doc.tf.get(term)||0;if(!tf)continue;
-          const frequency=compiled.postings.get(term)?.length||0;
-          const idf=Math.log(1+(docs.length-frequency+.5)/(frequency+.5));
-          const contribution=idf*(tf*2.2)/(tf+1.2*(.25+.75*doc.length/Math.max(1,average)));
-          score+=contribution;if(term.startsWith('w:'))wordScore+=contribution;
+      const scoreMap=new Map(),wordScoreMap=new Map();
+      for(const term of terms){
+        const post=compiled.postings.get(term);
+        if(!post||!post.length)continue;
+        const frequency=post.length;
+        const idf=Math.log(1+(docs.length-frequency+.5)/(frequency+.5));
+        const isWord=term.startsWith('w:');
+        for(const index of post){
+          const tf=docs[index].doc.tf.get(term)||0;
+          if(!tf)continue;
+          const contribution=idf*(tf*2.2)/(tf+docNorms[index]);
+          scoreMap.set(index,(scoreMap.get(index)||0)+contribution);
+          if(isWord)wordScoreMap.set(index,(wordScoreMap.get(index)||0)+contribution);
         }
-        // Exact lexical evidence leads; character grams remain the fallback
-        // and tie evidence. The information multiplier approaches one when
-        // the query itself selects a rare term.
-        return {row,score,lexical:wordScore*(1+broadness*compiled.information[index])};
-      }).filter(hit=>hit.score>0).sort((a,b)=>b.lexical-a.lexical||b.score-a.score||localRecallSourceKey(a.row).localeCompare(localRecallSourceKey(b.row)));
+      }
+      candidateVisits+=scoreMap.size;
+      const ranked=[];
+      for(const [index,score]of scoreMap){
+        if(!(score>0))continue;
+        const {row,key}=docs[index];
+        const wordScore=wordScoreMap.get(index)||0;
+        ranked.push({row,key,score,lexical:wordScore*(1+broadness*compiled.information[index])});
+      }
+      ranked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
       scoredRows+=ranked.length;
-      ranked.forEach((hit,index)=>{const key=localRecallSourceKey(hit.row),rank=index+1;
-        if(!best.has(key)||best.get(key).rank>rank)best.set(key,{...hit,rank});});
+      ranked.forEach((hit,index)=>{const rank=index+1;
+        if(!best.has(hit.key)||best.get(hit.key).rank>rank)best.set(hit.key,{...hit,rank});});
     }
     Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
       compiledIndexHit,verificationRows:docs.length,documentTokenizations,fullTermScans,informationTermScans,candidateVisits,scoredRows,
       questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
-    return [...best.values()].sort((a,b)=>a.rank-b.rank||localRecallSourceKey(a.row).localeCompare(localRecallSourceKey(b.row))).map(hit=>hit.row);
+    return [...best.values()].sort((a,b)=>a.rank-b.rank||a.key.localeCompare(b.key)).map(hit=>hit.row);
   };
   const localRecallFairMerge = (queues, limit) => {
     const out=[],seen=new Set(),positions=queues.map(()=>0);
@@ -23838,9 +23866,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     .filter(([key])=>key.endsWith('Refs')).flatMap(([,values])=>ensureArray(values)).filter(value=>typeof value==='string');
   const localRecallExpand = (allRows, seeds, settings) => {
     if(settings.graphClosureRecallEnabled===false || settings.typedMemoryGraphEnabled===false)return [];
-    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map();
+    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map(),rowIndexMap=new Map();
     const add=(map,key,row)=>{if(!key)return;const list=map.get(key)||[];list.push(row);map.set(key,list);};
-    for(const row of allRows){
+    for(let idx=0;idx<allRows.length;idx++){
+      const row=allRows[idx];
+      rowIndexMap.set(row,idx);
       localRecallRefs(row).forEach(ref=>add(refs,ref,row));
       localRecallDeclaredTargets(row).forEach(ref=>add(reverseRefs,ref,row));
       add(source,row.packetHash,row);add(scenes,row.scene_id||row.sceneId,row);
@@ -23853,9 +23883,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(settings.hierarchicalEpisodeMemoryEnabled!==false){
         related.push(...(source.get(seed.packetHash)||[]),...(scenes.get(seed.scene_id||seed.sceneId)||[]));
         ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[])));
-        const at=allRows.indexOf(seed);if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
+        const at=rowIndexMap.get(seed)??-1;if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
       }
-      return related.filter(row=>localRecallSourceKey(row)!==localRecallSourceKey(seed));
+      const seedKey=localRecallSourceKey(seed);
+      return related.filter(row=>localRecallSourceKey(row)!==seedKey);
     });
     return localRecallFairMerge(queues,Math.max(0,Math.min(24,Number(settings.graphClosureMaxNodes||DEFAULT_SETTINGS.graphClosureMaxNodes))));
   };
@@ -24244,13 +24275,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return stableHash64(JSON.stringify([scopeKey,config.mode,config.url,config.mode==='plugin_only'?'':backend.dataInstanceId,LOCAL_RECALL_POSTING_VERSION]));
     } finally { clearTimeout(timer); }
   };
-  const localRecallPostingSourceId = (descriptor,index) => {
+  const localRecallPostingSourceId = (descriptor,index,bypassCache=false) => {
+    const proof=!bypassCache&&descriptor&&typeof descriptor==='object'?localRecallDescriptorRevisions.get(descriptor):null;
+    if(proof&&proof.sourceId&&proof.sourceIdIndex===index
+      &&proof.sourceIdHash===descriptor.hash
+      &&proof.sourceIdMessageIndex===descriptor.messageIndex
+      &&proof.sourceIdSourceScope===descriptor.sourceScope
+      &&proof.sourceIdSourceType===descriptor.sourceType
+      &&proof.sourceIdTargetPair===descriptor.targetPairIndex
+      &&proof.sourceIdSourcePair===descriptor.sourcePairIndex
+      &&proof.sourceIdWorldline===descriptor.worldlineOrdinal
+      &&proof.sourceIdHistorical===descriptor.historicalOrdinal
+      &&proof.sourceIdLocator===descriptor.locator
+      &&proof.sourceIdEvidence===descriptor.sourceEvidence) {
+      return proof.sourceId;
+    }
     const identity=descriptor.hash||globalPacketRoutingIdentity(descriptor,index);
-    return stableHash64(JSON.stringify([identity,descriptor.messageIndex,descriptor.sourceScope,descriptor.sourceType,
+    const id=stableHash64(JSON.stringify([identity,descriptor.messageIndex,descriptor.sourceScope,descriptor.sourceType,
       descriptor.targetPairIndex,descriptor.sourcePairIndex,descriptor.worldlineOrdinal,descriptor.historicalOrdinal,descriptor.locator,descriptor.sourceEvidence]));
+    if(proof){
+      proof.sourceId=id;proof.sourceIdIndex=index;proof.sourceIdHash=descriptor.hash;
+      proof.sourceIdMessageIndex=descriptor.messageIndex;proof.sourceIdSourceScope=descriptor.sourceScope;
+      proof.sourceIdSourceType=descriptor.sourceType;proof.sourceIdTargetPair=descriptor.targetPairIndex;
+      proof.sourceIdSourcePair=descriptor.sourcePairIndex;proof.sourceIdWorldline=descriptor.worldlineOrdinal;
+      proof.sourceIdHistorical=descriptor.historicalOrdinal;proof.sourceIdLocator=descriptor.locator;
+      proof.sourceIdEvidence=descriptor.sourceEvidence;
+    }
+    return id;
   };
   const localRecallPostingEntryCurrent = entry => materializeExtractedPacket(entry.descriptor).raw===entry.proof.raw
-    &&localRecallPostingSourceId(entry.descriptor,entry.index)===entry.id;
+    &&localRecallPostingSourceId(entry.descriptor,entry.index,true)===entry.id;
   const localRecallPostingInventory = addresses => {
     let validationChars=0,validationHashChars=0;
     const entries=addresses.map((descriptor,index)=>{

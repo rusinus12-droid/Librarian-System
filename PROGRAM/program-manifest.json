@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.2.0",
-  "generatedAt": "2026-11-16T11:28:14.623Z",
+  "generatedAt": "2026-11-16T12:19:49.615Z",
   "server": {
     "version": "1.2.0",
     "protocol": {
@@ -3852,8 +3852,12 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "fc193e9e04eff7412871ea20e314b2256e072537b21dc55f0fd973603a9812d3",
+      "sha256": "2cb6f04f2ed2d0784e429b281a3238a0b1b7d0ff71bbfbf629ebdb562d5b4c22",
       "bytes": 11829
+    },
+    "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
+      "sha256": "b870bd96c4ca8be0d467ee465592d64a6055c28e02afa6f554bae6922c8b9839",
+      "bytes": 5875
     },
     "docs/release-provenance/SOURCE_CANDIDATE_REPAIR_20261003.md": {
       "sha256": "f894890bd82256b3b91289c7640cb4fafa360808e71805096bda3ffe3acf3a68",
@@ -4252,24 +4256,24 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "7311eb7b3e96fd13bf6fb514fd7d16d58de4e528c43a3899f53ac26f2ea681ba",
-      "bytes": 3839985
+      "sha256": "84dcb3d2e44415253b88405b34b63e7a517826926a0f84a35887734e4c2d7e21",
+      "bytes": 3842463
     },
     "plugins/GRADIA.js": {
       "sha256": "dd0cd55cb5de7deb14a3e92862e5e9d848a4aafba1417f23e652eea452326d6f",
       "bytes": 3267683
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "0d7f247316f3933df2e366ff126decc939229b875066dd8647990bf3be8bb77a",
-      "bytes": 4305684
+      "sha256": "5007de0b7a17248b3ec0df8684269466f0ecac00a5f267b80a541da5669b662b",
+      "bytes": 4308137
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "14353f4a7bdd8287ac2354854bd208ad5220a88e6efc3ee90b7c590238b83098",
-      "bytes": 6688962
+      "sha256": "36376ad13f2126c7e1a555386fc12bb44268124ec1bd163c645125d3e9609dda",
+      "bytes": 6694076
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",

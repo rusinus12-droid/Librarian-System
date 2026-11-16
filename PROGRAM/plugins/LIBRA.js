@@ -24243,81 +24243,128 @@ function summarizeAgentCbsTag(rawContent) {
     body: Object.freeze({ weight: 1.0, b: 0.80 })
   });
   const RESPONSE_LORE_BM25F_FIELDS = Object.freeze(Object.keys(RESPONSE_LORE_BM25F_DEFS));
+  const loreBm25fCorpusCache = new WeakMap();
+  const recentLoreBm25fCorpora = [];
+  const loreBm25fCorpusFor = records => {
+    const recordCount = records.length;
+    let cached = recordCount >= 8 ? loreBm25fCorpusCache.get(records) : null;
+    if (cached && cached.records.length === recordCount && cached.records.every((rec, i) => rec === records[i])) {
+      return cached;
+    }
+    if (recordCount >= 8) {
+      for (let i = recentLoreBm25fCorpora.length - 1; i >= 0; i -= 1) {
+        const entry = recentLoreBm25fCorpora[i];
+        if (entry.records.length === recordCount && entry.records.every((rec, idx) => rec === records[idx])) {
+          loreBm25fCorpusCache.set(records, entry);
+          return entry;
+        }
+      }
+    }
+    const defs = RESPONSE_LORE_BM25F_DEFS;
+    const defIdentity = defs.identity;
+    const defHeading = defs.heading;
+    const defBody = defs.body;
+    let sumIdentity = 0;
+    let sumHeading = 0;
+    let sumBody = 0;
+    for (let i = 0; i < recordCount; i += 1) {
+      const f = records[i].fields;
+      sumIdentity += Number(f.identity?.length || 0);
+      sumHeading += Number(f.heading?.length || 0);
+      sumBody += Number(f.body?.length || 0);
+    }
+    const avgIdentity = Math.max(1, sumIdentity / Math.max(1, recordCount));
+    const avgHeading = Math.max(1, sumHeading / Math.max(1, recordCount));
+    const avgBody = Math.max(1, sumBody / Math.max(1, recordCount));
+    const norms = new Array(recordCount);
+    const postings = new Map();
+    const addPosting = (token, index) => {
+      const list = postings.get(token);
+      if (!list) postings.set(token, [index]);
+      else if (list[list.length - 1] !== index) list.push(index);
+    };
+    for (let i = 0; i < recordCount; i += 1) {
+      const f = records[i].fields;
+      const statsIdentity = f.identity;
+      const statsHeading = f.heading;
+      const statsBody = f.body;
+      norms[i] = {
+        normIdentity: Math.max(0.12, (1 - defIdentity.b) + defIdentity.b * (Math.max(0, Number(statsIdentity?.length || 0)) / avgIdentity)),
+        normHeading: Math.max(0.12, (1 - defHeading.b) + defHeading.b * (Math.max(0, Number(statsHeading?.length || 0)) / avgHeading)),
+        normBody: Math.max(0.12, (1 - defBody.b) + defBody.b * (Math.max(0, Number(statsBody?.length || 0)) / avgBody))
+      };
+      if (statsIdentity?.counts) for (const token of statsIdentity.counts.keys()) addPosting(token, i);
+      if (statsHeading?.counts) for (const token of statsHeading.counts.keys()) addPosting(token, i);
+      if (statsBody?.counts) for (const token of statsBody.counts.keys()) addPosting(token, i);
+    }
+    const corpus = { records: records.slice(), recordCount, norms, postings };
+    if (recordCount >= 8) {
+      loreBm25fCorpusCache.set(records, corpus);
+      recentLoreBm25fCorpora.push(corpus);
+      if (recentLoreBm25fCorpora.length > 2) recentLoreBm25fCorpora.shift();
+    }
+    return corpus;
+  };
   const responseLoreCorpusBm25f = (records = [], query = '') => {
     const queryTokens = loreJaccardUnique(Array.from(responseLoreTokenStats(query).counts.keys()), 180);
     if (!queryTokens.length || !records.length) return records.map(() => ({ raw: 0, score: 0, fields: {} }));
+    const corpus = loreBm25fCorpusFor(records);
     const defs = RESPONSE_LORE_BM25F_DEFS;
-    const fields = RESPONSE_LORE_BM25F_FIELDS;
-    const recordCount = records.length;
-    const averages = {};
-    for (const field of fields) {
-      let sum = 0;
-      for (const record of records) sum += Number(record.fields[field]?.length || 0);
-      averages[field] = sum / Math.max(1, recordCount);
+    const defIdentity = defs.identity;
+    const defHeading = defs.heading;
+    const defBody = defs.body;
+    const recordCount = corpus.recordCount;
+    const norms = corpus.norms;
+    const postings = corpus.postings;
+    const results = new Array(recordCount);
+    for (let i = 0; i < recordCount; i += 1) {
+      results[i] = { raw: 0, score: 0, fields: { identity: 0, heading: 0, body: 0 } };
     }
-    const df = new Map();
-    for (const token of queryTokens) {
-      let count = 0;
-      for (const record of records) {
-        for (const field of fields) {
-          if (record.fields[field]?.counts?.has(token)) { count += 1; break; }
-        }
-      }
-      df.set(token, count);
-    }
-    // idf depends only on (token, df, recordCount), so it is the same for every record.
-    const idfByToken = new Map();
-    for (const token of queryTokens) {
-      const documentFrequency = Number(df.get(token) || 0);
-      idfByToken.set(token, Math.log(1 + ((recordCount - documentFrequency + 0.5) / (documentFrequency + 0.5))));
-    }
-    return records.map(record => {
-      let raw = 0;
-      const fieldRaw = { identity: 0, heading: 0, body: 0 };
-      const statsByIdentity = record.fields.identity;
-      const statsByHeading = record.fields.heading;
-      const statsByBody = record.fields.body;
-      const lenIdentity = Math.max(0, Number(statsByIdentity?.length || 0));
-      const lenHeading = Math.max(0, Number(statsByHeading?.length || 0));
-      const lenBody = Math.max(0, Number(statsByBody?.length || 0));
-      const defIdentity = defs.identity;
-      const defHeading = defs.heading;
-      const defBody = defs.body;
-      const avgIdentity = Math.max(1, Number(averages.identity || 1));
-      const avgHeading = Math.max(1, Number(averages.heading || 1));
-      const avgBody = Math.max(1, Number(averages.body || 1));
-      const normIdentity = Math.max(0.12, (1 - defIdentity.b) + defIdentity.b * (lenIdentity / avgIdentity));
-      const normHeading = Math.max(0.12, (1 - defHeading.b) + defHeading.b * (lenHeading / avgHeading));
-      const normBody = Math.max(0.12, (1 - defBody.b) + defBody.b * (lenBody / avgBody));
-      for (const token of queryTokens) {
-        const idf = idfByToken.get(token);
+    const touched = [];
+    for (let t = 0; t < queryTokens.length; t += 1) {
+      const token = queryTokens[t];
+      const post = postings.get(token);
+      if (!post || !post.length) continue;
+      const df = post.length;
+      const idf = Math.log(1 + ((recordCount - df + 0.5) / (df + 0.5)));
+      for (let p = 0; p < df; p += 1) {
+        const idx = post[p];
+        const f = records[idx].fields;
+        const n = norms[idx];
+        const statsIdentity = f.identity;
+        const statsHeading = f.heading;
+        const statsBody = f.body;
         let weightedIdentity = 0;
         let weightedHeading = 0;
         let weightedBody = 0;
-        if (statsByIdentity) {
-          const tf = Number(statsByIdentity.counts.get(token) || 0);
-          if (tf) weightedIdentity = defIdentity.weight * tf / normIdentity;
+        if (statsIdentity) {
+          const tf = Number(statsIdentity.counts.get(token) || 0);
+          if (tf) weightedIdentity = defIdentity.weight * tf / n.normIdentity;
         }
-        if (statsByHeading) {
-          const tf = Number(statsByHeading.counts.get(token) || 0);
-          if (tf) weightedHeading = defHeading.weight * tf / normHeading;
+        if (statsHeading) {
+          const tf = Number(statsHeading.counts.get(token) || 0);
+          if (tf) weightedHeading = defHeading.weight * tf / n.normHeading;
         }
-        if (statsByBody) {
-          const tf = Number(statsByBody.counts.get(token) || 0);
-          if (tf) weightedBody = defBody.weight * tf / normBody;
+        if (statsBody) {
+          const tf = Number(statsBody.counts.get(token) || 0);
+          if (tf) weightedBody = defBody.weight * tf / n.normBody;
         }
         const combinedTf = weightedIdentity + weightedHeading + weightedBody;
         if (!combinedTf) continue;
         const contribution = idf * ((combinedTf * (1.35 + 1)) / (combinedTf + 1.35));
-        raw += contribution;
-        // pieceTotal is exactly combinedTf whenever this branch runs (the pieces summed to it), so
-        // dividing by the running sum is identical to dividing by the rebuilt array's total.
-        fieldRaw.identity += contribution * (weightedIdentity / combinedTf);
-        fieldRaw.heading += contribution * (weightedHeading / combinedTf);
-        fieldRaw.body += contribution * (weightedBody / combinedTf);
+        const res = results[idx];
+        if (res.raw === 0) touched.push(idx);
+        res.raw += contribution;
+        res.fields.identity += contribution * (weightedIdentity / combinedTf);
+        res.fields.heading += contribution * (weightedHeading / combinedTf);
+        res.fields.body += contribution * (weightedBody / combinedTf);
       }
-      return { raw, score: raw > 0 ? raw / (raw + 1.55) : 0, fields: fieldRaw };
-    });
+    }
+    for (let i = 0; i < touched.length; i += 1) {
+      const res = results[touched[i]];
+      res.score = res.raw > 0 ? res.raw / (res.raw + 1.55) : 0;
+    }
+    return results;
   };
 
   // The query side of the linear score is fixed for a whole ranking pass, but the production path
@@ -24355,20 +24402,39 @@ function summarizeAgentCbsTag(rawContent) {
     return { score: clampNumber(Math.max(coverage * 0.78, jaccard) * 0.76 + identityCoverage * 0.24, 0, 1, 0), coverage, jaccard, identityCoverage };
   };
 
+  const LORE_EXACT_QUERY_CACHE_MAX = 32;
+  const loreExactQueryNormCache = new Map();
+  const loreExactRecordKeysCache = new WeakMap();
   const responseLoreExactScore = (record, query = '') => {
-    const normalized = loreJaccardNormalizeKey(query);
-    const keys = loreJaccardUnique([
-      record.lore?.label,
-      record.lore?.key,
-      ...(Array.isArray(record.lore?.keys) ? record.lore.keys : []),
-      ...(Array.isArray(record.lore?.secondaryKeys) ? record.lore.secondaryKeys : []),
-      ...(Array.isArray(record.lore?.additionalKeys) ? record.lore.additionalKeys : [])
-    ], 80);
+    const queryStr = text(query || '');
+    let normalized = loreExactQueryNormCache.get(queryStr);
+    if (normalized === undefined) {
+      normalized = loreJaccardNormalizeKey(queryStr);
+      if (loreExactQueryNormCache.size >= LORE_EXACT_QUERY_CACHE_MAX) {
+        loreExactQueryNormCache.delete(loreExactQueryNormCache.keys().next().value);
+      }
+      loreExactQueryNormCache.set(queryStr, normalized);
+    }
+    let keyPairs = record && typeof record === 'object' ? loreExactRecordKeysCache.get(record) : null;
+    if (!keyPairs || keyPairs.lore !== record.lore) {
+      const keys = loreJaccardUnique([
+        record.lore?.label,
+        record.lore?.key,
+        ...(Array.isArray(record.lore?.keys) ? record.lore.keys : []),
+        ...(Array.isArray(record.lore?.secondaryKeys) ? record.lore.secondaryKeys : []),
+        ...(Array.isArray(record.lore?.additionalKeys) ? record.lore.additionalKeys : [])
+      ], 80);
+      const pairs = [];
+      for (const raw of keys) {
+        const key = loreJaccardNormalizeKey(raw);
+        if (key && key.length >= 2) pairs.push([raw, key]);
+      }
+      keyPairs = { lore: record.lore, pairs };
+      if (record && typeof record === 'object') loreExactRecordKeysCache.set(record, keyPairs);
+    }
     const matches = [];
     let score = 0;
-    for (const raw of keys) {
-      const key = loreJaccardNormalizeKey(raw);
-      if (!key || key.length < 2) continue;
+    for (const [raw, key] of keyPairs.pairs) {
       if (normalized.includes(key)) {
         matches.push(raw);
         score = Math.max(score, key.length >= 4 ? 1 : 0.88);
@@ -40622,6 +40688,29 @@ function createLibraReadonlySourceContext(owner) {
     };
     const pairRevisionProjectionWithCache = (raw, index, cache, sourceTagKey, observation = null) => {
       state.memoryReadIO.rawRoleMetadataRowsValidated++;
+      const indexedEntry = observation && Array.isArray(cache.byIndex) ? cache.byIndex[index] : null;
+      const item = raw?.msg && typeof raw.msg === 'object' ? raw.msg : raw;
+      if (indexedEntry && indexedEntry.rawObj === raw && indexedEntry.itemObj === item
+        && indexedEntry.sourceTagKey === sourceTagKey && indexedEntry.index === index
+        && typeof item?.data !== 'object' && typeof item?.content !== 'object'
+        && item?.data === indexedEntry.fData && item?.content === indexedEntry.fContent
+        && item?.text === indexedEntry.fText && item?.message === indexedEntry.fMessage
+        && item?.mes === indexedEntry.fMes && item?.role === indexedEntry.fRole
+        && item?.type === indexedEntry.fType && item?.speakerType === indexedEntry.fSpeakerType
+        && item?.chatId === indexedEntry.fChatId && item?.id === indexedEntry.fId
+        && item?.messageId === indexedEntry.fMessageId && item?.saying === indexedEntry.fSaying
+        && item?.time === indexedEntry.fTime && item?.updatedAt === indexedEntry.fUpdatedAt
+        && item?.createdAt === indexedEntry.fCreatedAt && item?.isUser === indexedEntry.fIsUser
+        && item?.is_user === indexedEntry.fIsUserSnake && item?.disabled === indexedEntry.fDisabled
+        && item?.isComment === indexedEntry.fIsComment
+        && item?.generationInfo === indexedEntry.fGenInfo
+        && (!item?.generationInfo || item.generationInfo.generationId === indexedEntry.fGenId)
+        && cache.entries.get(indexedEntry.key) === indexedEntry) {
+        state.memoryReadIO.rawBodyBytesValidated += indexedEntry.rawBodyBytes;
+        indexedEntry.residentOrder = ++state.residentSequence;
+        state.pairRevisionCacheStats.hits += 1;
+        return indexedEntry;
+      }
       const role = messageRole(raw);
       const identity = messageIdentity(raw, index);
       const keyValue = pairRevisionEntryKey(raw, index, role, identity);
@@ -40674,6 +40763,13 @@ function createLibraReadonlySourceContext(owner) {
         internalCarrierRemoved: liveTailRawContainsRemovedCarrier(rawComparable.value),
         signature,
         sequenceItem: `${index}\u0001${keyValue}\u0001${signature}\u0001${rawPayloadDigest}\u0001${sanitizedTextDigest}`,
+        rawObj: raw, itemObj: item, sourceTagKey,
+        fData: item?.data, fContent: item?.content, fText: item?.text, fMessage: item?.message, fMes: item?.mes,
+        fRole: item?.role, fType: item?.type, fSpeakerType: item?.speakerType,
+        fChatId: item?.chatId, fId: item?.id, fMessageId: item?.messageId,
+        fSaying: item?.saying, fTime: item?.time, fUpdatedAt: item?.updatedAt, fCreatedAt: item?.createdAt,
+        fIsUser: item?.isUser, fIsUserSnake: item?.is_user, fDisabled: item?.disabled, fIsComment: item?.isComment,
+        fGenInfo: item?.generationInfo, fGenId: item?.generationInfo?.generationId,
         retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
       };
       // A full observation must read all retained entries before admitting
@@ -40815,6 +40911,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       cache.sequence = sequence;
       cache.observationHash = observationHash;
+      cache.byIndex = projections;
       cache.pairs = unifiedDeepFreeze(pairs);
       cache.updatedAt = Date.now();
       state.pairRevisionCacheStats.pairBuilds += 1;

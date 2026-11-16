@@ -35091,7 +35091,22 @@ const MemorySuiteHealthRecovery = (() => {
     ]));
   };
 
+  const sparseProjectionObjectCache = new WeakMap();
   const sparseProjectionForRecord = (record = {}, settings = Runtime.settings || DEFAULTS) => {
+    const tagKey = memorySuiteSourceTagKey('flashback');
+    if (record && typeof record === 'object') {
+      const memo = sparseProjectionObjectCache.get(record);
+      if (memo && memo.tagKey === tagKey
+        && memo.text === record.text && memo.body === record.body && memo.summary === record.summary
+        && memo.title === record.title && memo.tags === record.tags
+        && memo.scopeKey === record.scopeKey && memo.sourceType === record.sourceType
+        && memo.updatedAt === record.updatedAt && memo.hash === record.hash
+        && memo.metadata === record.metadata && memo.structuredStateFacts === record.structuredStateFacts
+        && memo.chunkIndex === record.chunkIndex && Runtime.sparseProjectionCache.has(memo.value.key)) {
+        Runtime.sparseCacheStats.hits += 1;
+        return memo.value;
+      }
+    }
     const recordKey = text(record?.id || record?.sourceId || record?.hash || stableHash(record?.text || ''));
     const key = [
       FLASHBACK_SPARSE_INDEX_VERSION,
@@ -35153,6 +35168,15 @@ const MemorySuiteHealthRecovery = (() => {
     }
     Runtime.sparseProjectionCache.set(key, value);
     Runtime.sparseProjectionRecordKeys.set(recordKey, key);
+    if (record && typeof record === 'object') {
+      sparseProjectionObjectCache.set(record, {
+        tagKey, text: record.text, body: record.body, summary: record.summary,
+        title: record.title, tags: record.tags, scopeKey: record.scopeKey,
+        sourceType: record.sourceType, updatedAt: record.updatedAt, hash: record.hash,
+        metadata: record.metadata, structuredStateFacts: record.structuredStateFacts,
+        chunkIndex: record.chunkIndex, value
+      });
+    }
     return value;
   };
 
@@ -35172,19 +35196,38 @@ const MemorySuiteHealthRecovery = (() => {
   // Field averages and token postings depend only on the array's sparse projections,
   // so they are built once and reused while every projection is the same object.
   const bm25fCorpusCache = new WeakMap();
+  const recentBm25fCorpora = [];
   const bm25fCorpusFor = (records, settings) => {
     const sparses = records.map(record => sparseProjectionForRecord(record, settings));
     const fields = Object.keys(FLASHBACK_BM25F_WEIGHTS);
     const cached = records.length >= 8 ? bm25fCorpusCache.get(records) : null;
     if (cached && cached.settings === settings && cached.sparses.length === sparses.length
       && cached.sparses.every((sparse, index) => sparse === sparses[index])) return cached;
+    if (records.length >= 8) {
+      for (let i = recentBm25fCorpora.length - 1; i >= 0; i -= 1) {
+        const entry = recentBm25fCorpora[i];
+        if (entry.settings === settings && entry.sparses.length === sparses.length
+          && entry.sparses.every((sparse, index) => sparse === sparses[index])) {
+          bm25fCorpusCache.set(records, entry);
+          return entry;
+        }
+      }
+    }
     const averages = Object.fromEntries(fields.map(field => [
       field,
       sparses.reduce((sum, sparse) => sum + Math.max(1, Number(sparse.lengths[field] || 1)), 0) / Math.max(1, sparses.length)
     ]));
     const postings = new Map();
-    sparses.forEach((sparse, index) => {
+    const fieldWeightNorms = new Array(sparses.length);
+    for (let index = 0; index < sparses.length; index += 1) {
+      const sparse = sparses[index];
+      const normsForDoc = {};
       for (const field of fields) {
+        const avg = Math.max(1, averages[field] || 1);
+        const length = Math.max(1, Number(sparse.lengths[field] || 1));
+        const b = Number(FLASHBACK_BM25F_LENGTH_NORM[field] || 0.75);
+        const norm = Math.max(0.15, 1 - b + b * (length / avg));
+        normsForDoc[field] = Number(FLASHBACK_BM25F_WEIGHTS[field] || 1) / norm;
         const tf = sparse.fieldTf[field];
         if (!tf) continue;
         for (const token of tf.keys()) {
@@ -35193,9 +35236,14 @@ const MemorySuiteHealthRecovery = (() => {
           else if (list[list.length - 1] !== index) list.push(index);
         }
       }
-    });
-    const corpus = { settings, sparses, fields, averages, postings };
-    if (records.length >= 8) bm25fCorpusCache.set(records, corpus);
+      fieldWeightNorms[index] = normsForDoc;
+    }
+    const corpus = { settings, sparses, fields, averages, postings, fieldWeightNorms };
+    if (records.length >= 8) {
+      bm25fCorpusCache.set(records, corpus);
+      recentBm25fCorpora.push(corpus);
+      if (recentBm25fCorpora.length > 4) recentBm25fCorpora.shift();
+    }
     return corpus;
   };
   const scoreBm25fCandidates = (records = [], queryText = '', settings = Runtime.settings || DEFAULTS, options = {}) => {
@@ -35203,48 +35251,52 @@ const MemorySuiteHealthRecovery = (() => {
     const families=RecallKeywordFeatures.tokenFamilies(queryText,queryTokens);
     const list = Array.isArray(records) ? records : [];
     if (!queryTokens.length || !list.length) return [];
-    const { sparses, fields, averages, postings } = bm25fCorpusFor(list, settings);
-    const documentFrequency = new Map();
+    const { sparses, fields, postings, fieldWeightNorms } = bm25fCorpusFor(list, settings);
+    const documentCount = list.length;
     const candidates = new Set();
-    for (const token of queryTokens) {
+    let maxRaw = 0;
+    const queryTokenStats = new Array(queryTokens.length);
+    for (let t = 0; t < queryTokens.length; t += 1) {
+      const token = queryTokens[t];
       const docs = postings.get(token) || [];
-      documentFrequency.set(token, docs.length);
-      for (const index of docs) candidates.add(index);
+      const df = docs.length;
+      const idf = Math.log(1 + ((documentCount - df + 0.5) / (df + 0.5)));
+      const weightIdf = families.get(token).weight * idf;
+      maxRaw += weightIdf * (FLASHBACK_BM25F_K1 + 1);
+      queryTokenStats[t] = { token, idf, weightIdf };
+      for (let d = 0; d < df; d += 1) candidates.add(docs[d]);
     }
     // Only documents holding a query token can score; document order is kept for ties.
-    const documents = [...candidates].sort((x, y) => x - y).map(index => ({ record: list[index], sparse: sparses[index] }));
-    const documentCount = list.length;
+    const candidateIndices = [...candidates].sort((x, y) => x - y);
     const rows = [];
-    for (const item of documents) {
+    for (let c = 0; c < candidateIndices.length; c += 1) {
+      const index = candidateIndices[c];
+      const record = list[index];
+      const sparse = sparses[index];
+      const weightNorms = fieldWeightNorms[index];
       let rawScore = 0;
-      let maxRaw = 0;
       let matched = 0;
       const fieldHits = {};
-      for (const token of queryTokens) {
-        const df = documentFrequency.get(token) || 0;
-        const idf = Math.log(1 + ((documentCount - df + 0.5) / (df + 0.5)));
+      for (let t = 0; t < queryTokenStats.length; t += 1) {
+        const { token, weightIdf } = queryTokenStats[t];
         let weightedTf = 0;
-        for (const field of fields) {
-          const tf = Number(item.sparse.fieldTf[field]?.get(token) || 0);
+        for (let f = 0; f < fields.length; f += 1) {
+          const field = fields[f];
+          const tf = Number(sparse.fieldTf[field]?.get(token) || 0);
           if (!tf) continue;
-          const avg = Math.max(1, averages[field] || 1);
-          const length = Math.max(1, Number(item.sparse.lengths[field] || 1));
-          const b = Number(FLASHBACK_BM25F_LENGTH_NORM[field] || 0.75);
-          const norm = Math.max(0.15, 1 - b + b * (length / avg));
-          const weighted = Number(FLASHBACK_BM25F_WEIGHTS[field] || 1) * (tf / norm);
+          const weighted = weightNorms[field] * tf;
           weightedTf += weighted;
           fieldHits[field] = (fieldHits[field] || 0) + weighted;
         }
         if (weightedTf > 0) {
           matched += 1;
-          rawScore += families.get(token).weight * idf * ((weightedTf * (FLASHBACK_BM25F_K1 + 1)) / (weightedTf + FLASHBACK_BM25F_K1));
+          rawScore += weightIdf * ((weightedTf * (FLASHBACK_BM25F_K1 + 1)) / (weightedTf + FLASHBACK_BM25F_K1));
         }
-        maxRaw += families.get(token).weight * idf * (FLASHBACK_BM25F_K1 + 1);
       }
       if (!matched) continue;
       const coverage = matched / Math.max(1, queryTokens.length);
       const score = clampNumber(maxRaw > 0 ? rawScore / maxRaw : 0, 0, 1, 0);
-      rows.push({ record: item.record, score, bm25fScore: score, bm25fRaw: rawScore, coverage, fieldHits });
+      rows.push({ record, score, bm25fScore: score, bm25fRaw: rawScore, coverage, fieldHits });
     }
     const cap = Math.max(1, Number(options.limit || settings?.candidateLimit || DEFAULTS.candidateLimit) || DEFAULTS.candidateLimit);
     return rows
