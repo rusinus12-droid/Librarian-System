@@ -7031,11 +7031,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return scope;
   };
 
-  const resolveCurrentScope = async (force = false) => {
+  // intent 'read' marks a resolution that only routes a storage read. A provider may then
+  // reuse a very recent answer; every other resolution (writes, removals, management) asks afresh.
+  const resolveCurrentScope = async (force = false, intent = '') => {
     if (!scopeRoutingEnabled) return normalizeScopeDescriptor({ scopeId: '__plugin_global__', scopeKey: '__plugin_global__', label: `${displayName} 전역`, global: true });
     if (!force && scopeCacheMs > 0 && state.scopeRouting.current?.scopeId && Date.now() - Number(state.scopeRouting.currentAt || 0) < scopeCacheMs) return state.scopeRouting.current;
     let value = null;
-    try { value = currentScopeProvider ? await currentScopeProvider({ namespace, pluginId, pluginVersion, force }) : await defaultCurrentScope(); }
+    try { value = currentScopeProvider ? await currentScopeProvider({ namespace, pluginId, pluginVersion, force, intent }) : await defaultCurrentScope(); }
     catch (error) { setStatus('scope_unavailable', error?.message || error); }
     const scope = normalizeScopeDescriptor(value);
     const previousScopeId = String(state.scopeRouting.current?.scopeId || '');
@@ -9744,7 +9746,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (localOnlyOwner) { return typeof legacyGet === 'function' ? await legacyGet() : null; }
     // Normal proxied storage follows the active scope. Explicit native-branch
     // views may bind this operation to a verified source/target scope instead.
-    const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
     const currentMode = (await readScopeMode(operationScope, false)).mode;
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
@@ -9925,12 +9927,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const rows = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
       const keys = [...new Set((Array.isArray(rows) ? rows : []).map(String).filter(key=>key && key.startsWith(String(prefix || ''))))];
       if (operationOptions.enforceScopeOwnership !== true) return keys;
-      const scope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+      const scope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
       const owned = [];
       for (const key of keys) { const route = await resolveScopedRoute(space,key,{scope,noCache:true}); if(route.kind === 'scope' && route.scopeId === scope.scopeId) owned.push(key); }
       return owned;
     }
-    const currentScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    const currentScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
     const currentMode = (await readScopeMode(currentScope, false)).mode;
     const legacy = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
     const legacyList = Array.isArray(legacy) ? legacy.map(String).filter(Boolean) : [];
@@ -14669,7 +14671,20 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 };
 
-const memorySuiteHayakuCurrentScope = async () => {
+// Resolving the open chat's scope reads the whole character (every chat) and the chat from the
+// host, twice when the reading is verified. The storage bridge asks for the scope on every
+// storage operation, so one turn made about a hundred such reads (Android OOM reports).
+// Reads now share one resolution: storage reads that arrive together use the same answer, and a
+// burst of them reuses it for a moment. Writes, removals and management never use it: they
+// resolve afresh every time. A new request or a committed output drops the shared answer.
+const HAYAKU_READ_SCOPE_REUSE_MS = 200;
+const memorySuiteHayakuReadScope = { at: 0, value: null, inFlight: null, generation: 0, reused: 0, joined: 0, resolved: 0 };
+const invalidateMemorySuiteHayakuReadScope = () => {
+  memorySuiteHayakuReadScope.at = 0;
+  memorySuiteHayakuReadScope.value = null;
+  memorySuiteHayakuReadScope.generation += 1;
+};
+const resolveMemorySuiteHayakuCurrentScope = async () => {
   let scope = null;
   try { scope = await RisuCompat.currentChatScope(); } catch (_) {}
   if (!scope?.key) return null;
@@ -14678,6 +14693,26 @@ const memorySuiteHayakuCurrentScope = async () => {
     chatTitle: scope.chatTitle || '', label: scope.chatTitle || scope.chatId || scope.key,
     aliases: [scope.key, scope.chatId].filter(Boolean)
   };
+};
+const memorySuiteHayakuCurrentScope = async (request = {}) => {
+  const shared = memorySuiteHayakuReadScope;
+  if (request?.intent !== 'read' || request?.force === true) {
+    shared.resolved += 1;
+    return await resolveMemorySuiteHayakuCurrentScope();
+  }
+  if (shared.value && Date.now() - shared.at < HAYAKU_READ_SCOPE_REUSE_MS) { shared.reused += 1; return { ...shared.value, aliases: [...shared.value.aliases] }; }
+  if (shared.inFlight) { shared.joined += 1; const joined = await shared.inFlight; return joined ? { ...joined, aliases: [...joined.aliases] } : joined; }
+  const generation = shared.generation;
+  shared.resolved += 1;
+  const pending = resolveMemorySuiteHayakuCurrentScope().then(value => {
+    // An answer that was already being read when the chat state changed is returned to its
+    // callers but not kept for later ones.
+    if (value && generation === shared.generation) { shared.value = value; shared.at = Date.now(); }
+    return value;
+  });
+  shared.inFlight = pending;
+  try { const value = await pending; return value ? { ...value, aliases: [...value.aliases] } : value; }
+  finally { if (shared.inFlight === pending) shared.inFlight = null; }
 };
 // These immutable keys contain a content identity, not a chat id. Resolve them
 // from their canonical manifest; never assign an unknown hash to the open chat.
@@ -16329,6 +16364,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = async (messages = [], requestType = 'model') => {
         if (Memory.unloaded || !ownsRuntime()) return messages;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.replacer.runCount += 1;
         Memory.replacer.lastRunAt = now();
         Memory.runtimeDiagnostics.requestHooksObservedSinceInstall += 1;
@@ -16495,6 +16531,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = async (content = '', requestType = 'model') => {
         if (Memory.unloaded || !ownsRuntime()) return content;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.afterRequest.runCount += 1;
         Memory.afterRequest.lastRunAt = now();
         Memory.runtimeDiagnostics.requestHooksObservedSinceInstall += 1;
@@ -16651,6 +16688,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = event => {
         if (Memory.unloaded || !ownsRuntime()) return;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.chatOutputListener.runCount += 1;
         Memory.chatOutputListener.lastRunAt = now();
         Memory.captureBackendObservedRuns += 1;
