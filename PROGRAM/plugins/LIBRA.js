@@ -35610,6 +35610,7 @@ function createLibraReadonlySourceContext(owner) {
       nativeCopyInFlight: new Map(),
       lastResolvedContext: null,
       previousResolvedContext: null,
+      receiptValidationCharacterId: null,
       branchPairSignatureCache: new Map(),
       pairRevisionCaches: new Map(),
       pairRevisionObjectIds: new WeakMap(),
@@ -40274,6 +40275,61 @@ function createLibraReadonlySourceContext(owner) {
       return context;
     };
 
+    const RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS = 30000;
+    const invalidateReceiptValidationCharacterId = () => {
+      state.receiptValidationCharacterId = null;
+    };
+    // Write-fence validation runs at the start and end of every receipt/micro
+    // check. It only needs the open chat's messages and the character id, so for
+    // independent chats it reads the open chat alone and keeps the character id
+    // per character index for 30s (native branches still read the full character
+    // because lineage checks parent chats).
+    const resolveReceiptValidationContext = async () => {
+      if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
+      const liveApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
+      const chatAlone = typeof liveApi?.getCurrentCharacterIndex === 'function'
+        && typeof liveApi?.getCurrentChatIndex === 'function'
+        && typeof liveApi?.getChatFromIndex === 'function';
+      if (!chatAlone) return resolveContext(true);
+      const [charIndexRaw, chatIndexRaw] = await Promise.all([
+        safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), false),
+        safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), false)
+      ]);
+      const charIndex = parseInt(charIndexRaw, 10);
+      const chatIndex = parseInt(chatIndexRaw, 10);
+      if (!Number.isInteger(charIndex) || charIndex < 0 || !Number.isInteger(chatIndex) || chatIndex < 0) {
+        return resolveContext(true);
+      }
+      const chat = await safeApi('getChatFromIndex', () => liveApi.getChatFromIndex(charIndex, chatIndex), false);
+      if (!chat) return resolveContext(true);
+      if (MemorySuiteHostLineage.marker(chat).present) return resolveContext(true);
+      let known = state.receiptValidationCharacterId;
+      if (!known || known.charIndex !== charIndex || Date.now() - known.at >= RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS) {
+        const characterInfo = await loadCurrentCharacterForRisuContext(false);
+        const character = characterInfo.character;
+        if (!character) {
+          state.receiptValidationCharacterId = null;
+          throw new Error('현재 캐릭터와 채팅을 읽을 수 없습니다.');
+        }
+        known = state.receiptValidationCharacterId = {
+          charIndex,
+          characterId: contextId(character, 'character'),
+          lineageCharacterId: string(character?.chaId || character?.id || character?.characterId || ''),
+          at: Date.now()
+        };
+      }
+      const identity = `${charIndex}:${chatIndex}`;
+      const characterId = known.characterId;
+      const chatId = contextId(chat, identity || 'chat');
+      if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
+      const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
+      const scope = { characterId, chatId, scopeKey };
+      const characterStub = { chaId: known.lineageCharacterId };
+      const hostLineage = MemorySuiteHostLineage.inspect(characterStub, chat);
+      const hostWorldlineMeta = defaultHostWorldlineMeta(scope);
+      return { character: characterStub, chat, identity, hostLineage, hostWorldlineMeta, scope };
+    };
+
     const outputEventContext = async eventValue => {
       const event = asObject(eventValue);
       const character = asObject(event.char);
@@ -41030,7 +41086,7 @@ function createLibraReadonlySourceContext(owner) {
         // Archival-only carriers are absent from the sanitized completed-turn
         // revision. They still must match the current original source before an
         // existing immutable packet can authorize acknowledgement or analysis.
-        const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
+        const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveReceiptValidationContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
         if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
           || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId) || sourceDigest([pair]) !== receipt.sourceDigest)
@@ -41349,7 +41405,7 @@ function createLibraReadonlySourceContext(owner) {
         if (options.beforeWrite) await options.beforeWrite();
         await storage.setVerifiedJson(receiptKey, receipt, scope);
       }
-      const current = await resolveContext();
+      const current = await resolveReceiptValidationContext();
       const currentPair = string(current?.scope?.scopeKey || '') === string(scope.scopeKey)
         ? buildPairs(current.chat, scope.scopeKey)[turn - 1]
         : null;
@@ -41366,7 +41422,7 @@ function createLibraReadonlySourceContext(owner) {
       // A lost head may be restored while the immutable receipt still owns an
       // earlier raw variant. Attach the current exact packet below, then verify
       // its physical ref and fresh source before any durable ACK or analysis.
-      const finalContext = await resolveContext();
+      const finalContext = await resolveReceiptValidationContext();
       const finalPair = string(finalContext?.scope?.scopeKey || '') === string(scope.scopeKey)
         ? buildPairs(finalContext.chat, scope.scopeKey)[turn - 1]
         : null;
@@ -41401,7 +41457,7 @@ function createLibraReadonlySourceContext(owner) {
       if (!scopeKey || !worldlineId || !Number.isInteger(sessionEpoch) || !Number.isInteger(turn) || turn < 1) {
         return empty('missing', 'invalid_binding');
       }
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (string(context?.scope?.scopeKey || '') !== scopeKey || hostWorldlineIdForScope(scope) !== worldlineId) {
         return empty('stale_source', 'scope_or_worldline_changed');
       }
@@ -41432,7 +41488,7 @@ function createLibraReadonlySourceContext(owner) {
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
-      const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveContext());
+      const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
@@ -41642,7 +41698,7 @@ function createLibraReadonlySourceContext(owner) {
       return prefixes.get(turn);
     };
     const validateReceiptRecoveryClaim = async ({scope, identity, boundary}) => {
-      const context = await resolveContext(true);
+      const context = await resolveReceiptValidationContext();
       if (context.scope.scopeKey !== scope.scopeKey || context.scope.characterId !== scope.characterId
         || context.scope.chatId !== scope.chatId) return {status:'paused', reason:'scope_inactive'};
       if (hostWorldlineIdForScope(context.scope) !== identity.worldlineId) return {status:'stale', reason:'worldline_changed'};
@@ -41657,7 +41713,7 @@ function createLibraReadonlySourceContext(owner) {
       if (current.generation !== boundary.generation || current.sourceFence !== boundary.sourceFence || current.lineage !== boundary.lineage)
         return {status:'stale',reason:'source_or_restore_boundary_changed'};
       // Host can change during any storage await. Re-read before admitting I/O.
-      const final = await resolveContext(true), finalPairs = buildPairs(final.chat,final.scope.scopeKey);
+      const final = await resolveReceiptValidationContext(), finalPairs = buildPairs(final.chat,final.scope.scopeKey);
       if (final.scope.scopeKey !== scope.scopeKey) return {status:'paused',reason:'scope_inactive'};
       const finalPair = finalPairs[identity.turn-1];
       if (!finalPair || digest(receiptRecoveryIdentity(final,finalPair)) !== digest(identity)
@@ -51044,7 +51100,7 @@ function createLibraReadonlySourceContext(owner) {
 
 
     const rebuildStoryArc = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) throw new Error('현재 Ariadne 스코프를 확인하지 못했습니다.');
       const scopeKey = string(context.scope.scopeKey);
       if (state.storyArcRebuildInFlight.has(scopeKey)) return await state.storyArcRebuildInFlight.get(scopeKey);
@@ -51132,7 +51188,7 @@ function createLibraReadonlySourceContext(owner) {
 
 
     const setStoryArcDestination = async (patch = {}, options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) throw new Error('현재 Ariadne 스코프를 확인하지 못했습니다.');
       return await setNarrativeDirection({
         goal: patch?.goal ?? patch?.destination ?? patch?.direction ?? '',
@@ -51145,7 +51201,7 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const clearStoryArc = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) return false;
       await clearNarrativeDirection({ scopeKey: string(context.scope.scopeKey) });
       return true;
@@ -53781,7 +53837,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...published, duplicate: priorHead?.recordKey === recordKey };
     };
     const prepareMicroStageClaim = async (scope,receipt,options={}) => {
-      const context=await resolveContext(true);
+      const context=await resolveReceiptValidationContext();
       if(context.scope.scopeKey!==scope.scopeKey || context.scope.characterId!==scope.characterId
         || context.scope.chatId!==scope.chatId)return null;
       if(options.expectedGeneration!==undefined
@@ -62296,6 +62352,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const captureCommittedOutputEvent = async eventValue => {
       if (state.disposed) return { ok: false, skipped: true, reason: 'runtime_disposed' };
+      invalidateReceiptValidationCharacterId();
       const event = asObject(eventValue);
       state.captureBackendObservedRuns += 1;
       state.captureBackendLastEventAt = Date.now();
@@ -65380,6 +65437,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
 
     let latestRecallPublicationOwner = null;
     const beforeRequest = async (messages, type) => {
+      invalidateReceiptValidationCharacterId();
       let requestOwner = null;
       let requestScope = null;
       let guard = null;
@@ -65800,6 +65858,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     };
 
     const afterRequest = async (response, type) => {
+      invalidateReceiptValidationCharacterId();
       const requestType = normalizeRequestType(type) || 'missing';
       const fallbackActive = state.settings?.autoAnalyze !== false && state.captureBackend === LIBRA_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE;
       const mainNarrativeType = isMainNarrativeRequest(type);
@@ -73866,7 +73925,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     // GUI and API view of this chat's clock: every pair's day, the anchor and the corrections.
     const getStoryClock = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       const clock = await loadStoryClock(context.scope);
       const timeline = await readStoryClockTimeline(context, { clock, ...(options.asOfTurn != null ? { asOfTurn: Number(options.asOfTurn) } : {}) });
       return clone({ schema: 'libra.story_clock_view.v1', scopeKey: context.scope.scopeKey, anchorDate: clock.anchorDate,
@@ -73879,14 +73938,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const raw = string(dateValue ?? '').trim();
       const anchorDate = storyClockDate(raw);
       if (raw && !anchorDate) throw lensError('STORY_CLOCK_DATE_INVALID', '기준 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.');
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       await updateStoryClock(context.scope, clock => clock.anchorDate === anchorDate ? null : { ...clock, anchorDate });
       return getStoryClock({ context });
     };
     // Fixes one pair's day, date or time of day; later pairs count on from it. null removes it.
     const correctStoryClockTurn = async (turnValue, correctionValue, options = {}) => {
       const turn = Number(turnValue);
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!Number.isInteger(turn) || !buildPairs(context.chat, context.scope.scopeKey).some(pair => pair.turn === turn))
         throw lensError('STORY_CLOCK_TURN_INVALID', '이 채팅에 없는 턴입니다.');
       const correction = correctionValue === null ? null : normalizeStoryClockCorrection(correctionValue);

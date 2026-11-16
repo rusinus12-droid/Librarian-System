@@ -246,6 +246,7 @@ jobs:
             PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
             PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
+            PROGRAM/tests/hayaku_read_scope_reuse_test.cjs \
             PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
             PROGRAM/tests/flashback_chat_output_live_confirmation_runtime_test.cjs \
             PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs \
@@ -255,7 +256,8 @@ jobs:
             PROGRAM/tests/gradia_scene_variance_test.cjs \
             PROGRAM/tests/libra_scope_switch_memory_gaps_test.cjs \
             PROGRAM/tests/libra_lens_memory_edit_runtime_test.cjs \
-            PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs
+            PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs \
+            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs
 
       - name: Verify packaged plugins against the reviewed RisuAI contract
         run: |
