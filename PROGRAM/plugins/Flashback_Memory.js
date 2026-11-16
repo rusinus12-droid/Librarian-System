@@ -3490,10 +3490,28 @@ const PLUGIN_VERSION = '2.0.4';
     };
   };
 
+  const SANITIZE_ASSISTANT_CACHE_MAX_ENTRIES = 4096;
+  const SANITIZE_ASSISTANT_CACHE_MAX_CHARS = 8192;
+  const sanitizeAssistantCache = new Map();
   const sanitizeAssistantForMemory = (value = '', options = {}) => {
     const explicit=memorySuiteCanonicalSource(value,'flashback');if(explicit!==null)return explicit;
-    let out = stripExternalRuntimeArtifacts(value || '');
-    if (!out) return '';
+    const raw = typeof value === 'string' ? value : text(value || '');
+    if (!raw) return '';
+    const stripRolePrefix = options.stripRolePrefix !== false;
+    const cacheable = raw.length <= SANITIZE_ASSISTANT_CACHE_MAX_CHARS;
+    const cacheKey = cacheable ? `${stripRolePrefix ? '1' : '0'}\u0000${memorySuiteSourceTagKey('flashback')}\u0000${raw}` : '';
+    if (cacheable) {
+      const cached = sanitizeAssistantCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+    }
+    let out = stripExternalRuntimeArtifacts(raw);
+    if (!out) {
+      if (cacheable) {
+        if (sanitizeAssistantCache.size >= SANITIZE_ASSISTANT_CACHE_MAX_ENTRIES) sanitizeAssistantCache.delete(sanitizeAssistantCache.keys().next().value);
+        sanitizeAssistantCache.set(cacheKey, '');
+      }
+      return '';
+    }
     out = stripNestedThoughtBlocks(out).text;
     out = out
       .replace(STATUS_DATA_RE, '\n')
@@ -3515,7 +3533,7 @@ const PLUGIN_VERSION = '2.0.4';
       .replace(MEMORY_WRAPPER_RE, '\n')
       .replace(DEBUG_LINE_RE, '\n')
       .replace(INTERNAL_LINE_RE, '\n');
-    if (options.stripRolePrefix !== false) {
+    if (stripRolePrefix) {
       out = stripNarrativeStructuralRoleMarkers(out, new Set(['assistant']))
         .replace(/^(?:어시스턴트|응답)\s*:\s*/i, '');
     }
@@ -3525,6 +3543,10 @@ const PLUGIN_VERSION = '2.0.4';
       .replace(/[ \t]+\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    if (cacheable) {
+      if (sanitizeAssistantCache.size >= SANITIZE_ASSISTANT_CACHE_MAX_ENTRIES) sanitizeAssistantCache.delete(sanitizeAssistantCache.keys().next().value);
+      sanitizeAssistantCache.set(cacheKey, out);
+    }
     return out;
   };
 
@@ -3704,7 +3726,21 @@ const PLUGIN_VERSION = '2.0.4';
     return hash >>> 0;
   };
 
-  const stableHash = (value) => fnv1a(value).toString(36);
+  const STABLE_HASH_CACHE_MAX_ENTRIES = 8192;
+  const STABLE_HASH_CACHE_MAX_CHARS = 4096;
+  const stableHashCache = new Map();
+  const stableHash = (value) => {
+    const source = text(value);
+    if (source.length > STABLE_HASH_CACHE_MAX_CHARS) return fnv1a(source).toString(36);
+    const cached = stableHashCache.get(source);
+    if (cached !== undefined) return cached;
+    const hashed = fnv1a(source).toString(36);
+    if (stableHashCache.size >= STABLE_HASH_CACHE_MAX_ENTRIES) {
+      stableHashCache.delete(stableHashCache.keys().next().value);
+    }
+    stableHashCache.set(source, hashed);
+    return hashed;
+  };
   const keyHash = (value) => stableHash(value).replace(/[^a-zA-Z0-9_-]/g, '_');
   const fnv1aUpdate = (hash, value) => {
     let next = Number(hash) >>> 0;
@@ -20730,10 +20766,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return identityValues(item).includes(raw);
   };
 
+  const FINGERPRINT_MESSAGE_CACHE_MAX_ENTRIES = 8192;
+  const FINGERPRINT_MESSAGE_CACHE_MAX_CHARS = 16384;
+  const fingerprintMessageCache = new Map();
   const normalizeMessagesForFingerprint = (messagesLike) => {
     const source = Array.isArray(messagesLike) ? messagesLike : chatMessageArray(messagesLike);
+    const tagKey = memorySuiteSourceTagKey('flashback');
     return source.map((message, index) => {
       const role = rawMessageRole(message);
+      const raw = rawMessageContentUnfiltered(message);
+      const rawKey = typeof raw === 'string' ? raw : '';
+      if (rawKey && rawKey.length <= FINGERPRINT_MESSAGE_CACHE_MAX_CHARS) {
+        const cacheKey = `${role}\u0000${tagKey}\u0000${rawKey}`;
+        let normalizedContent = fingerprintMessageCache.get(cacheKey);
+        if (normalizedContent === undefined) {
+          const sanitized = memorySuiteCanonicalSource(rawKey, 'flashback') ?? sanitizeSourceText(rawKey);
+          normalizedContent = compact(sanitized, 2000);
+          if (fingerprintMessageCache.size >= FINGERPRINT_MESSAGE_CACHE_MAX_ENTRIES) {
+            fingerprintMessageCache.delete(fingerprintMessageCache.keys().next().value);
+          }
+          fingerprintMessageCache.set(cacheKey, normalizedContent);
+        }
+        return { role, content: normalizedContent, index };
+      }
       const content = rawMessageContent(message);
       return { role, content: compact(content, 2000), index };
     });
@@ -21152,6 +21207,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
   };
 
+  const scopeFingerprintCache = new Map();
+  const SCOPE_FINGERPRINT_CACHE_MAX_CHATS = 16;
   const resolveScopeFromSnapshot = (snapshot) => {
     const character=snapshot?.character||{},chat=snapshot?.chat||{};
     const realCharacterId=firstFilled(character.chaId,character.characterId,character.charId,character.id,character._id,character.uid,character.uuid,character.key);
@@ -21159,18 +21216,46 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(!realCharacterId||!realChatId)return {available:false,reason:'no_active_chat',scopeKey:'',storageHash:'',canonicalScopeId:'',canonicalCharacterId:'',canonicalChatId:'',characterId:'',chatId:'',characterName:'',chatTitle:'',personaName:'',chatMessageCount:0,legacyScopeKeys:[],charIndex:-1,chatIndex:-1};
     const db=snapshot.db||{};
     const persona = selectedPersonaFromDb(db, chat) || {};
-    const messages = normalizeMessagesForFingerprint(chat);
-    const messageCount = messages.length;
-    const tail = messages.slice(-8).map(m => `${m.role}:${m.content}`).join('\n---\n');
-    let fingerprintHash = 0x811c9dc5;
-    for (let i = 0; i < messages.length; i += 1) {
-      if (i > 0) fingerprintHash = fnv1aUpdate(fingerprintHash, '\n---\n');
-      fingerprintHash = fnv1aUpdate(fingerprintHash, messages[i].role);
-      fingerprintHash = fnv1aUpdate(fingerprintHash, ':');
-      fingerprintHash = fnv1aUpdate(fingerprintHash, messages[i].content);
+    const rawMessages = chatMessageArray(chat);
+    const messageCount = rawMessages.length;
+    const chatTitle = firstFilled(chat.name, chat.title, chat.chatName, chat.filename, chat._id, chat.id, messageCount ? `chat ${messageCount}` : 'Current Chat');
+    const tagKey = memorySuiteSourceTagKey('flashback');
+    const fpKey = `${realCharacterId}\u0000${realChatId}`;
+    let cachedFp = scopeFingerprintCache.get(fpKey);
+    const rawRoles = new Array(messageCount);
+    const rawBodies = new Array(messageCount);
+    let fpMatches = Boolean(cachedFp && cachedFp.tagKey === tagKey && cachedFp.chatTitle === chatTitle && cachedFp.rawRoles.length === messageCount);
+    for (let i = 0; i < messageCount; i += 1) {
+      const msg = rawMessages[i];
+      const r = rawMessageRole(msg);
+      const b = rawMessageContentUnfiltered(msg);
+      rawRoles[i] = r;
+      rawBodies[i] = b;
+      if (fpMatches && (cachedFp.rawRoles[i] !== r || cachedFp.rawBodies[i] !== b)) fpMatches = false;
+    }
+    let chatFingerprint;
+    let chatTailHash;
+    if (fpMatches) {
+      chatFingerprint = cachedFp.chatFingerprint;
+      chatTailHash = cachedFp.chatTailHash;
+    } else {
+      const messages = normalizeMessagesForFingerprint(rawMessages);
+      const tail = messages.slice(-8).map(m => `${m.role}:${m.content}`).join('\n---\n');
+      let fingerprintHash = 0x811c9dc5;
+      for (let i = 0; i < messages.length; i += 1) {
+        if (i > 0) fingerprintHash = fnv1aUpdate(fingerprintHash, '\n---\n');
+        fingerprintHash = fnv1aUpdate(fingerprintHash, messages[i].role);
+        fingerprintHash = fnv1aUpdate(fingerprintHash, ':');
+        fingerprintHash = fnv1aUpdate(fingerprintHash, messages[i].content);
+      }
+      chatFingerprint = messageCount ? digestHash(fingerprintHash) : stableHash(`${chatTitle}\n${messageCount}`);
+      chatTailHash = tail ? stableHash(tail) : (messageCount ? chatFingerprint : stableHash(chatTitle));
+      if (scopeFingerprintCache.size >= SCOPE_FINGERPRINT_CACHE_MAX_CHATS) {
+        scopeFingerprintCache.delete(scopeFingerprintCache.keys().next().value);
+      }
+      scopeFingerprintCache.set(fpKey, { tagKey, chatTitle, rawRoles, rawBodies, chatFingerprint, chatTailHash });
     }
     const characterName = firstFilled(character.nickname, character.name, character.charName, 'Current Character');
-    const chatTitle = firstFilled(chat.name, chat.title, chat.chatName, chat.filename, chat._id, chat.id, messageCount ? `chat ${messageCount}` : 'Current Chat');
     const personaName = firstFilled(persona.name, persona.id, 'Selected Persona');
     const charIndex = Number.isFinite(Number(snapshot.chatInfo?.charIndex)) ? Number(snapshot.chatInfo.charIndex) : Number.isFinite(Number(snapshot.characterInfo?.charIndex)) ? Number(snapshot.characterInfo.charIndex) : -1;
     const chatIndex = Number.isFinite(Number(snapshot.chatInfo?.chatIndex)) ? Number(snapshot.chatInfo.chatIndex) : -1;
@@ -21185,8 +21270,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const canonicalScopeId = canonicalCharacterId && canonicalChatId
       ? `char:${keyHash(canonicalCharacterId)}|chat:${keyHash(canonicalChatId)}`
       : '';
-    const chatFingerprint = messageCount ? digestHash(fingerprintHash) : stableHash(`${chatTitle}\n${messageCount}`);
-    const chatTailHash = tail ? stableHash(tail) : (messageCount ? chatFingerprint : stableHash(chatTitle));
     const chatId = chatStableId || `chatHash:${chatFingerprint}`;
     const legacyPersonaScopeKey = `char:${keyHash(characterId)}|chat:${keyHash(chatId)}|persona:${keyHash(personaId)}`;
     const scopeKey = canonicalScopeId || `char:${keyHash(characterId)}|chat:${keyHash(chatId)}`;
@@ -30405,6 +30488,7 @@ const MemorySuiteSnapshotCache = (() => {
     return pairs;
   };
 
+  const flashbackIndexedLiveStates = new WeakSet();
   const liveChatStateFromNormalized = (normalized = []) => {
     const messages = Array.isArray(normalized) ? normalized : [];
     const cached = normalizedLiveStateCache.get(messages);
@@ -30432,6 +30516,7 @@ const MemorySuiteSnapshotCache = (() => {
       if (body) assistants.set(position, body);
     }
     const state = { count, assistants, pairs, pairCount: pairs.length, pairByIndex, pairByAssistantPosition, ignoredTagKey: memorySuiteSourceTagKey('flashback') };
+    flashbackIndexedLiveStates.add(state);
     normalizedLiveStateCache.set(messages, state);
     Runtime.liveChatRevisionCacheStats.pairBuilds += 1;
     return state;
@@ -30481,6 +30566,7 @@ const MemorySuiteSnapshotCache = (() => {
   const liveChatStateFromSnapshot = (snapshot = {}, scopeKeyInput = '') => liveChatStateFromNormalized(normalizeStoredChatMessages(snapshot.chat || {}, scopeKeyInput));
 
   const conversationStateWithIndexes = (state = {}) => {
+    if (state && flashbackIndexedLiveStates.has(state)) return state;
     const pairs = Array.isArray(state.pairs) ? state.pairs.map(pair => ({
       pairIndex: Number(pair?.pairIndex || 0) || 0,
       userPosition: Number(pair?.userPosition || 0) || 0,
@@ -30549,13 +30635,22 @@ const MemorySuiteSnapshotCache = (() => {
     }
     return Array.from(groups.values());
   };
+  const flashbackPairIdentityCache = new WeakMap();
   const flashbackPairIdentity = (scopeKey, pair = {}) => {
+    if (pair && typeof pair === 'object') {
+      const cached = flashbackPairIdentityCache.get(pair);
+      if (cached && cached.scopeKey === scopeKey) return cached.identity;
+    }
     const pairIndex = Math.max(1, Number(pair.pairIndex || 1) || 1);
     const userHash = stableHash(canonicalChatUserText(pair.userText || ''));
     const assistantHash = stableHash(canonicalChatResponseText(pair.assistantText || ''));
     const logicalTurnId = stableHash(`turn\u0001${scopeKey}\u0001${pairIndex}\u0001${userHash}`);
     const variantId = stableHash(`variant\u0001${logicalTurnId}\u0001${assistantHash}`);
-    return { pairIndex, userHash, assistantHash, logicalTurnId, variantId, turnNodeId: stableHash(`node\u0001${scopeKey}\u0001${logicalTurnId}\u0001${variantId}`) };
+    const identity = { pairIndex, userHash, assistantHash, logicalTurnId, variantId, turnNodeId: stableHash(`node\u0001${scopeKey}\u0001${logicalTurnId}\u0001${variantId}`) };
+    if (pair && typeof pair === 'object') {
+      flashbackPairIdentityCache.set(pair, { scopeKey, identity });
+    }
+    return identity;
   };
   const flashbackLiveWorldlineHash = (scopeKey, liveState = {}) => stableHash(safeStringify(
     conversationStateWithIndexes(liveState).pairs.map(pair => {
@@ -34915,7 +35010,15 @@ const MemorySuiteHealthRecovery = (() => {
 
 
 
+  const visibleRecallFieldsCache = new WeakMap();
   const visibleRecallFieldsForRecord = record => {
+    const tagKey = memorySuiteSourceTagKey('flashback');
+    if (record && typeof record === 'object') {
+      const memo = visibleRecallFieldsCache.get(record);
+      if (memo && memo.text === record.text && memo.title === record.title && memo.tagKey === tagKey) {
+        return memo.fields;
+      }
+    }
     const visibleBody = sanitizeAssistantForMemory(record?.text || '', { stripRolePrefix: false });
     const title = sanitizeAssistantForMemory(record?.title || '', { stripRolePrefix: false });
     const tags = Array.isArray(record?.tags) ? record.tags.map(value => text(value)).filter(Boolean) : [];
@@ -34936,7 +35039,7 @@ const MemorySuiteHealthRecovery = (() => {
     const numericAnchors = (visibleBody.match(/\b\d+(?:[.,]\d+)?(?:\s*(?:년|월|일|시|분|개|명|살|회|%|kg|km|m))?/gi) || []).slice(0, 40);
     const canonical = Array.from(new Set([...lexicalAnchors, ...titleTokens, ...quotes, ...numericAnchors])).slice(0, 180);
     const context = quotes;
-    return {
+    const fields = {
       canonical: canonical.join(' '),
       identity: Array.from(new Set(identities)).slice(0, 180).join(' '),
       relation: [...factRelation, declaredField('relation')].join(' '),
@@ -34946,6 +35049,10 @@ const MemorySuiteHealthRecovery = (() => {
       temporal: declaredField('temporal'),
       summary: visibleBody
     };
+    if (record && typeof record === 'object') {
+      visibleRecallFieldsCache.set(record, { text: record.text, title: record.title, tagKey, fields });
+    }
+    return fields;
   };
 
   // Compatibility helper deliberately returns no peer projection.
