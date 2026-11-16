@@ -23458,6 +23458,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       if (nextOffset !== floats.length) return null;
       if (payload.digest && memorySuiteFlashbackVectorShardDigest(payload) !== payload.digest) return null;
+      const normalizedItems = Array.isArray(payload.items) ? payload.items.map(item => ({
+        recordId: text(item?.recordId || ''),
+        offset: Math.max(0, Number(item?.offset || 0) || 0),
+        length: Math.max(0, Number(item?.length || 0) || 0)
+      })) : [];
+      const itemByRecordId = Object.create(null);
+      for (const item of normalizedItems) {
+        if (item.recordId) itemByRecordId[item.recordId] = { recordId: item.recordId, offset: item.offset, length: item.length };
+      }
       return {
         schema: payload.schema,
         version: Number(payload.version || 1),
@@ -23467,11 +23476,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         itemCount: Number(payload.itemCount || 0),
         floatCount: floats.length,
         byteLength: floats.byteLength,
-        items: Array.isArray(payload.items) ? payload.items.map(item => ({
-          recordId: text(item?.recordId || ''),
-          offset: Math.max(0, Number(item?.offset || 0) || 0),
-          length: Math.max(0, Number(item?.length || 0) || 0)
-        })) : [],
+        items: normalizedItems,
+        itemByRecordId,
         digest: text(payload.digest || ''),
         floats
       };
@@ -23800,7 +23806,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const decoded = decodedByKey.get(ref.storageKey);
       const floats = decoded?.floats;
-      const member = decoded?.items?.find(item => item.recordId === String(record.id || record.hash || ''));
+      const recordKey = String(record.id || record.hash || '');
+      const member = decoded?.itemByRecordId?.[recordKey] || decoded?.items?.find(item => item.recordId === recordKey);
       const refMatches = member && member.recordId === ref.recordId && member.offset === ref.offset && member.length === ref.length && (!ref.digest || decoded.digest === ref.digest);
       if (!floats || !refMatches || ref.offset + ref.length > floats.length || ref.length <= 0) {
         missingPayloads += 1;
@@ -24342,10 +24349,31 @@ const MemorySuiteSnapshotCache = (() => {
     }
     const parseStartedAt = Date.now();
     const decodedEnvelope = await readFlashbackPureProjection(raw,
-      { segmentId: scopeShardKeyForManifest(scopeKey, manifest, shardIndex), codecVersion: 'flashback-envelope-v2', transformVersion: 'decode-shard-v1' },
-      options, decodeOptions => decodeFlashbackShardEnvelope(raw, decodeOptions));
-    // A caller may mutate public records. Never expose the cached immutable tree.
-    const parsed = options.projectionOwner ? cloneRuntimeValue(decodedEnvelope.parsed, null) : decodedEnvelope.parsed;
+      { segmentId: scopeShardKeyForManifest(scopeKey, manifest, shardIndex), codecVersion: 'flashback-envelope-v2', transformVersion: 'decode-shard-v2' },
+      options, async decodeOptions => {
+        const decoded = await decodeFlashbackShardEnvelope(raw, decodeOptions);
+        const obj = decoded.parsed && typeof decoded.parsed === 'object' && !Array.isArray(decoded.parsed);
+        const recs = obj && Array.isArray(decoded.parsed.records) ? decoded.parsed.records : (Array.isArray(decoded.parsed) ? decoded.parsed : null);
+        const checksumValid = recs ? (!obj || !decoded.parsed.checksum || text(decoded.parsed.checksum) === storageShardChecksum(recs)) : false;
+        return { ...decoded, checksumValid };
+      });
+    // A caller may mutate public records. Never expose the cached immutable tree on mutable paths,
+    // while read-only C0 metadata verification avoids cloning the whole shard tree on every request.
+    const skipEnvelopeClone = Boolean(options.verifyVectorPayloadMetadataOnly === true && typeof options.expectedSerializedRaw === 'string');
+    const cachedParsed = decodedEnvelope.parsed;
+    let parsed = cachedParsed;
+    if (options.projectionOwner && !skipEnvelopeClone && cachedParsed && typeof cachedParsed === 'object') {
+      if (Array.isArray(cachedParsed)) {
+        parsed = cachedParsed.map(r => (r && typeof r === 'object' ? { ...r, ...(r.metadata && typeof r.metadata === 'object' && !Array.isArray(r.metadata) ? { metadata: { ...r.metadata } } : {}) } : r));
+      } else if (Array.isArray(cachedParsed.records)) {
+        parsed = {
+          ...cachedParsed,
+          records: cachedParsed.records.map(r => (r && typeof r === 'object' ? { ...r, ...(r.metadata && typeof r.metadata === 'object' && !Array.isArray(r.metadata) ? { metadata: { ...r.metadata } } : {}) } : r))
+        };
+      } else {
+        parsed = cloneRuntimeValue(cachedParsed, null);
+      }
+    }
     bumpStorageMetric(metrics, 'parseMs', Date.now() - parseStartedAt);
     if (decodedEnvelope.compressed) bumpStorageMetric(metrics, 'archiveDecompressions');
     const objectPayload = parsed && typeof parsed === 'object' && !Array.isArray(parsed);
@@ -24354,7 +24382,9 @@ const MemorySuiteSnapshotCache = (() => {
     const scopeMatches = !objectPayload || !parsed.scopeKey || text(parsed.scopeKey) === text(scopeKey);
     const shardMatches = !objectPayload || parsed.shard == null || Number(parsed.shard) === Number(shardIndex);
     const checksumStartedAt = Date.now();
-    const checksumMatches = !objectPayload || !parsed.checksum || text(parsed.checksum) === storageShardChecksum(recordsPayload || []);
+    const checksumMatches = typeof decodedEnvelope.checksumValid === 'boolean'
+      ? decodedEnvelope.checksumValid
+      : (!objectPayload || !parsed.checksum || text(parsed.checksum) === storageShardChecksum(recordsPayload || []));
     bumpStorageMetric(metrics, 'checksumMs', Date.now() - checksumStartedAt);
     const recordCountMatches = expectedRecordCount == null || recordsPayload?.length === expectedRecordCount;
     const recordObjectsValid = Array.isArray(recordsPayload)
@@ -35041,7 +35071,7 @@ const MemorySuiteHealthRecovery = (() => {
     const context = quotes;
     const fields = {
       canonical: canonical.join(' '),
-      identity: Array.from(new Set(identities)).slice(0, 180).join(' '),
+      identity: Array.from(new Set([...identities, ...factIdentity])).slice(0, 180).join(' '),
       relation: [...factRelation, declaredField('relation')].join(' '),
       state: [...factState, declaredField('state')].join(' '),
       event: declaredField('event'),
@@ -35131,13 +35161,20 @@ const MemorySuiteHealthRecovery = (() => {
     const lengths = {};
     const fieldTf = {};
     for (const field of Object.keys(FLASHBACK_BM25F_WEIGHTS)) {
-      const list = sparseTokenArray(fields[field], { canonical: field === 'canonical' });
+      const rawField = fields[field];
+      if (!rawField || !String(rawField).trim()) {
+        tokens[field] = [];
+        lengths[field] = 1;
+        fieldTf[field] = new Map();
+        continue;
+      }
+      const list = sparseTokenArray(rawField, { canonical: field === 'canonical' });
       const tf = new Map();
       for (const token of list) tf.set(token, Math.min(3, Number(tf.get(token) || 0) + 1));
       // Token budgeting chooses vocabulary, not document frequency. Preserve
       // repeated occurrences for BM25F after selecting the bounded vocabulary.
       const frequency=new Map();
-      for(const word of RecallKeywordFeatures.words(fields[field])) {
+      for(const word of RecallKeywordFeatures.words(rawField)) {
         const occurrence=new Set(RecallKeywordFeatures.variants(word));
         if(/[\p{Script=Hangul}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(word)) {
           const chars=Array.from(word);
@@ -35274,15 +35311,20 @@ const MemorySuiteHealthRecovery = (() => {
       const record = list[index];
       const sparse = sparses[index];
       const weightNorms = fieldWeightNorms[index];
+      const activeFields = [];
+      for (let f = 0; f < fields.length; f += 1) {
+        const field = fields[f];
+        if (sparse.fieldTf[field]?.size) activeFields.push(field);
+      }
       let rawScore = 0;
       let matched = 0;
       const fieldHits = {};
       for (let t = 0; t < queryTokenStats.length; t += 1) {
         const { token, weightIdf } = queryTokenStats[t];
         let weightedTf = 0;
-        for (let f = 0; f < fields.length; f += 1) {
-          const field = fields[f];
-          const tf = Number(sparse.fieldTf[field]?.get(token) || 0);
+        for (let f = 0; f < activeFields.length; f += 1) {
+          const field = activeFields[f];
+          const tf = Number(sparse.fieldTf[field].get(token) || 0);
           if (!tf) continue;
           const weighted = weightNorms[field] * tf;
           weightedTf += weighted;
@@ -36337,16 +36379,19 @@ const MemorySuiteHealthRecovery = (() => {
 
   const buildLatestStateByEntity = (records = [], externalFacts = []) => {
     const out = new Map();
-    const orderedRecords = (records || []).slice().sort((a, b) => (
+    const orderedRecords = [];
+    for (const record of Array.isArray(records) ? records : []) {
+      if (!recordStateUpdateFlag(record)) continue;
+      const group = sourceGroup(record.sourceType);
+      if (group === 'response' || group === 'local') orderedRecords.push(record);
+    }
+    orderedRecords.sort((a, b) => (
       storyOrderValue(a) - storyOrderValue(b)
       || finiteTurnIndex(a) - finiteTurnIndex(b)
       || Number(a?.chunkIndex || 0) - Number(b?.chunkIndex || 0)
       || text(a?.id || a?.hash || '').localeCompare(text(b?.id || b?.hash || ''))
     ));
     for (const record of orderedRecords) {
-      if (!recordStateUpdateFlag(record)) continue;
-      const group = sourceGroup(record.sourceType);
-      if (!['response', 'local'].includes(group)) continue;
       const structuredFacts = recordStructuredStateFacts(record);
       if (structuredFacts.length) {
         const time = storyOrderValue(record);
@@ -38334,75 +38379,147 @@ const MemorySuiteHealthRecovery = (() => {
       }
       return true;
     };
+    const unitVariantCache = new Map();
+    const choiceEvidence = new WeakMap();
+    const unitFocusIdCache = new Map();
+    const queryPlanId = policy.context.queryAnchors?.queryPlan?.id || null;
+    const focusTargetIdsForUnit = unit => {
+      let cached = unitFocusIdCache.get(unit.id);
+      if (!cached) {
+        cached = policy.focusMatches(unit).matches.map(a => a.id || a.normalized);
+        unitFocusIdCache.set(unit.id, cached);
+      }
+      return cached;
+    };
+    const fragmentEvidenceForVariant = (unit, variantIndex, fragment) => {
+      const cacheKey = `${unit.id}\u0001${variantIndex}`;
+      let entry = unitVariantCache.get(cacheKey);
+      if (!entry) {
+        const focus = policy.focusMatches(unit);
+        const rawEvidence = RecallKeywordFeatures.fragmentEvidence(unit.item?.record, fragment.text, focus.evidence);
+        const recordText = unit.item?.record?.text || '';
+        const targetMatches = rawEvidence.map(e => {
+          const start = fragment.text.indexOf(recordText.slice(e.start, e.end));
+          return { ...e, start, end: start + e.end - e.start };
+        });
+        const targetIds = rawEvidence.map(t => t.targetId);
+        entry = { rawEvidence, targetMatches, targetIds, targetIdSet: new Set(targetIds), sourceTargetMatches: focus.evidence };
+        unitVariantCache.set(cacheKey, entry);
+      }
+      return entry;
+    };
     const fittingChoices = (added,ordinary=false) => {
       added.forEach(u=>{delete u.lastFitFailure;});
       for(let variant=0;variant<3;variant++){
-        const next=added.map(unit=>({unit,fragment:unit.variants[Math.min(variant,unit.variants.length-1)]}));
-        if(policy.explicit && !ordinary && next.some(c=>{
+        const variantIndexes=added.map(unit=>Math.min(variant,unit.variants.length-1));
+        const next=added.map((unit,idx)=>({unit,fragment:unit.variants[variantIndexes[idx]]}));
+        if(policy.explicit && !ordinary && next.some((c,idx)=>{
           if(c.unit.state)return false;
-          const required=policy.focusMatches(c.unit).matches.map(t=>t.id||t.normalized);
-          const actual=new Set(RecallKeywordFeatures.fragmentEvidence(c.unit.item?.record,c.fragment.text,policy.focusMatches(c.unit).evidence).map(t=>t.targetId));
+          const required=focusTargetIdsForUnit(c.unit);
+          const actual=fragmentEvidenceForVariant(c.unit,variantIndexes[idx],c.fragment).targetIdSet;
           return required.some(id=>!actual.has(id));
         })){if(variant===2)added.forEach(u=>u.lastFitFailure='target_evidence_omitted');continue;}
-        next.forEach(c=>{if(!c.unit.state)c.fragment={...c.fragment,targetMatches:RecallKeywordFeatures.fragmentEvidence(c.unit.item?.record,c.fragment.text,policy.focusMatches(c.unit).evidence).map(e=>({...e,start:c.fragment.text.indexOf(c.unit.item.record.text.slice(e.start,e.end)),end:c.fragment.text.indexOf(c.unit.item.record.text.slice(e.start,e.end))+e.end-e.start})),targetMatchCoordinates:'fragment_utf16',sourceTargetMatches:policy.focusMatches(c.unit).evidence,sourceMatchCoordinates:'record_text_utf16',queryPlanId:policy.context.queryAnchors?.queryPlan?.id||null};});
+        next.forEach((c,idx)=>{if(!c.unit.state){const ev=fragmentEvidenceForVariant(c.unit,variantIndexes[idx],c.fragment);c.fragment={...c.fragment,targetMatches:ev.targetMatches,targetMatchCoordinates:'fragment_utf16',sourceTargetMatches:ev.sourceTargetMatches,sourceMatchCoordinates:'record_text_utf16',queryPlanId};choiceEvidence.set(c,ev);}});
         const trial=[...choices,...next];
         const stateChars=trial.filter(c=>c.unit.state).reduce((n,c)=>n+c.fragment.text.length+3,0);
         if(eventCount&&Number.isFinite(cap)&&stateChars>Math.max(120,Math.floor(cap*.3)))continue;
         if(options.selectionOnly||render(trial).text.length<=cap)return next;
       }
-      if(!ordinary)return fittingChoices(added,true)?.map(c=>({...c,priorityDowngraded:true}));
+      if(!ordinary)return fittingChoices(added,true)?.map(c=>{const out={...c,priorityDowngraded:true};const ev=choiceEvidence.get(c);if(ev)choiceEvidence.set(out,ev);return out;});
       return null;
     };
-    while(groups.length){
-      const redundancyCache=new Map();
-      const redundancy = group => {
-        if(redundancyCache.has(group))return redundancyCache.get(group);
-        let value=0;
-        for(const u of additions(group))if(!u.state)for(const c of choices)if(!c.unit.state)value=Math.max(value,policy.similarity(u,c.unit));
-        redundancyCache.set(group,value);
-        return value;
-      };
-      const rank = group => {
-        let value=score(group);
-        if(policy.cfg.heuristicRecall!==false&&policy.cfg.mmrEnabled&&(policy.contextualSemantic||group.priority>=3)){
-          const lambda=clampNumber(policy.cfg.mmrLambda,.05,.98,DEFAULTS.mmrLambda);value=lambda*value-(1-lambda)*redundancy(group);
+    const unitMaxSim=new Map();
+    const maxSimForUnit=u=>{
+      if(u.state||!choices.length)return 0;
+      let entry=unitMaxSim.get(u.id);
+      const start=entry?entry.scanned:0;
+      let max=entry?entry.max:0;
+      for(let i=start;i<choices.length;i+=1){
+        const prior=choices[i];
+        if(!prior.unit.state){
+          const sim=policy.similarity(u,prior.unit);
+          if(sim>max)max=sim;
         }
-        return value;
-      };
-      const baseCost=render(choices).text.length;
-      const groupFocus = group => {
-        if(!policy.explicit||group.evidenceDowngraded)return 0;
-        const delivered=new Set(choices.flatMap(c=>RecallKeywordFeatures.fragmentEvidence(c.unit.item?.record,c.fragment.text,policy.focusMatches(c.unit).evidence).map(t=>t.targetId)));
-        const matched=new Set(additions(group).flatMap(unit=>policy.focusMatches(unit).matches.map(a=>a.id||a.normalized)).filter(id=>!delivered.has(id)));
-        return matched.size/Math.max(1,policy.focusAnchors.length);
-      };
-      const metrics=new Map(groups.map(group=>[group,{rank:rank(group),semantic:additions(group).some(u=>u.item?.components?.contextualSemantic)?1:0,priority:finalPriority(group),gain:fulfilled(group),focus:groupFocus(group),dominated:Math.min(...additions(group).map(policy.retrievalDominance),Infinity)}]));
-      // Rendering is needed for an actual tie or for the selected group's admission.
-      const fit = group => {
-        const metric=metrics.get(group);
-        if(!Object.prototype.hasOwnProperty.call(metric,'next')){
+      }
+      if(!entry)unitMaxSim.set(u.id,{scanned:choices.length,max});
+      else{entry.scanned=choices.length;entry.max=max;}
+      return max;
+    };
+    let needsRebuildMetrics=true,needsResort=true,redundancyCache=new Map(),baseCost=0,delivered=null,metrics=new Map();
+    const redundancy = group => {
+      if(redundancyCache.has(group))return redundancyCache.get(group);
+      let value=0;
+      for(const u of additions(group))if(!u.state)value=Math.max(value,maxSimForUnit(u));
+      redundancyCache.set(group,value);
+      return value;
+    };
+    const rank = group => {
+      let value=score(group);
+      if(policy.cfg.heuristicRecall!==false&&policy.cfg.mmrEnabled&&(policy.contextualSemantic||group.priority>=3)){
+        const lambda=clampNumber(policy.cfg.mmrLambda,.05,.98,DEFAULTS.mmrLambda);value=lambda*value-(1-lambda)*redundancy(group);
+      }
+      return value;
+    };
+    const groupFocus = group => {
+      if(!policy.explicit||group.evidenceDowngraded)return 0;
+      const matched=new Set(additions(group).flatMap(focusTargetIdsForUnit).filter(id=>!delivered.has(id)));
+      return matched.size/Math.max(1,policy.focusAnchors.length);
+    };
+    const canAddGroup = group => {
+      const metric=metrics.get(group);
+      if(!Object.prototype.hasOwnProperty.call(metric,'canAdd')){
+        const added=additions(group);
+        const missing=group.ids.some(id=>!byId.has(id));
+        metric.canAdd=!missing&&added.length>0&&canAdd(added,group);
+      }
+      return metric.canAdd;
+    };
+    // Rendering is needed for an actual tie or for the selected group's admission.
+    const fit = group => {
+      const metric=metrics.get(group);
+      if(!Object.prototype.hasOwnProperty.call(metric,'next')){
+        if(!canAddGroup(group)){metric.next=null;metric.cost=Infinity;}
+        else{
           metric.next=fittingChoices(additions(group));
           metric.cost=metric.next?render([...choices,...metric.next]).text.length-baseCost:Infinity;
         }
-        return metric;
-      };
-      groups.sort((a,b)=>{const x=metrics.get(a),y=metrics.get(b);
-        // Required co-evidence is an admission condition, not a lexical boost.
-        // Resolve it before semantic preferences consume the available slots.
-        const requirementOrder=Number(!!b.requirement)-Number(!!a.requirement);
-        return requirementOrder||(policy.contextualSemantic?y.semantic-x.semantic||y.rank-x.rank:0)||y.focus-x.focus||x.dominated-y.dominated||a.priority-b.priority||(policy.explicit ? y.rank-x.rank : 0)||y.priority-x.priority
-        ||y.rank-x.rank||y.gain-x.gain||(policy.cfg.heuristicRecall===false?0:redundancy(a)-redundancy(b))
-        ||fit(a).cost-fit(b).cost||a.id.localeCompare(b.id);});
+      }
+      return metric;
+    };
+    while(groups.length){
+      if(needsRebuildMetrics){
+        redundancyCache=new Map();
+        baseCost=render(choices).text.length;
+        delivered=policy.explicit
+          ?new Set(choices.flatMap(c=>c.unit.state?[]:(choiceEvidence.get(c)?.targetIds||RecallKeywordFeatures.fragmentEvidence(c.unit.item?.record,c.fragment.text,policy.focusMatches(c.unit).evidence).map(t=>t.targetId))))
+          :null;
+        metrics=new Map(groups.map(group=>{
+          const added=additions(group);
+          return [group,{rank:rank(group),semantic:added.some(u=>u.item?.components?.contextualSemantic)?1:0,priority:finalPriority(group),gain:fulfilled(group),focus:groupFocus(group),dominated:Math.min(...added.map(policy.retrievalDominance),Infinity)}];
+        }));
+        needsRebuildMetrics=false;
+      }
+      if(needsResort){
+        groups.sort((a,b)=>{const x=metrics.get(a),y=metrics.get(b);
+          // Required co-evidence is an admission condition, not a lexical boost.
+          // Resolve it before semantic preferences consume the available slots.
+          const requirementOrder=Number(!!b.requirement)-Number(!!a.requirement);
+          return requirementOrder||(policy.contextualSemantic?y.semantic-x.semantic||y.rank-x.rank:0)||y.focus-x.focus||x.dominated-y.dominated||a.priority-b.priority||(policy.explicit ? y.rank-x.rank : 0)||y.priority-x.priority
+          ||y.rank-x.rank||y.gain-x.gain||(policy.cfg.heuristicRecall===false?0:redundancy(a)-redundancy(b))
+          ||fit(a).cost-fit(b).cost||a.id.localeCompare(b.id);});
+        needsResort=false;
+      }
       let group=groups.shift();
-      if(fit(group).next?.some(c=>c.priorityDowngraded)&&!group.evidenceDowngraded){group.evidenceDowngraded=true;group.priority=3;groups.push(group);continue;}
       const missing=group.ids.filter(id=>!byId.has(id));
       if(missing.length){discarded.push({id:group.id,reason:'dependency_unavailable'});continue;}
-      const added=group.ids.filter(id=>!picked.has(id)).map(id=>byId.get(id));if(!added.length)continue;
-      if(!canAdd(added,group)){discarded.push({id:group.id,reason:'not_selected'});continue;}
+      const added=additions(group);if(!added.length)continue;
+      if(!canAddGroup(group)){discarded.push({id:group.id,reason:'not_selected'});continue;}
+      if(fit(group).next?.some(c=>c.priorityDowngraded)&&!group.evidenceDowngraded){group.evidenceDowngraded=true;group.priority=3;groups.push(group);needsRebuildMetrics=true;needsResort=true;continue;}
       if(policy.cfg.heuristicRecall!==false&&group.priority>=3&&choices.some(c=>!c.unit.state)&&policy.cfg.mmrEnabled&&rank(group)<.04){discarded.push({id:group.id,reason:'low_novelty'});continue;}
       const accepted=fit(group).next;
       if(!accepted){discarded.push({id:group.id,reason:added.some(u=>u.lastFitFailure==='target_evidence_omitted')?'target_evidence_omitted':'not_delivered_budget'});continue;}
       for(const choice of accepted){choices.push(choice);picked.add(choice.unit.id);}
+      needsRebuildMetrics=true;needsResort=true;
     }
     const requirements=prepared.requirements.map(r=>{
       const selected=r.ids.filter(id=>picked.has(id));
@@ -38413,7 +38530,7 @@ const MemorySuiteHealthRecovery = (() => {
     });
     const rendered=options.selectionOnly?{text:'',fragments:[],deliveredIds:[]}:render(choices);
     return { ...rendered,queryPlanId:contextPlanId(prepared),targetCoverage:policy.focusAnchors.map(t=>{
-      const included=options.selectionOnly?[]:choices.filter(c=>!c.unit.state).flatMap(c=>RecallKeywordFeatures.fragmentEvidence(c.unit.item.record,c.fragment.text,policy.focusMatches(c.unit).evidence)).filter(e=>e.targetId===t.id);
+      const included=options.selectionOnly?[]:choices.filter(c=>!c.unit.state).flatMap(c=>choiceEvidence.get(c)?.rawEvidence||RecallKeywordFeatures.fragmentEvidence(c.unit.item.record,c.fragment.text,policy.focusMatches(c.unit).evidence)).filter(e=>e.targetId===t.id);
       return {id:t.id||t.normalized,delivered:included.length>0,literalIncluded:included.some(e=>e.kind==='text_match'),entityMentionIncluded:included.some(e=>e.kind==='entity_mention'),factSupportIncluded:included.some(e=>e.kind==='fact_support'),
         scopeComplete:prepared.context.queryAnchors?.queryPlan?.catalog?.complete===true,reason:options.selectionOnly?'selection_only':included.length?'included':'not_delivered',evidence:included};
     }), choices, requirements, discarded, stage:options.selectionOnly?'selection_only':'rendered',

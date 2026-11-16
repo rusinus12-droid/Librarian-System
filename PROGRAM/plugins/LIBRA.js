@@ -23436,10 +23436,18 @@ function summarizeAgentCbsTag(rawContent) {
     let feature = LoreTokenFeatureCache.get(raw);
     if (feature !== undefined) return feature;
     const normalized = loreJaccardNormalizeKey(raw);
+    const grams = normalized ? loreJaccardCharNgrams(normalized, 48) : [];
+    const gramKeySet = new Set();
+    for (const gram of grams) {
+      const normalizedGram = loreJaccardNormalizeKey(gram);
+      if (normalizedGram) gramKeySet.add(normalizedGram);
+    }
     feature = {
       normalized,
       stem: normalized ? loreJaccardStem(normalized) : '',
-      grams: normalized ? loreJaccardCharNgrams(normalized, 48) : []
+      grams,
+      gramKeys: [...gramKeySet],
+      gramKeySet
     };
     if (LoreTokenFeatureCache.size >= LORE_TOKEN_FEATURE_CACHE_MAX) {
       const oldest = LoreTokenFeatureCache.keys().next().value;
@@ -23461,9 +23469,25 @@ function summarizeAgentCbsTag(rawContent) {
     if (leftStem.length >= 3 && rightStem.length >= 3 && leftStem === rightStem) {
       return LORE_JACCARD_TUNING.stemMatchSimilarity;
     }
-    const grams = loreJaccardLexicalStats(leftFeature.grams, rightFeature.grams);
-    if (grams.jaccard < LORE_JACCARD_TUNING.ngramMatchFloor) return 0;
-    const scaled = grams.jaccard * LORE_JACCARD_TUNING.ngramMatchScale;
+    const leftKeys = leftFeature.gramKeys;
+    const rightKeys = rightFeature.gramKeys;
+    const leftSet = leftFeature.gramKeySet;
+    const rightSet = rightFeature.gramKeySet;
+    if (!leftKeys?.length || !rightKeys?.length) return 0;
+    let overlap = 0;
+    if (leftKeys.length <= rightKeys.length) {
+      for (let i = 0; i < leftKeys.length; i += 1) {
+        if (rightSet.has(leftKeys[i])) overlap += 1;
+      }
+    } else {
+      for (let i = 0; i < rightKeys.length; i += 1) {
+        if (leftSet.has(rightKeys[i])) overlap += 1;
+      }
+    }
+    const union = leftKeys.length + rightKeys.length - overlap;
+    const jaccard = union > 0 ? overlap / union : 0;
+    if (jaccard < LORE_JACCARD_TUNING.ngramMatchFloor) return 0;
+    const scaled = jaccard * LORE_JACCARD_TUNING.ngramMatchScale;
     return scaled > LORE_JACCARD_TUNING.ngramMatchCap ? LORE_JACCARD_TUNING.ngramMatchCap : scaled;
   };
 
@@ -23697,6 +23721,19 @@ function summarizeAgentCbsTag(rawContent) {
     LoreIdentityTokenCache.set(key, tokens);
     return tokens;
   };
+  const LoreIdentityFeatureCache = new Map();
+  const loreIdentityFeaturesOf = identityText => {
+    const key = text(identityText || '');
+    let features = LoreIdentityFeatureCache.get(key);
+    if (features !== undefined) return features;
+    features = loreIdentityTokensOf(key).map(loreTokenFeatureOf);
+    if (LoreIdentityFeatureCache.size >= LORE_IDENTITY_TOKEN_CACHE_MAX) {
+      const oldest = LoreIdentityFeatureCache.keys().next().value;
+      if (oldest !== undefined) LoreIdentityFeatureCache.delete(oldest);
+    }
+    LoreIdentityFeatureCache.set(key, features);
+    return features;
+  };
   // The query side of the entity score is also fixed for a whole pass, but was re-derived for every
   // record: `loreDistinctiveAnchorTokens(query)` plus the `.map(loreTokenFeatureOf)` over it measured
   // 90 ms of the 120 ms entity pass at N=3200, all of it recomputing the same values.
@@ -23722,8 +23759,8 @@ function summarizeAgentCbsTag(rawContent) {
     const queryPrep = loreEntityQueryPrep(query);
     if (!queryPrep.tokens.length) return 0;
     // A token's features are a pure function of the token, so the expensive normalization / stem /
-    // char-ngram work is done once per distinct token instead of once per (query x identity) pair.
-    const identityFeatures = loreIdentityTokensOf(identityText).map(loreTokenFeatureOf);
+    // char-ngram work is done once per distinct token and cached per identity string.
+    const identityFeatures = loreIdentityFeaturesOf(identityText);
     // An exact normalized match is the maximum this function can return, so scanning can stop the
     // moment one is found. The equivalence `similarity === 1 <=> normalizeKey(a) === normalizeKey(b)`
     // was verified over a wide token sample, so testing the normalized keys directly is exact and
@@ -47544,14 +47581,17 @@ function createLibraReadonlySourceContext(owner) {
     return [...grams];
   };
 
-  const exactSignal = (text, query) => {
-    const doc = normalize(text), q = normalize(query).trim();
+  const exactSignalFromNormalized = (doc, q, qWords) => {
     if (!q || !doc) return 0;
     if (doc.includes(q)) return 1.0;
-    const qWords = tokens(q);
     if (!qWords.length) return 0;
     const matched = qWords.filter(word => doc.includes(word)).length;
     return matched / qWords.length;
+  };
+  const exactSignal = (text, query) => {
+    const doc = normalize(text), q = normalize(query).trim();
+    if (!q || !doc) return 0;
+    return exactSignalFromNormalized(doc, q, tokens(q));
   };
 
   const charNgramSignal = (queryGrams, docGramsSet) => {
@@ -47718,25 +47758,24 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   // Standalone composite relevance score for string pairs.
-  const score = (text, query) => {
-    const q = normalize(query).trim();
-    if (!q) return 0;
-    const doc = normalize(text);
-    if (!doc) return 0;
-    const qWords = tokens(q);
+  const scorePrecomputed = (doc, dGrams, q, qWords, qGrams) => {
+    if (!q || !doc) return 0;
     const wordMatches = qWords.filter(w => doc.includes(w));
     if (!wordMatches.length && !doc.includes(q)) {
-      const qGrams = charNgrams(q, 40);
-      const dGrams = new Set(charNgrams(doc, 80));
       const ngramMatch = charNgramSignal(qGrams, dGrams);
       return ngramMatch >= 0.4 ? Number((ngramMatch * 1.5).toFixed(4)) : 0;
     }
     const tokenScore = wordMatches.reduce((sum, token) => sum + (1 + Math.min(token.length, 12) / 12), 0);
     const exact = doc.includes(q) ? 2.0 : 0;
-    const qGrams = charNgrams(q, 40);
-    const dGrams = new Set(charNgrams(doc, 80));
     const ngramBonus = charNgramSignal(qGrams, dGrams) * 1.2;
     return Number((tokenScore + exact + ngramBonus).toFixed(4));
+  };
+  const score = (text, query) => {
+    const q = normalize(query).trim();
+    if (!q) return 0;
+    const doc = normalize(text);
+    if (!doc) return 0;
+    return scorePrecomputed(doc, new Set(charNgrams(doc, 80)), q, tokens(q), charNgrams(q, 40));
   };
 
   const sparseRrfFusion = (rows = [], signalNames = ['bm25', 'charNgram', 'exact', 'anchor'], k = 60, blend = 0.20) => {
@@ -47893,7 +47932,8 @@ function createLibraReadonlySourceContext(owner) {
     if (!refList.length) return [];
     const rankRows = (queryValue, semanticMap) => {
       const q = normalize(queryValue).trim();
-      const qGrams = charNgrams(q, 40);
+      const qWords = q ? tokens(q) : [];
+      const qGrams = q ? charNgrams(q, 40) : [];
       // Every ref is already in the manifest, so corpus statistics cost no read.
       const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
         terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
@@ -47901,15 +47941,16 @@ function createLibraReadonlySourceContext(owner) {
       const queryEntities = q ? mentionedEntities(q, entities) : new Set();
       const scored = refList.map((ref, ordinal) => {
         const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
+        const doc = q ? normalize(textFields) : '';
         const isAnchor = evidenceIds.has(ref.memoryId);
         const anchorVal = isAnchor ? 1.0 : 0;
-        const exactVal = q ? exactSignal(textFields, q) : 0;
-        const refGrams = new Set(charNgrams(textFields, 80));
+        const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
+        const refGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
         const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
         const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
         const identityVal = identitySignal(queryEntities, textFields, entities);
         const semanticVal = Math.max(0, Math.min(1, Number(semanticMap.get(ref.key)) || 0));
-        const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
+        const base = (isAnchor ? 100 : 0) + (q ? scorePrecomputed(doc, refGrams, q, qWords, qGrams) : 0) + identityVal + 4 * semanticVal;
         return {
           ref,
           ordinal,
@@ -47970,7 +48011,9 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const q = normalize(query).trim();
-    const qGrams = charNgrams(q, 60);
+    const qWords = q ? tokens(q) : [];
+    const qGrams = q ? charNgrams(q, 60) : [];
+    const qScoreGrams = q ? charNgrams(q, 40) : [];
     // Term counts are kept: a row that repeats the queried word ranks above one that mentions it once.
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
@@ -47988,8 +48031,9 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const scoredCandidates = validRows.map((row, index) => {
-      const dGrams = new Set(charNgrams(row.text, 80));
-      const exactVal = q ? exactSignal(row.text, q) : 0;
+      const doc = q ? normalize(row.text) : '';
+      const dGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
+      const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
@@ -47997,7 +48041,7 @@ function createLibraReadonlySourceContext(owner) {
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
       const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,

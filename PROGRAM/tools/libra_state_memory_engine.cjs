@@ -26,14 +26,17 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     return [...grams];
   };
 
-  const exactSignal = (text, query) => {
-    const doc = normalize(text), q = normalize(query).trim();
+  const exactSignalFromNormalized = (doc, q, qWords) => {
     if (!q || !doc) return 0;
     if (doc.includes(q)) return 1.0;
-    const qWords = tokens(q);
     if (!qWords.length) return 0;
     const matched = qWords.filter(word => doc.includes(word)).length;
     return matched / qWords.length;
+  };
+  const exactSignal = (text, query) => {
+    const doc = normalize(text), q = normalize(query).trim();
+    if (!q || !doc) return 0;
+    return exactSignalFromNormalized(doc, q, tokens(q));
   };
 
   const charNgramSignal = (queryGrams, docGramsSet) => {
@@ -200,25 +203,24 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
   };
 
   // Standalone composite relevance score for string pairs.
-  const score = (text, query) => {
-    const q = normalize(query).trim();
-    if (!q) return 0;
-    const doc = normalize(text);
-    if (!doc) return 0;
-    const qWords = tokens(q);
+  const scorePrecomputed = (doc, dGrams, q, qWords, qGrams) => {
+    if (!q || !doc) return 0;
     const wordMatches = qWords.filter(w => doc.includes(w));
     if (!wordMatches.length && !doc.includes(q)) {
-      const qGrams = charNgrams(q, 40);
-      const dGrams = new Set(charNgrams(doc, 80));
       const ngramMatch = charNgramSignal(qGrams, dGrams);
       return ngramMatch >= 0.4 ? Number((ngramMatch * 1.5).toFixed(4)) : 0;
     }
     const tokenScore = wordMatches.reduce((sum, token) => sum + (1 + Math.min(token.length, 12) / 12), 0);
     const exact = doc.includes(q) ? 2.0 : 0;
-    const qGrams = charNgrams(q, 40);
-    const dGrams = new Set(charNgrams(doc, 80));
     const ngramBonus = charNgramSignal(qGrams, dGrams) * 1.2;
     return Number((tokenScore + exact + ngramBonus).toFixed(4));
+  };
+  const score = (text, query) => {
+    const q = normalize(query).trim();
+    if (!q) return 0;
+    const doc = normalize(text);
+    if (!doc) return 0;
+    return scorePrecomputed(doc, new Set(charNgrams(doc, 80)), q, tokens(q), charNgrams(q, 40));
   };
 
   const sparseRrfFusion = (rows = [], signalNames = ['bm25', 'charNgram', 'exact', 'anchor'], k = 60, blend = 0.20) => {
@@ -375,7 +377,8 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     if (!refList.length) return [];
     const rankRows = (queryValue, semanticMap) => {
       const q = normalize(queryValue).trim();
-      const qGrams = charNgrams(q, 40);
+      const qWords = q ? tokens(q) : [];
+      const qGrams = q ? charNgrams(q, 40) : [];
       // Every ref is already in the manifest, so corpus statistics cost no read.
       const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
         terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
@@ -383,15 +386,16 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const queryEntities = q ? mentionedEntities(q, entities) : new Set();
       const scored = refList.map((ref, ordinal) => {
         const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
+        const doc = q ? normalize(textFields) : '';
         const isAnchor = evidenceIds.has(ref.memoryId);
         const anchorVal = isAnchor ? 1.0 : 0;
-        const exactVal = q ? exactSignal(textFields, q) : 0;
-        const refGrams = new Set(charNgrams(textFields, 80));
+        const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
+        const refGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
         const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
         const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
         const identityVal = identitySignal(queryEntities, textFields, entities);
         const semanticVal = Math.max(0, Math.min(1, Number(semanticMap.get(ref.key)) || 0));
-        const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
+        const base = (isAnchor ? 100 : 0) + (q ? scorePrecomputed(doc, refGrams, q, qWords, qGrams) : 0) + identityVal + 4 * semanticVal;
         return {
           ref,
           ordinal,
@@ -452,7 +456,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     }
 
     const q = normalize(query).trim();
-    const qGrams = charNgrams(q, 60);
+    const qWords = q ? tokens(q) : [];
+    const qGrams = q ? charNgrams(q, 60) : [];
+    const qScoreGrams = q ? charNgrams(q, 40) : [];
     // Term counts are kept: a row that repeats the queried word ranks above one that mentions it once.
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
@@ -470,8 +476,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     }
 
     const scoredCandidates = validRows.map((row, index) => {
-      const dGrams = new Set(charNgrams(row.text, 80));
-      const exactVal = q ? exactSignal(row.text, q) : 0;
+      const doc = q ? normalize(row.text) : '';
+      const dGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
+      const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
@@ -479,7 +486,7 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
       const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,

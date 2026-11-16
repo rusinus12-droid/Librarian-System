@@ -285,18 +285,18 @@
     "plugins": {
       "flashback": {
         "version": "2.0.4",
-        "sha256": "84dcb3d2e44415253b88405b34b63e7a517826926a0f84a35887734e4c2d7e21",
-        "bytes": 3842463
+        "sha256": "78fc168e4feb74a71800b5efefa86d370601993a8c97e64a96ac7bd125e55a83",
+        "bytes": 3847500
       },
       "hayaku": {
         "version": "4.0.5",
-        "sha256": "5007de0b7a17248b3ec0df8684269466f0ecac00a5f267b80a541da5669b662b",
-        "bytes": 4308137
+        "sha256": "db491f41d90a874f1c8411a46c21ada001c3f465590fe35591012733edf55952",
+        "bytes": 4313215
       },
       "libra": {
         "version": "3.0.6",
-        "sha256": "36376ad13f2126c7e1a555386fc12bb44268124ec1bd163c645125d3e9609dda",
-        "bytes": 6694076
+        "sha256": "17820cefe01655389ea8b838dbaf8d8cc8743d477aeb3190bbe728d1a749e39d",
+        "bytes": 6695955
       },
       "lia": {
         "version": "0.30.3",

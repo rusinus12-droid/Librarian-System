@@ -23765,12 +23765,27 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return [body,...ensureArray(aliases.values).filter(value=>typeof value==='string')].join('\n');
   };
   let localRecallRankIndex=null;
+  const recentLocalRecallRankIndices=[];
   let localRecallRankInvocation=0;
   const localRecallRank = (rows, inputs) => {
     const invocation=++localRecallRankInvocation,startedAt=now(),request=hayakuRecallRequests.active;
     let documentTokenizations=0,fullTermScans=0,informationTermScans=0,candidateVisits=0,scoredRows=0;
-    const docs=rows.map((row,index)=>{
-      const body=localRecallSearchBody(row),evidenceBody=localRecallBody(row),key=localRecallSourceKey(row),prior=localRecallRankIndex?.docs[index];
+    const rowList=ensureArray(rows);
+    if(!rowList.length){
+      Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
+        compiledIndexHit:false,verificationRows:0,documentTokenizations:0,fullTermScans:0,informationTermScans:0,candidateVisits:0,scoredRows:0,
+        questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
+      return [];
+    }
+    let priorIndex=localRecallRankIndex?.docs.length===rowList.length?localRecallRankIndex:null;
+    if(!priorIndex){
+      for(let i=recentLocalRecallRankIndices.length-1;i>=0;i--){
+        if(recentLocalRecallRankIndices[i]?.docs.length===rowList.length){priorIndex=recentLocalRecallRankIndices[i];break;}
+      }
+      if(!priorIndex)priorIndex=localRecallRankIndex;
+    }
+    const docs=rowList.map((row,index)=>{
+      const body=localRecallSearchBody(row),evidenceBody=localRecallBody(row),key=localRecallSourceKey(row),prior=priorIndex?.docs[index];
       // The existing compiled corpus owns these terms even after document-LRU
       // eviction. Current eligibility, source identity and exact body still run.
       let doc=prior?.key===key&&prior.doc.body===body&&prior.doc.evidenceBody===evidenceBody?prior.doc:localRecallDocuments.get(body);
@@ -23785,9 +23800,22 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // Eligibility has already run in localRecallCandidates. Compare every
     // current record/provenance and exact search body before reusing the derived
     // DF/postings. This is a compiled corpus cache, never a question/output cache.
-    const compiledIndexHit=localRecallRankIndex?.docs.length===docs.length
-      &&docs.every((entry,index)=>entry.doc===localRecallRankIndex.docs[index].doc&&entry.key===localRecallRankIndex.docs[index].key);
-    let compiled=compiledIndexHit?localRecallRankIndex:null;
+    let compiled=null,compiledIndexHit=false;
+    for(let i=recentLocalRecallRankIndices.length-1;i>=0;i--){
+      const candidate=recentLocalRecallRankIndices[i];
+      if(candidate?.docs.length===docs.length
+        &&docs.every((entry,index)=>entry.doc===candidate.docs[index].doc&&entry.key===candidate.docs[index].key)){
+        compiled=candidate;compiledIndexHit=true;
+        recentLocalRecallRankIndices.splice(i,1);
+        recentLocalRecallRankIndices.push(compiled);
+        localRecallRankIndex=compiled;
+        break;
+      }
+    }
+    if(!compiled&&localRecallRankIndex?.docs.length===docs.length
+      &&docs.every((entry,index)=>entry.doc===localRecallRankIndex.docs[index].doc&&entry.key===localRecallRankIndex.docs[index].key)){
+      compiled=localRecallRankIndex;compiledIndexHit=true;
+    }
     if(!compiled){
       const postings=new Map();docs.forEach(({doc},index)=>doc.tf.forEach((_,term)=>{const ids=postings.get(term)||[];ids.push(index);postings.set(term,ids);fullTermScans++;}));
       const averageLength=docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length);
@@ -23807,7 +23835,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
         return count?sum/count:0;
       });
-      localRecallRankIndex=docs.length<=8192?compiled:null;
+      if(docs.length<=8192){
+        localRecallRankIndex=compiled;
+        recentLocalRecallRankIndices.push(compiled);
+        while(recentLocalRecallRankIndices.length>4)recentLocalRecallRankIndices.shift();
+      }else{
+        localRecallRankIndex=null;
+      }
     }
     const average=compiled.average;
     const docNorms=compiled.docNorms||docs.map(({doc})=>1.2*(.25+.75*doc.length/Math.max(1,average)));
@@ -24166,8 +24200,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat'},
       retrieval:{subject:value.name||value.title||'',entityNames:[]}};
   }).filter(row=>row.publicText);
+  const boundPacketRecordRowCache = new WeakMap();
   const bindPacketRecordReferences = (rows,store) => {
     const map=characterBoundaryRefMap(store.entity?.characters||[]);
+    let mapKey='';
+    for(const [k,v]of map)mapKey+=`${k}\u0001${v===null?'null':v}\u0002`;
     const resolveVisibility=(input,category)=>{
       const visibility=packetRecordVisibility({visibility:input||{}},category);
       visibility.unresolvedEntityRefs=[visibility.ownerEntityId,...ensureArray(visibility.holderEntityIds),...ensureArray(visibility.visibleToEntityIds)].some(ref=>map.has(normalizeKey(ref))&&map.get(normalizeKey(ref))===null);
@@ -24176,9 +24213,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return visibility;
     };
     return rows.map(row=>{
+      const cached=row&&typeof row==='object'?boundPacketRecordRowCache.get(row):null;
+      if(cached&&cached.mapKey===mapKey&&cached.visibilityIn===row.visibility
+        &&cached.boundariesIn===row.projectionVisibilityBoundaries
+        &&cached.entityRefsIn===row._recallEntityRefs&&cached.category===row.category){
+        return {...row,visibility:cached.visibilityOut,projectionVisibilityBoundaries:cached.boundariesOut,_recallEntityRefs:cached.entityRefsOut};
+      }
       const visibility=resolveVisibility(row.visibility,row.category);
       const projectionVisibilityBoundaries=ensureArray(row.projectionVisibilityBoundaries).map(boundary=>resolveVisibility(boundary,row.category));
-      return {...row,visibility,projectionVisibilityBoundaries,_recallEntityRefs:ensureArray(row._recallEntityRefs).map(ref=>canonicalBoundaryEntity(ref,map))};
+      const _recallEntityRefs=ensureArray(row._recallEntityRefs).map(ref=>canonicalBoundaryEntity(ref,map));
+      const outRow={...row,visibility,projectionVisibilityBoundaries,_recallEntityRefs};
+      if(row&&typeof row==='object'){
+        boundPacketRecordRowCache.set(row,{
+          mapKey,visibilityIn:row.visibility,boundariesIn:row.projectionVisibilityBoundaries,
+          entityRefsIn:row._recallEntityRefs,category:row.category,
+          visibilityOut:visibility,boundariesOut:projectionVisibilityBoundaries,entityRefsOut:_recallEntityRefs
+        });
+        boundPacketRecordRowCache.set(outRow,{
+          mapKey,visibilityIn:visibility,boundariesIn:projectionVisibilityBoundaries,
+          entityRefsIn:_recallEntityRefs,category:row.category,
+          visibilityOut:visibility,boundariesOut:projectionVisibilityBoundaries,entityRefsOut:_recallEntityRefs
+        });
+      }
+      return outRow;
     });
   };
   const mergeRecallRecordSources = (sourceRows,storedRows,store,sourceAliasesOnly=false) => {
@@ -28732,7 +28789,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
     }
     const context=settings.retrievalRecentContext||buildRecentContextFocus(messages,query,settings);
-    const chosen=localRecallFairMerge([localRecallRank(passages,[query]),localRecallRank(passages,context.topics||[])],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
+    let chosen=[];
+    if(passages.length){
+      const rankedLists=[];
+      if(text(query||'').trim())rankedLists.push(localRecallRank(passages,[query]));
+      const topics=ensureArray(context.topics);
+      if(topics.length)rankedLists.push(localRecallRank(passages,topics));
+      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT):[];
+    }
     const records=chosen.map((row,index)=>({id:row.id,text:row.publicText,role:row.role,pairIndex:row.record.pairIndex||row.record.targetPairIndex||1,
       sourceHash:row.record.sourceHash||'',historyScope:row.record.historyScope||'current_session',score:1/(61+index),
       epistemicCaution:true,epistemicStatus:'original_narration_not_universal_character_knowledge'}));
@@ -37803,8 +37867,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const prepareHayakuEvidenceUnits = (selected,query,settings,signatureOwner=null) => {
     const cached=hayakuEvidencePreparations.get(selected);
-    const policyKey=stableHash64(JSON.stringify(settings||{}));
-    if(cached&&cached.query===query&&cached.policyKey===policyKey)return cached;
+    const {injectionCapChars:_ic,recallDataBudgetChars:_rb,allowTailOnly:_at,...prepSettings}=settings||{};
+    const policyKey=stableHash64(JSON.stringify(prepSettings));
+    if(cached&&cached.query===query&&cached.policyKey===policyKey&&cached.signatureOwner===signatureOwner)return cached;
     const metadata=hayakuRecallPreparations.get(selected)||{store:{},settings,query};
     const sourceRows=['entity','world','narrative','planner'].flatMap(axis=>ensureArray(selected?.[axis]).filter(Boolean).map(row=>({...row,axis})));
     const policySettings={...metadata.settings,...settings,effectiveMode:metadata.settings?.effectiveMode||settings.effectiveMode};
@@ -37844,7 +37909,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const requirements=buildHayakuEvidenceRequirements(sourceRows,metadata,query,settings);
     const configured=normalizeMemoryLanguage(settings.memoryLanguage||DEFAULT_SETTINGS.memoryLanguage);
     const language=configured==='source'?(assessed[0]?.language||inferMemoryNoteLanguage(units.find(u=>u.raw)?.body||'')||'en'):configured;
-    const value={query,policyKey,metadata,policy,units,requirements,language,rejected};hayakuEvidencePreparations.set(selected,value);return value;
+    const value={query,policyKey,signatureOwner,metadata,policy,units,requirements,language,rejected};hayakuEvidencePreparations.set(selected,value);return value;
   };
   const effectiveHayakuRenderLane = unit => {
     const explicit = text(unit?.lane || '').trim();
@@ -37961,24 +38026,55 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for(const term of left)if(right.has(term))overlap++;
       const value=overlap/Math.max(1,left.size+right.size-overlap);diversityPairs.set(key,value);return value;
     };
-    const score=g=>{const fresh=additions(g);return fresh.reduce((n,u)=>{
-      const repeated=u.raw?0:chosen.reduce((max,prior)=>prior.raw?max:Math.max(max,similarity(u,prior)),0);
-      return n+u.weight/(1+repeated);
-    },0)/Math.max(1,fresh.length);};
+    let chosenEpoch=0,occupancyDirty=false,baseRenderLength=-1;
+    const unitMaxSim=new Map(),iterMetrics=new Map();
+    const maxSimToChosen=u=>{
+      if(u.raw||!chosen.length)return 0;
+      const entry=unitMaxSim.get(u.id);
+      let start=0,max=0;
+      if(entry&&entry.epoch===chosenEpoch){start=entry.count;max=entry.max;}
+      for(let i=start;i<chosen.length;i++){
+        const prior=chosen[i];
+        if(!prior.raw){const s=similarity(u,prior);if(s>max)max=s;}
+      }
+      unitMaxSim.set(u.id,{epoch:chosenEpoch,count:chosen.length,max});
+      return max;
+    };
+    const score=g=>{const fresh=additions(g);return fresh.reduce((n,u)=>n+u.weight/(1+maxSimToChosen(u)),0)/Math.max(1,fresh.length);};
     const fulfilled=g=>requirements.filter(r=>!r.missing && !r.units.every(u=>picked.has(u.id))
       && r.units.every(u=>picked.has(u.id)||g.units.includes(u))).length;
     const duplicate=g=>g.units.length-additions(g).length;
-    const cost=g=>render([...chosen,...additions(g)]).text.length-render(chosen).text.length;
     const availableByAxis={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
     for(const unit of prepared.units)for(const origin of unit.origins||[])availableByAxis[origin.axis]?.add(unit.id);
-    const allocationWeight=group=>{
-      const occupancy={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()},axes=new Set();
-      for(const unit of chosen)for(const origin of unit.origins||[])occupancy[origin.axis]?.add(unit.id);
-      for(const unit of additions(group))for(const origin of unit.origins||[])if(occupancy[origin.axis])axes.add(origin.axis);
-      if(!axes.size)return 1;
-      return [...axes].reduce((sum,axis)=>sum+Math.min(prepared.policy.targetAxisAllotments[axis],availableByAxis[axis].size)/(1+occupancy[axis].size),0)/axes.size;
+    let chosenOccupancy={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
+    const recomputeChosenOccupancy=()=>{
+      const occ={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
+      for(const unit of chosen)for(const origin of unit.origins||[])occ[origin.axis]?.add(unit.id);
+      chosenOccupancy=occ;
     };
-    const tie=(a,b)=>score(b)*allocationWeight(b)-score(a)*allocationWeight(a)||fulfilled(b)-fulfilled(a)||duplicate(a)-duplicate(b)||cost(a)-cost(b)||a.id.localeCompare(b.id);
+    const allocationWeight=group=>{
+      const axes=new Set();
+      for(const unit of additions(group))for(const origin of unit.origins||[])if(chosenOccupancy[origin.axis])axes.add(origin.axis);
+      if(!axes.size)return 1;
+      return [...axes].reduce((sum,axis)=>sum+Math.min(prepared.policy.targetAxisAllotments[axis],availableByAxis[axis].size)/(1+chosenOccupancy[axis].size),0)/axes.size;
+    };
+    const metricFor=g=>{
+      let m=iterMetrics.get(g);
+      if(!m){m={};iterMetrics.set(g,m);}
+      return m;
+    };
+    const weightedScoreOf=g=>{const m=metricFor(g);if(m.weighted===undefined)m.weighted=score(g)*allocationWeight(g);return m.weighted;};
+    const fulfilledOf=g=>{const m=metricFor(g);if(m.fulfilled===undefined)m.fulfilled=fulfilled(g);return m.fulfilled;};
+    const duplicateOf=g=>{const m=metricFor(g);if(m.duplicate===undefined)m.duplicate=duplicate(g);return m.duplicate;};
+    const costOf=g=>{
+      const m=metricFor(g);
+      if(m.cost===undefined){
+        if(baseRenderLength<0)baseRenderLength=render(chosen).text.length;
+        m.cost=render([...chosen,...additions(g)]).text.length-baseRenderLength;
+      }
+      return m.cost;
+    };
+    const tie=(a,b)=>weightedScoreOf(b)-weightedScoreOf(a)||fulfilledOf(b)-fulfilledOf(a)||duplicateOf(a)-duplicateOf(b)||costOf(a)-costOf(b)||a.id.localeCompare(b.id);
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
       const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane));
@@ -38053,8 +38149,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       return best;
     };
+    let needsResort=true;
     while(groups.length){
-      groups.sort((a,b)=>groupPriority(a)-groupPriority(b)||tie(a,b));
+      if(needsResort){
+        if(occupancyDirty){recomputeChosenOccupancy();occupancyDirty=false;}
+        iterMetrics.clear();baseRenderLength=-1;
+        groups.sort((a,b)=>groupPriority(a)-groupPriority(b)||tie(a,b));
+        needsResort=false;
+      }
       const group=groups.shift();
       if(group.requirement?.missing){discarded.push({id:group.id,reason:'dependency_unavailable'});continue;}
       const added=group.units.filter(u=>!picked.has(u.id));if(!added.length)continue;
@@ -38065,9 +38167,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         discarded.push({id:exchange.original.id,reason:'equivalent_source_representation'});
         if(exchange.removed)discarded.push({id:exchange.removed.id,reason:'marginal_evidence_replaced'});
         chosen.splice(0,chosen.length,...exchange.trial);picked.clear();for(const unit of chosen)picked.add(unit.id);
+        chosenEpoch+=1;occupancyDirty=true;needsResort=true;
         continue;
       }
       for(const unit of added){chosen.push(unit);picked.add(unit.id);}
+      occupancyDirty=true;needsResort=true;
     }
     const rendered=render(chosen),deliveredOrigins=chosen.flatMap(u=>u.origins||[]),allOrigins=prepared.units.flatMap(u=>u.origins||[]);
     const deliveredRowKeys=uniq(deliveredOrigins.map(o=>packetCoreRecallDeliveryRowKey(o.axis,o.row)),128);
@@ -46335,6 +46439,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         candidates.push({id:'partial:'+row.id+':'+stableHash64(JSON.stringify(atom)),publicText:body,axis:'narrative',turn:row.turn,path:atom.path});
       }
     }
+    if(!candidates.length||!text(query||'').trim())return [];
     return localRecallRank(candidates,[query]).slice(0,8).map((row,index)=>({id:row.id,text:row.publicText,pairIndex:row.turn,path:row.path,score:1/(61+index),stateAuthority:false,completeTurn:false}));
   };
 
