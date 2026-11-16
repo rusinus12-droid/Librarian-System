@@ -26096,6 +26096,30 @@ const MemorySuiteSnapshotCache = (() => {
       };
     }
     const nativeBranch = sameChatPersonaRecovery ? null : await verifyFlashbackNativeBranchCopy(fromScopeMeta, toScope, sourceManifest);
+    let reconciledWorldline = null;
+    let worldlineNodeByPair = null;
+    if (!sessionHandoff && !sameChatPersonaRecovery) {
+      try {
+        const targetSnapshot = cloneMeta.snapshot?.chat ? cloneMeta.snapshot : await loadRisuSnapshot(false);
+        if (targetSnapshot?.chat && resolveScopeFromSnapshot(targetSnapshot).scopeKey === toScope.scopeKey) {
+          const targetLiveState = liveChatStateFromSnapshot(targetSnapshot, toScope.scopeKey);
+          if (targetLiveState.pairCount > 0) {
+            reconciledWorldline = reconcileFlashbackTurnWorldline(
+              emptyTurnWorldline(toScope.scopeKey),
+              toScope.scopeKey,
+              targetLiveState,
+              { allowRetirement: true }
+            );
+            worldlineNodeByPair = new Map(
+              reconciledWorldline.descriptors.map(item => [Number(item.identity?.pairIndex || 0), item.node])
+            );
+          }
+        }
+      } catch (_) {
+        reconciledWorldline = null;
+        worldlineNodeByPair = null;
+      }
+    }
     const targetCommitId = stableHash(`${toScope.scopeKey}|clone|${fromScopeMeta.scopeKey}|${Date.now()}|${Math.random()}`);
     const result = await withScopeWriteLock(toScope.scopeKey, async () => {
       if (Runtime.portableMemoryActiveOperationId) {
@@ -26143,6 +26167,14 @@ const MemorySuiteSnapshotCache = (() => {
                   updatedAt: clonedAt
                 })
                 : cloneRecordForNativeChatCopy(record, fromScopeMeta.scopeKey, toScope.scopeKey, clonedAt)));
+          if (worldlineNodeByPair) {
+            for (let idx = 0; idx < records.length; idx += 1) {
+              const record = records[idx];
+              if (isInheritedScopeMemoryRecord(record, toScope.scopeKey) || isResponseDerivedIndexRecord(record)) continue;
+              const node = worldlineNodeByPair.get(finiteTurnIndex(record));
+              if (node) records[idx] = annotateWorldlineRecords([record], node, 'active')[0];
+            }
+          }
           const classifyInvalidVector = record => {
             const vector = Array.isArray(record.vector) ? record.vector : [];
             if (record.vectorPayloadMissing === true) return 'vector_sidecar_missing';
@@ -26287,9 +26319,9 @@ const MemorySuiteSnapshotCache = (() => {
         copyExpectedRecordCount: sessionHandoff
           ? Math.max(0, Number(cloneMeta.expectedRecordCount ?? copiedRecords) || 0)
           : 0,
-        turnWorldlineLiveHash: sameChatPersonaRecovery ? text(sourceManifest.turnWorldlineLiveHash || '') : '',
-        turnWorldlineRevision: sameChatPersonaRecovery ? Math.max(0, Number(sourceManifest.turnWorldlineRevision || 0) || 0) : 0,
-        turnWorldlineBindingPolicyVersion: sameChatPersonaRecovery ? Math.max(0, Number(sourceManifest.turnWorldlineBindingPolicyVersion || 0) || 0) : 0,
+        turnWorldlineLiveHash: sameChatPersonaRecovery ? text(sourceManifest.turnWorldlineLiveHash || '') : text(reconciledWorldline?.worldline?.liveHash || ''),
+        turnWorldlineRevision: sameChatPersonaRecovery ? Math.max(0, Number(sourceManifest.turnWorldlineRevision || 0) || 0) : Math.max(0, Number(reconciledWorldline?.worldline?.revision || 0) || 0),
+        turnWorldlineBindingPolicyVersion: sameChatPersonaRecovery ? Math.max(0, Number(sourceManifest.turnWorldlineBindingPolicyVersion || 0) || 0) : (reconciledWorldline ? TURN_WORLDLINE_BINDING_POLICY_VERSION : 0),
         turnWorldlinePendingRetirement: sameChatPersonaRecovery && sourceManifest.turnWorldlinePendingRetirement === true
       };
       // Owner transfer copies physical raw/vector pages; the recipient owns
@@ -26320,9 +26352,8 @@ const MemorySuiteSnapshotCache = (() => {
       } else {
         // Both handoffs and native copies receive a fresh scope-local worldline.
         // A handoff keeps predecessor records as permanent history; a native copy
-        // keeps the copied chat's records live and lets the visible transcript
-        // rebuild their target-scope lineage on the next synchronization.
-        await saveTurnWorldline(toScope.scopeKey, { ...emptyTurnWorldline(toScope.scopeKey), hostLineage: toScope.hostLineage });
+        // binds its copied live records to the target transcript's worldline nodes.
+        await saveTurnWorldline(toScope.scopeKey, { ...(reconciledWorldline ? reconciledWorldline.worldline : emptyTurnWorldline(toScope.scopeKey)), hostLineage: toScope.hostLineage });
       }
       if (nativeBranch) await nativeBranch.revalidate();
       await saveScopeManifest(manifest, toScope);

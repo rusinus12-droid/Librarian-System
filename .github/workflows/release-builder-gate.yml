@@ -119,6 +119,7 @@ jobs:
             PROGRAM/tests/flashback_chat_output_live_confirmation_runtime_test.cjs \
             PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs \
             PROGRAM/tests/flashback_copy_observer_host_read_test.cjs \
+            PROGRAM/tests/native_chat_copy_turn_binding_test.cjs \
             PROGRAM/tests/compute_gui_and_libra_open_latency_contract_test.cjs \
             PROGRAM/tests/libra_micro_unproven_diagnostic_test.cjs \
             PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \

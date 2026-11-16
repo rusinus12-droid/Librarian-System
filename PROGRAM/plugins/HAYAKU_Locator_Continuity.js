@@ -15951,6 +15951,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       message?.isComment === true,
       message?.disabled === true
     ]));
+    const chatCopyTextSignature = message => stableHash64(JSON.stringify([
+      text(message?.role || ''),
+      text(message?.data ?? message?.content ?? ''),
+      message?.isComment === true,
+      message?.disabled === true
+    ]));
     const memorySessionBridgeMarker = (chat, currentChatId = '') => {
       const marker = chat?.memorySessionBridge && typeof chat.memorySessionBridge === 'object'
         ? chat.memorySessionBridge
@@ -16003,6 +16009,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const baseTitle = text(copyTitleMatch[1] || '').trim();
       const targetSignatures = messages.map(chatCopyMessageSignature);
+      const targetTextSignatures = messages.map(chatCopyTextSignature);
       const cacheKey = stableHash64(JSON.stringify([
         text(character?.chaId || '').trim(),
         text(chat?.id || '').trim(),
@@ -16022,10 +16029,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const cachedSourceSignatures = Array.isArray(cachedSource?.message)
           ? cachedSource.message.map(chatCopyMessageSignature)
           : [];
+        const cachedSourceTextSignatures = Array.isArray(cachedSource?.message)
+          ? cachedSource.message.map(chatCopyTextSignature)
+          : [];
         const cachedSourceStillMatches = !cachedSourceId || (
-          cachedSourceSignatures.length > 0
-          && cachedSourceSignatures.length <= targetSignatures.length
-          && cachedSourceSignatures.every((signature, index) => signature === targetSignatures[index])
+          (cachedSourceSignatures.length > 0
+            && cachedSourceSignatures.length <= targetSignatures.length
+            && cachedSourceSignatures.every((signature, index) => signature === targetSignatures[index]))
+          || (cachedSourceTextSignatures.length > 0
+            && cachedSourceTextSignatures.length <= targetTextSignatures.length
+            && cachedSourceTextSignatures.every((signature, index) => signature === targetTextSignatures[index]))
         );
         if (cachedSourceStillMatches) {
           Memory.copiedChatSourceCacheStats.hits += 1;
@@ -16042,12 +16055,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         Memory.copiedChatSourceCacheStats.coalesced = Number(Memory.copiedChatSourceCacheStats.coalesced || 0) + 1;
         return { ...(await inflight) };
       }
-      const scan = inferCopiedChatSourceUncached(character, chat, options, { title, baseTitle, targetSignatures, cacheKey, lookupLedgerGeneration });
+      const scan = inferCopiedChatSourceUncached(character, chat, options, { title, baseTitle, targetSignatures, targetTextSignatures, cacheKey, lookupLedgerGeneration });
       Memory.copiedChatSourceInflight.set(flightKey, scan);
       try { return await scan; }
       finally { if (Memory.copiedChatSourceInflight.get(flightKey) === scan) Memory.copiedChatSourceInflight.delete(flightKey); }
     };
-    const inferCopiedChatSourceUncached = async (character, chat, options, { title, baseTitle, targetSignatures, cacheKey, lookupLedgerGeneration }) => {
+    const inferCopiedChatSourceUncached = async (character, chat, options, { title, baseTitle, targetSignatures, targetTextSignatures, cacheKey, lookupLedgerGeneration }) => {
       Memory.copiedChatSourceCacheStats.misses += 1;
       const remember = result => {
         const positive = !!result?.sourceChatId;
@@ -16074,7 +16087,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if (!candidateChatId || candidateChatId === text(chat?.id || '').trim() || !candidateMessages.length
           || candidateMessages.length > targetSignatures.length) continue;
         const candidateSignatures = candidateMessages.map(chatCopyMessageSignature);
-        if (!candidateSignatures.every((signature, index) => signature === targetSignatures[index])) continue;
+        const exactIdMatch = candidateSignatures.every((signature, index) => signature === targetSignatures[index]);
+        if (!exactIdMatch) {
+          const candidateTextSignatures = candidateMessages.map(chatCopyTextSignature);
+          if (!candidateTextSignatures.every((signature, index) => signature === targetTextSignatures[index])) continue;
+        }
         const candidateScopeKey = `chat_${stableHash64(`${text(character?.chaId || '').trim()}\n${candidateChatId}`)}`;
         const candidateTitle = text(candidate?.name || candidate?.title || candidate?.chatName || '').trim();
         const titleAffinity = candidateTitle === baseTitle ? 2
@@ -16083,10 +16100,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           sourceChatId: candidateChatId,
           sourceScopeKey: candidateScopeKey,
           messageCount: candidateMessages.length,
+          exactIdMatch: exactIdMatch ? 1 : 0,
           titleAffinity
         });
       }
-      matchingChats.sort((a, b) => b.messageCount - a.messageCount
+      matchingChats.sort((a, b) => b.exactIdMatch - a.exactIdMatch
+        || b.messageCount - a.messageCount
         || b.titleAffinity - a.titleAffinity
         || a.sourceChatId.localeCompare(b.sourceChatId));
       const candidates = (await Promise.all(matchingChats.slice(0, 48).map(async candidate => {
@@ -16107,7 +16126,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         && options?.ledgerGenerationRetry !== true) {
         return inferCopiedChatSource(character, chat, { ...options, ledgerGenerationRetry: true });
       }
-      candidates.sort((a, b) => b.messageCount - a.messageCount
+      candidates.sort((a, b) => b.exactIdMatch - a.exactIdMatch
+        || b.messageCount - a.messageCount
         || b.updatedAt - a.updatedAt
         || b.titleAffinity - a.titleAffinity
         || a.sourceChatId.localeCompare(b.sourceChatId));
@@ -42499,25 +42519,76 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         scope,
         options?.authoritativeSnapshot || null
       );
-      const copiedTranscriptPresent = ensureArray(scope?.chatMessages).length > 0
-        || ensureArray(options?.authoritativeSnapshot?.conversationPairs).length > 0;
+      const targetSnapshot = objectish(options?.authoritativeSnapshot)
+        && Array.isArray(options.authoritativeSnapshot?.conversationPairs)
+        ? options.authoritativeSnapshot
+        : (ensureArray(scope?.chatMessages).length ? authoritativeChatSnapshot(scope.chatMessages, scope) : null);
+      const copiedTranscriptPresent = ensureArray(targetSnapshot?.conversationPairs).length > 0
+        || ensureArray(scope?.chatMessages).length > 0;
       if (!copiedTranscriptPresent) {
         return { ledger, changed: false, reason: 'native_copy_transcript_unavailable', sourceScopeKey };
       }
+      const maxPairIndex = scope?.hostLineage?.kind === 'native_branch'
+        ? (scope.hostLineage.inheritanceEligible === true ? Math.max(0, Number(scope.hostLineage.commonPrefixPairs || 0) || 0) : 0)
+        : Infinity;
+      const targetPairsByIndex = new Map(
+        ensureArray(targetSnapshot?.conversationPairs)
+          .map(pair => [Number(pair?.pairIndex || 0), pair])
+          .filter(([pairIndex]) => pairIndex > 0 && pairIndex <= maxPairIndex)
+      );
+      const reboundRecords = [];
+      for (const [index, record] of ensureArray(sourceLocalLedger.records).entries()) {
+        if (!record
+          || record.inheritedSessionHistory === true
+          || record.memoryClass === 'historical'
+          || record.recordState !== 'active'
+          || record.auditRetained === true
+          || !record.ownerTurnNodeId
+          || !['current_snapshot', 'recovery_snapshot'].includes(text(record.packetType || '').toLowerCase())) continue;
+        const pairIndex = Number(record.targetPairIndex || 0);
+        const targetPair = targetPairsByIndex.get(pairIndex);
+        if (!targetPair
+          || text(record.userHash || '') !== text(targetPair.userHash || '')
+          || text(record.assistantVisibleHash || '') !== text(targetPair.assistantVisibleHash || '')) continue;
+        const copied = nativeCopiedStorageRecord(record, scope, sourceScopeKey, index, {
+          preserveRequestNonce: false
+        });
+        const normalized = normalizeStorageRecord({
+          ...copied,
+          targetPairIndex: pairIndex,
+          requestSequence: pairIndex,
+          userHash: text(targetPair.userHash || ''),
+          userMessageIdHash: text(targetPair.userMessageIdHash || ''),
+          assistantVisibleHash: text(targetPair.assistantVisibleHash || ''),
+          assistantMessageIdHash: text(targetPair.assistantMessageIdHash || ''),
+          captureSource: 'native_chat_copy_rebind'
+        });
+        if (normalized) reboundRecords.push(normalized);
+      }
+      let targetWorldline = worldline;
+      let workingLedger = {
+        ...emptyStorageLedger(scope),
+        migration: { complete: false, importedAt: 0, importedRecords: 0, chatSnapshotHash: '' },
+        worldline: targetWorldline,
+        archiveRef: null,
+        nativeBranchStorageBinding: nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status:'complete', committedAt:new Date().toISOString() } : ledger?.nativeBranchStorageBinding || null,
+        records: reboundRecords
+      };
+      if (targetSnapshot && (reboundRecords.length > 0 || ensureArray(targetWorldline?.nodes).length > 0)) {
+        targetWorldline = reconcileTurnWorldline(targetWorldline, targetSnapshot, scope);
+        workingLedger = { ...workingLedger, worldline: targetWorldline };
+        const bound = bindStorageLedgerToSnapshot(workingLedger, targetSnapshot, targetWorldline);
+        const liveChatRecords = liveChatLedgerRecordsFromSnapshot(targetSnapshot, scope, targetWorldline);
+        const heads = reconcileStorageSlotHeads(bound.ledger, bound.activeRecords, liveChatRecords);
+        workingLedger = { ...heads.ledger, worldline: targetWorldline };
+      }
       return {
-        ledger: {
-          ...emptyStorageLedger(scope),
-          migration: { complete: false, importedAt: 0, importedRecords: 0, chatSnapshotHash: '' },
-          worldline,
-          archiveRef: null,
-          nativeBranchStorageBinding: nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status:'complete', committedAt:new Date().toISOString() } : ledger?.nativeBranchStorageBinding || null,
-          records: []
-        },
+        ledger: workingLedger,
         changed: true,
-        reason: 'copied_chat_transcript_only',
+        reason: reboundRecords.length ? 'copied_chat_rebound' : 'copied_chat_transcript_only',
         sourceScopeKey,
-        records: 0,
-        physicalRecords: 0,
+        records: workingLedger.records.length,
+        physicalRecords: workingLedger.records.length,
         archiveRecords: 0
       };
     }
