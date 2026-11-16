@@ -37673,8 +37673,12 @@ function createLibraReadonlySourceContext(owner) {
       verifiedReadStats.entries = verifiedReadCache.size;
     };
     const touchVerifiedRead = row => { if (row) row.residentOrder = ++state.residentSequence; return row; };
-    const pruneVerifiedReads = () => {
+    let lastVerifiedReadPruneAt = 0;
+    const pruneVerifiedReads = (force = false) => {
+      if (!verifiedReadCache.size) return;
       const now = Date.now();
+      if (!force && now - lastVerifiedReadPruneAt < 250 && verifiedReadCache.size < VERIFIED_READ_CACHE_MAX) return;
+      lastVerifiedReadPruneAt = now;
       for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
     };
     const rememberVerifiedRead = (key, signature, value, empty, serverPin = null, localRaw = null, serverRaw = null) => {
@@ -40628,10 +40632,15 @@ function createLibraReadonlySourceContext(owner) {
         state.memoryReadIO.rawBodyBytesValidated += Number.isSafeInteger(entry.rawBodyBytes)
           ? entry.rawBodyBytes
           : (entry.rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length);
-        cache.entries.delete(keyValue);
-        cache.entries.set(keyValue, entry);
-        entry.index = index;
-        entry.lastSeenAt = Date.now();
+        if (!observation) {
+          cache.entries.delete(keyValue);
+          cache.entries.set(keyValue, entry);
+          entry.lastSeenAt = Date.now();
+        }
+        if (entry.index !== index) {
+          entry.index = index;
+          entry.sequenceItem = `${index}\u0001${entry.key}\u0001${entry.signature}\u0001${entry.rawPayloadDigest}\u0001${entry.sanitizedTextDigest}`;
+        }
         entry.residentOrder = ++state.residentSequence;
         state.pairRevisionCacheStats.hits += 1;
         return entry;
@@ -40654,14 +40663,18 @@ function createLibraReadonlySourceContext(owner) {
       const body = role ? cleanMessageText(role, raw) : '';
       const retainedChars = Math.max(0, rawComparable.value.length + body.length);
       const signature = branchContentHash([role, identity.source, identity.id, body].join('\u0000'));
+      const rawPayloadDigest = digest({ type: rawComparable.type, value: rawComparable.value });
+      const sanitizedTextDigest = digest({ role, body });
       entry = {
         key: keyValue, index, role, identity, body,
         rawType: rawComparable.type, rawValue: rawComparable.value, rawBodyBytes, metaKey,
-        rawPayloadDigest: digest({ type: rawComparable.type, value: rawComparable.value }),
-        sanitizedTextDigest: digest({ role, body }),
+        rawPayloadDigest,
+        sanitizedTextDigest,
         sanitizationTransformed: rawComparable.type !== 'string' || rawComparable.value !== body,
         internalCarrierRemoved: liveTailRawContainsRemovedCarrier(rawComparable.value),
-        signature, retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
+        signature,
+        sequenceItem: `${index}\u0001${keyValue}\u0001${signature}\u0001${rawPayloadDigest}\u0001${sanitizedTextDigest}`,
+        retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
       };
       // A full observation must read all retained entries before admitting
       // misses. Otherwise a missing prefix evicts the still-unread suffix.
@@ -40732,16 +40745,18 @@ function createLibraReadonlySourceContext(owner) {
         seenKeys.push(projection.key);
         return projection;
       });
-      finalizePairRevisionObservation(cache, seenKeys);
-      retainPairRevisionObservation(cache, projections);
-      const sequence = projections.map((projection, index) => `${index}\u0001${projection.key}\u0001${projection.signature}\u0001${projection.rawPayloadDigest}\u0001${projection.sanitizedTextDigest}`);
+      const sequence = projections.map((projection, index) => projection.sequenceItem
+        || `${index}\u0001${projection.key}\u0001${projection.signature}\u0001${projection.rawPayloadDigest}\u0001${projection.sanitizedTextDigest}`);
       // A digest is not an exact raw witness. Misses (including uncached
       // over-budget rows) rebuild pairs even if their hash strings collide.
-      if (observation.allUnchanged && cache.pairs && pairRevisionSequenceEqual(cache.sequence, sequence)) {
+      if (observation.allUnchanged && cache.pairs && cache.entries.size === projections.length
+        && pairRevisionSequenceEqual(cache.sequence, sequence)) {
         state.pairRevisionCacheStats.lastObservationHash = cache.observationHash;
         state.pairRevisionCacheStats.pairReuses += 1;
         return cache.pairs;
       }
+      finalizePairRevisionObservation(cache, seenKeys);
+      retainPairRevisionObservation(cache, projections);
       const observationHash = branchContentHash(sequence.join('\u001e'));
       state.pairRevisionCacheStats.lastObservationHash = observationHash;
       const pairs = [];
