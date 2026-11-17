@@ -30987,11 +30987,13 @@ const MemorySuiteSnapshotCache = (() => {
     const forceReconcile = options.forceReconcile === true || Number(manifest.sourceConsentPolicyVersion||0)<2;
     const allowRetirement = options.allowRetirement !== false;
     const observedPairCount = Math.max(0, Number(normalizedObservedLive.pairCount || normalizedObservedLive.pairs?.length || 0) || 0);
+    const observedMessageCount = Math.max(0, Number(normalizedObservedLive.count || 0) || 0);
     const manifestResponseTurns = Math.max(0, Number(manifest.responseTurnCount || 0) || 0);
     const manifestChatMessages = Math.max(0, Number(manifest.chatMessageCount || 0) || 0);
     // An empty-but-structurally-readable host snapshot can occur transiently while
     // RisuAI swaps chat state. Never interpret that one frame as a rollback to T0.
-    if (allowRetirement && observedPairCount === 0 && (manifestResponseTurns > 0 || manifestChatMessages > 1)) {
+    // A Turn 1 reroll still has live messages (observedMessageCount > 0) with 0 completed pairs.
+    if (allowRetirement && observedPairCount === 0 && observedMessageCount === 0 && (manifestResponseTurns > 0 || manifestChatMessages > 1)) {
       const guarded = {
         changed: false,
         reason: 'worldline_empty_snapshot_guard',
@@ -35558,8 +35560,11 @@ const MemorySuiteHealthRecovery = (() => {
   // components and must run after scoreRecordForRecall() has populated them.
   const recallRecordConflictsWithWorldline = (record = {}, context = {}) => {
     if (!isResponseMemoryRecord(record)
-      || isInheritedScopeMemoryRecord(record, context.scopeKey)
-      || !text(record.turnNodeId || '').trim()) return false;
+      || isInheritedScopeMemoryRecord(record, context.scopeKey)) return false;
+    const currentPairIndex = Math.max(0, Number(context.currentPairIndex || 0) || 0);
+    const turnIndex = finiteTurnIndex(record);
+    if (currentPairIndex > 0 && turnIndex >= currentPairIndex) return true;
+    if (!text(record.turnNodeId || '').trim()) return false;
     const worldline = context.worldline?.version === TURN_WORLDLINE_VERSION
       ? context.worldline
       : null;
@@ -37697,7 +37702,8 @@ const MemorySuiteHealthRecovery = (() => {
       temporalIntent,
       truthIntent,
       scopeKey: scope.scopeKey,
-      worldline: recallWorldline
+      worldline: recallWorldline,
+      currentPairIndex
     };
     let branchGate = applyRecallHardGates(storedRecords, recallHardGateContext);
     storedRecords = branchGate;

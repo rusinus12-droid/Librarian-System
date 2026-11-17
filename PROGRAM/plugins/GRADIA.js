@@ -25388,6 +25388,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '- Make the scene feel alive through concrete behavior, small physical reactions, dialogue rhythm, social timing, sensory detail, and character-specific choices.',
     '- Let dialogue and action create motion before narration explains it. Avoid generic drama, empty abstraction, fake foreshadowing, formulaic endings, and inflated dramatic phrasing.',
     '- Use profiles, lore, persona, memory, and Others Info only as private writing fuel. Do not recite profile fields, leak secrets, or narrate knowledge unavailable to the current viewpoint.',
+    ...(!rpScopeLocksCast(settings)
+      ? [isPlayerControlledDraftMode(settings)
+          ? '- LORE-DRIVEN INITIATIVE: do not treat NPCs as passive responders who only echo or wait on the user input. Use each NPC’s lore (goals, habits, temperament, relationship stance, defense mechanisms) to drive 1–2 concrete, character-specific actions or shifts in stance—while keeping the persona’s reaction open and avoiding long NPC self-talk.'
+          : '- LORE-DRIVEN INITIATIVE: use the cast’s lore (goals, desires, habits, relationship stance, defense mechanisms) as an active engine so characters initiate, press, evade, or make concrete choices rather than reacting passively.']
+      : []),
     isPlayerControlledDraftMode(settings)
       ? '- PLAYER-CONTROLLED RP: preserve player agency. Do not decide the user character hidden thoughts, feelings, choices, dialogue, consent/refusal, or voluntary action unless the user already provided them.'
       : '- NOVEL MODE AUTHORSHIP: the user is the author/director. You may write the user persona’s new actions, dialogue, thoughts, feelings, choices, consent/refusal, movement, and reactions as part of the fiction; preserve only explicit author-fixed/reserved boundaries and established canon.',
@@ -25576,6 +25581,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
           : '- It belongs to an NPC or the world, never to the persona.');
       lines.push('- It never overrides user direction, canon, mode rules, or reserved choices.');
       if (gate !== 'staging') {
+        lines.push('- LORE ALIGNMENT: when this variable involves character behavior, ground it in the acting character’s established lore (goals, temperament, habits, vulnerabilities) rather than generic randomness.');
         lines.push('- CAUSAL PRIORITY: never force this variable to hijack the characters’ primary emotional or situational reaction, contradict the authorial tone/direction, or manufacture an unnatural detour. If it does not fit the immediate moment naturally, keep it as subtle background texture or omit it.');
       }
     }
@@ -25601,6 +25607,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Respect the COMMIT BARRIER: attempts, offers, intentions, requests, and expected outcomes are not yet confirmed results. Do not invent exact state changes, success, acceptance, ownership transfer, or relationship change.'
         : 'Respect the COMMIT BARRIER for facts not fixed by the author. If the current authorial input explicitly requires an outcome, realize it coherently; otherwise do not pretend an attempt/proposal was already confirmed before this response.',
       'Use established character, persona, and lore context when present. The current input ranks first, the Current Chat Author Note ranks second, and current-scene facts then outrank summaries and older notes.',
+      ...(!rpScopeLocksCast(settings)
+        ? ['Let active characters act on their lore—what they want now, how they handle tension, and what they press or conceal—so they show genuine initiative instead of passive, generic reactions.']
+        : []),
       'This draft is the seed every later AIDE will revise; make it a complete, playable response with vivid dialogue-first momentum and human behavioral texture, not a plan.'
     ],
     aide_character: [
@@ -25608,6 +25617,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       CAUSAL_REALISM_LINES[1],
       'Judge the latest CURRENT_SAME_TURN_DRAFT using compact portrayal anchors for at most the few characters who materially matter now, then return only structural paragraph patches for material character-domain weaknesses.',
       'Preserve exact supplied canon and keep it separate from current interpretation. Express supported pressure, emotion, motive, relationship stance, and voice without predetermining exact reactions or outcomes.',
+      ...(!rpScopeLocksCast(settings)
+        ? ['Check whether each active character’s behavior matches their lore-established drive, temperament, and relationship stance; if a character is reacting too passively or flatly for their lore, sharpen that beat into a concrete, lore-consistent action or stance (without adding NPC self-talk or crossing user agency in RP).']
+        : []),
       'Enforce information paths and evidence levels. A character may act only on direct perception, communication, established memory, public information, or another confirmed route; suspicion and rumor remain uncertain.',
       isPlayerControlledDraftMode(settings)
         ? 'Repair unsupported identity assumptions, generic dialogue, secret leakage, omniscient knowledge, absent-character insertion without a bridge, and any decision, consent, hidden thought, feeling, or dialogue invented for the user character. Also trim unnatural NPC self-talk or self-answering monologues, and do not convert a natural opening question into a monologue.'
