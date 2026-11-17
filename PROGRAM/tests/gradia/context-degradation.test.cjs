@@ -76,7 +76,11 @@ test('an unset context window uses the model heuristic instead of the ollama 32k
 
 // NPC 반응 경향성 adds a long block to every stage. On a small model it is condensed first (the
 // fixed stances and the NPC list stay), then left out of that stage, and the turn never fails.
-const dispositionRun=async(t,contextWindow)=>{
+const FOUR_NPCS=[{name:'준호',level:'affection'},{name:'민아',level:'dislike'},{name:'세라',level:'like'},{name:'도윤',level:'acquaintance'}];
+// The prompt's base size varies by a few hundred tokens between runs, so the drop case uses a cast
+// whose condensed rows alone (16 NPCs with notes) cannot fit beside it on a 16k model.
+const MANY_NPCS=Array.from({length:16},(_,i)=>({name:'인물'+i,level:'hostile',note:'페르소나를 오래전 사건의 원흉으로 여기며 공개적인 자리에서도 적의를 감추지 않는다 '.repeat(3).slice(0,190)}));
+const dispositionRun=async(t,contextWindow,npcs=FOUR_NPCS)=>{
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
@@ -87,8 +91,7 @@ const dispositionRun=async(t,contextWindow)=>{
   const send=()=>f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
   await send();
   const key=f.host.plugin.debugActiveScopeKey();
-  await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),npc_disposition:JSON.stringify({[key]:{default:'hostile',
-    npcs:[{name:'준호',level:'affection'},{name:'민아',level:'dislike'},{name:'세라',level:'like'},{name:'도윤',level:'acquaintance'}]}})});
+  await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),npc_disposition:JSON.stringify({[key]:{default:'hostile',npcs}})});
   prompts.length=0;
   const out=await send();
   return {f,prompts,out,record:f.host.plugin.getRuntime().contextDegradations.find(item=>item.stage==='shadow_act'&&String(item.dropped).includes('npc_disposition'))};
@@ -109,7 +112,7 @@ test('NPC disposition is condensed when the full block does not fit, keeping the
 });
 
 test('NPC disposition is left out of a stage with no room rather than failing the turn',async t=>{
-  const {prompts,out,record}=await dispositionRun(t,16000);
+  const {prompts,out,record}=await dispositionRun(t,16000,MANY_NPCS);
   assert.equal(prompts.length,4,'the turn runs');
   assert.ok(JSON.stringify(out).includes(DRAFT));
   assert.ok(record&&record.dropped.includes('npc_disposition'),'the drop is recorded');
