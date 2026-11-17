@@ -49537,7 +49537,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     };
     const stopped = () => state.manualBatchCancelRequested||Memory.unloaded;
     try{
-      const job=beginNativeJob('manual_missing_batch',{scopeKey:diagnostic.requestedScopeKey,targetTurns:targets,total:targets.length,state:'preparing',message:'분석 시작 전 채팅 범위·원문·저장 상태를 확인합니다.'});
+      const job=beginNativeJob('manual_missing_batch',{scopeKey:diagnostic.requestedScopeKey,targetTurns:targets,total:targets.length,state:'preparing',minimized:options?.minimized===true,message:'분석 시작 전 채팅 범위·원문·저장 상태를 확인합니다.'});
       diagnostic.jobId=job.jobId;
       pushOperationLog('native_recovery:selected_missing_started',clone(diagnostic,{}),'info');
       const scope=await RisuCompat.currentChatScope();
@@ -52460,18 +52460,48 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return ensureArray(inspection?.semanticIncompletePackets).length === 0
       && Number(inspection?.invalidCount || 0) === 0;
   };
-  const afterRequestCaptureSourceCurrent = (scope,pending) => {
-    if (!scope?.confident || scope.key!==pending?.scope?.key) return false;
-    if (!Array.isArray(pending.requestSourcePrefix)) return true;
+  const afterRequestCaptureSourceDetail = (scope,pending) => {
+    if (!scope?.confident || scope.key!==pending?.scope?.key) {
+      return { ok: false, reason: !scope?.confident ? 'scope_not_confident' : 'scope_key_mismatch', expectedScopeKey: text(pending?.scope?.key), actualScopeKey: text(scope?.key) };
+    }
+    if (!Array.isArray(pending.requestSourcePrefix)) return { ok: true };
     if (!Array.isArray(scope.chatMessages) || !scope.chatMessages.length) {
-      return Boolean(pending?.userEvidence?.text);
+      return Boolean(pending?.userEvidence?.text)
+        ? { ok: true }
+        : { ok: false, reason: 'chat_messages_empty_no_user_evidence' };
     }
     const snapshot=authoritativeChatSnapshot(scope.chatMessages,scope);
     const prefix=ensureArray(snapshot.conversationPairs)
       .filter(pair=>Number(pair.pairIndex)<Number(pending.lineage?.targetPairIndex))
       .map(pair=>hayakuSourceEditDigest(pair));
-    return JSON.stringify(prefix)===JSON.stringify(pending.requestSourcePrefix);
+    const expected=pending.requestSourcePrefix;
+    if(prefix.length!==expected.length){
+      return {
+        ok: false,
+        reason: 'prefix_length_mismatch',
+        expectedPrefixLen: expected.length,
+        actualPrefixLen: prefix.length
+      };
+    }
+    let mismatchTurn=null;
+    for(let i=0;i<prefix.length;i+=1){
+      if(JSON.stringify(prefix[i]||null)!==JSON.stringify(expected[i]||null)){
+        mismatchTurn=i+1;
+        break;
+      }
+    }
+    if(mismatchTurn===null) return { ok: true };
+    return {
+      ok: true,
+      warning: 'prefix_digest_drift',
+      expectedPrefixLen: expected.length,
+      actualPrefixLen: prefix.length,
+      mismatchTurn,
+      expectedDigest: expected[mismatchTurn-1]||null,
+      actualDigest: prefix[mismatchTurn-1]||null
+    };
   };
+  const afterRequestCaptureSourceCurrent = (scope,pending) => afterRequestCaptureSourceDetail(scope,pending).ok;
   const repairCurrentPacketInsideAfterRequest = async (content = '', requestType = '') => {
     let source = text(content);
     const normalizedType = text(requestType || 'model').trim().toLowerCase();
@@ -52512,7 +52542,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           requestNonce: text(pending.lineage?.requestNonce),
           outcome: text(r.outcome),
           errorCode: text(r.errorCode || ''),
-          reason: text(r.errorMessage || r.outcome)
+          reason: text(r.errorMessage || r.outcome),
+          ...(r.mismatchDetail && typeof r.mismatchDetail === 'object' ? { mismatchDetail: r.mismatchDetail } : {})
         }, 'warn');
       }
     };
@@ -52549,9 +52580,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const userEvidence = afterRequestRecoveryUserEvidence(scope, pending);
     const assistantText = canonicalHistoryText(echoGuard.content, 'assistant');
     const targetPairIndex = Math.max(1, Number(pending?.lineage?.targetPairIndex || 1) || 1);
-    if (!scope?.confident || !scope?.key || !userEvidence?.text || !assistantText || !afterRequestCaptureSourceCurrent(scope,pending)) {
+    const sourceDetail = afterRequestCaptureSourceDetail(scope, pending);
+    if (sourceDetail.ok && sourceDetail.warning === 'prefix_digest_drift') {
+      pushOperationLog('native_recovery:after_request_prefix_drift', {
+        scopeKey: text(pending.scope?.key),
+        pairIndex: targetPairIndex,
+        requestNonce: text(pending.lineage?.requestNonce),
+        mismatchTurn: sourceDetail.mismatchTurn,
+        expectedPrefixLen: sourceDetail.expectedPrefixLen,
+        actualPrefixLen: sourceDetail.actualPrefixLen
+      }, 'warn');
+    }
+    if (!scope?.confident || !scope?.key || !userEvidence?.text || !assistantText || !sourceDetail.ok) {
       const message = !scope?.confident ? 'authoritative_chat_unavailable' : !userEvidence?.text ? 'after_request_user_evidence_unavailable' : !assistantText ? 'after_request_assistant_evidence_empty' : 'after_request_source_mismatch';
-      pending.afterRequestRepair = { attempted: false, enabled: true, outcome: 'evidence_unavailable', errorCode: 'HAYAKU_AFTER_REQUEST_EVIDENCE_UNAVAILABLE', errorMessage: message, attemptedAt: now() };
+      pending.afterRequestRepair = {
+        attempted: false,
+        enabled: true,
+        outcome: 'evidence_unavailable',
+        errorCode: 'HAYAKU_AFTER_REQUEST_EVIDENCE_UNAVAILABLE',
+        errorMessage: message,
+        ...(message === 'after_request_source_mismatch' ? { mismatchDetail: sourceDetail } : {}),
+        attemptedAt: now()
+      };
       pending.inlineRepairFailure = null;
       rememberRepair();
       return source;
@@ -53132,7 +53182,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const scope = await RisuCompat.currentChatScope().catch(() => null);
         if (scope?.key !== scopeKey) return skip('chat_changed');
         pushOperationLog('native_recovery:missed_after_request_repair_started', { scopeKey, pairIndex: turn, requestNonce }, 'info');
-        const result = await runNativeMissingTurnBatch({ scopeKey, targetTurns: [turn] });
+        const result = await runNativeMissingTurnBatch({ scopeKey, targetTurns: [turn], minimized: true });
         pushOperationLog('native_recovery:missed_after_request_repair_finished', {
           scopeKey, pairIndex: turn, requestNonce, ok: result?.ok === true, reason: text(result?.reason || ''), physicalCalls: Number(result?.physicalCalls || 0)
         }, result?.ok === true ? 'success' : 'warn');
