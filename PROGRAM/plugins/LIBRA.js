@@ -54244,7 +54244,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       let analysis = work.result;
       if (!analysis) {
-        options.onInvocationPrepared?.();
         let inventory = null;
         try {
           const saved = await readPersonSpanInventory(scope, worldlineId, sessionEpoch, turn);
@@ -54255,6 +54254,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const settings=await loadSettings();
         const permit=await checkClaim();
         if(permit.status!=='current')return {status:permit.status,reason:permit.reason};
+        options.onInvocationPrepared?.();
         microInvocationsInFlight.add(workKey);
         try {
           analysis = await analyzeCompletedReceipt({ ...receipt, receiptKey: active.receiptKey },
@@ -62186,6 +62186,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
               stateAdmission: clone(result?.stateAdmission || null) };
           }
           if (result?.status === 'verified') scheduleCurrentStateSnapshotRefresh(scope);
+          if (!state.disposed && result?.status === 'pending_reconciliation'
+            && result?.reason === 'micro_result_not_durably_ready'
+            && request.retryNotDurablyReady !== true) {
+            setTimeout(() => {
+              if (!state.disposed) {
+                void scheduleMicroForTurn(scope, worldlineId, sessionEpoch, turn, revisionId,
+                  { ...request, manual: true, retryNotDurablyReady: true, reason: 'micro_not_durably_ready_retry' });
+              }
+            }, 250);
+          }
           if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
         }).catch(error => {
