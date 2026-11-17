@@ -54,6 +54,8 @@ const microCase = async () => {
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified');
 
     f.chat.message[1].data = illustrated;
+    const preRecaptureReader = await f.r.api.readActiveMicroMemoryForTurn(1);
+    assert.equal(preRecaptureReader.status, 'verified', 'Micro reader stays verified before receipt recapture on illustration-only raw edit: ' + JSON.stringify({status: preRecaptureReader.status, reason: preRecaptureReader.reason}));
     await recapture();
     assert.notEqual(await receiptRevision(), analyzed, 'the raw change still makes a new receipt (formula unchanged)');
     const carried = await f.r.api.debugReadActiveMicroMemory(1);
@@ -65,6 +67,8 @@ const microCase = async () => {
     assert.equal(f.control.calls.length, 1, 'no Micro job reruns for an illustration');
 
     f.chat.message[1].data = rewritten;
+    const staleReader = await f.r.api.readActiveMicroMemoryForTurn(1);
+    assert.equal(staleReader.status, 'stale_source', 'Micro reader marks a real text change stale immediately');
     await recapture();
     const stale = await f.r.api.debugReadActiveMicroMemory(1);
     assert.notEqual(stale.status, 'verified', 'a real text change still needs a new analysis');

@@ -53511,7 +53511,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         head, recordKey, headKey, ...(bound !== active ? { currentReceipt: active.receipt, carriedFromRevisionId: bound.receipt.revisionId } : {}) };
     };
     const readMicroReaderTurn = async (scope, turn, options = {}) => {
-      const active = await readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn, options);
+      const active = await readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn,
+        { allowProjectedEquivalent: true, ...options });
       if (active.status === 'verified' && !microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey)) {
         return {status: 'pending_reconciliation', reason: 'micro_body_verification_failed', record: null, head: null};
       }
