@@ -31,12 +31,13 @@ test('a long chat keeps every owner request under the channel limit, and a large
   bus.messages.length = 0;
   const messages = chat.message.map(row => ({ role: row.role, content: row.data, chatId: row.chatId, messageId: row.chatId }));
   await f.host.hooks.beforeRequest(messages, 'model');
-  const captures = bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'capture');
+  // Drafting reads each owner with select: the owner decides what is relevant (plugin IPC read path).
+  const captures = bus.messages.filter(m => m.body.kind === 'request' && m.body.action === 'select');
   assert.ok(captures.length >= 1);
   for (const message of captures) assert.ok(Buffer.byteLength(JSON.stringify(message.body)) < 65536, 'an owner silently ignores anything larger');
   assert.equal(captures[0].body.recentChatTurns, 8, 'owners search over what the response request carries');
   assert.ok(captures[0].body.requestChars > 40000);
-  const reply = bus.messages.find(m => m.sender === 'flashback_memory' && m.body.kind === 'response' && m.body.action === 'capture');
+  const reply = bus.messages.find(m => m.sender === 'flashback_memory' && m.body.kind === 'response' && m.body.action === 'select');
   assert.ok(reply && !reply.body.error, JSON.stringify(reply?.body?.error));
   assert.equal(reply.body.result.engine.source, 'owner_selection');
   assert.ok(f.prompts.length >= 1);

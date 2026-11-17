@@ -4,7 +4,9 @@ const {createMemorySuiteServer,mockFetch,trace}=require('./fixtures/flashback_in
 const {load}=require('./gradia/host.cjs');
 const createOwnerUnifiedReadProvider=require('./fixtures/libra_owner_unified_read_provider.cjs');
 const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
-test('actual SQLite -> owner unified read -> SDK -> GRA immutable session; replacement retires old draft',async t=>{
+// Current read path: GRADIA reads only through plugin IPC, where each owner selects its own recall
+// (selectOwnerRecall). The retired server read session (and its post-read currency check) is gone.
+test('actual SQLite -> owner selection over plugin IPC -> GRA read-only session',async t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gradia-cross-project-')),app=createMemorySuiteServer({dataDir:dir,port:0,autoBackup:false,computeEnabled:false,token:'offline-only'});t.after(async()=>{await app.close();fs.rmSync(dir,{recursive:true,force:true});});
  const address=await app.listen(),url=`http://127.0.0.1:${address.port}`,pluginId='serial_gradation_agents_for_rp';
  const scope={scopeKey:'e2e',characterId:'c',chatId:'h'},key='libra:v1:scope:e2e:memory:1:r1',manifestKey='libra:v1:scope:e2e:manifest';
@@ -29,11 +31,18 @@ test('actual SQLite -> owner unified read -> SDK -> GRA immutable session; repla
  accepted=await bridge.bootstrap();assert.equal(accepted.dataIdentityCertified,true);assert.equal(accepted.capabilities['libra-read-session.v1'],true);
  const g=await load({testGlobals:{crypto:crypto.webcrypto},transformSource:s=>s.replace('  const publicApi = Object.freeze({','  globalThis.__testCreateLibReadConsumer = createLibServerReadConsumer;\n  const publicApi = Object.freeze({')});
  const client=bridge.createLibraReadOnlyClient(),binding={client,scope,maxCorpusBytes:4194304};
- const consumer=g.createLibReadConsumer({getBinding:()=>binding,assertNativeScope:async()=>true,digest:async v=>sha(v)});
+ // The LIBRA owner reads its own committed memory from the database; the other owners are absent.
+ const selected=[];
+ const selectOwnerRecall=async(owner,requestScope,queryText)=>{selected.push([owner,requestScope.scopeKey,queryText]);
+  if(owner!=='libra')return {absent:true,code:'LIB_READ_OWNER_UNAVAILABLE'};
+  const row=app.repositories.libra.database.prepare('SELECT value_json FROM kv WHERE key=?').get(key);
+  return {content:JSON.parse(JSON.parse(row.value_json)).text};};
+ const consumer=g.createLibReadConsumer({getBinding:()=>binding,assertNativeScope:async()=>true,digest:async v=>sha(v),selectOwnerRecall});
  const before=app.repositories.libra.database.prepare('SELECT * FROM kv ORDER BY key').all();const start=trace.length;
- const session=await consumer.beginRead({requestId:'e2e'});assert.equal((await session.getEvidence()).items[0].content,text);assert.equal(session.selection.corpusBytes,Buffer.byteLength(text));await session.bindDraft('DRAFT_FROM_CURRENT_TEXT');assert.equal(await session.finalizeDraft(),'DRAFT_FROM_CURRENT_TEXT');
+ const session=await consumer.beginRead({requestId:'e2e',queryText:'은빛 열쇠'});
+ assert.deepEqual(selected.map(row=>row[0]).sort(),['flashback','hayaku','libra'],'every owner is asked to select');
+ assert.ok(selected.every(row=>row[1]===scope.scopeKey&&row[2]==='은빛 열쇠'),'owners get the scope and the query');assert.equal((await session.getEvidence()).items[0].content,text);assert.equal(session.selection.corpusBytes,Buffer.byteLength(text));await session.bindDraft('DRAFT_FROM_CURRENT_TEXT');assert.equal(await session.finalizeDraft(),'DRAFT_FROM_CURRENT_TEXT');
  assert.deepEqual(app.repositories.libra.database.prepare('SELECT * FROM kv ORDER BY key').all(),before);assert.equal(app.repositories.libra.database.prepare('SELECT COUNT(*) n FROM operations').get().n,0);
- assert.equal(trace.slice(start).length,0,'the LIBRA owner read must not touch the server read-session endpoints any more');
- put(key,{schema:'libra.canonical_memory.v1',status:'committed',scopeKey:scope.scopeKey,memoryId:'one',revision:1,sourceDigest:'source-one',turnRange:ref.turnRange,text:'explicit replacement'},2);
- await assert.rejects(()=>session.finalizeDraft(),e=>/^LIB_READ_/.test(e.code));assert.equal(g.getCalls(),0);
+ assert.equal(trace.slice(start).length,0,'GRADIA never touches the server read-session endpoints');
+ assert.equal(g.getCalls(),0,'no model call in a read');
 });

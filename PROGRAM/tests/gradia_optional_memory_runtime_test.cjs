@@ -11,7 +11,9 @@ const files={libra:'LIBRA.js',hayaku:'HAYAKU_Locator_Continuity.js',flashback:'F
 const sha=v=>crypto.createHash('sha256').update(v).digest('hex');
 const schemaValue=s=>s.const!==undefined?s.const:s.type==='object'?Object.fromEntries((s.required||[]).map(k=>[k,schemaValue(s.properties[k])])):s.type==='array'?Array.from({length:Math.max(s.minItems||0,24)},(_,i)=>{const v=schemaValue(s.items);return typeof v==='string'?v+' '+i:v;}):s.type==='boolean'?true:s.type==='number'||s.type==='integer'?1:'Preserve the current library scene.';
 const wait=async(fn,label)=>{const start=Date.now();while(Date.now()-start<15000){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT_TIMEOUT '+label);};
-async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=false}={}){
+// Owners answer GRADIA over plugin IPC in every storage mode (ownerMode); GRADIA never reads the
+// memory server itself, so serverOwners only seeds a stale scope registry for that check.
+async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=false,ownerMode='plugin_only'}={}){
  const sources={serial_gradation_agents_for_rp:fs.readFileSync(path.join(root,'plugins/GRADIA.js'),'utf8')};
  for(const o of present)sources[ids[o]]=fs.readFileSync(path.join(root,'plugins',files[o]),'utf8');
  const bus=createHost(sources),unloads=[],values=new Map(),local=new Map(),prompts=[],sent=[],copied=[],owners={},state={responseText:null,onModel:null,current:true,captures:0};
@@ -21,7 +23,9 @@ async function setup(t,present=[],saved,{serverOwners=[],staleLibraRegistry=fals
  const device={getItem:async k=>local.get(k)??null,setItem:async(k,v)=>local.set(k,v)};
  if(saved)local.set('serial_gradation_agents_for_rp:lib_read_connection:v1',JSON.stringify(saved));
  for(const o of present){owners[o]=createOwner({role:'owner',owner:o,api:bus.api(ids[o]),primitives:{fingerprint:sha,byteLength:v=>Buffer.byteLength(v)},
-  boundary:async()=>({scope:{scopeKey:o+'-scope',characterId:'char',chatId:'chat'},mode:'plugin_only'}),
+  boundary:async()=>({scope:{scopeKey:o+'-scope',characterId:'char',chatId:'chat'},mode:ownerMode}),
+  // Drafting reads each owner with select: the owner decides what is relevant.
+  select:async()=>{state.captures++;return {content:o.toUpperCase()+'_OPTIONAL_MEMORY'};},
   capture:async()=>{state.captures++;return {items:[{id:o+'-record',key:o+'-key',content:o.toUpperCase()+'_OPTIONAL_MEMORY',source:{namespace:o}}],assertCurrent:async()=>state.current,close(){}};}});await owners[o].start();}
  for(const owner of [...serverOwners,...(staleLibraRegistry?['libra']:[])]){
   const scope={scopeKey:owner+'-scope',characterId:'char',chatId:'chat'};
@@ -75,7 +79,8 @@ for(const [mode,multi,expected]of [['normal','lightweight',4],['normal','heavywe
 for(const mode of ['novel','rp'])test(`no owners: ${mode} Input Writer copies a choice without memory reads`,async t=>{const f=await setup(t);assert.equal(await f.writer(mode),true);assert.equal(f.copied.length,1);assert.ok(f.prompts.length>=1);assert.ok(!f.bus.messages.length);assert.equal(f.host.plugin.getLibReadOnlyStatus().connection.state,'disconnected');});
 test('no owners: failed IPC/server connection still permits native pipeline and Input Writer',async t=>{
  const f=await setup(t);let s=await f.host.plugin.connectLibReadOnly('','plugin_ipc');assert.equal(s.state,'error');assert.equal(s.reason,'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');await f.configure();await f.run();assert.equal(f.prompts.length,4);assert.equal(await f.writer(),true);
- s=await f.host.plugin.connectLibReadOnly('','unified_engine');assert.equal(s.state,'error');assert.equal(s.reason,'LIB_READ_SCOPE_REGISTRY_UNAVAILABLE');assert.equal(f.state.captures,0);t.diagnostic(JSON.stringify({ipc:'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE',server:s.reason}));
+ // A saved legacy server source connects through plugin IPC as well and fails the same way.
+ s=await f.host.plugin.connectLibReadOnly('','unified_engine');assert.equal(s.state,'error');assert.equal(s.reason,'LIB_READ_PLUGIN_OWNERS_UNAVAILABLE');assert.equal(s.readSource,'plugin_ipc');assert.equal(f.state.captures,0);
 });
 
 test('a request waits for the ongoing explicit connection and consumes its evidence',async t=>{
@@ -117,8 +122,13 @@ test('owner loss before read allows both the native pipeline and a fresh native 
  const f=await setup(t,['hayaku']);assert.equal((await f.host.plugin.connectLibReadOnly('','plugin_ipc')).state,'connected');await f.owners.hayaku.dispose();await f.configure();let at=Date.now();await f.run();assert.equal(f.prompts.length,4);assert.ok(!f.prompts.some(p=>JSON.stringify(p).includes('HAYAKU_OPTIONAL_MEMORY')));assert.ok(Date.now()-at<5000,'missing owner does not consume the capture timeout');t.diagnostic('pipeline fallback ms: '+(Date.now()-at));
  const before=f.prompts.length;at=Date.now();assert.equal(await f.writer(),true);assert.equal(f.prompts.length,before+1);assert.ok(Date.now()-at<5000,'availability probe replaces the long capture wait');t.diagnostic('writer fallback ms: '+(Date.now()-at));
 });
-test('owner loss after memory consumption rejects the influenced draft without extra model calls',async t=>{
- const f=await setup(t,['flashback']);assert.equal((await f.host.plugin.connectLibReadOnly('','plugin_ipc')).state,'connected');await f.configure();f.state.onModel=async()=>{f.state.current=false;};await assert.rejects(()=>f.run(),/LIB_READ_/);assert.equal(f.prompts.length,1);
+// A read is a snapshot for one request: it is never reused, so memory from an owner that has since
+// gone does not reach the next request, and that request costs no extra calls.
+test('owner loss after a read keeps that memory out of the next request',async t=>{
+ const f=await setup(t,['flashback']);assert.equal((await f.host.plugin.connectLibReadOnly('','plugin_ipc')).state,'connected');await f.configure();
+ await f.run();assert.equal(f.prompts.length,4);assert.ok(f.prompts.every(p=>JSON.stringify(p).includes('FLASHBACK_OPTIONAL_MEMORY')));
+ await f.owners.flashback.dispose();const before=f.prompts.length;
+ await f.run();assert.equal(f.prompts.length,before+4);assert.ok(f.prompts.slice(before).every(p=>!JSON.stringify(p).includes('FLASHBACK_OPTIONAL_MEMORY')));
 });
 
 for(const readSource of ['plugin_ipc','unified_engine'])test('saved consent with no owners: '+readSource,async t=>{
@@ -127,14 +137,14 @@ for(const readSource of ['plugin_ipc','unified_engine'])test('saved consent with
  await f.configure();await f.run();assert.equal(f.prompts.length,4);assert.equal(await f.writer(),true);assert.ok(!f.bus.messages.some(m=>m.body.action==='capture'));
 });
 
-for(const serverOwners of [['hayaku'],['flashback'],['hayaku','flashback']])test('server-only peers feed both GRADIA pipeline and writer without LIBRA: '+serverOwners.join('+'),async t=>{
- const f=await setup(t,[],undefined,{serverOwners}),status=await f.host.plugin.connectLibReadOnly('','unified_engine');assert.equal(status.state,'connected',JSON.stringify(status));assert.deepEqual(Array.from(status.activeOwners),serverOwners);
+for(const present of [['hayaku'],['flashback'],['hayaku','flashback']])test('server-mode owners feed both GRADIA pipeline and writer over plugin IPC without LIBRA: '+present.join('+'),async t=>{
+ const f=await setup(t,present,undefined,{ownerMode:'server_only'}),status=await f.host.plugin.connectLibReadOnly('','plugin_ipc');assert.equal(status.state,'connected',JSON.stringify(status));assert.deepEqual(Array.from(status.activeOwners),present);
  await f.configure();const output=await f.run();assert.equal(f.prompts.length,4);assert.ok(JSON.stringify(output).includes('GRADIA_LIB_EVIDENCE_NO_REUSE_V1'));
- assert.equal(await f.writer(),true);for(const owner of serverOwners)assert.ok(f.prompts.every(body=>JSON.stringify(body).includes(owner.toUpperCase()+'_OPTIONAL_MEMORY')));
- assert.equal(f.copied.length,1);assert.ok(!f.bus.messages.some(message=>message.body.action==='capture'));
+ for(const owner of present)assert.ok(f.prompts.every(body=>JSON.stringify(body).includes(owner.toUpperCase()+'_OPTIONAL_MEMORY')));
+ assert.equal(await f.writer(),true);assert.equal(f.copied.length,1);
 });
-test('stale LIBRA registration does not prevent server peers from connecting',async t=>{
- const f=await setup(t,[],undefined,{serverOwners:['hayaku','flashback'],staleLibraRegistry:true}),started=Date.now();
- const status=await f.host.plugin.connectLibReadOnly('','unified_engine');assert.equal(status.state,'connected',JSON.stringify(status));assert.deepEqual(Array.from(status.activeOwners),['hayaku','flashback']);assert.equal(status.unavailable.libra,'LIB_READ_TIMEOUT');assert.ok(Date.now()-started<5000);
+test('stale LIBRA registration does not prevent the other owners from connecting',async t=>{
+ const f=await setup(t,['hayaku','flashback'],undefined,{staleLibraRegistry:true,ownerMode:'server_only'}),started=Date.now();
+ const status=await f.host.plugin.connectLibReadOnly('','plugin_ipc');assert.equal(status.state,'connected',JSON.stringify(status));assert.deepEqual(Array.from(status.activeOwners),['hayaku','flashback']);assert.equal(status.unavailable.libra,'LIB_READ_TIMEOUT');assert.ok(Date.now()-started<5000);
  await f.configure();await f.run();assert.equal(f.prompts.length,4);assert.equal(await f.writer(),true);
 });
