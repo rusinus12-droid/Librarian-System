@@ -89241,7 +89241,7 @@ advanced
       if(kind==='receipt'||kind==='micro'){
         await loadBookReceiptRecoveryStatus(true);if(!valid())return;
         const state=bookReceiptRecoveryState(),rows=kind==='receipt'?guiAsArray(state.status?.receiptStages):guiAsArray(state.status?.microJobs);
-        const eligible=item=>item.scopeKey===binding.scopeKey&&(kind==='receipt'?['missing','failed','pending_write','queued','paused','unavailable'].includes(item.status)&&item.reason!=='journal_read_unavailable':item.status==='publish_ready');
+        const eligible=item=>kind==='receipt'?libraReceiptRepairEligible(item,binding.scopeKey):item.scopeKey===binding.scopeKey&&item.status==='publish_ready';
         options=rows.filter(eligible).filter(item=>!row||recoveryRowIdentity(kind,item)===recoveryRowIdentity(kind,row)).map(item=>({key:recoveryRowIdentity(kind,item),row:cloneJson(item),label:`T${Number(item.turn||0)} · ${item.status}`}));
       }
       selector.replaceChildren(...optionNodes([['','실제 대상을 선택하세요'],...options.map(item=>[item.key,item.label])],''));
