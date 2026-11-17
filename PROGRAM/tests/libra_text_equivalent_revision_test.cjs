@@ -13,14 +13,15 @@ const withPlaceholder = `${BODY}\n\n---\n[LBDATA START]\n<lb-lazy id="lb-xnai" /
 const illustrated = `하연은 이불을 끌어안았다. "세지 마."\n\n<lb-xnai id="scene-11" operation="bc5aa5af-291e-459d-b3b6-9728866a269b" scene="11">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 const rewritten = `하연은 이불을 걷어찼다. "세도 돼."\n\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 
-const microCase = async () => {
+const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illustrated, label = 'illustration'} = {}) => {
   let outputListener;
   const fixture = await serverFixture({mode: 'server_only', host: {addRisuChatListener: async (_kind, handler) => { outputListener = handler; return true; }}});
   try {
     const {f} = fixture;
     f.chat.message = f.chat.message.slice(0, 2);
     f.chat.messages = f.chat.message;
-    f.chat.message[1].data = withPlaceholder;
+    if (rules) await f.r.api.setSourceEditRules(rules);
+    f.chat.message[1].data = first;
     f.control.onCall = async () => {
       const receipt = (await f.r.api.debugReadActiveCompletedTurnReceipt(1)).receipt;
       const quote = receipt.assistant.text.slice(0, 20);
@@ -53,7 +54,7 @@ const microCase = async () => {
     assert.equal(f.control.calls.length, 1, 'the first capture runs one Micro job');
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified');
 
-    f.chat.message[1].data = illustrated;
+    f.chat.message[1].data = rawOnly;
     const preRecaptureReader = await f.r.api.readActiveMicroMemoryForTurn(1);
     assert.equal(preRecaptureReader.status, 'verified', 'Micro reader stays verified before receipt recapture on illustration-only raw edit: ' + JSON.stringify({status: preRecaptureReader.status, reason: preRecaptureReader.reason}));
     const preRecaptureStatus = await f.r.api.getReceiptRecoveryStatus();
@@ -67,7 +68,7 @@ const microCase = async () => {
     const jobs = (await f.r.api.getReceiptRecoveryStatus()).microJobs || [];
     const row = jobs.find(job => Number(job.turn) === 1);
     assert.ok(!row || row.reason !== 'micro_work_missing', 'the turn is not reported as micro_work_missing: ' + JSON.stringify(row));
-    assert.equal(f.control.calls.length, 1, 'no Micro job reruns for an illustration');
+    assert.equal(f.control.calls.length, 1, 'no Micro job reruns for a ' + label + ' change');
 
     f.chat.message[1].data = rewritten;
     const staleReader = await f.r.api.readActiveMicroMemoryForTurn(1);
@@ -99,8 +100,14 @@ const lensCase = async () => {
   } finally { await f.close?.(); }
 };
 
+// 원문 재분석의 태그 관리: a tag the user set to be ignored changes only raw bytes, so the turn
+// keeps its analysis the same way an illustration does (it used to need a fresh Micro job).
+const STATUS_RULES = {version: 1, ignoredTags: ['lb-xnai', 'status-window'], unwrapTags: [], sourceTags: [], controls: ['html-comment', 'lbdata']};
+const withStatus = hp => `${BODY}\n\n<status-window>HP ${hp} · 위치: 침실</status-window>`;
+
 (async () => {
   await microCase();
+  await microCase({rules: STATUS_RULES, first: withStatus(10), rawOnly: withStatus(9), label: 'user-ignored tag'});
   await lensCase();
   console.log('libra_text_equivalent_revision_test: ok');
 })().catch(error => { console.error(error); process.exit(1); });

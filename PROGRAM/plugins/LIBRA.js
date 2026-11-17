@@ -53381,8 +53381,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     // An earlier receipt of a turn that still matches the current one in everything Micro reads:
     // the same user and assistant messages, the same analyzed text (sourceDigest), and raw bytes
-    // differing only in LightBoard illustration/lazy/LBDATA blocks. Other raw-only variants (such
-    // as stage markers or hidden raw rerolls) still produce a fresh Micro provenance.
+    // differing only in content the source rules leave out: the user's tag rules (원문 재분석의 태그
+    // 관리) plus LightBoard illustration/lazy/LBDATA blocks. The receipt itself stays bound to the
+    // raw bytes; other raw-only variants (stage markers, hidden raw rerolls) still produce a fresh
+    // Micro provenance.
     const stripIllustrationRawOnly = value => string(value || '')
       .replace(/\[LBDATA START\][\s\S]*?(?:\[LBDATA END\]|$)/gi, '')
       .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\s\S]*?<\/lb-xnai\s*>/gi, '')
@@ -53391,6 +53393,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       .replace(/<lb-lazy\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
+    // The user's tag rules first (the same projection the analyzed text uses), then the fixed
+    // illustration carriers, so a default setup behaves as before and custom rules extend it.
+    const neutralRawSegment = value => stripIllustrationRawOnly(memorySuiteProjectSourceTags(string(value || ''), 'libra'));
     const sameIllustrationNeutralRaw = (leftReceipt, rightReceipt) => {
       if (!leftReceipt?.rawSourcePacket || !rightReceipt?.rawSourcePacket) return false;
       for (const role of ['user', 'assistant']) {
@@ -53399,7 +53404,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (!leftSegs.length || leftSegs.length !== rightSegs.length) return false;
         for (let i = 0; i < leftSegs.length; i += 1) {
           if (string(leftSegs[i]?.rawType || '') !== string(rightSegs[i]?.rawType || '')) return false;
-          if (stripIllustrationRawOnly(leftSegs[i]?.rawValue) !== stripIllustrationRawOnly(rightSegs[i]?.rawValue)) return false;
+          if (neutralRawSegment(leftSegs[i]?.rawValue) !== neutralRawSegment(rightSegs[i]?.rawValue)) return false;
         }
       }
       return true;
