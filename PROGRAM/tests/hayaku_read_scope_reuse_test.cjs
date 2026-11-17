@@ -89,3 +89,17 @@ test('a new request drops the shared answer, and a turn stays within its host-re
   assert.ok(turn<=30,'full-character reads in one request: '+turn);
  }finally{await runtime.dispose();}
 });
+
+test('a read that starts after an invalidation never joins a resolution begun before it',async()=>{
+ const {runtime,reads,provider,shared}=await start();
+ try{
+  const resolvedBefore=shared().resolved,joinedBefore=shared().joined;
+  // The first read starts resolving; the chat changes before it settles.
+  const early=provider({intent:'read'});
+  runtime.hayaku.__readScope.invalidate();
+  const late=provider({intent:'read'});
+  await Promise.all([early,late]);
+  assert.equal(shared().joined-joinedBefore,0,'the later read did not join the earlier resolution');
+  assert.equal(shared().resolved-resolvedBefore,2,'the later read resolved afresh');
+ }finally{await runtime.dispose();}
+});

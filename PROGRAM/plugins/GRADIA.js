@@ -14991,9 +14991,20 @@ ${passage.text || ''}`, 420));
   const selectManualSkillsForStage = (stage, settings = {}) => {
     if (!SKILL_STAGE_IDS.includes(stage)) return {engine:MANUAL_SKILL_SELECTION_VERSION,stage,selected:[],baselineIds:[]};
     const library = skillLibraryForSettings(settings, true);
-    const allIds = normalizeSkillStageSelections(settings.skillStageSelections)[stage].filter(id => !GRADIA_BASE_SKILL_IDS.includes(id));
+    const stageSelections = normalizeSkillStageSelections(settings.skillStageSelections);
+    const stageReferences = normalizeSkillStageReferences(settings.skillStageReferences);
+    const allIds = stageSelections[stage].filter(id => !GRADIA_BASE_SKILL_IDS.includes(id));
     const ids = allIds.slice(0, MANUAL_SKILL_MAX_PER_STAGE), overCount = allIds.slice(MANUAL_SKILL_MAX_PER_STAGE);
-    const references = normalizeSkillStageReferences(settings.skillStageReferences)[stage];
+    const references = { ...stageReferences[stage] };
+    // A host stage also applies the skills chosen for the sub-AIDEs it runs, each within that
+    // sub-AIDE's own per-stage limit; a skill chosen in both places is applied once.
+    for (const subStage of extensionAidesHostedBy(stage, settings)) {
+      for (const id of (stageSelections[subStage] || []).filter(id => !GRADIA_BASE_SKILL_IDS.includes(id)).slice(0, MANUAL_SKILL_MAX_PER_STAGE)) {
+        if (ids.includes(id)) continue;
+        ids.push(id);
+        references[id] = (stageReferences[subStage] || {})[id] || [];
+      }
+    }
     const selected = [];
     if (overCount.length) warn(`skill_count_limit:${stage}`, `단계당 스킬은 ${MANUAL_SKILL_MAX_PER_STAGE}개까지입니다. ${overCount.join(', ')}은(는) 적용하지 않았습니다.`);
     for (const id of ids) {
@@ -15408,13 +15419,16 @@ ${passage.text || ''}`, 420));
     ]));
     for (const stageName of discoveryStages) {
       const def = STAGE_LORE_RERANKER_DEFS[stageName] || STAGE_LORE_RERANKER_DEFS.shadow_act;
+      // A host stage also looks for lore in the domain of each sub-AIDE it runs.
+      const domainQuery = [def.domainQuery, ...(options.hostedSubStages?.[stageName] || []).map(stageId => STAGE_LORE_RERANKER_DEFS[stageId]?.domainQuery)]
+        .filter(Boolean).join(' ');
       const rescueIds = [];
-      if (stageName !== 'shadow_act' && text(def.domainQuery || '').trim()) {
+      if (stageName !== 'shadow_act' && text(domainQuery || '').trim()) {
         // Domain rescue is cheap: it uses the already-built inverted index and does not run
         // passage extraction, CBS rendering, or a second all-lore precision reranker.
         const domainBm25f = loreFullTextBm25fCorpusScores(
           mergedUniverse,
-          def.domainQuery,
+          domainQuery,
           LORE_BM25F_LORE_FIELD_DEFS,
           { queryLimit: 180, uniqueQueryLimit: 120, scoreScale: 1.45, corpus: universeCorpus }
         );
@@ -15673,7 +15687,8 @@ ${passage.text || ''}`, 420));
         recentMessages: recent?.loreSearchMessages || [],
         defaultScanDepth: source?.loreSettings?.scanDepth ?? source?.loreSettings?.scan_depth ?? settings?.turnWindow ?? DEFAULT_RECENT_TURNS,
         stageNames: sharedDiscoveryStageNames,
-        stageReferences: sharedDiscoveryStageReferences
+        stageReferences: sharedDiscoveryStageReferences,
+        hostedSubStages: Object.fromEntries(CORE_AIDE_STAGE_IDS.map(stageId => [stageId, extensionAidesHostedBy(stageId, settings || {})]))
       }
     );
     const activeLore = sharedCandidatePool.selected;
@@ -26304,15 +26319,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // A movement is a line saying something was set in motion and is still under way.
   const WORLD_DYNAMICS_KINDS = Object.freeze([
     ['pursuit', /추격|뒤쫓|쫓고|쫓아|쫓기|추적|수배|현상금|pursu|chasing|hunting for|bounty|wanted/i],
-    ['deadline or promise', /기한|마감|까지\s|(?:하|만나|돌아오|갚|끝내|넘기|전하|가져오|찾아오)기로|약속했|deadline|due (?:in|by)|promised to|agreed to/i],
+    ['deadline or promise', /기한|마감|(?:\d+\s*일|내일|모레|글피|주말|월말)\s*까지|(?:하|만나|돌아오|갚|끝내|넘기|전하|가져오|찾아오)기로|약속했|deadline|due (?:in|by)|promised to|agreed to/i],
     ['inquiry or procedure', /수사|조사\s*(?:중|를|가|에)|심문|재판|감사를|고발|신고했|investigat|inquiry|trial|audit/i],
-    ['order or dispatch', /파견|출동|(?:명령|지시|지령)(?:을|를)?\s*(?:내렸|내리|받았|전했)|소집|보냈|보내왔|dispatched|was sent|ordered/i],
+    ['order or dispatch', /파견|출동|(?:명령|지시|지령)(?:을|를)?\s*(?:내렸|내리|받았|전했)|소집|(?:추격대|병사|병력|군대|군사|부하|사람|전령|사자|사신|밀사|사절|서신|편지|전갈|첩자|정찰대|정찰병|수색대|원군|지원군)(?:들)?(?:을|를)?\s*보냈|보내왔|dispatched|was sent|ordered/i],
     ['travel or approach', /오는\s*중|향하고|향했|출발했|떠났|이동\s*중|돌아오는|진군|on (?:the|his|her|their) way|heading (?:for|to)|set out|marching|en route/i],
     ['rumor', /소문|풍문|입소문|rumou?r/i],
     ['scheme or preparation', /음모|모의|계획(?:을|이)?\s*(?:세웠|꾸미|진행)|노리고|준비\s*(?:중|하고)|plotting|scheming|preparing/i]
   ]);
   // A line that says the movement ended is a record of an ending, not a movement.
   const WORLD_DYNAMICS_ENDED_RE = /취소|철회|무산|끝났|마무리|해결됐|해결되|체포됐|붙잡혔|잡혔|도착했|완료|지켰|갚았|called off|cancel|resolved|arrived|caught|completed|fulfilled/i;
+  const worldDynamicsEndedLine = line => {
+    const value = String(line || '');
+    const pattern = new RegExp(WORLD_DYNAMICS_ENDED_RE.source, 'gi');
+    for (const match of value.matchAll(pattern)) {
+      const after = value.slice(match.index + match[0].length, match.index + match[0].length + 6);
+      const before = value.slice(Math.max(0, match.index - 14), match.index);
+      if (/^\s*지\s*(?:않|못|도\s*않)/.test(after)) continue;
+      if (/(?:\bnot|\bnever|n['’]t|\byet to)\s+(?:been\s+|be\s+)?$/i.test(before)) continue;
+      return true;
+    }
+    return false;
+  };
   const WORLD_DYNAMICS_SPAN_TAIL = '\\s*(?:뒤|후|안에|안으로|이내|내로|내에|걸|만에)';
   const WORLD_DYNAMICS_SPAN_WORDS = Object.freeze([
     ['하루', 1], ['이틀', 2], ['사흘', 3], ['나흘', 4], ['닷새', 5], ['엿새', 6], ['이레', 7], ['일주일', 7], ['열흘', 10], ['보름', 15], ['한\\s*달', 30]
@@ -26359,7 +26386,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const WORLD_DYNAMICS_RANK = Object.freeze({ overdue: 0, due: 1, in_motion: 2, not_due: 3, unknown: 4, ended: 5 });
   const WORLD_DYNAMICS_MAX_MOVEMENTS = 6;
   const worldDynamicsReadLine = (entry, now, clock) => {
-    if (WORLD_DYNAMICS_ENDED_RE.test(entry.line)) return null;
+    if (worldDynamicsEndedLine(entry.line)) return null;
     const kind = WORLD_DYNAMICS_KINDS.find(([, pattern]) => pattern.test(entry.line));
     if (!kind) return null;
     const deadline = worldDynamicsDeadline(entry.line, now);
@@ -26420,21 +26447,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return true;
     });
     const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line),
-      kinds: WORLD_DYNAMICS_ENDED_RE.test(entry.line) ? WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) : [] }))
-      .filter(item => item.kinds.length);
+      ended: worldDynamicsEndedLine(entry.line),
+      kinds: WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) }))
+      .filter(item => item.ended && (item.kinds.length || item.subjects.size));
     const read = unique.map((entry, index) => {
       const row = worldDynamicsReadLine(entry, now, clock);
       return row ? { ...row, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
     }).filter(Boolean);
-    const later = (end, item) => (item.day !== null && end.day !== null ? end.day >= item.day : end.index > item.index);
+    const later = (end, item) => (item.day !== null && end.day !== null && end.day !== item.day ? end.day > item.day : end.index > item.index);
     // An ending closes a movement only when it is the same matter: same kind, recorded later
     // (by story day, else by order), and naming the same party. The kind alone is not enough:
     // calling off the southern guard's pursuit does not end the northern order's. An ending
     // that names nobody closes a movement only when it is the one such movement before it.
-    const endedBy = item => endings.some(end => end.kinds.includes(item.kind) && later(end, item)
-      && (end.subjects.size
-        ? [...end.subjects].some(word => item.subjects.has(word))
-        : read.filter(other => other.kind === item.kind && later(end, other)).length === 1));
+    const sharesSubject = (end, item) => [...end.subjects].some(word => item.subjects.has(word));
+    const endedBy = item => endings.some(end => later(end, item) && (end.kinds.length
+      ? end.kinds.includes(item.kind) && (end.subjects.size
+        ? sharesSubject(end, item)
+        : read.filter(other => other.kind === item.kind && later(end, other)).length === 1)
+      // No kind word: the ending names its matter only through who or what it is about.
+      : sharesSubject(end, item)));
     const movements = read.map(item => (endedBy(item)
       ? { ...item, state: 'ended', text: `[${item.kind}] a later ending of this matter is on record: treat it as ended unless the evidence shows otherwise` }
       : item))

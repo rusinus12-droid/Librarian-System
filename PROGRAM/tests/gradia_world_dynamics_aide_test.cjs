@@ -255,6 +255,51 @@ test('an ending that names nobody closes a movement only when it is the only one
   assert.match(several, /Recorded endings[^\n]*\n- \(LIB\) 이야기 15일째 추격이 취소됐다/, 'the ending is still shown for the model to weigh');
 });
 
+test('an ending that names only its outcome closes the movement about the same party', async t => {
+  const packet = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 경비대가 도적을 추격하기 시작했다',
+    '이야기 15일째 도적이 붙잡혔다'
+  ].join('\n'));
+  assert.match(packet, /\[pursuit\] a later ending of this matter is on record/);
+  assert.doesNotMatch(packet, /Candidate this turn/);
+
+  const other = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 경비대가 도적을 추격하기 시작했다',
+    '이야기 15일째 소매치기가 붙잡혔다'
+  ].join('\n'));
+  assert.doesNotMatch(other, /a later ending of this matter is on record/, 'an outcome about someone else ends nothing');
+});
+
+test('on the same story day the record order decides whether an ending came later', async t => {
+  const packet = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 12일째 북부 기사단의 추격이 취소됐다',
+    '이야기 12일째 북부 기사단이 다시 추격대를 보냈다'
+  ].join('\n'));
+  assert.doesNotMatch(packet, /a later ending of this matter is on record/, 'the pursuit restarted after the ending');
+  assert.match(packet, /\[pursuit\] in motion for 5 days/);
+});
+
+test('everyday phrases are not movements, and a negated ending is not an ending', async t => {
+  const everyday = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 15일째 둘은 조용한 밤을 보냈다',
+    '이야기 16일째 소문은 성문까지 퍼졌다'
+  ].join('\n'));
+  assert.doesNotMatch(everyday, /\[order or dispatch\]/, '"밤을 보냈다" sends nobody');
+  assert.doesNotMatch(everyday, /\[deadline or promise\]/, '"성문까지" is a place, not a deadline');
+
+  const open = await packetOf(t, [
+    '[STORY CLOCK] 현재: 이야기 17일째 · 저녁',
+    '이야기 10일째 조사관이 수사를 시작했다',
+    '이야기 14일째 수사는 아직 해결되지 않았다'
+  ].join('\n'));
+  assert.doesNotMatch(open, /a later ending of this matter is on record/);
+  assert.match(open, /\[inquiry or procedure\] in motion for 7 days/);
+});
+
 test('nothing on record: the packet says to surface nothing', async t => {
   const packet = await packetOf(t, '', ['민아는 문을 열었다.']);
   assert.match(packet, /No off-scene movement on record\. Surface nothing\./);

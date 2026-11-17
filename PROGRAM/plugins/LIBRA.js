@@ -40410,9 +40410,16 @@ function createLibraReadonlySourceContext(owner) {
       const chat = await safeApi('getChatFromIndex', () => liveApi.getChatFromIndex(charIndex, chatIndex), false);
       if (!chat) return resolveContext(true);
       if (MemorySuiteHostLineage.marker(chat).present) return resolveContext(true);
+      const identity = `${charIndex}:${chatIndex}`;
+      const chatId = contextId(chat, identity || 'chat');
       let known = state.receiptValidationCharacterId;
-      if (!known || known.charIndex !== charIndex || Date.now() - known.at >= RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS) {
-        const characterInfo = await loadCurrentCharacterForRisuContext(false);
+      // The id is bound to the chat it was read with, not only to the list position: after a
+      // character is deleted or imported, another character can sit at the same index, but its
+      // open chat has a different chat id, so a new chat id always reads the character again.
+      if (!known || known.charIndex !== charIndex || known.chatId !== chatId
+        || Date.now() - known.at >= RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS) {
+        // A changed position or chat must not be answered from the character read cache.
+        const characterInfo = await loadCurrentCharacterForRisuContext(Boolean(known) && (known.charIndex !== charIndex || known.chatId !== chatId));
         const character = characterInfo.character;
         if (!character) {
           state.receiptValidationCharacterId = null;
@@ -40420,14 +40427,13 @@ function createLibraReadonlySourceContext(owner) {
         }
         known = state.receiptValidationCharacterId = {
           charIndex,
+          chatId,
           characterId: contextId(character, 'character'),
           lineageCharacterId: string(character?.chaId || character?.id || character?.characterId || ''),
           at: Date.now()
         };
       }
-      const identity = `${charIndex}:${chatIndex}`;
       const characterId = known.characterId;
-      const chatId = contextId(chat, identity || 'chat');
       if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
       const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
       const scope = { characterId, chatId, scopeKey };

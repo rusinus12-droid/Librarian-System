@@ -24359,16 +24359,25 @@ const MemorySuiteSnapshotCache = (() => {
       });
     // A caller may mutate public records. Never expose the cached immutable tree on mutable paths,
     // while read-only C0 metadata verification avoids cloning the whole shard tree on every request.
+    // Owners may change any nested field of a record, so each record is copied in depth. The
+    // embedding vector is the one large field, and no reader changes it in place, so it is shared.
+    const cloneShardRecordForOwner = record => {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) return cloneRuntimeValue(record, record);
+      const { vector, ...rest } = record;
+      const copy = cloneRuntimeValue(rest, {});
+      if (Object.prototype.hasOwnProperty.call(record, 'vector')) copy.vector = vector;
+      return copy;
+    };
     const skipEnvelopeClone = Boolean(options.verifyVectorPayloadMetadataOnly === true && typeof options.expectedSerializedRaw === 'string');
     const cachedParsed = decodedEnvelope.parsed;
     let parsed = cachedParsed;
     if (options.projectionOwner && !skipEnvelopeClone && cachedParsed && typeof cachedParsed === 'object') {
       if (Array.isArray(cachedParsed)) {
-        parsed = cachedParsed.map(r => (r && typeof r === 'object' ? { ...r, ...(r.metadata && typeof r.metadata === 'object' && !Array.isArray(r.metadata) ? { metadata: { ...r.metadata } } : {}) } : r));
+        parsed = cachedParsed.map(cloneShardRecordForOwner);
       } else if (Array.isArray(cachedParsed.records)) {
         parsed = {
           ...cachedParsed,
-          records: cachedParsed.records.map(r => (r && typeof r === 'object' ? { ...r, ...(r.metadata && typeof r.metadata === 'object' && !Array.isArray(r.metadata) ? { metadata: { ...r.metadata } } : {}) } : r))
+          records: cachedParsed.records.map(cloneShardRecordForOwner)
         };
       } else {
         parsed = cloneRuntimeValue(cachedParsed, null);
@@ -30595,9 +30604,21 @@ const MemorySuiteSnapshotCache = (() => {
 
   const liveChatStateFromSnapshot = (snapshot = {}, scopeKeyInput = '') => liveChatStateFromNormalized(normalizeStoredChatMessages(snapshot.chat || {}, scopeKeyInput));
 
+  // A live state built from normalized messages is reused for the same chat, so its indexed form
+  // is built once per state. It is the same normalized shape every caller has always received.
+  const indexedConversationStates = new WeakMap();
   const conversationStateWithIndexes = (state = {}) => {
-    if (state && flashbackIndexedLiveStates.has(state)) return state;
-    const pairs = Array.isArray(state.pairs) ? state.pairs.map(pair => ({
+    const reusable = Boolean(state && flashbackIndexedLiveStates.has(state));
+    if (reusable) {
+      const known = indexedConversationStates.get(state);
+      if (known) return known;
+    }
+    const indexed = buildConversationStateWithIndexes(state);
+    if (reusable) indexedConversationStates.set(state, indexed);
+    return indexed;
+  };
+  const buildConversationStateWithIndexes = (state = {}) => {
+    const pairs =Array.isArray(state.pairs) ? state.pairs.map(pair => ({
       pairIndex: Number(pair?.pairIndex || 0) || 0,
       userPosition: Number(pair?.userPosition || 0) || 0,
       assistantPosition: Number(pair?.assistantPosition || 0) || 0,

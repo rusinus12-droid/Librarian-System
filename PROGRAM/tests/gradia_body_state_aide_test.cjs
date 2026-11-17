@@ -66,6 +66,16 @@ test('상태 rides in 인물 AIDE’s call and 억결 in 플롯 AIDE’s call, w
   assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /억결 AIDE runs inside this stage as a sub-step/);
 });
 
+test('a skill chosen for 상태 AIDE reaches 인물 AIDE, the stage that runs it', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f, { skill_stage_selections: JSON.stringify({ aide_body_state: ['quiet-interior-beat'] }), skill_router_enabled: 'false' });
+  await runTurn(f, '문을 연다.');
+  const host = JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  assert.equal(host.split('[COMPILED SKILL — quiet-interior-beat]').length - 1, 1, 'applied once in the host call');
+  assert.ok(!JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_plot')).includes('[COMPILED SKILL — quiet-interior-beat]'), 'not in other stages');
+});
+
 test('without its parent a sub-AIDE rides in the last core AIDE that runs, and runs alone only with none', async t => {
   const hosted = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(hosted, '민아는 문 앞에 섰다.');

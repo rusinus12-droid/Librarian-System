@@ -14656,6 +14656,9 @@ const invalidateMemorySuiteHayakuReadScope = () => {
   memorySuiteHayakuReadScope.at = 0;
   memorySuiteHayakuReadScope.value = null;
   memorySuiteHayakuReadScope.generation += 1;
+  // A resolution already under way may describe the chat that was open before this point, so
+  // later reads must not join it; its own callers still get their answer.
+  memorySuiteHayakuReadScope.inFlight = null;
 };
 const resolveMemorySuiteHayakuCurrentScope = async () => {
   let scope = null;
@@ -16061,14 +16064,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           || candidateMessages.length > targetSignatures.length) continue;
         const candidateSignatures = candidateMessages.map(chatCopyMessageSignature);
         const exactIdMatch = candidateSignatures.every((signature, index) => signature === targetSignatures[index]);
+        const candidateTitle = text(candidate?.name || candidate?.title || candidate?.chatName || '').trim();
+        const titleAffinity = candidateTitle === baseTitle ? 2
+          : candidateTitle.replace(/\s+\((?:Copy|Branch)(?:\s+\d+)?\)$/i, '').trim() === baseTitle ? 1 : 0;
         if (!exactIdMatch) {
+          // Chats of one character often open with the same greeting, so matching text names a
+          // source only when the copy's title names the same chat.
+          if (!titleAffinity) continue;
           const candidateTextSignatures = candidateMessages.map(chatCopyTextSignature);
           if (!candidateTextSignatures.every((signature, index) => signature === targetTextSignatures[index])) continue;
         }
         const candidateScopeKey = `chat_${stableHash64(`${text(character?.chaId || '').trim()}\n${candidateChatId}`)}`;
-        const candidateTitle = text(candidate?.name || candidate?.title || candidate?.chatName || '').trim();
-        const titleAffinity = candidateTitle === baseTitle ? 2
-          : candidateTitle.replace(/\s+\((?:Copy|Branch)(?:\s+\d+)?\)$/i, '').trim() === baseTitle ? 1 : 0;
         matchingChats.push({
           sourceChatId: candidateChatId,
           sourceScopeKey: candidateScopeKey,
