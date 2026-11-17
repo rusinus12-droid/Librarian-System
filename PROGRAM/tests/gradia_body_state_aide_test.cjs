@@ -377,3 +377,65 @@ test('a real run reads conception eligibility from the character card profile', 
   assert.match(body, /- Minah Kim:\n *cycle: day \d+ of \d+ \(auto \(fixed seed, story date\)\)/);
   assert.match(body, /sexual contact \d+ days ago [^\n]*\[can conceive: profile: female\]/);
 });
+
+// User decision 2026-11-17 (after comparing a Dusk cycle editor): a pregnancy runs on a timeline,
+// a birth starts a postpartum state, both replace the cycle, and a pregnancy can be kept on the
+// card so it no longer depends on the contact line being recalled.
+const pregnancyBase = { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true };
+test('a pregnancy on the card runs on its timeline and replaces the cycle', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = card => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'p', libText: '[STORY CLOCK] 현재: 이야기 40일째 · 저녁',
+    settings: { ...pregnancyBase, bodyStateCards: { p: [{ name: '세라', cycleLength: 28, lastPeriodStart: '3월 1일', ...card }] } }, profileGenders: { 세라: 'female' } });
+  const auto = packetFor({ conceptionDate: '이야기 5일째', partner: '하준' });
+  assert.match(auto, /pregnancy: week 5 \(day 36 since conception, card\) → morning sickness: nausea, smell sensitivity, fatigue; due in about 231 days; awareness: she likely knows by now unless the story says otherwise; other party: 하준/);
+  assert.doesNotMatch(auto, /cycle:/, 'no cycle while pregnant');
+  assert.match(packetFor({ conceptionDate: '이야기 5일째', knows: 'no' }), /awareness: she does not know yet \(card\): show only the body changes, never her knowing/);
+  assert.match(packetFor({ conceptionDate: '이야기 39일째' }), /pregnancy: week 0 \(day 2 since conception, card\) → no bodily change yet/);
+});
+
+test('a recent birth on the card gives a postpartum state until a period is recorded', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (card, libText = '[STORY CLOCK] 현재: 이야기 40일째 · 저녁') => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'b', libText,
+    settings: { ...pregnancyBase, bodyStateCards: { b: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+  const early = packetFor({ lastBirth: '이야기 30일째' });
+  assert.match(early, /postpartum: day 11 after giving birth \(card\) → recovering: bleeding, soreness, exhaustion, broken sleep/);
+  assert.doesNotMatch(early, /cycle:/);
+  assert.match(packetFor({ lastBirth: '이야기 1일째' }, '[STORY CLOCK] 현재: 이야기 90일째 · 저녁'), /postpartum: day 90 after giving birth \(card\) → recovered, but the cycle may not have returned yet/);
+  const back = packetFor({ lastBirth: '이야기 1일째' }, '[STORY CLOCK] 현재: 이야기 90일째 · 저녁\n이야기 85일째 · 아침 세라는 생리를 시작했다');
+  assert.doesNotMatch(back, /postpartum/, 'a period recorded after the birth means the cycle is back');
+  assert.match(back, /cycle: day 6 of 28/);
+});
+
+test('a positive verdict runs on the timeline, and the 상태 panel can pin it to the card', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f, { body_state_reproduction: true });
+  await runTurn(f, '문을 연다.');
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  // Find a contact day whose fixed verdict is positive (deterministic for this scope).
+  let packet = '';
+  for (let day = 1; day <= 28 && !/PREGNANT/.test(packet); day += 1) {
+    packet = f.host.plugin.debugBodyStatePacket({ personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+      libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${day + 30}일째 · 밤 세라는 하준과 관계를 가졌다`,
+      settings: { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true,
+        bodyStateCards: { [scopeKey]: [{ name: '세라', cycleLength: 28, lastPeriodStart: '' }] } } });
+  }
+  assert.match(packet, /PREGNANT \(fixed verdict\)/, 'some contact day in a cycle yields a positive verdict');
+  assert.match(packet, /pregnancy: week \d+ \(day \d+ since conception, fixed verdict\)/);
+  assert.doesNotMatch(packet, /cycle:/, 'no cycle once the verdict is positive');
+  const verdict = f.host.plugin.getRuntime().bodyStateVerdicts[scopeKey].items.find(item => item.name === '세라');
+  assert.match(verdict.conception, /^이야기 \d+일째$/);
+
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  const pin = await f.wait(() => panel.querySelector('[data-body-state-action="pin"]'), 'pin button');
+  assert.ok(panel.querySelector('[data-body-state-verdicts]').textContent.includes(`세라 · 임신 판정 (수정 ${verdict.conception})`));
+  pin.click();
+  await f.wait(() => panel.querySelector('[data-body-state-card-field="conceptionDate"]')?.value === verdict.conception, 'pinned to the card');
+  assert.equal(panel.querySelector('[data-body-state-action="pin"]'), null, 'a pinned verdict is no longer offered');
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  const cards = JSON.parse((await f.host.plugin.getRuntimeSettings()).body_state_cards)[scopeKey];
+  assert.equal(cards.find(card => card.name === '세라').conceptionDate, verdict.conception);
+});

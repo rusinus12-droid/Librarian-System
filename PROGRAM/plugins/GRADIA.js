@@ -3912,6 +3912,7 @@ ${BIANCA_PERSONA_TEXT}`;
     // This run's random scene variable (shared by all stages); not stored.
     sceneVarianceRun: null,
     bodyStateReadings: {},
+    bodyStateVerdicts: {},
     worldDynamicsReadings: {},
     last: null,
     lastAuxiliarySkip: null,
@@ -25901,6 +25902,53 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // Conception chance for one act by day relative to ovulation (fiction-grade approximation).
   const BODY_STATE_CONCEPTION_BY_OVULATION_DAY = Object.freeze({ '-5': 0.1, '-4': 0.16, '-3': 0.14, '-2': 0.27, '-1': 0.31, '0': 0.33, '1': 0.1 });
   const BODY_STATE_DEFAULT_CYCLE = 28;
+  // Pregnancy by days since conception (fiction-grade): the stage and what the body shows.
+  const BODY_STATE_PREGNANCY_STAGES = Object.freeze([
+    [14, 'no bodily change yet'],
+    [35, 'period is late; early tiredness, tender breasts'],
+    [84, 'morning sickness: nausea, smell sensitivity, fatigue'],
+    [112, 'nausea easing, energy returning'],
+    [196, 'belly starting to show; the baby’s movements can be felt'],
+    [266, 'belly large; back pain, short of breath, tires easily'],
+    [Infinity, 'near the due date; labor could begin']
+  ]);
+  const BODY_STATE_DUE_DAYS = 266;
+  // After a birth: early recovery, then a stretch where the cycle may not have returned.
+  const BODY_STATE_POSTPARTUM = Object.freeze({ recoveryDays: 42, cycleReturnDays: 180 });
+  const bodyStatePregnancyLine = (days, source, card) => {
+    const stage = BODY_STATE_PREGNANCY_STAGES.find(([limit]) => days < limit)[1];
+    const left = BODY_STATE_DUE_DAYS - days;
+    const awareness = card?.knows === 'yes' ? 'she knows she is pregnant (card)'
+      : card?.knows === 'no' ? 'she does not know yet (card): show only the body changes, never her knowing'
+        : days >= 35 ? 'she likely knows by now unless the story says otherwise'
+          : days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays ? 'symptoms may make her suspect'
+            : days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
+    return `  pregnancy: week ${Math.floor(days / 7)} (day ${days + 1} since conception, ${source}) → ${stage}; due ${left > 0 ? `in about ${left} days` : 'now'}; awareness: ${awareness}${card?.partner ? `; other party: ${card.partner}` : ''}`;
+  };
+  // Days since a card date: a calendar date, or "이야기 N일째" counted on the story clock.
+  const bodyStateCardDays = (value, now, today) => {
+    const textValue = String(value || '').trim();
+    if (!textValue) return null;
+    const story = textValue.match(/이야기\s*(\d+)\s*일째/);
+    if (story) return today && today.basis === 'story clock' && today.day >= Number(story[1]) ? today.day - Number(story[1]) : null;
+    const date = bodyStateParseDate(textValue);
+    return date && now ? bodyStateDaysBetween(date, now) : null;
+  };
+  // The day a contact happened, written so a card can hold it: the calendar date when the
+  // story has one, else the story day.
+  const bodyStateDayLabel = (daysAgo, now, clock) => {
+    const date = clock?.date ? bodyStateParseDate(clock.date) : now;
+    if (date && date.y) {
+      const at = new Date(Date.UTC(date.y, date.m - 1, date.d) - daysAgo * 86400000);
+      return `${at.getUTCFullYear()}-${String(at.getUTCMonth() + 1).padStart(2, '0')}-${String(at.getUTCDate()).padStart(2, '0')}`;
+    }
+    if (clock && Number.isFinite(clock.day) && clock.day - daysAgo >= 1) return `이야기 ${clock.day - daysAgo}일째`;
+    if (date) {
+      const at = new Date(Date.UTC(2001, date.m - 1, date.d) - daysAgo * 86400000);
+      return `${at.getUTCMonth() + 1}월 ${at.getUTCDate()}일`;
+    }
+    return '';
+  };
   // Weeks after conception when a character could notice: a missed period, then symptoms.
   const BODY_STATE_PREGNANCY_AWARENESS = Object.freeze({ missedPeriodDays: 14, testReliableDays: 14, symptomsDays: 28 });
   const BODY_STATE_RELATIVE_DAYS = Object.freeze([
@@ -25947,10 +25995,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return {
       id: compact(raw.id || '', 40),
       name,
-      cycleLength: Number.isFinite(cycleLength) && cycleLength >= 21 && cycleLength <= 40 ? Math.round(cycleLength) : 0,
+      cycleLength: Number.isFinite(cycleLength) && cycleLength >= 21 && cycleLength <= 45 ? Math.round(cycleLength) : 0,
       lastPeriodStart: compact(raw.lastPeriodStart || '', 40),
       constitution: compact(raw.constitution || '', 160),
       contraception: Object.prototype.hasOwnProperty.call(BODY_STATE_CONTRACEPTION, raw.contraception) ? raw.contraception : '',
+      // A pregnancy the user fixed (or pinned from a verdict): conception day as a date or
+      // "이야기 N일째", the other party, and whether she knows. Configuration, not memory.
+      conceptionDate: compact(raw.conceptionDate || '', 40),
+      partner: compact(String(raw.partner || '').replace(/[\n·]/g, ' '), 60),
+      knows: ['yes', 'no'].includes(raw.knows) ? raw.knows : 'auto',
+      lastBirth: compact(raw.lastBirth || '', 40),
       // yes / no set by the user; auto infers from the profile.
       canConceive: ['yes', 'no'].includes(raw.canConceive) ? raw.canConceive : 'auto'
     };
@@ -26197,12 +26251,29 @@ Begin directly with the in-world response and finish the complete same-turn draf
       cycleConfidence = `auto (fixed seed, ${today.basis})`;
     }
     if (fertility.value === false) cycleDay = null;
-    if (cycleDay !== null) {
+    // A pregnancy or a recent birth replaces the cycle: there is no period to report then.
+    const cycleAt = lines.length;
+    const cycleLine = cycleDay !== null ? (() => {
       const phase = bodyStateCyclePhase(cycleDay, length);
-      lines.push(`  cycle: day ${cycleDay} of ${length} (${cycleConfidence}) → ${phase.phase}; signs: ${phase.signs}`);
+      return `  cycle: day ${cycleDay} of ${length} (${cycleConfidence}) → ${phase.phase}; signs: ${phase.signs}`;
+    })() : '';
+    const cardConception = card?.conceptionDate ? bodyStateCardDays(card.conceptionDate, now, today) : null;
+    let pregnancyLine = '';
+    if (card?.conceptionDate) {
+      pregnancyLine = cardConception !== null
+        ? bodyStatePregnancyLine(cardConception, 'card', card)
+        : '  pregnancy: set on the card, but the conception day cannot be counted against the story date — say only that she is pregnant';
     }
+    const birthDays = card?.lastBirth ? bodyStateCardDays(card.lastBirth, now, today) : null;
+    // A period recorded after the birth means the cycle is back.
+    const periodSinceBirth = periodEntry && birthDays !== null && (bodyStateElapsed(periodEntry, now, clock).days ?? Infinity) < birthDays;
+    const postpartumLine = !pregnancyLine && birthDays !== null && birthDays < BODY_STATE_POSTPARTUM.cycleReturnDays && !periodSinceBirth
+      ? (birthDays < BODY_STATE_POSTPARTUM.recoveryDays
+        ? `  postpartum: day ${birthDays + 1} after giving birth (card) → recovering: bleeding, soreness, exhaustion, broken sleep`
+        : `  postpartum: day ${birthDays + 1} after giving birth (card) → recovered, but the cycle may not have returned yet`)
+      : '';
 
-    if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false) {
+    if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate) {
       const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line));
       for (const exposure of exposures.slice(-3)) {
         if (fertility.value === null) {
@@ -26226,12 +26297,23 @@ Begin directly with the in-world response and finish the complete same-turn draf
         // reaches GRADIA as a LIBRA note instead of a recent-scene line.
         const seedKey = today ? `${scopeKey}|${name}|contact-day:${today.day - elapsed.days}` : `${scopeKey}|${name}|${normalizeForLoreMatch(exposure.line)}`;
         const pregnant = chance > 0 && bodyStateSeedRoll(seedKey) < chance;
+        if (pregnant && !pregnancyLine) {
+          pregnancyLine = bodyStatePregnancyLine(elapsed.days, 'fixed verdict', card);
+          const conception = bodyStateDayLabel(elapsed.days, now, clock);
+          if (scopeKey && conception) {
+            const known = Runtime.bodyStateVerdicts[scopeKey]?.items || [];
+            Runtime.bodyStateVerdicts[scopeKey] = { at: Date.now(), items: [...known.filter(item => item.name !== name), { name, conception }].slice(-FORCED_BOND_MAX_CARDS) };
+          }
+        }
         const aware = elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays
           ? 'symptoms may show (nausea, fatigue)'
           : elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
         lines.push(`  sexual contact ${elapsed.days} days ago (${elapsed.confidence}), cycle day ${exposureCycleDay} then, ${method ? BODY_STATE_CONTRACEPTION[method].label : 'contraception unknown, treated as none'} → chance ${(chance * 100).toFixed(1)}% → ${pregnant ? `PREGNANT (fixed verdict); ${aware}` : 'not pregnant (fixed verdict)'} [can conceive: ${fertility.source}]`);
       }
     }
+    if (pregnancyLine) lines.splice(cycleAt, 0, pregnancyLine);
+    else if (postpartumLine) lines.splice(cycleAt, 0, postpartumLine);
+    else if (cycleLine) lines.splice(cycleAt, 0, cycleLine);
     if (card?.constitution) lines.push(`  constitution (card): ${card.constitution}`);
     if (present) {
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
@@ -45751,6 +45833,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         field('임신 가능', (() => { const node = guiEl('select', { class: 'select', dataset: { bodyStateCardField: 'canConceive', cardId: card.id } }); mockupOption(node, 'auto', '프로필 성별로 추정'); mockupOption(node, 'yes', '예'); mockupOption(node, 'no', '아니요'); node.value = card.canConceive || 'auto'; return node; })())
       ]),
       field('체질·평소 상태', input('constitution', card.constitution, '예: 감기에 약함, 빈혈기')),
+      guiEl('div', { class: 'opt-grid' }, [
+        field('수정일(임신)', input('conceptionDate', card.conceptionDate, '예: 2026-04-03, 이야기 12일째')),
+        field('상대', input('partner', card.partner, '비워도 됩니다')),
+        field('본인 인지', (() => { const node = guiEl('select', { class: 'select', dataset: { bodyStateCardField: 'knows', cardId: card.id } }); mockupOption(node, 'auto', '경과일로 추정'); mockupOption(node, 'yes', '앎'); mockupOption(node, 'no', '모름'); node.value = card.knows || 'auto'; return node; })()),
+        field('최근 출산일', input('lastBirth', card.lastBirth, '출산 직후일 때만'))
+      ]),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '카드 삭제', dataset: { bodyStateAction: 'remove', itemId: card.id } })
       ])
@@ -45773,6 +45861,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
     const readingBox = app.querySelector('[data-body-state-readings]');
     if (readingBox) {
+      let verdictBox = app.querySelector('[data-body-state-verdicts]');
+      if (!verdictBox) { verdictBox = guiEl('div', { class: 'stack stack--sm', style: 'margin-top:8px', dataset: { bodyStateVerdicts: '' } }); readingBox.after(verdictBox); }
+      const cardsNow = scopeKey ? (normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || []) : [];
+      const open = (scopeKey ? Runtime.bodyStateVerdicts?.[scopeKey]?.items || [] : [])
+        .filter(item => !cardsNow.some(card => card.name === item.name && card.conceptionDate === item.conception));
+      verdictBox.replaceChildren(...open.map(item => guiEl('div', { class: 'note' }, [
+        guiEl('b', { text: `${forcedBondPersonLabel(item.name)} · 임신 판정 (수정 ${item.conception})` }),
+        guiEl('p', { text: '판정은 관계 기록이 회상될 때만 다시 계산됩니다. 카드에 고정하면 기록이 회상되지 않아도 임신이 이어집니다.' }),
+        guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '이 판정을 카드에 고정', dataset: { bodyStateAction: 'pin', itemId: item.name } })])
+      ])));
       const readings = scopeKey ? (Runtime.bodyStateReadings?.[scopeKey]?.readings || []) : [];
       readingBox.replaceChildren(...(readings.length
         ? readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: forcedBondPersonLabel(item.character) }), guiEl('p', { text: item.summary })]))
@@ -45802,6 +45900,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     } else if (action === 'remove') {
       const index = cards.findIndex(card => card.id === itemId);
       if (index >= 0) cards.splice(index, 1);
+    } else if (action === 'pin') {
+      // A verdict pinned to the card no longer depends on the contact line being recalled.
+      const verdict = (Runtime.bodyStateVerdicts[scopeKey]?.items || []).find(item => item.name === itemId);
+      if (!verdict) return;
+      let card = cards.find(item => item.name === verdict.name);
+      if (!card) {
+        if (cards.length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`상태 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
+        card = { id: `state-${Date.now().toString(36)}`, name: verdict.name };
+        cards.push(card);
+      }
+      card.conceptionDate = verdict.conception;
     } else return;
     if (cards.length) map[scopeKey] = cards; else delete map[scopeKey];
     runtime.bodyStateCards = normalizeBodyStateCardMap(map);
