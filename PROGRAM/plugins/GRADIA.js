@@ -25942,16 +25942,41 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const BODY_STATE_DUE_DAYS = 266;
   // After a birth: early recovery, then a stretch where the cycle may not have returned.
   const BODY_STATE_POSTPARTUM = Object.freeze({ recoveryDays: 42, cycleReturnDays: 180 });
-  const bodyStatePregnancyLine = (days, source, card) => {
+  const bodyStatePregnancyLine = (days, source, card, recorded = null) => {
     const stage = BODY_STATE_PREGNANCY_STAGES.find(([limit]) => days < limit)[1];
     const left = BODY_STATE_DUE_DAYS - days;
     const awareness = card?.knows === 'yes' ? 'she knows she is pregnant (card)'
       : card?.knows === 'no' ? 'she does not know yet (card): show only the body changes, never her knowing'
-        : days >= 35 ? 'she likely knows by now unless the story says otherwise'
-          : days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays ? 'symptoms may make her suspect'
-            : days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
-    return `  pregnancy: week ${Math.floor(days / 7)} (day ${days + 1} since conception, ${source}) → ${stage}; due ${left > 0 ? `in about ${left} days` : 'now'}; awareness: ${awareness}${card?.partner ? `; other party: ${card.partner}` : ''}`;
+        : recorded ? 'she knows she is pregnant (recorded in the story)'
+          : days >= 35 ? 'she likely knows by now unless the story says otherwise'
+            : days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays ? 'symptoms may make her suspect'
+              : days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
+    const partner = card?.partner || recorded?.partner || '';
+    // Characters and doctors count weeks from the last period, two weeks before conception.
+    return `  pregnancy: week ${Math.floor(days / 7)} (day ${days + 1} since conception, ${source}) → ${stage}; due ${left > 0 ? `in about ${left} days` : 'now'}; awareness: ${awareness}${partner ? `; other party: ${partner}` : ''}; as characters and doctors count it: week ${Math.floor((days + 14) / 7)}`;
   };
+  // A pregnancy, a birth or a pregnancy end the story recorded: LIBRA's 생체 주기 · 생식 lens labels
+  // them 임신 확인 / 출산 / 임신 종료, and other memory or the recent scene may say it in words. A
+  // worded line that hedges, negates, asks or plans is not a record; a lens label is.
+  const BODY_STATE_RECORD_LABEL = Object.freeze({ end: /·\s*임신\s*종료\)/, birth: /·\s*출산\)/, pregnant: /·\s*임신\s*확인\)/ });
+  const BODY_STATE_RECORD_WORDS = Object.freeze({
+    end: /(?:자연|계류)?유산(?:했|됐|되었|이\s*됐)|(?:아이|아기|태아)를\s*잃|낙태|임신\s*중절|사산|miscarr|abortion|stillbirth/i,
+    birth: /출산(?:했|하였|을\s*했)|(?:아이|아기|딸|아들)(?:을|를)\s*낳았|분만(?:했|하였)|gave birth|delivered (?:a|the|her) baby/i,
+    pregnant: /임신\s*(?:사실을?\s*)?확인|임신(?:했|이었|이다|이야|이래|이에요|입니다|\s*중이)|임신\s*\d{1,2}\s*주|(?:임신\s*)?(?:검사|테스트)[^.。]{0,16}(?:양성|두\s*줄)|is pregnant|pregnancy (?:was )?confirmed|tested positive/i
+  });
+  const BODY_STATE_RECORD_HEDGE_RE = /아니|않|음성|한\s*줄|없[다었어]|\?|지도|[을ㄹ]까|혹시|만약|농담|거짓|가짜|예정|낳을|계획|원해|싶|좋겠|바라|negative|not pregnant|\bif\b|might|maybe/i;
+  const bodyStateRecordKind = (line, full = '') => {
+    const value = String(line || '');
+    for (const kind of ['end', 'birth', 'pregnant']) if (BODY_STATE_RECORD_LABEL[kind].test(String(full || value))) return kind;
+    if (BODY_STATE_RECORD_HEDGE_RE.test(value)) return '';
+    for (const kind of ['end', 'birth', 'pregnant']) if (BODY_STATE_RECORD_WORDS[kind].test(value)) return kind;
+    return '';
+  };
+  const bodyStateRecordWeeks = line => {
+    const weeks = Number((String(line || '').match(/임신\s*(\d{1,2})\s*주/) || String(line || '').match(/(\d{1,2})\s*weeks? pregnant/i) || [])[1]);
+    return Number.isFinite(weeks) && weeks >= 1 && weeks <= 42 ? weeks : null;
+  };
+  const bodyStateRecordPartner = line => compact((String(line || '').match(/상대:\s*([^·|)\n]{1,40})/) || [])[1] || '', 40);
   // Days since a card date: a calendar date, or "이야기 N일째" counted on the story clock.
   const bodyStateCardDays = (value, now, today) => {
     const textValue = String(value || '').trim();
@@ -26186,7 +26211,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return null;
   };
   const bodyStateEvidenceLines = (recent = {}, settings = {}) => {
-    const lib = forcedBondSentences(libEvidenceWithoutMarkers(settings)).map(line => ({ source: 'LIB', line, relative: null }));
+    // Each sentence keeps the memory line it came from, so a lens note's label and fields
+    // (· 임신 확인, 상대: …) still belong to it when the note runs over several sentences.
+    const lib = String(libEvidenceWithoutMarkers(settings) || '').split(/\n+/)
+      .flatMap(full => forcedBondSentences(full).map(line => ({ source: 'LIB', line, full, relative: null })));
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
     const scene = messages.flatMap(message => forcedBondSentences(message?.content).map(line => ({ source: 'recent', line, relative: bodyStateRelativeDays(line) })));
     return [...lib, ...scene];
@@ -26291,17 +26319,63 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? bodyStatePregnancyLine(cardConception, 'card', card)
         : '  pregnancy: set on the card, but the conception day cannot be counted against the story date — say only that she is pregnant';
     }
-    const birthDays = card?.lastBirth ? bodyStateCardDays(card.lastBirth, now, today) : null;
+    // What the story recorded, newest first: a confirmed pregnancy, a birth or a pregnancy end.
+    // A recent-scene line with no time phrase happened today; an undated memory line counts as oldest.
+    const recordAge = entry => {
+      // A lens note's story-day stamp sits at the head of its memory line.
+      const elapsed = bodyStateElapsed(entry.full ? { ...entry, line: entry.full } : entry, now, clock);
+      return elapsed.days === null && entry.source === 'recent' ? { days: 0, confidence: 'estimated (recent scene)' } : elapsed;
+    };
+    const ageOrder = row => (row.age.days === null ? Infinity : row.age.days);
+    const records = fertility.value === false ? [] : mine
+      .map((entry, index) => ({ entry, index, kind: bodyStateRecordKind(entry.line, entry.full) }))
+      .filter(row => row.kind)
+      .map(row => ({ ...row, age: recordAge(row.entry) }))
+      .sort((a, b) => ageOrder(a) - ageOrder(b) || b.index - a.index);
+    const newestRecord = records[0] || null;
+    if (!pregnancyLine && newestRecord?.kind === 'pregnant') {
+      const recorded = { partner: bodyStateRecordPartner(newestRecord.entry.full || newestRecord.entry.line) };
+      const stated = records.find(row => row.kind === 'pregnant' && row.age.days !== null && bodyStateRecordWeeks(row.entry.full || row.entry.line) !== null);
+      // Without a stated week, conception is the newest recorded contact before the confirmation.
+      const contact = stated ? null : mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
+        .map(entry => ({ entry, age: recordAge(entry) }))
+        .filter(row => row.age.days !== null && newestRecord.age.days !== null && row.age.days >= newestRecord.age.days)
+        .sort((a, b) => a.age.days - b.age.days)[0] || null;
+      if (stated) {
+        const weeks = bodyStateRecordWeeks(stated.entry.full || stated.entry.line);
+        pregnancyLine = bodyStatePregnancyLine(Math.max(0, weeks * 7 - 14) + stated.age.days, `recorded: week ${weeks} stated ${stated.age.days} days ago, ${stated.age.confidence}`, card, recorded);
+      } else if (contact) {
+        pregnancyLine = bodyStatePregnancyLine(contact.age.days, `recorded pregnancy; conceived at the contact ${contact.age.days} days ago, ${contact.age.confidence}`, card, recorded);
+      } else {
+        pregnancyLine = `  pregnancy: recorded (${newestRecord.entry.source}); timing unknown — show that she is pregnant (she knows) without stating a week or a due date${recorded.partner ? `; other party: ${recorded.partner}` : ''}`;
+      }
+    }
+    const recordedBirth = newestRecord?.kind === 'birth' ? newestRecord : null;
+    const cardBirthDays = card?.lastBirth ? bodyStateCardDays(card.lastBirth, now, today) : null;
+    const birthFromRecord = recordedBirth && recordedBirth.age.days !== null && (cardBirthDays === null || recordedBirth.age.days < cardBirthDays);
+    const birthDays = birthFromRecord ? recordedBirth.age.days : cardBirthDays;
+    const birthSource = birthFromRecord ? 'recorded' : 'card';
     // A period recorded after the birth means the cycle is back.
     const periodSinceBirth = periodEntry && birthDays !== null && (bodyStateElapsed(periodEntry, now, clock).days ?? Infinity) < birthDays;
-    const postpartumLine = !pregnancyLine && birthDays !== null && birthDays < BODY_STATE_POSTPARTUM.cycleReturnDays && !periodSinceBirth
-      ? (birthDays < BODY_STATE_POSTPARTUM.recoveryDays
-        ? `  postpartum: day ${birthDays + 1} after giving birth (card) → recovering: bleeding, soreness, exhaustion, broken sleep`
-        : `  postpartum: day ${birthDays + 1} after giving birth (card) → recovered, but the cycle may not have returned yet`)
-      : '';
+    const postpartumLine = pregnancyLine ? ''
+      : birthDays !== null && birthDays < BODY_STATE_POSTPARTUM.cycleReturnDays && !periodSinceBirth
+        ? (birthDays < BODY_STATE_POSTPARTUM.recoveryDays
+          ? `  postpartum: day ${birthDays + 1} after giving birth (${birthSource}) → recovering: bleeding, soreness, exhaustion, broken sleep`
+          : `  postpartum: day ${birthDays + 1} after giving birth (${birthSource}) → recovered, but the cycle may not have returned yet`)
+        : recordedBirth && recordedBirth.age.days === null && cardBirthDays === null
+          ? '  postpartum: a birth is recorded, day unknown — do not state how long ago; no pregnancy now'
+          : '';
+    const recordedEnd = !pregnancyLine && newestRecord?.kind === 'end' ? newestRecord : null;
+    if (recordedEnd) {
+      if (recordedEnd.age.days === null) lines.push('  pregnancy ended (recorded), day unknown — no pregnancy now');
+      else if (recordedEnd.age.days < BODY_STATE_POSTPARTUM.recoveryDays) lines.push(`  pregnancy ended ${recordedEnd.age.days} days ago (recorded, ${recordedEnd.age.confidence}) → the body is still recovering; no pregnancy now`);
+    }
+    // Contacts before a recorded birth or pregnancy end belong to that pregnancy, not a new one.
+    const closedAt = records.find(row => row.kind !== 'pregnant' && row.age.days !== null)?.age.days ?? null;
 
-    if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate) {
-      const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line));
+    if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate && newestRecord?.kind !== 'pregnant') {
+      const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
+        .filter(entry => closedAt === null || (() => { const days = recordAge(entry).days; return days === null || days < closedAt; })());
       for (const exposure of exposures.slice(-3)) {
         if (fertility.value === null) {
           lines.push(`  sexual contact recorded (${exposure.source}); whether this person can conceive is unknown (no card setting, no profile gender) — do not decide a pregnancy`);
@@ -26340,7 +26414,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     if (pregnancyLine) lines.splice(cycleAt, 0, pregnancyLine);
     else if (postpartumLine) lines.splice(cycleAt, 0, postpartumLine);
-    else if (cycleLine) lines.splice(cycleAt, 0, cycleLine);
+    else if (cycleLine && !(recordedEnd && recordedEnd.age.days !== null && recordedEnd.age.days < BODY_STATE_POSTPARTUM.recoveryDays)) lines.splice(cycleAt, 0, cycleLine);
     if (card?.constitution) lines.push(`  constitution (card): ${card.constitution}`);
     if (present) {
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
@@ -26379,7 +26453,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // User decision 2026-11-15 after live runs: a sign is required only for a tracked condition. The
     // earlier every-character rule made the AIDE write filler (invented stiffness, knees, a restated
     // input line) for an uninjured persona in 4 of 5 runs while the real injury was already shown.
-    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings from the packet. A tracked condition is an illness, injury, symptom, treatment, pregnancy verdict, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Correct contradictions and remove unsupported health claims or explanations already in the draft. Preserve ordinary gestures and scene atmosphere. Return edits: [] when the portrayal already fits (quote supporting lines in analysis.summary) or no condition needs an edit.'
+    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings from the packet. A tracked condition is an illness, injury, symptom, treatment, pregnancy (fixed verdict or recorded), postpartum recovery, a recorded pregnancy end, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Correct contradictions and remove unsupported health claims or explanations already in the draft. Preserve ordinary gestures and scene atmosphere. Return edits: [] when the portrayal already fits (quote supporting lines in analysis.summary) or no condition needs an edit.'
   });
   const bodyStateOutputKind = (stageName, settings = {}) => {
     if (!bodyStateStageActive(settings)) return '';

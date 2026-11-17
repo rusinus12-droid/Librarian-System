@@ -439,3 +439,56 @@ test('a positive verdict runs on the timeline, and the 상태 panel can pin it t
   const cards = JSON.parse((await f.host.plugin.getRuntimeSettings()).body_state_cards)[scopeKey];
   assert.equal(cards.find(card => card.name === '세라').conceptionDate, verdict.conception);
 });
+
+// User decision 2026-11-17: pregnancy runs from the record without the card. LIBRA's 생체 주기 · 생식
+// lens labels a confirmed pregnancy, a birth and a pregnancy end; other memory and the recent scene
+// may say it in words. The card still wins, and hedged or negated lines are not records.
+test('a recorded pregnancy runs on its timeline without a card', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (libText, recent = { visibleMessages: [] }, card = {}) => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'r', libText, recent,
+    settings: { ...pregnancyBase, bodyStateCards: { r: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+
+  const weeks = packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n- [lens:생체 주기 · 생식] (T9–T9 · 시점 불명 · 이야기 30일째 · 임신 확인) 세라는 병원에서 임신 8주라는 진단을 받았다. (원문: "8주래요.") | 상대: 하준');
+  assert.match(weeks, /pregnancy: week 7 \(day 53 since conception, recorded: week 8 stated 10 days ago, confirmed \(story clock\)\) → morning sickness/);
+  assert.match(weeks, /awareness: she knows she is pregnant \(recorded in the story\); other party: 하준; as characters and doctors count it: week 9/);
+  assert.doesNotMatch(weeks, /cycle:|sexual contact/, 'a recorded pregnancy replaces the cycle and the verdict');
+
+  const fromContact = packetFor('[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 20일째 · 밤 세라는 하준과 관계를 가졌다\n이야기 50일째 · 아침 세라는 임신 테스트기에서 두 줄을 확인했다');
+  assert.match(fromContact, /pregnancy: week 5 \(day 41 since conception, recorded pregnancy; conceived at the contact 40 days ago, confirmed \(story clock\)\)/);
+
+  assert.match(packetFor('세라가 임신했다는 사실은 모두가 안다.'), /pregnancy: recorded \(LIB\); timing unknown — show that she is pregnant \(she knows\) without stating a week or a due date/);
+  assert.match(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁', { visibleMessages: [{ role: 'assistant', content: '"임신이래." 세라는 결과지를 내려놓았다. 세라는 임신 6주였다.' }] }),
+    /pregnancy: week 4 \(day 29 since conception, recorded: week 6 stated 0 days ago, estimated \(recent scene\)\)/, 'a pregnancy said in the scene counts today');
+
+  for (const hedged of ['세라는 혹시 임신했을까 봐 걱정했다.', '세라는 임신이 아니었다.', '세라의 임신 테스트 결과는 음성이었다.', '세라는 임신했으면 좋겠다고 말했다.', '세라는 양성평등 강의를 들었다.']) {
+    assert.doesNotMatch(packetFor(`[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n${hedged}`), /pregnancy:/, hedged);
+  }
+  assert.match(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n- [lens:생체 주기 · 생식] (T9–T9 · 이야기 30일째 · 임신 확인) 세라는 테스트기를 보며 "두 줄이야… 어떡해?"라고 말했다.'),
+    /pregnancy: recorded/, 'a lens label is a record even when the quote asks a question');
+
+  const card = packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n이야기 30일째 세라는 임신 8주라는 진단을 받았다', undefined, { conceptionDate: '이야기 5일째', knows: 'no' });
+  assert.match(card, /pregnancy: week 5 \(day 36 since conception, card\)[^\n]*awareness: she does not know yet \(card\)/, 'the card wins over the record');
+});
+
+test('a recorded birth or pregnancy end closes the pregnancy and starts recovery', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (libText, card = {}) => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'e', libText,
+    settings: { ...pregnancyBase, bodyStateCards: { e: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+  const preg = '이야기 100일째 세라는 임신 12주라는 진단을 받았다';
+
+  const birth = packetFor(`[STORY CLOCK] 현재: 이야기 300일째 · 저녁\n${preg}\n- [lens:생체 주기 · 생식] (T80–T80 · 이야기 290일째 · 출산) 세라는 새벽에 딸을 낳았다.`);
+  assert.match(birth, /postpartum: day 11 after giving birth \(recorded\) → recovering/);
+  assert.doesNotMatch(birth, /pregnancy:|cycle:/, 'the birth ends the pregnancy and the cycle has not returned');
+  const back = packetFor(`[STORY CLOCK] 현재: 이야기 500일째 · 저녁\n${preg}\n이야기 290일째 세라는 아들을 낳았다\n이야기 495일째 · 아침 세라는 생리를 시작했다`);
+  assert.doesNotMatch(back, /postpartum|pregnancy:/);
+  assert.match(back, /cycle: day 6 of 28/);
+
+  const ended = packetFor(`[STORY CLOCK] 현재: 이야기 130일째 · 저녁\n${preg}\n이야기 120일째 세라는 유산했다`);
+  assert.match(ended, /pregnancy ended 10 days ago \(recorded, confirmed \(story clock\)\) → the body is still recovering; no pregnancy now/);
+  assert.doesNotMatch(ended, /pregnancy: week|cycle:/);
+  assert.doesNotMatch(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n세라는 할머니의 유산을 물려받았다'), /pregnancy ended/, 'an inheritance is not a pregnancy end');
+
+  // A contact before the birth belongs to that pregnancy and gets no new verdict.
+  const afterBirth = packetFor(`[STORY CLOCK] 현재: 이야기 300일째 · 저녁\n이야기 10일째 · 밤 세라는 하준과 관계를 가졌다\n${preg}\n이야기 290일째 세라는 아들을 낳았다`);
+  assert.doesNotMatch(afterBirth, /sexual contact 290 days ago/);
+});

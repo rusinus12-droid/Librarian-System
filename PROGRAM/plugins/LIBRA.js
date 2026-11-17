@@ -17715,18 +17715,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // docs/gradia/STATE-AIDE-DESIGN-20261114.md §8, §10) and computes cycle phase and risk itself.
       templateId: 'starter_cycle_reproduction',
       name: '생체 주기 · 생식',
-      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상을 인물별로 기록합니다.',
-      labels: ['주기 시작', '주기 종료', '관계', '피임', '임신 검사', '임신 증상'],
+      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상, 임신 확인·출산·임신 종료를 인물별로 기록합니다.',
+      labels: ['주기 시작', '주기 종료', '관계', '피임', '임신 검사', '임신 증상', '임신 확인', '출산', '임신 종료'],
       evidenceMode: 'strict',
       canonicalContext: false,
       trackTime: true,
       trackSubject: true,
       instruction: {
-        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
-        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상'],
-        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)'],
-        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요.',
-        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom), partner, method, used(예/아니오/모름), result를 선택적으로 기록할 수 있습니다.'
+        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상, 임신이 확인된 사실, 출산, 유산 등 임신이 끝난 사건을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
+        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상', '검사 양성·진단·본인이나 의사의 확언으로 임신이 확인된 사실(원문이 말하면 임신 몇 주인지도)', '출산했다는 서술과 그 시점', '유산·사산·중절 등 임신이 끝났다는 서술'],
+        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)', '의심·걱정·추측만 있고 확인되지 않은 임신(임신 증상이나 임신 검사로 기록)'],
+        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요. 임신이 확인되면 "임신 확인", 출산은 "출산", 유산 등은 "임신 종료" 라벨을 쓰세요.',
+        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom/pregnancy/birth/pregnancy_end), partner, method, used(예/아니오/모름), result, weeks(원문이 말한 임신 주수)를 선택적으로 기록할 수 있습니다.'
       },
       recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 4 }
     },
@@ -17879,6 +17879,47 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
   ].map(template => Object.freeze(template)));
   const LENS_STARTER_TEMPLATES = STARTER_LENS_TEMPLATES;
+  // A lens added from a starter template keeps its own copy of the template's instruction. One
+  // that still carries an earlier template instruction word for word (the user never edited it)
+  // moves to the current one when it is read; the earlier revision stays in revisionHistory for
+  // the notes it wrote, and the lens queue only analyzes new turns, so nothing is re-run.
+  const STARTER_LENS_PREVIOUS = Object.freeze({
+    // Before 2026-11-17: no pregnancy confirmation, birth or pregnancy end, so GRADIA's 상태 AIDE
+    // lost a pregnancy once its contact note stopped being recalled.
+    starter_cycle_reproduction: Object.freeze([Object.freeze({
+      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상을 인물별로 기록합니다.',
+      instruction: Object.freeze({
+        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
+        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상'],
+        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)'],
+        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요.',
+        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom), partner, method, used(예/아니오/모름), result를 선택적으로 기록할 수 있습니다.'
+      })
+    })])
+  });
+  // Notes that set where a person stands (newest per label first) for a lens whose scene
+  // delivery would otherwise pick by score; see the scene picks in the lens recall.
+  const LENS_STANDING_LABELS = Object.freeze({
+    starter_cycle_reproduction: Object.freeze(['임신 확인', '출산', '임신 종료', '주기 시작', '관계', '임신 검사'])
+  });
+  const upgradeStarterLensSource = src => {
+    const templateId = lensSlug(src.templateId) || '';
+    const previous = STARTER_LENS_PREVIOUS[templateId];
+    const current = previous ? STARTER_LENS_TEMPLATES.find(template => template.templateId === templateId) : null;
+    if (!current || !src.instruction) return src;
+    const revision = computeLensInstructionRevision(normalizeLensInstructionObject(src.instruction));
+    const match = previous.find(entry => computeLensInstructionRevision(normalizeLensInstructionObject(entry.instruction)) === revision);
+    if (!match) return src;
+    const ownLabels = Array.isArray(src.labels) ? src.labels : String(src.labels || '').split(/[,\n]/);
+    return {
+      ...src,
+      // The earlier instruction stays in the history even if an older copy dropped it.
+      revisionHistory: [...(Array.isArray(src.revisionHistory) ? src.revisionHistory : []), { instruction: safeClone(src.instruction), updatedAt: src.updatedAt }],
+      instruction: safeClone(current.instruction),
+      labels: [...ownLabels, ...current.labels.filter(label => !ownLabels.includes(label))],
+      ...(compact(src.description || '', 300) === match.description ? { description: current.description } : {})
+    };
+  };
 
   const lensLines = value => (Array.isArray(value) ? value : String(value ?? '').split(/\n+/))
     .map(item => compact(item, 400)).filter(Boolean).slice(0, 12);
@@ -17922,7 +17963,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const LENS_PERSISTENT_ROLE_TEMPLATES = new Set(['starter_cycle_reproduction', 'starter_secrets_knowledge', 'starter_unresolved_promises', 'starter_clues_red_herrings', 'starter_promises_schedule']);
   const lensDefaultRecallRole = id => LENS_CURRENT_ROLE_TEMPLATES.has(id) ? 'current' : LENS_PERSISTENT_ROLE_TEMPLATES.has(id) ? 'persistent' : 'relevant';
   const normalizeLensDefinition = (raw = {}, index = 0) => {
-    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const src = upgradeStarterLensSource(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
     const now = new Date().toISOString();
     const lensId = lensSlug(src.lensId || src.id || src.templateId) || `lens_${index + 1}`;
     const name = compact(lensSafeText(src.name, 60), 60) || `렌즈 ${index + 1}`;
@@ -75979,6 +76020,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (candidate.sceneRank === 2 && !candidate.floorPassed) { skip(lens, candidate, candidate.record, 'below_score_floor'); continue; }
           kept.push(candidate);
         }
+        // A lens with standing labels hands each scene person their newest note of each such label
+        // first (a pregnancy, a birth, the last period start), newest event first, before other notes.
+        const standingLabels = LENS_STANDING_LABELS[lens.templateId] || null;
+        if (standingLabels) {
+          const newestByLabel = new Map(), rankOf = row => [row.inherited ? 0 : 1, Number(row.turnRange.end)];
+          for (const candidate of kept) if (candidate.sceneRank < 2 && standingLabels.includes(candidate.label)) {
+            const key = `${candidate.groupKey}|${candidate.label}`, newest = newestByLabel.get(key);
+            const [a, b] = rankOf(candidate), [c, d] = newest ? rankOf(newest) : [-1, -1];
+            if (a > c || (a === c && b > d)) newestByLabel.set(key, candidate);
+          }
+          for (const candidate of newestByLabel.values()) candidate.standing = true;
+        }
         if (kept.length) byLens.set(lens.lensId, kept);
       }
       if (queryUnit && semantic.missingVectors && options.refreshVectors !== false) for (const lens of candidatesLenses) void scheduleLensVectorRefresh(scope, lens.lensId, semantic.profileId);
@@ -76008,7 +76061,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         moved = false;
         for (const queue of order) {
           // Each person's lenses take turns: the lens given least so far, then the newest-note role, then the score.
-          queue.sort((x, y) => picksOf(x) - picksOf(y) || x.sceneRank - y.sceneRank || y.score - x.score);
+          queue.sort((x, y) => picksOf(x) - picksOf(y) || x.sceneRank - y.sceneRank
+            || Number(y.standing === true) - Number(x.standing === true)
+            || (x.standing === true && y.standing === true ? Number(y.turnRange.end) - Number(x.turnRange.end) : 0)
+            || y.score - x.score);
           const at = queue.findIndex(candidate => (counts.get(candidate.lensId) || 0) < lensById.get(candidate.lensId).recall.maxItems && picksOf(candidate) < LENS_SCENE_ITEMS_PER_PERSON && used + costOf(candidate) <= bodyBudget);
           if (at < 0) continue;
           const [candidate] = queue.splice(at, 1), pick = candidate.lensId + '|' + candidate.groupKey;
