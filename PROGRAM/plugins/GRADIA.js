@@ -1031,6 +1031,9 @@
   const LORE_PASSAGE_DEFAULT_EVIDENCE_CHARS = 2600;
   const LORE_PASSAGE_PROTECTED_EVIDENCE_CHARS = 4200;
   const LORE_PASSAGE_MAX_EVIDENCE_ITEMS = 12;
+  // A present character's profile may take up to this much; its core sections come first.
+  const LORE_PASSAGE_PROFILE_EVIDENCE_CHARS = 6000;
+  const LORE_PROFILE_CORE_HEADING_RE = /anchor|profile|direction|personality|core|identity|speech|voice|성격|말투|핵심|프로필|정체|연기|지침/i;
   const LORE_PASSAGE_EVIDENCE_CACHE_MAX = 2048;
   const LORE_FULL_TEXT_INDEX_VERSION = 'gradia_lore_full_text_passage_index_v2';
   const LORE_FULL_TEXT_INDEX_CACHE_MAX = 4096;
@@ -12320,7 +12323,7 @@ ${passage.text || ''}`);
     const cacheKey = [
       'lore-passage-evidence-v1', record.contentHash, record.identityHash,
       referenceContentHash(queryText), stage, maxChars, protectedEvidence ? 1 : 0,
-      requiredAnchors.join('|')
+      options.profileFill === true ? 'profile' : '', requiredAnchors.join('|')
     ].join(':');
     const cached = LorePassageEvidenceCache.get(cacheKey);
     if (cached) {
@@ -12503,6 +12506,43 @@ ${passage.text || ''}`, 420));
       selectedPassage.coveredAnchors.forEach(token => covered.add(token));
       remaining -= fittedBlock.length + 2;
       if (required.size && Array.from(required).every(token => covered.has(token)) && selected.length >= 2 && best.relevance < bestScore * 0.72) break;
+    }
+
+    // A present character's profile carries who they are and how to play them, not only the
+    // passage that shares words with this turn. Live run 2026-11-17: Hayeon's sheet sent only
+    // PERSONAL (1,675 of 5,755 chars) and dropped ANCHOR and DIRECTION with budget to spare.
+    if (options.profileFill === true && selected.length && remaining > 180) {
+      const chosen = new Set(selected.map(item => item.id));
+      const rest = (passageIndex?.passages || []).filter(passage => !chosen.has(passage.id) && text(passage.text || '').trim());
+      const core = passage => LORE_PROFILE_CORE_HEADING_RE.test(text(passage.heading || ''));
+      rest.sort((left, right) => Number(core(right)) - Number(core(left)) || Number(left.order || 0) - Number(right.order || 0));
+      for (const passage of rest) {
+        if (remaining <= 180) break;
+        let block = passageBlock(passage);
+        let fitted = passage;
+        if (block.length > remaining) {
+          if (!core(passage)) continue;
+          const header = passageBlock({ ...passage, text: '' });
+          const bodyBudget = remaining - header.length - 2;
+          if (bodyBudget < 160) continue;
+          fitted = { ...passage, text: text(passage.text || '').trim().slice(0, bodyBudget).trim() };
+          fitted.end = Number(passage.start || 0) + fitted.text.length;
+          block = passageBlock(fitted);
+          if (block.length > remaining) continue;
+        }
+        const coveredAnchors = Array.from(new Set(passageCoveredAnchorsAfterFit(fitted)));
+        selected.push({
+          id: fitted.id, order: fitted.order, start: fitted.start, end: fitted.end,
+          heading: fitted.heading || '', chars: block.length,
+          confidenceScore: Number(Number(passage.confidenceScore || 0).toFixed(4)),
+          bm25f: 0, coverage: 0, exact: 0, coveredAnchors, maxSimilarity: 0, utility: 0,
+          profileFill: true, block
+        });
+        coveredAnchors.forEach(token => covered.add(token));
+        remaining -= block.length + 2;
+      }
+      // Read in the sheet's own order.
+      selected.sort((left, right) => Number(left.start || 0) - Number(right.start || 0));
     }
 
     if (!selected.length) {
@@ -14774,13 +14814,17 @@ ${passage.text || ''}`, 420));
         600,
         Math.floor(fairEvidenceShare * (protection.injectionProtected ? 1.80 : 1.10))
       );
+      // The profile of a character named in this scene keeps its core sections, within the
+      // stage's fair share of the lore budget.
+      const profileFill = protection.exactIdentity === true && loreRerankerProfileTraits(entry.lore).profileLike === true;
       const dynamicEvidenceChars = Math.min(
         12000,
         sourceChars || 12000,
-        Math.max(600, Math.min(anchorScaled, budgetShareCap))
+        Math.max(600, Math.min(anchorScaled, budgetShareCap), profileFill ? Math.min(LORE_PASSAGE_PROFILE_EVIDENCE_CHARS, budgetShareCap) : 0)
       );
       return loreBuildPassageEvidence(entry.lore, evidenceQuery, {
         protected: protection.injectionProtected,
+        profileFill,
         stage: rerankerStage,
         requiredAnchors,
         maxChars: dynamicEvidenceChars,
@@ -48168,13 +48212,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }))
       }));
     },
-    debugLorePassageEvidence(lore = {}, query = '', stageName = 'shadow_act', maxChars = LORE_PASSAGE_DEFAULT_EVIDENCE_CHARS) {
+    debugLorePassageEvidence(lore = {}, query = '', stageName = 'shadow_act', maxChars = LORE_PASSAGE_DEFAULT_EVIDENCE_CHARS, extra = {}) {
       const anchors = loreDynamicRequiredAnchors([{ lore }], query, '');
       return JSON.parse(JSON.stringify(loreBuildPassageEvidence(lore, query, {
         stage: stageName,
         maxChars,
         requiredAnchors: anchors,
-        protected: false
+        protected: extra?.protected === true,
+        profileFill: extra?.profileFill === true
       })));
     },
     debugLorePassageScores(lore = {}, query = '') {
