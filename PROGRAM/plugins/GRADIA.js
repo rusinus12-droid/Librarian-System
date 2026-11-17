@@ -24115,6 +24115,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
+      fixation: normalizeStringArray(parsed.fixation, 2, 160),
       edits
     };
   };
@@ -25539,7 +25540,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!purpose || scenePurposeForRun(recent)) return;
     Runtime.scenePurposeRun = { key: sceneVarianceRunKey(recent), text: purpose, arc: compact(arcValue || '', 400), stage: stageName, at: Date.now() };
   };
-  const scenePurposeJsonProperties = stageName => (CORE_AIDE_STAGE_IDS.includes(stageName) ? { scene_purpose: { type: 'string' }, story_arc: { type: 'string' } } : {});
+  const scenePurposeJsonProperties = stageName => (CORE_AIDE_STAGE_IDS.includes(stageName)
+    ? { scene_purpose: { type: 'string' }, story_arc: { type: 'string' }, ...(stageName === 'aide_plot' ? { fixation: stringArrayJsonSchema() } : {}) }
+    : {});
   let sceneVarianceRandom = () => Math.random();
   const sceneVarianceRunKey = (recent = {}) => text(recent?.runLineage?.runId || recent?.runLineage?.currentInputHash || stableDraftHash(String(recent?.latestUser || '')));
   const sceneVarianceForRun = (recent = {}, settings = {}) => {
@@ -25590,6 +25593,130 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .slice(0, 8)
       .map(([token]) => token);
     return { questions, motifs };
+  };
+  // Fixations: a word the recent responses keep coming back to, whatever its ending. The motif
+  // list above drops verb forms, so "세지 마 / 세면 / 셀게 / 센다" (one verb, 세다) went unseen
+  // while a live chat circled it for turns (2026-11-17). Endings are cut to a stem, and a ㄴ/ㄹ
+  // that a contracted ending left on the stem (센다, 셀게) is dropped, so the forms meet.
+  const SCENE_FIXATION_RESPONSES = 6;
+  const SCENE_FIXATION_TURNS_KEPT = 4;
+  const SCENE_FIXATION_ENDINGS = Object.freeze(['는거지', '는거야', '는거', '지마', '지말고', '면서', '으면', '는다', '니까', '거야', '거지', '겠어', '겠다', '는데', '지만', '어서', '아서', '었어', '았어', '었다', '았다', '지', '면', '는', '게', '다', '고', '요', '야', '어', '아', '며', '자', '네', '죠', '까', '을', '를', '은', '이', '가', '도', '만', '의']);
+  const SCENE_FIXATION_CONTRACTED = new Set(['다', '게', '까', '거야', '거지', '는거', '니까', '겠어', '겠다']);
+  const SCENE_FIXATION_STOP_STEMS = new Set(['하', '해', '했', '되', '된', '될', '있', '없', '보', '가', '오', '알', '아', '모르', '같', '말', '주', '받', '그렇', '이렇', '저렇', '않', '싶', '들', '나', '먹', '자', '할', '한', '그', '이', '저', '것', '거', '수', '좀', '안', '못', '더', '잘', '왜', '뭐', '또', '네', '내', '너', '우리', '그래', '그러', '이러', '어떻', '아니', '맞', '좋', '싫', '보이', '느끼', '생각', '말하', '그녀', '그는', '자신', '다시', '계속', '아직', '이미', '지금', '정말', '진짜', '조금', '그냥', '어디', '누구', '무슨', '그런', '이런', '저런', '하나', '처음', '다음', '대신', '때문', '사이', '위에', '아래', '쪽으', '앞에', '뒤에', '옆에', '조용', '천천', '다른', '많', '작', '크', '보다', '시선', '고개', '목소리', '얼굴', '손가락', '어깨', '입술', '숨을']);
+  const hangulDropFinal = syllable => {
+    const code = syllable.charCodeAt(0) - 0xAC00;
+    if (code < 0 || code > 11171) return syllable;
+    const final = code % 28;
+    return final === 4 || final === 8 ? String.fromCharCode(0xAC00 + code - final) : syllable;
+  };
+  // Endings that also mark a noun (하연은, 민지가): a word seen only with these is a name or a
+  // noun, which the motif list handles, so it never counts as a verb form.
+  const SCENE_FIXATION_NOUN_ENDINGS = new Set(['을', '를', '은', '는', '이', '가', '도', '만', '의', '']);
+  const sceneFixationStemOf = word => {
+    const value = String(word || '');
+    if (value.length < 2 || value.length > 7) return { stem: '', ending: '' };
+    for (const ending of SCENE_FIXATION_ENDINGS) {
+      if (!value.endsWith(ending) || value.length === ending.length) continue;
+      let stem = value.slice(0, -ending.length);
+      if (SCENE_FIXATION_CONTRACTED.has(ending)) stem = stem.slice(0, -1) + hangulDropFinal(stem.slice(-1));
+      return { stem, ending };
+    }
+    return { stem: value, ending: '' };
+  };
+  const sceneFixationStem = word => sceneFixationStemOf(word).stem;
+  const sceneFixationText = value => String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/◈[\s\S]*?◈/g, ' ')
+    .replace(/^#{1,6}\s.*$/gm, ' ');
+  const sceneFixationDetect = (recentValue = {}) => {
+    const recent = recentValue || {};
+    const assistants = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
+      .filter(message => message?.role === 'assistant').slice(-SCENE_FIXATION_RESPONSES).map(message => sceneFixationText(message?.content));
+    if (assistants.length < 3) return [];
+    const names = new Set([Runtime.activePersonaName, Runtime.activeCharacterName, ...extensionScenePeople(recent)]
+      .filter(Boolean).flatMap(name => { const entry = extensionEntityEntry(name); return [name, ...(entry ? [entry.canonical, ...(entry.aliases || [])] : [])]; })
+      .flatMap(name => (String(name).match(/[가-힣]+/g) || []).flatMap(part => [part, sceneFixationStem(part)])));
+    const stats = new Map();
+    assistants.forEach((body, index) => {
+      for (const word of body.match(/[가-힣]{2,7}/g) || []) {
+        const { stem, ending } = sceneFixationStemOf(word);
+        if (!stem || SCENE_FIXATION_STOP_STEMS.has(stem) || SCENE_MOTIF_STOPWORDS.has(stem) || names.has(stem) || names.has(word)) continue;
+        if (!stats.has(stem)) stats.set(stem, { count: 0, responses: new Set(), surfaces: new Map(), verbForms: new Set() });
+        const row = stats.get(stem);
+        row.count += 1;
+        row.responses.add(index);
+        row.surfaces.set(word, (row.surfaces.get(word) || 0) + 1);
+        if (!SCENE_FIXATION_NOUN_ENDINGS.has(ending)) row.verbForms.add(word);
+      }
+    });
+    const last = assistants.length - 1;
+    return [...stats.entries()]
+      // A stem of one syllable says less on its own, so it needs more repeats.
+      // A fixation is a verb or phrase coming back in several forms; a name or a noun seen with
+      // particles only is left to the motif list.
+      .filter(([stem, row]) => row.responses.has(last) && row.responses.size >= 3 && row.count >= (stem.length === 1 ? 5 : 4)
+        && row.verbForms.size >= 2)
+      .sort((left, right) => right[1].responses.size - left[1].responses.size || right[1].count - left[1].count)
+      .slice(0, 4)
+      .map(([stem, row]) => ({
+        stem,
+        forms: [...row.surfaces.entries()].sort((left, right) => right[1] - left[1]).slice(0, 4).map(([form]) => form),
+        responses: row.responses.size,
+        count: row.count
+      }));
+  };
+  // Fixations named by the Plot AIDE ("감정을 점수로 세는 것") stay for the next few turns of
+  // this chat, in memory only; the detected ones are recounted every turn.
+  const sceneFixationState = (recent = {}) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512) || 'default';
+    const runKey = sceneVarianceRunKey(recent);
+    if (!Runtime.sceneFixations || typeof Runtime.sceneFixations !== 'object') Runtime.sceneFixations = {};
+    const state = Runtime.sceneFixations[scopeKey] || { key: '', named: [] };
+    if (state.key !== runKey) {
+      // runsLeft counts the later runs it still applies to, this one included before the cut.
+      state.named = (state.named || []).filter(item => item.addedIn === runKey || item.runsLeft > 0)
+        .map(item => (item.addedIn === runKey ? item : { ...item, runsLeft: item.runsLeft - 1 }));
+      state.key = runKey;
+    }
+    Runtime.sceneFixations[scopeKey] = state;
+    return state;
+  };
+  const rememberSceneFixations = (recent = {}, values = [], stageName = '') => {
+    const list = (Array.isArray(values) ? values : [values]).map(value => compact(value || '', 160)).filter(Boolean).slice(0, 2);
+    if (!list.length) return;
+    const state = sceneFixationState(recent);
+    for (const value of list) {
+      if (state.named.some(item => item.text === value)) continue;
+      state.named.push({ text: value, stage: stageName, addedIn: state.key, runsLeft: SCENE_FIXATION_TURNS_KEPT, at: Date.now() });
+    }
+    state.named = state.named.slice(-4);
+  };
+  const sceneFixationsForRun = (recent = {}) => {
+    const state = sceneFixationState(recent);
+    const input = String(submittedCurrentInput(recent) || recent?.latestUser || '');
+    const detected = sceneFixationDetect(recent).map(item => ({
+      ...item,
+      // The user brought it up this turn, so it may be answered.
+      raisedByInput: item.forms.some(form => input.includes(form)) || (item.stem.length >= 2 && input.includes(item.stem))
+    }));
+    Runtime.sceneFixationDetected = { key: state.key, items: detected };
+    // A named fixation from this run itself is for the turns after it.
+    const named = state.named.filter(item => item.addedIn !== state.key);
+    return { detected, named };
+  };
+  const sceneFixationLines = (stageName, recent = {}) => {
+    const { detected, named } = sceneFixationsForRun(recent);
+    const blocked = detected.filter(item => !item.raisedByInput);
+    const lines = [];
+    if (blocked.length || named.length) {
+      const words = blocked.map(item => (item.stem.length >= 2 ? `${item.stem} (${item.forms.join(' / ')})` : item.forms.join(' / ')));
+      lines.push(`- FIXATION TO BREAK: the recent responses keep returning to ${[...words, ...named.map(item => `“${item.text}”`)].join('; ')}. Do not bring it back this turn in any form: no echo, callback, play on words, or variation of it, in dialogue or narration, unless the current input itself raises it. Memory or evidence that mentions it records the past; it is not a cue to repeat it. Move the scene through something else that is present.`);
+      if (stageName === 'aide_plot' || stageName === 'aide_character') lines.push('- If the draft still echoes it, keep the beat and change the words or the move so the echo is gone.');
+    }
+    const raised = detected.filter(item => item.raisedByInput);
+    if (raised.length) lines.push(`- The current input itself raises ${raised.map(item => item.forms[0]).join(', ')}: answer it this turn, then let it go instead of turning it into a refrain.`);
+    if (stageName === 'aide_plot') lines.push('- OUTPUT: add a top-level "fixation": up to two short lines naming a word, phrase, image or idea that several recent responses keep returning to and that this draft would repeat again (for example a pet phrase, a running metaphor, a repeated dare); use [] when there is none, and never list what the current input itself raises.');
+    return lines;
   };
   const sceneVarianceBlock = (stageName, recentValue = {}, settingsValue = {}) => {
     if (!isDraftPipelineStage(stageName)) return '';
@@ -25645,6 +25772,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (repetition.motifs.length) {
       lines.push(`- ALREADY-USED MOTIFS (recent responses): ${repetition.motifs.join(', ')}. Do not bring them back unless something about them changes this turn; vary within this scene instead of leaving it.`);
     }
+    lines.push(...sceneFixationLines(stageName, recent));
     return ['[LIVING SCENE — PURPOSE, VARIANCE AND REPETITION]', ...lines].join('\n');
   };
   const fullDraftStageRoleInstructions = (stageName, settings = {}) => ({
@@ -27851,6 +27979,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
+      fixation: normalizeStringArray(parsed.fixation, 2, 160),
       doNotReveal: normalizeStringArray(parsed.do_not_reveal || parsed.doNotReveal, 24, 420),
       povLimits: normalizeStringArray(parsed.pov_limits || parsed.povLimits, 24, 420),
       beats: normalizeStringArray(
@@ -29171,10 +29300,11 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         worldCheck: patch.worldCheck,
         worldReadings: patch.worldReadings,
         scenePurpose: patch.scenePurpose,
-        storyArc: patch.storyArc
+        storyArc: patch.storyArc,
+        fixation: patch.fixation
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
+        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -29400,6 +29530,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     if (result?.ok !== false && !result?.fallback) {
       recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings);
       rememberScenePurpose(recent, result?.twoCallAnalysis?.scenePurpose, stageName, result?.twoCallAnalysis?.storyArc);
+      rememberSceneFixations(recent, result?.twoCallAnalysis?.fixation, stageName);
     }
     if (result?.ok !== false && !result?.fallback && result?.draft?.rp_text && result.twoCallAnalysis) {
       recordAideLedgerEntry(ledger, stageName, {
@@ -43847,7 +43978,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (!key) return null;
     const same = run => (run && run.key === key ? run : null);
     const variance = same(Runtime.sceneVarianceRun), purpose = same(Runtime.scenePurposeRun), arcSource = same(Runtime.sceneArcSource);
+    const fixationState = Runtime.sceneFixations?.[compact(Runtime.activeScopeKey || '', 512) || 'default'] || null;
     return cloneJson({
+      fixations: {
+        detected: Runtime.sceneFixationDetected?.key === key ? Runtime.sceneFixationDetected.items : [],
+        named: (fixationState?.named || []).map(item => ({ text: item.text, stage: item.stage, runsLeft: item.runsLeft, fromThisRun: item.addedIn === key }))
+      },
       schema: 'gradia.scene_run.v1', at: Math.max(Number(variance?.at || 0), Number(purpose?.at || 0), Number(arcSource?.at || 0)),
       arcSource: arcSource ? { kind: arcSource.lines.length ? 'libra_story_arc' : 'read_from_scene', lines: arcSource.lines } : null,
       arcReading: purpose?.arc || '', purpose: purpose?.text || '', setBy: purpose?.stage || '',
@@ -43871,7 +44007,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ...row('아크 출처', arcSourceText, run.arcSource?.kind !== 'libra_story_arc'),
         ...row('이번 턴 아크 판독', run.arcReading ? run.arcReading + by : '판독 없음', !run.arcReading),
         ...row('장면 목적', run.purpose ? run.purpose + by : '정해지지 않음', !run.purpose),
-        ...row('무작위 변수', variable ? `${SCENE_VARIANCE_CATEGORY_LABELS[variable.category] || variable.category} · ${variable.text}` : run.variance?.level === 'off' ? '꺼짐' : '이번 턴 없음', !variable)
+        ...row('무작위 변수', variable ? `${SCENE_VARIANCE_CATEGORY_LABELS[variable.category] || variable.category} · ${variable.text}` : run.variance?.level === 'off' ? '꺼짐' : '이번 턴 없음', !variable),
+        ...row('반복 차단', (() => {
+          const detected = (run.fixations?.detected || []).map(item => `${item.forms.join(' / ')} · 최근 응답 ${item.responses}곳${item.raisedByInput ? ' · 이번 입력이 꺼내서 허용' : ''}`);
+          const named = (run.fixations?.named || []).map(item => `“${item.text}” · ${STAGE_DEF_MAP[item.stage]?.label || item.stage}${item.fromThisRun ? ' · 다음 턴부터' : item.runsLeft > 0 ? ` · ${item.runsLeft}턴 더` : ' · 이번 턴까지'}`);
+          return [...detected, ...named].join('\n') || '감지된 반복 없음';
+        })(), !(run.fixations?.detected || []).length && !(run.fixations?.named || []).length)
       ]), guiEl('p', { class: 'hint', style: 'margin:8px 0 0', text: '가장 최근 실행 한 번의 기록입니다. 저장되지 않으며 다음 실행이 덮어씁니다.' })]
         : [guiEl('p', { class: 'hint', text: '아직 실행 기록이 없습니다. 실행하면 이번 턴의 아크 출처, 아크 판독, 장면 목적, 무작위 변수가 여기에 표시됩니다.' })])
     );
