@@ -2181,7 +2181,7 @@
     const scope = rpImpersonationScope(settings);
     if (scope === 'all') return 'END ON A SEED: add no event. Close on something unresolved that the input already contains, shown as still unresolved: what is still shut, still unanswered, still out of reach. If the input contains nothing unresolved, simply stop. The ending must not decide what the persona does next.';
     if (scope === 'persona_cast') return 'END ON A SEED: finish on one change in the surroundings that moves no character and is left unexplained, such as a sound that stops at the end of the corridor or a light that goes out and stays out. It must not settle back to calm. It need not be a question, and it must not decide what the persona does next.';
-    return 'END ON THE NEXT CHOICE: finish where the persona has to choose next, on one seed that others or the world hand to the persona, such as something an NPC starts doing on their own, something held out and waiting, or a change right in front of them. Prefer an act or a change over a question: ask the persona at most one question, and only when nothing else fits. Do not wrap the exchange up. ' + NEXT_TURN_SEED_RULES;
+    return 'END ON THE NEXT CHOICE: finish where the persona has to choose next, on one seed that others or the world hand to the persona, such as something an NPC starts doing on their own, something held out and waiting, or a change right in front of them. Prefer an act or a change over a question: ask the persona at most one question, and only when nothing else fits. Do not wrap the exchange up. ' + NEXT_TURN_SEED_RULES + ' Do not avoid a natural reaction or a single direct question by having an NPC talk to themselves, answer their own question, or tack on an unmotivated errand.';
   };
   const NOVEL_NEXT_TURN_SEED_LINE = 'END ON A SEED: deepen the current scene and stop just before it resolves. Do not finish the arc in one response: no wrapping up the search, leaving the place, reaching the conclusion, or a closing reflection, unless the author explicitly asks for that ending. Leave one concrete unresolved thing inside the scene for the next turn, taken from what the characters have found, said, or noticed, such as a torn last page or a plan left half made. Before stopping, move the scene at least one real step (a decision, a reveal, a change of position or plan) so it never circles back to the same tension. ' + NEXT_TURN_SEED_RULES;
   // What the model may write in each RP mode. It overrides every other line of the prompt that gives the model more.
@@ -2266,7 +2266,9 @@
         '- A user attempt/request is not proof of success, NPC acceptance, consent, transfer, relationship change, or any other external result. Determine only the world/NPC side from valid causality and canon.',
         '- If the user input is blank, silence, or an explicit continue cue, the user character contributes NO new action or dialogue. Continue only NPC/world motion already in progress or a causally adjacent response, then stop at the next point requiring user agency.',
         '- Story Arc, Narrative Archive recall, Skills, lore, memory, Author Note, and length targets may guide NPC/world portrayal, model-owned initiative, and continuity. None of them can authorize a new user-character behavior.',
-        '- MODEL-OWNED AUTONOMY IS REAL: NPCs/world may initiate conversation, make decisions, reveal what they know, create grounded complications/opportunities, arrive/leave, or change location when those beats follow current goals, pressure, canon, or established causality. RP does not mean freezing the world until the player moves.',
+        '- MODEL-OWNED AUTONOMY IS REAL: NPCs/world may initiate conversation, make decisions, reveal what they know, create grounded complications/opportunities, arrive/leave, or change location when those beats follow current goals, pressure, canon, or established causality. RP does not mean freezing the world until the player moves. However, autonomy means reacting naturally and proportionally to the immediate scene—never padding a quiet or 1-on-1 turn with NPC self-talk, self-answering dialogue, or unmotivated errands.',
+        '- An NPC may physically act toward or touch the persona (such as shaking their shoulder, pulling a blanket, or stepping closer) when it fits their personality and the moment, while leaving the persona’s resulting reaction, awakening, or reply for the user’s next input.',
+        '- When the current user input advances time, location, or physical state (such as waking up later), react first to the new immediate situation created by the input rather than mechanically forcing an outdated question from the previous scene back into focus.',
         '- Do not force an unrelated sequel, random interruption, arbitrary reveal, relocation, or escalation merely to fill length. New model-owned beats are allowed when they are causally earned and do not require silently choosing the player character’s response.',
         '- USER-AGENCY FRONTIER: continue through as many model-owned beats as remain causally self-sufficient. Stop only before the next meaningful beat whose truth depends on a NEW user-character action, dialogue, consent/refusal, decision, private reaction, or voluntary movement.',
         '- An NPC may leave or say goodbye, and time may pass, when that is itself model-owned and does not skip a player decision that the scene has actually placed in front of the user. It is a defect when used to bypass or pre-answer such a player-owned beat, and the response still ends where the persona can respond.',
@@ -2321,6 +2323,7 @@
         '- NPC/world autonomy is allowed and expected when causally supported. Do not over-correct by freezing NPCs, demanding a player reply too early, or stripping model-owned initiative from the scene.',
         '- Story Arc, skills, lore, and length targets can improve model-owned reactions and grounded NPC/world initiative; they cannot create user-character behavior.',
         '- Preserve the USER-AGENCY FRONTIER and the closing seed. NPC/world may depart or transition, but the response must still end where the next player choice is needed.',
+        '- CAUSAL & NARRATIVE SANITY: if the draft has an NPC monologuing, answering their own questions, forcing an unmotivated errand or prop distraction, or clinging awkwardly to an outdated question after a time/state jump, trim or simplify the contrived beat so the scene reads like natural fiction and stops cleanly where the persona’s response belongs.',
         domainLine,
         phase === 'analysis'
           ? '- Diagnose user-agency crossings, AGENCY-BYPASS CLOSURE, and endings that close everything. An ending is defective when it skips or pre-answers a player-owned beat, or when it leaves nothing for the next player choice.'
@@ -2334,6 +2337,7 @@
         '- CURRENT_SAME_TURN_DRAFT may intentionally absorb user-supplied in-world material in its opening and then continue authoring the user persona plus all other actors.',
         '- Preserve explicit author-fixed actor/action/target/completion/dialogue/outcome/boundary commitments, but do not treat later model-authored user-persona behavior as an agency violation merely because it was not written verbatim in the input.',
         '- Patch only domain-relevant defects: semantic distortion of author direction, contradiction of explicit fixed/reserved decisions, OOC/meta leakage, characterization/canon/continuity error, or redundant retelling.',
+        '- CAUSAL & NARRATIVE SANITY: if the draft pads length with contrived side-accidents, out-of-character impulses, or clings awkwardly to an outdated question/setting after an author-directed time or state jump, trim or simplify the contrived beat so the prose reads like natural fiction.',
         phase === 'analysis'
           ? '- Diagnose whether the draft fulfills the authorial scene rather than whether it leaves the user persona untouched.'
           : '- You may revise or add user-persona prose inside your domain when needed to improve the author-directed scene.'
@@ -2344,6 +2348,7 @@
       buildNovelAuthorshipContract(settings, phase === 'analysis' ? 'analysis' : 'writing'),
       '- Treat CURRENT_SAME_TURN_DRAFT as the realized author-directed scene, not as a protected response after an already-enacted player turn.',
       '- Preserve the user’s explicit scene commitments and reservations, but you may revise or add user-persona action/dialogue/interiority inside your AIDE domain when it improves the same author-directed scene.',
+      '- CAUSAL & NARRATIVE SANITY: if the draft pads length with contrived side-accidents, out-of-character impulses, or clings awkwardly to an outdated question/setting after an author-directed time or state jump, trim or simplify the contrived beat so the prose reads like natural fiction.',
       '- Do not force the draft to begin after the raw input; preserve whichever opening best realizes the authorial brief without redundant instruction replay.'
     ].filter(Boolean).join('\n');
   };
@@ -2421,7 +2426,7 @@
       '- Never write the player response beyond the frontier.'
     ];
     if (stage === 'shadow_act') lines.push(
-      '- SHADOW duty: plan enough model-owned causal motion for a satisfying turn, then identify the actual user-agency frontier. Do not choose an artificially early stop and do not write past the frontier.'
+      '- SHADOW duty: write a natural, causally grounded NPC/world response that fits the immediate situation, and stop cleanly at the first natural point where the persona’s reaction or choice is needed—do not pad with NPC self-talk or contrived errands.'
     );
     if (stage === 'aide_character') lines.push(
       '- Character AIDE duty: let NPCs pursue their own conversational and relational logic. Do not force them to ask a question just to end the turn, and do not supply the player side of an exchange.'
@@ -24791,6 +24796,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         'There is NO minimum beat count that must be filled. The necessary beat inventory is determined by the user action plus causally owed NPC/world reactions.',
         'Develop the response through NPC dialogue, autonomous NPC decisions, environmental/world consequences, physical causality, relationship pressure, and sensory staging that belongs to model-owned actors/world.',
         'Continue through all causally useful model-owned beats, and stop only when the next meaningful progression requires a new user-character action, dialogue, consent/refusal, feeling, decision, or voluntary movement. A shorter response is correct when that boundary arrives early.',
+        'Natural prose pacing: write as a focused, human scene in a novel—stop cleanly once the NPC’s immediate reaction or initiative naturally invites the persona’s response, instead of stretching a single turn with NPC self-talk, self-answering dialogue, or artificial side-actions.',
         'End where the next player choice is needed. If NPC/world causality produces a departure or transition, let it happen, but still leave that choice open, and do not use closure to bypass a player-owned beat that is already pending.',
         'The final beat is a seed for that choice, something from the scene handed to the persona. A direct question is optional. What matters is that the model never writes the player’s next contribution.',
         'Never pad by replaying the user input, puppeting the user character, adding an unrelated random event, or jumping to a causally unsupported sequel scene.'
@@ -25402,10 +25408,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     isAuthorDirectedDraftMode(settings)
       ? (rpScopeLocksCast(settings)
           ? '- PLAYER-CONTROLLED RP: follow the RP detail mode above for what may be written.'
-          : '- PLAYER-CONTROLLED RP: what the persona does and says in the current input is the already-enacted player contribution for this turn; do not restage that part. Show first what the input states about others or the situation, then write NPC/world/model-owned continuation. Continue causally until a new player contribution is actually required, and stop there on a seed for that choice.')
+          : '- PLAYER-CONTROLLED RP: what the persona does and says in the current input is the already-enacted player contribution for this turn; do not restage that part. Show first what the input states about others or the situation, then write NPC/world/model-owned continuation. React first to the immediate situation created by the current input (especially if time, location, or physical state moved forward) rather than forcing an outdated question from the previous turn back into focus, and stop cleanly at the first natural point where a new player contribution is needed.')
       : normalizeShadowDraftMode(settings?.shadowDraftMode) === 'input_inclusive'
-        ? '- Start from the terminal handoff and fold the user-authored in-world portion of the current input into the opening as one continuous scene beat; do not reset the older scene or duplicate the incorporated input afterward.'
-        : '- NOVEL CLASSIC: use the previous assistant endpoint as the factual handoff and interpret the current input as an author brief/scene seed, not automatically as already-enacted player behavior. Realize the requested scene from that handoff without mechanical input replay, and freely author the user persona unless the author explicitly fixed/reserved a choice.',
+        ? '- Start from the terminal handoff and fold the user-authored in-world portion of the current input into the opening as one continuous scene beat; do not reset the older scene or duplicate the incorporated input afterward. If the input explicitly advances time, location, or physical state, honor that transition first rather than pulling an outdated question or setting from the previous turn back into focus.'
+        : '- NOVEL CLASSIC: use the previous assistant endpoint as the factual handoff and interpret the current input as an author brief/scene seed, not automatically as already-enacted player behavior. Realize the requested scene from that handoff without mechanical input replay, and freely author the user persona unless the author explicitly fixed/reserved a choice. If the author brief explicitly advances time, location, or physical state, follow that transition naturally rather than clinging to an outdated line from the previous turn.',
     '- Older turns and long-term continuity records provide historical support only. They must not outweigh, replace, summarize over, or pull the scene away from the terminal passage.',
     '- The first draft should already contain dialogue, small physical reactions, social timing, concrete behavior, and enough scene substance for later agents to refine.',
     '- Use character, persona, lore, and memory as hidden writing fuel, but never turn them into profile exposition.',
@@ -25569,6 +25575,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
           ? '- It is a change in the world only; no character takes a new act or line.'
           : '- It belongs to an NPC or the world, never to the persona.');
       lines.push('- It never overrides user direction, canon, mode rules, or reserved choices.');
+      if (gate !== 'staging') {
+        lines.push('- CAUSAL PRIORITY: never force this variable to hijack the characters’ primary emotional or situational reaction, contradict the authorial tone/direction, or manufacture an unnatural detour. If it does not fit the immediate moment naturally, keep it as subtle background texture or omit it.');
+      }
     }
     if (repetition.questions >= 3) {
       lines.push(gate === 'novel'
@@ -25601,7 +25610,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Preserve exact supplied canon and keep it separate from current interpretation. Express supported pressure, emotion, motive, relationship stance, and voice without predetermining exact reactions or outcomes.',
       'Enforce information paths and evidence levels. A character may act only on direct perception, communication, established memory, public information, or another confirmed route; suspicion and rumor remain uncertain.',
       isPlayerControlledDraftMode(settings)
-        ? 'Repair unsupported identity assumptions, generic dialogue, secret leakage, omniscient knowledge, absent-character insertion without a bridge, and any decision, consent, hidden thought, feeling, or dialogue invented for the user character.'
+        ? 'Repair unsupported identity assumptions, generic dialogue, secret leakage, omniscient knowledge, absent-character insertion without a bridge, and any decision, consent, hidden thought, feeling, or dialogue invented for the user character. Also trim unnatural NPC self-talk or self-answering monologues, and do not convert a natural opening question into a monologue.'
         : 'Repair unsupported identity assumptions, generic dialogue, secret leakage, omniscient knowledge, and absent-character insertion without a bridge. In Novel mode the user persona is authorable; improve their behavior/interiority like any other character while preserving explicit author-fixed/reserved constraints and persona canon.',
       'This is a same-turn partial edit, not a new continuation or full rewrite. Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
     ],
