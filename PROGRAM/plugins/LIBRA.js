@@ -70714,6 +70714,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
       }
     };
+    // The story arc from 서사 연감 (World Manager): which arc the story is on, its phase and the
+    // pressure now, so GRADIA's scene purpose continues the same arc each turn. GRADIA keeps
+    // nothing; it reads these lines with the evidence, like the story clock line.
+    const GRADIA_STORY_ARC_PREFIX = '[STORY ARC]';
+    const GRADIA_STORY_ARC_PHASES = Object.freeze({ emerging: '시작', developing: '전개', escalating: '고조', turning: '전환', aftermath: '여파', resolved: '종결' });
+    const gradiaStoryArcText = async (scope, worldlineView, pairs) => {
+      // An earlier branch point is not where the current arc head stands.
+      if (Number.isFinite(worldlineView?.cutoffTurn) && worldlineView.cutoffTurn < asArray(pairs).length) return '';
+      const head = await loadContinuityState(scope).catch(() => null);
+      const narrative = normalizeCurrentNarrativeState(head?.narrative);
+      const said = value => compact(string(typeof value === 'string' ? value : value?.summary || value?.text || value?.pressure || '').replace(/\s+/g, ' ').trim(), 240);
+      const open = narrative.arcs.filter(row => !['resolved', 'superseded'].includes(string(row?.status || 'active').toLowerCase()));
+      const primary = open.find(row => row.id === narrative.primaryArcId) || open.find(row => string(row?.status || 'active') === 'active') || open[0] || null;
+      const describe = row => {
+        const phase = GRADIA_STORY_ARC_PHASES[string(row?.phase || '').toLowerCase()] || '';
+        const title = said(row?.title || row?.summary);
+        if (!title) return '';
+        const summary = row?.title && row?.summary ? said(row.summary) : '';
+        const pressure = said(row?.centralPressure);
+        return [`${title}${phase ? ` (단계: ${phase})` : ''}`, summary && `— ${summary}`, pressure && `· 중심 압력: ${pressure}`].filter(Boolean).join(' ');
+      };
+      const lines = [];
+      if (primary && describe(primary)) lines.push(`${GRADIA_STORY_ARC_PREFIX} 진행 중 흐름: ${describe(primary)}`);
+      const momentum = said(narrative.momentum);
+      if (momentum) lines.push(`${GRADIA_STORY_ARC_PREFIX} 현재 압력: ${momentum}`);
+      for (const row of open.filter(item => item !== primary).slice(0, 2)) if (describe(row)) lines.push(`${GRADIA_STORY_ARC_PREFIX} 다른 흐름: ${describe(row)}`);
+      return lines.join('\n');
+    };
     const captureGradiaMemoryEvidenceOnce = async (request, authority) => {
       const before = await gradiaLensReadSnapshot(request);
       // Both owner channels validate the proposal before reaching this reader.
@@ -70756,7 +70784,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           storyClock = storyClockDelivery(await readStoryClockTimeline(before.context, { pairs, cutoff: worldlineView.cutoffTurn ?? Infinity }));
         } catch (_) { storyClock = null; }
         const clockText = storyClock?.line || '';
-        const content = [[UNIFIED_RECALL_RULES,clockText,canonical].filter(Boolean).join('\n'),lensText].filter(Boolean).join('\n\n');
+        let arcText = '';
+        try { arcText = await gradiaStoryArcText(before.context.scope, worldlineView, pairs); } catch (_) { arcText = ''; }
+        const content = [[UNIFIED_RECALL_RULES,clockText,arcText,canonical].filter(Boolean).join('\n'),lensText].filter(Boolean).join('\n\n');
         if (MemorySuiteExecutionContract.utf8Bytes(content)>request.maxCorpusBytes) throw Error('LIB_READ_CORPUS_BUDGET_EXCEEDED');
         const lensEvidence = Object.freeze({schema:'libra.gradia-lens-evidence.v1',noncanonical:true,
           itemCount:asArray(lens?.injectedItems).length,characterLength:Number(lens?.usedChars || 0),

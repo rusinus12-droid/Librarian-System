@@ -2088,7 +2088,7 @@
     .join('\n\n');
   // Fields are added only while an extension is active, so the schema is unchanged otherwise.
   const withExtensionAideJsonProperties = (schema, stageName, settings = {}) => {
-    const extra = Object.assign({}, ...activeExtensionAideStages(settings).map(stageId => EXTENSION_AIDE_DEFS[stageId].jsonProperties(stageName, settings) || {}));
+    const extra = Object.assign({}, scenePurposeJsonProperties(stageName), ...activeExtensionAideStages(settings).map(stageId => EXTENSION_AIDE_DEFS[stageId].jsonProperties(stageName, settings) || {}));
     const keys = Object.keys(extra);
     if (!keys.length) return schema;
     return { ...schema, required: [...schema.required, ...keys.filter(key => !schema.required.includes(key))], properties: { ...schema.properties, ...extra } };
@@ -4019,6 +4019,12 @@ ${BIANCA_PERSONA_TEXT}`;
   const evidenceDerivedEntry = entry => !!entry && (entry.externalEvidence === true
     || entry.finalDraftMeta?.externalEvidence === true || hasLibEvidenceMarker(entry.injection));
   const libEvidencePrompt = settings => settings?.[LIB_EVIDENCE_CONTEXT]?.block || '';
+  // LIBRA marks whole lines for the story clock and the story arc (서사 연감). They describe the
+  // story as a whole, so per-sentence evidence parsing leaves them out.
+  const LIB_MARKER_LINE_RE = /^\s*\[STORY (?:CLOCK|ARC)\]/;
+  const libEvidenceWithoutMarkers = settings => libEvidencePrompt(settings).split('\n').filter(line => !LIB_MARKER_LINE_RE.test(line)).join('\n');
+  const libStoryArcLines = settings => libEvidencePrompt(settings).split('\n')
+    .filter(line => /^\s*\[STORY ARC\]/.test(line)).map(line => line.replace(/^\s*\[STORY ARC\]\s*/, '').trim()).filter(Boolean).slice(0, 4);
   // System-side reading guide for the GRADIA EXTERNAL EVIDENCE block. Each draft stage
   // reads the same packet for its own job, so SHADOW and the AIDEs do not all redo
   // the same continuity work.
@@ -24055,6 +24061,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
+      scenePurpose: compact(parsed.scene_purpose || '', 400),
+      storyArc: compact(parsed.story_arc || '', 400),
       edits
     };
   };
@@ -25409,52 +25417,65 @@ Begin directly with the in-world response and finish the complete same-turn draf
     'CAUSAL REALISM: a habit, routine, or standing arrangement (a nightly call, a regular visit, a shared ritual) continues only while the reasons behind it still hold. When the story has changed those reasons (a breakup, a betrayal, a fight, a loss, a move), the old routine stops by default, and every other character acts from their changed position, not from the old pattern.',
     'BELIEF IS NOT FACT: a character may still expect, hope for, or insist on the old pattern. Write that as the character’s own belief together with the feeling that drives it (longing, denial, guilt, pride), and let the world answer by its own causes, usually by the routine not happening. A mistaken belief deepens the character; it never makes the event happen.',
     'PROBABLE OVER CONVENIENT: ask what each person would really do after what just happened, at this time of day, given what they now know and feel. Example: after a breakup that morning, the ex does not make the usual evening call; she may still wait by the phone out of lingering hope, and the silence is what lands.',
-    'PLAUSIBLE IS NOT PREDICTABLE: people are not machines. Within what is believable, prefer the less obvious choice; let mood, impulse, misjudgment, habit, and contradiction move them, and do not explain every reason. A believable surprise beats the most likely line.'
+    'PLAUSIBLE IS NOT PREDICTABLE: people are not machines. Within what is believable and inside this scene, prefer the less obvious choice; let mood, impulse, misjudgment, habit, and contradiction move them, and do not explain every reason. A believable surprise beats the most likely line.'
   ]);
   // Living scene: one random variable per run, plus calculated repetition and question load.
   // The variable is truly random (a regenerated turn may get another one); it is drawn once
   // per run and shared by every stage so the draft and its reviewers agree.
   const SCENE_VARIANCE_LEVELS = Object.freeze({ off: 0, low: 0.35, medium: 0.6, high: 0.9 });
   const normalizeSceneVariance = value => normalizeChoice(String(value || '').trim().toLowerCase(), Object.keys(SCENE_VARIANCE_LEVELS), 'medium');
+  // User decision 2026-11-17: randomness stays inside the scene. Every variable bends how this
+  // scene unfolds (a person present, the matter at hand, an object or the place itself); none
+  // opens an unrelated topic, memory, or event.
   const SCENE_VARIANCE_POOL = Object.freeze({
     inner: Object.freeze([
-      'an unrelated memory surfaces in a non-persona character and colors their next line',
-      'a non-persona character’s mood swings without a stated reason (a flash of irritation, an odd lightness)',
-      'a physical impulse wins over what a non-persona character meant to do (they reach for something, stand up, laugh at the wrong moment)',
+      'a non-persona character reacts to the last line with a feeling they did not expect in themselves, and it shows',
+      'a non-persona character’s mood about what is happening here swings without a stated reason (a flash of irritation, an odd lightness)',
+      'a physical impulse wins over what a non-persona character meant to do here (they reach for something in the scene, stand up, laugh at the wrong moment)',
       'a non-persona character misreads what just happened and acts on the wrong idea',
-      'a non-persona character says the opposite of what they feel, then half-corrects it',
-      'a non-persona character loses the thread and drifts to a small private worry',
-      'a non-persona character fixates on a trivial detail in the room',
-      'a non-persona character changes their mind in the middle of a sentence',
-      'a non-persona character gets tired of the topic and drops it',
-      'a small habit or quirk of a non-persona character shows'
+      'a non-persona character says the opposite of what they feel about the matter at hand, then half-corrects it',
+      'a non-persona character fixates on a detail of this place or of someone present',
+      'a non-persona character changes their mind about the matter at hand in the middle of a sentence',
+      'a small habit or quirk of a non-persona character shows in how they handle this moment'
     ]),
     initiative: Object.freeze([
-      'instead of asking, a non-persona character decides something on their own and does it',
-      'a non-persona character starts a small task with their hands that changes the scene',
-      'a non-persona character brings up a topic of their own, unrelated to the last line',
-      'a non-persona character makes a slightly reckless suggestion and already acts on part of it',
-      'a non-persona character shares something about themselves that no one asked about',
-      'a non-persona character postpones or refuses something they had agreed to, for a reason they keep to themselves',
-      'a non-persona character teases or provokes, slightly out of their usual manner',
-      'a non-persona character moves away from the exchange (another part of the room, the window, the door) and keeps talking from there'
+      'instead of asking, a non-persona character decides something about the matter at hand and does it',
+      'a non-persona character starts a small task with something in this scene that changes the situation',
+      'a non-persona character pushes the current exchange one step further than expected',
+      'a non-persona character makes a slightly reckless suggestion about the situation at hand and already acts on part of it',
+      'a non-persona character reveals something about themselves that bears on what is happening now',
+      'a non-persona character postpones or refuses something asked in this scene, for a reason they keep to themselves',
+      'a non-persona character teases or provokes about what just happened, slightly out of their usual manner',
+      'a non-persona character moves within the scene (to the window, the door, another part of the place) and keeps the exchange going from there'
     ]),
     world: Object.freeze([
-      'a familiar background sound stops at an unexpected moment',
-      'a sound from outside (a car, voices, construction) cuts in',
-      'the weather or the light shifts',
-      'a small object falls, spills, or breaks',
-      'a smell drifts in (food, rain, smoke)',
-      'a minor bodily need interrupts someone other than the persona (hunger, cold, thirst)',
-      'something in the room is not where it was expected',
+      'a familiar background sound of this place stops at an unexpected moment',
+      'a sound from just outside this place (a car, voices, an animal, the wind) cuts in',
+      'the weather or the light here shifts',
+      'an object in the scene falls, spills, or breaks',
+      'a smell reaches the scene from somewhere nearby (food, rain, smoke)',
+      'a minor bodily need interrupts someone present other than the persona (hunger, cold, thirst)',
+      'something in the scene is not where it was expected',
       'a little time passes in silence before anyone speaks'
     ]),
     protagonist: Object.freeze([
-      'the protagonist acts on an impulse the author did not specify',
+      'the protagonist acts on an impulse about the matter at hand that the author did not specify',
       'the protagonist misjudges the moment and says something slightly wrong',
-      'the protagonist notices something odd that no one else does'
+      'the protagonist notices something odd in the scene that no one else does'
     ])
   });
+  // The purpose of this run's scene, shared by every stage: SHADOW's plan sets it in two-call
+  // mode; otherwise the first AIDE names the purpose its draft serves and later stages keep it.
+  const scenePurposeForRun = (recent = {}) => {
+    const run = Runtime.scenePurposeRun;
+    return run && run.key === sceneVarianceRunKey(recent) ? run : null;
+  };
+  const rememberScenePurpose = (recent = {}, value = '', stageName = '', arcValue = '') => {
+    const purpose = compact(value || '', 400);
+    if (!purpose || scenePurposeForRun(recent)) return;
+    Runtime.scenePurposeRun = { key: sceneVarianceRunKey(recent), text: purpose, arc: compact(arcValue || '', 400), stage: stageName, at: Date.now() };
+  };
+  const scenePurposeJsonProperties = stageName => (CORE_AIDE_STAGE_IDS.includes(stageName) ? { scene_purpose: { type: 'string' }, story_arc: { type: 'string' } } : {});
   let sceneVarianceRandom = () => Math.random();
   const sceneVarianceRunKey = (recent = {}) => text(recent?.runLineage?.runId || recent?.runLineage?.currentInputHash || stableDraftHash(String(recent?.latestUser || '')));
   const sceneVarianceForRun = (recent = {}, settings = {}) => {
@@ -25513,15 +25534,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (gate === 'skip') return '';
     const run = sceneVarianceForRun(recent, settings);
     const repetition = sceneRepetitionReport(recent);
+    const purpose = scenePurposeForRun(recent);
+    const isAide = CORE_AIDE_STAGE_IDS.includes(stageName);
     const lines = [];
+    // Arc: the larger flow this scene belongs to. 서사 연감 records it; without a record the
+    // arc is read from the scene, never invented.
+    const arcLines = libStoryArcLines(settings);
+    if (purpose?.arc) lines.push(`- THIS RUN’S ARC READING (set earlier in this run): ${purpose.arc}.`);
+    else if (arcLines.length) lines.push(`- STORY ARC (LIBRA 서사 연감): ${arcLines.join(' / ')}. Read the arc this scene belongs to from these lines and the recent scene.`);
+    else lines.push('- STORY ARC: none recorded yet. Read the arc the story is already on from the recent scene: what the main characters want or face, what stands in the way, and how far it has come. Do not invent an arc the scene does not show.');
+    lines.push('- The scene purpose is the next step of that arc that the current input opens: move the arc one step within its phase, or into the next phase only when the scene earns it. Do not resolve the arc in one turn and do not start an unrelated one.');
+    // Purpose: what this scene is for decides what happens in it and how everyone responds.
+    lines.push(purpose
+      ? `- THIS SCENE’S PURPOSE (set earlier in this run): ${purpose.text}. Keep it; change it only when the current input plainly asks for something else.`
+      : `- Settle this scene’s purpose first: the one thing this response must move forward, taken from the current input first, then the author note, the open pressure at the end of the last response, and the active arc.${gate === 'novel' ? '' : ' In RP the purpose is how the world and the other characters answer the persona, never a decision for the persona.'}`);
+    lines.push('- Arrange the development and every reaction by that purpose: each character responds from their own position in a way that pushes, resists, or complicates it, and the world (the place, objects, sound, time, bystanders) supports or presses on it.');
+    lines.push('- A beat the purpose cannot explain does not belong here: tie it to the purpose or cut it. Nothing unrelated to this scene enters the response.');
+    if (isAide) lines.push(`- OUTPUT: add a top-level "scene_purpose": one short line naming the purpose this draft serves${purpose ? ' (the purpose above)' : ''}, and a top-level "story_arc": one short line naming the arc, its phase, and this scene’s step in it${purpose?.arc ? ' (the arc reading above)' : ''}.`);
     if (run.variable) {
       lines.push(`- THIS TURN’S VARIABLE (${run.variable.category}): ${run.variable.text}.`);
+      lines.push('- The variable comes from inside this scene: a person present, the line just spoken, the matter at hand, or an object or feature of this place. It bends how the scene reaches its purpose (a detour, a friction, a sharper edge); it never opens a topic, memory, or event unrelated to the scene.');
       lines.push(stageName === 'shadow_act'
         ? '- Write it into the first draft, early or mid-scene, believable without explanation: people do not always state their reasons.'
         : stageName === 'aide_plot'
-          ? '- The draft carries this variable on purpose. It is not arbitrary escalation or a random interruption: keep it, and only make sure it does not become the ending.'
-          : '- The draft carries this variable on purpose: keep it, and only make it fit the character and the scene.');
-      lines.push('- Ground the variable in an established person, object, or feature of the setting. Give it one small effect on what happens next without inventing new lore, technology, or obligations to make it fit.');
+          ? '- The draft carries this variable on purpose. Keep it when it stays inside the scene and serves or tests the purpose, and make sure it does not become the ending. If it drifted off the scene, tie it back to the scene or remove it; never add an unrelated substitute.'
+          : '- The draft carries this variable on purpose. Keep it when it stays inside the scene and make it fit the character; if it drifted off the scene or works against the purpose, tie it back or remove it.');
+      lines.push('- Give it one small effect on what happens next without inventing new lore, technology, or obligations to make it fit.');
       lines.push(gate === 'novel'
         ? '- It may belong to any character, the protagonist included, unless the author reserved that choice.'
         : gate === 'staging'
@@ -25535,9 +25573,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : `- QUESTION LOAD: the last response asked the persona ${repetition.questions} questions. This turn ask the persona at most one question, or none; let NPCs act, decide, or change the subject instead.`);
     }
     if (repetition.motifs.length) {
-      lines.push(`- ALREADY-USED MOTIFS (recent responses): ${repetition.motifs.join(', ')}. Do not bring them back unless something about them changes this turn; give the scene something new.`);
+      lines.push(`- ALREADY-USED MOTIFS (recent responses): ${repetition.motifs.join(', ')}. Do not bring them back unless something about them changes this turn; vary within this scene instead of leaving it.`);
     }
-    return lines.length ? ['[LIVING SCENE — VARIANCE AND REPETITION]', ...lines].join('\n') : '';
+    return ['[LIVING SCENE — PURPOSE, VARIANCE AND REPETITION]', ...lines].join('\n');
   };
   const fullDraftStageRoleInstructions = (stageName, settings = {}) => ({
     shadow_act: [
@@ -26065,7 +26103,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return null;
   };
   const bodyStateEvidenceLines = (recent = {}, settings = {}) => {
-    const lib = forcedBondSentences(libEvidencePrompt(settings)).filter(line => !line.startsWith('[STORY CLOCK]')).map(line => ({ source: 'LIB', line, relative: null }));
+    const lib = forcedBondSentences(libEvidenceWithoutMarkers(settings)).map(line => ({ source: 'LIB', line, relative: null }));
     const messages = Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [];
     const scene = messages.flatMap(message => forcedBondSentences(message?.content).map(line => ({ source: 'recent', line, relative: bodyStateRelativeDays(line) })));
     return [...lib, ...scene];
@@ -27580,6 +27618,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
+      scenePurpose: compact(parsed.scene_purpose || '', 400),
+      storyArc: compact(parsed.story_arc || '', 400),
       doNotReveal: normalizeStringArray(parsed.do_not_reveal || parsed.doNotReveal, 24, 420),
       povLimits: normalizeStringArray(parsed.pov_limits || parsed.povLimits, 24, 420),
       beats: normalizeStringArray(
@@ -28896,10 +28936,12 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         stateCheck: patch.stateCheck,
         stateReadings: patch.stateReadings,
         worldCheck: patch.worldCheck,
-        worldReadings: patch.worldReadings
+        worldReadings: patch.worldReadings,
+        scenePurpose: patch.scenePurpose,
+        storyArc: patch.storyArc
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
+        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -29122,7 +29164,10 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     const result = executionRoute === 'analysis_then_serial_patch'
       ? await runTwoCallAidePatchStage(stageName, recent, previous, settings, ledger)
       : await runAidePatchStage(stageName, recent, previous, settings, ledger);
-    if (result?.ok !== false && !result?.fallback) recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings);
+    if (result?.ok !== false && !result?.fallback) {
+      recordExtensionAideOutputs(ledger, stageName, result?.twoCallAnalysis, settings);
+      rememberScenePurpose(recent, result?.twoCallAnalysis?.scenePurpose, stageName, result?.twoCallAnalysis?.storyArc);
+    }
     if (result?.ok !== false && !result?.fallback && result?.draft?.rp_text && result.twoCallAnalysis) {
       recordAideLedgerEntry(ledger, stageName, {
         analysis: result.twoCallAnalysis.analysis,
@@ -40503,6 +40548,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const shadowAnalysis = extractAnalysisFromStage(current);
     recordExtensionAideOutputs(ledger, 'shadow_act', current?.twoCallAnalysis, settings);
     const shadowPlanning = shadowPlanningFromDomain(shadowAnalysis?.domain || {});
+    rememberScenePurpose(shadowEnv.recent, shadowPlanning.storyAuthorPlan?.scene_purpose, 'shadow_act');
     if (shadowPlanning.hasContent) {
       ledger.shadowDesign = {
         storyAuthorPlan: shadowPlanning.storyAuthorPlan,
@@ -48977,6 +49023,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
       return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });
+    },
+    debugSceneBlock({ stageName = 'shadow_act', recent = {}, libText = '', settings = {} } = {}) {
+      return sceneVarianceBlock(stageName, recent, { writingMode: 'rp', ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });
     },
     debugWorldDynamicsState() {
       const scopeKey = Runtime.activeScopeKey || '';
