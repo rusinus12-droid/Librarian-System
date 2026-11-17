@@ -1,7 +1,7 @@
 //@name libra
-//@display-name LIBRA v3.0.6
+//@display-name LIBRA v3.0.7
 //@api 3.0
-//@version 3.0.6
+//@version 3.0.7
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
@@ -1305,7 +1305,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.6';
+  const PLUGIN_VERSION = '3.0.7';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -17715,18 +17715,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       // docs/gradia/STATE-AIDE-DESIGN-20261114.md §8, §10) and computes cycle phase and risk itself.
       templateId: 'starter_cycle_reproduction',
       name: '생체 주기 · 생식',
-      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상을 인물별로 기록합니다.',
-      labels: ['주기 시작', '주기 종료', '관계', '피임', '임신 검사', '임신 증상'],
+      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상, 임신 확인·출산·임신 종료를 인물별로 기록합니다.',
+      labels: ['주기 시작', '주기 종료', '관계', '피임', '임신 검사', '임신 증상', '임신 확인', '출산', '임신 종료'],
       evidenceMode: 'strict',
       canonicalContext: false,
       trackTime: true,
       trackSubject: true,
       instruction: {
-        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
-        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상'],
-        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)'],
-        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요.',
-        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom), partner, method, used(예/아니오/모름), result를 선택적으로 기록할 수 있습니다.'
+        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상, 임신이 확인된 사실, 출산, 유산 등 임신이 끝난 사건을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
+        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상', '검사 양성·진단·본인이나 의사의 확언으로 임신이 확인된 사실(원문이 말하면 임신 몇 주인지도)', '출산했다는 서술과 그 시점', '유산·사산·중절 등 임신이 끝났다는 서술'],
+        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)', '의심·걱정·추측만 있고 확인되지 않은 임신(임신 증상이나 임신 검사로 기록)'],
+        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요. 임신이 확인되면 "임신 확인", 출산은 "출산", 유산 등은 "임신 종료" 라벨을 쓰세요.',
+        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom/pregnancy/birth/pregnancy_end), partner, method, used(예/아니오/모름), result, weeks(원문이 말한 임신 주수)를 선택적으로 기록할 수 있습니다.'
       },
       recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 4 }
     },
@@ -17747,6 +17747,27 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         extraFieldsNote: 'extra에 promisor, promisee, deadline, status(예정/이행/변경/파기)를 선택적으로 기록할 수 있습니다.'
       },
       recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 3 }
+    },
+    {
+      // GRADIA's 세계 동역학 AIDE reads these notes with each note's story day and computes how
+      // long each movement has run and whether a stated span has come. The note records only what
+      // the source says; subjects are not tracked because the mover is often an organization.
+      templateId: 'starter_offscene_movement',
+      name: '장면 밖 흐름 · 진행 중인 일',
+      description: '장면 밖에서 시작되어 아직 진행 중인 일(추격, 명령·파견, 수사·절차, 이동, 소문, 준비)과 그 일이 끝난 순간을 기록합니다.',
+      labels: ['추격', '명령·파견', '수사·절차', '이동', '소문', '준비', '종결'],
+      evidenceMode: 'strict',
+      canonicalContext: false,
+      trackTime: true,
+      trackSubject: false,
+      instruction: {
+        goal: '지금 장면 밖에서 시작되어 아직 끝나지 않은 일을 기록하라: 누가(인물·세력·기관) 무엇을 시작했는지, 원문이 말한 소요 기간이나 도착 예정, 그리고 그 일이 끝나거나 취소된 순간. 하나의 일은 한 문장으로, 시작과 종결은 서로 다른 기록으로 남긴다.',
+        includeRules: ['추격·수배·현상금이 시작됐다는 서술', '명령, 파견, 소집, 전령이나 서신을 보낸 일', '수사, 조사, 재판, 심사 같은 절차가 시작되거나 진행 중이라는 서술', '인물이나 무리가 어딘가로 출발했거나 오는 중이라는 서술', '소문이 퍼지기 시작했다는 서술', '원문이 말한 소요 기간이나 도착 예정("사흘 뒤 도착", "보름 걸린다")', '위의 일이 끝남, 도착, 취소, 실패한 순간'],
+        excludeRules: ['지금 장면 안에서 바로 끝난 행동', '인물끼리 정한 약속과 기한(약속 · 일정 렌즈가 기록)', '농담·가정·추측·소망으로만 나온 일', '원문에 없는 날짜 계산, 진행 정도나 도착 여부의 추정', '원문이 밝히지 않은 배후나 목적'],
+        outputHint: '누가 무엇을 시작했는지(또는 끝났는지) 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 기간이나 도착 예정을 말하면 그 표현을 그대로 남기세요.',
+        extraFieldsNote: 'extra에 actor, kind(pursuit/order/procedure/travel/rumor/preparation), span(원문 표현 그대로), status(진행/종결/취소)를 선택적으로 기록할 수 있습니다.'
+      },
+      recall: { enabled: true, mode: 'relevant', share: 35, maxItems: 4 }
     },
     {
       templateId: 'starter_relationship_shift',
@@ -17858,6 +17879,47 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
   ].map(template => Object.freeze(template)));
   const LENS_STARTER_TEMPLATES = STARTER_LENS_TEMPLATES;
+  // A lens added from a starter template keeps its own copy of the template's instruction. One
+  // that still carries an earlier template instruction word for word (the user never edited it)
+  // moves to the current one when it is read; the earlier revision stays in revisionHistory for
+  // the notes it wrote, and the lens queue only analyzes new turns, so nothing is re-run.
+  const STARTER_LENS_PREVIOUS = Object.freeze({
+    // Before 2026-11-17: no pregnancy confirmation, birth or pregnancy end, so GRADIA's 상태 AIDE
+    // lost a pregnancy once its contact note stopped being recalled.
+    starter_cycle_reproduction: Object.freeze([Object.freeze({
+      description: '누구의 생리 주기가 언제 시작·종료됐는지, 관계·피임·임신 검사와 증상을 인물별로 기록합니다.',
+      instruction: Object.freeze({
+        goal: '인물의 생리 주기 시작과 종료, 성적 접촉이 있었던 사건, 피임 수단과 실제 사용 여부, 임신 검사와 결과, 임신을 의심하게 하는 증상을 기록하라. 사실이 속한 사람은 말한 사람이 아니라 몸에 그 일이 있는 사람이다. 성적 접촉은 관련된 인물 각각에게 같은 사건으로 기록한다.',
+        includeRules: ['생리가 시작되거나 끝났다는 서술이나 대사', '성적 접촉이 실제로 있었다는 서술(암시가 아니라 일어난 일)', '피임 수단의 종류와 그때 사용했는지, 쓰지 않았는지, 실패했는지', '임신 검사 실시와 결과', '생리 지연, 입덧 등 원문이 임신과 연결한 증상'],
+        excludeRules: ['농담·가정·소문·계획으로만 나온 관계나 임신', '원문에 없는 날짜·주기 일차·임신 확률 계산', '원문이 임신과 연결하지 않은 일반 증상(몸 상태 렌즈가 기록)'],
+        outputHint: '누구에게 무슨 일이 있었는지 한 문장으로 쓰고, 원문 인용을 붙이세요. 원문이 시점을 말하면 그 표현을 그대로 남기세요.',
+        extraFieldsNote: 'extra에 event(cycle_start/cycle_end/contact/contraception/test/symptom), partner, method, used(예/아니오/모름), result를 선택적으로 기록할 수 있습니다.'
+      })
+    })])
+  });
+  // Notes that set where a person stands (newest per label first) for a lens whose scene
+  // delivery would otherwise pick by score; see the scene picks in the lens recall.
+  const LENS_STANDING_LABELS = Object.freeze({
+    starter_cycle_reproduction: Object.freeze(['임신 확인', '출산', '임신 종료', '주기 시작', '관계', '임신 검사'])
+  });
+  const upgradeStarterLensSource = src => {
+    const templateId = lensSlug(src.templateId) || '';
+    const previous = STARTER_LENS_PREVIOUS[templateId];
+    const current = previous ? STARTER_LENS_TEMPLATES.find(template => template.templateId === templateId) : null;
+    if (!current || !src.instruction) return src;
+    const revision = computeLensInstructionRevision(normalizeLensInstructionObject(src.instruction));
+    const match = previous.find(entry => computeLensInstructionRevision(normalizeLensInstructionObject(entry.instruction)) === revision);
+    if (!match) return src;
+    const ownLabels = Array.isArray(src.labels) ? src.labels : String(src.labels || '').split(/[,\n]/);
+    return {
+      ...src,
+      // The earlier instruction stays in the history even if an older copy dropped it.
+      revisionHistory: [...(Array.isArray(src.revisionHistory) ? src.revisionHistory : []), { instruction: safeClone(src.instruction), updatedAt: src.updatedAt }],
+      instruction: safeClone(current.instruction),
+      labels: [...ownLabels, ...current.labels.filter(label => !ownLabels.includes(label))],
+      ...(compact(src.description || '', 300) === match.description ? { description: current.description } : {})
+    };
+  };
 
   const lensLines = value => (Array.isArray(value) ? value : String(value ?? '').split(/\n+/))
     .map(item => compact(item, 400)).filter(Boolean).slice(0, 12);
@@ -17901,7 +17963,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const LENS_PERSISTENT_ROLE_TEMPLATES = new Set(['starter_cycle_reproduction', 'starter_secrets_knowledge', 'starter_unresolved_promises', 'starter_clues_red_herrings', 'starter_promises_schedule']);
   const lensDefaultRecallRole = id => LENS_CURRENT_ROLE_TEMPLATES.has(id) ? 'current' : LENS_PERSISTENT_ROLE_TEMPLATES.has(id) ? 'persistent' : 'relevant';
   const normalizeLensDefinition = (raw = {}, index = 0) => {
-    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const src = upgradeStarterLensSource(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
     const now = new Date().toISOString();
     const lensId = lensSlug(src.lensId || src.id || src.templateId) || `lens_${index + 1}`;
     const name = compact(lensSafeText(src.name, 60), 60) || `렌즈 ${index + 1}`;
@@ -23415,10 +23477,18 @@ function summarizeAgentCbsTag(rawContent) {
     let feature = LoreTokenFeatureCache.get(raw);
     if (feature !== undefined) return feature;
     const normalized = loreJaccardNormalizeKey(raw);
+    const grams = normalized ? loreJaccardCharNgrams(normalized, 48) : [];
+    const gramKeySet = new Set();
+    for (const gram of grams) {
+      const normalizedGram = loreJaccardNormalizeKey(gram);
+      if (normalizedGram) gramKeySet.add(normalizedGram);
+    }
     feature = {
       normalized,
       stem: normalized ? loreJaccardStem(normalized) : '',
-      grams: normalized ? loreJaccardCharNgrams(normalized, 48) : []
+      grams,
+      gramKeys: [...gramKeySet],
+      gramKeySet
     };
     if (LoreTokenFeatureCache.size >= LORE_TOKEN_FEATURE_CACHE_MAX) {
       const oldest = LoreTokenFeatureCache.keys().next().value;
@@ -23440,9 +23510,25 @@ function summarizeAgentCbsTag(rawContent) {
     if (leftStem.length >= 3 && rightStem.length >= 3 && leftStem === rightStem) {
       return LORE_JACCARD_TUNING.stemMatchSimilarity;
     }
-    const grams = loreJaccardLexicalStats(leftFeature.grams, rightFeature.grams);
-    if (grams.jaccard < LORE_JACCARD_TUNING.ngramMatchFloor) return 0;
-    const scaled = grams.jaccard * LORE_JACCARD_TUNING.ngramMatchScale;
+    const leftKeys = leftFeature.gramKeys;
+    const rightKeys = rightFeature.gramKeys;
+    const leftSet = leftFeature.gramKeySet;
+    const rightSet = rightFeature.gramKeySet;
+    if (!leftKeys?.length || !rightKeys?.length) return 0;
+    let overlap = 0;
+    if (leftKeys.length <= rightKeys.length) {
+      for (let i = 0; i < leftKeys.length; i += 1) {
+        if (rightSet.has(leftKeys[i])) overlap += 1;
+      }
+    } else {
+      for (let i = 0; i < rightKeys.length; i += 1) {
+        if (leftSet.has(rightKeys[i])) overlap += 1;
+      }
+    }
+    const union = leftKeys.length + rightKeys.length - overlap;
+    const jaccard = union > 0 ? overlap / union : 0;
+    if (jaccard < LORE_JACCARD_TUNING.ngramMatchFloor) return 0;
+    const scaled = jaccard * LORE_JACCARD_TUNING.ngramMatchScale;
     return scaled > LORE_JACCARD_TUNING.ngramMatchCap ? LORE_JACCARD_TUNING.ngramMatchCap : scaled;
   };
 
@@ -23676,6 +23762,19 @@ function summarizeAgentCbsTag(rawContent) {
     LoreIdentityTokenCache.set(key, tokens);
     return tokens;
   };
+  const LoreIdentityFeatureCache = new Map();
+  const loreIdentityFeaturesOf = identityText => {
+    const key = text(identityText || '');
+    let features = LoreIdentityFeatureCache.get(key);
+    if (features !== undefined) return features;
+    features = loreIdentityTokensOf(key).map(loreTokenFeatureOf);
+    if (LoreIdentityFeatureCache.size >= LORE_IDENTITY_TOKEN_CACHE_MAX) {
+      const oldest = LoreIdentityFeatureCache.keys().next().value;
+      if (oldest !== undefined) LoreIdentityFeatureCache.delete(oldest);
+    }
+    LoreIdentityFeatureCache.set(key, features);
+    return features;
+  };
   // The query side of the entity score is also fixed for a whole pass, but was re-derived for every
   // record: `loreDistinctiveAnchorTokens(query)` plus the `.map(loreTokenFeatureOf)` over it measured
   // 90 ms of the 120 ms entity pass at N=3200, all of it recomputing the same values.
@@ -23701,8 +23800,8 @@ function summarizeAgentCbsTag(rawContent) {
     const queryPrep = loreEntityQueryPrep(query);
     if (!queryPrep.tokens.length) return 0;
     // A token's features are a pure function of the token, so the expensive normalization / stem /
-    // char-ngram work is done once per distinct token instead of once per (query x identity) pair.
-    const identityFeatures = loreIdentityTokensOf(identityText).map(loreTokenFeatureOf);
+    // char-ngram work is done once per distinct token and cached per identity string.
+    const identityFeatures = loreIdentityFeaturesOf(identityText);
     // An exact normalized match is the maximum this function can return, so scanning can stop the
     // moment one is found. The equivalence `similarity === 1 <=> normalizeKey(a) === normalizeKey(b)`
     // was verified over a wide token sample, so testing the normalized keys directly is exact and
@@ -24222,81 +24321,128 @@ function summarizeAgentCbsTag(rawContent) {
     body: Object.freeze({ weight: 1.0, b: 0.80 })
   });
   const RESPONSE_LORE_BM25F_FIELDS = Object.freeze(Object.keys(RESPONSE_LORE_BM25F_DEFS));
+  const loreBm25fCorpusCache = new WeakMap();
+  const recentLoreBm25fCorpora = [];
+  const loreBm25fCorpusFor = records => {
+    const recordCount = records.length;
+    let cached = recordCount >= 8 ? loreBm25fCorpusCache.get(records) : null;
+    if (cached && cached.records.length === recordCount && cached.records.every((rec, i) => rec === records[i])) {
+      return cached;
+    }
+    if (recordCount >= 8) {
+      for (let i = recentLoreBm25fCorpora.length - 1; i >= 0; i -= 1) {
+        const entry = recentLoreBm25fCorpora[i];
+        if (entry.records.length === recordCount && entry.records.every((rec, idx) => rec === records[idx])) {
+          loreBm25fCorpusCache.set(records, entry);
+          return entry;
+        }
+      }
+    }
+    const defs = RESPONSE_LORE_BM25F_DEFS;
+    const defIdentity = defs.identity;
+    const defHeading = defs.heading;
+    const defBody = defs.body;
+    let sumIdentity = 0;
+    let sumHeading = 0;
+    let sumBody = 0;
+    for (let i = 0; i < recordCount; i += 1) {
+      const f = records[i].fields;
+      sumIdentity += Number(f.identity?.length || 0);
+      sumHeading += Number(f.heading?.length || 0);
+      sumBody += Number(f.body?.length || 0);
+    }
+    const avgIdentity = Math.max(1, sumIdentity / Math.max(1, recordCount));
+    const avgHeading = Math.max(1, sumHeading / Math.max(1, recordCount));
+    const avgBody = Math.max(1, sumBody / Math.max(1, recordCount));
+    const norms = new Array(recordCount);
+    const postings = new Map();
+    const addPosting = (token, index) => {
+      const list = postings.get(token);
+      if (!list) postings.set(token, [index]);
+      else if (list[list.length - 1] !== index) list.push(index);
+    };
+    for (let i = 0; i < recordCount; i += 1) {
+      const f = records[i].fields;
+      const statsIdentity = f.identity;
+      const statsHeading = f.heading;
+      const statsBody = f.body;
+      norms[i] = {
+        normIdentity: Math.max(0.12, (1 - defIdentity.b) + defIdentity.b * (Math.max(0, Number(statsIdentity?.length || 0)) / avgIdentity)),
+        normHeading: Math.max(0.12, (1 - defHeading.b) + defHeading.b * (Math.max(0, Number(statsHeading?.length || 0)) / avgHeading)),
+        normBody: Math.max(0.12, (1 - defBody.b) + defBody.b * (Math.max(0, Number(statsBody?.length || 0)) / avgBody))
+      };
+      if (statsIdentity?.counts) for (const token of statsIdentity.counts.keys()) addPosting(token, i);
+      if (statsHeading?.counts) for (const token of statsHeading.counts.keys()) addPosting(token, i);
+      if (statsBody?.counts) for (const token of statsBody.counts.keys()) addPosting(token, i);
+    }
+    const corpus = { records: records.slice(), recordCount, norms, postings };
+    if (recordCount >= 8) {
+      loreBm25fCorpusCache.set(records, corpus);
+      recentLoreBm25fCorpora.push(corpus);
+      if (recentLoreBm25fCorpora.length > 2) recentLoreBm25fCorpora.shift();
+    }
+    return corpus;
+  };
   const responseLoreCorpusBm25f = (records = [], query = '') => {
     const queryTokens = loreJaccardUnique(Array.from(responseLoreTokenStats(query).counts.keys()), 180);
     if (!queryTokens.length || !records.length) return records.map(() => ({ raw: 0, score: 0, fields: {} }));
+    const corpus = loreBm25fCorpusFor(records);
     const defs = RESPONSE_LORE_BM25F_DEFS;
-    const fields = RESPONSE_LORE_BM25F_FIELDS;
-    const recordCount = records.length;
-    const averages = {};
-    for (const field of fields) {
-      let sum = 0;
-      for (const record of records) sum += Number(record.fields[field]?.length || 0);
-      averages[field] = sum / Math.max(1, recordCount);
+    const defIdentity = defs.identity;
+    const defHeading = defs.heading;
+    const defBody = defs.body;
+    const recordCount = corpus.recordCount;
+    const norms = corpus.norms;
+    const postings = corpus.postings;
+    const results = new Array(recordCount);
+    for (let i = 0; i < recordCount; i += 1) {
+      results[i] = { raw: 0, score: 0, fields: { identity: 0, heading: 0, body: 0 } };
     }
-    const df = new Map();
-    for (const token of queryTokens) {
-      let count = 0;
-      for (const record of records) {
-        for (const field of fields) {
-          if (record.fields[field]?.counts?.has(token)) { count += 1; break; }
-        }
-      }
-      df.set(token, count);
-    }
-    // idf depends only on (token, df, recordCount), so it is the same for every record.
-    const idfByToken = new Map();
-    for (const token of queryTokens) {
-      const documentFrequency = Number(df.get(token) || 0);
-      idfByToken.set(token, Math.log(1 + ((recordCount - documentFrequency + 0.5) / (documentFrequency + 0.5))));
-    }
-    return records.map(record => {
-      let raw = 0;
-      const fieldRaw = { identity: 0, heading: 0, body: 0 };
-      const statsByIdentity = record.fields.identity;
-      const statsByHeading = record.fields.heading;
-      const statsByBody = record.fields.body;
-      const lenIdentity = Math.max(0, Number(statsByIdentity?.length || 0));
-      const lenHeading = Math.max(0, Number(statsByHeading?.length || 0));
-      const lenBody = Math.max(0, Number(statsByBody?.length || 0));
-      const defIdentity = defs.identity;
-      const defHeading = defs.heading;
-      const defBody = defs.body;
-      const avgIdentity = Math.max(1, Number(averages.identity || 1));
-      const avgHeading = Math.max(1, Number(averages.heading || 1));
-      const avgBody = Math.max(1, Number(averages.body || 1));
-      const normIdentity = Math.max(0.12, (1 - defIdentity.b) + defIdentity.b * (lenIdentity / avgIdentity));
-      const normHeading = Math.max(0.12, (1 - defHeading.b) + defHeading.b * (lenHeading / avgHeading));
-      const normBody = Math.max(0.12, (1 - defBody.b) + defBody.b * (lenBody / avgBody));
-      for (const token of queryTokens) {
-        const idf = idfByToken.get(token);
+    const touched = [];
+    for (let t = 0; t < queryTokens.length; t += 1) {
+      const token = queryTokens[t];
+      const post = postings.get(token);
+      if (!post || !post.length) continue;
+      const df = post.length;
+      const idf = Math.log(1 + ((recordCount - df + 0.5) / (df + 0.5)));
+      for (let p = 0; p < df; p += 1) {
+        const idx = post[p];
+        const f = records[idx].fields;
+        const n = norms[idx];
+        const statsIdentity = f.identity;
+        const statsHeading = f.heading;
+        const statsBody = f.body;
         let weightedIdentity = 0;
         let weightedHeading = 0;
         let weightedBody = 0;
-        if (statsByIdentity) {
-          const tf = Number(statsByIdentity.counts.get(token) || 0);
-          if (tf) weightedIdentity = defIdentity.weight * tf / normIdentity;
+        if (statsIdentity) {
+          const tf = Number(statsIdentity.counts.get(token) || 0);
+          if (tf) weightedIdentity = defIdentity.weight * tf / n.normIdentity;
         }
-        if (statsByHeading) {
-          const tf = Number(statsByHeading.counts.get(token) || 0);
-          if (tf) weightedHeading = defHeading.weight * tf / normHeading;
+        if (statsHeading) {
+          const tf = Number(statsHeading.counts.get(token) || 0);
+          if (tf) weightedHeading = defHeading.weight * tf / n.normHeading;
         }
-        if (statsByBody) {
-          const tf = Number(statsByBody.counts.get(token) || 0);
-          if (tf) weightedBody = defBody.weight * tf / normBody;
+        if (statsBody) {
+          const tf = Number(statsBody.counts.get(token) || 0);
+          if (tf) weightedBody = defBody.weight * tf / n.normBody;
         }
         const combinedTf = weightedIdentity + weightedHeading + weightedBody;
         if (!combinedTf) continue;
         const contribution = idf * ((combinedTf * (1.35 + 1)) / (combinedTf + 1.35));
-        raw += contribution;
-        // pieceTotal is exactly combinedTf whenever this branch runs (the pieces summed to it), so
-        // dividing by the running sum is identical to dividing by the rebuilt array's total.
-        fieldRaw.identity += contribution * (weightedIdentity / combinedTf);
-        fieldRaw.heading += contribution * (weightedHeading / combinedTf);
-        fieldRaw.body += contribution * (weightedBody / combinedTf);
+        const res = results[idx];
+        if (res.raw === 0) touched.push(idx);
+        res.raw += contribution;
+        res.fields.identity += contribution * (weightedIdentity / combinedTf);
+        res.fields.heading += contribution * (weightedHeading / combinedTf);
+        res.fields.body += contribution * (weightedBody / combinedTf);
       }
-      return { raw, score: raw > 0 ? raw / (raw + 1.55) : 0, fields: fieldRaw };
-    });
+    }
+    for (let i = 0; i < touched.length; i += 1) {
+      const res = results[touched[i]];
+      res.score = res.raw > 0 ? res.raw / (res.raw + 1.55) : 0;
+    }
+    return results;
   };
 
   // The query side of the linear score is fixed for a whole ranking pass, but the production path
@@ -24334,20 +24480,39 @@ function summarizeAgentCbsTag(rawContent) {
     return { score: clampNumber(Math.max(coverage * 0.78, jaccard) * 0.76 + identityCoverage * 0.24, 0, 1, 0), coverage, jaccard, identityCoverage };
   };
 
+  const LORE_EXACT_QUERY_CACHE_MAX = 32;
+  const loreExactQueryNormCache = new Map();
+  const loreExactRecordKeysCache = new WeakMap();
   const responseLoreExactScore = (record, query = '') => {
-    const normalized = loreJaccardNormalizeKey(query);
-    const keys = loreJaccardUnique([
-      record.lore?.label,
-      record.lore?.key,
-      ...(Array.isArray(record.lore?.keys) ? record.lore.keys : []),
-      ...(Array.isArray(record.lore?.secondaryKeys) ? record.lore.secondaryKeys : []),
-      ...(Array.isArray(record.lore?.additionalKeys) ? record.lore.additionalKeys : [])
-    ], 80);
+    const queryStr = text(query || '');
+    let normalized = loreExactQueryNormCache.get(queryStr);
+    if (normalized === undefined) {
+      normalized = loreJaccardNormalizeKey(queryStr);
+      if (loreExactQueryNormCache.size >= LORE_EXACT_QUERY_CACHE_MAX) {
+        loreExactQueryNormCache.delete(loreExactQueryNormCache.keys().next().value);
+      }
+      loreExactQueryNormCache.set(queryStr, normalized);
+    }
+    let keyPairs = record && typeof record === 'object' ? loreExactRecordKeysCache.get(record) : null;
+    if (!keyPairs || keyPairs.lore !== record.lore) {
+      const keys = loreJaccardUnique([
+        record.lore?.label,
+        record.lore?.key,
+        ...(Array.isArray(record.lore?.keys) ? record.lore.keys : []),
+        ...(Array.isArray(record.lore?.secondaryKeys) ? record.lore.secondaryKeys : []),
+        ...(Array.isArray(record.lore?.additionalKeys) ? record.lore.additionalKeys : [])
+      ], 80);
+      const pairs = [];
+      for (const raw of keys) {
+        const key = loreJaccardNormalizeKey(raw);
+        if (key && key.length >= 2) pairs.push([raw, key]);
+      }
+      keyPairs = { lore: record.lore, pairs };
+      if (record && typeof record === 'object') loreExactRecordKeysCache.set(record, keyPairs);
+    }
     const matches = [];
     let score = 0;
-    for (const raw of keys) {
-      const key = loreJaccardNormalizeKey(raw);
-      if (!key || key.length < 2) continue;
+    for (const [raw, key] of keyPairs.pairs) {
       if (normalized.includes(key)) {
         matches.push(raw);
         score = Math.max(score, key.length >= 4 ? 1 : 0.88);
@@ -35589,6 +35754,7 @@ function createLibraReadonlySourceContext(owner) {
       nativeCopyInFlight: new Map(),
       lastResolvedContext: null,
       previousResolvedContext: null,
+      receiptValidationCharacterId: null,
       branchPairSignatureCache: new Map(),
       pairRevisionCaches: new Map(),
       pairRevisionObjectIds: new WeakMap(),
@@ -37651,8 +37817,12 @@ function createLibraReadonlySourceContext(owner) {
       verifiedReadStats.entries = verifiedReadCache.size;
     };
     const touchVerifiedRead = row => { if (row) row.residentOrder = ++state.residentSequence; return row; };
-    const pruneVerifiedReads = () => {
+    let lastVerifiedReadPruneAt = 0;
+    const pruneVerifiedReads = (force = false) => {
+      if (!verifiedReadCache.size) return;
       const now = Date.now();
+      if (!force && now - lastVerifiedReadPruneAt < 250 && verifiedReadCache.size < VERIFIED_READ_CACHE_MAX) return;
+      lastVerifiedReadPruneAt = now;
       for (const [key, row] of verifiedReadCache) if (now - row.at >= VERIFIED_READ_CACHE_TTL_MS) deleteVerifiedRead(key);
     };
     const rememberVerifiedRead = (key, signature, value, empty, serverPin = null, localRaw = null, serverRaw = null) => {
@@ -40253,6 +40423,67 @@ function createLibraReadonlySourceContext(owner) {
       return context;
     };
 
+    const RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS = 30000;
+    const invalidateReceiptValidationCharacterId = () => {
+      state.receiptValidationCharacterId = null;
+    };
+    // Write-fence validation runs at the start and end of every receipt/micro
+    // check. It only needs the open chat's messages and the character id, so for
+    // independent chats it reads the open chat alone and keeps the character id
+    // per character index for 30s (native branches still read the full character
+    // because lineage checks parent chats).
+    const resolveReceiptValidationContext = async () => {
+      if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
+      const liveApi = getLiveApi(['getCurrentCharacterIndex', 'getCurrentChatIndex', 'getChatFromIndex']);
+      const chatAlone = typeof liveApi?.getCurrentCharacterIndex === 'function'
+        && typeof liveApi?.getCurrentChatIndex === 'function'
+        && typeof liveApi?.getChatFromIndex === 'function';
+      if (!chatAlone) return resolveContext(true);
+      const [charIndexRaw, chatIndexRaw] = await Promise.all([
+        safeApi('getCurrentCharacterIndex', () => liveApi.getCurrentCharacterIndex(), false),
+        safeApi('getCurrentChatIndex', () => liveApi.getCurrentChatIndex(), false)
+      ]);
+      const charIndex = parseInt(charIndexRaw, 10);
+      const chatIndex = parseInt(chatIndexRaw, 10);
+      if (!Number.isInteger(charIndex) || charIndex < 0 || !Number.isInteger(chatIndex) || chatIndex < 0) {
+        return resolveContext(true);
+      }
+      const chat = await safeApi('getChatFromIndex', () => liveApi.getChatFromIndex(charIndex, chatIndex), false);
+      if (!chat) return resolveContext(true);
+      if (MemorySuiteHostLineage.marker(chat).present) return resolveContext(true);
+      const identity = `${charIndex}:${chatIndex}`;
+      const chatId = contextId(chat, identity || 'chat');
+      let known = state.receiptValidationCharacterId;
+      // The id is bound to the chat it was read with, not only to the list position: after a
+      // character is deleted or imported, another character can sit at the same index, but its
+      // open chat has a different chat id, so a new chat id always reads the character again.
+      if (!known || known.charIndex !== charIndex || known.chatId !== chatId
+        || Date.now() - known.at >= RECEIPT_VALIDATION_CHARACTER_ID_TTL_MS) {
+        // A changed position or chat must not be answered from the character read cache.
+        const characterInfo = await loadCurrentCharacterForRisuContext(Boolean(known) && (known.charIndex !== charIndex || known.chatId !== chatId));
+        const character = characterInfo.character;
+        if (!character) {
+          state.receiptValidationCharacterId = null;
+          throw new Error('현재 캐릭터와 채팅을 읽을 수 없습니다.');
+        }
+        known = state.receiptValidationCharacterId = {
+          charIndex,
+          chatId,
+          characterId: contextId(character, 'character'),
+          lineageCharacterId: string(character?.chaId || character?.id || character?.characterId || ''),
+          at: Date.now()
+        };
+      }
+      const characterId = known.characterId;
+      if (state.disposed) throw new LIBRAError('LIBRA runtime was disposed.', 'RUNTIME_DISPOSED');
+      const scopeKey = await resolveStableScopeKey(characterId, chatId, identity);
+      const scope = { characterId, chatId, scopeKey };
+      const characterStub = { chaId: known.lineageCharacterId };
+      const hostLineage = MemorySuiteHostLineage.inspect(characterStub, chat);
+      const hostWorldlineMeta = defaultHostWorldlineMeta(scope);
+      return { character: characterStub, chat, identity, hostLineage, hostWorldlineMeta, scope };
+    };
+
     const outputEventContext = async eventValue => {
       const event = asObject(eventValue);
       const character = asObject(event.char);
@@ -40541,6 +40772,29 @@ function createLibraReadonlySourceContext(owner) {
     };
     const pairRevisionProjectionWithCache = (raw, index, cache, sourceTagKey, observation = null) => {
       state.memoryReadIO.rawRoleMetadataRowsValidated++;
+      const indexedEntry = observation && Array.isArray(cache.byIndex) ? cache.byIndex[index] : null;
+      const item = raw?.msg && typeof raw.msg === 'object' ? raw.msg : raw;
+      if (indexedEntry && indexedEntry.rawObj === raw && indexedEntry.itemObj === item
+        && indexedEntry.sourceTagKey === sourceTagKey && indexedEntry.index === index
+        && typeof item?.data !== 'object' && typeof item?.content !== 'object'
+        && item?.data === indexedEntry.fData && item?.content === indexedEntry.fContent
+        && item?.text === indexedEntry.fText && item?.message === indexedEntry.fMessage
+        && item?.mes === indexedEntry.fMes && item?.role === indexedEntry.fRole
+        && item?.type === indexedEntry.fType && item?.speakerType === indexedEntry.fSpeakerType
+        && item?.chatId === indexedEntry.fChatId && item?.id === indexedEntry.fId
+        && item?.messageId === indexedEntry.fMessageId && item?.saying === indexedEntry.fSaying
+        && item?.time === indexedEntry.fTime && item?.updatedAt === indexedEntry.fUpdatedAt
+        && item?.createdAt === indexedEntry.fCreatedAt && item?.isUser === indexedEntry.fIsUser
+        && item?.is_user === indexedEntry.fIsUserSnake && item?.disabled === indexedEntry.fDisabled
+        && item?.isComment === indexedEntry.fIsComment
+        && item?.generationInfo === indexedEntry.fGenInfo
+        && (!item?.generationInfo || item.generationInfo.generationId === indexedEntry.fGenId)
+        && cache.entries.get(indexedEntry.key) === indexedEntry) {
+        state.memoryReadIO.rawBodyBytesValidated += indexedEntry.rawBodyBytes;
+        indexedEntry.residentOrder = ++state.residentSequence;
+        state.pairRevisionCacheStats.hits += 1;
+        return indexedEntry;
+      }
       const role = messageRole(raw);
       const identity = messageIdentity(raw, index);
       const keyValue = pairRevisionEntryKey(raw, index, role, identity);
@@ -40551,10 +40805,15 @@ function createLibraReadonlySourceContext(owner) {
         state.memoryReadIO.rawBodyBytesValidated += Number.isSafeInteger(entry.rawBodyBytes)
           ? entry.rawBodyBytes
           : (entry.rawBodyBytes = new TextEncoder().encode(String(rawComparable.value ?? '')).length);
-        cache.entries.delete(keyValue);
-        cache.entries.set(keyValue, entry);
-        entry.index = index;
-        entry.lastSeenAt = Date.now();
+        if (!observation) {
+          cache.entries.delete(keyValue);
+          cache.entries.set(keyValue, entry);
+          entry.lastSeenAt = Date.now();
+        }
+        if (entry.index !== index) {
+          entry.index = index;
+          entry.sequenceItem = `${index}\u0001${entry.key}\u0001${entry.signature}\u0001${entry.rawPayloadDigest}\u0001${entry.sanitizedTextDigest}`;
+        }
         entry.residentOrder = ++state.residentSequence;
         state.pairRevisionCacheStats.hits += 1;
         return entry;
@@ -40577,14 +40836,25 @@ function createLibraReadonlySourceContext(owner) {
       const body = role ? cleanMessageText(role, raw) : '';
       const retainedChars = Math.max(0, rawComparable.value.length + body.length);
       const signature = branchContentHash([role, identity.source, identity.id, body].join('\u0000'));
+      const rawPayloadDigest = digest({ type: rawComparable.type, value: rawComparable.value });
+      const sanitizedTextDigest = digest({ role, body });
       entry = {
         key: keyValue, index, role, identity, body,
         rawType: rawComparable.type, rawValue: rawComparable.value, rawBodyBytes, metaKey,
-        rawPayloadDigest: digest({ type: rawComparable.type, value: rawComparable.value }),
-        sanitizedTextDigest: digest({ role, body }),
+        rawPayloadDigest,
+        sanitizedTextDigest,
         sanitizationTransformed: rawComparable.type !== 'string' || rawComparable.value !== body,
         internalCarrierRemoved: liveTailRawContainsRemovedCarrier(rawComparable.value),
-        signature, retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
+        signature,
+        sequenceItem: `${index}\u0001${keyValue}\u0001${signature}\u0001${rawPayloadDigest}\u0001${sanitizedTextDigest}`,
+        rawObj: raw, itemObj: item, sourceTagKey,
+        fData: item?.data, fContent: item?.content, fText: item?.text, fMessage: item?.message, fMes: item?.mes,
+        fRole: item?.role, fType: item?.type, fSpeakerType: item?.speakerType,
+        fChatId: item?.chatId, fId: item?.id, fMessageId: item?.messageId,
+        fSaying: item?.saying, fTime: item?.time, fUpdatedAt: item?.updatedAt, fCreatedAt: item?.createdAt,
+        fIsUser: item?.isUser, fIsUserSnake: item?.is_user, fDisabled: item?.disabled, fIsComment: item?.isComment,
+        fGenInfo: item?.generationInfo, fGenId: item?.generationInfo?.generationId,
+        retainedChars, lastSeenAt: Date.now(), residentOrder: ++state.residentSequence
       };
       // A full observation must read all retained entries before admitting
       // misses. Otherwise a missing prefix evicts the still-unread suffix.
@@ -40655,16 +40925,18 @@ function createLibraReadonlySourceContext(owner) {
         seenKeys.push(projection.key);
         return projection;
       });
-      finalizePairRevisionObservation(cache, seenKeys);
-      retainPairRevisionObservation(cache, projections);
-      const sequence = projections.map((projection, index) => `${index}\u0001${projection.key}\u0001${projection.signature}\u0001${projection.rawPayloadDigest}\u0001${projection.sanitizedTextDigest}`);
+      const sequence = projections.map((projection, index) => projection.sequenceItem
+        || `${index}\u0001${projection.key}\u0001${projection.signature}\u0001${projection.rawPayloadDigest}\u0001${projection.sanitizedTextDigest}`);
       // A digest is not an exact raw witness. Misses (including uncached
       // over-budget rows) rebuild pairs even if their hash strings collide.
-      if (observation.allUnchanged && cache.pairs && pairRevisionSequenceEqual(cache.sequence, sequence)) {
+      if (observation.allUnchanged && cache.pairs && cache.entries.size === projections.length
+        && pairRevisionSequenceEqual(cache.sequence, sequence)) {
         state.pairRevisionCacheStats.lastObservationHash = cache.observationHash;
         state.pairRevisionCacheStats.pairReuses += 1;
         return cache.pairs;
       }
+      finalizePairRevisionObservation(cache, seenKeys);
+      retainPairRevisionObservation(cache, projections);
       const observationHash = branchContentHash(sequence.join('\u001e'));
       state.pairRevisionCacheStats.lastObservationHash = observationHash;
       const pairs = [];
@@ -40723,6 +40995,7 @@ function createLibraReadonlySourceContext(owner) {
       }
       cache.sequence = sequence;
       cache.observationHash = observationHash;
+      cache.byIndex = projections;
       cache.pairs = unifiedDeepFreeze(pairs);
       cache.updatedAt = Date.now();
       state.pairRevisionCacheStats.pairBuilds += 1;
@@ -41009,7 +41282,7 @@ function createLibraReadonlySourceContext(owner) {
         // Archival-only carriers are absent from the sanitized completed-turn
         // revision. They still must match the current original source before an
         // existing immutable packet can authorize acknowledgement or analysis.
-        const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
+        const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveReceiptValidationContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
         if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
           || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId) || sourceDigest([pair]) !== receipt.sourceDigest)
@@ -41328,7 +41601,7 @@ function createLibraReadonlySourceContext(owner) {
         if (options.beforeWrite) await options.beforeWrite();
         await storage.setVerifiedJson(receiptKey, receipt, scope);
       }
-      const current = await resolveContext();
+      const current = await resolveReceiptValidationContext();
       const currentPair = string(current?.scope?.scopeKey || '') === string(scope.scopeKey)
         ? buildPairs(current.chat, scope.scopeKey)[turn - 1]
         : null;
@@ -41345,7 +41618,7 @@ function createLibraReadonlySourceContext(owner) {
       // A lost head may be restored while the immutable receipt still owns an
       // earlier raw variant. Attach the current exact packet below, then verify
       // its physical ref and fresh source before any durable ACK or analysis.
-      const finalContext = await resolveContext();
+      const finalContext = await resolveReceiptValidationContext();
       const finalPair = string(finalContext?.scope?.scopeKey || '') === string(scope.scopeKey)
         ? buildPairs(finalContext.chat, scope.scopeKey)[turn - 1]
         : null;
@@ -41380,7 +41653,7 @@ function createLibraReadonlySourceContext(owner) {
       if (!scopeKey || !worldlineId || !Number.isInteger(sessionEpoch) || !Number.isInteger(turn) || turn < 1) {
         return empty('missing', 'invalid_binding');
       }
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (string(context?.scope?.scopeKey || '') !== scopeKey || hostWorldlineIdForScope(scope) !== worldlineId) {
         return empty('stale_source', 'scope_or_worldline_changed');
       }
@@ -41411,7 +41684,7 @@ function createLibraReadonlySourceContext(owner) {
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
-      const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveContext());
+      const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
@@ -41621,7 +41894,7 @@ function createLibraReadonlySourceContext(owner) {
       return prefixes.get(turn);
     };
     const validateReceiptRecoveryClaim = async ({scope, identity, boundary}) => {
-      const context = await resolveContext(true);
+      const context = await resolveReceiptValidationContext();
       if (context.scope.scopeKey !== scope.scopeKey || context.scope.characterId !== scope.characterId
         || context.scope.chatId !== scope.chatId) return {status:'paused', reason:'scope_inactive'};
       if (hostWorldlineIdForScope(context.scope) !== identity.worldlineId) return {status:'stale', reason:'worldline_changed'};
@@ -41636,7 +41909,7 @@ function createLibraReadonlySourceContext(owner) {
       if (current.generation !== boundary.generation || current.sourceFence !== boundary.sourceFence || current.lineage !== boundary.lineage)
         return {status:'stale',reason:'source_or_restore_boundary_changed'};
       // Host can change during any storage await. Re-read before admitting I/O.
-      const final = await resolveContext(true), finalPairs = buildPairs(final.chat,final.scope.scopeKey);
+      const final = await resolveReceiptValidationContext(), finalPairs = buildPairs(final.chat,final.scope.scopeKey);
       if (final.scope.scopeKey !== scope.scopeKey) return {status:'paused',reason:'scope_inactive'};
       const finalPair = finalPairs[identity.turn-1];
       if (!finalPair || digest(receiptRecoveryIdentity(final,finalPair)) !== digest(identity)
@@ -41711,19 +41984,28 @@ function createLibraReadonlySourceContext(owner) {
       const scope = cleanReceiptRecoveryScope(scopeValue || (await resolveContext(true)).scope);
       let reason='';
       try { await loadReceiptRecoveryJobs(scope); } catch (_) { reason='journal_read_unavailable'; }
-       const microJobs=[],receiptStages=[];
+       let microJobs=[],receiptStages=[];
        try {
          let microEnabled=true,microSettingsError=false;
          try {microEnabled=(await loadMemorySettings()).enabled!==false;}
          catch (_) {microSettingsError=true;}
-         const context=await resolveContext(true);
-        if(context.scope.scopeKey===scope.scopeKey){
+         // One host read serves the whole scan. Reading the host again for every turn copied the
+         // entire character once or twice per turn: a 150-turn chat cost about 300 full copies
+         // per status poll, repeated while the home screen stayed open (Android OOM reports).
+         // Each turn still passes the same binding checks against this context; one closing
+         // read after the scan catches a chat that changed meanwhile.
+         // What the scan depended on: each turn's revision (raw text and payload) and the
+         // sanitized text. A whitespace-only edit changes the revision but not the sanitized text.
+         const scanSignature=pairs=>digest({revisions:pairs.map(completedTurnRevisionId),source:sourceDigest(pairs)});
+         const scan=async context=>{
+           microJobs=[];receiptStages=[];
+           if(context.scope.scopeKey!==scope.scopeKey)return null;
            const pairs=buildPairs(context.chat,scope.scopeKey);
            for(const pair of pairs){
               const identity=receiptRecoveryIdentity(context,pair);
               const jobId='receipt_'+digest(identity),job=state.receiptRecoveryJobs.get(jobId);
               let active;
-              try {active=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn);}
+              try {active=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn,{context,pairs});}
               catch (_) {active={status:'unavailable',reason:'receipt_status_read_unavailable'};}
               receiptStages.push({turn:pair.turn,scopeKey:scope.scopeKey,jobId,
                 identity,receiptRef:active.status==='verified'?active.receiptKey:null,
@@ -41734,7 +42016,7 @@ function createLibraReadonlySourceContext(owner) {
                 writeOutcome:string(job?.writeOutcome||'not_started')});
              if(active.status==='verified'){
                let stage;
-               try {stage=await readMicroStageStatus(scope,active);}
+               try {stage=await readMicroStageStatus(scope,active,{context,pairs});}
                catch (_) {stage={receiptRef:active.receiptKey,revisionId:active.receipt.revisionId,
                  sourceDigest:active.receipt.sourceDigest,turn:active.receipt.turn,
                  status:'unavailable',reason:'micro_status_read_unavailable'};}
@@ -41744,6 +42026,14 @@ function createLibraReadonlySourceContext(owner) {
                     :{...stage,scopeKey:scope.scopeKey,status:'OFF',reason:'memory_disabled'});
              }
           }
+           return scanSignature(pairs);
+         };
+         const scanned=await scan(await resolveContext(true));
+         if(scanned!==null){
+           // The chat can change during the storage reads above. Scan once more from the newer
+           // chat rather than report statuses that mix two revisions.
+           const closing=await resolveContext(true);
+           if(closing.scope.scopeKey!==scope.scopeKey||scanSignature(buildPairs(closing.chat,scope.scopeKey))!==scanned)await scan(closing);
          }
        } catch (_) { if(!reason)reason='micro_status_unavailable'; }
        const covered=new Set(receiptStages.map(row=>Number(row.turn)));
@@ -47338,14 +47628,17 @@ function createLibraReadonlySourceContext(owner) {
     return [...grams];
   };
 
-  const exactSignal = (text, query) => {
-    const doc = normalize(text), q = normalize(query).trim();
+  const exactSignalFromNormalized = (doc, q, qWords) => {
     if (!q || !doc) return 0;
     if (doc.includes(q)) return 1.0;
-    const qWords = tokens(q);
     if (!qWords.length) return 0;
     const matched = qWords.filter(word => doc.includes(word)).length;
     return matched / qWords.length;
+  };
+  const exactSignal = (text, query) => {
+    const doc = normalize(text), q = normalize(query).trim();
+    if (!q || !doc) return 0;
+    return exactSignalFromNormalized(doc, q, tokens(q));
   };
 
   const charNgramSignal = (queryGrams, docGramsSet) => {
@@ -47512,25 +47805,24 @@ function createLibraReadonlySourceContext(owner) {
   };
 
   // Standalone composite relevance score for string pairs.
-  const score = (text, query) => {
-    const q = normalize(query).trim();
-    if (!q) return 0;
-    const doc = normalize(text);
-    if (!doc) return 0;
-    const qWords = tokens(q);
+  const scorePrecomputed = (doc, dGrams, q, qWords, qGrams) => {
+    if (!q || !doc) return 0;
     const wordMatches = qWords.filter(w => doc.includes(w));
     if (!wordMatches.length && !doc.includes(q)) {
-      const qGrams = charNgrams(q, 40);
-      const dGrams = new Set(charNgrams(doc, 80));
       const ngramMatch = charNgramSignal(qGrams, dGrams);
       return ngramMatch >= 0.4 ? Number((ngramMatch * 1.5).toFixed(4)) : 0;
     }
     const tokenScore = wordMatches.reduce((sum, token) => sum + (1 + Math.min(token.length, 12) / 12), 0);
     const exact = doc.includes(q) ? 2.0 : 0;
-    const qGrams = charNgrams(q, 40);
-    const dGrams = new Set(charNgrams(doc, 80));
     const ngramBonus = charNgramSignal(qGrams, dGrams) * 1.2;
     return Number((tokenScore + exact + ngramBonus).toFixed(4));
+  };
+  const score = (text, query) => {
+    const q = normalize(query).trim();
+    if (!q) return 0;
+    const doc = normalize(text);
+    if (!doc) return 0;
+    return scorePrecomputed(doc, new Set(charNgrams(doc, 80)), q, tokens(q), charNgrams(q, 40));
   };
 
   const sparseRrfFusion = (rows = [], signalNames = ['bm25', 'charNgram', 'exact', 'anchor'], k = 60, blend = 0.20) => {
@@ -47687,7 +47979,8 @@ function createLibraReadonlySourceContext(owner) {
     if (!refList.length) return [];
     const rankRows = (queryValue, semanticMap) => {
       const q = normalize(queryValue).trim();
-      const qGrams = charNgrams(q, 40);
+      const qWords = q ? tokens(q) : [];
+      const qGrams = q ? charNgrams(q, 40) : [];
       // Every ref is already in the manifest, so corpus statistics cost no read.
       const docs = q ? refList.map(ref => ({ title: termFrequency(ref.title || ''), summary: termFrequency(ref.searchText || ref.summary || ''),
         terms: termFrequency([...array(ref.searchTerms), ...array(ref.recallTerms)].join(' ')) })) : [];
@@ -47695,15 +47988,16 @@ function createLibraReadonlySourceContext(owner) {
       const queryEntities = q ? mentionedEntities(q, entities) : new Set();
       const scored = refList.map((ref, ordinal) => {
         const textFields = [ref.searchText, ref.summary, ref.title, array(ref.searchTerms).join(' '), array(ref.recallTerms).join(' ')].filter(Boolean).join(' ');
+        const doc = q ? normalize(textFields) : '';
         const isAnchor = evidenceIds.has(ref.memoryId);
         const anchorVal = isAnchor ? 1.0 : 0;
-        const exactVal = q ? exactSignal(textFields, q) : 0;
-        const refGrams = new Set(charNgrams(textFields, 80));
+        const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
+        const refGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
         const ngramVal = q ? charNgramSignal(qGrams, refGrams) : 0;
         const bm25Val = q ? bm25fScore(terms, docs[ordinal], corpus) : 0;
         const identityVal = identitySignal(queryEntities, textFields, entities);
         const semanticVal = Math.max(0, Math.min(1, Number(semanticMap.get(ref.key)) || 0));
-        const base = (isAnchor ? 100 : 0) + (q ? score(textFields, q) : 0) + identityVal + 4 * semanticVal;
+        const base = (isAnchor ? 100 : 0) + (q ? scorePrecomputed(doc, refGrams, q, qWords, qGrams) : 0) + identityVal + 4 * semanticVal;
         return {
           ref,
           ordinal,
@@ -47764,7 +48058,9 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const q = normalize(query).trim();
-    const qGrams = charNgrams(q, 60);
+    const qWords = q ? tokens(q) : [];
+    const qGrams = q ? charNgrams(q, 60) : [];
+    const qScoreGrams = q ? charNgrams(q, 40) : [];
     // Term counts are kept: a row that repeats the queried word ranks above one that mentions it once.
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
@@ -47782,8 +48078,9 @@ function createLibraReadonlySourceContext(owner) {
     }
 
     const scoredCandidates = validRows.map((row, index) => {
-      const dGrams = new Set(charNgrams(row.text, 80));
-      const exactVal = q ? exactSignal(row.text, q) : 0;
+      const doc = q ? normalize(row.text) : '';
+      const dGrams = q ? new Set(charNgrams(doc, 80)) : new Set();
+      const exactVal = q ? exactSignalFromNormalized(doc, q, qWords) : 0;
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
@@ -47791,7 +48088,7 @@ function createLibraReadonlySourceContext(owner) {
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
       const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? score(row.text, q) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
       return {
         ...row,
         score: rawScore,
@@ -51006,7 +51303,7 @@ function createLibraReadonlySourceContext(owner) {
 
 
     const rebuildStoryArc = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) throw new Error('현재 Ariadne 스코프를 확인하지 못했습니다.');
       const scopeKey = string(context.scope.scopeKey);
       if (state.storyArcRebuildInFlight.has(scopeKey)) return await state.storyArcRebuildInFlight.get(scopeKey);
@@ -51094,7 +51391,7 @@ function createLibraReadonlySourceContext(owner) {
 
 
     const setStoryArcDestination = async (patch = {}, options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) throw new Error('현재 Ariadne 스코프를 확인하지 못했습니다.');
       return await setNarrativeDirection({
         goal: patch?.goal ?? patch?.destination ?? patch?.direction ?? '',
@@ -51107,7 +51404,7 @@ function createLibraReadonlySourceContext(owner) {
     };
 
     const clearStoryArc = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!context?.scope?.scopeKey) return false;
       await clearNarrativeDirection({ scopeKey: string(context.scope.scopeKey) });
       return true;
@@ -53248,7 +53545,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     };
     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 15000;
     const microInvocationsInFlight = new Set();
-    const readMicroStageStatus = async (scope, active) => {
+    // hostSource ({context, pairs}) lets a caller that already read the host share that read with
+    // the Micro reader's own source checks instead of having each of them read the host again.
+    const readMicroStageStatus = async (scope, active, hostSource = {}) => {
       const receipt=active.receipt;
       const workKey=key.microWork(scope,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId,microProducerVersion);
@@ -53259,7 +53558,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       catch (_) {reason='work_copy_unavailable';}
       // Reuse this poll's verified receipt and work read instead of fetching both again.
       const published=await readActiveMicroMemory(scope,receipt.worldlineId,receipt.sessionEpoch,receipt.turn,
-        {verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
+        {...hostSource,verifiedSource:active,...(reason?{}:{prefetchedWork:{key:workKey,value:work}})});
       const jobKey=[scope.scopeKey,receipt.worldlineId,receipt.sessionEpoch,
         receipt.turn,receipt.revisionId].join(':');
       const inFlight = microInvocationsInFlight.has(workKey) || (work?.phase === 'invoking' && Number(work?.leaseExpiresAt || 0) > Date.now());
@@ -53741,7 +54040,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { ...published, duplicate: priorHead?.recordKey === recordKey };
     };
     const prepareMicroStageClaim = async (scope,receipt,options={}) => {
-      const context=await resolveContext(true);
+      const context=await resolveReceiptValidationContext();
       if(context.scope.scopeKey!==scope.scopeKey || context.scope.characterId!==scope.characterId
         || context.scope.chatId!==scope.chatId)return null;
       if(options.expectedGeneration!==undefined
@@ -54061,7 +54360,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Automatic use is a projection of verified records, never a rewrite of source/Canonical bytes.
     const collectMemoryReviews=async(context,manifest,view)=>{
       const scope=context.scope,worldline=string(view?.head?.worldlineId||manifest?.activeWorldlineId||'main');
-      const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[];
+      const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[],reviewProofs=[];
       const dependencies=new Map([[policy.key,policy.saved]]);
       dependencies.set(key.manifest(scope),await storage.getVerifiedJson(key.manifest(scope),scope,null));
       dependencies.set(key.continuityState(scope),await storage.getVerifiedJson(key.continuityState(scope),scope,null));
@@ -54094,6 +54393,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=currentPairs.slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
             unifiedAssert(batch.length===BATCH_SIZE&&sourceDigest(batch)===record.sourceDigest,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
           dependencies.set(ref.key,record);
+          const canonicalProof=getConsumedCanonicalProof(record);if(canonicalProof)reviewProofs.push(canonicalProof);
           const expanded=[...selected];
           for(const p of selected.filter(p=>p.reason==='same_source_order_conflict')){
             const origin=asArray(record.canonicalArtifact.facts).find(f=>f.tempFactId===p.fact);
@@ -54121,6 +54421,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
         if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
+        reviewProofs.push(activeMicroConsumptionProof(active));
         const validated=microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey);if(!validated)continue;
         for(const [index,claim] of asArray(active.record.claims).entries()){
           const intent=asObject(claim.stateIntent),admission=microPending.find(p=>p.turn===pair.turn&&p.claimIndex===index);
@@ -54136,7 +54437,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const identity={scopeKey:scope.scopeKey,worldlineId:worldline,restoreGeneration:Number(state.microRestoreGeneration||0),rows,
         headDigest:digest(head),dependencies:[...dependencies].map(([k,v])=>[k,digest(v)])};
-      return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,registry};
+      return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,reviewProofs,registry};
     };
     const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
       const candidateContext = options.context || (options.readOnly === true ? options.context : null);
@@ -54151,7 +54452,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // proofs and boundary. Pinning their exact bytes here made any unrelated manifest write
       // (stats, timestamps) invalidate every response context, so only review inputs are bound.
       const broad=new Set([key.manifest(scope),key.continuityState(scope),key.stateWorldlineMeta(scope),key.entityRegistry(scope)]);
-      for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)&&(k===catalog.policy.key||catalog.rows.length)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      if(!proofKeys.has(catalog.policy.key)){proofs.push(stateDecisionConsumptionProof(catalog.policy.key,catalog.policy.saved));proofKeys.add(catalog.policy.key);}
+      if(catalog.rows.length){
+        for(const proof of asArray(catalog.reviewProofs)){proofs.push(proof);for(const k of [proof.recordKey,proof.headKey,proof.receiptKey].filter(Boolean))proofKeys.add(k);}
+        for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)){proofs.push(getConsumedCanonicalProof(v)||stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      }
       const applied=[],rejected=[],blocked=[],reviewTransitions=[];
       const autoApply=(await loadSettings()).memoryStateAutoApply!==false;
       const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
@@ -62256,6 +62561,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const captureCommittedOutputEvent = async eventValue => {
       if (state.disposed) return { ok: false, skipped: true, reason: 'runtime_disposed' };
+      invalidateReceiptValidationCharacterId();
       const event = asObject(eventValue);
       state.captureBackendObservedRuns += 1;
       state.captureBackendLastEventAt = Date.now();
@@ -65340,6 +65646,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
 
     let latestRecallPublicationOwner = null;
     const beforeRequest = async (messages, type) => {
+      invalidateReceiptValidationCharacterId();
       let requestOwner = null;
       let requestScope = null;
       let guard = null;
@@ -65760,6 +66067,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     };
 
     const afterRequest = async (response, type) => {
+      invalidateReceiptValidationCharacterId();
       const requestType = normalizeRequestType(type) || 'missing';
       const fallbackActive = state.settings?.autoAnalyze !== false && state.captureBackend === LIBRA_CAPTURE_BACKENDS.AFTER_REQUEST_RECONCILE;
       const mainNarrativeType = isMainNarrativeRequest(type);
@@ -70447,6 +70755,34 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }
       }
     };
+    // The story arc from 서사 연감 (World Manager): which arc the story is on, its phase and the
+    // pressure now, so GRADIA's scene purpose continues the same arc each turn. GRADIA keeps
+    // nothing; it reads these lines with the evidence, like the story clock line.
+    const GRADIA_STORY_ARC_PREFIX = '[STORY ARC]';
+    const GRADIA_STORY_ARC_PHASES = Object.freeze({ emerging: '시작', developing: '전개', escalating: '고조', turning: '전환', aftermath: '여파', resolved: '종결' });
+    const gradiaStoryArcText = async (scope, worldlineView, pairs) => {
+      // An earlier branch point is not where the current arc head stands.
+      if (Number.isFinite(worldlineView?.cutoffTurn) && worldlineView.cutoffTurn < asArray(pairs).length) return '';
+      const head = await loadContinuityState(scope).catch(() => null);
+      const narrative = normalizeCurrentNarrativeState(head?.narrative);
+      const said = value => compact(string(typeof value === 'string' ? value : value?.summary || value?.text || value?.pressure || '').replace(/\s+/g, ' ').trim(), 240);
+      const open = narrative.arcs.filter(row => !['resolved', 'superseded'].includes(string(row?.status || 'active').toLowerCase()));
+      const primary = open.find(row => row.id === narrative.primaryArcId) || open.find(row => string(row?.status || 'active') === 'active') || open[0] || null;
+      const describe = row => {
+        const phase = GRADIA_STORY_ARC_PHASES[string(row?.phase || '').toLowerCase()] || '';
+        const title = said(row?.title || row?.summary);
+        if (!title) return '';
+        const summary = row?.title && row?.summary ? said(row.summary) : '';
+        const pressure = said(row?.centralPressure);
+        return [`${title}${phase ? ` (단계: ${phase})` : ''}`, summary && `— ${summary}`, pressure && `· 중심 압력: ${pressure}`].filter(Boolean).join(' ');
+      };
+      const lines = [];
+      if (primary && describe(primary)) lines.push(`${GRADIA_STORY_ARC_PREFIX} 진행 중 흐름: ${describe(primary)}`);
+      const momentum = said(narrative.momentum);
+      if (momentum) lines.push(`${GRADIA_STORY_ARC_PREFIX} 현재 압력: ${momentum}`);
+      for (const row of open.filter(item => item !== primary).slice(0, 2)) if (describe(row)) lines.push(`${GRADIA_STORY_ARC_PREFIX} 다른 흐름: ${describe(row)}`);
+      return lines.join('\n');
+    };
     const captureGradiaMemoryEvidenceOnce = async (request, authority) => {
       const before = await gradiaLensReadSnapshot(request);
       // Both owner channels validate the proposal before reaching this reader.
@@ -70489,7 +70825,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           storyClock = storyClockDelivery(await readStoryClockTimeline(before.context, { pairs, cutoff: worldlineView.cutoffTurn ?? Infinity }));
         } catch (_) { storyClock = null; }
         const clockText = storyClock?.line || '';
-        const content = [[UNIFIED_RECALL_RULES,clockText,canonical].filter(Boolean).join('\n'),lensText].filter(Boolean).join('\n\n');
+        let arcText = '';
+        try { arcText = await gradiaStoryArcText(before.context.scope, worldlineView, pairs); } catch (_) { arcText = ''; }
+        const content = [[UNIFIED_RECALL_RULES,clockText,arcText,canonical].filter(Boolean).join('\n'),lensText].filter(Boolean).join('\n\n');
         if (MemorySuiteExecutionContract.utf8Bytes(content)>request.maxCorpusBytes) throw Error('LIB_READ_CORPUS_BUDGET_EXCEEDED');
         const lensEvidence = Object.freeze({schema:'libra.gradia-lens-evidence.v1',noncanonical:true,
           itemCount:asArray(lens?.injectedItems).length,characterLength:Number(lens?.usedChars || 0),
@@ -73826,7 +74164,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
     // GUI and API view of this chat's clock: every pair's day, the anchor and the corrections.
     const getStoryClock = async (options = {}) => {
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       const clock = await loadStoryClock(context.scope);
       const timeline = await readStoryClockTimeline(context, { clock, ...(options.asOfTurn != null ? { asOfTurn: Number(options.asOfTurn) } : {}) });
       return clone({ schema: 'libra.story_clock_view.v1', scopeKey: context.scope.scopeKey, anchorDate: clock.anchorDate,
@@ -73839,14 +74177,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const raw = string(dateValue ?? '').trim();
       const anchorDate = storyClockDate(raw);
       if (raw && !anchorDate) throw lensError('STORY_CLOCK_DATE_INVALID', '기준 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.');
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       await updateStoryClock(context.scope, clock => clock.anchorDate === anchorDate ? null : { ...clock, anchorDate });
       return getStoryClock({ context });
     };
     // Fixes one pair's day, date or time of day; later pairs count on from it. null removes it.
     const correctStoryClockTurn = async (turnValue, correctionValue, options = {}) => {
       const turn = Number(turnValue);
-      const context = options.context || await resolveContext();
+      const context = options.context || await resolveReceiptValidationContext();
       if (!Number.isInteger(turn) || !buildPairs(context.chat, context.scope.scopeKey).some(pair => pair.turn === turn))
         throw lensError('STORY_CLOCK_TURN_INVALID', '이 채팅에 없는 턴입니다.');
       const correction = correctionValue === null ? null : normalizeStoryClockCorrection(correctionValue);
@@ -75682,6 +76020,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (candidate.sceneRank === 2 && !candidate.floorPassed) { skip(lens, candidate, candidate.record, 'below_score_floor'); continue; }
           kept.push(candidate);
         }
+        // A lens with standing labels hands each scene person their newest note of each such label
+        // first (a pregnancy, a birth, the last period start), newest event first, before other notes.
+        const standingLabels = LENS_STANDING_LABELS[lens.templateId] || null;
+        if (standingLabels) {
+          const newestByLabel = new Map(), rankOf = row => [row.inherited ? 0 : 1, Number(row.turnRange.end)];
+          for (const candidate of kept) if (candidate.sceneRank < 2 && standingLabels.includes(candidate.label)) {
+            const key = `${candidate.groupKey}|${candidate.label}`, newest = newestByLabel.get(key);
+            const [a, b] = rankOf(candidate), [c, d] = newest ? rankOf(newest) : [-1, -1];
+            if (a > c || (a === c && b > d)) newestByLabel.set(key, candidate);
+          }
+          for (const candidate of newestByLabel.values()) candidate.standing = true;
+        }
         if (kept.length) byLens.set(lens.lensId, kept);
       }
       if (queryUnit && semantic.missingVectors && options.refreshVectors !== false) for (const lens of candidatesLenses) void scheduleLensVectorRefresh(scope, lens.lensId, semantic.profileId);
@@ -75711,7 +76061,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         moved = false;
         for (const queue of order) {
           // Each person's lenses take turns: the lens given least so far, then the newest-note role, then the score.
-          queue.sort((x, y) => picksOf(x) - picksOf(y) || x.sceneRank - y.sceneRank || y.score - x.score);
+          queue.sort((x, y) => picksOf(x) - picksOf(y) || x.sceneRank - y.sceneRank
+            || Number(y.standing === true) - Number(x.standing === true)
+            || (x.standing === true && y.standing === true ? Number(y.turnRange.end) - Number(x.turnRange.end) : 0)
+            || y.score - x.score);
           const at = queue.findIndex(candidate => (counts.get(candidate.lensId) || 0) < lensById.get(candidate.lensId).recall.maxItems && picksOf(candidate) < LENS_SCENE_ITEMS_PER_PERSON && used + costOf(candidate) <= bodyBudget);
           if (at < 0) continue;
           const [candidate] = queue.splice(at, 1), pick = candidate.lensId + '|' + candidate.groupKey;

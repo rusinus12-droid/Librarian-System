@@ -25,8 +25,11 @@ function artifact(){
 async function fixture(options={}){
  const chat=options.snapshot?clone(options.snapshot.chat):{id:'unified-chat',chatId:'unified-chat',name:'Unified synthetic 5 U+A',message:input.sourceRows.map(r=>({role:r.role,chatId:r.ref,data:r.text}))};chat.messages=chat.message;
  const character={id:'unified-char',chaId:'unified-char',name:'민아',chatPage:0,chats:[chat]};
- const control={calls:[],supplementCalls:[],onSupplementCall:null,artifact:artifact(),onCall:null,modelFails:false,hooks:{}};
- const host={getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>character,getChar:async()=>character,getCharacterFromIndex:async()=>character,getChat:async()=>chat,getCurrentChat:async()=>chat,getChatFromIndex:async()=>chat,
+ const control={calls:[],supplementCalls:[],onSupplementCall:null,artifact:artifact(),onCall:null,modelFails:false,hooks:{},hostReads:{character:0,chat:0}};
+ // control.hostReads counts full-object host reads: the real host copies the whole character
+ // (with every chat) or the whole chat on each of these calls.
+ const fullCharacter=()=>{control.hostReads.character++;return character;},fullChat=()=>{control.hostReads.chat++;return chat;};
+ const host={getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,getCharacter:async()=>fullCharacter(),getChar:async()=>fullCharacter(),getCharacterFromIndex:async()=>fullCharacter(),getChat:async()=>fullChat(),getCurrentChat:async()=>fullChat(),getChatFromIndex:async()=>fullChat(),
  getDatabase:async fields=>{const db={personas:[],selectedPersona:'',characters:[character],plugins:[]};return Array.isArray(fields)?Object.fromEntries(fields.map(k=>[k,db[k]??null])):db;},
  addRisuReplacer:async(mode,fn)=>{control.hooks[mode]=fn;return true;},
  // Story-structure and preference/boundary passes run inside one canonical batch. They are

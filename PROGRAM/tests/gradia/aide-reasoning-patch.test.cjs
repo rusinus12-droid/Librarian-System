@@ -156,12 +156,12 @@ test('results page places input assist next to plot, and defaults to SHADOW ACT 
     assert.ok(results, 'results page renders');
 
     const tabs = [...results.querySelectorAll('[data-subtabs="rs"] [data-subtab]')];
-    assert.equal(tabs.length, 7, 'seven tabs in results');
+    assert.equal(tabs.length, 8, 'eight tabs in results');
 
-    // Tab order: s (SHADOW ACT), c (인물), w (세계관), f (억결), b (상태), p (플롯), i (입력 도우미).
-    // 억결 and 상태 are the extension AIDEs; their place after 세계관 was set in 037f6e97.
+    // Tab order follows the run: each sub-AIDE sits right after the core AIDE whose call runs it
+    // (상태 → 인물, 세계 동역학 → 세계관, 억결 → 플롯), then 입력 도우미.
     const tabKeys = tabs.map(t => t.dataset.subtab);
-    assert.deepEqual(tabKeys, ['s', 'c', 'w', 'f', 'b', 'p', 'i'], 'tab order: SHADOW ACT, 인물, 세계관, 억결, 상태, 플롯, 입력 도우미');
+    assert.deepEqual(tabKeys, ['s', 'c', 'b', 'w', 'd', 'p', 'f', 'i'], 'tab order: SHADOW ACT, 인물, 상태, 세계관, 세계 동역학, 플롯, 억결, 입력 도우미');
     const inputTab = tabs[tabKeys.indexOf('i')];
 
     // SHADOW ACT tab should be active by default

@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.0.5
+//@display-name HAYAKU · Locator Continuity v4.0.6
 //@api 3.0
-//@version 4.0.5
+//@version 4.0.6
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -812,7 +812,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.0.5';
+  const PLUGIN_VERSION = '4.0.6';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -1111,33 +1111,6 @@ const MemorySuiteExecutionContract = (() => {
     rrfSignalEpsilon: 0.001,
     channelBoost: 1.30,
     channelDamp: 0.85
-  });
-  const SPARSE_HYBRID_TUNING = Object.freeze({
-    candidateLimits: Object.freeze({ fast: 16, balanced: 32, deep: 64 }),
-    bm25fK1: 1.2,
-    bm25fFieldWeights: Object.freeze({
-      canonical: 4.0,
-      identity: 3.4,
-      relation: 2.8,
-      state: 2.2,
-      event: 1.9,
-      context: 1.35,
-      temporal: 1.2,
-      summary: 0.65
-    }),
-    bm25fFieldLengthNorm: Object.freeze({
-      canonical: 0.15,
-      identity: 0.25,
-      relation: 0.35,
-      state: 0.72,
-      event: 0.68,
-      context: 0.48,
-      temporal: 0.35,
-      summary: 0.82
-    }),
-    candidateRrfK: 52,
-    rerankJaccardWeight: 0.09,
-    candidateEvidenceFloor: 0.018
   });
   const UNIFIED_MEMORY_TUNING = Object.freeze({
     maxAssociationsPerRow: 24,
@@ -7031,11 +7004,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return scope;
   };
 
-  const resolveCurrentScope = async (force = false) => {
+  // intent 'read' marks a resolution that only routes a storage read. A provider may then
+  // reuse a very recent answer; every other resolution (writes, removals, management) asks afresh.
+  const resolveCurrentScope = async (force = false, intent = '') => {
     if (!scopeRoutingEnabled) return normalizeScopeDescriptor({ scopeId: '__plugin_global__', scopeKey: '__plugin_global__', label: `${displayName} 전역`, global: true });
     if (!force && scopeCacheMs > 0 && state.scopeRouting.current?.scopeId && Date.now() - Number(state.scopeRouting.currentAt || 0) < scopeCacheMs) return state.scopeRouting.current;
     let value = null;
-    try { value = currentScopeProvider ? await currentScopeProvider({ namespace, pluginId, pluginVersion, force }) : await defaultCurrentScope(); }
+    try { value = currentScopeProvider ? await currentScopeProvider({ namespace, pluginId, pluginVersion, force, intent }) : await defaultCurrentScope(); }
     catch (error) { setStatus('scope_unavailable', error?.message || error); }
     const scope = normalizeScopeDescriptor(value);
     const previousScopeId = String(state.scopeRouting.current?.scopeId || '');
@@ -9744,7 +9719,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (localOnlyOwner) { return typeof legacyGet === 'function' ? await legacyGet() : null; }
     // Normal proxied storage follows the active scope. Explicit native-branch
     // views may bind this operation to a verified source/target scope instead.
-    const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    const operationScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
     const currentMode = (await readScopeMode(operationScope, false)).mode;
     if (currentMode === MODE_PLUGIN_ONLY) return typeof legacyGet === 'function' ? await legacyGet() : null;
     const route = await resolveScopedRoute(space, key, { scope:operationScope, noCache:operationOptions.noCache === true });
@@ -9925,12 +9900,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const rows = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
       const keys = [...new Set((Array.isArray(rows) ? rows : []).map(String).filter(key=>key && key.startsWith(String(prefix || ''))))];
       if (operationOptions.enforceScopeOwnership !== true) return keys;
-      const scope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+      const scope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
       const owned = [];
       for (const key of keys) { const route = await resolveScopedRoute(space,key,{scope,noCache:true}); if(route.kind === 'scope' && route.scopeId === scope.scopeId) owned.push(key); }
       return owned;
     }
-    const currentScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false));
+    const currentScope = normalizeScopeDescriptor(operationOptions.scope || await resolveCurrentScope(false, 'read'));
     const currentMode = (await readScopeMode(currentScope, false)).mode;
     const legacy = typeof legacyKeysFn === 'function' ? await legacyKeysFn() : [];
     const legacyList = Array.isArray(legacy) ? legacy.map(String).filter(Boolean) : [];
@@ -14669,7 +14644,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 };
 
-const memorySuiteHayakuCurrentScope = async () => {
+// Resolving the open chat's scope reads the whole character (every chat) and the chat from the
+// host, twice when the reading is verified. The storage bridge asks for the scope on every
+// storage operation, so one turn made about a hundred such reads (Android OOM reports).
+// Reads now share one resolution: storage reads that arrive together use the same answer, and a
+// burst of them reuses it for a moment. Writes, removals and management never use it: they
+// resolve afresh every time. A new request or a committed output drops the shared answer.
+const HAYAKU_READ_SCOPE_REUSE_MS = 200;
+const memorySuiteHayakuReadScope = { at: 0, value: null, inFlight: null, generation: 0, reused: 0, joined: 0, resolved: 0 };
+const invalidateMemorySuiteHayakuReadScope = () => {
+  memorySuiteHayakuReadScope.at = 0;
+  memorySuiteHayakuReadScope.value = null;
+  memorySuiteHayakuReadScope.generation += 1;
+  // A resolution already under way may describe the chat that was open before this point, so
+  // later reads must not join it; its own callers still get their answer.
+  memorySuiteHayakuReadScope.inFlight = null;
+};
+const resolveMemorySuiteHayakuCurrentScope = async () => {
   let scope = null;
   try { scope = await RisuCompat.currentChatScope(); } catch (_) {}
   if (!scope?.key) return null;
@@ -14678,6 +14669,26 @@ const memorySuiteHayakuCurrentScope = async () => {
     chatTitle: scope.chatTitle || '', label: scope.chatTitle || scope.chatId || scope.key,
     aliases: [scope.key, scope.chatId].filter(Boolean)
   };
+};
+const memorySuiteHayakuCurrentScope = async (request = {}) => {
+  const shared = memorySuiteHayakuReadScope;
+  if (request?.intent !== 'read' || request?.force === true) {
+    shared.resolved += 1;
+    return await resolveMemorySuiteHayakuCurrentScope();
+  }
+  if (shared.value && Date.now() - shared.at < HAYAKU_READ_SCOPE_REUSE_MS) { shared.reused += 1; return { ...shared.value, aliases: [...shared.value.aliases] }; }
+  if (shared.inFlight) { shared.joined += 1; const joined = await shared.inFlight; return joined ? { ...joined, aliases: [...joined.aliases] } : joined; }
+  const generation = shared.generation;
+  shared.resolved += 1;
+  const pending = resolveMemorySuiteHayakuCurrentScope().then(value => {
+    // An answer that was already being read when the chat state changed is returned to its
+    // callers but not kept for later ones.
+    if (value && generation === shared.generation) { shared.value = value; shared.at = Date.now(); }
+    return value;
+  });
+  shared.inFlight = pending;
+  try { const value = await pending; return value ? { ...value, aliases: [...value.aliases] } : value; }
+  finally { if (shared.inFlight === pending) shared.inFlight = null; }
 };
 // These immutable keys contain a content identity, not a chat id. Resolve them
 // from their canonical manifest; never assign an unknown hash to the open chat.
@@ -15916,6 +15927,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       message?.isComment === true,
       message?.disabled === true
     ]));
+    const chatCopyTextSignature = message => stableHash64(JSON.stringify([
+      text(message?.role || ''),
+      text(message?.data ?? message?.content ?? ''),
+      message?.isComment === true,
+      message?.disabled === true
+    ]));
     const memorySessionBridgeMarker = (chat, currentChatId = '') => {
       const marker = chat?.memorySessionBridge && typeof chat.memorySessionBridge === 'object'
         ? chat.memorySessionBridge
@@ -15968,6 +15985,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const baseTitle = text(copyTitleMatch[1] || '').trim();
       const targetSignatures = messages.map(chatCopyMessageSignature);
+      const targetTextSignatures = messages.map(chatCopyTextSignature);
       const cacheKey = stableHash64(JSON.stringify([
         text(character?.chaId || '').trim(),
         text(chat?.id || '').trim(),
@@ -15987,10 +16005,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         const cachedSourceSignatures = Array.isArray(cachedSource?.message)
           ? cachedSource.message.map(chatCopyMessageSignature)
           : [];
+        const cachedSourceTextSignatures = Array.isArray(cachedSource?.message)
+          ? cachedSource.message.map(chatCopyTextSignature)
+          : [];
         const cachedSourceStillMatches = !cachedSourceId || (
-          cachedSourceSignatures.length > 0
-          && cachedSourceSignatures.length <= targetSignatures.length
-          && cachedSourceSignatures.every((signature, index) => signature === targetSignatures[index])
+          (cachedSourceSignatures.length > 0
+            && cachedSourceSignatures.length <= targetSignatures.length
+            && cachedSourceSignatures.every((signature, index) => signature === targetSignatures[index]))
+          || (cachedSourceTextSignatures.length > 0
+            && cachedSourceTextSignatures.length <= targetTextSignatures.length
+            && cachedSourceTextSignatures.every((signature, index) => signature === targetTextSignatures[index]))
         );
         if (cachedSourceStillMatches) {
           Memory.copiedChatSourceCacheStats.hits += 1;
@@ -16007,12 +16031,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         Memory.copiedChatSourceCacheStats.coalesced = Number(Memory.copiedChatSourceCacheStats.coalesced || 0) + 1;
         return { ...(await inflight) };
       }
-      const scan = inferCopiedChatSourceUncached(character, chat, options, { title, baseTitle, targetSignatures, cacheKey, lookupLedgerGeneration });
+      const scan = inferCopiedChatSourceUncached(character, chat, options, { title, baseTitle, targetSignatures, targetTextSignatures, cacheKey, lookupLedgerGeneration });
       Memory.copiedChatSourceInflight.set(flightKey, scan);
       try { return await scan; }
       finally { if (Memory.copiedChatSourceInflight.get(flightKey) === scan) Memory.copiedChatSourceInflight.delete(flightKey); }
     };
-    const inferCopiedChatSourceUncached = async (character, chat, options, { title, baseTitle, targetSignatures, cacheKey, lookupLedgerGeneration }) => {
+    const inferCopiedChatSourceUncached = async (character, chat, options, { title, baseTitle, targetSignatures, targetTextSignatures, cacheKey, lookupLedgerGeneration }) => {
       Memory.copiedChatSourceCacheStats.misses += 1;
       const remember = result => {
         const positive = !!result?.sourceChatId;
@@ -16039,19 +16063,28 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         if (!candidateChatId || candidateChatId === text(chat?.id || '').trim() || !candidateMessages.length
           || candidateMessages.length > targetSignatures.length) continue;
         const candidateSignatures = candidateMessages.map(chatCopyMessageSignature);
-        if (!candidateSignatures.every((signature, index) => signature === targetSignatures[index])) continue;
-        const candidateScopeKey = `chat_${stableHash64(`${text(character?.chaId || '').trim()}\n${candidateChatId}`)}`;
+        const exactIdMatch = candidateSignatures.every((signature, index) => signature === targetSignatures[index]);
         const candidateTitle = text(candidate?.name || candidate?.title || candidate?.chatName || '').trim();
         const titleAffinity = candidateTitle === baseTitle ? 2
           : candidateTitle.replace(/\s+\((?:Copy|Branch)(?:\s+\d+)?\)$/i, '').trim() === baseTitle ? 1 : 0;
+        if (!exactIdMatch) {
+          // Chats of one character often open with the same greeting, so matching text names a
+          // source only when the copy's title names the same chat.
+          if (!titleAffinity) continue;
+          const candidateTextSignatures = candidateMessages.map(chatCopyTextSignature);
+          if (!candidateTextSignatures.every((signature, index) => signature === targetTextSignatures[index])) continue;
+        }
+        const candidateScopeKey = `chat_${stableHash64(`${text(character?.chaId || '').trim()}\n${candidateChatId}`)}`;
         matchingChats.push({
           sourceChatId: candidateChatId,
           sourceScopeKey: candidateScopeKey,
           messageCount: candidateMessages.length,
+          exactIdMatch: exactIdMatch ? 1 : 0,
           titleAffinity
         });
       }
-      matchingChats.sort((a, b) => b.messageCount - a.messageCount
+      matchingChats.sort((a, b) => b.exactIdMatch - a.exactIdMatch
+        || b.messageCount - a.messageCount
         || b.titleAffinity - a.titleAffinity
         || a.sourceChatId.localeCompare(b.sourceChatId));
       const candidates = (await Promise.all(matchingChats.slice(0, 48).map(async candidate => {
@@ -16072,7 +16105,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         && options?.ledgerGenerationRetry !== true) {
         return inferCopiedChatSource(character, chat, { ...options, ledgerGenerationRetry: true });
       }
-      candidates.sort((a, b) => b.messageCount - a.messageCount
+      candidates.sort((a, b) => b.exactIdMatch - a.exactIdMatch
+        || b.messageCount - a.messageCount
         || b.updatedAt - a.updatedAt
         || b.titleAffinity - a.titleAffinity
         || a.sourceChatId.localeCompare(b.sourceChatId));
@@ -16329,6 +16363,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = async (messages = [], requestType = 'model') => {
         if (Memory.unloaded || !ownsRuntime()) return messages;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.replacer.runCount += 1;
         Memory.replacer.lastRunAt = now();
         Memory.runtimeDiagnostics.requestHooksObservedSinceInstall += 1;
@@ -16495,6 +16530,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = async (content = '', requestType = 'model') => {
         if (Memory.unloaded || !ownsRuntime()) return content;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.afterRequest.runCount += 1;
         Memory.afterRequest.lastRunAt = now();
         Memory.runtimeDiagnostics.requestHooksObservedSinceInstall += 1;
@@ -16651,6 +16687,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const wrapped = event => {
         if (Memory.unloaded || !ownsRuntime()) return;
+        invalidateMemorySuiteHayakuReadScope();
         Memory.chatOutputListener.runCount += 1;
         Memory.chatOutputListener.lastRunAt = now();
         Memory.captureBackendObservedRuns += 1;
@@ -16829,6 +16866,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   })();
 
   const compact = (value = '', max = 240) => {
+    if (typeof value === 'string') {
+      const requested = Number(max);
+      const limit = Number.isFinite(requested) ? Math.max(0, requested) : 240;
+      if (limit <= 0) return '';
+      if (value.length <= limit && !/[\r\n\t\f\v]|  |^\s|\s$/.test(value)) return value;
+    }
     const source = text(value).replace(/\s+/g, ' ').trim();
     const requested = Number(max);
     const limit = Number.isFinite(requested) ? Math.max(0, requested) : 240;
@@ -23668,7 +23711,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     return '';
   };
-  const localRecallSourceKey = row => [row.packetHash || row.locator?.sourceHash || '', row.axis || '', row.id || row.publicRef || '', row.publicText || ''].join('\u0001');
+  const localRecallSourceKeyCache = new WeakMap();
+  const localRecallSourceKey = row => {
+    if (row && typeof row === 'object') {
+      const cached = localRecallSourceKeyCache.get(row);
+      if (cached !== undefined) return cached;
+      const key = [row.packetHash || row.locator?.sourceHash || '', row.axis || '', row.id || row.publicRef || '', row.publicText || ''].join('\u0001');
+      localRecallSourceKeyCache.set(row, key);
+      return key;
+    }
+    return [row?.packetHash || row?.locator?.sourceHash || '', row?.axis || '', row?.id || row?.publicRef || '', row?.publicText || ''].join('\u0001');
+  };
   const localRecallWords = value => localRecallQueryText(value).normalize('NFKC').toLocaleLowerCase('und').match(/[\p{L}\p{N}_]+/gu) || [];
   const localRecallTerms = value => {
     const terms=[];
@@ -23681,6 +23734,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   
   const localRecallBody = row => [row.publicText,row.publicProfile].filter(value=>typeof value==='string').join('\n').trim();
+  const localRecallIdentityText = evidenceBody => {
+    const parts=[];
+    for(const match of String(evidenceBody||'').matchAll(/^(?:name|title|subject|speaker|owner|holder|location|place|scene|character|entity|target)\s*:\s*(.+)$/gimu)){
+      const value=match[1].trim();
+      if(value)parts.push(value);
+    }
+    return parts.join('\n');
+  };
   // Search metadata never becomes rendered evidence, a body identity, or a budget charge.
   const localRecallSearchBody = row => {
     const body=localRecallBody(row),aliases=row._recallSearchAliases,locator=row.locator||{};
@@ -23691,19 +23752,44 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return [body,...ensureArray(aliases.values).filter(value=>typeof value==='string')].join('\n');
   };
   let localRecallRankIndex=null;
+  const recentLocalRecallRankIndices=[];
   let localRecallRankInvocation=0;
   const localRecallRank = (rows, inputs) => {
     const invocation=++localRecallRankInvocation,startedAt=now(),request=hayakuRecallRequests.active;
     let documentTokenizations=0,fullTermScans=0,informationTermScans=0,candidateVisits=0,scoredRows=0;
-    const docs=rows.map((row,index)=>{
-      const body=localRecallSearchBody(row),evidenceBody=localRecallBody(row),key=localRecallSourceKey(row),prior=localRecallRankIndex?.docs[index];
+    const rowList=ensureArray(rows);
+    if(!rowList.length){
+      Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
+        compiledIndexHit:false,verificationRows:0,documentTokenizations:0,fullTermScans:0,informationTermScans:0,candidateVisits:0,scoredRows:0,
+        rankingModel:'bm25f_3field_v1',questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
+      return [];
+    }
+    let priorIndex=localRecallRankIndex?.docs.length===rowList.length?localRecallRankIndex:null;
+    if(!priorIndex){
+      for(let i=recentLocalRecallRankIndices.length-1;i>=0;i--){
+        if(recentLocalRecallRankIndices[i]?.docs.length===rowList.length){priorIndex=recentLocalRecallRankIndices[i];break;}
+      }
+      if(!priorIndex)priorIndex=localRecallRankIndex;
+    }
+    const docs=rowList.map((row,index)=>{
+      const body=localRecallSearchBody(row),evidenceBody=localRecallBody(row),key=localRecallSourceKey(row),prior=priorIndex?.docs[index];
       // The existing compiled corpus owns these terms even after document-LRU
       // eviction. Current eligibility, source identity and exact body still run.
       let doc=prior?.key===key&&prior.doc.body===body&&prior.doc.evidenceBody===evidenceBody?prior.doc:localRecallDocuments.get(body);
       if(!doc || doc.body!==body || doc.evidenceBody!==evidenceBody){
-        const terms=localRecallTerms(evidenceBody),evidenceTf=new Map();terms.forEach(term=>evidenceTf.set(term,(evidenceTf.get(term)||0)+1));
-        const tf=new Map(evidenceTf);for(const term of localRecallTerms(body))if(!tf.has(term))tf.set(term,1);
-        doc={body,evidenceBody,evidenceTf,tf,length:terms.length};localRecallDocuments.set(body,doc);documentTokenizations++;
+        const terms=localRecallTerms(evidenceBody),evidenceTf=new Map();
+        for(const term of terms)evidenceTf.set(term,(evidenceTf.get(term)||0)+1);
+        const idText=localRecallIdentityText(evidenceBody),identityTf=new Map();
+        const idTerms=idText?localRecallTerms(idText):[];
+        for(const term of idTerms)identityTf.set(term,(identityTf.get(term)||0)+1);
+        const aliasSource=body.startsWith(evidenceBody)?body.slice(evidenceBody.length):body;
+        const aliasTf=new Map();
+        if(aliasSource){for(const term of localRecallTerms(aliasSource))if(!evidenceTf.has(term))aliasTf.set(term,1);}
+        const tf=new Map(evidenceTf);
+        for(const term of aliasTf.keys())tf.set(term,1);
+        for(const [term,count] of identityTf)if(!tf.has(term))tf.set(term,count);
+        doc={body,evidenceBody,evidenceTf,identityTf,aliasTf,tf,length:terms.length,identityLength:idTerms.length,aliasLength:aliasTf.size};
+        localRecallDocuments.set(body,doc);documentTokenizations++;
       }
       return {row,doc,key};
     });
@@ -23711,12 +23797,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     // Eligibility has already run in localRecallCandidates. Compare every
     // current record/provenance and exact search body before reusing the derived
     // DF/postings. This is a compiled corpus cache, never a question/output cache.
-    const compiledIndexHit=localRecallRankIndex?.docs.length===docs.length
-      &&docs.every((entry,index)=>entry.doc===localRecallRankIndex.docs[index].doc&&entry.key===localRecallRankIndex.docs[index].key);
-    let compiled=compiledIndexHit?localRecallRankIndex:null;
+    let compiled=null,compiledIndexHit=false;
+    for(let i=recentLocalRecallRankIndices.length-1;i>=0;i--){
+      const candidate=recentLocalRecallRankIndices[i];
+      if(candidate?.docs.length===docs.length
+        &&docs.every((entry,index)=>entry.doc===candidate.docs[index].doc&&entry.key===candidate.docs[index].key)){
+        compiled=candidate;compiledIndexHit=true;
+        recentLocalRecallRankIndices.splice(i,1);
+        recentLocalRecallRankIndices.push(compiled);
+        localRecallRankIndex=compiled;
+        break;
+      }
+    }
+    if(!compiled&&localRecallRankIndex?.docs.length===docs.length
+      &&docs.every((entry,index)=>entry.doc===localRecallRankIndex.docs[index].doc&&entry.key===localRecallRankIndex.docs[index].key)){
+      compiled=localRecallRankIndex;compiledIndexHit=true;
+    }
     if(!compiled){
       const postings=new Map();docs.forEach(({doc},index)=>doc.tf.forEach((_,term)=>{const ids=postings.get(term)||[];ids.push(index);postings.set(term,ids);fullTermScans++;}));
-      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length)};
+      const averageLength=docs.reduce((sum,{doc})=>sum+doc.length,0)/Math.max(1,docs.length);
+      let identityTotal=0,identityCount=0,aliasTotal=0,aliasCount=0;
+      for(const {doc} of docs){
+        if(doc.identityLength>0){identityTotal+=doc.identityLength;identityCount++;}
+        if(doc.aliasLength>0){aliasTotal+=doc.aliasLength;aliasCount++;}
+      }
+      const identityAverage=identityCount?identityTotal/identityCount:1;
+      const aliasAverage=aliasCount?aliasTotal/aliasCount:1;
+      const bodyNorms=docs.map(({doc})=>.25+.75*doc.length/Math.max(1,averageLength));
+      const identityNorms=docs.map(({doc})=>.70+.30*doc.identityLength/Math.max(1,identityAverage));
+      const aliasNorms=docs.map(({doc})=>.65+.35*doc.aliasLength/Math.max(1,aliasAverage));
+      compiled={docs:docs.map(({doc,key})=>({doc,key})),postings,average:averageLength,identityAverage,aliasAverage,bodyNorms,identityNorms,aliasNorms,docNorms:bodyNorms};
       // Repeated templates must not crowd distinct facts out of a broad
       // collection query. Derive information from this exact eligible corpus,
       // without topic dictionaries, question rules, or answer identities.
@@ -23731,38 +23841,62 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         }
         return count?sum/count:0;
       });
-      localRecallRankIndex=docs.length<=8192?compiled:null;
+      if(docs.length<=8192){
+        localRecallRankIndex=compiled;
+        recentLocalRecallRankIndices.push(compiled);
+        while(recentLocalRecallRankIndices.length>4)recentLocalRecallRankIndices.shift();
+      }else{
+        localRecallRankIndex=null;
+      }
     }
     const average=compiled.average;
+    const identityAverage=compiled.identityAverage||1;
+    const aliasAverage=compiled.aliasAverage||1;
+    const bodyNorms=compiled.bodyNorms||docs.map(({doc})=>.25+.75*doc.length/Math.max(1,average));
+    const identityNorms=compiled.identityNorms||docs.map(({doc})=>.70+.30*doc.identityLength/Math.max(1,identityAverage));
+    const aliasNorms=compiled.aliasNorms||docs.map(({doc})=>.65+.35*doc.aliasLength/Math.max(1,aliasAverage));
     const best=new Map();
     const queryInputs = ensureArray(inputs).map(localRecallQueryText).map(value => value.trim()).filter(Boolean);
     for(const input of new Set(queryInputs)){
       const terms=[...new Set(localRecallTerms(input))];
       const wordFrequencies=terms.filter(term=>term.startsWith('w:')).map(term=>compiled.postings.get(term)?.length||0).filter(Boolean);
       const broadness=wordFrequencies.length?Math.min(...wordFrequencies)/Math.max(1,docs.length):0;
-      const visited=new Set();for(const term of terms)for(const index of compiled.postings.get(term)||[])visited.add(index);
-      candidateVisits+=visited.size;
-      const ranked=[...visited].map(index=>{const {row,doc}=docs[index];
-        let score=0,wordScore=0;
-        for(const term of terms){const tf=doc.tf.get(term)||0;if(!tf)continue;
-          const frequency=compiled.postings.get(term)?.length||0;
-          const idf=Math.log(1+(docs.length-frequency+.5)/(frequency+.5));
-          const contribution=idf*(tf*2.2)/(tf+1.2*(.25+.75*doc.length/Math.max(1,average)));
-          score+=contribution;if(term.startsWith('w:'))wordScore+=contribution;
+      const scoreMap=new Map(),wordScoreMap=new Map();
+      for(const term of terms){
+        const post=compiled.postings.get(term);
+        if(!post||!post.length)continue;
+        const frequency=post.length;
+        const idf=Math.log(1+(docs.length-frequency+.5)/(frequency+.5));
+        const isWord=term.startsWith('w:');
+        for(const index of post){
+          const d=docs[index].doc;
+          const bodyTf=d.evidenceTf.get(term)||0;
+          const idTf=d.identityTf.get(term)||0;
+          const alTf=d.aliasTf.get(term)||0;
+          const weightedTf=(bodyTf?bodyTf/bodyNorms[index]:0)+(idTf?1.5*(idTf/identityNorms[index]):0)+(!bodyTf&&alTf?0.85*(alTf/aliasNorms[index]):0);
+          if(!(weightedTf>0))continue;
+          const contribution=idf*(weightedTf*2.2)/(weightedTf+1.2);
+          scoreMap.set(index,(scoreMap.get(index)||0)+contribution);
+          if(isWord)wordScoreMap.set(index,(wordScoreMap.get(index)||0)+contribution);
         }
-        // Exact lexical evidence leads; character grams remain the fallback
-        // and tie evidence. The information multiplier approaches one when
-        // the query itself selects a rare term.
-        return {row,score,lexical:wordScore*(1+broadness*compiled.information[index])};
-      }).filter(hit=>hit.score>0).sort((a,b)=>b.lexical-a.lexical||b.score-a.score||localRecallSourceKey(a.row).localeCompare(localRecallSourceKey(b.row)));
+      }
+      candidateVisits+=scoreMap.size;
+      const ranked=[];
+      for(const [index,score]of scoreMap){
+        if(!(score>0))continue;
+        const {row,key}=docs[index];
+        const wordScore=wordScoreMap.get(index)||0;
+        ranked.push({row,key,score,lexical:wordScore*(1+broadness*compiled.information[index])});
+      }
+      ranked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
       scoredRows+=ranked.length;
-      ranked.forEach((hit,index)=>{const key=localRecallSourceKey(hit.row),rank=index+1;
-        if(!best.has(key)||best.get(key).rank>rank)best.set(key,{...hit,rank});});
+      ranked.forEach((hit,index)=>{const rank=index+1;
+        if(!best.has(hit.key)||best.get(hit.key).rank>rank)best.set(hit.key,{...hit,rank});});
     }
     Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
       compiledIndexHit,verificationRows:docs.length,documentTokenizations,fullTermScans,informationTermScans,candidateVisits,scoredRows,
-      questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
-    return [...best.values()].sort((a,b)=>a.rank-b.rank||localRecallSourceKey(a.row).localeCompare(localRecallSourceKey(b.row))).map(hit=>hit.row);
+      rankingModel:'bm25f_3field_v1',questionCache:'bypass_missing_authoritative_model_identity',outputCache:false};
+    return [...best.values()].sort((a,b)=>a.rank-b.rank||a.key.localeCompare(b.key)).map(hit=>hit.row);
   };
   const localRecallFairMerge = (queues, limit) => {
     const out=[],seen=new Set(),positions=queues.map(()=>0);
@@ -23780,9 +23914,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     .filter(([key])=>key.endsWith('Refs')).flatMap(([,values])=>ensureArray(values)).filter(value=>typeof value==='string');
   const localRecallExpand = (allRows, seeds, settings) => {
     if(settings.graphClosureRecallEnabled===false || settings.typedMemoryGraphEnabled===false)return [];
-    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map();
+    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map(),rowIndexMap=new Map();
     const add=(map,key,row)=>{if(!key)return;const list=map.get(key)||[];list.push(row);map.set(key,list);};
-    for(const row of allRows){
+    for(let idx=0;idx<allRows.length;idx++){
+      const row=allRows[idx];
+      rowIndexMap.set(row,idx);
       localRecallRefs(row).forEach(ref=>add(refs,ref,row));
       localRecallDeclaredTargets(row).forEach(ref=>add(reverseRefs,ref,row));
       add(source,row.packetHash,row);add(scenes,row.scene_id||row.sceneId,row);
@@ -23795,9 +23931,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(settings.hierarchicalEpisodeMemoryEnabled!==false){
         related.push(...(source.get(seed.packetHash)||[]),...(scenes.get(seed.scene_id||seed.sceneId)||[]));
         ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[])));
-        const at=allRows.indexOf(seed);if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
+        const at=rowIndexMap.get(seed)??-1;if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
       }
-      return related.filter(row=>localRecallSourceKey(row)!==localRecallSourceKey(seed));
+      const seedKey=localRecallSourceKey(seed);
+      return related.filter(row=>localRecallSourceKey(row)!==seedKey);
     });
     return localRecallFairMerge(queues,Math.max(0,Math.min(24,Number(settings.graphClosureMaxNodes||DEFAULT_SETTINGS.graphClosureMaxNodes))));
   };
@@ -24077,8 +24214,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       locator:{sourceHash:identity,sourceRevision:origin.sourceRevision,originalPointer:origin.pointer,field:origin.pointer.slice(1).split('/').map(key=>key.replace(/~1/g,'/').replace(/~0/g,'~')).join('.'),messageIndex:packet.messageIndex,sourcePairIndex:packetSourcePairIndex(packet,packet.meta||{}),turnAnchor:text(packet.meta?.turn_anchor||''),worldlineOrdinal:packet.worldlineOrdinal??null,sourceType:packet.sourceType||'chat_packet',sourceScope:packet.sourceScope||'current_chat'},
       retrieval:{subject:value.name||value.title||'',entityNames:[]}};
   }).filter(row=>row.publicText);
+  const boundPacketRecordRowCache = new WeakMap();
   const bindPacketRecordReferences = (rows,store) => {
     const map=characterBoundaryRefMap(store.entity?.characters||[]);
+    let mapKey='';
+    for(const [k,v]of map)mapKey+=`${k}\u0001${v===null?'null':v}\u0002`;
     const resolveVisibility=(input,category)=>{
       const visibility=packetRecordVisibility({visibility:input||{}},category);
       visibility.unresolvedEntityRefs=[visibility.ownerEntityId,...ensureArray(visibility.holderEntityIds),...ensureArray(visibility.visibleToEntityIds)].some(ref=>map.has(normalizeKey(ref))&&map.get(normalizeKey(ref))===null);
@@ -24087,9 +24227,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return visibility;
     };
     return rows.map(row=>{
+      const cached=row&&typeof row==='object'?boundPacketRecordRowCache.get(row):null;
+      if(cached&&cached.mapKey===mapKey&&cached.visibilityIn===row.visibility
+        &&cached.boundariesIn===row.projectionVisibilityBoundaries
+        &&cached.entityRefsIn===row._recallEntityRefs&&cached.category===row.category){
+        return {...row,visibility:cached.visibilityOut,projectionVisibilityBoundaries:cached.boundariesOut,_recallEntityRefs:cached.entityRefsOut};
+      }
       const visibility=resolveVisibility(row.visibility,row.category);
       const projectionVisibilityBoundaries=ensureArray(row.projectionVisibilityBoundaries).map(boundary=>resolveVisibility(boundary,row.category));
-      return {...row,visibility,projectionVisibilityBoundaries,_recallEntityRefs:ensureArray(row._recallEntityRefs).map(ref=>canonicalBoundaryEntity(ref,map))};
+      const _recallEntityRefs=ensureArray(row._recallEntityRefs).map(ref=>canonicalBoundaryEntity(ref,map));
+      const outRow={...row,visibility,projectionVisibilityBoundaries,_recallEntityRefs};
+      if(row&&typeof row==='object'){
+        boundPacketRecordRowCache.set(row,{
+          mapKey,visibilityIn:row.visibility,boundariesIn:row.projectionVisibilityBoundaries,
+          entityRefsIn:row._recallEntityRefs,category:row.category,
+          visibilityOut:visibility,boundariesOut:projectionVisibilityBoundaries,entityRefsOut:_recallEntityRefs
+        });
+        boundPacketRecordRowCache.set(outRow,{
+          mapKey,visibilityIn:visibility,boundariesIn:projectionVisibilityBoundaries,
+          entityRefsIn:_recallEntityRefs,category:row.category,
+          visibilityOut:visibility,boundariesOut:projectionVisibilityBoundaries,entityRefsOut:_recallEntityRefs
+        });
+      }
+      return outRow;
     });
   };
   const mergeRecallRecordSources = (sourceRows,storedRows,store,sourceAliasesOnly=false) => {
@@ -24186,13 +24346,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return stableHash64(JSON.stringify([scopeKey,config.mode,config.url,config.mode==='plugin_only'?'':backend.dataInstanceId,LOCAL_RECALL_POSTING_VERSION]));
     } finally { clearTimeout(timer); }
   };
-  const localRecallPostingSourceId = (descriptor,index) => {
+  const localRecallPostingSourceId = (descriptor,index,bypassCache=false) => {
+    const proof=!bypassCache&&descriptor&&typeof descriptor==='object'?localRecallDescriptorRevisions.get(descriptor):null;
+    if(proof&&proof.sourceId&&proof.sourceIdIndex===index
+      &&proof.sourceIdHash===descriptor.hash
+      &&proof.sourceIdMessageIndex===descriptor.messageIndex
+      &&proof.sourceIdSourceScope===descriptor.sourceScope
+      &&proof.sourceIdSourceType===descriptor.sourceType
+      &&proof.sourceIdTargetPair===descriptor.targetPairIndex
+      &&proof.sourceIdSourcePair===descriptor.sourcePairIndex
+      &&proof.sourceIdWorldline===descriptor.worldlineOrdinal
+      &&proof.sourceIdHistorical===descriptor.historicalOrdinal
+      &&proof.sourceIdLocator===descriptor.locator
+      &&proof.sourceIdEvidence===descriptor.sourceEvidence) {
+      return proof.sourceId;
+    }
     const identity=descriptor.hash||globalPacketRoutingIdentity(descriptor,index);
-    return stableHash64(JSON.stringify([identity,descriptor.messageIndex,descriptor.sourceScope,descriptor.sourceType,
+    const id=stableHash64(JSON.stringify([identity,descriptor.messageIndex,descriptor.sourceScope,descriptor.sourceType,
       descriptor.targetPairIndex,descriptor.sourcePairIndex,descriptor.worldlineOrdinal,descriptor.historicalOrdinal,descriptor.locator,descriptor.sourceEvidence]));
+    if(proof){
+      proof.sourceId=id;proof.sourceIdIndex=index;proof.sourceIdHash=descriptor.hash;
+      proof.sourceIdMessageIndex=descriptor.messageIndex;proof.sourceIdSourceScope=descriptor.sourceScope;
+      proof.sourceIdSourceType=descriptor.sourceType;proof.sourceIdTargetPair=descriptor.targetPairIndex;
+      proof.sourceIdSourcePair=descriptor.sourcePairIndex;proof.sourceIdWorldline=descriptor.worldlineOrdinal;
+      proof.sourceIdHistorical=descriptor.historicalOrdinal;proof.sourceIdLocator=descriptor.locator;
+      proof.sourceIdEvidence=descriptor.sourceEvidence;
+    }
+    return id;
   };
   const localRecallPostingEntryCurrent = entry => materializeExtractedPacket(entry.descriptor).raw===entry.proof.raw
-    &&localRecallPostingSourceId(entry.descriptor,entry.index)===entry.id;
+    &&localRecallPostingSourceId(entry.descriptor,entry.index,true)===entry.id;
   const localRecallPostingInventory = addresses => {
     let validationChars=0,validationHashChars=0;
     const entries=addresses.map((descriptor,index)=>{
@@ -28620,7 +28803,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
     }
     const context=settings.retrievalRecentContext||buildRecentContextFocus(messages,query,settings);
-    const chosen=localRecallFairMerge([localRecallRank(passages,[query]),localRecallRank(passages,context.topics||[])],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
+    let chosen=[];
+    if(passages.length){
+      const rankedLists=[];
+      if(text(query||'').trim())rankedLists.push(localRecallRank(passages,[query]));
+      const topics=ensureArray(context.topics);
+      if(topics.length)rankedLists.push(localRecallRank(passages,topics));
+      chosen=rankedLists.length?localRecallFairMerge(rankedLists,PACKET_CORE_RECALL_CANDIDATE_LIMIT):[];
+    }
     const records=chosen.map((row,index)=>({id:row.id,text:row.publicText,role:row.role,pairIndex:row.record.pairIndex||row.record.targetPairIndex||1,
       sourceHash:row.record.sourceHash||'',historyScope:row.record.historyScope||'current_session',score:1/(61+index),
       epistemicCaution:true,epistemicStatus:'original_narration_not_universal_character_knowledge'}));
@@ -33862,381 +34052,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       reason: text(contextFocus.reason || '')
     };
   };
-  const buildRetrievalBm25DocumentRaw = row => {
-    const r = row.retrieval || {};
-    const out = [];
-    const pushToken = (token, weight = 1) => {
-      const key = normalizeKey(token);
-      if (!key) return;
-      const count = Math.max(1, Math.min(5, Math.floor(Number(weight) || 1)));
-      for (let i = 0; i < count; i += 1) out.push(key);
-    };
-    const pushValue = (value, weight = 1, limit = 180) => {
-      const walk = source => {
-        if (source == null) return;
-        if (Array.isArray(source)) {
-          source.forEach(walk);
-          return;
-        }
-        if (objectish(source)) {
-          const body = itemText(source);
-          if (body) bm25DocumentTokens(body, limit).forEach(token => pushToken(token, weight));
-          return;
-        }
-        const body = text(source);
-        if (!body.trim()) return;
-        pushToken(body, weight);
-        bm25DocumentTokens(body, limit).forEach(token => pushToken(token, weight));
-      };
-      walk(value);
-    };
-    pushValue([r.canonicalAnchors, r.crossLingualTokens], 4, 160);
-    pushValue(row.memoryNote?.retrievalAliases, 3, 180);
-    pushValue([r.subjectTokens, r.relationEndpoints, r.entityNames, r.subject], 3, 160);
-    pushValue([r.priorityTerms, r.locatorTokens, row.publicRef], 2, 220);
-    pushValue([r.surfaceTokens, r.tokens, row.publicText, row.publicProfile], 1, 360);
-    pushValue([r.conceptTokens, r.semanticFrameTokens, r.sourceEvidenceTokens], 1, 220);
-    pushValue([
-      row.memoryNote?.title,
-      row.memoryNote?.location,
-      row.memoryNote?.characters,
-      row.memoryNote?.sectionLabel,
-      row.memoryNote?.sectionText,
-      row.memoryNote?.coreMemory,
-      row.memoryNote?.recallAnchors
-    ], 1, 260);
-    return out.slice(0, 900);
-  };
-  const retrievalBm25Document = (row, settings = Memory.settings) => requestCachedRowFeature(
-    settings, row, 'retrieval_bm25_document', () => buildRetrievalBm25DocumentRaw(row)
-  );
-  const SPARSE_BM25F_FIELD_NAMES = Object.freeze(Object.keys(SPARSE_HYBRID_TUNING.bm25fFieldWeights));
-  const sparseFieldValuesForRow = (row = {}, preserveFrequency = false) => {
-    const r = row.retrieval || {};
-    const atomic = r.atomicRecord || sparseAtomicRecordFor(row, row.item || {});
-    const visibility = atomic.visibility || row.visibility || {};
-    const collect = (values, limit) => preserveFrequency
-      ? ensureArray(values).flat(Infinity).map(value => text(value).trim()).filter(Boolean).slice(0, limit * 2)
-      : mergeValues(values, limit);
-    return {
-      canonical: collect([
-        r.canonicalAnchors,
-        r.crossLingualTokens,
-        row.links?.canonicalAnchors,
-        row.memoryNote?.retrievalAliases
-      ], 160),
-      identity: collect([
-        row.publicRef,
-        row.id,
-        atomic.subjectRefs,
-        r.subject,
-        r.subjectTokens,
-        r.entityNames
-      ], 180),
-      relation: collect([
-        atomic.participants,
-        r.relationEndpoints,
-        row.visibility?.ownerEntityId,
-        visibility.visibleToEntityIds,
-        visibility.deniedToEntityIds
-      ], 160),
-      state: collect([
-        atomic.predicate,
-        row.publicText,
-        row.category === 'character' || row.category === 'current_state' ? row.publicText : '',
-        r.tokens,
-        r.surfaceTokens,
-        r.priorityTerms
-      ], 220),
-      event: collect([
-        atomic.kind === 'event' || atomic.kind === 'constraint' ? row.publicText : '',
-        atomic.kind,
-        atomic.predicate,
-        atomic.kind === 'event' || atomic.kind === 'constraint' ? r.tokens : [],
-        r.semanticFrameTokens,
-        r.conceptTokens,
-        r.storyTags,
-        r.narrativeTags
-      ], 180),
-      context: collect([
-        row.memoryNote?.title,
-        row.memoryNote?.location,
-        row.memoryNote?.characters,
-        row.memoryNote?.memoryType,
-        row.memoryNote?.promotion,
-        row.memoryNote?.sectionLabel,
-        row.memoryNote?.sectionText,
-        row.memoryNote?.coreMemory,
-        row.memoryNote?.recallAnchors,
-        row.memoryNote?.criticalDialogue,
-        row.memoryNote?.unsupportedInferences,
-        row.memoryNote?.compressionSeed
-      ], 220),
-      temporal: collect([
-        atomic.status,
-        atomic.validTime,
-        atomic.eventTime,
-        row.sourceTime,
-        row.scene_id,
-        row.sceneRelation,
-        r.timeTags
-      ], 100),
-      summary: collect([
-        row.category === 'summary_memory' ? row.publicText : '',
-        row.publicProfile,
-        r.tokens,
-        r.sourceEvidenceTokens,
-        row.category !== 'summary_memory' ? row.publicText : ''
-      ], 220)
-    };
-  };
-  const sparseFieldDocumentTokens = (values = [], limit = 360) => {
-    const sources = ensureArray(values).flat().map(value => text(value).trim()).filter(Boolean);
-    return uniq(sources.map(normalizeKey).filter(Boolean), limit);
-  };
-  const sparseFieldTermFrequency = (values = [], limit = 360) => {
-    const tf = new Map();
-    let length = 0;
-    const sources = ensureArray(values).flat().map(value => normalizeKey(text(value).trim())).filter(Boolean);
-    for (const token of sources.slice(0, limit * 3)) {
-      const next = Math.min(3, Number(tf.get(token) || 0) + 1);
-      length += next > Number(tf.get(token) || 0) ? 1 : 0;
-      tf.set(token, next);
-    }
-    return { tf, length: Math.max(1, length), sourceCount: sources.length };
-  };
-  const buildSparseBm25fDocumentRaw = row => {
-    const fields = sparseFieldValuesForRow(row);
-    const frequencyFields = sparseFieldValuesForRow(row, true);
-    const document = {};
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      const limit = field === 'summary' || field === 'state' ? 420 : 260;
-      document[field] = sparseFieldDocumentTokens(fields[field], limit);
-    });
-    document._fieldTf = Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => [
-      field,
-      sparseFieldTermFrequency(frequencyFields[field], field === 'summary' || field === 'state' ? 420 : 260)
-    ]));
-    return document;
-  };
-  const sparseBm25fDocument = (row, settings = Memory.settings) => requestCachedRowFeature(
-    settings, row, 'sparse_bm25f_document_v3', () => buildSparseBm25fDocumentRaw(row)
-  );
-  const buildSparseBm25fCorpus = (rows = [], settings = Memory.settings) => {
-    const docs = ensureArray(rows).map(row => sparseBm25fDocument(row, settings));
-    const docFreq = new Map();
-    const avgFieldLength = Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => [field, 1]));
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      let total = 0;
-      docs.forEach(doc => {
-        total += Math.max(1, Number(doc?._fieldTf?.[field]?.length || ensureArray(doc[field]).length || 1));
-      });
-      avgFieldLength[field] = docs.length ? Math.max(1, total / docs.length) : 1;
-    });
-    docs.forEach(doc => {
-      const unique = new Set(SPARSE_BM25F_FIELD_NAMES.flatMap(field => ensureArray(doc[field])));
-      unique.forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    });
-    return { docs, docFreq, avgFieldLength, size: docs.length };
-  };
-  const sparseBm25fQueryTokens = (signature = {}) => uniq([
-    ...bm25DocumentTokens(signature.expandedText || signature.rawQuery || '', 180),
-    ...ensureArray(signature.canonicalTokens),
-    ...ensureArray(signature.entityTokens),
-    ...ensureArray(signature.surfaceQueryTokens)
-  ].map(normalizeKey).filter(Boolean), 220);
-  const sparseBm25fScore = (queryTokens = [], document = {}, corpus = {}) => {
-    const query = uniq(queryTokens.map(normalizeKey).filter(Boolean), 120);
-    if (!query.length) return 0;
-    const docCount = Math.max(1, Number(corpus.size || 1));
-    const k1 = SPARSE_HYBRID_TUNING.bm25fK1;
-    const fieldTf = document._fieldTf || Object.fromEntries(SPARSE_BM25F_FIELD_NAMES.map(field => {
-      const tokens = ensureArray(document[field]).map(normalizeKey).filter(Boolean);
-      const tf = new Map();
-      tokens.forEach(token => tf.set(token, (tf.get(token) || 0) + 1));
-      return [field, { tf, length: tokens.length }];
-    }));
-    let raw = 0;
-    let maxRaw = 0;
-    query.forEach(token => {
-      const df = Math.max(0, Number(corpus.docFreq?.get(token) || 0));
-      const idf = Math.log(1 + ((docCount - df + 0.5) / (df + 0.5)));
-      let weightedTf = 0;
-      SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-        const weight = Number(SPARSE_HYBRID_TUNING.bm25fFieldWeights[field] || 1);
-        const b = Number(SPARSE_HYBRID_TUNING.bm25fFieldLengthNorm[field] || 0.75);
-        const entry = fieldTf[field];
-        const freq = entry.tf.get(token) || 0;
-        if (!freq) return;
-        const avg = Math.max(1, Number(corpus.avgFieldLength?.[field] || 1));
-        const norm = Math.max(0.15, 1 - b + b * (entry.length / avg));
-        weightedTf += weight * (freq / norm);
-      });
-      if (weightedTf > 0) raw += idf * ((weightedTf * (k1 + 1)) / (weightedTf + k1));
-      maxRaw += idf * (k1 + 1);
-    });
-    return clamp(maxRaw > 0 ? raw / maxRaw : 0, 0, 1, 0);
-  };
-  const sparseExactCoverage = (queryTokens = [], documentTokens = []) => {
-    const query = new Set(ensureArray(queryTokens).map(normalizeKey).filter(Boolean));
-    const document = new Set(ensureArray(documentTokens).map(normalizeKey).filter(Boolean));
-    if (!query.size || !document.size) return 0;
-    let overlap = 0;
-    query.forEach(token => { if (document.has(token)) overlap += 1; });
-    return overlap / query.size;
-  };
-  const sparseCandidateSignalsForRow = (row = {}, rowIndex = 0, signature = {}, corpus = {}, settings = Memory.settings) => {
-    const doc = corpus.docs?.[rowIndex] || sparseBm25fDocument(row, settings);
-    const queryTokens = corpus.queryTokens || sparseBm25fQueryTokens(signature);
-    const identitySignal = Math.max(
-      sparseExactCoverage(signature.entityTokens, doc.identity),
-      queryMentionsAny(signature.rawQuery, doc.identity) ? 1 : 0
-    );
-    // Broad discourse tags such as `info:memory` describe the query form, not
-    // the remembered fact. Let only specific anchors participate in the exact
-    // canonical channel so a generic "remember" query cannot outrank its
-    // explicitly named subject/owner.
-    const specificQueryCanonical = ensureArray(signature.canonicalTokens).filter(packetCoverageSpecificCanonical);
-    const specificDocCanonical = ensureArray(doc.canonical).filter(packetCoverageSpecificCanonical);
-    const canonicalExactSignal = sparseExactCoverage(specificQueryCanonical, specificDocCanonical);
-    const lexicalCoverageSignal = sparseExactCoverage(signature.tokens, mergeValues([doc.state, doc.event, doc.context, doc.summary], 900));
-    const charNgramSignal = Math.max(
-      weightedJaccard(signature.charTokens, mergeValues([doc.identity, doc.state, doc.event, doc.context], 900)).coverage,
-      0
-    );
-    const phraseSignal = lexicalStats(signature.phraseBigrams || [], bigramTokens(row?.retrieval?.tokens || [], 220)).coverage;
-    const bm25fSignal = sparseBm25fScore(queryTokens, doc, corpus);
-    const sparseEvidence = Math.max(
-      bm25fSignal,
-      identitySignal,
-      canonicalExactSignal,
-      charNgramSignal * 0.82,
-      lexicalCoverageSignal * 0.78,
-      phraseSignal * 0.72
-    );
-    return {
-      ...row,
-      retrievalEngine: RETRIEVAL_ENGINE_VERSION,
-      scoreBreakdown: {
-        ...(row.scoreBreakdown || {}),
-        retrievalEngine: RETRIEVAL_ENGINE_VERSION,
-        bm25fSignal: Number(bm25fSignal.toFixed(4)),
-        identitySignal: Number(identitySignal.toFixed(4)),
-        canonicalExactSignal: Number(canonicalExactSignal.toFixed(4)),
-        charNgramSignal: Number(charNgramSignal.toFixed(4)),
-        lexicalCoverageSignal: Number(lexicalCoverageSignal.toFixed(4)),
-        sparsePhraseSignal: Number(phraseSignal.toFixed(4)),
-        sparseEvidence: Number(sparseEvidence.toFixed(4))
-      }
-    };
-  };
-  const unifiedMemoryContextualDocument = (rowIndex, rows = [], corpus = {}, queryTokens = []) => {
-    const row = rows[rowIndex];
-    const sourceDoc = corpus.docs?.[rowIndex];
-    if (!row || !sourceDoc) return { document: sourceDoc || {}, sources: 0, totalWeight: 0 };
-    const keyToIndex = corpus.unifiedMemoryKeyToIndex || new Map(rows.map((candidate, index) => [
-      candidate.unifiedMemoryKey || unifiedMemoryKeyFor(candidate),
-      index
-    ]));
-    corpus.unifiedMemoryKeyToIndex = keyToIndex;
-    const queryFieldMatches = corpus.unifiedQueryFieldMatches || [];
-    const sourceMatches = queryFieldMatches[rowIndex];
-    const fieldTf = {};
-    SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-      const direct = sourceDoc?._fieldTf?.[field] || { tf: new Map(), length: 1 };
-      const tf = new Map(ensureArray(sourceMatches?.[field]).map(match => [match.token, match.frequency]));
-      fieldTf[field] = { tf, length: Math.max(1, Number(direct.length || 1)) };
-    });
-    let sources = 0;
-    let totalWeight = 0;
-    for (const edge of ensureArray(row?.retrieval?.unifiedAssociations)) {
-      const targetIndex = keyToIndex.get(edge.targetMemoryKey);
-      if (!Number.isInteger(targetIndex) || targetIndex === rowIndex) continue;
-      const neighbor = rows[targetIndex];
-      const neighborDoc = corpus.docs?.[targetIndex];
-      if (!neighbor || !neighborDoc) continue;
-      const breakdown = neighbor.scoreBreakdown || {};
-      const exact = Math.max(Number(breakdown.identitySignal || 0), Number(breakdown.canonicalExactSignal || 0));
-      const directEvidence = Math.max(
-        Number(breakdown.sparseEvidence || 0),
-        Number(breakdown.bm25fSignal || 0),
-        Number(breakdown.charNgramSignal || 0)
-      );
-      if (exact <= 0 && directEvidence < UNIFIED_MEMORY_TUNING.minContextEvidence) continue;
-      const semanticGate = exact > 0 ? 1 : clamp(directEvidence * 1.35, 0, 0.85, 0);
-      const edgeWeight = clamp(edge.weight, 0, 1, 0) * semanticGate;
-      if (edgeWeight <= 0) continue;
-      sources += 1;
-      totalWeight += edgeWeight;
-      SPARSE_BM25F_FIELD_NAMES.forEach(field => {
-        const transfer = Number(UNIFIED_MEMORY_TUNING.contextualFieldTransfer[field] || 0);
-        if (transfer <= 0) return;
-        const neighborEntry = neighborDoc?._fieldTf?.[field];
-        if (!neighborEntry) return;
-        const contribution = edgeWeight * transfer;
-        fieldTf[field].length += Number(neighborEntry.length || 0) * contribution;
-        ensureArray(queryFieldMatches[targetIndex]?.[field]).forEach(match => {
-          fieldTf[field].tf.set(
-            match.token,
-            Number(fieldTf[field].tf.get(match.token) || 0) + Number(match.frequency || 0) * contribution
-          );
-        });
-      });
-    }
-    return {
-      document: { ...sourceDoc, _fieldTf: fieldTf },
-      sources,
-      totalWeight: Number(totalWeight.toFixed(4))
-    };
-  };
-  const applyUnifiedContextualBm25f = (rows = [], signature = {}, corpus = {}) => {
-    const queryTokens = corpus.queryTokens || sparseBm25fQueryTokens(signature);
-    corpus.unifiedMemoryKeyToIndex = new Map(rows.map((row, index) => [row.unifiedMemoryKey || unifiedMemoryKeyFor(row), index]));
-    // Cache only query-matching field entries once per request. Contextual
-    // transfer then walks sparse matches instead of every query token for every
-    // field of every relation edge.
-    corpus.unifiedQueryFieldMatches = ensureArray(corpus.docs).map(document => Object.fromEntries(
-      SPARSE_BM25F_FIELD_NAMES.map(field => {
-        const entry = document?._fieldTf?.[field];
-        const matches = [];
-        ensureArray(queryTokens).forEach(token => {
-          const frequency = Number(entry?.tf?.get(token) || 0);
-          if (frequency > 0) matches.push({ token, frequency });
-        });
-        return [field, matches];
-      })
-    ));
-    return ensureArray(rows).map((row, rowIndex) => {
-      const directBm25f = Number(row?.scoreBreakdown?.bm25fSignal || 0);
-      const contextual = unifiedMemoryContextualDocument(rowIndex, rows, corpus, queryTokens);
-      const rawContextualBm25f = sparseBm25fScore(queryTokens, contextual.document, corpus);
-      const contextualLift = clamp(
-        rawContextualBm25f - directBm25f,
-        0,
-        UNIFIED_MEMORY_TUNING.maxContextualBm25fLift,
-        0
-      );
-      const contextualBm25fSignal = clamp(directBm25f + contextualLift, 0, 1, directBm25f);
-      const directEvidence = Number(row?.scoreBreakdown?.sparseEvidence || 0);
-      const sparseEvidence = Math.max(directEvidence, contextualBm25fSignal);
-      return {
-        ...row,
-        retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-          directBm25fSignal: Number(directBm25f.toFixed(4)),
-          contextualBm25fSignal: Number(contextualBm25fSignal.toFixed(4)),
-          contextualBm25fLift: Number(contextualLift.toFixed(4)),
-          contextualSourceCount: contextual.sources,
-          contextualSourceWeight: contextual.totalWeight,
-          bm25fSignal: Number(contextualBm25fSignal.toFixed(4)),
-          directSparseEvidence: Number(directEvidence.toFixed(4)),
-          sparseEvidence: Number(sparseEvidence.toFixed(4))
-        }
-      };
-    });
-  };
   const hierarchicalEpisodeBroadQuery = (signature = {}) => {
     const intent = explicitQueryIntentOf(signature);
     return isPastStateLookupQuery(signature)
@@ -34445,487 +34260,6 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       topScore: Number(Number(scored[0]?.detail?.score || 0).toFixed(4)), selectedEpisodes: selectedDiagnostics,
       reason: signals.size ? 'episode_router_applied_recursive_memory_lane_v1' : 'episode_match_without_child_evidence' };
     return output;
-  };
-
-  const unifiedMemoryTemporalTransition = (source = {}, target = {}, signature = {}) => {
-    const sourceDistance = Number(source?.locator?.distanceFromLatest ?? source?.retrieval?.distanceFromLatest);
-    const targetDistance = Number(target?.locator?.distanceFromLatest ?? target?.retrieval?.distanceFromLatest);
-    if (!Number.isFinite(sourceDistance) || !Number.isFinite(targetDistance)) return 1;
-    const gap = Math.abs(sourceDistance - targetDistance);
-    let factor = gap <= COMPOSITE_RECALL_HORIZONS.shortMaxMessageDistance
-      ? 1
-      : (gap < COMPOSITE_RECALL_HORIZONS.longMinMessageDistance ? 0.72 : 0.5);
-    if (isPastStateLookupQuery(signature.rawQuery || '')) factor = Math.min(1, factor + 0.18);
-    if (signature.presentStateQuery && targetDistance >= COMPOSITE_RECALL_HORIZONS.longMinMessageDistance) factor *= 0.62;
-    return clamp(factor, 0.2, 1, 1);
-  };
-  const applyUnifiedAssociationActivation = (rows = [], signature = {}, store = {}) => {
-    const input = ensureArray(rows);
-    if (!input.length) return input;
-    const keyToIndex = new Map(input.map((row, index) => [row.unifiedMemoryKey || unifiedMemoryKeyFor(row), index]));
-    const frontier = new Map();
-    input.forEach((row, index) => {
-      const breakdown = row.scoreBreakdown || {};
-      const exact = Math.max(Number(breakdown.identitySignal || 0), Number(breakdown.canonicalExactSignal || 0));
-      const evidence = Math.max(
-        Number(breakdown.directSparseEvidence || 0),
-        Number(breakdown.directBm25fSignal || 0),
-        Number(breakdown.charNgramSignal || 0) * 0.82,
-        Number(breakdown.sparsePhraseSignal || 0) * 0.72
-      );
-      if (exact <= 0 && evidence < UNIFIED_MEMORY_TUNING.minSeedEvidence) return;
-      frontier.set(index, { value: clamp(Math.max(exact, evidence), 0, 1, 0), path: [] });
-    });
-    const best = input.map(() => ({ value: 0, hop: 0, path: [] }));
-    let active = frontier;
-    for (let hop = 1; hop <= UNIFIED_MEMORY_TUNING.maxPropagationHops && active.size; hop += 1) {
-      const next = new Map();
-      active.forEach((sourceState, sourceIndex) => {
-        const source = input[sourceIndex];
-        ensureArray(source?.retrieval?.unifiedAssociations).forEach(edge => {
-          const targetIndex = keyToIndex.get(edge.targetMemoryKey);
-          if (!Number.isInteger(targetIndex) || targetIndex === sourceIndex) return;
-          const target = input[targetIndex];
-          const transition = unifiedMemoryTemporalTransition(source, target, signature);
-          const value = clamp(
-            Number(sourceState.value || 0)
-              * Number(edge.weight || 0)
-              * UNIFIED_MEMORY_TUNING.hopDecay
-              * transition,
-            0,
-            UNIFIED_MEMORY_TUNING.maxAssociationSignal,
-            0
-          );
-          if (value <= 0.006 || value <= Number(best[targetIndex]?.value || 0)) return;
-          const path = [...ensureArray(sourceState.path), {
-            from: source.unifiedMemoryKey || unifiedMemoryKeyFor(source),
-            to: target.unifiedMemoryKey || unifiedMemoryKeyFor(target),
-            type: edge.type,
-            weight: Number(edge.weight || 0)
-          }].slice(-UNIFIED_MEMORY_TUNING.maxPropagationHops);
-          best[targetIndex] = { value, hop, path };
-          const previous = next.get(targetIndex);
-          if (!previous || value > previous.value) next.set(targetIndex, { value, path });
-        });
-      });
-      active = next;
-    }
-    return input.map((row, index) => {
-      const directEvidence = Number(row?.scoreBreakdown?.sparseEvidence || 0);
-      const associationSignal = Number(best[index]?.value || 0);
-      const unifiedEvidence = clamp(Math.max(
-        directEvidence,
-        associationSignal * 0.92,
-        directEvidence + associationSignal * 0.22
-      ), 0, 1, directEvidence);
-      return {
-        ...row,
-        retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          retrievalEngine: UNIFIED_MEMORY_ENGINE_VERSION,
-          associationSignal: Number(associationSignal.toFixed(4)),
-          associationHop: Number(best[index]?.hop || 0),
-          associationPath: ensureArray(best[index]?.path),
-          directSparseEvidence: Number(directEvidence.toFixed(4)),
-          sparseEvidence: Number(unifiedEvidence.toFixed(4)),
-          unifiedMemoryEvidence: Number(unifiedEvidence.toFixed(4))
-        }
-      };
-    });
-  };
-  const applyUnifiedMemoryCandidateSignals = (rows = [], signature = {}, corpus = {}, store = {}) => {
-    const episodeRouted = applyHierarchicalEpisodeRouting(rows, signature, store, signature?.settings || Memory.settings || DEFAULT_SETTINGS);
-    const contextualized = applyUnifiedContextualBm25f(episodeRouted, signature, corpus);
-    const associated = applyUnifiedAssociationActivation(contextualized, signature, store);
-    return applyLatentEpisodicReactivation(associated, signature, store);
-  };
-  const sparseCandidateForceKeep = (row = {}, signature = {}) => {
-    const category = text(row.category || '');
-    const lifecycle = row?._memoryLifecycle || {};
-    if (lifecycle.tier === 'hot' && lifecycle.mustCarryClass) return true;
-    if (Number(row.importance || 0) >= 0.92) return true;
-    if (signature.explicitContinuityIntent && /continuity_lock|do_not_resolve_yet|open_invitation/i.test(category)) return true;
-    if (signature.presentStateQuery && /character|current_state|active_event/i.test(category)) return true;
-    return false;
-  };
-  const packetMemoryPreRankDecayPenalty = (row = {}, signature = {}) => {
-    const lifecycle = objectish(row?._memoryLifecycle) ? row._memoryLifecycle : {};
-    const decay = ledgerRev2Clamp(lifecycle.decay, 0, 1, 1);
-    const maxPenalty = Math.max(0, Number(lifecycle.decayPenaltyMax || 0));
-    if (!maxPenalty || lifecycle.mustCarryClass) return 0;
-    const pastLookup = ledgerRev2IsPastLookup(signature?.rawQuery || signature?.expandedText || '');
-    const evidence = ledgerRev2Clamp(row?.scoreBreakdown?.sparseEvidence ?? row?.scoreBreakdown?.relevanceEvidence ?? 0, 0, 1, 0);
-    const evidenceRelief = Math.max(0.40, 1 - evidence * 0.60);
-    const episodicCue = ledgerRev2Clamp(row?.scoreBreakdown?.episodicCueSignal, 0, 1, 0);
-    const cueRelief = episodicCue > 0 ? Math.max(0.12, 1 - episodicCue * 0.88) : 1;
-    const lookupRelief = pastLookup ? 0.10 : 0.48;
-    return maxPenalty * Math.max(0, 1 - decay) * evidenceRelief * cueRelief * lookupRelief;
-  };
-  const rankSparseCandidates = (rows = [], signature = {}, mode = 'balanced') => {
-    if (!rows.length) return rows;
-    const signals = ['bm25fSignal', 'identitySignal', 'canonicalExactSignal', 'episodeRouterSignal', 'associationSignal', 'episodicCueSignal', 'charNgramSignal', 'lexicalCoverageSignal', 'sparsePhraseSignal'];
-    const ranks = {};
-    signals.forEach(signal => {
-      const sorted = [...rows]
-        .filter(row => Number(row.scoreBreakdown?.[signal] || 0) > 0)
-        .sort((a, b) => Number(b.scoreBreakdown?.[signal] || 0) - Number(a.scoreBreakdown?.[signal] || 0));
-      ranks[signal] = new Map(sorted.map((row, index) => [row, index + 1]));
-    });
-    let maxRrf = 0;
-    const computed = rows.map(row => {
-      let rrf = 0;
-      signals.forEach(signal => {
-        const rank = ranks[signal].get(row);
-        if (rank !== undefined) rrf += 1 / (SPARSE_HYBRID_TUNING.candidateRrfK + rank);
-      });
-      maxRrf = Math.max(maxRrf, rrf);
-      return { row, rrf };
-    }).map(({ row, rrf }) => {
-      const normalizedRrf = maxRrf > 0 ? rrf / maxRrf : 0;
-      const evidence = Number(row.scoreBreakdown?.sparseEvidence || 0);
-      const bm25f = Number(row.scoreBreakdown?.bm25fSignal || 0);
-      const ageDecayPenalty = packetMemoryPreRankDecayPenalty(row, signature);
-      const rankScore = normalizedRrf * 0.52 + evidence * 0.34 + bm25f * 0.14 - ageDecayPenalty;
-      return {
-        ...row,
-        scoreBreakdown: {
-          ...(row.scoreBreakdown || {}),
-          sparseCandidateRrf: Number(normalizedRrf.toFixed(4)),
-          sparseCandidateAgeDecayPenalty: Number(ageDecayPenalty.toFixed(4)),
-          sparseCandidateRank: Number(rankScore.toFixed(4))
-        }
-      };
-    });
-    const limit = Math.max(12, Number(SPARSE_HYBRID_TUNING.candidateLimits[mode] || SPARSE_HYBRID_TUNING.candidateLimits.balanced));
-    const forcedLimit = Math.max(4, Math.floor(limit * 0.35));
-    const forced = computed.filter(row => sparseCandidateForceKeep(row, signature))
-      .sort((a, b) => Number(b.scoreBreakdown?.sparseEvidence || 0) - Number(a.scoreBreakdown?.sparseEvidence || 0)
-        || Number(b.importance || 0) - Number(a.importance || 0)
-        || Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-      .slice(0, forcedLimit);
-    const ranked = computed
-      .filter(row => Number(row.scoreBreakdown?.sparseEvidence || 0) >= SPARSE_HYBRID_TUNING.candidateEvidenceFloor || sparseCandidateForceKeep(row, signature))
-      .sort((a, b) => Number(b.scoreBreakdown?.sparseCandidateRank || 0) - Number(a.scoreBreakdown?.sparseCandidateRank || 0)
-        || Number(b.importance || 0) - Number(a.importance || 0)
-        || Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
-    const selected = [];
-    const seen = new Set();
-    const add = row => {
-      const key = rowIdentityKey(row) || `${row.axis}|${row.category}|${row.publicRef}`;
-      if (key && seen.has(key)) return;
-      if (key) seen.add(key);
-      selected.push(row);
-    };
-    forced.forEach(add);
-    ranked.forEach(row => { if (selected.length < limit) add(row); });
-    return selected;
-  };
-  const buildRetrievalCorpus = (rows, settings = Memory.settings) => {
-    const docs = ensureArray(rows).map(row => retrievalBm25Document(row, settings));
-    const docFreq = new Map();
-    docs.forEach(doc => {
-      new Set(doc).forEach(token => docFreq.set(token, (docFreq.get(token) || 0) + 1));
-    });
-    const avgDocLen = docs.length
-      ? docs.reduce((sum, doc) => sum + doc.length, 0) / docs.length
-      : 1;
-    return { docs, docFreq, avgDocLen, size: docs.length };
-  };
-  const retrievalBm25Weight = (settings = Memory.settings || DEFAULT_SETTINGS) => {
-    if (settings?.bm25Channel === false) return 0;
-    return clamp(settings?.bm25Weight, 0, 0.25, DEFAULT_SETTINGS.bm25Weight);
-  };
-  const retrievalRowPressure = r => Math.max(
-    Number(r.pressure || 0),
-    Number(r.emotionProfile?.intensity || 0),
-    Number(r.emotionProfile?.relationImpact || 0),
-    Number(r.worldProfile?.pressure || 0),
-    Number(r.storyProfile?.priority || 0)
-  );
-  const scoreRowWithStrengthenedJaccard = (store, row, rowIndex, signature, corpus, profile, settings = Memory.settings) => {
-    const r = row.retrieval || {};
-    const sparseBreakdown = row.scoreBreakdown || {};
-    const hasSparseCandidateSignals = Object.prototype.hasOwnProperty.call(sparseBreakdown, 'sparseEvidence');
-    const lexical = lexicalStats(signature.tokens, r.tokens || []);
-    const subjectStats = lexicalStats(signature.tokens, r.subjectTokens || tokenize(r.subject || '', 48));
-    const subjectMatch = r.subject && normalizeKey(signature.rawQuery).includes(normalizeKey(r.subject)) ? 1 : 0;
-    const pressure = retrievalRowPressure(r);
-    const tagScores = {
-      branch: jaccard(signature.branchTags, r.branchTags || []),
-      emotion: Math.max(jaccard(signature.emotionTags, r.emotionTags || []), jaccard(signature.relationTags, r.relationTags || [])),
-      world: Math.max(jaccard(signature.worldTags, r.worldTags || []), jaccard(signature.tokens, r.worldProfile?.locationTokens || []), jaccard(signature.tokens, r.worldProfile?.factionTokens || [])),
-      narrative: Math.max(jaccard(signature.narrativeTags, r.narrativeTags || []), jaccard(signature.storyTags, r.storyTags || [])),
-      time: jaccard(signature.timeTags, r.timeTags || []),
-      locator: locatorScoreFor(signature.rawQuery, row, signature.tokens, !hasSparseCandidateSignals)
-    };
-    const priorityBoost = priorityBoostFor(signature.expandedText, r.priorityTerms || [], signature.tokens, signature.conceptTokens, !hasSparseCandidateSignals);
-    const contextFocus = requestContextFocusSignalForRow(row, signature.contextFocus, settings);
-    const freshness = hayakuTimeFreshness(store, row, settings);
-    const lifecycleLift = lifecycleRelevanceLift(row, signature.expandedText);
-    const lifecycleMultiplier = lifecycleScoreMultiplier(row, signature.expandedText);
-    // Character n-grams already provide fuzzy recall during sparse candidate
-    // generation. On that path, exact weighted Jaccard is the bounded reranker;
-    // repeating edit-distance matching for every field caused quadratic search
-    // latency without adding independent evidence.
-    const rerankJaccard = hasSparseCandidateSignals ? weightedJaccard : softWeightedJaccard;
-    const wordJaccard = rerankJaccard(signature.tokens, r.tokens || []);
-    const charJaccard = hasSparseCandidateSignals
-      ? {
-          jaccard: Number(sparseBreakdown.charNgramSignal || 0),
-          coverage: Number(sparseBreakdown.charNgramSignal || 0),
-          overlap: Number(sparseBreakdown.charNgramSignal || 0) > 0 ? 1 : 0
-        }
-      : rerankJaccard(signature.charTokens, charNgramTokens([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '), 260));
-    const entityJaccard = rerankJaccard(signature.entityTokens, mergeValues([r.subjectTokens, r.relationEndpoints, r.subject], 120));
-    const conceptJaccard = rerankJaccard(signature.conceptTokens, conceptTokensForRetrieval(r));
-    const canonicalJaccard = rerankJaccard(
-      ensureArray(signature.canonicalTokens),
-      mergeValues([r.canonicalAnchors, r.crossLingualTokens], 160).filter(token => CANONICAL_RECALL_TOKEN_PREFIX_RE.test(token))
-    );
-    const canonicalSignal = Math.max(canonicalJaccard.jaccard, canonicalJaccard.coverage);
-    const frameJaccard = rerankJaccard(signature.semanticFrameTokens, r.semanticFrameTokens || semanticFrameTokensForText(row.publicText || ''));
-    const locatorJaccard = rerankJaccard(signature.tokens, r.locatorTokens || []);
-    const bm25Raw = hasSparseCandidateSignals
-      ? Number(sparseBreakdown.bm25fSignal || 0)
-      : bm25Score(signature.tokens, corpus.docs[rowIndex] || [], corpus.docFreq, Math.max(1, corpus.size), corpus.avgDocLen);
-    const bm25Weight = retrievalBm25Weight(settings);
-    const bm25Signal = clamp(bm25Raw * bm25Weight, 0, 0.25, 0);
-    const entitySignal = Math.max(entityJaccard.jaccard, entityJaccard.coverage, subjectStats.coverage, subjectMatch);
-    const conceptSignal = Math.max(
-      conceptJaccard.jaccard,
-      conceptJaccard.coverage,
-      tagScores.branch,
-      tagScores.emotion,
-      tagScores.world,
-      tagScores.narrative,
-      tagScores.time
-    );
-    const frameSignal = Math.max(frameJaccard.jaccard, frameJaccard.coverage);
-    const locatorSignal = Math.max(locatorJaccard.jaccard, locatorJaccard.coverage, tagScores.locator);
-    const specificConceptStats = rerankJaccard(
-      ensureArray(signature.conceptTokens).filter(isSpecificConceptToken),
-      mergeValues([r.crossLingualTokens, r.relationTags?.map(tag => `relation:${tag}`)], 128).filter(isSpecificConceptToken)
-    );
-    const specificConceptSignal = Math.max(specificConceptStats.jaccard, specificConceptStats.coverage);
-    const specificFrameStats = rerankJaccard(
-      ensureArray(signature.semanticFrameTokens).filter(isSpecificFrameToken),
-      ensureArray(r.semanticFrameTokens).filter(isSpecificFrameToken)
-    );
-    const specificFrameSignal = Math.max(specificFrameStats.jaccard, specificFrameStats.coverage);
-    const phraseStats = lexicalStats(signature.phraseBigrams || [], bigramTokens(r.tokens || [], 220));
-    const phraseSignal = Math.max(phraseStats.jaccard, phraseStats.coverage * 0.82);
-    const surfaceQueryTokens = ensureArray(signature.surfaceQueryTokens);
-    const surfaceRowTokens = surfaceSpecificTokensOf([row.publicText, r.subject, ensureArray(r.priorityTerms).join(' ')].filter(Boolean).join(' '));
-    const surfaceOverlap = surfaceQueryTokens.filter(token => surfaceRowTokens.includes(token)).length;
-    const surfaceSpecificSignal = surfaceOverlap > 0
-      ? Math.min(0.42, 0.18 + (surfaceOverlap / Math.max(1, surfaceQueryTokens.length)) * 0.34)
-      : 0;
-    const explicitContinuityIntent = Boolean(signature.explicitContinuityIntent);
-    const cw = signature.channelWeights || { entity: 1, world: 1, narrative: 1, planner: 1, locator: 1, frame: 1, concept: 1, lexical: 1 };
-    const directSpecificity = Math.max(
-      entitySignal,
-      locatorSignal,
-      specificConceptSignal,
-      specificFrameSignal,
-      canonicalSignal,
-      surfaceSpecificSignal,
-      phraseSignal,
-      contextFocus.signal * 0.88,
-      Number(lifecycleLift || 0) > 0 ? 0.2 : 0,
-      subjectStats.coverage,
-      subjectMatch,
-      lexical.coverage,
-      wordJaccard.coverage,
-      Number(lexical.overlap || 0) >= 2 ? 0.35 : 0,
-      Number(priorityBoost || 0) >= 0.14 ? 0.3 : 0
-    );
-    const genericConceptOnly = directSpecificity < JACCARD_TUNING.specificGateFloor && !(row.axis === 'planner' && explicitContinuityIntent);
-    const effectiveConceptSignal = genericConceptOnly ? Math.min(conceptSignal, JACCARD_TUNING.genericConceptCap) : conceptSignal;
-    const effectiveFrameSignal = genericConceptOnly ? Math.min(frameSignal, JACCARD_TUNING.genericConceptCap) : frameSignal;
-    const memoryStrength = clamp(
-      Number(row.importance || 0) * 0.35
-      + Number(r.salience || 0) * 0.25
-      + Number(r.impression || 0) * 0.20
-      + Number(r.confidence || 0.5) * 0.20,
-      0, 1, 0.4
-    );
-    const lexicalScore = clamp(
-      Math.max(wordJaccard.jaccard, wordJaccard.coverage * 0.74, lexical.jaccard) * 0.32
-      + Math.max(charJaccard.jaccard, charJaccard.coverage * 0.58) * 0.20
-      + Math.max(entityJaccard.jaccard, entityJaccard.coverage * 0.82, subjectStats.coverage, subjectMatch) * 0.26
-      + Math.max(locatorJaccard.jaccard, locatorJaccard.coverage * 0.78) * 0.12,
-      0, 1, 0
-    );
-    const strengthenedJaccard = clamp(
-      Math.max(wordJaccard.jaccard, wordJaccard.coverage * 0.74, lexical.jaccard) * 0.46
-      + Math.max(charJaccard.jaccard, charJaccard.coverage * 0.58) * 0.20
-      + effectiveFrameSignal * 0.14 * cw.frame
-      + locatorSignal * 0.10 * cw.locator
-      + phraseSignal * 0.10,
-      0, 1, 0
-    );
-    const sparseBm25f = Number(sparseBreakdown.bm25fSignal || 0);
-    const sparseIdentity = Number(sparseBreakdown.identitySignal || 0);
-    const sparseCanonical = Number(sparseBreakdown.canonicalExactSignal || 0);
-    const sparseAssociation = Number(sparseBreakdown.associationSignal || 0);
-    const sparseChar = Number(sparseBreakdown.charNgramSignal || 0);
-    const sparseLexicalCoverage = Number(sparseBreakdown.lexicalCoverageSignal || 0);
-    const sparsePhrase = Number(sparseBreakdown.sparsePhraseSignal || 0);
-    const sparsePrimaryScore = hasSparseCandidateSignals
-      ? clamp(
-          sparseBm25f * 0.40
-          + sparseIdentity * 0.20
-          + sparseCanonical * 0.14
-          + sparseAssociation * 0.12
-          + sparseChar * 0.06
-          + sparseLexicalCoverage * 0.05
-          + sparsePhrase * 0.03,
-          0, 1, 0
-        )
-      : clamp(lexicalScore * 0.52 + entitySignal * 0.20 + canonicalSignal * 0.12 + bm25Signal * 0.16, 0, 1, 0);
-    const sparseEvidence = hasSparseCandidateSignals
-      ? Number(sparseBreakdown.sparseEvidence || 0)
-      : Math.max(sparsePrimaryScore, lexicalScore, entitySignal, canonicalSignal, bm25Signal);
-    const relevanceEvidence = clamp(
-      (Math.max(sparseEvidence, sparsePrimaryScore, strengthenedJaccard, entitySignal, effectiveConceptSignal, effectiveFrameSignal, canonicalSignal, locatorSignal, priorityBoost, contextFocus.signal * 0.78, directSpecificity * 0.4, phraseSignal * 0.5) + lifecycleLift) * lifecycleMultiplier,
-      0, 1, 0
-    );
-    const relevanceGate = clamp(relevanceEvidence * 1.85, 0, 1, 0);
-    const axisChannelBoost = row.axis === 'world' ? (cw.world || 1) : row.axis === 'narrative' ? (cw.narrative || 1) : 1;
-    const axisPrior = clamp((signature.axisWeights[row.axis] || 0) * axisChannelBoost * Math.max(strengthenedJaccard, entitySignal, effectiveConceptSignal, locatorSignal), 0, 1, 0);
-    const pressurePrior = clamp(pressure * relevanceGate, 0, 1, 0);
-    const memoryPrior = clamp(memoryStrength * (0.18 + relevanceGate * 0.82), 0, 1, 0);
-    const freshnessPrior = clamp(freshness * (0.22 + relevanceGate * 0.78), 0, 1, 0);
-    const priorityPrior = clamp(priorityBoost * (0.35 + relevanceGate * 0.65), 0, 1, 0);
-    const freshnessWeight = signature.presentStateQuery ? JACCARD_TUNING.presentStateFreshnessWeight : JACCARD_TUNING.defaultFreshnessWeight;
-    const importantRecallLift = clamp(
-      (
-        Math.max(0, Number(row.importance || 0) - 0.78) * 0.62
-        + Math.max(0, memoryStrength - 0.78) * 0.34
-      ) * relevanceGate,
-      0, relevanceEvidence >= 0.045 ? 0.20 : 0.06, 0
-    );
-    const plannerCoordinationLift = row.axis === 'planner'
-      ? clamp(
-        (0.035 + memoryStrength * 0.025 + pressure * 0.025) * (0.35 + relevanceGate * 0.65) * (cw.planner || 1),
-        0, 0.08, 0
-      )
-      : 0;
-    const score = clamp(
-      (sparsePrimaryScore * 0.72
-      + strengthenedJaccard * SPARSE_HYBRID_TUNING.rerankJaccardWeight
-      + effectiveConceptSignal * 0.025 * cw.concept
-      + effectiveFrameSignal * 0.035 * cw.frame
-      + locatorSignal * 0.035 * cw.locator
-      + phraseSignal * 0.02
-      + priorityPrior * 0.04
-      + pressurePrior * 0.015
-      + memoryPrior * 0.025
-      + freshnessPrior * freshnessWeight
-      + axisPrior * 0.025
-      + contextFocus.boost
-      + importantRecallLift
-      + plannerCoordinationLift) * lifecycleMultiplier,
-      0, 1.35, 0
-    );
-    return {
-      ...row,
-      score,
-      retrievalEngine: signature.engine,
-      scoreBreakdown: {
-        ...(row.scoreBreakdown || {}),
-        retrievalEngine: signature.engine,
-        lexical: Number(lexicalScore.toFixed(4)),
-        strengthenedJaccard: Number(strengthenedJaccard.toFixed(4)),
-        sparsePrimaryScore: Number(sparsePrimaryScore.toFixed(4)),
-        associationSignal: Number(sparseAssociation.toFixed(4)),
-        sparseEvidence: Number(sparseEvidence.toFixed(4)),
-        relevanceEvidence: Number(relevanceEvidence.toFixed(4)),
-        jaccard: Number(lexical.jaccard.toFixed(4)),
-        wordJaccard: Number(wordJaccard.jaccard.toFixed(4)),
-        charJaccard: Number(charJaccard.jaccard.toFixed(4)),
-        entityJaccard: Number(entityJaccard.jaccard.toFixed(4)),
-        conceptJaccard: Number(conceptJaccard.jaccard.toFixed(4)),
-        canonicalJaccard: Number(canonicalJaccard.jaccard.toFixed(4)),
-        canonicalSignal: Number(canonicalSignal.toFixed(4)),
-        specificConceptSignal: Number(specificConceptSignal.toFixed(4)),
-        frameJaccard: Number(frameJaccard.jaccard.toFixed(4)),
-        specificFrameSignal: Number(specificFrameSignal.toFixed(4)),
-        surfaceSpecificSignal: Number(surfaceSpecificSignal.toFixed(4)),
-        phraseSignal: Number(phraseSignal.toFixed(4)),
-        phraseJaccard: Number(phraseStats.jaccard.toFixed(4)),
-        presentStateQuery: Boolean(signature.presentStateQuery),
-        channelWeights: cw,
-        locatorJaccard: Number(locatorJaccard.jaccard.toFixed(4)),
-        bm25: Number(bm25Raw.toFixed(4)),
-        bm25Signal: Number(bm25Signal.toFixed(4)),
-        bm25Weight: Number(bm25Weight.toFixed(4)),
-        bm25Enabled: bm25Weight > 0,
-        coverage: Number(lexical.coverage.toFixed(4)),
-        overlap: lexical.overlap,
-        subject: Number(Math.max(subjectStats.coverage, subjectMatch).toFixed(4)),
-        axis: Number((signature.axisWeights[row.axis] || 0).toFixed(4)),
-        branch: Number(tagScores.branch.toFixed(4)),
-        emotion: Number(tagScores.emotion.toFixed(4)),
-        world: Number(tagScores.world.toFixed(4)),
-        narrative: Number(tagScores.narrative.toFixed(4)),
-        time: Number(tagScores.time.toFixed(4)),
-        locator: Number(tagScores.locator.toFixed(4)),
-        entitySignal: Number(entitySignal.toFixed(4)),
-        conceptSignal: Number(conceptSignal.toFixed(4)),
-        effectiveConceptSignal: Number(effectiveConceptSignal.toFixed(4)),
-        frameSignal: Number(frameSignal.toFixed(4)),
-        effectiveFrameSignal: Number(effectiveFrameSignal.toFixed(4)),
-        locatorSignal: Number(locatorSignal.toFixed(4)),
-        relevanceGate: Number(relevanceGate.toFixed(4)),
-        directSpecificity: Number(directSpecificity.toFixed(4)),
-        genericConceptCap: genericConceptOnly,
-        axisPrior: Number(axisPrior.toFixed(4)),
-        pressurePrior: Number(pressurePrior.toFixed(4)),
-        memoryPrior: Number(memoryPrior.toFixed(4)),
-        freshnessPrior: Number(freshnessPrior.toFixed(4)),
-        priorityPrior: Number(priorityPrior.toFixed(4)),
-        pressure: Number(pressure.toFixed(4)),
-        memoryStrength: Number(memoryStrength.toFixed(4)),
-        salience: Number(Number(r.salience || 0).toFixed(4)),
-        impression: Number(Number(r.impression || 0).toFixed(4)),
-        confidence: Number(Number(r.confidence || 0).toFixed(4)),
-        priorityBoost: Number(priorityBoost.toFixed(4)),
-        contextFocusSignal: Number(contextFocus.signal.toFixed(4)),
-        contextFocusBoost: Number(contextFocus.boost.toFixed(4)),
-        contextFocusPrimary: Number(contextFocus.primary.toFixed(4)),
-        contextFocusSupport: Number(contextFocus.support.toFixed(4)),
-        contextFocusTopic: Number(contextFocus.topic.toFixed(4)),
-        importantRecallLift: Number(importantRecallLift.toFixed(4)),
-        plannerCoordinationLift: Number(plannerCoordinationLift.toFixed(4)),
-        lifecycleLift: Number(lifecycleLift.toFixed(4)),
-        lifecycleMultiplier: Number(lifecycleMultiplier.toFixed(4)),
-        recency: Number(freshness.toFixed(4))
-      }
-    };
-  };
-  const rowPassesRetrievalGate = (row, profile) => {
-    const breakdown = row.scoreBreakdown || {};
-    const relevanceEvidence = Number(breakdown.relevanceEvidence || 0);
-    const historicalIntentBoost = Number(breakdown?.packetLedgerV2?.historicalIntentBoost || 0);
-    const episodicCueSignal = Number(breakdown.episodicCueSignal || 0);
-    const memoryLifecycle = breakdown.packetMemoryLifecycle || row?._memoryLifecycle || {};
-    if (memoryLifecycle.tier === 'disputed' && memoryLifecycle.disputeIntent !== true && relevanceEvidence < 0.1) return false;
-    if (episodicCueSignal >= LATENT_EPISODIC_REACTIVATION_TUNING.minCueSignal && relevanceEvidence >= 0.025) return true;
-    if (memoryLifecycle.tier === 'archived' && memoryLifecycle.pastLookup !== true && historicalIntentBoost <= 0 && relevanceEvidence < 0.08) return false;
-    if (Number(breakdown.lifecycleMultiplier || 1) < 0.5 && historicalIntentBoost <= 0) return false;
-    if (historicalIntentBoost > 0 && relevanceEvidence >= 0.01) return true;
-    return (row.score > profile.threshold && relevanceEvidence >= JACCARD_TUNING.gateRelevanceFloor)
-      || Number(breakdown.strengthenedJaccard || 0) >= JACCARD_TUNING.strongJaccardFloor
-      || relevanceEvidence >= JACCARD_TUNING.gateHighRelevanceFloor
-      || (row.importance >= 0.82 && relevanceEvidence >= JACCARD_TUNING.importantRelevanceFloor)
-      || Number(breakdown.locatorSignal || 0) >= JACCARD_TUNING.locatorSignalFloor
-      || Number(breakdown.priorityBoost || 0) >= JACCARD_TUNING.priorityBoostFloor
-      || (Number(breakdown.directSpecificity || 0) >= JACCARD_TUNING.specificGateFloor && relevanceEvidence >= JACCARD_TUNING.gateSpecificRelevanceFloor)
-      || Number(breakdown.phraseSignal || 0) >= JACCARD_TUNING.gatePhraseSignalFloor
-      || (Number(breakdown.contextFocusSignal || 0) >= 0.48 && relevanceEvidence >= 0.02)
-      || (row.axis === 'planner' && row.score > profile.threshold * JACCARD_TUNING.gatePlannerThresholdRatio && relevanceEvidence >= JACCARD_TUNING.gatePlannerRelevanceFloor);
   };
   // Query intent is accepted only from structured caller metadata or an
   // explicit namespace marker (for example `time:past`). Natural-language
@@ -37691,8 +37025,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   const prepareHayakuEvidenceUnits = (selected,query,settings,signatureOwner=null) => {
     const cached=hayakuEvidencePreparations.get(selected);
-    const policyKey=stableHash64(JSON.stringify(settings||{}));
-    if(cached&&cached.query===query&&cached.policyKey===policyKey)return cached;
+    const {injectionCapChars:_ic,recallDataBudgetChars:_rb,allowTailOnly:_at,...prepSettings}=settings||{};
+    const policyKey=stableHash64(JSON.stringify(prepSettings));
+    if(cached&&cached.query===query&&cached.policyKey===policyKey&&cached.signatureOwner===signatureOwner)return cached;
     const metadata=hayakuRecallPreparations.get(selected)||{store:{},settings,query};
     const sourceRows=['entity','world','narrative','planner'].flatMap(axis=>ensureArray(selected?.[axis]).filter(Boolean).map(row=>({...row,axis})));
     const policySettings={...metadata.settings,...settings,effectiveMode:metadata.settings?.effectiveMode||settings.effectiveMode};
@@ -37732,7 +37067,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const requirements=buildHayakuEvidenceRequirements(sourceRows,metadata,query,settings);
     const configured=normalizeMemoryLanguage(settings.memoryLanguage||DEFAULT_SETTINGS.memoryLanguage);
     const language=configured==='source'?(assessed[0]?.language||inferMemoryNoteLanguage(units.find(u=>u.raw)?.body||'')||'en'):configured;
-    const value={query,policyKey,metadata,policy,units,requirements,language,rejected};hayakuEvidencePreparations.set(selected,value);return value;
+    const value={query,policyKey,signatureOwner,metadata,policy,units,requirements,language,rejected};hayakuEvidencePreparations.set(selected,value);return value;
   };
   const effectiveHayakuRenderLane = unit => {
     const explicit = text(unit?.lane || '').trim();
@@ -37849,24 +37184,55 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for(const term of left)if(right.has(term))overlap++;
       const value=overlap/Math.max(1,left.size+right.size-overlap);diversityPairs.set(key,value);return value;
     };
-    const score=g=>{const fresh=additions(g);return fresh.reduce((n,u)=>{
-      const repeated=u.raw?0:chosen.reduce((max,prior)=>prior.raw?max:Math.max(max,similarity(u,prior)),0);
-      return n+u.weight/(1+repeated);
-    },0)/Math.max(1,fresh.length);};
+    let chosenEpoch=0,occupancyDirty=false,baseRenderLength=-1;
+    const unitMaxSim=new Map(),iterMetrics=new Map();
+    const maxSimToChosen=u=>{
+      if(u.raw||!chosen.length)return 0;
+      const entry=unitMaxSim.get(u.id);
+      let start=0,max=0;
+      if(entry&&entry.epoch===chosenEpoch){start=entry.count;max=entry.max;}
+      for(let i=start;i<chosen.length;i++){
+        const prior=chosen[i];
+        if(!prior.raw){const s=similarity(u,prior);if(s>max)max=s;}
+      }
+      unitMaxSim.set(u.id,{epoch:chosenEpoch,count:chosen.length,max});
+      return max;
+    };
+    const score=g=>{const fresh=additions(g);return fresh.reduce((n,u)=>n+u.weight/(1+maxSimToChosen(u)),0)/Math.max(1,fresh.length);};
     const fulfilled=g=>requirements.filter(r=>!r.missing && !r.units.every(u=>picked.has(u.id))
       && r.units.every(u=>picked.has(u.id)||g.units.includes(u))).length;
     const duplicate=g=>g.units.length-additions(g).length;
-    const cost=g=>render([...chosen,...additions(g)]).text.length-render(chosen).text.length;
     const availableByAxis={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
     for(const unit of prepared.units)for(const origin of unit.origins||[])availableByAxis[origin.axis]?.add(unit.id);
-    const allocationWeight=group=>{
-      const occupancy={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()},axes=new Set();
-      for(const unit of chosen)for(const origin of unit.origins||[])occupancy[origin.axis]?.add(unit.id);
-      for(const unit of additions(group))for(const origin of unit.origins||[])if(occupancy[origin.axis])axes.add(origin.axis);
-      if(!axes.size)return 1;
-      return [...axes].reduce((sum,axis)=>sum+Math.min(prepared.policy.targetAxisAllotments[axis],availableByAxis[axis].size)/(1+occupancy[axis].size),0)/axes.size;
+    let chosenOccupancy={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
+    const recomputeChosenOccupancy=()=>{
+      const occ={entity:new Set(),world:new Set(),narrative:new Set(),planner:new Set()};
+      for(const unit of chosen)for(const origin of unit.origins||[])occ[origin.axis]?.add(unit.id);
+      chosenOccupancy=occ;
     };
-    const tie=(a,b)=>score(b)*allocationWeight(b)-score(a)*allocationWeight(a)||fulfilled(b)-fulfilled(a)||duplicate(a)-duplicate(b)||cost(a)-cost(b)||a.id.localeCompare(b.id);
+    const allocationWeight=group=>{
+      const axes=new Set();
+      for(const unit of additions(group))for(const origin of unit.origins||[])if(chosenOccupancy[origin.axis])axes.add(origin.axis);
+      if(!axes.size)return 1;
+      return [...axes].reduce((sum,axis)=>sum+Math.min(prepared.policy.targetAxisAllotments[axis],availableByAxis[axis].size)/(1+chosenOccupancy[axis].size),0)/axes.size;
+    };
+    const metricFor=g=>{
+      let m=iterMetrics.get(g);
+      if(!m){m={};iterMetrics.set(g,m);}
+      return m;
+    };
+    const weightedScoreOf=g=>{const m=metricFor(g);if(m.weighted===undefined)m.weighted=score(g)*allocationWeight(g);return m.weighted;};
+    const fulfilledOf=g=>{const m=metricFor(g);if(m.fulfilled===undefined)m.fulfilled=fulfilled(g);return m.fulfilled;};
+    const duplicateOf=g=>{const m=metricFor(g);if(m.duplicate===undefined)m.duplicate=duplicate(g);return m.duplicate;};
+    const costOf=g=>{
+      const m=metricFor(g);
+      if(m.cost===undefined){
+        if(baseRenderLength<0)baseRenderLength=render(chosen).text.length;
+        m.cost=render([...chosen,...additions(g)]).text.length-baseRenderLength;
+      }
+      return m.cost;
+    };
+    const tie=(a,b)=>weightedScoreOf(b)-weightedScoreOf(a)||fulfilledOf(b)-fulfilledOf(a)||duplicateOf(a)-duplicateOf(b)||costOf(a)-costOf(b)||a.id.localeCompare(b.id);
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
       const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane));
@@ -37941,8 +37307,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       return best;
     };
+    let needsResort=true;
     while(groups.length){
-      groups.sort((a,b)=>groupPriority(a)-groupPriority(b)||tie(a,b));
+      if(needsResort){
+        if(occupancyDirty){recomputeChosenOccupancy();occupancyDirty=false;}
+        iterMetrics.clear();baseRenderLength=-1;
+        groups.sort((a,b)=>groupPriority(a)-groupPriority(b)||tie(a,b));
+        needsResort=false;
+      }
       const group=groups.shift();
       if(group.requirement?.missing){discarded.push({id:group.id,reason:'dependency_unavailable'});continue;}
       const added=group.units.filter(u=>!picked.has(u.id));if(!added.length)continue;
@@ -37953,9 +37325,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         discarded.push({id:exchange.original.id,reason:'equivalent_source_representation'});
         if(exchange.removed)discarded.push({id:exchange.removed.id,reason:'marginal_evidence_replaced'});
         chosen.splice(0,chosen.length,...exchange.trial);picked.clear();for(const unit of chosen)picked.add(unit.id);
+        chosenEpoch+=1;occupancyDirty=true;needsResort=true;
         continue;
       }
       for(const unit of added){chosen.push(unit);picked.add(unit.id);}
+      occupancyDirty=true;needsResort=true;
     }
     const rendered=render(chosen),deliveredOrigins=chosen.flatMap(u=>u.origins||[]),allOrigins=prepared.units.flatMap(u=>u.origins||[]);
     const deliveredRowKeys=uniq(deliveredOrigins.map(o=>packetCoreRecallDeliveryRowKey(o.axis,o.row)),128);
@@ -42461,25 +41835,76 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         scope,
         options?.authoritativeSnapshot || null
       );
-      const copiedTranscriptPresent = ensureArray(scope?.chatMessages).length > 0
-        || ensureArray(options?.authoritativeSnapshot?.conversationPairs).length > 0;
+      const targetSnapshot = objectish(options?.authoritativeSnapshot)
+        && Array.isArray(options.authoritativeSnapshot?.conversationPairs)
+        ? options.authoritativeSnapshot
+        : (ensureArray(scope?.chatMessages).length ? authoritativeChatSnapshot(scope.chatMessages, scope) : null);
+      const copiedTranscriptPresent = ensureArray(targetSnapshot?.conversationPairs).length > 0
+        || ensureArray(scope?.chatMessages).length > 0;
       if (!copiedTranscriptPresent) {
         return { ledger, changed: false, reason: 'native_copy_transcript_unavailable', sourceScopeKey };
       }
+      const maxPairIndex = scope?.hostLineage?.kind === 'native_branch'
+        ? (scope.hostLineage.inheritanceEligible === true ? Math.max(0, Number(scope.hostLineage.commonPrefixPairs || 0) || 0) : 0)
+        : Infinity;
+      const targetPairsByIndex = new Map(
+        ensureArray(targetSnapshot?.conversationPairs)
+          .map(pair => [Number(pair?.pairIndex || 0), pair])
+          .filter(([pairIndex]) => pairIndex > 0 && pairIndex <= maxPairIndex)
+      );
+      const reboundRecords = [];
+      for (const [index, record] of ensureArray(sourceLocalLedger.records).entries()) {
+        if (!record
+          || record.inheritedSessionHistory === true
+          || record.memoryClass === 'historical'
+          || record.recordState !== 'active'
+          || record.auditRetained === true
+          || !record.ownerTurnNodeId
+          || !['current_snapshot', 'recovery_snapshot'].includes(text(record.packetType || '').toLowerCase())) continue;
+        const pairIndex = Number(record.targetPairIndex || 0);
+        const targetPair = targetPairsByIndex.get(pairIndex);
+        if (!targetPair
+          || text(record.userHash || '') !== text(targetPair.userHash || '')
+          || text(record.assistantVisibleHash || '') !== text(targetPair.assistantVisibleHash || '')) continue;
+        const copied = nativeCopiedStorageRecord(record, scope, sourceScopeKey, index, {
+          preserveRequestNonce: false
+        });
+        const normalized = normalizeStorageRecord({
+          ...copied,
+          targetPairIndex: pairIndex,
+          requestSequence: pairIndex,
+          userHash: text(targetPair.userHash || ''),
+          userMessageIdHash: text(targetPair.userMessageIdHash || ''),
+          assistantVisibleHash: text(targetPair.assistantVisibleHash || ''),
+          assistantMessageIdHash: text(targetPair.assistantMessageIdHash || ''),
+          captureSource: 'native_chat_copy_rebind'
+        });
+        if (normalized) reboundRecords.push(normalized);
+      }
+      let targetWorldline = worldline;
+      let workingLedger = {
+        ...emptyStorageLedger(scope),
+        migration: { complete: false, importedAt: 0, importedRecords: 0, chatSnapshotHash: '' },
+        worldline: targetWorldline,
+        archiveRef: null,
+        nativeBranchStorageBinding: nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status:'complete', committedAt:new Date().toISOString() } : ledger?.nativeBranchStorageBinding || null,
+        records: reboundRecords
+      };
+      if (targetSnapshot && (reboundRecords.length > 0 || ensureArray(targetWorldline?.nodes).length > 0)) {
+        targetWorldline = reconcileTurnWorldline(targetWorldline, targetSnapshot, scope);
+        workingLedger = { ...workingLedger, worldline: targetWorldline };
+        const bound = bindStorageLedgerToSnapshot(workingLedger, targetSnapshot, targetWorldline);
+        const liveChatRecords = liveChatLedgerRecordsFromSnapshot(targetSnapshot, scope, targetWorldline);
+        const heads = reconcileStorageSlotHeads(bound.ledger, bound.activeRecords, liveChatRecords);
+        workingLedger = { ...heads.ledger, worldline: targetWorldline };
+      }
       return {
-        ledger: {
-          ...emptyStorageLedger(scope),
-          migration: { complete: false, importedAt: 0, importedRecords: 0, chatSnapshotHash: '' },
-          worldline,
-          archiveRef: null,
-          nativeBranchStorageBinding: nativeBranchStorage?.receipt ? { ...nativeBranchStorage.receipt, status:'complete', committedAt:new Date().toISOString() } : ledger?.nativeBranchStorageBinding || null,
-          records: []
-        },
+        ledger: workingLedger,
         changed: true,
-        reason: 'copied_chat_transcript_only',
+        reason: reboundRecords.length ? 'copied_chat_rebound' : 'copied_chat_transcript_only',
         sourceScopeKey,
-        records: 0,
-        physicalRecords: 0,
+        records: workingLedger.records.length,
+        physicalRecords: workingLedger.records.length,
         archiveRecords: 0
       };
     }
@@ -46172,6 +45597,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         candidates.push({id:'partial:'+row.id+':'+stableHash64(JSON.stringify(atom)),publicText:body,axis:'narrative',turn:row.turn,path:atom.path});
       }
     }
+    if(!candidates.length||!text(query||'').trim())return [];
     return localRecallRank(candidates,[query]).slice(0,8).map((row,index)=>({id:row.id,text:row.publicText,pairIndex:row.turn,path:row.path,score:1/(61+index),stateAuthority:false,completeTurn:false}));
   };
 
@@ -48578,8 +48004,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     error.failedAnalysisReason = preserved.reason;
     throw error;
   };
-  // Upper bound on automatic single-turn re-analysis calls in one Cold Start run (only multi-turn
-  // batches retry): one batch's worth of turns, or one per batch for long chats.
+  // Upper bound on automatic single-turn re-analysis calls in one Cold Start run (a failed turn is
+  // retried once at any batch size): one batch's worth of turns, or one per batch for long chats.
   const coldStartAutomaticRetryBudget = (targetTurns, batchTurnsInput) => {
     const turns = Math.max(0, Number(targetTurns || 0) || 0), batchTurns = normalizeColdStartBatchTurns(batchTurnsInput);
     return turns > 0 ? Math.max(batchTurns, Math.ceil(turns / batchTurns)) : 0;
@@ -51121,7 +50547,8 @@ const MemorySuiteHealthRecovery = (() => {
     const batchTurns = normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1);
     const extraCalls = Memory.settings?.recoveryExtraCalls === 1 ? 1 : 0;
     const baseCalls = coverage.mode === 'cold_start' ? Math.ceil(targetTurns.length / batchTurns) : targetTurns.length;
-    const automaticRetryCalls = coverage.mode === 'cold_start' && batchTurns > 1 ? coldStartAutomaticRetryBudget(targetTurns.length, batchTurns) : 0;
+    // Retries run at every batch size, so the estimate counts them at every batch size too.
+    const automaticRetryCalls = coverage.mode === 'cold_start' ? coldStartAutomaticRetryBudget(targetTurns.length, batchTurns) : 0;
     // Repeat every physical witness, including referenced bodies, before
     // declaring inspection complete. No normalized/cached empty can certify it.
     for (const key of [...observed.keys()]) await read(key);
@@ -55546,6 +54973,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     let changed = ledger.illustrationIdentityReconciled === true || bridgeIdentityRepair.changed || identityRepair.changed;
     let ownerRebindings = 0;
     let staleOwnerDetections = 0;
+    // First node, in worldline order, that owns or quarantines each packet hash. Searching every
+    // node for every record grew with the square of the chat length. Nodes are not changed below.
+    const activeAcceptedOwnerByPacketHash = new Map();
+    const quarantineNodeByPacketHash = new Map();
+    for (const node of nodes) {
+      if (node?.status === 'active' && node?.packetLineageStatus !== 'quarantined') {
+        for (const hash of ensureArray(node?.packetHashes)) if (!activeAcceptedOwnerByPacketHash.has(hash)) activeAcceptedOwnerByPacketHash.set(hash, node);
+      }
+      for (const hash of ensureArray(node?.quarantinedPacketHashes)) if (!quarantineNodeByPacketHash.has(hash)) quarantineNodeByPacketHash.set(hash, node);
+    }
     for (const record of records) {
       if (record.inheritedSessionHistory === true) {
         record.slotId = storageRecordSlotId(record);
@@ -55598,14 +55035,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // that exact packet. An active accepted owner is authoritative; stale audit
       // quarantine from another node must not re-quarantine the durable record.
       const activeAcceptedPacketOwner = record?.hash
-        ? nodes.find(node => (
-            node?.status === 'active'
-            && node?.packetLineageStatus !== 'quarantined'
-            && ensureArray(node?.packetHashes).includes(record.hash)
-          ))
+        ? (activeAcceptedOwnerByPacketHash.get(record.hash) || null)
         : null;
       const packetLineageQuarantine = !activeAcceptedPacketOwner && record?.hash
-        ? nodes.find(node => ensureArray(node?.quarantinedPacketHashes).includes(record.hash))
+        ? (quarantineNodeByPacketHash.get(record.hash) || null)
         : null;
       if (packetLineageQuarantine) {
         if (record.recordState !== 'quarantined'
@@ -57016,11 +56449,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
   const hayakuCanonicalTopologySnapshot = (snapshot,ledger,requestOwnedTargetPairIndex=0) => {
     const records=ensureArray(ledger?.records),tombstones=new Map(ensureArray(ledger?.tombstones).filter(t=>t?.active).map(t=>[t.slotId,t]));
     let canonicalIdentityUnresolved=false;
+    // Group the eligible records by turn once. Filtering every record again for every pair made
+    // this pass grow with the square of the chat length (160,000 checks at 400 turns).
+    const recordsAtTurn=new Map();
+    for(const record of records){
+      if(record.inheritedSessionHistory||record.auditRetained||!['active','unbound'].includes(record.recordState))continue;
+      const turn=Number(record.targetPairIndex);
+      if(Number.isNaN(turn))continue;
+      const bucket=recordsAtTurn.get(turn);
+      if(bucket)bucket.push(record);else recordsAtTurn.set(turn,[record]);
+    }
     const pairs=ensureArray(snapshot?.conversationPairs).map(pair=>{
       // Only an internal pending request may exempt its exact target from the
       // ordinary projection. Packet-carried nonce claims never choose this index.
       if(Number(requestOwnedTargetPairIndex)>0&&Number(pair.pairIndex)===Number(requestOwnedTargetPairIndex))return pair;
-      const atTurn=records.filter(record=>Number(record.targetPairIndex)===Number(pair.pairIndex)&&!record.inheritedSessionHistory&&!record.auditRetained&&['active','unbound'].includes(record.recordState));
+      const atTurn=recordsAtTurn.get(Number(pair.pairIndex))||[];
       if(pair.userMessageIdentityStable!==true||pair.assistantMessageIdentityStable!==true||!pair.userMessageIdHash||!pair.assistantMessageIdHash){if(atTurn.length)canonicalIdentityUnresolved=true;return pair;}
       const candidates=atTurn.filter(record=>record.userMessageIdHash===pair.userMessageIdHash&&record.assistantMessageIdHash===pair.assistantMessageIdHash
         &&!storageRecordSuppressedByTombstone(record,tombstones.get(storageRecordSlotId(record))));
@@ -64104,19 +63547,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         ensureHayakuTransitionCoverage,
         crossLingualTokensForText,
         multilingualRecallAliasesForValue,
-        buildRetrievalCorpus,
         sparseAtomicRecordFor,
         buildHayakuMemoryNote,
         formatHayakuMemoryNote,
         memoryNoteContextForRow,
-        buildSparseBm25fCorpus,
-        sparseBm25fScore,
-        sparseCandidateSignalsForRow,
-        applyUnifiedContextualBm25f,
-        applyUnifiedAssociationActivation,
-        applyUnifiedMemoryCandidateSignals,
         attachUnifiedMemoryAssociations,
-        rankSparseCandidates,
         viewerRecordPairLabel,
         viewerRecordOrigin,
         viewerRecordStateLabel,
@@ -64142,13 +63577,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         resolvePacketLedgerRev2Supersessions,
         packetMemoryLifecycleFor,
         packetMemoryDecayClassFor,
-        packetMemoryPreRankDecayPenalty,
         applyPacketMemoryLifecycleScoring,
         decayCharacterStateProjectionItem,
         decayCharacterStateProjectionsForRecall,
         buildDerivedEventMemoryRows,
-        scoreRowWithStrengthenedJaccard,
-        rowPassesRetrievalGate,
         explicitQueryIntentOf,
         isCurrentStateQuery,
         isPastStateLookupQuery,
@@ -64188,8 +63620,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         packetCoverageAuditQuerySignal,
         selectPacketCoverageFallbackRows,
         createRequestRetrievalCache,
-        requestRetrievalCacheSnapshot,
-        retrievalBm25Document
+        requestRetrievalCacheSnapshot
       }
     };
     Memory.exposedApi = exposedApi;

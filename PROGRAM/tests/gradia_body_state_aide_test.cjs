@@ -23,7 +23,7 @@ const wireModel = (f, draftText, stageExtras = {}) => {
   };
 };
 
-const configure = async (f, settings = {}, enabled = { body: true, bond: false }) => {
+const configure = async (f, settings = {}, enabled = { body: true, bond: false }, coreOff = []) => {
   await f.host.plugin.saveRuntimeSettings({
     ...await f.host.plugin.getRuntimeSettings(),
     mode: 'normal', default_preset: 'writer', input_assist_mode: 'off', writing_mode: 'rp', nsfw_mode: 'off',
@@ -32,7 +32,7 @@ const configure = async (f, settings = {}, enabled = { body: true, bond: false }
     failure_mode: 'hard', lore_activation_mode: 'off', ...settings
   });
   const slots = await f.host.plugin.getAgentSlots();
-  await f.host.plugin.saveAgentSlots({ ...slots, aide_body_state: { ...(slots.aide_body_state || {}), enabled: enabled.body }, aide_forced_bond: { ...(slots.aide_forced_bond || {}), enabled: enabled.bond } });
+  await f.host.plugin.saveAgentSlots({ ...slots, aide_body_state: { ...(slots.aide_body_state || {}), enabled: enabled.body }, aide_forced_bond: { ...(slots.aide_forced_bond || {}), enabled: enabled.bond }, ...Object.fromEntries(coreOff.map(id => [id, { ...(slots[id] || {}), enabled: false }])) });
 };
 
 const runTurn = async (f, userText) => {
@@ -51,13 +51,44 @@ test('상태 AIDE is off by default and adds no call or block', async t => {
   assert.ok(f.prompts.every(body => !textOf(body).includes('[BODY STATE')));
 });
 
-test('상태 runs before 억결, and both run right before Plot AIDE', async t => {
+// User decision 2026-11-17: 상태 is a sub-AIDE of 인물 AIDE and 억결 of 플롯 AIDE. Each rides in
+// its parent's call instead of spending one of its own.
+test('상태 rides in 인물 AIDE’s call and 억결 in 플롯 AIDE’s call, with no call of their own', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 문 앞에 섰다.');
   await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, ['aide_body_state', 'aide_forced_bond', 'aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  const character = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  assert.match(character, /상태 AIDE runs inside this stage as a sub-step\. Body State AIDE: read the verification notes/);
+  assert.match(JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character')), /"state_readings"/);
+  assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /억결 AIDE runs inside this stage as a sub-step/);
+});
+
+test('a skill chosen for 상태 AIDE reaches 인물 AIDE, the stage that runs it', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f, { skill_stage_selections: JSON.stringify({ aide_body_state: ['quiet-interior-beat'] }), skill_router_enabled: 'false' });
+  await runTurn(f, '문을 연다.');
+  const host = JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  assert.equal(host.split('[COMPILED SKILL — quiet-interior-beat]').length - 1, 1, 'applied once in the host call');
+  assert.ok(!JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_plot')).includes('[COMPILED SKILL — quiet-interior-beat]'), 'not in other stages');
+});
+
+test('without its parent a sub-AIDE rides in the last core AIDE that runs, and runs alone only with none', async t => {
+  const hosted = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(hosted, '민아는 문 앞에 섰다.');
+  await configure(hosted, {}, undefined, ['aide_character', 'aide_world']);
+  await runTurn(hosted, '문을 연다.');
+  assert.deepEqual(hosted.prompts.map(stageOf).filter(stage => stage.startsWith('aide_')), ['aide_plot']);
+  assert.match(systemOf(hosted.prompts.find(body => stageOf(body) === 'aide_plot')), /상태 AIDE runs inside this stage as a sub-step/);
+
+  const alone = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(alone, '민아는 문 앞에 섰다.');
+  await configure(alone, {}, undefined, ['aide_character', 'aide_world', 'aide_plot']);
+  await runTurn(alone, '문을 연다.');
+  assert.deepEqual(alone.prompts.map(stageOf).filter(stage => stage.startsWith('aide_')), ['aide_body_state']);
 });
 
 test('writing modes: prose skips, staging adds no verdict, RP never judges the persona', async t => {
@@ -71,7 +102,7 @@ test('writing modes: prose skips, staging adds no verdict, RP never judges the p
   wireModel(staging, '민아는 문 앞에 섰다.');
   await configure(staging, { rp_impersonation_scope: 'persona_cast' });
   await runTurn(staging, '문을 연다.');
-  assert.match(systemOf(staging.prompts.find(body => stageOf(body) === 'aide_body_state')), /Scene-staging RP mode: add no new condition and no new verdict/);
+  assert.match(systemOf(staging.prompts.find(body => stageOf(body) === 'aide_character')), /Scene-staging RP mode: add no new condition and no new verdict/);
 
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   const packet = f.host.plugin.debugBodyStatePacket({
@@ -151,27 +182,50 @@ test('pregnancy is a fixed verdict behind its own toggle, only for NPCs in RP', 
   assert.match(noCycle, /whether this person can conceive is unknown \(no card setting, no profile gender\) — do not decide a pregnancy/);
 });
 
-test('checkers return state_check and later stages read it; readings stay in memory', async t => {
+test('checkers return state_check and the host reads it; readings stay in memory', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', {
-    aide_character: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
-    aide_body_state: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
+    aide_plot: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
+    aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
   });
-  await configure(f);
+  // Plot runs before the host (인물 AIDE), so Plot leaves a note for it.
+  await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) });
   const keysBefore = new Set(f.values.keys());
   await runTurn(f, '민아에게 다가간다.');
-  const character = f.prompts.find(body => stageOf(body) === 'aide_character');
-  assert.ok(JSON.stringify(character).includes('"state_check"'), 'the patch schema asks for state_check');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
-  assert.match(body, /\[aide_character\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
-  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /\[aide_character\] 민아: adjust/);
+  const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
+  assert.ok(JSON.stringify(plot).includes('"state_check"'), 'the patch schema asks for state_check');
+  const host = f.prompts.find(item => stageOf(item) === 'aide_character');
+  assert.ok(!JSON.stringify(host).includes('"state_check"'), 'the host settles readings instead of checking');
+  assert.match(systemOf(host), /\[aide_plot\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });
 
+test('a hosted 상태 AIDE shows its host call’s status and its own readings, tabbed under 인물', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
+  await configure(f);
+  await runTurn(f, '민아에게 다가간다.');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  // No run of its own: the ladder shows the 인물 AIDE call's outcome, without that call's time.
+  assert.equal(f.document.querySelector('#lb-body_state').textContent, '성공');
+  assert.match(f.document.querySelector('#lb-char').textContent, /^성공/);
+  await f.host.plugin.debugNavigateGui('results');
+  const panel = f.document.querySelector('[data-subpanel="b"]');
+  assert.match(panel.textContent, /성공/);
+  assert.match(panel.textContent, /이번 턴 판독[\s\S]*민아[\s\S]*발목 염좌 3일째/);
+  assert.match(panel.textContent, /초안과 분석 전체는 인물 AIDE 탭에서 볼 수 있습니다/);
+  assert.doesNotMatch(panel.textContent, /실행 기록 없음/);
+  const tabs = [...f.document.querySelectorAll('[data-subtabs="rs"] [data-subtab]')].map(tab => tab.dataset.subtab);
+  assert.equal(tabs[tabs.indexOf('c') + 1], 'b', tabs.join(' '));
+  assert.equal(tabs[tabs.indexOf('p') + 1], 'f', tabs.join(' '));
+  assert.ok(f.document.querySelector('[data-subtab="b"]').classList.contains('tab--sub'));
+});
+
 test('the 상태 panel turns the stage on, edits per-chat cards, saves the reproduction toggle and shows readings', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
-  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_body_state: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
+  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
   await configure(f);
   await runTurn(f, '민아에게 다가간다.');
   const scopeKey = f.host.plugin.debugActiveScopeKey();
@@ -206,12 +260,15 @@ test('the 상태 panel turns the stage on, edits per-chat cards, saves the repro
   assert.equal((await f.host.plugin.getAgentSlots()).aide_body_state.enabled, true);
 });
 
-test('the 상태 panel opens its own prompt preview and sits before 억결 in the ladder', async t => {
+test('the 상태 panel opens its own prompt preview and sits under 인물 AIDE in the ladder', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
   const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
-  assert.ok(rows.indexOf('body_state') < rows.indexOf('forced_bond') && rows.indexOf('forced_bond') < rows.indexOf('plot'), rows.join(' > '));
+  assert.equal(rows[rows.indexOf('char') + 1], 'body_state', rows.join(' > '));
+  assert.equal(rows[rows.indexOf('plot') + 1], 'forced_bond', rows.join(' > '));
+  assert.ok(f.document.querySelector('#ladder [data-select-row="body_state"]').classList.contains('node--sub'));
+  assert.match(f.document.querySelector('#ladder [data-select-row="body_state"]').textContent, /인물 AIDE 하위/);
   f.document.querySelector('.stage-detail[data-detail="body_state"] [data-action="prompt-preview"]').click();
   const title = () => f.document.querySelector('.dialog h2, .dialog [class*="title"]')?.textContent || '';
   await f.wait(() => title().includes('프롬프트 미리보기'), 'prompt preview dialog');
@@ -245,7 +302,7 @@ test('a scene condition is tracked and the time of day is optional color, never 
   wireModel(f, '민아는 벤치에 주저앉았다.');
   await configure(f);
   await runTurn(f, '민아 옆에 앉는다.');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
   assert.match(body, /- Minah Kim:/);
   assert.match(body, /scene condition this turn: exertion → breathing hard, sweat, sore muscles/);
   assert.match(body, /Scene time \(context only\): night \(recent scene\)/);
@@ -316,7 +373,122 @@ test('a real run reads conception eligibility from the character card profile', 
   wireModel(f, '민아는 창밖을 보았다.');
   await configure(f, { body_state_reproduction: true });
   await runTurn(f, '민아 곁에 눕는다.');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
   assert.match(body, /- Minah Kim:\n *cycle: day \d+ of \d+ \(auto \(fixed seed, story date\)\)/);
   assert.match(body, /sexual contact \d+ days ago [^\n]*\[can conceive: profile: female\]/);
+});
+
+// User decision 2026-11-17 (after comparing a Dusk cycle editor): a pregnancy runs on a timeline,
+// a birth starts a postpartum state, both replace the cycle, and a pregnancy can be kept on the
+// card so it no longer depends on the contact line being recalled.
+const pregnancyBase = { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true };
+test('a pregnancy on the card runs on its timeline and replaces the cycle', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = card => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'p', libText: '[STORY CLOCK] 현재: 이야기 40일째 · 저녁',
+    settings: { ...pregnancyBase, bodyStateCards: { p: [{ name: '세라', cycleLength: 28, lastPeriodStart: '3월 1일', ...card }] } }, profileGenders: { 세라: 'female' } });
+  const auto = packetFor({ conceptionDate: '이야기 5일째', partner: '하준' });
+  assert.match(auto, /pregnancy: week 5 \(day 36 since conception, card\) → morning sickness: nausea, smell sensitivity, fatigue; due in about 231 days; awareness: she likely knows by now unless the story says otherwise; other party: 하준/);
+  assert.doesNotMatch(auto, /cycle:/, 'no cycle while pregnant');
+  assert.match(packetFor({ conceptionDate: '이야기 5일째', knows: 'no' }), /awareness: she does not know yet \(card\): show only the body changes, never her knowing/);
+  assert.match(packetFor({ conceptionDate: '이야기 39일째' }), /pregnancy: week 0 \(day 2 since conception, card\) → no bodily change yet/);
+});
+
+test('a recent birth on the card gives a postpartum state until a period is recorded', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (card, libText = '[STORY CLOCK] 현재: 이야기 40일째 · 저녁') => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'b', libText,
+    settings: { ...pregnancyBase, bodyStateCards: { b: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+  const early = packetFor({ lastBirth: '이야기 30일째' });
+  assert.match(early, /postpartum: day 11 after giving birth \(card\) → recovering: bleeding, soreness, exhaustion, broken sleep/);
+  assert.doesNotMatch(early, /cycle:/);
+  assert.match(packetFor({ lastBirth: '이야기 1일째' }, '[STORY CLOCK] 현재: 이야기 90일째 · 저녁'), /postpartum: day 90 after giving birth \(card\) → recovered, but the cycle may not have returned yet/);
+  const back = packetFor({ lastBirth: '이야기 1일째' }, '[STORY CLOCK] 현재: 이야기 90일째 · 저녁\n이야기 85일째 · 아침 세라는 생리를 시작했다');
+  assert.doesNotMatch(back, /postpartum/, 'a period recorded after the birth means the cycle is back');
+  assert.match(back, /cycle: day 6 of 28/);
+});
+
+test('a positive verdict runs on the timeline, and the 상태 panel can pin it to the card', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f, { body_state_reproduction: true });
+  await runTurn(f, '문을 연다.');
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  // Find a contact day whose fixed verdict is positive (deterministic for this scope).
+  let packet = '';
+  for (let day = 1; day <= 28 && !/PREGNANT/.test(packet); day += 1) {
+    packet = f.host.plugin.debugBodyStatePacket({ personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+      libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${day + 30}일째 · 밤 세라는 하준과 관계를 가졌다`,
+      settings: { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true,
+        bodyStateCards: { [scopeKey]: [{ name: '세라', cycleLength: 28, lastPeriodStart: '' }] } } });
+  }
+  assert.match(packet, /PREGNANT \(fixed verdict\)/, 'some contact day in a cycle yields a positive verdict');
+  assert.match(packet, /pregnancy: week \d+ \(day \d+ since conception, fixed verdict\)/);
+  assert.doesNotMatch(packet, /cycle:/, 'no cycle once the verdict is positive');
+  const verdict = f.host.plugin.getRuntime().bodyStateVerdicts[scopeKey].items.find(item => item.name === '세라');
+  assert.match(verdict.conception, /^이야기 \d+일째$/);
+
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  const pin = await f.wait(() => panel.querySelector('[data-body-state-action="pin"]'), 'pin button');
+  assert.ok(panel.querySelector('[data-body-state-verdicts]').textContent.includes(`세라 · 임신 판정 (수정 ${verdict.conception})`));
+  pin.click();
+  await f.wait(() => panel.querySelector('[data-body-state-card-field="conceptionDate"]')?.value === verdict.conception, 'pinned to the card');
+  assert.equal(panel.querySelector('[data-body-state-action="pin"]'), null, 'a pinned verdict is no longer offered');
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  const cards = JSON.parse((await f.host.plugin.getRuntimeSettings()).body_state_cards)[scopeKey];
+  assert.equal(cards.find(card => card.name === '세라').conceptionDate, verdict.conception);
+});
+
+// User decision 2026-11-17: pregnancy runs from the record without the card. LIBRA's 생체 주기 · 생식
+// lens labels a confirmed pregnancy, a birth and a pregnancy end; other memory and the recent scene
+// may say it in words. The card still wins, and hedged or negated lines are not records.
+test('a recorded pregnancy runs on its timeline without a card', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (libText, recent = { visibleMessages: [] }, card = {}) => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'r', libText, recent,
+    settings: { ...pregnancyBase, bodyStateCards: { r: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+
+  const weeks = packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n- [lens:생체 주기 · 생식] (T9–T9 · 시점 불명 · 이야기 30일째 · 임신 확인) 세라는 병원에서 임신 8주라는 진단을 받았다. (원문: "8주래요.") | 상대: 하준');
+  assert.match(weeks, /pregnancy: week 7 \(day 53 since conception, recorded: week 8 stated 10 days ago, confirmed \(story clock\)\) → morning sickness/);
+  assert.match(weeks, /awareness: she knows she is pregnant \(recorded in the story\); other party: 하준; as characters and doctors count it: week 9/);
+  assert.doesNotMatch(weeks, /cycle:|sexual contact/, 'a recorded pregnancy replaces the cycle and the verdict');
+
+  const fromContact = packetFor('[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 20일째 · 밤 세라는 하준과 관계를 가졌다\n이야기 50일째 · 아침 세라는 임신 테스트기에서 두 줄을 확인했다');
+  assert.match(fromContact, /pregnancy: week 5 \(day 41 since conception, recorded pregnancy; conceived at the contact 40 days ago, confirmed \(story clock\)\)/);
+
+  assert.match(packetFor('세라가 임신했다는 사실은 모두가 안다.'), /pregnancy: recorded \(LIB\); timing unknown — show that she is pregnant \(she knows\) without stating a week or a due date/);
+  assert.match(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁', { visibleMessages: [{ role: 'assistant', content: '"임신이래." 세라는 결과지를 내려놓았다. 세라는 임신 6주였다.' }] }),
+    /pregnancy: week 4 \(day 29 since conception, recorded: week 6 stated 0 days ago, estimated \(recent scene\)\)/, 'a pregnancy said in the scene counts today');
+
+  for (const hedged of ['세라는 혹시 임신했을까 봐 걱정했다.', '세라는 임신이 아니었다.', '세라의 임신 테스트 결과는 음성이었다.', '세라는 임신했으면 좋겠다고 말했다.', '세라는 양성평등 강의를 들었다.']) {
+    assert.doesNotMatch(packetFor(`[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n${hedged}`), /pregnancy:/, hedged);
+  }
+  assert.match(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n- [lens:생체 주기 · 생식] (T9–T9 · 이야기 30일째 · 임신 확인) 세라는 테스트기를 보며 "두 줄이야… 어떡해?"라고 말했다.'),
+    /pregnancy: recorded/, 'a lens label is a record even when the quote asks a question');
+
+  const card = packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n이야기 30일째 세라는 임신 8주라는 진단을 받았다', undefined, { conceptionDate: '이야기 5일째', knows: 'no' });
+  assert.match(card, /pregnancy: week 5 \(day 36 since conception, card\)[^\n]*awareness: she does not know yet \(card\)/, 'the card wins over the record');
+});
+
+test('a recorded birth or pregnancy end closes the pregnancy and starts recovery', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const packetFor = (libText, card = {}) => f.host.plugin.debugBodyStatePacket({ characterName: '세라', scopeKey: 'e', libText,
+    settings: { ...pregnancyBase, bodyStateCards: { e: [{ name: '세라', cycleLength: 28, ...card }] } }, profileGenders: { 세라: 'female' } });
+  const preg = '이야기 100일째 세라는 임신 12주라는 진단을 받았다';
+
+  const birth = packetFor(`[STORY CLOCK] 현재: 이야기 300일째 · 저녁\n${preg}\n- [lens:생체 주기 · 생식] (T80–T80 · 이야기 290일째 · 출산) 세라는 새벽에 딸을 낳았다.`);
+  assert.match(birth, /postpartum: day 11 after giving birth \(recorded\) → recovering/);
+  assert.doesNotMatch(birth, /pregnancy:|cycle:/, 'the birth ends the pregnancy and the cycle has not returned');
+  const back = packetFor(`[STORY CLOCK] 현재: 이야기 500일째 · 저녁\n${preg}\n이야기 290일째 세라는 아들을 낳았다\n이야기 495일째 · 아침 세라는 생리를 시작했다`);
+  assert.doesNotMatch(back, /postpartum|pregnancy:/);
+  assert.match(back, /cycle: day 6 of 28/);
+
+  const ended = packetFor(`[STORY CLOCK] 현재: 이야기 130일째 · 저녁\n${preg}\n이야기 120일째 세라는 유산했다`);
+  assert.match(ended, /pregnancy ended 10 days ago \(recorded, confirmed \(story clock\)\) → the body is still recovering; no pregnancy now/);
+  assert.doesNotMatch(ended, /pregnancy: week|cycle:/);
+  assert.doesNotMatch(packetFor('[STORY CLOCK] 현재: 이야기 40일째 · 저녁\n세라는 할머니의 유산을 물려받았다'), /pregnancy ended/, 'an inheritance is not a pregnancy end');
+
+  // A contact before the birth belongs to that pregnancy and gets no new verdict.
+  const afterBirth = packetFor(`[STORY CLOCK] 현재: 이야기 300일째 · 저녁\n이야기 10일째 · 밤 세라는 하준과 관계를 가졌다\n${preg}\n이야기 290일째 세라는 아들을 낳았다`);
+  assert.doesNotMatch(afterBirth, /sexual contact 290 days ago/);
 });

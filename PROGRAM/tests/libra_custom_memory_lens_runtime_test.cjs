@@ -50,15 +50,16 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
   ];
 
   try {
-    await check('fourteen starter templates, each a valid lens that keeps its time/people switches', async () => {
+    await check('fifteen starter templates, each a valid lens that keeps its time/people switches', async () => {
       const templates = api.getLensStarterTemplates();
-      assert.equal(templates.length, 14);
-      assert.equal(new Set(templates.map(template => template.templateId)).size, 14, 'template ids are unique');
+      assert.equal(templates.length, 15);
+      assert.equal(new Set(templates.map(template => template.templateId)).size, 15, 'template ids are unique');
       assert.ok(templates.every(template => template.templateId && template.instruction?.goal && template.labels.length));
       const expected = {
         starter_body_condition: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
         starter_cycle_reproduction: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
         starter_promises_schedule: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
+        starter_offscene_movement: { trackTime: true, trackSubject: false, evidenceMode: 'strict' },
         starter_relationship_shift: { trackTime: false, trackSubject: true, evidenceMode: 'interpretive' },
         starter_belongings: { trackTime: true, trackSubject: true, evidenceMode: 'strict' },
         starter_secrets_knowledge: { trackTime: false, trackSubject: true, evidenceMode: 'interpretive' },

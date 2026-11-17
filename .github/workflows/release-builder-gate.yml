@@ -110,12 +110,22 @@ jobs:
           node --test --test-concurrency=2 \
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
+            PROGRAM/tests/gradia_world_dynamics_aide_test.cjs \
+            PROGRAM/tests/gradia_profile_initiative_test.cjs \
+            PROGRAM/tests/gradia_rp_pacing_prompt_test.cjs \
+            PROGRAM/tests/gradia_present_profile_lore_test.cjs \
+            PROGRAM/tests/gradia_scene_fixation_test.cjs \
+            PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
             PROGRAM/tests/hayaku_storage_read_coalescing_test.cjs \
+            PROGRAM/tests/hayaku_read_scope_reuse_test.cjs \
             PROGRAM/tests/hayaku_review_hardening_runtime_test.cjs \
             PROGRAM/tests/flashback_chat_output_live_confirmation_runtime_test.cjs \
             PROGRAM/tests/flashback_chat_output_unload_microtask_recovery_test.cjs \
+            PROGRAM/tests/flashback_copy_observer_host_read_test.cjs \
+            PROGRAM/tests/native_branch_flashback_real_character_test.cjs \
+            PROGRAM/tests/native_chat_copy_turn_binding_test.cjs \
             PROGRAM/tests/compute_gui_and_libra_open_latency_contract_test.cjs \
             PROGRAM/tests/libra_micro_unproven_diagnostic_test.cjs \
             PROGRAM/tests/libra_narrative_event_projection_runtime_test.cjs \
@@ -124,7 +134,8 @@ jobs:
             PROGRAM/tests/gradia_scene_variance_test.cjs \
             PROGRAM/tests/libra_scope_switch_memory_gaps_test.cjs \
             PROGRAM/tests/libra_lens_memory_edit_runtime_test.cjs \
-            PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs
+            PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs \
+            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs
 
       - name: Verify clean working tree
         run: |
