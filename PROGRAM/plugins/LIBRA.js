@@ -41442,10 +41442,10 @@ function createLibraReadonlySourceContext(owner) {
       if(digest(pair.user.text)!==proof.userHash) return {ok:false,reason:'user_source_changed'};
       const prefix=buildPairs(context.chat,context.scope.scopeKey).slice(0,proof.turn-1);
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
-      if (proof.committedRevisionId && proof.committedRevisionId !== completedTurnRevisionId(pair))
-        return {ok:false,reason:'assistant_source_changed'};
       const assistantHash=completionAssistantDigest(pair.assistant.text);
       if (assistantHash === proof.assistantHash || assistantHash === proof.legacyAssistantHash) return {ok:true,reason:''};
+      if (proof.committedRevisionId && proof.committedRevisionId !== completedTurnRevisionId(pair))
+        return {ok:false,reason:'assistant_source_changed'};
       if (state.lastRequestScope?.pendingMicro === health.pendingMicro
         && proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
         && stateMemoryFingerprint(JSON.stringify(pair.user.chatIds)) === proof.userMessageIdsHash
