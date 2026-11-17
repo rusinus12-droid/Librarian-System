@@ -203,3 +203,32 @@ test('the first AIDE’s arc reading holds for the rest of the run', async t => 
   assert.match(plot, /THIS RUN’S ARC READING \(set earlier in this run\): 이별을 앞둔 두 사람의 관계 정리 · 고조 · 이유를 처음 말하는 걸음\./);
   assert.match(plot, /THIS SCENE’S PURPOSE \(set earlier in this run\): 민아가 떠나려는 이유를 털어놓게 한다\./);
 });
+
+// The latest run's arc and purpose are visible: a card on 단계별 실행 결과 and the debug export.
+test('the run results card and the debug export show the arc source, arc reading, purpose and variable', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wire(f, '민아는 창가에 섰다.', { aide_character: { scene_purpose: '민아가 떠나려는 이유를 털어놓게 한다', story_arc: '이별을 앞둔 관계 정리 · 고조 · 이유를 처음 말하는 걸음' } });
+  f.host.plugin.debugSetSceneVarianceRandom([0.1, 0.99, 0.0]);
+  t.after(() => f.host.plugin.debugSetSceneVarianceRandom(null));
+  await run(f, { scene_variance: 'medium' });
+  const exported = f.host.plugin.debugSceneRun();
+  assert.equal(exported.schema, 'gradia.scene_run.v1');
+  assert.equal(exported.arcSource.kind, 'read_from_scene', 'no 서사 연감 lines in this fixture');
+  assert.equal(exported.arcReading, '이별을 앞둔 관계 정리 · 고조 · 이유를 처음 말하는 걸음');
+  assert.equal(exported.purpose, '민아가 떠나려는 이유를 털어놓게 한다');
+  assert.equal(exported.setBy, 'aide_character');
+  assert.equal(exported.variance.variable.category, 'world');
+
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('results');
+  const card = f.document.querySelector('[data-scene-run-card]');
+  assert.ok(card, 'the results page shows the card');
+  const text = card.textContent;
+  assert.match(text, /장면 목적 · 아크/);
+  assert.match(text, /아크 출처서사 연감 기록 없음 · 최근 장면에서 판독/);
+  assert.match(text, /이번 턴 아크 판독이별을 앞둔 관계 정리 · 고조 · 이유를 처음 말하는 걸음 · 인물 AIDE에서 정함/);
+  assert.match(text, /장면 목적민아가 떠나려는 이유를 털어놓게 한다 · 인물 AIDE에서 정함/);
+  assert.match(text, /무작위 변수세계 · a familiar background sound of this place stops/);
+  const tabs = f.document.querySelector('[data-page="results"] [data-subtabs="rs"]');
+  assert.equal(card.nextElementSibling, tabs, 'the card sits above the stage tabs');
+});

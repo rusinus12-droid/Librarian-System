@@ -25540,6 +25540,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // Arc: the larger flow this scene belongs to. 서사 연감 records it; without a record the
     // arc is read from the scene, never invented.
     const arcLines = libStoryArcLines(settings);
+    const runKey = sceneVarianceRunKey(recent);
+    if (Runtime.sceneArcSource?.key !== runKey) Runtime.sceneArcSource = { key: runKey, lines: arcLines.slice(), at: Date.now() };
     if (purpose?.arc) lines.push(`- THIS RUN’S ARC READING (set earlier in this run): ${purpose.arc}.`);
     else if (arcLines.length) lines.push(`- STORY ARC (LIBRA 서사 연감): ${arcLines.join(' / ')}. Read the arc this scene belongs to from these lines and the recent scene.`);
     else lines.push('- STORY ARC: none recorded yet. Read the arc the story is already on from the recent scene: what the main characters want or face, what stands in the way, and how far it has come. Do not invent an arc the scene does not show.');
@@ -43606,6 +43608,43 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 
 
 
+  // The latest run's arc and scene purpose, from memory only: where the arc came from, what the
+  // stages read and decided, and the random variable drawn. The next run replaces it.
+  const SCENE_VARIANCE_CATEGORY_LABELS = Object.freeze({ inner: '내면', initiative: '주도', world: '세계', protagonist: '주인공' });
+  const sceneRunSnapshot = () => {
+    const key = Runtime.sceneVarianceRun?.key || Runtime.scenePurposeRun?.key || Runtime.sceneArcSource?.key || '';
+    if (!key) return null;
+    const same = run => (run && run.key === key ? run : null);
+    const variance = same(Runtime.sceneVarianceRun), purpose = same(Runtime.scenePurposeRun), arcSource = same(Runtime.sceneArcSource);
+    return cloneJson({
+      schema: 'gradia.scene_run.v1', at: Math.max(Number(variance?.at || 0), Number(purpose?.at || 0), Number(arcSource?.at || 0)),
+      arcSource: arcSource ? { kind: arcSource.lines.length ? 'libra_story_arc' : 'read_from_scene', lines: arcSource.lines } : null,
+      arcReading: purpose?.arc || '', purpose: purpose?.text || '', setBy: purpose?.stage || '',
+      variance: variance ? { level: variance.level, variable: variance.variable || null } : null
+    });
+  };
+  const renderSceneRunCard = results => {
+    const bar = results?.querySelector('[data-subtabs="rs"]');
+    if (!bar) return;
+    let card = results.querySelector('[data-scene-run-card]');
+    if (!card) { card = guiEl('div', { class: 'card', style: 'margin-bottom:14px', dataset: { sceneRunCard: '' } }); bar.parentNode.insertBefore(card, bar); }
+    const run = sceneRunSnapshot();
+    const by = run?.setBy ? ` · ${STAGE_DEF_MAP[run.setBy]?.label || run.setBy}에서 정함` : '';
+    const row = (term, value, muted = false) => [guiEl('dt', { text: term }), guiEl('dd', { class: muted ? 'muted' : '', text: value })];
+    const arcSourceText = !run?.arcSource ? '확인되지 않음'
+      : run.arcSource.kind === 'libra_story_arc' ? run.arcSource.lines.join('\n') : '서사 연감 기록 없음 · 최근 장면에서 판독';
+    const variable = run?.variance?.variable;
+    card.replaceChildren(
+      guiEl('h3', { class: 'section-title', text: '장면 목적 · 아크' }),
+      ...(run ? [guiEl('dl', { class: 'kv', style: 'white-space:pre-line' }, [
+        ...row('아크 출처', arcSourceText, run.arcSource?.kind !== 'libra_story_arc'),
+        ...row('이번 턴 아크 판독', run.arcReading ? run.arcReading + by : '판독 없음', !run.arcReading),
+        ...row('장면 목적', run.purpose ? run.purpose + by : '정해지지 않음', !run.purpose),
+        ...row('무작위 변수', variable ? `${SCENE_VARIANCE_CATEGORY_LABELS[variable.category] || variable.category} · ${variable.text}` : run.variance?.level === 'off' ? '꺼짐' : '이번 턴 없음', !variable)
+      ]), guiEl('p', { class: 'hint', style: 'margin:8px 0 0', text: '가장 최근 실행 한 번의 기록입니다. 저장되지 않으며 다음 실행이 덮어씁니다.' })]
+        : [guiEl('p', { class: 'hint', text: '아직 실행 기록이 없습니다. 실행하면 이번 턴의 아크 출처, 아크 판독, 장면 목적, 무작위 변수가 여기에 표시됩니다.' })])
+    );
+  };
   // This turn's settled readings of a sub-AIDE, from memory only (nothing is stored).
   const resultsSubAideReadings = stageId => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
@@ -44415,6 +44454,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     skillSelections: Runtime.skillSelections ? JSON.parse(JSON.stringify(Runtime.skillSelections)) : {},
     pipelineTimings: Runtime.pipelineTimings ? JSON.parse(JSON.stringify(Runtime.pipelineTimings)) : null,
     callTelemetry: Runtime.callTelemetry ? JSON.parse(JSON.stringify(Runtime.callTelemetry)) : null,
+    sceneRun: sceneRunSnapshot(),
     risuEngine: Runtime.risuEngine,
     finalDraftMeta: Runtime.finalDraftMeta,
     lastLibReadDiagnostic: Runtime.lastLibReadDiagnostic || null,
@@ -46499,6 +46539,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       }
       for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');if(!panel)continue;const sub=isExtensionAideStage(id);panel.replaceChildren(guiEl('div',{class:'gx-status'+(info.className==='warn'||info.className==='danger'?' gx-status--warn':'')},[guiEl('strong',{text:info.label}),guiEl('span',{class:'gx-meta',text:[info.elapsed,trace?.hostedBy?'':trace?.model].filter(Boolean).join(' · ')||info.title})]),...(sub?[resultsSubAideReadings(id)]:[]),...(sub&&trace?.hostedBy?[guiEl('p',{class:'hint',text:`초안과 분석 전체는 ${STAGE_DEF_MAP[trace.hostedBy]?.label||trace.hostedBy} 탭에서 볼 수 있습니다.`})]:[resultsAideView(trace)]));}
       resultsOrderTabs(results);
+      renderSceneRunCard(results);
       for(const [key,id] of [['s','shadow_act'],['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics']]){const tabBtn=results.querySelector('[data-subtab="'+key+'"]');if(tabBtn){let badge=tabBtn.querySelector('.count');const info=traceStateInfo(latestTraceForStage(id));const isFallback=info.label==='폴백'||info.className==='warn';if(isFallback){if(!badge){badge=document.createElement('span');badge.className='count';tabBtn.appendChild(badge);}badge.textContent='폴백';badge.hidden=false;}else if(badge){badge.hidden=true;}}}
     }
     const mode=normalizeChoice(runtime.mode==='full'?'normal':runtime.mode,['off','lite','normal'],'normal');
@@ -49036,6 +49077,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       sceneVarianceRandom = queue ? () => (queue.length ? queue.shift() : 0.5) : () => Math.random();
       Runtime.sceneVarianceRun = null;
       return true;
+    },
+    debugSceneRun() {
+      return sceneRunSnapshot();
     },
     debugSceneVarianceRun() {
       return cloneJson(Runtime.sceneVarianceRun || null);
