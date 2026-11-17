@@ -52487,7 +52487,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // Envelope repair runs before inspection so a markerless or wrapper-nested
     // packet is accepted as the canonical packet instead of triggering Other Ax.
     source = restoreMalformedPacketEnvelope(source, pending ? requestPacketLineageObject({ requestLineage: pending.lineage }) : null);
-    if (!pending) return source;
+    if (!pending) {
+      pushOperationLog('native_recovery:after_request_packet_skipped', {
+        scopeKey: text(scope?.key || ''),
+        reason: 'no_matching_pending_capture',
+        pendingCount: ensureArray(Memory.pendingCaptures).length
+      }, 'warn');
+      return source;
+    }
     const rememberRepair = () => {
       const r = pending.afterRequestRepair;
       if (!r) return;
@@ -52498,6 +52505,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         packetHash: text(r.packetHash || ''), source: 'existing_bounded_after_request_repair'
       };
       if (typeof recordPacketRepairHistory === 'function') recordPacketRepairHistory(Memory.lastPacketRepairObservation);
+      if (r.attempted !== true && ['evidence_unavailable', 'lineage_unavailable', 'auxiliary_probe_in_progress'].includes(r.outcome)) {
+        pushOperationLog('native_recovery:after_request_packet_skipped', {
+          scopeKey: text(pending.scope?.key),
+          pairIndex: Number(pending?.lineage?.targetPairIndex || 0),
+          requestNonce: text(pending.lineage?.requestNonce),
+          outcome: text(r.outcome),
+          errorCode: text(r.errorCode || ''),
+          reason: text(r.errorMessage || r.outcome)
+        }, 'warn');
+      }
     };
     const echoGuard = stripHayakuRuntimeInstructionEcho(source, {
       incompleteTail: true,
@@ -52868,6 +52885,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           const vaultResult = await upsertRecoveryVaultEvidence(pending, candidate, 'risu_chat_output_packet_missing_revision');
           recoveryOnly += vaultResult?.durable === true ? 1 : 0;
           result = { durable: vaultResult?.durable === true, saved: vaultResult?.saved === true, reason: 'recovery_vault_revision_saved', recoveryVault: true };
+          if (vaultResult?.durable === true && pending?.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
+            result.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
+          }
         }
         revisionState.durable=result?.durable===true;
         Memory.lastChatOutputCapture = { ...revisionState, ...result, captureSource: 'risu_chat_output', deferredBinding: candidate.packets.length > 0 };
@@ -53088,6 +53108,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // the turn would have spent anyway. A slow afterRequest gets a grace period first, and a turn
   // whose afterRequest ran (and failed) is left to the user as before.
   const MISSED_AFTER_REQUEST_REPAIR_DELAY_MS = 15000;
+  const afterRequestAttemptedOrSettled = pending => pending?.afterRequestRepair?.attempted === true
+    || ['in_progress', 'suspended', 'packet_already_usable', 'candidate_returned_pending_commit', 'committed_chat_output_verified'].includes(pending?.afterRequestRepair?.outcome);
   const scheduleMissedAfterRequestCanonicalPacket = pending => {
     const scopeKey = text(pending?.scope?.key);
     const turn = Math.max(0, Number(pending?.lineage?.targetPairIndex || 0) || 0);
@@ -53103,7 +53125,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const skip = reason => pushOperationLog('native_recovery:missed_after_request_repair_skipped', { scopeKey, pairIndex: turn, requestNonce, reason }, 'info');
       try {
         if (Memory.unloaded) return;
-        if (pending.afterRequestRepair) return skip('after_request_ran');
+        if (afterRequestAttemptedOrSettled(pending)) return skip('after_request_ran');
         // The otherAX canonical switch is the opt-in: it already spends one otherAX call per turn.
         // Background auto repair is a separate sweep over old debt and does not gate this.
         if (Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
@@ -53296,7 +53318,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                   !packetWriteExpected || vaultResult.durable === true ? 'info' : 'warn'
                 );
                 if (packetWriteExpected && !packetMarkersPresent && vaultResult.durable === true
-                  && pending.otherAxCanonicalPacket === true && !pending.afterRequestRepair) {
+                  && pending.otherAxCanonicalPacket === true && !afterRequestAttemptedOrSettled(pending)) {
                   Memory.lastStorageCapture.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
                 }
               }
@@ -57322,6 +57344,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
       requestSequence: Number(pending.requestSequence || 0),
       requestType: pending.requestType || '',
       recoveryRequired: pending.recoveryRequired === true,
+      otherAxCanonicalPacket: pending.otherAxCanonicalPacket === true,
+      afterRequestRepair: clone(pending.afterRequestRepair || null, null),
       scope: debugScopeForExport(pending.scope),
       lineage: pending.lineage || null,
       recoveryTarget: pending.recoveryTarget || null,
@@ -57393,7 +57417,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         lastManualBatchRejection:clone(Memory.nativeRecovery.lastManualBatchRejection,null),
         job:Memory.nativeRecovery.job ? Object.fromEntries(['jobId','scopeKey','kind','state','diagnosticStage','targetTurns','total','completed','currentTurn','startedAt','updatedAt','finishedAt','error','physicalCalls','transportPhase'].map(key=>[key,Memory.nativeRecovery.job[key]])) : null,
         lastRepair:Memory.nativeRecovery.lastRepairResult ? Object.fromEntries(['ok','reason','error','repaired','deferred','skipped','failureId','recordAdmission','partialMemory','generationMetrics'].map(key=>[key,Memory.nativeRecovery.lastRepairResult[key]])) : null,
-        lastRepairError:Memory.nativeRecovery.lastRepairError||''
+        lastRepairError:Memory.nativeRecovery.lastRepairError||'',
+        lastPacketRepairObservation:clone(Memory.lastPacketRepairObservation||null,null)
       },
       privacy: {
         credentialValues: 'redacted',
