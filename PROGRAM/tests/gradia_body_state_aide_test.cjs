@@ -23,7 +23,7 @@ const wireModel = (f, draftText, stageExtras = {}) => {
   };
 };
 
-const configure = async (f, settings = {}, enabled = { body: true, bond: false }) => {
+const configure = async (f, settings = {}, enabled = { body: true, bond: false }, coreOff = []) => {
   await f.host.plugin.saveRuntimeSettings({
     ...await f.host.plugin.getRuntimeSettings(),
     mode: 'normal', default_preset: 'writer', input_assist_mode: 'off', writing_mode: 'rp', nsfw_mode: 'off',
@@ -32,7 +32,7 @@ const configure = async (f, settings = {}, enabled = { body: true, bond: false }
     failure_mode: 'hard', lore_activation_mode: 'off', ...settings
   });
   const slots = await f.host.plugin.getAgentSlots();
-  await f.host.plugin.saveAgentSlots({ ...slots, aide_body_state: { ...(slots.aide_body_state || {}), enabled: enabled.body }, aide_forced_bond: { ...(slots.aide_forced_bond || {}), enabled: enabled.bond } });
+  await f.host.plugin.saveAgentSlots({ ...slots, aide_body_state: { ...(slots.aide_body_state || {}), enabled: enabled.body }, aide_forced_bond: { ...(slots.aide_forced_bond || {}), enabled: enabled.bond }, ...Object.fromEntries(coreOff.map(id => [id, { ...(slots[id] || {}), enabled: false }])) });
 };
 
 const runTurn = async (f, userText) => {
@@ -51,13 +51,34 @@ test('상태 AIDE is off by default and adds no call or block', async t => {
   assert.ok(f.prompts.every(body => !textOf(body).includes('[BODY STATE')));
 });
 
-test('상태 runs before 억결, and both run right before Plot AIDE', async t => {
+// User decision 2026-11-17: 상태 is a sub-AIDE of 인물 AIDE and 억결 of 플롯 AIDE. Each rides in
+// its parent's call instead of spending one of its own.
+test('상태 rides in 인물 AIDE’s call and 억결 in 플롯 AIDE’s call, with no call of their own', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 문 앞에 섰다.');
   await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, ['aide_body_state', 'aide_forced_bond', 'aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  const character = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  assert.match(character, /상태 AIDE runs inside this stage as a sub-step\. Body State AIDE: read the verification notes/);
+  assert.match(JSON.stringify(f.prompts.find(body => stageOf(body) === 'aide_character')), /"state_readings"/);
+  assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /억결 AIDE runs inside this stage as a sub-step/);
+});
+
+test('without its parent a sub-AIDE rides in the last core AIDE that runs, and runs alone only with none', async t => {
+  const hosted = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(hosted, '민아는 문 앞에 섰다.');
+  await configure(hosted, {}, undefined, ['aide_character', 'aide_world']);
+  await runTurn(hosted, '문을 연다.');
+  assert.deepEqual(hosted.prompts.map(stageOf).filter(stage => stage.startsWith('aide_')), ['aide_plot']);
+  assert.match(systemOf(hosted.prompts.find(body => stageOf(body) === 'aide_plot')), /상태 AIDE runs inside this stage as a sub-step/);
+
+  const alone = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(alone, '민아는 문 앞에 섰다.');
+  await configure(alone, {}, undefined, ['aide_character', 'aide_world', 'aide_plot']);
+  await runTurn(alone, '문을 연다.');
+  assert.deepEqual(alone.prompts.map(stageOf).filter(stage => stage.startsWith('aide_')), ['aide_body_state']);
 });
 
 test('writing modes: prose skips, staging adds no verdict, RP never judges the persona', async t => {
@@ -71,7 +92,7 @@ test('writing modes: prose skips, staging adds no verdict, RP never judges the p
   wireModel(staging, '민아는 문 앞에 섰다.');
   await configure(staging, { rp_impersonation_scope: 'persona_cast' });
   await runTurn(staging, '문을 연다.');
-  assert.match(systemOf(staging.prompts.find(body => stageOf(body) === 'aide_body_state')), /Scene-staging RP mode: add no new condition and no new verdict/);
+  assert.match(systemOf(staging.prompts.find(body => stageOf(body) === 'aide_character')), /Scene-staging RP mode: add no new condition and no new verdict/);
 
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   const packet = f.host.plugin.debugBodyStatePacket({
@@ -151,27 +172,28 @@ test('pregnancy is a fixed verdict behind its own toggle, only for NPCs in RP', 
   assert.match(noCycle, /whether this person can conceive is unknown \(no card setting, no profile gender\) — do not decide a pregnancy/);
 });
 
-test('checkers return state_check and later stages read it; readings stay in memory', async t => {
+test('checkers return state_check and the host reads it; readings stay in memory', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', {
-    aide_character: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
-    aide_body_state: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
+    aide_plot: { state_check: [{ character: '민아', verdict: 'adjust', claim: '민아 runs to the door', reason: 'her sprained ankle cannot take running' }] },
+    aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] }
   });
-  await configure(f);
+  // Plot runs before the host (인물 AIDE), so Plot leaves a note for it.
+  await configure(f, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) });
   const keysBefore = new Set(f.values.keys());
   await runTurn(f, '민아에게 다가간다.');
-  const character = f.prompts.find(body => stageOf(body) === 'aide_character');
-  assert.ok(JSON.stringify(character).includes('"state_check"'), 'the patch schema asks for state_check');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
-  assert.match(body, /\[aide_character\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
-  assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /\[aide_character\] 민아: adjust/);
+  const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
+  assert.ok(JSON.stringify(plot).includes('"state_check"'), 'the patch schema asks for state_check');
+  const host = f.prompts.find(item => stageOf(item) === 'aide_character');
+  assert.ok(!JSON.stringify(host).includes('"state_check"'), 'the host settles readings instead of checking');
+  assert.match(systemOf(host), /\[aide_plot\] 민아: adjust — 민아 runs to the door \(because her sprained ankle cannot take running\)/);
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });
 
 test('the 상태 panel turns the stage on, edits per-chat cards, saves the reproduction toggle and shows readings', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
-  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_body_state: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
+  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
   await configure(f);
   await runTurn(f, '민아에게 다가간다.');
   const scopeKey = f.host.plugin.debugActiveScopeKey();
@@ -206,12 +228,15 @@ test('the 상태 panel turns the stage on, edits per-chat cards, saves the repro
   assert.equal((await f.host.plugin.getAgentSlots()).aide_body_state.enabled, true);
 });
 
-test('the 상태 panel opens its own prompt preview and sits before 억결 in the ladder', async t => {
+test('the 상태 panel opens its own prompt preview and sits under 인물 AIDE in the ladder', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
   const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
-  assert.ok(rows.indexOf('body_state') < rows.indexOf('forced_bond') && rows.indexOf('forced_bond') < rows.indexOf('plot'), rows.join(' > '));
+  assert.equal(rows[rows.indexOf('char') + 1], 'body_state', rows.join(' > '));
+  assert.equal(rows[rows.indexOf('plot') + 1], 'forced_bond', rows.join(' > '));
+  assert.ok(f.document.querySelector('#ladder [data-select-row="body_state"]').classList.contains('node--sub'));
+  assert.match(f.document.querySelector('#ladder [data-select-row="body_state"]').textContent, /인물 AIDE 하위/);
   f.document.querySelector('.stage-detail[data-detail="body_state"] [data-action="prompt-preview"]').click();
   const title = () => f.document.querySelector('.dialog h2, .dialog [class*="title"]')?.textContent || '';
   await f.wait(() => title().includes('프롬프트 미리보기'), 'prompt preview dialog');
@@ -245,7 +270,7 @@ test('a scene condition is tracked and the time of day is optional color, never 
   wireModel(f, '민아는 벤치에 주저앉았다.');
   await configure(f);
   await runTurn(f, '민아 옆에 앉는다.');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
   assert.match(body, /- Minah Kim:/);
   assert.match(body, /scene condition this turn: exertion → breathing hard, sweat, sore muscles/);
   assert.match(body, /Scene time \(context only\): night \(recent scene\)/);
@@ -316,7 +341,7 @@ test('a real run reads conception eligibility from the character card profile', 
   wireModel(f, '민아는 창밖을 보았다.');
   await configure(f, { body_state_reproduction: true });
   await runTurn(f, '민아 곁에 눕는다.');
-  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_body_state'));
+  const body = systemOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
   assert.match(body, /- Minah Kim:\n *cycle: day \d+ of \d+ \(auto \(fixed seed, story date\)\)/);
   assert.match(body, /sexual contact \d+ days ago [^\n]*\[can conceive: profile: female\]/);
 });

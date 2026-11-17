@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.2.0",
-  "generatedAt": "2026-11-17T00:03:32.543Z",
+  "generatedAt": "2026-11-17T03:24:30.934Z",
   "server": {
     "version": "1.2.0",
     "protocol": {
@@ -3852,7 +3852,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "6742888cb540163960fa851a549b916ec88cf05308d0f2b43077030f932f71e8",
+      "sha256": "cb6f13431ffedbb98f067999cdf361bb24ca18566a0ece5ae908843e769449d3",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4260,8 +4260,8 @@
       "bytes": 3847500
     },
     "plugins/GRADIA.js": {
-      "sha256": "252533d4a6151c406412a10cb2b84b41d6f6fdb2917dbb2149d29d113a4e7adc",
-      "bytes": 3267683
+      "sha256": "6e98a9e56ac8301d842bf956ba9caceb7857d38c236eeb1468d231ad97bc1609",
+      "bytes": 3278654
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "7214ec5aa9e8668e45911a2f80c8f4713de54c63bb5c2b7d4dc88fd4cff006ac",
@@ -6592,8 +6592,8 @@
       "bytes": 5796
     },
     "tests/gradia_body_state_aide_test.cjs": {
-      "sha256": "26a8534f1d53ee2dbbb7314c5885b3766c52e33e80406de513dfd26e3112c41a",
-      "bytes": 22672
+      "sha256": "54ebdbcc8a887549d4a6754d1bbd9588f6d169295daa82dd495b1669d5f57d57",
+      "bytes": 24754
     },
     "tests/gradia_causal_realism_test.cjs": {
       "sha256": "015a4f2b24e62ed3a5b96bc919798f52f112fc88cf2e3b7dd07e7e97a8e8b36c",
@@ -6608,8 +6608,8 @@
       "bytes": 23237
     },
     "tests/gradia_forced_bond_aide_test.cjs": {
-      "sha256": "28550fe3e53ee51f21d5a9213c94a1d622dced4818d70db69bff9523272febac",
-      "bytes": 22057
+      "sha256": "777bac47dc529be53eb41bb315919f111cb002101066117f9447fee58518bec8",
+      "bytes": 22296
     },
     "tests/gradia_four_plugin_chain_order_test.cjs": {
       "sha256": "8719ffac0c36604c3e1699ec5f5f52bef5de73f74625b505e9b3d70f96918ef7",
@@ -6768,8 +6768,8 @@
       "bytes": 8753
     },
     "tests/gradia_world_dynamics_aide_test.cjs": {
-      "sha256": "6d8278289b4fae5dc00ee4f2a5c5a9530a2344d73ac9eed37a4fefc658f97d9d",
-      "bytes": 24432
+      "sha256": "6f1536b34bebd10af98604a23a69d645ca3e93f0c5dacfd60dc2aca0c677c25d",
+      "bytes": 24770
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",

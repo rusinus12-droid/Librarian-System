@@ -12,6 +12,9 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
 
 const STAGE = 'aide_world_dynamics';
+// User decision 2026-11-17: 세계 동역학 is a sub-AIDE of 세계관 AIDE and settles its readings in
+// that stage's call. HOST is the stage that carries it in these fixtures.
+const HOST = 'aide_world';
 const BLOCK = '[WORLD DYNAMICS';
 const systemOf = body => body.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
 const textOf = body => body.messages.map(m => m.content).join('\n');
@@ -69,13 +72,13 @@ test('세계 동역학 AIDE is off by default and adds no call or block', async 
   assert.ok(f.prompts.every(body => !textOf(body).includes(BLOCK)));
 });
 
-test('when on, the stage runs and every draft stage carries the block with its own duty', async t => {
+test('when on, 세계관 AIDE settles it in its own call and every draft stage carries the block with its duty', async t => {
   const f = await start(t);
   await runTurn(f, '문을 연다.');
-  const own = f.prompts.filter(body => stageOf(body) === STAGE);
-  assert.ok(own.length > 0, 'the stage is called');
-  assert.match(systemOf(own[0]), /STAGE DUTY: World Dynamics AIDE:/);
-  assert.match(systemOf(own[0]), /ROLE: World Dynamics AIDE/);
+  assert.ok(!f.prompts.some(body => stageOf(body) === STAGE), 'no call of its own');
+  const host = f.prompts.filter(body => stageOf(body) === HOST);
+  assert.ok(host.length > 0, 'the host stage is called');
+  assert.match(systemOf(host[0]), /STAGE DUTY: 세계 동역학 AIDE runs inside this stage as a sub-step. World Dynamics AIDE:/);
   const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
   assert.match(systemOf(plot), /STAGE DUTY: Plot AIDE: check that an off-scene movement does not end the turn/);
   const character = f.prompts.find(body => stageOf(body) === 'aide_character');
@@ -83,11 +86,12 @@ test('when on, the stage runs and every draft stage carries the block with its o
   assert.ok(f.prompts.some(body => !stageOf(body).startsWith('aide_') && textOf(body).includes('STAGE DUTY: SHADOW: when the packet offers a candidate that would plausibly reach this scene by now')), 'SHADOW gets its duty');
 });
 
-test('세계 동역학 runs before 상태 and 억결, and all three run right before Plot AIDE', async t => {
+test('with all three sub-AIDEs on, only the core AIDEs are called, in the user’s order', async t => {
   const f = await start(t, { aide_stage_order: JSON.stringify(['aide_plot', 'aide_character', 'aide_world']) }, { body: true, bond: true });
   await runTurn(f, '문을 연다.');
   const aides = f.prompts.map(stageOf).filter(stage => stage.startsWith('aide_'));
-  assert.deepEqual(aides, [STAGE, 'aide_body_state', 'aide_forced_bond', 'aide_plot', 'aide_character', 'aide_world']);
+  assert.deepEqual(aides, ['aide_plot', 'aide_character', 'aide_world']);
+  assert.match(systemOf(f.prompts.find(body => stageOf(body) === HOST)), /세계 동역학 AIDE runs inside this stage as a sub-step/);
 });
 
 test('writing modes: prose skips the stage, staging surfaces nothing new, RP leaves the persona to the user', async t => {
@@ -98,17 +102,17 @@ test('writing modes: prose skips the stage, staging surfaces nothing new, RP lea
 
   const staging = await start(t, { rp_impersonation_scope: 'persona_cast' });
   await runTurn(staging, '문을 연다.');
-  const stagingSystem = systemOf(staging.prompts.find(body => stageOf(body) === STAGE));
+  const stagingSystem = systemOf(staging.prompts.find(body => stageOf(body) === HOST));
   assert.match(stagingSystem, /Scene-staging RP mode: surface no new off-scene development and bring nobody in/);
   assert.doesNotMatch(stagingSystem, /- RP mode: the world and NPCs move/);
 
   const rp = await start(t, { rp_impersonation_scope: 'persona' });
   await runTurn(rp, '문을 연다.');
-  assert.match(systemOf(rp.prompts.find(body => stageOf(body) === STAGE)), /RP mode: the world and NPCs move on their own terms\. Never decide the persona’s reaction, knowledge, or next act/);
+  assert.match(systemOf(rp.prompts.find(body => stageOf(body) === HOST)), /RP mode: the world and NPCs move on their own terms\. Never decide the persona’s reaction, knowledge, or next act/);
 
   const novel = await start(t, { writing_mode: 'novel' });
   await runTurn(novel, '문을 연다.');
-  assert.match(systemOf(novel.prompts.find(body => stageOf(body) === STAGE)), /Novel mode: off-scene actors may move and reach the scene within the author’s direction/);
+  assert.match(systemOf(novel.prompts.find(body => stageOf(body) === HOST)), /Novel mode: off-scene actors may move and reach the scene within the author’s direction/);
 });
 
 test('pipeline mode off: no call and no block', async t => {
@@ -123,7 +127,7 @@ test('the block forbids invented movement and the stage stores nothing', async t
   const keysOf = () => new Set([...f.values.keys(), ...f.local.keys()].map(String));
   const before = keysOf();
   await runTurn(f, '문을 연다.');
-  const system = systemOf(f.prompts.find(body => stageOf(body) === STAGE));
+  const system = systemOf(f.prompts.find(body => stageOf(body) === HOST));
   assert.match(system, /Never invent a faction, pursuer, deadline, or crisis/);
   assert.match(system, /Surfacing nothing is the correct result whenever nothing is due/);
   assert.match(system, /An off-scene movement never ends the turn and is never resolved in one turn/);
@@ -264,7 +268,7 @@ test('every draft stage receives the packet built from the recent scene', async 
   const withBlock = f.prompts.filter(body => textOf(body).includes(BLOCK));
   assert.ok(withBlock.length >= 3, 'SHADOW and the AIDEs carry the block');
   for (const body of withBlock) assert.match(textOf(body), /WORLD DYNAMICS PACKET:\n/);
-  const own = textOf(f.prompts.find(body => stageOf(body) === STAGE));
+  const own = textOf(f.prompts.find(body => stageOf(body) === HOST));
   assert.match(own, /\[order or dispatch\] in motion for about 1 day \(estimated\); no stated span\n\s+evidence \(recent\): 어제 영주는 성문으로 병사들을 파견했다\./);
   assert.match(own, /Day counts and due verdicts come only from the packet/);
 });
@@ -285,7 +289,7 @@ const chainRun = async (t, stageExtras, settings = {}) => {
 test('checkers return world_check and later stages read the notes; readings stay in memory', async t => {
   const f = await chainRun(t, {
     aide_character: { world_check: [{ movement: '영주의 병사 파견', verdict: 'adjust', claim: '민아 already knows the soldiers are coming', reason: 'nobody told her and she saw nothing' }] },
-    aide_world_dynamics: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }] }
+    aide_world: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }] }
   });
   const keysBefore = new Set([...f.values.keys(), ...f.local.keys()].map(String));
   await runTurn(f, '문을 연다.');
@@ -295,8 +299,8 @@ test('checkers return world_check and later stages read the notes; readings stay
   assert.ok(!JSON.stringify(character).includes('"world_readings"'), 'a checking stage is not asked for readings');
   assert.doesNotMatch(systemOf(character), /VERIFICATION NOTES FROM EARLIER STAGES/, 'the first checker has no earlier note');
 
-  const own = f.prompts.find(body => stageOf(body) === STAGE);
-  assert.ok(JSON.stringify(own).includes('"world_readings"'), 'the stage is asked for world_readings');
+  const own = f.prompts.find(body => stageOf(body) === HOST);
+  assert.ok(JSON.stringify(own).includes('"world_readings"'), 'the host is asked for world_readings');
   assert.ok(!JSON.stringify(own).includes('"world_check"'), 'the stage settles readings instead of leaving a note');
   assert.match(systemOf(own), /VERIFICATION NOTES FROM EARLIER STAGES \(this run\):\n- \[aide_character\] 영주의 병사 파견: adjust — 민아 already knows the soldiers are coming \(because nobody told her and she saw nothing\)/);
   assert.match(systemOf(own), /An "adjust" note lowers the movement to a fainter trace or holds it back/);
@@ -318,10 +322,10 @@ test('malformed notes and readings are dropped or normalized, never passed along
       { movement: '', verdict: 'confirm', claim: 'no movement named', reason: '' },
       { movement: '소문', verdict: 'certainly', claim: 'the rumor reached the gate', reason: '' }
     ] },
-    aide_world_dynamics: { world_readings: [{ movement: '소문', status: 'exploded', summary: '성문까지 퍼짐' }, { movement: '이름만', status: 'held', summary: '' }] }
+    aide_world: { world_readings: [{ movement: '소문', status: 'exploded', summary: '성문까지 퍼짐' }, { movement: '이름만', status: 'held', summary: '' }] }
   });
   await runTurn(f, '문을 연다.');
-  const own = systemOf(f.prompts.find(body => stageOf(body) === STAGE));
+  const own = systemOf(f.prompts.find(body => stageOf(body) === HOST));
   assert.match(own, /- \[aide_character\] 소문: uncertain — the rumor reached the gate/, 'an unknown verdict becomes uncertain');
   assert.doesNotMatch(own, /no movement named/, 'a note without a movement is dropped');
   assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
@@ -336,7 +340,7 @@ test('with the stage off no other stage is asked for world_check', async t => {
 // ---- Settings GUI: turn the stage on, see this turn's readings, find it in the ladder ----
 
 test('the 세계 동역학 panel shows the last readings, turns the stage on and saves it', async t => {
-  const f = await chainRun(t, { aide_world_dynamics: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 아직 성문에 닿지 않음' }] } });
+  const f = await chainRun(t, { aide_world: { world_readings: [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 아직 성문에 닿지 않음' }] } });
   await runTurn(f, '문을 연다.');
   await configure(f, {}, { world: false });
   await f.host.plugin.openSettingsGui();
@@ -357,7 +361,7 @@ test('the 세계 동역학 panel shows the last readings, turns the stage on and
   assert.ok(Object.keys(runtime).every(key => !/world_?dynamics_read/i.test(key)), 'readings are not written to settings');
 });
 
-test('with no run yet the panel says so, and the stage sits first among the extension AIDEs in the ladder', async t => {
+test('with no run yet the panel says so, and the stage sits under 세계관 AIDE in the ladder', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
@@ -365,9 +369,9 @@ test('with no run yet the panel says so, and the stage sits first among the exte
   assert.match(panel.querySelector('[data-world-dynamics-readings]').textContent, /아직 판독이 없습니다/);
   assert.equal(panel.querySelector('#on-s7').checked, false, 'off by default');
   const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
-  assert.ok(rows.indexOf('world_dynamics') >= 0 && rows.indexOf('world_dynamics') < rows.indexOf('body_state')
-    && rows.indexOf('body_state') < rows.indexOf('forced_bond') && rows.indexOf('forced_bond') < rows.indexOf('plot'), rows.join(' > '));
+  assert.equal(rows[rows.indexOf('world') + 1], 'world_dynamics', rows.join(' > '));
+  assert.match(f.document.querySelector('#ladder [data-select-row="world_dynamics"]').textContent, /세계관 AIDE 하위/);
   assert.ok(f.document.querySelector('[data-subtab="d"]'), 'the results page has a 세계 동역학 tab');
   assert.ok(f.document.querySelector('[data-subpanel="d"]'), 'and its panel');
-  assert.ok(f.document.querySelector('#mini-s4w'), 'the home overview lists the stage');
+  assert.ok(f.document.querySelector('#mini-s4w'), 'the home overview keeps a chip for a stand-alone run');
 });

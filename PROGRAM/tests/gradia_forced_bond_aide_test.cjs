@@ -62,24 +62,29 @@ test('억결 is off by default and adds no call', async t => {
   assert.equal(f.prompts.length, 4, 'shadow + three AIDEs');
 });
 
-test('억결 runs right before Plot AIDE in every AIDE order and follows the shared pipeline mode', async t => {
-  for (const [order, expected] of [
-    [['aide_character', 'aide_world', 'aide_plot'], ['aide_character', 'aide_world', 'aide_forced_bond', 'aide_plot']],
-    [['aide_plot', 'aide_character', 'aide_world'], ['aide_forced_bond', 'aide_plot', 'aide_character', 'aide_world']],
-    [['aide_world', 'aide_plot', 'aide_character'], ['aide_world', 'aide_forced_bond', 'aide_plot', 'aide_character']]
+// User decision 2026-11-17: 억결 is a sub-AIDE of 플롯 AIDE and settles its readings in Plot's call.
+test('억결 rides in Plot AIDE’s call in every AIDE order and spends no call of its own', async t => {
+  for (const order of [
+    ['aide_character', 'aide_world', 'aide_plot'],
+    ['aide_plot', 'aide_character', 'aide_world'],
+    ['aide_world', 'aide_plot', 'aide_character']
   ]) {
     const f = await fixture(t, { writingMode: 'rp', unified: false });
     wireModel(f, '복도 끝에서 발소리가 멎었다.');
     await configure(f, { aide_stage_order: JSON.stringify(order) });
     await runTurn(f, '복도로 나간다.');
     const aideStages = callStages(f).filter(stage => stage.startsWith('aide_'));
-    assert.deepEqual(aideStages, expected, JSON.stringify(order));
+    assert.deepEqual(aideStages, order, JSON.stringify(order));
+    const plot = f.prompts.find(body => stageOf(body) === 'aide_plot');
+    assert.match(systemOf(plot), /억결 AIDE runs inside this stage as a sub-step. Forced Bond AIDE: read the verification notes/);
+    assert.ok(JSON.stringify(plot).includes('"bond_readings"'), 'Plot settles the bond readings');
   }
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '복도 끝에서 발소리가 멎었다.');
   await configure(f, { multi_pipeline_mode: 'heavyweight' });
   await runTurn(f, '복도로 나간다.');
-  assert.equal(callStages(f).filter(stage => stage === 'aide_forced_bond').length, 2, 'heavyweight: analysis + patch, same as every AIDE');
+  assert.equal(callStages(f).filter(stage => stage === 'aide_forced_bond').length, 0, 'heavyweight: still no call of its own');
+  assert.equal(callStages(f).filter(stage => stage === 'aide_plot').length, 2, 'heavyweight: Plot keeps its analysis + patch');
 });
 
 test('RP prose mode skips 억결; scene-staging mode runs it without arrivals or invented acts', async t => {
@@ -94,8 +99,8 @@ test('RP prose mode skips 억결; scene-staging mode runs it without arrivals or
   wireModel(staging, '민아는 문 앞에 섰다.');
   await withCards(staging, { rp_impersonation_scope: 'persona_cast' });
   await runTurn(staging, '문을 연다.');
-  const bondPrompt = staging.prompts.find(body => stageOf(body) === 'aide_forced_bond');
-  assert.ok(bondPrompt, 'staging mode still runs 억결');
+  const bondPrompt = staging.prompts.find(body => stageOf(body) === 'aide_plot');
+  assert.ok(bondPrompt && systemOf(bondPrompt).includes('억결 AIDE runs inside this stage'), 'staging mode still runs 억결');
   const sys = systemOf(bondPrompt);
   assert.match(sys, /Scene-staging RP mode/);
   assert.match(sys, /Do not bring an absent character into the scene for a bond/);
@@ -107,7 +112,7 @@ test('cards are per chat and reach every stage with mode rules, accuracy rules a
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await withCards(f);
   await runTurn(f, '준호를 지나쳐 간다.');
-  for (const stage of ['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_forced_bond']) {
+  for (const stage of ['shadow_act', 'aide_character', 'aide_world', 'aide_plot']) {
     const body = f.prompts.find(item => (stage === 'shadow_act' ? !stageOf(item) || stageOf(item) === 'shadow_act' : stageOf(item) === stage));
     assert.ok(body, stage + ' was called');
     // SHADOW carries stage guidance in its user message; the AIDEs in the system prompt.
@@ -125,14 +130,14 @@ test('cards are per chat and reach every stage with mode rules, accuracy rules a
   wireModel(novel, '준호가 문 앞에서 기다렸다.');
   await withCards(novel, { writing_mode: 'novel' });
   await runTurn(novel, '준호를 지나쳐 간다.');
-  assert.match(systemOf(novel.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /Novel mode: both sides of a bond/);
+  assert.match(systemOf(novel.prompts.find(item => stageOf(item) === 'aide_plot')), /Novel mode: both sides of a bond/);
 
   const other = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(other, '민아는 문 앞에 섰다.');
   await configure(other, { forced_bond_cards: JSON.stringify({ 'some-other-chat': [{ to: '준호', tones: ['hatred'] }] }) });
   await runTurn(other, '문을 연다.');
   // Another chat's cards do not apply here; with no card of its own the chat gets auto bonds.
-  const otherBond = systemOf(other.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const otherBond = systemOf(other.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.doesNotMatch(otherBond, /tones: hatred/);
   assert.match(otherBond, /- auto-1: the user persona → 민아 \(mutual\) · tones: read from canon, lore and the scene \(auto bond, no user card\)/);
 });
@@ -142,7 +147,7 @@ test('with no card, 억결 binds scene people and asks for a beat only when the 
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await configure(f);
   await runTurn(f, '준호를 지나쳐 간다.');
-  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.match(bond, /- auto-1: the user persona → 민아/, 'the character card person is bound first');
   assert.match(bond, /When there is a natural opening this turn, show one visible beat that forms or moves the main bond/);
   assert.match(bond, /If the user closes or explicitly excludes a relationship thread, keep it out of the scene/);
@@ -158,7 +163,7 @@ test('with no card, 억결 binds scene people and asks for a beat only when the 
   wireModel(off, '민아는 문 앞에 섰다.');
   await configure(off, { forced_bond_auto: false });
   await runTurn(off, '문을 연다.');
-  assert.match(systemOf(off.prompts.find(item => stageOf(item) === 'aide_forced_bond')), /BONDS: no user card and no other person in the scene this turn/);
+  assert.match(systemOf(off.prompts.find(item => stageOf(item) === 'aide_plot')), /BONDS: no user card and no other person in the scene this turn/);
   assert.ok(!systemOf(off.prompts.find(item => stageOf(item) === 'aide_character')).includes('[FORCED BOND'), 'auto off: no bond block for checkers');
 });
 
@@ -169,7 +174,7 @@ test('bond evidence matches any alias of a person through the continuity index',
   wireModel(f, '민아는 다시 고개를 들었다.');
   await configure(f);
   await runTurn(f, '민아를 바라본다.');
-  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.match(bond, /- auto-1: the user persona → Minah Kim/);
   assert.match(bond, /recent scene: 민아는 얼굴을 붉히며 시선을 피했다\./, 'a line naming the Korean alias counts for Minah Kim');
 });
@@ -183,17 +188,16 @@ test('lightweight AIDEs return bond_check through the schema and 억결 reads th
   await runTurn(f, '준호를 지나쳐 간다.');
   const character = f.prompts.find(item => stageOf(item) === 'aide_character');
   assert.ok(JSON.stringify(character).includes('"bond_check"'), 'the patch schema asks for bond_check when 억결 is active');
-  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.match(bond, /VERIFICATION NOTES FROM EARLIER STAGES/);
   assert.match(bond, /\[aide_character\] bond-junho: adjust — 준호 is jealous of the persona and 세라 \(because 준호 never saw them together; evidence: recent\)/);
-  const plot = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
-  assert.match(plot, /\[aide_character\] bond-junho: adjust/, 'Plot AIDE, after 억결, also sees the check');
+  assert.ok(!JSON.stringify(f.prompts.find(item => stageOf(item) === 'aide_plot')).includes('"bond_check"'), 'the host settles readings instead of checking');
 });
 
 test('readings and proposals stay in memory for the GUI and are never written to storage', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.', {
-    aide_forced_bond: {
+    aide_plot: {
       bond_readings: [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }],
       bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호 wait for the persona' }, { from: '@persona', to: '준호', tones: ['rivalry'], why: 'already a card' }]
     }
@@ -212,7 +216,7 @@ test('readings and proposals stay in memory for the GUI and are never written to
 test('the 억결 panel edits per-chat cards and accepts proposals as cards', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.', {
-    aide_forced_bond: { bond_readings: [], bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호' }] }
+    aide_plot: { bond_readings: [], bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호' }] }
   });
   const scopeKey = await withCards(f, {}, []);
   await runTurn(f, '준호를 지나쳐 간다.');
@@ -303,7 +307,7 @@ test('억결 forms and moves relationships from recent emotional signals instead
   wireModel(f, '민아는 지도를 건넸다.');
   await configure(f);
   await runTurn(f, '고맙다고 말한다.');
-  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.match(bond, /keep forming and moving the relationships below/);
   assert.match(bond, /do not steer a bond toward romance unless the user or what has developed already points there/);
   assert.match(bond, /recent emotional signals \(oldest → newest\): avoidance \("민아는 시선을 피하며 짧게 대답했다\."\) → warmth \("잠시 후 민아는 작게 미소를 지었다\."\)/);
@@ -317,7 +321,7 @@ test('a bond follows the user’s direction and the story, never gender, and lor
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await withCards(f);
   await runTurn(f, '준호에게 오늘은 친구로서 이야기하자고 말한다.');
-  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_forced_bond'));
+  const bond = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
   assert.match(bond, /Gender never decides a bond\. Different genders do not imply romance, and the same gender does not rule it out\./);
   assert.match(bond, /WHAT DECIDES A BOND’S DIRECTION, in order: \(1\) the user’s direction/);
   assert.match(bond, /Lore describing a character’s feelings or preferences is background, not a script/);
