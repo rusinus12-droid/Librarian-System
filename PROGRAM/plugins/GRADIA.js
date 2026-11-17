@@ -25377,6 +25377,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
 }`;
   };
 
+  // A bot keeps a character's profile in its description (one-character bots) or in lorebook
+  // entries and cast tables (multi-character bots), under section names that differ per bot
+  // and per request, so the profile is named by what it says about a character, not by where.
+  const CHARACTER_PROFILE_DEFINITION = 'CHARACTER PROFILE means whatever supplied text describes a named character, wherever it sits: the character description, a lorebook entry or character sheet under that name, a row of a cast table, the persona text, or memory about them. Find it by the character’s name, not by a section title.';
+  const CHARACTER_PROFILE_CHECK = 'Check each active character’s behavior against their profile: drive, temperament, and stance toward the others present. If one reacts too passively or flatly for that profile, sharpen that beat into a concrete action or stance consistent with it, without adding NPC self-talk or crossing user agency in RP. Leave a character whose profile is missing alone; never invent a drive to justify a change.';
+
   const builtInStylePresetPrompt = (settings = {}) => [
     '- Work as a serial RP draft writer/editor, not as an analyst.',
     '- Every beforeRequest writing stage must return a complete, usable RP response draft, not a plan, summary, scene memo, scaffold, or hidden reasoning.',
@@ -25387,11 +25393,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '- Keep functional obligations such as image-command rules, language requirements, and status/interface blocks only when they are explicitly required by the active chat rules.',
     '- Make the scene feel alive through concrete behavior, small physical reactions, dialogue rhythm, social timing, sensory detail, and character-specific choices.',
     '- Let dialogue and action create motion before narration explains it. Avoid generic drama, empty abstraction, fake foreshadowing, formulaic endings, and inflated dramatic phrasing.',
-    '- Use profiles, lore, persona, memory, and Others Info only as private writing fuel. Do not recite profile fields, leak secrets, or narrate knowledge unavailable to the current viewpoint.',
+    `- ${CHARACTER_PROFILE_DEFINITION} Use profiles, lore, memory, and Others Info only as private writing fuel. Do not recite profile fields, leak secrets, or narrate knowledge unavailable to the current viewpoint.`,
     ...(!rpScopeLocksCast(settings)
       ? [isPlayerControlledDraftMode(settings)
-          ? '- LORE-DRIVEN INITIATIVE: do not treat NPCs as passive responders who only echo or wait on the user input. Use each NPC’s lore (goals, habits, temperament, relationship stance, defense mechanisms) to drive 1–2 concrete, character-specific actions or shifts in stance—while keeping the persona’s reaction open and avoiding long NPC self-talk.'
-          : '- LORE-DRIVEN INITIATIVE: use the cast’s lore (goals, desires, habits, relationship stance, defense mechanisms) as an active engine so characters initiate, press, evade, or make concrete choices rather than reacting passively.']
+          ? '- PROFILE-DRIVEN INITIATIVE: NPCs are not passive responders who only echo or wait on the user input. For the NPCs who matter in this moment, let what their profile establishes (what they want, how they handle tension, their habits, their stance toward the others present) drive a concrete, character-specific action or shift in stance; in a scene with several NPCs, not every one needs a beat. Use only what the profile or the story shows; when a character has neither, start from what the scene shows of them and invent no motive. Keep the persona’s reaction open and avoid NPC self-talk.'
+          : '- PROFILE-DRIVEN INITIATIVE: let what each active character’s profile establishes (what they want, how they handle tension, their habits, their stance toward the others present) drive them to initiate, press, evade, or make concrete choices rather than react passively. Use only what the profile or the story shows; invent no motive a character lacks.']
       : []),
     isPlayerControlledDraftMode(settings)
       ? '- PLAYER-CONTROLLED RP: preserve player agency. Do not decide the user character hidden thoughts, feelings, choices, dialogue, consent/refusal, or voluntary action unless the user already provided them.'
@@ -25608,7 +25614,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : 'Respect the COMMIT BARRIER for facts not fixed by the author. If the current authorial input explicitly requires an outcome, realize it coherently; otherwise do not pretend an attempt/proposal was already confirmed before this response.',
       'Use established character, persona, and lore context when present. The current input ranks first, the Current Chat Author Note ranks second, and current-scene facts then outrank summaries and older notes.',
       ...(!rpScopeLocksCast(settings)
-        ? ['Let active characters act on their lore—what they want now, how they handle tension, and what they press or conceal—so they show genuine initiative instead of passive, generic reactions.']
+        ? ['Let the characters who matter now act from their profile (what they want now, how they handle tension, what they press or conceal) so they show initiative instead of passive, generic reactions. A character with no profile acts from what the scene and memory show of them.']
         : []),
       'This draft is the seed every later AIDE will revise; make it a complete, playable response with vivid dialogue-first momentum and human behavioral texture, not a plan.'
     ],
@@ -25618,7 +25624,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Judge the latest CURRENT_SAME_TURN_DRAFT using compact portrayal anchors for at most the few characters who materially matter now, then return only structural paragraph patches for material character-domain weaknesses.',
       'Preserve exact supplied canon and keep it separate from current interpretation. Express supported pressure, emotion, motive, relationship stance, and voice without predetermining exact reactions or outcomes.',
       ...(!rpScopeLocksCast(settings)
-        ? ['Check whether each active character’s behavior matches their lore-established drive, temperament, and relationship stance; if a character is reacting too passively or flatly for their lore, sharpen that beat into a concrete, lore-consistent action or stance (without adding NPC self-talk or crossing user agency in RP).']
+        ? [CHARACTER_PROFILE_CHECK]
         : []),
       'Enforce information paths and evidence levels. A character may act only on direct perception, communication, established memory, public information, or another confirmed route; suspicion and rumor remain uncertain.',
       isPlayerControlledDraftMode(settings)
@@ -28493,6 +28499,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Never infer biological, reproductive, or medical state from identity, appearance, mood, or behavior, and never decide the user character’s interior body state.'
         : 'Never infer biological, reproductive, or medical state from identity, appearance, mood, or behavior as pre-existing canon. Novel-mode fiction may author ordinary interior states, but unsupported medical/reproductive facts remain evidence-bound.',
       'Own why a character speaks or reacts that way; do not redesign scene order, physical rules, location, or object state unless correcting a local characterization contradiction requires preserving them.',
+      // The live patch prompt carries no style pack, so it gets the profile definition here.
+      ...(!rpScopeLocksCast(settings) ? [CHARACTER_PROFILE_DEFINITION, CHARACTER_PROFILE_CHECK] : []),
       'Patch only paragraphs that materially need character-domain correction or development. Preserve every unaffected block exactly.',
       isPlayerControlledDraftMode(settings)
         ? 'Do not force a specific feeling, consent, rejection, or relationship outcome for the player character unless the supplied evidence already establishes it.'

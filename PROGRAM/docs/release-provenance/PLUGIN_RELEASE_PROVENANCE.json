@@ -285,8 +285,8 @@
     "plugins": {
       "flashback": {
         "version": "2.0.5",
-        "sha256": "a067310e9bb28c89dd9596893e89d4422d60951f131196e3c1a0348a21109834",
-        "bytes": 3848356
+        "sha256": "9b482dd9cd6092cc97af5e3c37a6db1826cf011fe311d195045d6c6b2a6ad84c",
+        "bytes": 3848825
       },
       "hayaku": {
         "version": "4.0.6",
@@ -310,8 +310,8 @@
       },
       "gradia": {
         "version": "1.1.3",
-        "sha256": "8d91f669dccaa43cfb9b1c09c36b3217c94a2143a5ae035acbd6d913646dcb90",
-        "bytes": 3302338
+        "sha256": "03c82a8d69e3c23c896b6659efe957f84366aa58fb3e1fa8f4c8fead29282f00",
+        "bytes": 3308584
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
