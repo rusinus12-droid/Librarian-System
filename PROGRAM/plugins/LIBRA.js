@@ -62130,6 +62130,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         throw error;
       }
     };
+    const shouldUpdateLastMicroPublication = (scopeKey, turn) => {
+      const current = state.lastMicroPublication;
+      return !current || current.scopeKey !== scopeKey || Number(turn || 0) >= Number(current.turn || 0);
+    };
     const scheduleMicroForTurn = (scope, worldlineId, sessionEpoch, turn, revisionId, request={}) => {
       if (state.disposed) return Promise.resolve({ status: 'pending', reason: 'runtime_disposed' });
       if (state.deletingScopes.has(scope.scopeKey)) return Promise.resolve({ status: 'paused', reason: 'scope_deleting' });
@@ -62138,7 +62142,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (state.microJobs.has(jobKey)) return state.microJobs.get(jobKey);
       if (state.microJobs.size >= MICRO_QUEUE_CAPACITY) {
         const result = { status: 'never_started', reason: 'micro_queue_capacity' };
-        state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
+        if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+          state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
+        }
         return Promise.resolve(result);
       }
       const previous = state.microQueues.get(scope.scopeKey) || Promise.resolve();
@@ -62164,27 +62170,31 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ? { ...result, stateAdmission: await admitPublishedMicroStateClaims(scope, worldlineId, sessionEpoch, turn) }
           : result)
         .then(async result => {
-          state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId,
-            queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
-              queueWaitMs: Math.max(0, startedAt - queuedAt) },
-            status: string(result?.status || 'pending'), reason: string(result?.reason || ''),
-            ...(result?.recoveryAction ? { recoveryAction: string(result.recoveryAction) } : {}),
-            ...(result?.planUnprovenReason ? { planUnprovenReason: string(result.planUnprovenReason) } : {}),
-            ...(result?.planRefusal ? { planRefusal: string(result.planRefusal) } : {}),
-            personInventoryStatus: string(result?.personInventoryStatus || ''),
-            personInventoryError: string(result?.personInventoryError || ''),
-            analysisStatus: string(result?.record?.analysisStatus || ''),
-            analysisReason: string(result?.record?.analysisStatus === 'minimum_source_bound'
-              ? 'micro_analysis_unavailable_source_only' : ''),
-            stateAdmission: clone(result?.stateAdmission || null) };
+          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+            state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId,
+              queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
+                queueWaitMs: Math.max(0, startedAt - queuedAt) },
+              status: string(result?.status || 'pending'), reason: string(result?.reason || ''),
+              ...(result?.recoveryAction ? { recoveryAction: string(result.recoveryAction) } : {}),
+              ...(result?.planUnprovenReason ? { planUnprovenReason: string(result.planUnprovenReason) } : {}),
+              ...(result?.planRefusal ? { planRefusal: string(result.planRefusal) } : {}),
+              personInventoryStatus: string(result?.personInventoryStatus || ''),
+              personInventoryError: string(result?.personInventoryError || ''),
+              analysisStatus: string(result?.record?.analysisStatus || ''),
+              analysisReason: string(result?.record?.analysisStatus === 'minimum_source_bound'
+                ? 'micro_analysis_unavailable_source_only' : ''),
+              stateAdmission: clone(result?.stateAdmission || null) };
+          }
           if (result?.status === 'verified') scheduleCurrentStateSnapshotRefresh(scope);
           if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
         }).catch(error => {
           const result = { status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
-          state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
-          state.lastMicroPublication.queueMetrics = { queuedAt, startedAt, finishedAt: Date.now(),
-            queueWaitMs: Math.max(0, startedAt - queuedAt) };
+          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+            state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
+            state.lastMicroPublication.queueMetrics = { queuedAt, startedAt, finishedAt: Date.now(),
+              queueWaitMs: Math.max(0, startedAt - queuedAt) };
+          }
           return result;
         }).finally(() => {
           if (state.microQueues.get(scope.scopeKey) === next) state.microQueues.delete(scope.scopeKey);
