@@ -54183,7 +54183,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         }
         // This runtime's own call may outlive a lease written by an older version; it is
         // still in flight, not lost.
-        if (Number(work.leaseExpiresAt) > Date.now() || microInvocationsInFlight.has(workKey)) {
+        if (!(options.retryNotDurablyReady === true && !microInvocationsInFlight.has(workKey))
+          && (Number(work.leaseExpiresAt) > Date.now() || microInvocationsInFlight.has(workKey))) {
           return { status: 'pending', reason: 'provider_in_flight', workKey };
         }
         const outcomeUnknown = { status: 'pending', reason: 'provider_outcome_unknown',
@@ -54206,7 +54207,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
          || options.manual === true && unprovenPlan
          || options.manual === true && work.status === 'reserved'
          && !['planned','manual_planned','retry_planned'].includes(work.phase)
-         && Number(work.leaseExpiresAt||0) <= Date.now()) {
+         && (Number(work.leaseExpiresAt||0) <= Date.now()
+           || (options.retryNotDurablyReady === true && !microInvocationsInFlight.has(workKey)))) {
         const priorResult = { result: clone(work.result), resultDigest: work.resultDigest,
           logicalAttempts: Number(work.logicalAttempts || 1) };
          const legacyHistory=asArray(work.priorResults).map((row,index)=>({
