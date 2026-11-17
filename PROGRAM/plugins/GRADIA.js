@@ -25185,16 +25185,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // Clothing and place are state, not scenery: a coat taken off in an earlier beat stays off, and a
   // room does not change without the move being performed on the page. Both the draft and every AIDE
   // phase carry these contracts so a patch cannot silently re-dress a character or teleport a scene.
+  // Objects, people and limbs follow the same rule (user requests 2026-11-17/18): a blanket pushed
+  // fully down came back over a character with nothing shown, and one gathered at the chest jumped
+  // to the chin. One merged contract, kept short: it rides in every stage prompt, and a 16k-context
+  // model must still fit the whole mandatory prompt (tests/gradia/context-degradation.test.cjs).
   const buildWardrobeContinuityContract = () => [
     'WARDROBE AND APPEARANCE CONTINUITY — HARD CONDITION:',
-    '- Treat every named garment, accessory, and item of footwear as state, not decoration: worn, removed, loosened, opened, pushed aside, torn, soiled, wet, or held. Carry the last explicitly narrated state into this turn.',
-    '- A garment removed or opened in an earlier beat stays removed or open until the prose shows the physical action that reverses it. Never re-dress a character between turns, and never restore a coat, jacket, shirt, skirt, or shoes that the visible scene already took off.',
-    '- Perform every change on the page: the hand at a hem, the step out of a sleeve, the tug that closes a collar. Never report a change in summary voice after the fact.',
-    '- When the current state was never narrated, infer it from setting, weather, and the immediately preceding action, state it once, and hold it consistently. Never contradict an explicit earlier statement to make a new beat easier.',
-    '- Clothing governs access, warmth, injury, and intimacy. A garment that reappears without cause breaks posture, contact, and every downstream beat that depended on it.',
-    '- In a patch, a silently restored or newly invented garment is a defect: either restore the last narrated state, or supply the missing physical action that changes it.',
-    '- The immediately preceding exchanges govern wardrobe and staging more than older summaries, archives, or agent notes.'
+    '- Treat every named garment, accessory, and item of footwear as state, and so too objects (blankets, towels, cups, phones, doors, curtains, lights), where each character stands, sits or lies, and where their arms, hands, legs and head are. Carry the last narrated state into this turn, partial states included (a coat half off, a blanket at the chest, a door half open, a hand on a shoulder).',
+    '- A garment removed or opened stays removed or open until the prose shows the physical action that reverses it; never re-dress a character between turns.',
+    '- Perform every change on the page, step by step: the hand at a hem, a blanket pulled from the chest up to the chin. One pushed fully off never lies over anyone again by itself, no person, limb or object jumps to a new place, and a time skip or a new beat never stands in for the move.',
+    '- A body does only what its current position allows: a hand that holds or is held is not free, and someone lying down rises before walking.',
+    '- When a state was never narrated, infer it once from the setting and the preceding action and hold it.',
+    '- In RP, what the persona last moved or holds, and how the persona is positioned, stays as the input left it unless an NPC or the world changes it on the page.',
+    '- In a patch, a silently restored or newly invented garment is a defect, as is any change without a shown action: restore the last state or add the missing action where it happens.'
   ].join('\n');
+
+  const WORLD_AIDE_LAST_STATE_CHECK = 'Last-state check: privately note where the terminal scene left each object, person and limb in play (how far a blanket covers, which door is open, who sits or lies where, where each hand and leg is), then follow each through the draft in order. A change with no action causing it, at the point it happens and through the steps between, is a defect to patch.';
 
   const buildLocationContinuityContract = () => [
     'LOCATION AND STAGING CONTINUITY — HARD CONDITION:',
@@ -25812,6 +25818,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Keep secondary scenes, remembered or imagined material, proposals, and remote events separated. Admit remote material only through a concrete present bridge.',
       'Apply EXACT / DIRECTIONAL / PENDING / PROPOSED distinctions. Do not treat attempts, offers, temporary custody, likely rewards, proposed changes, or expected system responses as completed outcomes or exact values.',
       'Repair unsupported movement, impossible access/perception, disappearing objects or bystanders, false ownership, broken chronology/causality, ignored social consequences, and invented canon. Reinforce only with small grounded details from supplied context.',
+      WORLD_AIDE_LAST_STATE_CHECK,
       'If prose moved the scene without support, patch that local passage. Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
     ],
     aide_plot: [
@@ -28758,6 +28765,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     aide_world: [
       'ROLE: World AIDE — serial world, physical-state, and causality patch editor.',
       'Inspect the latest draft for only location, time, posture, distance, contact, object custody, perception, witnesses, chronology, rules, and physical/social causality.',
+      WORLD_AIDE_LAST_STATE_CHECK,
       'For boundary-risk facts, test each observer’s actual channel and barriers; concealed/interior or offscreen specifics require an open path or depicted present bridge at plausible timing.',
       'Advance time-sensitive physical or bodily facts only when story-time passage is confirmed. Do not calculate cycles, fertility, conception, or pregnancy.',
       'Own whether actions and observable consequences are physically and socially possible; do not assign hidden motives, permanent feelings, or a new narrative payoff.',

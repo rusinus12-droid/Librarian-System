@@ -115,6 +115,7 @@ jobs:
             PROGRAM/tests/gradia_rp_pacing_prompt_test.cjs \
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
+            PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \
