@@ -62142,8 +62142,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         throw error;
       }
     };
-    const shouldUpdateLastMicroPublication = (scopeKey, turn) => {
+    // Only a background gap repair of an older turn yields to a newer publication. Any other
+    // job always reports, so a chat rolled back to an earlier turn is not stuck on the old one.
+    const shouldUpdateLastMicroPublication = (scopeKey, turn, request = {}) => {
       const current = state.lastMicroPublication;
+      if (request?.reason !== 'micro_gap_repair') return true;
       return !current || current.scopeKey !== scopeKey || Number(turn || 0) >= Number(current.turn || 0);
     };
     const scheduleMicroForTurn = (scope, worldlineId, sessionEpoch, turn, revisionId, request={}) => {
@@ -62154,7 +62157,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (state.microJobs.has(jobKey)) return state.microJobs.get(jobKey);
       if (state.microJobs.size >= MICRO_QUEUE_CAPACITY) {
         const result = { status: 'never_started', reason: 'micro_queue_capacity' };
-        if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+        if (shouldUpdateLastMicroPublication(scope.scopeKey, turn, request)) {
           state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
         }
         return Promise.resolve(result);
@@ -62182,7 +62185,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           ? { ...result, stateAdmission: await admitPublishedMicroStateClaims(scope, worldlineId, sessionEpoch, turn) }
           : result)
         .then(async result => {
-          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn, request)) {
             state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId,
               queueMetrics: { queuedAt, startedAt, finishedAt: Date.now(),
                 queueWaitMs: Math.max(0, startedAt - queuedAt) },
@@ -62229,7 +62232,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           return result;
         }).catch(error => {
           const result = { status: 'pending_reconciliation', reason: compact(error?.message || error, 300) };
-          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn)) {
+          if (shouldUpdateLastMicroPublication(scope.scopeKey, turn, request)) {
             state.lastMicroPublication = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, ...result };
             state.lastMicroPublication.queueMetrics = { queuedAt, startedAt, finishedAt: Date.now(),
               queueWaitMs: Math.max(0, startedAt - queuedAt) };
