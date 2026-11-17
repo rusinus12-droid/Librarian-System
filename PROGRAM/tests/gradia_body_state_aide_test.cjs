@@ -201,6 +201,28 @@ test('checkers return state_check and the host reads it; readings stay in memory
   assert.deepEqual(newKeys.filter(key => /body|state_read|reading/i.test(key)), [], 'no body state is persisted');
 });
 
+test('a hosted 상태 AIDE shows its host call’s status and its own readings, tabbed under 인물', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });
+  await configure(f);
+  await runTurn(f, '민아에게 다가간다.');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('pipeline');
+  // No run of its own: the ladder shows the 인물 AIDE call's outcome, without that call's time.
+  assert.equal(f.document.querySelector('#lb-body_state').textContent, '성공');
+  assert.match(f.document.querySelector('#lb-char').textContent, /^성공/);
+  await f.host.plugin.debugNavigateGui('results');
+  const panel = f.document.querySelector('[data-subpanel="b"]');
+  assert.match(panel.textContent, /성공/);
+  assert.match(panel.textContent, /이번 턴 판독[\s\S]*민아[\s\S]*발목 염좌 3일째/);
+  assert.match(panel.textContent, /초안과 분석 전체는 인물 AIDE 탭에서 볼 수 있습니다/);
+  assert.doesNotMatch(panel.textContent, /실행 기록 없음/);
+  const tabs = [...f.document.querySelectorAll('[data-subtabs="rs"] [data-subtab]')].map(tab => tab.dataset.subtab);
+  assert.equal(tabs[tabs.indexOf('c') + 1], 'b', tabs.join(' '));
+  assert.equal(tabs[tabs.indexOf('p') + 1], 'f', tabs.join(' '));
+  assert.ok(f.document.querySelector('[data-subtab="b"]').classList.contains('tab--sub'));
+});
+
 test('the 상태 panel turns the stage on, edits per-chat cards, saves the reproduction toggle and shows readings', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '민아는 다리를 절며 문 앞에 섰다.', { aide_character: { state_readings: [{ character: '민아', summary: '발목 염좌 3일째, 절뚝임' }] } });

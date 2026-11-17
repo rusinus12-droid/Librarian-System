@@ -24,10 +24,16 @@ for(const mode of ['mirror','server_only'])test('status polling reads each verif
     const start=fx.requests.length;
     const status=await f.r.api.getReceiptRecoveryStatus({scope:pollScope});
     const counts={};
+    // A read is one key, whether it travels alone (/v1/kv/get) or in a batch (/v1/kv/get-many).
+    // A batch's continuation pages (cursor > 0) repeat its keys and are not new reads.
+    const count=key=>{const name=family(key);counts[name]=(counts[name]||0)+1;};
     for(const request of fx.requests.slice(start)){
-      if(!request.url.includes('/v1/kv/get?'))continue;
-      const name=family(new URL(request.url).searchParams.get('key'));
-      counts[name]=(counts[name]||0)+1;
+      const url=new URL(request.url);
+      if(url.pathname==='/v1/kv/get')count(url.searchParams.get('key'));
+      else if(url.pathname==='/v1/kv/get-many'){
+        const body=JSON.parse(request.body||'{}');
+        if(!Number(body.cursor||0))for(const key of body.keys||[])count(key);
+      }
     }
     assert.equal(status.receiptStages[0].status,'verified');
     assert.equal(status.microJobs[0].status,'succeeded',JSON.stringify(status.microJobs[0]));

@@ -48004,8 +48004,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     error.failedAnalysisReason = preserved.reason;
     throw error;
   };
-  // Upper bound on automatic single-turn re-analysis calls in one Cold Start run (only multi-turn
-  // batches retry): one batch's worth of turns, or one per batch for long chats.
+  // Upper bound on automatic single-turn re-analysis calls in one Cold Start run (a failed turn is
+  // retried once at any batch size): one batch's worth of turns, or one per batch for long chats.
   const coldStartAutomaticRetryBudget = (targetTurns, batchTurnsInput) => {
     const turns = Math.max(0, Number(targetTurns || 0) || 0), batchTurns = normalizeColdStartBatchTurns(batchTurnsInput);
     return turns > 0 ? Math.max(batchTurns, Math.ceil(turns / batchTurns)) : 0;
@@ -50547,7 +50547,8 @@ const MemorySuiteHealthRecovery = (() => {
     const batchTurns = normalizeColdStartBatchTurns(Memory.settings?.coldStartBatchTurns || 1);
     const extraCalls = Memory.settings?.recoveryExtraCalls === 1 ? 1 : 0;
     const baseCalls = coverage.mode === 'cold_start' ? Math.ceil(targetTurns.length / batchTurns) : targetTurns.length;
-    const automaticRetryCalls = coverage.mode === 'cold_start' && batchTurns > 1 ? coldStartAutomaticRetryBudget(targetTurns.length, batchTurns) : 0;
+    // Retries run at every batch size, so the estimate counts them at every batch size too.
+    const automaticRetryCalls = coverage.mode === 'cold_start' ? coldStartAutomaticRetryBudget(targetTurns.length, batchTurns) : 0;
     // Repeat every physical witness, including referenced bodies, before
     // declaring inspection complete. No normalized/cached empty can certify it.
     for (const key of [...observed.keys()]) await read(key);

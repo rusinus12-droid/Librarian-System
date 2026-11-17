@@ -43,7 +43,9 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data });
     assert.equal(firstResult.ok, true);assert.equal(firstResult.completed,false);assert.equal(firstResult.reason,'cold_start_partial_adopted');assert.equal(firstResult.adoption.durable,true);
     assert.equal(firstResult.awaitingUserReview, false, 'failed generation must be retained without the retired manual adoption flow');
     assert.equal(firstResult.failedChunks,1);
-    assert.equal(runtime.llmCalls.length, 2, 'one primary per turn; no unapproved repair');
+    // One primary per turn, plus the one automatic retry of the rejected turn (Cold Start retries
+    // a failed turn once at any batch size since 2026-11-05). The retry also failed here.
+    assert.equal(runtime.llmCalls.length, 3, 'one primary per turn and one automatic retry; no other repair');
 
     const failedStatus = await runtime.hayaku.recovery.status();
     assert.equal(failedStatus.coldStartRun.available, true, 'failed checkpoint must remain durable');
@@ -52,7 +54,8 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data });
     assert.equal(failedStatus.coldStartRun.run.chunks[0].status, 'verified');
     assert.equal(failedStatus.coldStartRun.run.chunks[1].status, 'failed');
     assert.equal(failedStatus.coldStartRun.run.chunks[1].failedAnalysisId, '', 'checkpoints do not depend on a separate default failure archive');
-    assert.ok(failedStatus.failedAnalysis.summaries.some(row => row.turn === 2));
+    // Failure summaries are read through their own call, not the status snapshot.
+    assert.ok((await runtime.hayaku.recovery.failedAnalysis.summaries()).some(row => row.turn === 2));
     assert.ok(failedStatus.coldStartRun.run.chunks[0].body, 'verified chunk body must survive failure');
 
     runtime.setLlmResponder(async () => ({
@@ -70,7 +73,7 @@ const assistant = (id, data) => ({ role: 'assistant', chatId: id, id, data });
     assert.equal(resumed.completed, true);
     assert.equal(resumed.packets, 2);
     assert.equal(resumed.reusedChunks, 1, 'the verified first chunk must not be called again');
-    assert.equal(runtime.llmCalls.length, 3, 'resume must add exactly one Other Ax call');
+    assert.equal(runtime.llmCalls.length, 4, 'resume must add exactly one Other Ax call');
 
     for (const call of runtime.llmCalls) {
       assert.equal(call.mode, 'otherAx');

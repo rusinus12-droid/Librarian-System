@@ -25,7 +25,7 @@ async function serverFixture(options={}){
  };
  const start=async()=>{
   const x=await fixture({snapshot:options.snapshot,transformSource:options.transformSource,contextGlobals:options.contextGlobals,args:{memory_suite_server_mode:options.mode||'server_only',memory_suite_server_url:url,...options.args},host:{...options.host,pluginStorage:backend,safeLocalStorage:backend,getLocalPluginStorage:async()=>backend,nativeFetch:async(u,i)=>{
-   requests.push({url:u,method:i?.method});if(!u.startsWith(url+'/')&&hooks.externalFetch)return await hooks.externalFetch(u,i);await hooks.beforeServerRequest?.(u,i);let body;
+   requests.push({url:u,method:i?.method,body:typeof i?.body==='string'?i.body:undefined});if(!u.startsWith(url+'/')&&hooks.externalFetch)return await hooks.externalFetch(u,i);await hooks.beforeServerRequest?.(u,i);let body;
    if(u.endsWith('/v1/kv/batch')){body=JSON.parse(i.body);batches.push(body);await hooks.beforeBatch?.(body);}
    const r=await fetch(u,i);if(body)await hooks.afterBatch?.(body,r);return r;
   }}});
