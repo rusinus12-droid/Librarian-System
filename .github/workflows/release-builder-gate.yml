@@ -116,6 +116,13 @@ jobs:
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
             PROGRAM/tests/gradia_npc_disposition_test.cjs \
+            PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
+            PROGRAM/tests/libra_micro_claim_changed_retry_test.cjs \
+            PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
+            PROGRAM/tests/libra_text_equivalent_revision_test.cjs \
+            PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
+            PROGRAM/tests/gradia/context-degradation.test.cjs \
             PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \

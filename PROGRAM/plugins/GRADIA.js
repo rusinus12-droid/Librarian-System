@@ -4862,6 +4862,41 @@ ${BIANCA_PERSONA_TEXT}`;
     if (!removedChars) return { changed: false, body: serialized };
     return { changed: true, body: JSON.stringify(next), removedChars };
   };
+  // The NPC disposition block marks its long explanation as detail. When a request still does not fit
+  // after the output and shared-reference steps, each detail section is replaced by its condensed form,
+  // so the user's fixed stances and the NPC list survive on a small model instead of failing the turn.
+  const NPC_DISPOSITION_DETAIL_CLOSE = '[END NPC DISPOSITION DETAIL]';
+  const NPC_DISPOSITION_BLOCK_END = '[END NPC DISPOSITION]';
+  const NPC_DISPOSITION_BLOCK_RE = /\[NPC DISPOSITION \(반응 경향성\)[^\]\n]*\][\s\S]*?\[END NPC DISPOSITION\]\n?/g;
+  const npcDispositionDetailOpen = condensed => `[NPC DISPOSITION DETAIL | condensed: ${String(condensed || '').replace(/[\[\]\n]/g, ' ')}]`;
+  const NPC_DISPOSITION_DETAIL_RE = /\[NPC DISPOSITION DETAIL \| condensed: ([^\]\n]*)\]\n[\s\S]*?\[END NPC DISPOSITION DETAIL\]/g;
+  // dropBlock: the last resort, for a model with no room even for the condensed block. The final
+  // pass keeps its own short disposition guard either way.
+  const compactNpcDispositionDetail = (serialized, { dropBlock = false } = {}) => {
+    let parsed;
+    try { parsed = JSON.parse(serialized); } catch (_) { return { changed: false, body: serialized }; }
+    let removedChars = 0;
+    const walk = value => {
+      if (typeof value === 'string') {
+        if (dropBlock) {
+          if (!value.includes('[NPC DISPOSITION (')) return value;
+          return value.replace(NPC_DISPOSITION_BLOCK_RE, whole => { removedChars += whole.length; return ''; });
+        }
+        if (!value.includes('[NPC DISPOSITION DETAIL | ')) return value;
+        return value.replace(NPC_DISPOSITION_DETAIL_RE, (whole, condensed) => {
+          const next = condensed.trim();
+          removedChars += whole.length - next.length;
+          return next;
+        });
+      }
+      if (Array.isArray(value)) return value.map(walk);
+      if (value && typeof value === 'object') { for (const key of Object.keys(value)) value[key] = walk(value[key]); }
+      return value;
+    };
+    const next = walk(parsed);
+    if (!removedChars) return { changed: false, body: serialized };
+    return { changed: true, body: JSON.stringify(next), removedChars };
+  };
   const recordContextDegradation = record => {
     try {
       const normalized = Object.freeze({ ...record, dropped: Object.freeze([...new Set(record.dropped || [])]) });
@@ -5108,6 +5143,30 @@ ${BIANCA_PERSONA_TEXT}`;
                 workingBody = trimmed.body; base = next;
                 degradation.dropped.push('shared_reference');
                 degradation.referenceRemovedChars = trimmed.removedChars;
+              }
+            }
+          }
+          // 3) Condense the NPC disposition explanation; the user's fixed stances stay.
+          if (!base.fits) {
+            const condensed = compactNpcDispositionDetail(workingBody);
+            if (condensed.changed) {
+              const next = budgetMeter.inspect(input(condensed.body,'',condensed.body));
+              if (next.status === 'available') {
+                workingBody = condensed.body; base = next;
+                degradation.dropped.push('npc_disposition_detail');
+                degradation.npcDispositionRemovedChars = condensed.removedChars;
+              }
+            }
+          }
+          // 4) Leave the disposition out of this stage rather than fail the turn.
+          if (!base.fits) {
+            const dropped = compactNpcDispositionDetail(workingBody, { dropBlock: true });
+            if (dropped.changed) {
+              const next = budgetMeter.inspect(input(dropped.body,'',dropped.body));
+              if (next.status === 'available') {
+                workingBody = dropped.body; base = next;
+                degradation.dropped.push('npc_disposition');
+                degradation.npcDispositionRemovedChars = Number(degradation.npcDispositionRemovedChars || 0) + dropped.removedChars;
               }
             }
           }
@@ -26168,8 +26227,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const defaultCovers = entry.default ? present.filter(name => !covered(name)).slice(0, 6) : [];
     const duty = NPC_DISPOSITION_STAGE_DUTY[stageName] || 'Keep every NPC’s stance toward the persona on its fixed disposition, expressed through that NPC’s lore.';
     const persona = npcDispositionDisplayName();
+    const gate = forcedBondModeGate(settings);
+    const condensed = [
+      `Fixed by the user toward the persona (${persona}); it never drifts, and lore decides only how it shows.`,
+      gate === 'staging'
+        ? 'Only color the expression and tone of NPC acts the input states; invent none.'
+        : 'An engaged NPC shows it through a concrete, visible act or line in their own voice.',
+      gate === 'rp' ? 'Write the NPC side only.' : ''
+    ].filter(Boolean).join(' ');
     return [
       '[NPC DISPOSITION (반응 경향성) — USER-FIXED STANCE TOWARD THE PERSONA]',
+      npcDispositionDetailOpen(condensed),
       `The user has fixed how the NPCs below are disposed toward the user persona (${persona}). This is a deliberate user directive that bends the cast away from their default lore attitude toward the persona. It is not flavor and not a reading to adjust.`,
       '- WHAT IS FIXED: the direction and strength of each NPC’s stance toward the persona. It does not drift: a kind act, a gift, an apology, flattery, good looks, or a calm scene never softens a hostile or disliking NPC, and a slight never sours an affectionate one. Only the user changes it. Do not bias toward warmth or toward conflict beyond what the disposition says.',
       '- WHAT LORE DECIDES: how the stance shows. Keep each NPC’s lore personality, voice, speech habits, values, social position, abilities, and means intact, and reinterpret their stance toward the persona through the disposition. Ask how this exact person would act on the persona if they felt this way: a reserved character shows hostility as icy, deliberate contempt; a hot-tempered one as an outburst; a schemer as a calculated humiliation. The result is a new reading built from the lore, never a generic villain or a generic sweetheart.',
@@ -26181,12 +26249,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...npcDispositionModeLines(settings),
       'LEVELS IN USE:',
       ...levels.map(level => `- ${npcDispositionLevelLine(level)}`),
+      NPC_DISPOSITION_DETAIL_CLOSE,
       'DISPOSITIONS:',
       ...rows,
       entry.default
         ? `- Every other NPC: ${entry.default} (${NPC_DISPOSITION_LEVELS[entry.default].label}) by default${defaultCovers.length ? ` · in the scene now: ${defaultCovers.join(', ')}` : ''}.`
         : '- Every other NPC: follows lore (no default disposition).',
-      `STAGE DUTY: ${duty}`
+      npcDispositionDetailOpen(''),
+      `STAGE DUTY: ${duty}`,
+      NPC_DISPOSITION_DETAIL_CLOSE,
+      NPC_DISPOSITION_BLOCK_END
     ].filter(Boolean).join('\n');
   };
   // The final pass polishes the candidate; it must not drift an NPC back toward their lore default.
@@ -47086,11 +47158,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const resultsContextDegradationSection = () => {
     const record = Runtime.lastContextDegradation;
     if (!record) return null;
-    const label = { output_tokens: '출력 토큰 축소', shared_reference: '공유 참조 축소', memory_evidence: '기억 증거 생략' };
+    const label = { output_tokens: '출력 토큰 축소', shared_reference: '공유 참조 축소', npc_disposition_detail: 'NPC 반응 경향성 요약', npc_disposition: 'NPC 반응 경향성 생략(이 단계)', memory_evidence: '기억 증거 생략' };
     const dropped = Array.isArray(record.dropped) ? record.dropped : [];
     const detail = [];
     if (dropped.includes('output_tokens')) detail.push(`출력 ${Number(record.outputBefore || 0).toLocaleString('ko-KR')} → ${Number(record.outputAfter || 0).toLocaleString('ko-KR')} 토큰`);
     if (dropped.includes('shared_reference')) detail.push(`공유 참조 ${Number(record.referenceRemovedChars || 0).toLocaleString('ko-KR')}자 제외`);
+    if (dropped.includes('npc_disposition_detail') || dropped.includes('npc_disposition')) detail.push(`경향성 설명 ${Number(record.npcDispositionRemovedChars || 0).toLocaleString('ko-KR')}자 제외`);
     if (dropped.includes('memory_evidence')) detail.push(`기억 증거 ${Number(record.evidenceChars || 0).toLocaleString('ko-KR')}자 미주입`);
     const meta = `${record.stage || '요청'} · 한도 ${Number(record.contextLimit || 0).toLocaleString('ko-KR')} 토큰`;
     return resultsSection('컨텍스트 조정', meta, [
