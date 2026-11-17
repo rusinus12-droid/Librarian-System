@@ -54313,7 +54313,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // Automatic use is a projection of verified records, never a rewrite of source/Canonical bytes.
     const collectMemoryReviews=async(context,manifest,view)=>{
       const scope=context.scope,worldline=string(view?.head?.worldlineId||manifest?.activeWorldlineId||'main');
-      const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[];
+      const policy=await readMemoryReviewPolicy(scope,worldline),head=view?.head,rows=[],internal=new Map(),unavailable=[],reviewProofs=[];
       const dependencies=new Map([[policy.key,policy.saved]]);
       dependencies.set(key.manifest(scope),await storage.getVerifiedJson(key.manifest(scope),scope,null));
       dependencies.set(key.continuityState(scope),await storage.getVerifiedJson(key.continuityState(scope),scope,null));
@@ -54346,6 +54346,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(!unifiedInheritedRef(ref)&&Number(ref.sessionEpoch||0)===0){const batch=currentPairs.slice(Number(ref.turnRange.start)-1,Number(ref.turnRange.end));
             unifiedAssert(batch.length===BATCH_SIZE&&sourceDigest(batch)===record.sourceDigest,'MEMORY_REVIEW_CURRENT_SOURCE_CHANGED');}
           dependencies.set(ref.key,record);
+          const canonicalProof=getConsumedCanonicalProof(record);if(canonicalProof)reviewProofs.push(canonicalProof);
           const expanded=[...selected];
           for(const p of selected.filter(p=>p.reason==='same_source_order_conflict')){
             const origin=asArray(record.canonicalArtifact.facts).find(f=>f.tempFactId===p.fact);
@@ -54373,6 +54374,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
         if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
+        reviewProofs.push(activeMicroConsumptionProof(active));
         const validated=microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey);if(!validated)continue;
         for(const [index,claim] of asArray(active.record.claims).entries()){
           const intent=asObject(claim.stateIntent),admission=microPending.find(p=>p.turn===pair.turn&&p.claimIndex===index);
@@ -54388,7 +54390,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }
       const identity={scopeKey:scope.scopeKey,worldlineId:worldline,restoreGeneration:Number(state.microRestoreGeneration||0),rows,
         headDigest:digest(head),dependencies:[...dependencies].map(([k,v])=>[k,digest(v)])};
-      return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,registry};
+      return {schema:'libra.memory_review_inventory.v1',...identity,previewDigest:digest(identity),unavailable,policy,internal,dependencies,reviewProofs,registry};
     };
     const projectMemoryReviewForResponse=async(scope,manifest,view,options={})=>{
       const candidateContext = options.context || (options.readOnly === true ? options.context : null);
@@ -54403,7 +54405,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // proofs and boundary. Pinning their exact bytes here made any unrelated manifest write
       // (stats, timestamps) invalidate every response context, so only review inputs are bound.
       const broad=new Set([key.manifest(scope),key.continuityState(scope),key.stateWorldlineMeta(scope),key.entityRegistry(scope)]);
-      for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)&&(k===catalog.policy.key||catalog.rows.length)){proofs.push(stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      if(!proofKeys.has(catalog.policy.key)){proofs.push(stateDecisionConsumptionProof(catalog.policy.key,catalog.policy.saved));proofKeys.add(catalog.policy.key);}
+      if(catalog.rows.length){
+        for(const proof of asArray(catalog.reviewProofs)){proofs.push(proof);for(const k of [proof.recordKey,proof.headKey,proof.receiptKey].filter(Boolean))proofKeys.add(k);}
+        for(const [k,v] of catalog.dependencies)if(!proofKeys.has(k)&&!broad.has(k)){proofs.push(getConsumedCanonicalProof(v)||stateDecisionConsumptionProof(k,v));proofKeys.add(k);}
+      }
       const applied=[],rejected=[],blocked=[],reviewTransitions=[];
       const autoApply=(await loadSettings()).memoryStateAutoApply!==false;
       const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
