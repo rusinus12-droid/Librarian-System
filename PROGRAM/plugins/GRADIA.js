@@ -40675,6 +40675,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (previous && Date.now() < previous.until) return { absent: true, code: previous.code };
     libOwnerAbsentUntil.delete(cacheKey);
     let answer;
+    // Availability first: a short describe (3 s) answers whether the owner is running at all, so a
+    // plugin that is turned off or unloaded does not hold the read for the long select deadline.
+    try {
+      const probe = await libOwnerReader().describe(scope, [owner]);
+      if (!probe?.scopes?.[owner]) answer = { absent: true, code: probe?.unavailable?.[owner] || 'LIB_READ_OWNER_UNAVAILABLE' };
+    } catch (error) {
+      if (signal?.aborted || /CANCELED/.test(error?.code || '')) throw error;
+      answer = { absent: true, code: error?.unavailable?.[owner] || error?.code || 'LIB_READ_OWNER_UNAVAILABLE' };
+    }
+    if (answer?.absent) {
+      noteLibOwnerLost(owner, answer.code);
+      if (['LIB_READ_TIMEOUT', 'LIB_READ_IPC_UNAVAILABLE'].includes(answer.code)) {
+        libOwnerAbsentUntil.set(cacheKey, { until: Date.now() + 5000, code: answer.code });
+        if (libOwnerAbsentUntil.size > 64) libOwnerAbsentUntil.delete(libOwnerAbsentUntil.keys().next().value);
+      }
+      return answer;
+    }
     // A refusal or timeout here costs only this owner, and it is asked again next turn.
     try { answer = await libOwnerReader().select(owner, scope, queryText, signal, hints); }
     catch (error) {
