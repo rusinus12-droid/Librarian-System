@@ -241,6 +241,7 @@ jobs:
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
             PROGRAM/tests/gradia_world_dynamics_aide_test.cjs \
             PROGRAM/tests/gradia_profile_initiative_test.cjs \
+            PROGRAM/tests/gradia_rp_pacing_prompt_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/libra_story_clock_accumulation_runtime_test.cjs \
