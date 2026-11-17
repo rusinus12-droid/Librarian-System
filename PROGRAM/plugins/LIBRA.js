@@ -62198,6 +62198,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
             }, 250);
           }
+          if (!state.disposed && result?.status === 'stale_source'
+            && result?.reason === 'micro_publish_claim_changed'
+            && request.retryClaimChanged !== true) {
+            setTimeout(async () => {
+              if (state.disposed) return;
+              try {
+                const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
+                if (active?.status !== 'verified' || !active.receipt?.revisionId
+                  || active.receipt.revisionId === revisionId) return;
+                const existingMicro = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn);
+                if (existingMicro?.status === 'verified'
+                  && existingMicro.record?.sourceRevisionId === active.receipt.revisionId) return;
+                void scheduleMicroForTurn(scope, worldlineId, sessionEpoch, turn, active.receipt.revisionId,
+                  { ...request, manual: true, retryClaimChanged: true, reason: 'micro_claim_changed_retry' });
+              } catch (_) {}
+            }, 250);
+          }
           if (!state.disposed) setTimeout(() => { void repairMicroGapsAfterPublication(scope).catch(() => null); }, 0);
           return result;
         }).catch(error => {
