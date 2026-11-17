@@ -252,6 +252,14 @@ jobs:
             PROGRAM/tests/libra_text_equivalent_revision_test.cjs \
             PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
             PROGRAM/tests/gradia/context-degradation.test.cjs \
+            PROGRAM/tests/gradia_three_owner_pipeline_test.cjs \
+            PROGRAM/tests/gradia/evidence-bridge.test.cjs \
+            PROGRAM/tests/gradia_optional_memory_runtime_test.cjs \
+            PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs \
+            PROGRAM/tests/gradia_owner_handback_test.cjs \
+            PROGRAM/tests/gradia_plugin_mode_long_chat_test.cjs \
+            PROGRAM/tests/gradia_plugin_read_test.cjs \
+            PROGRAM/tests/gradia_three_owner_allocation_test.cjs \
             PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
