@@ -53081,6 +53081,45 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ? { matched: true, mode: 'append_target_time_affinity' }
       : { matched: false, mode: 'mismatch' };
   };
+  // otherAX canonical mode writes a turn's packet inside afterRequest, and nothing else does. When
+  // the host never calls afterRequest for a reply (live chat 2026-11-17, T12: the reply finished,
+  // but neither HAYAKU nor LIBRA saw afterRequest), the turn was left as 패킷 누락 until someone
+  // pressed repair. This runs that same single-turn repair once in its place: the one otherAX call
+  // the turn would have spent anyway. A slow afterRequest gets a grace period first, and a turn
+  // whose afterRequest ran (and failed) is left to the user as before.
+  const MISSED_AFTER_REQUEST_REPAIR_DELAY_MS = 15000;
+  const scheduleMissedAfterRequestCanonicalPacket = pending => {
+    const scopeKey = text(pending?.scope?.key);
+    const turn = Math.max(0, Number(pending?.lineage?.targetPairIndex || 0) || 0);
+    const requestNonce = text(pending?.lineage?.requestNonce);
+    if (!scopeKey || !turn) return false;
+    const state = Memory.nativeRecovery;
+    if (!(state.missedAfterRequestRepairs instanceof Set)) state.missedAfterRequestRepairs = new Set();
+    const key = `${scopeKey}|${turn}|${requestNonce}`;
+    if (state.missedAfterRequestRepairs.has(key)) return false;
+    state.missedAfterRequestRepairs.add(key);
+    pushOperationLog('native_recovery:missed_after_request_repair_scheduled', { scopeKey, pairIndex: turn, requestNonce, delayMs: MISSED_AFTER_REQUEST_REPAIR_DELAY_MS }, 'info');
+    setTimeout(async () => {
+      const skip = reason => pushOperationLog('native_recovery:missed_after_request_repair_skipped', { scopeKey, pairIndex: turn, requestNonce, reason }, 'info');
+      try {
+        if (Memory.unloaded) return;
+        if (pending.afterRequestRepair) return skip('after_request_ran');
+        // The otherAX canonical switch is the opt-in: it already spends one otherAX call per turn.
+        // Background auto repair is a separate sweep over old debt and does not gate this.
+        if (Memory.settings?.otherAxCanonicalPacket !== true) return skip('otherax_canonical_off');
+        const scope = await RisuCompat.currentChatScope().catch(() => null);
+        if (scope?.key !== scopeKey) return skip('chat_changed');
+        pushOperationLog('native_recovery:missed_after_request_repair_started', { scopeKey, pairIndex: turn, requestNonce }, 'info');
+        const result = await runNativeMissingTurnBatch({ scopeKey, targetTurns: [turn] });
+        pushOperationLog('native_recovery:missed_after_request_repair_finished', {
+          scopeKey, pairIndex: turn, requestNonce, ok: result?.ok === true, reason: text(result?.reason || ''), physicalCalls: Number(result?.physicalCalls || 0)
+        }, result?.ok === true ? 'success' : 'warn');
+      } catch (error) {
+        pushOperationLog('native_recovery:missed_after_request_repair_finished', { scopeKey, pairIndex: turn, requestNonce, ok: false, reason: text(error?.message || error) }, 'warn');
+      }
+    }, MISSED_AFTER_REQUEST_REPAIR_DELAY_MS);
+    return true;
+  };
   const finalizedChatPacketCandidate = (pending, liveScope) => {
     if (!pending?.scope?.key || liveScope?.key !== pending.scope.key || liveScope?.chatMessagesAvailable !== true) return null;
     const snapshot = authoritativeChatSnapshot(liveScope.chatMessages, liveScope);
@@ -53256,6 +53295,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
                   Memory.lastStorageCapture,
                   !packetWriteExpected || vaultResult.durable === true ? 'info' : 'warn'
                 );
+                if (packetWriteExpected && !packetMarkersPresent && vaultResult.durable === true
+                  && pending.otherAxCanonicalPacket === true && !pending.afterRequestRepair) {
+                  Memory.lastStorageCapture.missedAfterRequestRepairScheduled = scheduleMissedAfterRequestCanonicalPacket(pending);
+                }
               }
             } else if (!Memory.finalizedCaptureInFlight.has(key)) {
               Memory.finalizedCaptureInFlight.add(key);

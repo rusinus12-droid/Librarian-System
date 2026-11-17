@@ -53370,6 +53370,44 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (survivor) await storage.setVerifiedJson(storageKey, survivor, scope);
       return survivor;
     };
+    // An earlier receipt of a turn that still matches the current one in everything Micro reads:
+    // the same user and assistant messages, the same analyzed text (sourceDigest), and raw bytes
+    // differing only in LightBoard illustration/lazy/LBDATA blocks. Other raw-only variants (such
+    // as stage markers or hidden raw rerolls) still produce a fresh Micro provenance.
+    const stripIllustrationRawOnly = value => string(value || '')
+      .replace(/\[LBDATA START\][\s\S]*?(?:\[LBDATA END\]|$)/gi, '')
+      .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\s\S]*?<\/lb-xnai\s*>/gi, '')
+      .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '')
+      .replace(/<lb-lazy\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\s\S]*?<\/lb-lazy\s*>/gi, '')
+      .replace(/<lb-lazy\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const sameIllustrationNeutralRaw = (leftReceipt, rightReceipt) => {
+      if (!leftReceipt?.rawSourcePacket || !rightReceipt?.rawSourcePacket) return false;
+      for (const role of ['user', 'assistant']) {
+        const leftSegs = asArray(leftReceipt.rawSourcePacket?.[role]?.segments);
+        const rightSegs = asArray(rightReceipt.rawSourcePacket?.[role]?.segments);
+        if (!leftSegs.length || leftSegs.length !== rightSegs.length) return false;
+        for (let i = 0; i < leftSegs.length; i += 1) {
+          if (string(leftSegs[i]?.rawType || '') !== string(rightSegs[i]?.rawType || '')) return false;
+          if (stripIllustrationRawOnly(leftSegs[i]?.rawValue) !== stripIllustrationRawOnly(rightSegs[i]?.rawValue)) return false;
+        }
+      }
+      return true;
+    };
+    const readTextEquivalentReceipt = async (scope, worldlineId, sessionEpoch, turn, revisionId, current) => {
+      const receiptKey = key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, revisionId);
+      let receipt;
+      try { receipt = await storage.getVerifiedJson(receiptKey, scope, null); } catch (_) { return null; }
+      const sameMessages = role => digest(asArray(receipt?.[role]?.chatIds)) === digest(asArray(current?.[role]?.chatIds));
+      if (receipt?.schema !== 'libra.completed_turn_receipt.v1' || receipt.scopeKey !== current?.scopeKey
+        || receipt.worldlineId !== worldlineId || Number(receipt.sessionEpoch) !== Number(sessionEpoch)
+        || Number(receipt.turn) !== Number(turn) || receipt.revisionId !== revisionId
+        || completedTurnRevisionId(receipt) !== revisionId || receipt.sourceDigest !== current.sourceDigest
+        || !sameMessages('user') || !sameMessages('assistant')
+        || !sameIllustrationNeutralRaw(receipt, current)) return null;
+      return { status: 'verified', reason: '', receipt, receiptKey };
+    };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
       const empty = (status, reason = '') => ({ status, reason, record: null, head: null });
       // State projection only needs records containing a state intent. Exclusion
@@ -53414,21 +53452,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try { head = candidateHead === undefined ? await storage.getVerifiedJson(headKey, scope, null) : candidateHead; }
       catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
       if (!head) return empty('missing', 'micro_head_absent');
+      // A newer receipt of the same messages with the same analyzed text (only raw-only content such
+      // as LightBoard illustrations changed) keeps the analysis bound to the earlier receipt. Live
+      // chat 2026-11-17: illustrations made new receipts for T8-T11 and their Micro read as missing.
+      const bound = head.sourceRevisionId !== active.receipt.revisionId && head.sourceDigest === active.receipt.sourceDigest
+        ? (await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, head.sourceRevisionId, active.receipt) || active)
+        : active;
       const recordKey = key.microMemory(scope, worldlineId, sessionEpoch, turn,
-        active.receipt.revisionId, head.analysisRevisionId);
-      if (head.schema !== 'libra.micro_memory_head.v1' || head.scopeKey !== active.receipt.scopeKey
+        bound.receipt.revisionId, head.analysisRevisionId);
+      if (head.schema !== 'libra.micro_memory_head.v1' || head.scopeKey !== bound.receipt.scopeKey
         || head.worldlineId !== worldlineId || Number(head.sessionEpoch) !== Number(sessionEpoch)
-        || Number(head.turn) !== Number(turn) || head.sourceRevisionId !== active.receipt.revisionId
-        || head.sourceDigest !== active.receipt.sourceDigest || head.recordKey !== recordKey) {
+        || Number(head.turn) !== Number(turn) || head.sourceRevisionId !== bound.receipt.revisionId
+        || head.sourceDigest !== bound.receipt.sourceDigest || head.recordKey !== recordKey) {
         return empty('stale_source', 'micro_head_binding_changed');
       }
       let record;
       try { record = candidateRecord === undefined ? await storage.getVerifiedJson(recordKey, scope, null) : candidateRecord; }
       catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
-      if (record?.schema !== 'libra.micro_memory.v1' || record.scopeKey !== active.receipt.scopeKey
-        || record.sourceRevisionId !== active.receipt.revisionId
-        || record.sourceDigest !== active.receipt.sourceDigest
-        || record.receiptKey !== active.receiptKey
+      if (record?.schema !== 'libra.micro_memory.v1' || record.scopeKey !== bound.receipt.scopeKey
+        || record.sourceRevisionId !== bound.receipt.revisionId
+        || record.sourceDigest !== bound.receipt.sourceDigest
+        || record.receiptKey !== bound.receiptKey
         || record.analysisRevisionId !== head.analysisRevisionId
         || record.analysisStatus !== head.analysisStatus) {
         return empty('pending_reconciliation', 'micro_record_binding_invalid');
@@ -53462,8 +53506,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
         if (digest(finalHead) !== digest(head)) return empty('stale_source', 'micro_head_changed_during_read');
       }
-      return { status: 'verified', reason: '', record, receipt: active.receipt,
-        head, recordKey, headKey };
+      // The record stays bound to its own receipt; a text-equivalent newer receipt is named beside it.
+      return { status: 'verified', reason: '', record, receipt: bound.receipt,
+        head, recordKey, headKey, ...(bound !== active ? { currentReceipt: active.receipt, carriedFromRevisionId: bound.receipt.revisionId } : {}) };
     };
     const readMicroReaderTurn = async (scope, turn, options = {}) => {
       const active = await readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn, options);
@@ -74062,7 +74107,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const current = await resolveContext();
       if (string(current?.scope?.scopeKey || '') !== token.scopeKey) return { ok: false, reason: 'stale_source_revision' };
       const latest = await captureLensSourceToken(current, token.turnRange.start, token.turnRange.end);
-      if (!latest || latest.worldlineId !== token.worldlineId || latest.sourceRevisionId !== token.sourceRevisionId) {
+      if (!latest || latest.worldlineId !== token.worldlineId || latest.sourceDigest !== token.sourceDigest) {
         return { ok: false, reason: 'stale_source_revision' };
       }
       return { ok: true, reason: '', context: current };
@@ -74108,7 +74153,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           revisions.set(rangeKey, revision);
         }
         const revision = revisions.get(rangeKey);
-        return revision != null && revision.bodyDigest === record.sourceDigest && revision.revisionId === record.sourceRevisionId;
+        // The analyzed text decides: a raw-only change (LightBoard illustrations, packets) keeps the
+        // note current. Live chat 2026-11-17: illustrations made the T6-T10 notes stale.
+        return revision != null && revision.bodyDigest === record.sourceDigest;
       };
     };
 
@@ -74937,7 +74984,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const recordKeyValue = lensRecordKey(token.worldlineId, token.turnRange);
       const existingRecords = trialRun ? {} : await loadLensRecordsMap(scope, lens.lensId);
       const existing = existingRecords[recordKeyValue] || null;
-      if (opts.skipIfCurrent === true && existing && existing.sourceRevisionId === token.sourceRevisionId && existing.instructionRevision === lens.instructionRevision) {
+      if (opts.skipIfCurrent === true && existing && existing.sourceDigest === token.sourceDigest && existing.instructionRevision === lens.instructionRevision) {
         return { ok: true, status: 'unchanged', lensId: lens.lensId, trialRun, record: clone(existing) };
       }
       let canonicalSummary = '';
