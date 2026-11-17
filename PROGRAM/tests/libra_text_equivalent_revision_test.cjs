@@ -56,6 +56,9 @@ const microCase = async () => {
     f.chat.message[1].data = illustrated;
     const preRecaptureReader = await f.r.api.readActiveMicroMemoryForTurn(1);
     assert.equal(preRecaptureReader.status, 'verified', 'Micro reader stays verified before receipt recapture on illustration-only raw edit: ' + JSON.stringify({status: preRecaptureReader.status, reason: preRecaptureReader.reason}));
+    const preRecaptureStatus = await f.r.api.getReceiptRecoveryStatus();
+    assert.equal(preRecaptureStatus.receiptStages?.[0]?.status, 'stale_source', 'receipt stage reports stale_source until recapture');
+    assert.equal((preRecaptureStatus.microJobs || []).find(job => Number(job.turn) === 1)?.status, 'succeeded', 'micro job stage remains succeeded on text-equivalent raw edit');
     await recapture();
     assert.notEqual(await receiptRevision(), analyzed, 'the raw change still makes a new receipt (formula unchanged)');
     const carried = await f.r.api.debugReadActiveMicroMemory(1);

@@ -42014,11 +42014,20 @@ function createLibraReadonlySourceContext(owner) {
                 reason:active.status==='verified'?'':reason||job?.reason||active.reason||'',
                 cycle:Number(job?.cycle||1),attempts:Number(job?.attempts||0),
                 writeOutcome:string(job?.writeOutcome||'not_started')});
-             if(active.status==='verified'){
+             let microActive=active.status==='verified'?active:null;
+             let microProjected=false;
+             if(!microActive&&active.status==='stale_source'&&active.reason==='current_pair_revision_changed'){
+               try {
+                 const projected=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn,
+                   {context,pairs,allowProjectedEquivalent:true});
+                 if(projected.status==='verified'){microActive=projected;microProjected=true;}
+               } catch (_) {}
+             }
+             if(microActive){
                let stage;
-               try {stage=await readMicroStageStatus(scope,active,{context,pairs});}
-               catch (_) {stage={receiptRef:active.receiptKey,revisionId:active.receipt.revisionId,
-                 sourceDigest:active.receipt.sourceDigest,turn:active.receipt.turn,
+               try {stage=await readMicroStageStatus(scope,microActive,{context,pairs,...(microProjected?{allowProjectedEquivalent:true}:{})});}
+               catch (_) {stage={receiptRef:microActive.receiptKey,revisionId:microActive.receipt.revisionId,
+                 sourceDigest:microActive.receipt.sourceDigest,turn:microActive.receipt.turn,
                  status:'unavailable',reason:'micro_status_read_unavailable'};}
                 microJobs.push(microSettingsError
                   ? {...stage,scopeKey:scope.scopeKey,status:'unavailable',reason:'memory_settings_unavailable'}
@@ -87017,7 +87026,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       microRows=Array.isArray(status.microJobs)?status.microJobs:[];
     const receiptLabel={verified:'저장 확인됨',missing:'저장 대기',queued:'복구 대기',running:'복구 중',
       pending_write:'쓰기 결과 확인 중',failed:'저장 실패',unrecoverable:'원문과 영수증을 찾을 수 없음',
-      paused:'복구 일시중단',stale:'원문 변경으로 이전 작업 무효',unavailable:'상태 확인 불가',
+      paused:'복구 일시중단',stale:'원문 변경으로 이전 작업 무효',stale_source:'원문 변경 · 재확인 필요',
+      unavailable:'상태 확인 불가',
       pending_reconciliation:'저장 확인 중'};
     const microLabel={succeeded:'분석 완료',never_started:'분석 미시작',queued:'분석 대기',running:'분석 중',publish_ready:'발행 확인 필요',
       failed:'분석 실패',unknown:'이전 분석 결과 불명확',OFF:'Micro 꺼짐',
@@ -87025,7 +87035,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const segmentLabel={saved:'저장됨',partial:'부분 저장',missing:'누락',failed:'분석 실패',pending:'미완성 구간',running:'분석 중',off:'꺼짐',unknown:'확인 전'};
     const receiptCard=row=>{
       const busy=!!state.busy['receipt:'+row.turn];
-      const retryable=['missing','failed','pending_write','queued','paused','unavailable','running'].includes(row.status)
+      const retryable=['missing','failed','pending_write','queued','paused','unavailable','running','stale_source'].includes(row.status)
         && row.reason!=='journal_read_unavailable';
       return guiEl('div',{class:"note",dataset:{receiptTurn:String(row.turn),receiptStatus:row.status}},[
         guiEl('strong',{text:`T${row.turn} 원문 영수증`}),
@@ -88033,7 +88043,7 @@ advanced
     overlay.querySelector('.dialog__actions').replaceChildren(guiEl('button',{class:'btn',type:'button',text:'닫기',onClick:()=>overlay.remove()}),apply);overlay.addEventListener('click',event=>{if(event.target===overlay)overlay.remove();});Gui.app.appendChild(overlay);bindApprovedOverlayKeyboard(overlay,()=>overlay.remove());return overlay;
   };
   const libraReceiptRepairEligible = (row, scopeKey) => row?.scopeKey === scopeKey
-    && ['missing', 'failed', 'pending_write', 'queued', 'paused', 'unavailable'].includes(row.status)
+    && ['missing', 'failed', 'pending_write', 'queued', 'paused', 'unavailable', 'stale_source'].includes(row.status)
     && row.reason !== 'journal_read_unavailable';
   const inspectLibraMemoryMaintenance = async () => {
     const context = await LibraMemoryCore.resolveContext().catch(() => ({ scope: {} }));
