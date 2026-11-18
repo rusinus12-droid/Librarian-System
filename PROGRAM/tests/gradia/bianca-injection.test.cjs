@@ -12,8 +12,8 @@ const PERSONA_ANCHORS=[
   'Level 3 — Direct, Explicit'            // §9 직접 묘사 등급
 ];
 const CONTRACT_ANCHORS=['NSFW GUIDANCE — EXPLICIT:','Boundaries Are Facts','Descriptive Register — Level 3'];
-async function pipelineFixture(runtime={}){
-  const prompts=[],h=await load({api:{nativeFetch:async(_url,init)=>{
+async function pipelineFixture(runtime={},loadOptions={}){
+  const prompts=[],h=await load({...loadOptions,api:{nativeFetch:async(_url,init)=>{
     const body=JSON.parse(init.body);prompts.push(body);
     const system=body.messages.filter(m=>m.role==='system').map(m=>typeof m.content==='string'?m.content:JSON.stringify(m.content)).join('\n');
     const patch=system.match(/Return the compact (aide_\w+) patch JSON/),analysis=system.match(/Run (\w+) analysis now/);
@@ -58,7 +58,11 @@ test('비앙카 투입 injects the whole persona into the first draft only and s
 
 test('비앙카 투입 adds one persona copy per turn, not one per stage call',async()=>{
   const runOnce=async bianca=>{
-    const f=await pipelineFixture({bianca_inject:bianca?'true':'false',nsfw_mode:'explicit',nsfw_guidance_enabled:'true'});
+    // Pin VM Math.random so stylePack/sceneVariance selection stays identical between off and on runs.
+    const f=await pipelineFixture(
+      {bianca_inject:bianca?'true':'false',nsfw_mode:'explicit',nsfw_guidance_enabled:'true'},
+      {transformSource:s=>'Math.random = () => 0.1;\n'+s}
+    );
     await f.run();
     return f.prompts.reduce((sum,body)=>sum+JSON.stringify(body).length,0);
   };
