@@ -27,8 +27,9 @@ for(const owner of ['hayaku','flashback']){
  }finally{f.close();}});
  test(owner+': restore means factory defaults, stays a draft until verified Apply',async()=>{const f=await setup(owner);try{
   f.find('[data-source-input-defaults]').click();assert.deepEqual(f.stored.sourceRules.ignoredTags,['custom-default']);assert.equal(f.writes,0);
-  assert.deepEqual([...f.root.querySelectorAll('[data-rule-value]')].map(n=>n.value).filter(Boolean),['lb-xnai','thoughts']);
-  await f.apply();assert.deepEqual(f.stored.sourceRules.ignoredTags,['lb-xnai','thoughts']);assert.deepEqual(f.stored.sourceRules.controls,['html-comment','lbdata']);
+  assert.deepEqual([...f.root.querySelectorAll('[data-rule-value]')].map(n=>n.value).filter(Boolean),['img','lb-lazy','lb-stage','lb-stage-marker','lb-xnai','thoughts']);
+  // Factory defaults carry the presentation tags the built-in cleanup removes (source_input_tag_finder_test).
+  await f.apply();assert.deepEqual(f.stored.sourceRules.ignoredTags,['img','lb-lazy','lb-stage','lb-stage-marker','lb-xnai','thoughts']);assert.deepEqual(f.stored.sourceRules.controls,['html-comment','lbdata']);
  }finally{f.close();}});
  test(owner+': unsaved source selection, unwrapping and exclusion preview locally without chat or storage writes',async()=>{const f=await setup(owner);try{
   f.add('original','sourceTags');f.add('wrapper','unwrapTags');f.add('drop');await f.preview();
