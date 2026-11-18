@@ -1,5 +1,106 @@
 /* MEMORY SUITE SOURCE INPUT CONTROLS v1 BEGIN */
 // Owner input-rule controls and explicit review UI. Reanalysis stays in owner callbacks.
+// 채팅에서 태그 찾기: which tags and markers the recent messages use, and how the draft rules
+// treat each one, so a rule can be added without knowing tag names in advance. Local only:
+// no model call, nothing stored or logged.
+const MEMORY_SUITE_PRESENTATION_TAG_HINTS = Object.freeze({
+  'img':'이미지','lb-xnai':'LightBoard 삽화','lb-lazy':'LightBoard 지연 표식','lb-stage':'LightBoard 무대 표식',
+  'lb-stage-marker':'LightBoard 무대 표식','thoughts':'생각 블록'
+});
+function memorySuiteSourceTagInventory(texts, rules) {
+  const found=new Map(),note=(key,kind,example)=>{const row=found.get(key)||{name:key,kind,count:0,messages:0,example:''};row.count++;if(!row.example&&example)row.example=example;found.set(key,row);return row;};
+  const clip=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,80);
+  for(const raw of (Array.isArray(texts)?texts:[]).slice(0,40)){
+    const body=memorySuiteStripInternalSource(String(raw||'')),seen=new Set();
+    const re=/<([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;let m;
+    while((m=re.exec(body))){
+      const name=m[1].toLowerCase(),close=new RegExp('</'+name.replace(/[-:]/g,'\\$&')+'\\s*>','i').exec(body.slice(re.lastIndex));
+      const inner=/\/\s*>$/.test(m[0])||!close?'':body.slice(re.lastIndex,re.lastIndex+close.index);
+      note(name,'tag',clip(inner)||clip(m[0]));seen.add(name);
+    }
+    for(const [control,pattern] of [['html-comment',/<!--([\s\S]*?)-->/g],['lbdata',/\[LBDATA START\]([\s\S]*?)\[LBDATA END\]/gi],['inlay',/\{\{inlay::([^{}\r\n]+)\}\}/gi]]){
+      for(const hit of body.matchAll(pattern)){note('@'+control,'control',clip(hit[1])||clip(hit[0]));seen.add('@'+control);}
+    }
+    for(const key of seen)found.get(key).messages++;
+  }
+  const lists=rules&&typeof rules==='object'?rules:{ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
+  // Whether an item reaches the analysis is read from the projection itself, so a tag inside an
+  // excluded block, or outside a 이 안만 분석 area, shows as left out even without its own rule.
+  const projected=rules&&typeof rules==='object'
+    ? (Array.isArray(texts)?texts:[]).slice(0,40).map(raw=>{try{return memorySuiteProjectSourceRules(memorySuiteStripInternalSource(String(raw||'')),rules).text;}catch{return String(raw||'');}}).join('\n')
+    : null;
+  const controlPatterns={'@html-comment':/<!--[\s\S]*?-->/,'@lbdata':/\[LBDATA START\][\s\S]*?\[LBDATA END\]/i,'@inlay':/\{\{inlay::[^{}\r\n]+\}\}/i};
+  const survives=row=>projected===null||(row.kind==='control'?controlPatterns[row.name].test(projected):new RegExp('<'+row.name.replace(/[-:]/g,'\\$&')+'(?=[\\s/>])','i').test(projected));
+  const treatment=row=>{
+    if(row.kind==='control'&&(lists.controls||[]).includes(row.name.slice(1)))return 'ignoredTags';
+    if(row.kind==='tag')for(const key of ['ignoredTags','unwrapTags','sourceTags'])if((lists[key]||[]).some(entry=>entry===row.name))return key;
+    return survives(row)?'analyzed':'covered';
+  };
+  return [...found.values()].map(row=>({...row,treatment:treatment(row),hint:MEMORY_SUITE_PRESENTATION_TAG_HINTS[row.name]||''}))
+    .sort((a,b)=>(a.treatment==='analyzed'?0:1)-(b.treatment==='analyzed'?0:1)||b.messages-a.messages||b.count-a.count||a.name.localeCompare(b.name))
+    .slice(0,40);
+}
+// Its styles travel with it, so it looks the same inside any editor's own stylesheet.
+function memorySuiteSourceFinderCss(){return `
+.ms-source-settings .ms-input-finder,.ms-source-settings .ms-input-defaults-notice{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-finder>button{justify-self:start}
+.ms-source-settings .ms-finder-list{display:grid;gap:6px}.ms-source-settings .ms-finder-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-finder-row[data-treatment]:not([data-treatment=analyzed]){opacity:.72}
+.ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
+@media(max-width:600px){.ms-source-settings .ms-finder-row{flex-direction:column;align-items:stretch}}
+`;}
+// The finder section shared by every source-rule editor. config: readSamples() → raw texts,
+// draft() → current draft rules (throws while invalid), addRule(name, action), busy().
+function mountMemorySuiteSourceTagFinder(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('section'),button=make('button','최근 메시지에서 태그 찾기'),status=make('p'),list=make('div');
+  const style=make('style');style.textContent=memorySuiteSourceFinderCss();
+  area.className='ms-input-finder';area.dataset.sourceTagFinder='';button.type='button';button.dataset.sourceTagFind='';
+  status.dataset.sourceTagFinderStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');list.dataset.sourceTagFinderList='';list.className='ms-finder-list';
+  area.append(style,make('strong','채팅에서 태그 찾기'),make('small','최근 메시지에 쓰인 태그와 표식을 보여 줍니다. 분석에 들어가는 것 중 뺄 것을 골라 추가한 뒤 적용을 누르세요. AI를 호출하지 않습니다.'),button,status,list);
+  host.append(area);
+  const labels={analyzed:'분석에 포함',ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석',covered:'다른 규칙으로 빠짐'};
+  const controlNames={'@html-comment':'HTML 주석','@lbdata':'LBDATA 제어 블록','@inlay':'삽화 호출'};
+  let samples=null,reading=false;
+  const render=()=>{
+    if(!samples)return;
+    let draft=null;try{draft=config.draft();}catch{}
+    const rows=memorySuiteSourceTagInventory(samples,draft);
+    if(!rows.length){list.replaceChildren();status.textContent='최근 메시지 '+samples.length+'개에 태그나 표식이 없습니다.';return;}
+    status.textContent='최근 메시지 '+samples.length+'개에서 '+rows.length+'가지를 찾았습니다.'+(draft?'':' 규칙 초안에 오류가 있어 처리 상태는 표시하지 않습니다.');
+    list.replaceChildren(...rows.map(row=>{
+      const item=make('div'),title=make('code',row.kind==='control'?controlNames[row.name]||row.name:'<'+row.name+'>'),meta=make('small'),example=make('small',row.example?'예: '+row.example:'');
+      item.className='ms-finder-row';item.dataset.sourceTagFinderRow=row.name;item.dataset.treatment=draft?row.treatment:'unknown';
+      meta.textContent=[row.messages+'개 메시지 · '+row.count+'회',row.hint,draft?labels[row.treatment]:''].filter(Boolean).join(' · ');
+      const text=make('div');text.className='ms-finder-text';text.append(title,meta);if(row.example){example.className='ms-finder-example';text.append(example);}
+      if(row.name==='lb-xnai')text.append(make('small','안에 서술이 있으면 그 서술은 분석에 남고, 이미지 호출만 빠집니다.'));
+      const actions=make('div');actions.className='ms-finder-actions';
+      if(draft&&row.treatment==='analyzed'){
+        const actionsFor=row.kind==='control'?[['ignoredTags','분석에서 빼기']]:[['ignoredTags','분석에서 빼기'],['unwrapTags','태그만 지우기']];
+        for(const [key,label] of actionsFor){const add=make('button',label);add.type='button';add.dataset.sourceTagFinderAdd=key;add.disabled=config.busy?.()===true;
+          add.onclick=()=>{if(config.busy?.()===true)return;config.addRule(row.kind==='control'?row.name:row.name,key);render();};actions.append(add);}
+      }
+      item.append(text,actions);return item;
+    }));
+  };
+  button.onclick=async()=>{
+    if(reading||config.busy?.()===true)return;reading=true;button.disabled=true;status.textContent='최근 메시지를 읽는 중…';list.replaceChildren();
+    try{const texts=await config.readSamples();samples=(Array.isArray(texts)?texts:[]).filter(value=>typeof value==='string');render();}
+    catch{samples=null;status.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 시도하세요.';}
+    finally{reading=false;button.disabled=false;}
+  };
+  return {refresh:render};
+}
+// Rows for default presentation tags a saved rule set leaves out (shown once, added as a draft).
+function mountMemorySuiteMissingDefaultsNotice(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const box=make('div'),text=make('p'),add=make('button','빠진 기본 규칙 추가');box.className='ms-input-defaults-notice';box.dataset.sourceMissingDefaults='';box.hidden=true;add.type='button';add.dataset.sourceMissingDefaultsAdd='';
+  box.append(text,add);host.append(box);
+  const update=rules=>{
+    const missing=memorySuiteMissingDefaultSourceTags(rules);box.hidden=!missing.length;
+    text.textContent=missing.length?'저장된 규칙에 기본 정리 대상이 빠져 있어, 다음 표시용 태그가 분석에 들어갑니다: '+missing.map(name=>'<'+name+'>').join(', ')+'. 추가한 뒤 적용을 누르면 규칙 저장 전과 같게 빠집니다.':'';
+    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules))config.addRule(name,'ignoredTags');box.hidden=true;};
+  };
+  return {update};
+}
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
     const disposed=()=>config.isDisposed?.()===true;
@@ -33,13 +134,14 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
     const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
-    box.append(style,toolbar,status,hint,head,list);
+    const noticeHost=make('div'),finderHost=make('div');
+    box.append(style,toolbar,status,noticeHost,hint,head,list);
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
-    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
+    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(finderHost,previewArea);
     const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
@@ -93,8 +195,19 @@ function mountMemorySuiteSourceInputControls(container, config) {
     function changed() {
       if(!loaded||applying)return;
       if(!rows.some(isEmpty))addRow();
-      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();
+      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();finder?.refresh();
     }
+    // A rule chosen in the finder or the defaults notice lands in the draft; 적용 still saves it.
+    function addFoundRule(name,key) {
+      if(!loaded||applying)return;
+      for(const row of rows.filter(isEmpty))row.element.remove();rows=rows.filter(row=>!isEmpty(row));
+      if(name.startsWith('@'))addRow(memorySuiteSourceRuleForm(name),'ignoredTags',name.slice(1));else addRow(name,key);
+      changed();
+    }
+    const draftOrNull=()=>{try{return readDraft();}catch{return null;}};
+    const finder=mountMemorySuiteSourceTagFinder(finderHost,{draft:readDraft,addRule:addFoundRule,busy:()=>!loaded||applying,
+      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[(await config.readSample?.())?.text].filter(value=>typeof value==='string')});
+    const missingNotice=mountMemorySuiteMissingDefaultsNotice(noticeHost,{draft:draftOrNull,addRule:addFoundRule,busy:()=>!loaded||applying});
     function addRow(value=null,key='ignoredTags',control=null) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
@@ -123,11 +236,11 @@ function mountMemorySuiteSourceInputControls(container, config) {
       rows=[];removed=[];list.replaceChildren();
       for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
       for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
-      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;}setEnabled();
+      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;missingNotice.update(preferences.sourceRules);}setEnabled();finder?.refresh();
     }
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...memorySuiteSourceIgnoredTags(),'thoughts']},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     apply.onclick=async()=>{
       if(!loaded||applying||disposed())return;
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
