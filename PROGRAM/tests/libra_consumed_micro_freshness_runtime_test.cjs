@@ -90,7 +90,7 @@ async function withMicro(run, args = {}) {
       // The unified engine no longer copies Micro rows into the public canonicalLayers; the delivered
       // Micro unit is visible in the Classic viewer rows and the injected block.
       const supplied = microRows(f);
-      assert(supplied.some(row => row.selectedText.includes(DETAIL) && row.injected === true), 'the actual consumed Micro is present');
+      assert(supplied.some(row => String(row.selectedText ?? row.text ?? '').includes(DETAIL) && row.injected === true), 'the actual consumed Micro is present');
       return prepared;
     };
     await run(f, active, prepare);
