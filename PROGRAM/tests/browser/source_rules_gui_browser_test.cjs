@@ -18,10 +18,11 @@ fs.mkdirSync(output,{recursive:true});
   await page.evaluate(async({owner,api})=>{window.product=window[api];window.originalChat=JSON.stringify(__chat);if(owner==='libra')await product.openSettingsGui();else await product.showUi();},{owner,api});
   if(owner==='libra'){
    await page.waitForFunction(()=>!!document.querySelector('.sidebar [data-go="settings"]'));await page.evaluate(()=>document.querySelector('.sidebar [data-go="settings"]').click());
-   await page.locator('.setnav button').filter({hasText:'참고 자료'}).click();await page.locator('.page[data-page="settings"] .tabs button').filter({hasText:'분석할 내용'}).click();
+   await page.locator('.setnav button').filter({hasText:'참고 자료'}).click();await page.locator('.page[data-page="settings"] .tabs button').filter({hasText:'원문 태그 필터'}).click();
   }else if(owner==='hayaku'){
    await page.locator('.tabbar [data-go="recovery"]').click();await page.locator('[data-recovery-view="reanalysis"]').click();
-  }else await page.locator('.tabbar [data-go="care"]').click();
+  }else{await page.locator('.tabbar [data-go="care"]').click();await page.locator('#fbSourceEditTitle').click();}
+  if(owner!=='libra')await page.locator('summary:visible',{hasText:'원문 태그 필터'}).first().click();
   const controls=page.locator('[data-source-input-controls]:visible');await controls.waitFor();
   assert.equal(await controls.locator('select option[value="auto"],select option[value="off"],select option[value="notify"]').count(),0,owner+': no retired automatic mode selector');
   assert.equal(await page.locator('[data-source-tracking-controls],#memorySuiteSourceReview,[x-memory-suite-source-review-dock],[x-memory-suite-source-edit-dialog]').count(),0,owner+': retired observer/dock/dialog UI absent');

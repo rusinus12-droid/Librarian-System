@@ -41,3 +41,20 @@ test('LIBRA editor adds, restores deletions and defaults through the existing du
   find('[data-source-input-defaults]').click();await find('[data-source-input-apply]').onclick();assert.deepEqual(current(),defaults,'factory restore clears saved custom ignored tags too');
  }finally{await f.cleanup();dom.window.close();}
 });
+test('LIBRA mounts the shared editor: the blank row is the new-rule slot and the marker toggle stays in its column',async()=>{
+ const dom=new JSDOM('<main></main>'),document=dom.window.document;
+ const seam='const libraSourceInput = createLibraSourceInputPolicy(libraSourceInputConfig);';
+ const f=await createLibraVmHarness({}, {},{contextGlobals:{document},transformSource:source=>source.replace(seam,seam+' globalThis.__mountInput=mountLibraSourceInputControls;')});
+ try{
+  const root=document.querySelector('main');f.context.__mountInput(root);
+  const find=selector=>root.querySelector(selector),rows=()=>[...root.querySelectorAll('[data-source-input-row]')];
+  for(let i=0;i<50&&find('[data-source-input-add]').disabled;i++)await new Promise(r=>setTimeout(r,10));
+  assert.ok(find('.ms-input-head'),'shared column header');assert.doesNotMatch(root.textContent,/직접 구분자/);
+  const blank=rows().at(-1);assert.equal(blank.dataset.ruleNew,'true');assert.equal(blank.querySelector('[data-rule-delete]').style.visibility,'hidden');
+  assert.equal(blank.querySelector('[data-rule-value]').placeholder,'새 태그 이름 (예: decoration)');
+  const filled=rows()[0];assert.equal(filled.dataset.ruleNew,'false');assert.equal(filled.querySelector('[data-rule-delete]').style.visibility,'');
+  const toggle=filled.querySelector('[data-rule-custom]').closest('label');
+  assert.equal(toggle.parentElement,filled,'the toggle is its own column, not inside the field stack');assert.match(toggle.textContent,/시작·끝 표식/);
+  toggle.querySelector('input').click();assert.equal(toggle.parentElement,filled);
+ }finally{await f.cleanup();dom.window.close();}
+});

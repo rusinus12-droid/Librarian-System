@@ -309,10 +309,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
 .ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
 .ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
 .ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
-.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 118px 62px;gap:8px;align-items:center}
 .ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
 .ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
-.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-row.is-new{border-style:dashed;background:transparent}.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
 .ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
 .ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
@@ -324,7 +324,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
-    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
     const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
     box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
@@ -334,7 +334,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -344,7 +344,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -362,7 +362,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
       apply.disabled=!loaded||applying||!dirty;
       add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
@@ -409,10 +409,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
-      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='새 태그 이름 (예: decoration)';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='시작 표식 예: [START]';close.placeholder='끝 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('시작 표식'),open);closeLabel.append(hidden('끝 표식'),close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;

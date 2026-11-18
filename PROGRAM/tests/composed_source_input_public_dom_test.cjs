@@ -16,10 +16,10 @@ test('composed public settings opens real input editor, applies once, previews l
   // "나중에 하기" before navigating; it is not shown again on reopen.
   const firstSetup=await wait(()=>doc.querySelector('[data-libra-quick-dialog]')).catch(()=>null);
   if(firstSetup){const later=[...firstSetup.querySelectorAll('.dialog__actions button')].find(node=>node.textContent.trim()==='나중에 하기');assert.ok(later,'first-setup dialog offers 나중에 하기');later.click();assert.equal(doc.querySelector('[data-libra-quick-dialog]'),null);}
-  // Post-GUI navigation: 설정 nav -> 참고 자료 subtab -> 분석할 내용(section id source_edits).
+  // Post-GUI navigation: 설정 nav -> 참고 자료 subtab -> 원문 태그 필터(section id source_edits).
   (await wait(()=>doc.querySelector('[data-go="settings"]'))).click();
   (await wait(()=>doc.querySelector('[data-subtab="ref"]'))).click();
-  (await wait(()=>[...doc.querySelectorAll('nav.tabs button,.tabs button')].find(node=>node.textContent.trim()==='분석할 내용'))).click();
+  (await wait(()=>[...doc.querySelectorAll('nav.tabs button,.tabs button')].find(node=>node.textContent.trim()==='원문 태그 필터'))).click();
   const list=await wait(()=>doc.querySelector('[data-source-input-list]'));
   assert.equal(doc.querySelectorAll('[data-source-input-list]').length,1);
   const before=f.control.calls.length,last=list.querySelector('[data-source-input-row]:last-child'),input=last.querySelector('[data-rule-value]');
@@ -33,7 +33,7 @@ test('composed public settings opens real input editor, applies once, previews l
   await f.r.api.closeSettingsGui();await f.r.api.openSettingsGui();
   (await wait(()=>doc.querySelector('[data-go="settings"]'))).click();
   (await wait(()=>doc.querySelector('[data-subtab="ref"]'))).click();
-  (await wait(()=>[...doc.querySelectorAll('nav.tabs button,.tabs button')].find(node=>node.textContent.trim()==='분석할 내용'))).click();await wait(()=>doc.querySelector('[data-source-input-list]'));
+  (await wait(()=>[...doc.querySelectorAll('nav.tabs button,.tabs button')].find(node=>node.textContent.trim()==='원문 태그 필터'))).click();await wait(()=>doc.querySelector('[data-source-input-list]'));
   assert.deepEqual(Array.from(f.r.api.getSourceEditRules().ignoredTags),['decoration']);
   assert.equal(typeof f.r.api.getSourceEditSyncStatus,'undefined');assert.equal(typeof f.r.api.setSourceEditTrackingMode,'undefined');
  }catch(error){console.log('DOM_DIAGNOSTICS',JSON.stringify({text:doc.body.textContent.slice(0,4000),html:doc.body.innerHTML.slice(0,4000),logs:diagnostics}));throw error;}finally{await f.r.api.closeSettingsGui();await f.r.cleanup();dom.window.close();}

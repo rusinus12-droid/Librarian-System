@@ -11,7 +11,7 @@ for(const [owner,file,api]of [['libra','LIBRA.js','__LIBRA__'],['hayaku','HAYAKU
  if(owner==='libra'){
   await p.waitForFunction(()=>!!document.querySelector('.sidebar [data-go="settings"]'));
   await p.evaluate(()=>document.querySelector('.sidebar [data-go="settings"]').click());
-  await p.locator('.setnav button').filter({hasText:'참고 자료'}).click();await p.locator('.page[data-page="settings"] .tabs button').filter({hasText:'분석할 내용'}).click();
+  await p.locator('.setnav button').filter({hasText:'참고 자료'}).click();await p.locator('.page[data-page="settings"] .tabs button').filter({hasText:'원문 태그 필터'}).click();
  }else if(owner==='hayaku'){
   await p.locator('.tabbar [data-go="recovery"]').click();await p.locator('[data-recovery-view="reanalysis"]').click();
  }else await p.locator('.tabbar [data-go="care"]').click();
