@@ -33509,6 +33509,17 @@ const MemorySuiteHealthRecovery = (() => {
   // options.rechunkLegacy: a stored turn whose text still matches the live turn but
   // whose chunks predate the narrative chunk schema is re-derived from the live
   // source like a changed turn. That is the only re-derivation server mode can run.
+  // 태그 규칙 변경: with saved source rules a stored body is a pure rules projection, so a body the
+  // current rules would change was written under different rules. Such a turn is the same turn
+  // (the comparison below already reads both sides under the current rules) but its stored chunks
+  // are out of date; rechunkRuleChanged resyncs it in one step instead of trimming the stored text,
+  // which would leave chunk offsets that a later maintenance rebuilds again.
+  const recordBodyChangedUnderRules = record => {
+    if (memorySuiteSourceRules('flashback') === null) return false;
+    const body = text(record?.text || '');
+    const projected = sanitizeAssistantForMemory(body, { stripRolePrefix: false });
+    return projected !== body && projected !== body.trim();
+  };
   const diffLiveChatSourcesAgainstRecords = (sources = [], records = [], options = {}) => {
     const groups = responseGroupsForWorldline(records);
     const groupsBySourceHash = new Map();
@@ -33525,6 +33536,7 @@ const MemorySuiteHealthRecovery = (() => {
     const metadataChanged = [];
     const rechunked = [];
     const rechunkedGroupKeys = [];
+    const ruleChanged = [];
     const matchedGroupKeys = new Set();
     for (const source of sources || []) {
       const pair = responsePairFromMaintenanceSource(source);
@@ -33542,6 +33554,15 @@ const MemorySuiteHealthRecovery = (() => {
         && !exact.records.some(record => isInheritedScopeMemoryRecord(record, options.scopeKey || ''))) {
         changed.push(source);
         rechunked.push(source);
+        if (exact.key) { matchedGroupKeys.add(exact.key); rechunkedGroupKeys.push(exact.key); }
+        continue;
+      }
+      if (exact && options.rechunkRuleChanged === true
+        && exact.records.some(recordBodyChangedUnderRules)
+        && !exact.records.some(record => isInheritedScopeMemoryRecord(record, options.scopeKey || ''))) {
+        changed.push(source);
+        rechunked.push(source);
+        ruleChanged.push(source);
         if (exact.key) { matchedGroupKeys.add(exact.key); rechunkedGroupKeys.push(exact.key); }
         continue;
       }
@@ -33564,6 +33585,7 @@ const MemorySuiteHealthRecovery = (() => {
       metadataChanged,
       rechunked,
       rechunkedGroupKeys,
+      ruleChanged,
       selected: [...missing, ...changed],
       staleGroups,
       storedGroups: groups.length,
@@ -33813,7 +33835,7 @@ const MemorySuiteHealthRecovery = (() => {
       if (!sources.length) continue;
       const liveState = liveChatStateFromSnapshot(item);
       const loadedBeforeSync = await loadScopeRecords(itemScope.scopeKey);
-      const rechunkOptions = { rechunkLegacy: options.rechunkLegacyTurns === true, scopeKey: itemScope.scopeKey };
+      const rechunkOptions = { rechunkLegacy: options.rechunkLegacyTurns === true, rechunkRuleChanged: options.rechunkRuleChangedTurns === true, scopeKey: itemScope.scopeKey };
       const diff = diffLiveChatSourcesAgainstRecords(sources, loadedBeforeSync.records, rechunkOptions);
       await synchronizeFlashbackTurnWorldline(itemScope, liveState, coldStartSettings, { assertCurrent: options.maintenanceSourceValidate });
       // A rollback may restore the exact response from the retired branch, so
@@ -46609,7 +46631,7 @@ ${cleanedText}`, 80),
 
   const recordMaintenanceInspection = plan => {
     Runtime.lastMaintenanceInspection=cloneRuntimeValue({at:plan.at,scopeKey:plan.scopeKey,automatic:plan.automatic,inspection:plan.inspection,
-      counts:Object.fromEntries(['missingTurns','changedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
+      counts:Object.fromEntries(['missingTurns','changedTurns','ruleChangedTurns','staleStoredTurns','dirtyRecords','anchorOnlyDirtyRecords','embeddingWorkIncompleteRecords',
         'embeddingWorkFailedRecords','embeddingWorkUncertainRecords','unqueuedVectorRepairRecords','storageMissingShards','storageManifestCorrupt',
         'storageRecordCountMismatch','shardIndexMismatch','episodeStale','embeddingQueueSourceHealthy','requiresFullRebuild',
         'requiresDerivedSchemaRebuildOnly','legacySanitizerRecords','liveChunkSchemaMismatch','inheritedChunkSchemaMismatch',
@@ -46697,7 +46719,8 @@ ${cleanedText}`, 80),
     const episodeRecords = records.filter(record => record.autoEpisode || record.sourceType === 'episode_index');
     reportMaintenanceTask(options, 'source', { scopeKey: scope.scopeKey });
     const sources = collectLiveChatSourcesFromSnapshot(snapshot, normalizeColdStartOptions(settings, { scope: 'current', historyLimit: 0 }));
-    const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords);
+    const diff = diffLiveChatSourcesAgainstRecords(sources, responseRecords, { rechunkRuleChanged: true, scopeKey: scope.scopeKey });
+    const ruleChangedGroupKeys = new Set(diff.rechunkedGroupKeys);
     const expectedProvider = settings.embeddingProvider;
     const expectedModel = expectedRecordModel(settings);
     let dirtyRecords = 0;
@@ -46717,6 +46740,7 @@ ${cleanedText}`, 80),
     // vector checks below pass. Count the open jobs themselves.
     const embeddingWorkStatusCounts = { pending: 0, running: 0, failed: 0, uncertain: 0 };
     for (const record of responseRecords) {
+      if (ruleChangedGroupKeys.has(responseTurnGroupKey(record))) continue;
       const workStatus = text(record.embeddingWork?.status || '');
       if (Object.hasOwn(embeddingWorkStatusCounts, workStatus)) embeddingWorkStatusCounts[workStatus] += 1;
       const cleaned = cleanRecordForMemory(record, scope);
@@ -46862,6 +46886,7 @@ ${cleanedText}`, 80),
       staleStoredTurns: diff.staleGroups.length,
       externalRecords,
       dirtyRecords,
+      ruleChangedTurns: diff.ruleChanged.length,
       anchorOnlyDirtyRecords,
       providerMismatch,
       localProviderMismatch,
@@ -47597,6 +47622,7 @@ ${cleanedText}`, 80),
           incremental: true,
           deferEmbedding: true,
           rechunkLegacyTurns: preflight.requiresDerivedSchemaRebuildOnly === true,
+          rechunkRuleChangedTurns: true,
           ...operationSettings
         });
         await operationSettings.maintenanceSourceValidate();
@@ -47888,7 +47914,7 @@ ${cleanedText}`, 80),
       if (adopted.manifest.copyAdoptedComplete !== true) throw new Error('maintenance_adoption_not_published');
     } else if (normalizedMode === 'sync') {
       await persistMaintenanceJournal({ operationId, status: 'running', stage: 'sync', scopeKey: before.scopeKey || '', strategy: 'sync', stages: ['sync'] });
-      operation = await ingestLiveChatColdStart({ scope: 'current', historyLimit: 0, incremental: true, ...operationSettings });
+      operation = await ingestLiveChatColdStart({ scope: 'current', historyLimit: 0, incremental: true, rechunkRuleChangedTurns: true, ...operationSettings });
     } else if (normalizedMode === 'rebuild') {
       await persistMaintenanceJournal({ operationId, status: 'running', stage: 'rebuild', scopeKey: before.scopeKey || '', strategy: 'rebuild', stages: ['rebuild'] });
       const rebuildOptions = { ...options, ...operationSettings };
@@ -47942,6 +47968,7 @@ ${cleanedText}`, 80),
             historyLimit: 0,
             incremental: true,
             skipEpisodeRebuild: true,
+            rechunkRuleChangedTurns: true,
             ...operationSettings
           });
         }
@@ -48239,7 +48266,8 @@ ${cleanedText}`, 80),
     ]
     : [
     ['턴 대조', `현재 채팅 턴 ${formatNumber(plan.liveTurns)}개 · 저장 턴 ${formatNumber(plan.storedTurns)}개`],
-    ['누락·변경', `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`],
+    ['누락·변경', `누락 ${formatNumber(plan.missingTurns)} · 변경 ${formatNumber(plan.changedTurns)}${Number(plan.ruleChangedTurns || 0) > 0 ? ` (태그 규칙 변경 ${formatNumber(plan.ruleChangedTurns)} 포함)` : ''} · 오래된/고아 ${formatNumber(plan.staleStoredTurns)}`],
+    ...(Number(plan.ruleChangedTurns || 0) > 0 ? [['태그 규칙', `태그 규칙 변경으로 다시 정리할 턴 ${formatNumber(plan.ruleChangedTurns)}개 · 저장된 본문을 지금 규칙으로 다시 쪼개고 임베딩합니다 (아래 신규 임베딩 예상에 포함). 원하지 않으면 실행하지 마세요.`]] : []),
     ['정제 상태', `정제 필요 ${formatNumber(plan.dirtyRecords)} · 외부 구형 데이터 ${formatNumber(plan.externalRecords)}`],
     ['정제기 버전', `정제기 버전 불일치 ${formatNumber(plan.sanitizerVersionMismatch)}${plan.requiresFullRebuild && Number(plan.legacySanitizerRecords || 0) > 0 ? ' · 전체 재구축 필요' : ''}`],
     ['문장 청크', `문장 청크 v${formatNumber(plan.narrativeChunkSchemaVersion || NARRATIVE_CHUNK_SCHEMA_VERSION)} · 현재 채팅 구형 청크 ${formatNumber(plan.liveChunkSchemaMismatch)} · 인계 기록 구형 청크 ${formatNumber(plan.inheritedChunkSchemaMismatch)}${plan.requiresDerivedSchemaRebuildOnly ? ' · 원문은 정상, 자동 복구에서 청크만 다시 나눔' : ''}`],
@@ -54408,7 +54436,7 @@ ${cleanedText}`, 80),
             `• 현재 채팅 턴: 총 ${formatNumber(plan.liveTurns)}개`,
             `• 이미 저장된 턴: 총 ${formatNumber(plan.storedTurns)}개`,
             `• 누락된 턴: ${formatNumber(plan.missingTurns)}개`,
-            Number(plan.changedTurns || 0) > 0 ? `• 변경된 턴: ${formatNumber(plan.changedTurns)}개 (수정/롤백 감지)` : null,
+            Number(plan.changedTurns || 0) > 0 ? `• 변경된 턴: ${formatNumber(plan.changedTurns)}개 (수정/롤백 감지${Number(plan.ruleChangedTurns || 0) > 0 ? `, 태그 규칙 변경 ${formatNumber(plan.ruleChangedTurns)}개 포함` : ''})` : null,
             `• 동기화 대상 합계: 총 ${formatNumber(Number(plan.missingTurns || 0) + Number(plan.changedTurns || 0))}개 턴`,
             `• 복구 방식: 서버 모드 안전 턴 동기화 (서버 DB 직접 반영)\n`,
             `위 누락·변경 턴을 서버에 동기화할까요?`
