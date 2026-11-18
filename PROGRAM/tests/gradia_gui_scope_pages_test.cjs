@@ -69,3 +69,71 @@ test('RP 세부 모드 on 작성 방식 is filled, and disabled with a reason in
     }
   } finally { await f.close(); }
 });
+
+// ---- Phase 2: search, why a stage does not run, settings that differ from defaults ----
+
+const change = (f, node) => node.dispatchEvent(new f.doc.defaultView.Event('change', { bubbles: true }));
+
+test('settings search finds a setting by name, synonym and stage, and goes to it', async () => {
+  const f = await gradia();
+  try {
+    await f.plugin.openSettingsGui();
+    const d = f.doc;
+    d.querySelector('[data-settings-search-open]').click();
+    const input = await until(() => d.querySelector('[data-settings-search-input]'), 'search dialog');
+    const search = query => { input.value = query; input.dispatchEvent(new f.doc.defaultView.Event('input')); return [...d.querySelectorAll('.search-hit')].map(node => node.textContent); };
+    assert.ok(search('nsfw').some(text => text.startsWith('성인 장면 표현')), 'a synonym finds the adult-scene selector');
+    assert.ok(search('대기 세계관').some(text => /대기 시간/.test(text) && /세계관 AIDE/.test(text)), 'words from the stage narrow it');
+    assert.ok(search('기본값').some(text => text.startsWith('모든 NPC 기본값')));
+    assert.ok(search('관계 카드').every(text => !/^세라/.test(text)), 'card contents are not settings');
+    search('대기 세계관');
+    [...d.querySelectorAll('.search-hit')].find(node => /세계관 AIDE/.test(node.textContent)).click();
+    await until(() => d.querySelector('.stage-detail.is-on')?.dataset.detail === 'world', 'world panel selected');
+    assert.equal(f.plugin.debugGuiStateInfo().pageId, 'pipeline');
+    assert.ok(d.querySelector('.stage-detail[data-detail="world"] .is-flash'), 'the setting is highlighted');
+    assert.equal(d.querySelector('[data-settings-search-input]'), null, 'the dialog closes');
+    d.dispatchEvent(new f.doc.defaultView.KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+    assert.ok(await until(() => d.querySelector('[data-settings-search-input]'), 'Ctrl+K opens search'));
+  } finally { await f.close(); }
+});
+
+test('a stage panel says why it will not run, or who runs it, with a link to the cause', async () => {
+  const f = await gradia();
+  try {
+    await f.plugin.openSettingsGui();
+    await f.plugin.debugNavigateGui('pipeline');
+    const d = f.doc;
+    const notes = detail => [...d.querySelectorAll(`.stage-detail[data-detail="${detail}"] [data-stage-blockers] .note`)];
+    const intimacy = d.querySelector('#on-s8');
+    intimacy.checked = true; change(f, intimacy);
+    const blocker = await until(() => notes('intimacy').find(node => /성인 장면 표현이 OFF라 정사 AIDE가 실행되지 않습니다/.test(node.textContent)), 'NSFW blocker');
+    assert.equal(blocker.querySelector('button').dataset.go, 'writing');
+    assert.equal(blocker.querySelector('button').dataset.goSub, 'nsfw');
+    const body = d.querySelector('#on-s6');
+    body.checked = true; change(f, body);
+    const character = d.querySelector('#on-s2');
+    character.checked = false; change(f, character);
+    await until(() => notes('body_state').some(node => /인물 AIDE가 꺼져 있어 .+ 대신 처리합니다/.test(node.textContent)), 'host note');
+    const bond = d.querySelector('section[data-page="chat"] [data-chat-section="bond"] [data-chat-blockers]');
+    assert.match(bond.textContent, /억결 AIDE가 꺼져 있어 이 카드들은 지금 쓰이지 않습니다/);
+  } finally { await f.close(); }
+});
+
+test('바꾼 설정 lists what differs from the defaults and can restore one', async () => {
+  const f = await gradia();
+  try {
+    await f.plugin.openSettingsGui();
+    await f.plugin.debugNavigateGui('pipeline');
+    const d = f.doc;
+    const before = d.querySelectorAll('[data-changed-settings] .changed-row').length;
+    const world = d.querySelector('#on-s3');
+    world.checked = false; change(f, world);
+    const row = await until(() => [...d.querySelectorAll('[data-changed-settings] .changed-row')].find(node => /세계관 AIDE · 사용/.test(node.textContent)), 'changed row');
+    assert.match(row.textContent, /현재 꺼짐 · 기본 켜짐/);
+    assert.equal(d.querySelectorAll('[data-changed-settings] .changed-row').length, before + 1);
+    assert.equal(d.querySelector('[data-changed-count]').textContent, String(before + 1));
+    [...row.querySelectorAll('button')].find(node => node.textContent === '기본값으로').click();
+    await until(() => d.querySelector('#on-s3').checked === true, 'restored');
+    assert.equal(d.querySelectorAll('[data-changed-settings] .changed-row').length, before);
+  } finally { await f.close(); }
+});
