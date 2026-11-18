@@ -41423,7 +41423,38 @@ function createLibraReadonlySourceContext(owner) {
     // HAYAKU's packet replacement trims line endings before appending its packet.
     // Apply that equivalence only to completion proof, where the stored revision
     // still comes from the exact settled chat source.
-    const completionAssistantDigest = body => digest(string(body).replace(/[ \t]+(?=\r?$)/gm, '').replace(/\r\n/g, '\n'));
+    const normalizeCompletionCompareText = body => string(body).replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    const completionAssistantDigest = body => digest(normalizeCompletionCompareText(body));
+    const containsLineBoundedBlock = (longer, shorter) => {
+      if (!longer || !shorter || shorter.length < 12 || longer.length <= shorter.length) return false;
+      for (let from = 0; from <= longer.length - shorter.length; ) {
+        const idx = longer.indexOf(shorter, from);
+        if (idx < 0) return false;
+        const end = idx + shorter.length;
+        if ((idx === 0 || longer[idx - 1] === '\n') && (end === longer.length || longer[end] === '\n')) return true;
+        from = idx + 1;
+      }
+      return false;
+    };
+    const sameCompletedTurnNormalizedText = (left, right) => ['user', 'assistant'].every(role =>
+      completionAssistantDigest(left?.[role]?.text) === completionAssistantDigest(right?.[role]?.text)
+      && JSON.stringify(asArray(left?.[role]?.chatIds)) === JSON.stringify(asArray(right?.[role]?.chatIds))
+    );
+    const sameCompletedTurnLineBoundedAugmentation = (earlier, later) =>
+      completionAssistantDigest(earlier?.user?.text) === completionAssistantDigest(later?.user?.text)
+      && JSON.stringify(asArray(earlier?.user?.chatIds)) === JSON.stringify(asArray(later?.user?.chatIds))
+      && JSON.stringify(asArray(earlier?.assistant?.chatIds)) === JSON.stringify(asArray(later?.assistant?.chatIds))
+      && (containsLineBoundedBlock(
+        normalizeCompletionCompareText(later?.assistant?.text),
+        normalizeCompletionCompareText(earlier?.assistant?.text)
+      ) || containsLineBoundedBlock(
+        normalizeCompletionCompareText(earlier?.assistant?.text),
+        normalizeCompletionCompareText(later?.assistant?.text)
+      ));
+    const isTextEquivalentCompletedTurn = (earlier, later) =>
+      sameCompletedTurnRaw(earlier, later)
+      || sameCompletedTurnNormalizedText(earlier, later)
+      || sameCompletedTurnLineBoundedAugmentation(earlier, later);
     // A current HAYAKU packet carries the generation nonce through output
     // postprocessing. Compare the whole packet as well as its lineage.
     const completionPacketProof = body => {
@@ -41461,16 +41492,45 @@ function createLibraReadonlySourceContext(owner) {
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
       const assistantHash=completionAssistantDigest(pair.assistant.text);
       if (assistantHash === proof.assistantHash || assistantHash === proof.legacyAssistantHash) return {ok:true,reason:''};
-      if (proof.committedRevisionId && proof.committedRevisionId !== completedTurnRevisionId(pair))
-        return {ok:false,reason:'assistant_source_changed'};
-      if (state.lastRequestScope?.pendingMicro === health.pendingMicro
-        && proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
+      const revisionId = completedTurnRevisionId(pair);
+      const sameRequestUser = state.lastRequestScope?.pendingMicro === health.pendingMicro
+        && !!proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
         && stateMemoryFingerprint(JSON.stringify(pair.user.chatIds)) === proof.userMessageIdsHash
-        && (proof.packet || proof.legacyPacket) && pair.assistant.sourceMessageCount === 1) {
+        && pair.assistant.sourceMessageCount === 1;
+      if (sameRequestUser && (proof.packet || proof.legacyPacket)) {
         const row = rawChatMessages(context.chat)[pair.assistant.index];
         const packet = completionPacketProof(contentToText(pairRevisionRawPayload(row)));
         if (packet && (packet === proof.packet || packet === proof.legacyPacket)) return {ok:true,reason:''};
       }
+      if (sameRequestUser) {
+        const norm = value => String(value ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+        const lineBounded = (longer, shorter) => {
+          if (!longer || !shorter || shorter.length < 12 || longer.length <= shorter.length) return false;
+          for (let from = 0; from <= longer.length - shorter.length; ) {
+            const idx = longer.indexOf(shorter, from);
+            if (idx < 0) return false;
+            const end = idx + shorter.length;
+            if ((idx === 0 || longer[idx - 1] === '\n') && (end === longer.length || longer[end] === '\n')) return true;
+            from = idx + 1;
+          }
+          return false;
+        };
+        const settledText = norm(pair.assistant.text);
+        const candidates = [norm(proof.assistantText), norm(proof.legacyAssistantText)].filter(Boolean);
+        if ((!proof.postprocessedRevisionId || proof.postprocessedRevisionId === revisionId)
+          && candidates.some(base => lineBounded(settledText, base) || lineBounded(base, settledText))) {
+          proof.postprocessedRevisionId = revisionId;
+          return {ok:true,reason:''};
+        }
+        const otherAxAfterMain = state.lastAfterRequest?.mainNarrativeType === false
+          && Number(state.lastAfterRequest?.at || 0) >= Number(health.at || 0);
+        if (otherAxAfterMain && (!proof.otherAxRevisionId || proof.otherAxRevisionId === revisionId)) {
+          proof.otherAxRevisionId = revisionId;
+          return {ok:true,reason:''};
+        }
+      }
+      if (proof.committedRevisionId && proof.committedRevisionId !== revisionId)
+        return {ok:false,reason:'assistant_source_changed'};
       return {ok:false,reason:'assistant_source_changed'};
     };
     const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) =>
@@ -41580,11 +41640,15 @@ function createLibraReadonlySourceContext(owner) {
             const [priorWork,priorCapture,priorMicroHead]=await Promise.all([
               storage.getVerifiedJson(workKey,scope,null),storage.getVerifiedJson(captureKey,scope,null),
               storage.getVerifiedJson(key.microMemoryHead(scope,worldlineId,sessionEpoch,turn),scope,null)]);
+            const carriedEquivalent = priorMicroHead?.analysisStatus === 'verified'
+              && priorMicroHead?.sourceRevisionId && priorMicroHead.sourceRevisionId !== revisionId
+              ? await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, receipt)
+              : null;
             const existingPlan = priorWork || priorCapture ? 'plan_work_already_present'
-              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId
+              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId || carriedEquivalent
                 ? 'plan_revision_already_published' : '';
             const finalPermit = existingPlan ? null : await validateReceiptRecoveryClaim(claim);
-            if (existingPlan) noteMicroPlanRefusal(existingPlan);
+            if (existingPlan) { if (!carriedEquivalent) noteMicroPlanRefusal(existingPlan); }
             else if (finalPermit.status !== 'current') noteMicroPlanRefusal('plan_final_' + finalPermit.reason);
             else if (mainCompletion && !freshMainAfterRequestPair(finalPermit.context,finalPermit.pair,options.mainAfterRequestBoundary)) {
               noteMicroPlanRefusal('plan_main_completion_changed');
@@ -41704,13 +41768,13 @@ function createLibraReadonlySourceContext(owner) {
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
-      if (rulesOnly && !sameCompletedTurnRaw(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
+      if (rulesOnly && !isTextEquivalentCompletedTurn(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
       const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
       if (!finalPair || hostWorldlineIdForScope(scope) !== worldlineId
-        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&sameCompletedTurnRaw(receipt, finalPair)))
+        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&isTextEquivalentCompletedTurn(receipt, finalPair)))
         || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(finalPair) !== revisionId)) {
         return empty('stale_source', 'source_changed_during_read');
       }
@@ -53659,7 +53723,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || Number(receipt.turn) !== Number(turn) || receipt.revisionId !== revisionId
         || completedTurnRevisionId(receipt) !== revisionId
         || !sameMessages('user') || !sameMessages('assistant')
-        || (receipt.sourceDigest !== current.sourceDigest && !sameCompletedTurnRaw(receipt, current))) return null;
+        || (receipt.sourceDigest !== current.sourceDigest && !isTextEquivalentCompletedTurn(receipt, current))) return null;
       return { status: 'verified', reason: '', receipt, receiptKey };
     };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
@@ -62462,9 +62526,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
             }, 250);
           }
-          if (!state.disposed && result?.status === 'stale_source'
-            && result?.reason === 'micro_publish_claim_changed'
-            && request.retryClaimChanged !== true) {
+          const claimChangedStale = (result?.status === 'stale_source' || result?.status === 'stale')
+            && ['micro_publish_claim_changed', 'micro_claim_changed', 'revision_changed',
+              'source_changed_during_validation', 'source_changed_after_provider',
+              'micro_publication_basis_changed', 'receipt_revision_mismatch', ''].includes(string(result?.reason || ''));
+          if (!state.disposed && claimChangedStale && request.retryClaimChanged !== true) {
             setTimeout(async () => {
               if (state.disposed) return;
               try {
@@ -63112,7 +63178,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // chat comparison if a later output processor changes the prose.
       if(expectedScope && health?.microBoundary?.scopeKey===expectedScope.scopeKey
         && health===state.mainAfterRequestHealth && typeof options.completedResponse==='string'){
-        health.microBoundary.legacyAssistantHash=completionAssistantDigest(cleanMessageText('assistant',{content:options.completedResponse}));
+        const legacyCleaned = cleanMessageText('assistant',{content:options.completedResponse});
+        health.microBoundary.legacyAssistantText = legacyCleaned;
+        health.microBoundary.legacyAssistantHash=completionAssistantDigest(legacyCleaned);
         if (health.pendingMicro === state.lastRequestScope?.pendingMicro)
           health.microBoundary.legacyPacket ??= completionPacketProof(options.completedResponse);
       }
@@ -66437,12 +66505,13 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       };
       if(mainNarrativeType){
         const pendingMicro = expectedScope ? state.lastRequestScope?.pendingMicro : null;
+        const cleanedResponse = pendingMicro ? cleanMessageText('assistant',{content:response}) : '';
         state.mainAfterRequestHealth={schema:'libra.capture_backend_health.v1',at:Date.now(),requestType,
           observedRunsAtAfter:Number(state.captureBackendObservedRuns||0),
           expectedScope:expectedScope?clone(expectedScope):null,
           pendingMicro,
           microBoundary:pendingMicro
-            ? {...pendingMicro,assistantHash:completionAssistantDigest(cleanMessageText('assistant',{content:response})),
+            ? {...pendingMicro,assistantText:cleanedResponse,assistantHash:completionAssistantDigest(cleanedResponse),
               packet:completionPacketProof(response)}:null};
       }
       // Only an exact main model request may trigger automatic memory analysis.
