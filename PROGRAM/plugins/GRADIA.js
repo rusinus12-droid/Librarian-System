@@ -1988,28 +1988,23 @@
   const NPC_DISPOSITION_LEVELS = Object.freeze({
     hostile: Object.freeze({
       label: '적대',
-      stance: 'actively against the persona. Reads the persona’s goodwill as manipulation, weakness, or insult and answers it with rejection made visible: scorn, open mockery, refusal, sabotage, retaliation',
-      example: 'sneers and walks past, snatches the flower and grinds it underfoot, or drops it in the trash in front of the persona'
+      stance: 'strong pole — wants the persona diminished, gone, or defeated; reads the persona’s goodwill as threat, manipulation, or insult, and never stays indifferent or warms'
     }),
     dislike: Object.freeze({
       label: '비호감',
-      stance: 'unwelcoming. Curt, cold, dismissive, or impatient with the persona; keeps distance, accepts only grudgingly or not at all, lets small slights and sarcasm show, but does not go out of the way to harm',
-      example: 'takes the flower with a flat look and sets it aside without a word, or declines it outright'
+      stance: 'restrained negative — wants distance and minimal contact; treats the persona’s approach as an unwanted intrusion, clear yet measured without escalating into open attack'
     }),
     acquaintance: Object.freeze({
       label: '아는 사이',
-      stance: 'neutral, polite distance. Treats the persona as someone known but not close: courteous, matter-of-fact, transactional; no special warmth or hostility, and no intimacy read into gestures',
-      example: 'gives a polite, slightly puzzled thanks and goes back to what they were doing'
+      stance: 'neutral — neither seeks nor avoids the persona; treats them strictly within the current social or practical frame, with no special warmth, no hostility, and no intimacy read into gestures'
     }),
     like: Object.freeze({
       label: '호감',
-      stance: 'warm. Welcomes the persona, gives the benefit of the doubt, is pleased by attention, and returns small kindnesses',
-      example: 'brightens, thanks the persona sincerely, and keeps the flower somewhere in sight'
+      stance: 'restrained positive — welcomes the persona and leans in their favor; reads their approach in good faith and is glad of it, clear yet measured'
     }),
     affection: Object.freeze({
       label: '애정',
-      stance: 'deeply attached. The persona matters greatly: open joy, protectiveness, devotion, quick forgiveness, seeking closeness — in this character’s own way (a shy one flusters, a proud one hides it badly)',
-      example: 'treasures the flower — holds it close, presses it, or wears it'
+      stance: 'strong pole — deeply attached and wants the persona safe, close, and well; the persona’s approach matters deeply and is met at full emotional weight'
     })
   });
   const normalizeNpcDispositionLevel = value => {
@@ -26188,15 +26183,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   // NPC 반응 경향성: the stance is fixed by the user; each stage enforces it from its own domain.
   const NPC_DISPOSITION_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write every NPC who meets, answers, or is engaged by the persona from their fixed disposition, expressed through their own lore. When the persona engages one of them, give that NPC a concrete, visible response that shows the disposition at its strength.',
-    aide_character: 'Character AIDE: check every NPC with a disposition who reacts to the persona in the draft. If the reaction slid back toward their default lore attitude, toward generic politeness, or toward warmth the disposition does not allow (or coldness it does not allow), rewrite that beat into a concrete act or line in the character’s own lore voice that shows the fixed disposition at its strength. If the form breaks the character’s lore (a stoic suddenly screaming without cause), keep the disposition and change the form.',
-    aide_world: 'World AIDE: check that the form each stance takes fits the place, the witnesses, the social rules, and the NPC’s means (in a throne room a hostile courtier humiliates with words and protocol rather than a brawl). Adjust the form only; never weaken the direction or strength of a disposition.',
+    shadow_act: 'SHADOW: write every NPC who meets, answers, or is engaged by the persona from their fixed disposition, built directly from their lore through the draft steps above. When the persona engages one of them, give that NPC a concrete, visible response unique to that character at the disposition’s strength.',
+    aide_character: 'Character AIDE: check every NPC with a disposition who reacts to the persona in the draft. (1) If the reaction slid back toward their default lore attitude, generic politeness, or warmth/coldness the disposition does not allow, rewrite that beat to match the fixed disposition’s direction and strength. (2) If the reaction is generic or stock — something that could fit any character with the same disposition — rewrite it into a concrete act or line drawn directly from this specific character’s lore (their means, values, speech habits, and social position). (3) If the form breaks the character’s lore, keep the disposition and change the form.',
+    aide_world: 'World AIDE: check that the form each stance takes fits the place, the witnesses, the social rules, and the NPC’s means. Adjust the form only; never weaken the direction or strength of a disposition.',
     aide_plot: 'Plot AIDE: check that no disposition softened, flipped, or was “won over” within this turn, and that each NPC’s stance leaves a pull or consequence for the persona’s next move instead of closing the scene.'
   });
   const npcDispositionDisplayName = () => compact(Runtime.activePersonaName || '', 80) || 'the user persona';
   const npcDispositionLevelLine = level => {
     const def = NPC_DISPOSITION_LEVELS[level];
-    return def ? `${level} (${def.label}): ${def.stance}. For example, offered a flower, such an NPC ${def.example} — whichever fits their lore.` : '';
+    return def ? `${level} (${def.label}): ${def.stance}.` : '';
   };
   const npcDispositionModeLines = (settings = {}) => {
     const gate = forcedBondModeGate(settings);
@@ -26205,11 +26200,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ];
     if (gate === 'staging') return [
       '- Scene-staging RP mode: every character’s acts and lines belong to the user. Do not invent any act, line, or reaction for an NPC.',
-      '- Only color the staging (expression, gesture, tone, breath, timing) of the NPC acts and lines the input already states, according to each NPC’s disposition: a stated “takes the flower” from a hostile NPC becomes a snatch with a cold glance.'
+      '- Only color the staging (expression, gesture, tone, breath, timing) of the NPC acts and lines the input already states, according to each NPC’s disposition and lore — never borrow generic stock gestures.'
     ];
     return [
       '- RP mode: only the NPC side gets new acts, lines, and reactions; the persona’s side stays exactly what the user input states. Do not write how the persona feels about the NPC’s response.',
-      '- Acts on objects, words, and social moves land fully (a gift can be refused, thrown away, or treasured). An act on the persona’s body may begin, but its effect on the persona stays open for the user under the existing RP touch rules. Hand the NPC’s stance back to the persona as the pull for the next turn.'
+      '- Acts on objects, words, and social moves land fully according to the NPC’s lore and stance. An act on the persona’s body may begin, but its effect on the persona stays open for the user under the existing RP touch rules. Hand the NPC’s stance back to the persona as the pull for the next turn.'
     ];
   };
   const npcDispositionStageBlock = (stageName, recent = {}, settings = {}) => {
@@ -26232,7 +26227,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `Fixed by the user toward the persona (${persona}); it never drifts, and lore decides only how it shows.`,
       gate === 'staging'
         ? 'Only color the expression and tone of NPC acts the input states; invent none.'
-        : 'An engaged NPC shows it through a concrete, visible act or line in their own voice.',
+        : 'Build each engaged NPC’s response from their lore (means, values, speech habits, social position) without stock gestures.',
       gate === 'rp' ? 'Write the NPC side only.' : ''
     ].filter(Boolean).join(' ');
     return [
@@ -26240,7 +26235,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       npcDispositionDetailOpen(condensed),
       `The user has fixed how the NPCs below are disposed toward the user persona (${persona}). This is a deliberate user directive that bends the cast away from their default lore attitude toward the persona. It is not flavor and not a reading to adjust.`,
       '- WHAT IS FIXED: the direction and strength of each NPC’s stance toward the persona. It does not drift: a kind act, a gift, an apology, flattery, good looks, or a calm scene never softens a hostile or disliking NPC, and a slight never sours an affectionate one. Only the user changes it. Do not bias toward warmth or toward conflict beyond what the disposition says.',
-      '- WHAT LORE DECIDES: how the stance shows. Keep each NPC’s lore personality, voice, speech habits, values, social position, abilities, and means intact, and reinterpret their stance toward the persona through the disposition. Ask how this exact person would act on the persona if they felt this way: a reserved character shows hostility as icy, deliberate contempt; a hot-tempered one as an outburst; a schemer as a calculated humiliation. The result is a new reading built from the lore, never a generic villain or a generic sweetheart.',
+      '- HOW TO BUILD EACH NPC’S RESPONSE FROM LORE: keep each NPC’s lore personality, voice, speech habits, values, social position, abilities, and means intact, and build their reaction in this order: (1) find in the lore how this character deals with someone toward whom they hold this stance — their available means, the values or pride they protect, their speech habits, and their social position; (2) judge what the persona’s just-made move means to this specific character in this situation; (3) craft a concrete response that only this character would make, at the disposition’s direction and strength.',
+      '- NO STOCK REACTIONS: do not use generic or cliché gestures (such as snatching, throwing away, grinding underfoot, sneering, blushing, or stammering) unless the character’s lore specifically points to them. Two NPCs with the same disposition must not react in the same way; their lore, status, habits, and means must produce distinct reactions.',
       '- LORE CONFLICT: when lore or memory describes a different attitude toward the persona, the disposition wins for the attitude. Do not invent a specific past event to explain the stance; let it show in present behavior and leave the reason unspoken unless the user note gives one. Canon relationship facts (family, spouse, rank, shared history) and their forms of address stay as canon; only the attitude inside them changes.',
       '- ACTIVE, VISIBLE BEHAVIOR: when the persona addresses, approaches, touches, gives, asks, or otherwise engages an NPC with a disposition, that NPC answers with at least one concrete, visible act or line that makes the disposition unmistakable, scaled to its strength. hostile and affection are strong poles and call for decisive acts; dislike and like are clear but restrained; acquaintance is deliberate neutrality. Never hide the stance in inner thought only.',
       '- A character reacts only to what they could know or witness. The disposition is a stance toward the persona only: relations between NPCs follow lore and the story. An NPC without a disposition (and with no default) follows lore.',

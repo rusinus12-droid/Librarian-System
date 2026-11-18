@@ -76,17 +76,19 @@ test('a disposition reaches every draft stage with its levels, rows, duties and 
     assert.match(all, /\[NPC DISPOSITION \(반응 경향성\) — USER-FIXED STANCE TOWARD THE PERSONA\]/, stage);
     assert.match(all, /- 준호: hostile \(적대\) · in the scene now · user note: 페르소나를 가문의 원수로 여긴다/, stage + ' row');
     assert.match(all, /- Every other NPC: dislike \(비호감\) by default · in the scene now: 민아/, stage + ' default covers 민아');
-    assert.match(all, /- hostile \(적대\): actively against the persona/, stage + ' hostile level');
-    assert.match(all, /grinds it underfoot/, stage + ' active example');
-    assert.match(all, /- dislike \(비호감\): unwelcoming/, stage + ' dislike level');
+    assert.match(all, /- hostile \(적대\): strong pole — wants the persona diminished, gone, or defeated/, stage + ' hostile level');
+    assert.match(all, /- dislike \(비호감\): restrained negative — wants distance and minimal contact/, stage + ' dislike level');
     assert.doesNotMatch(all, /- affection \(애정\):/, stage + ' only levels in use');
+    assert.doesNotMatch(all, /flower|grinds it underfoot|drops it in the trash|a reserved character shows hostility|hot-tempered one as an outburst|schemer as a calculated/i, stage + ' no flower example or fixed personality formula');
     assert.match(all, /never softens a hostile or disliking NPC/, stage + ' no drift');
-    assert.match(all, /WHAT LORE DECIDES: how the stance shows/, stage + ' lore decides the form');
+    assert.match(all, /HOW TO BUILD EACH NPC’S RESPONSE FROM LORE:[\s\S]*\(1\) find in the lore[\s\S]*\(2\) judge what the persona’s just-made move means[\s\S]*\(3\) craft a concrete response/, stage + ' step-by-step lore draft procedure');
+    assert.match(all, /NO STOCK REACTIONS:[\s\S]*Two NPCs with the same disposition must not react in the same way/, stage + ' forbids stock reactions and identical NPC responses');
     assert.match(all, /the disposition wins for the attitude/, stage + ' lore conflict');
     assert.match(all, /RP mode: only the NPC side gets new acts/, stage + ' RP rule');
   }
   const duty = stage => allOf(f.prompts.find(item => stageOf(item) === stage)).match(/STAGE DUTY: ([^\n]+)/g).join('\n');
   assert.match(duty('aide_character'), /Character AIDE: check every NPC with a disposition/);
+  assert.match(duty('aide_character'), /generic or stock — something that could fit any character with the same disposition/);
   assert.match(duty('aide_world'), /World AIDE: check that the form each stance takes/);
   assert.match(duty('aide_plot'), /Plot AIDE: check that no disposition softened/);
 });
@@ -143,7 +145,7 @@ test('dispositions are per chat, a default alone applies, and Korean level label
   await runTurn(only, '민아에게 꽃을 건넨다.');
   const all = allOf(only.prompts.find(item => stageOf(item) === 'aide_character'));
   assert.match(all, /- Every other NPC: affection \(애정\) by default/);
-  assert.match(all, /- affection \(애정\): deeply attached/);
+  assert.match(all, /- affection \(애정\): strong pole — deeply attached/);
   assert.doesNotMatch(all, /- 준호: /, 'a row without a level is not used');
   assert.doesNotMatch(all, /hostile \(적대\)/, 'a row without a name is not used');
 });
