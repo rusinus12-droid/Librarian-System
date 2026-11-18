@@ -18002,7 +18002,7 @@ ${passage.text || ''}`, 420));
         'Keep conditions consistent over time: no instant recovery, no forgotten injury.',
         'Do not use a body-state change as the ending of the turn.'
       ]),
-      example: '세라의 감기는 대사보다 몸짓으로 드러나게 해줘. 기침은 가끔만, 대신 오래 서 있지 못하고 자꾸 기대게. 하준은 그걸 눈치채도 바로 말하지 않게.',
+      example: '아픈 인물의 상태는 대사보다 몸짓으로 드러나게 해줘. 증상은 가끔만 보이고, 대신 오래 서 있지 못하거나 자꾸 기대는 식으로. 주변 인물은 눈치채도 바로 말하지 않게.',
       placeholder: '예: 부상은 행동 제약으로 보여주고, 아픈 티를 대사로 설명하지 마.'
     }),
     aide_forced_bond: Object.freeze({
@@ -18016,8 +18016,8 @@ ${passage.text || ''}`, 420));
         'Respect the active writing mode: in RP the persona’s side stays the user’s, and in scene-staging mode nobody is brought in or given a new act.',
         'Do not resolve or settle a bond in one turn, and do not use an arrival as the ending.'
       ]),
-      example: '이 채팅에서는 페르소나와 세라의 애증을 중심으로 다뤄줘. 서로 필요한 상황에서 원망이 걸리게 하고, 세라가 먼저 다정해지지는 않게 해. 리안은 그걸 보고 질투하는 정도로만.',
-      placeholder: '예: 세라와는 애증, 리안과는 경쟁. 한 턴에 한 관계만 깊게 다뤄줘.'
+      example: '관계는 한 가지 감정으로 정리하지 말고 섞인 채로 다뤄줘. 서로 필요한 상황에서 원망이 걸리게 하고, 상대가 먼저 다정해지지는 않게 해. 주변 인물은 그걸 보고 반응하는 정도로만.',
+      placeholder: '예: 관계는 섞인 감정으로 다루고, 한 턴에 한 관계만 깊게 다뤄줘.'
     })
   });
 
@@ -18042,6 +18042,7 @@ ${passage.text || ''}`, 420));
       `이 영역의 핵심 질문은 “${guide.keyQuestion}”입니다.`,
       `변환 기준: ${guide.adaptation}`,
       '합의된 내용은 이 단계가 무엇을 분석해야 하는지와, 그 분석을 실제 초안에 어떻게 적용해야 하는지를 한 지침으로 묶어 저장합니다.',
+      '이 지침은 모든 채팅에 공통으로 적용됩니다. 특정 채팅에서만 지킬 필수·금지 요소는 RisuAI 작가의 노트에 적어 주세요. 작가의 노트는 모든 초안 단계와 인풋 관리자에 유저 입력 다음 권위로 적용됩니다.',
       '',
       `[${targetDef.label} 창작 지침 예시]`,
       `“${guide.example}”`,
@@ -18123,6 +18124,8 @@ ${passage.text || ''}`, 420));
     'This is a discussion phase, not the compilation phase. Do not output JSON or prematurely present a finalized creative-instruction block.',
     'Reflect the user’s request, surface one meaningful ambiguity or tradeoff when useful, and ask a focused follow-up question if it would materially improve the instruction.',
     'When the direction is sufficiently clear, briefly summarize the agreement and tell the user they can press the creative-instruction generation button. Do not claim that anything has been saved yet.',
+    'SCOPE: a saved creative instruction applies to every chat and character, not only the current one. The RisuAI Author’s Note of the current chat is the chat-scoped place for this story’s required and forbidden elements, and GRADIA applies it to every draft stage and Input Assist with authority right after the user’s input.',
+    'When the user asks for something tied to this chat only (named characters, a specific relationship, a plot point, or a must/forbid rule for this story), say so briefly and suggest putting it in the RisuAI Author’s Note. Offer a general form of the same idea for this stage’s instruction when one exists. If the user still wants it saved here, accept that.',
     'Do not redesign the pipeline, create a new agent, or write RP prose in this conversational reply.',
     'Reflect what you understood. If a material choice is unclear, ask one focused question.',
     'Never treat your own suggestion as an accepted preference until the user confirms it.',
@@ -18163,6 +18166,7 @@ ${passage.text || ''}`, 420));
     'Separate observable immediate responses from hidden long-term feelings: allow clear dialogue and action now, while avoiding forced permanent emotions or relationship outcomes unless explicitly requested.',
     'Do not turn optional stimulus examples into a repetitive checklist that must appear in every reply.',
     'Preserve confirmed parts of the existing instruction unless the user revises or removes them.',
+    'The instruction is global across chats. Phrase confirmed preferences as general rules; keep chat-specific names, relationships, or plot facts only when the user explicitly chose to save them here instead of in the RisuAI Author’s Note.',
     'Write actionable creative guidance, not pipeline architecture, JSON output schemas, model settings, lore database entries, private chain-of-thought, or RP prose.',
     'The instruction augments the built-in stage prompt; it never replaces safety, canon, agency, continuity, or structured-output contracts.',
     'Return one JSON object only with keys: enabled, summary, creative_instruction.',
@@ -18204,9 +18208,20 @@ ${passage.text || ''}`, 420));
     };
   };
 
+  // The legacy User Intent import runs once. Without this marker a SHADOW instruction
+  // the user cleared would be re-imported from the untouched legacy record on every open.
+  const LEGACY_OOC_MIGRATION_MARKER_KEY = 'serial_gradation_agents_for_rp:legacy_ooc_migration:v1';
+  const markLegacyOocMigrationDone = async outcome => {
+    try { await writeObject(LEGACY_OOC_MIGRATION_MARKER_KEY, { done: true, outcome, at: new Date().toISOString() }); } catch (_) {}
+  };
   const migrateLegacyOocToCreativePrompt = async prompts => {
+    const marker = await readObject(LEGACY_OOC_MIGRATION_MARKER_KEY, {});
+    if (marker?.done === true) return { prompts, migrated: false };
     const shadow = normalizePromptRecordEntry(prompts?.before?.shadow_act || {});
-    if (shadow.customPrompt.trim()) return { prompts, migrated: false };
+    if (shadow.customPrompt.trim()) {
+      await markLegacyOocMigrationDone('superseded_by_existing_instruction');
+      return { prompts, migrated: false };
+    }
     const stored = await readObject('serial_gradation_agents_for_rp:writer_designs:v1', {});
     const records = unwrapVersionedStore(stored, 'designs');
     const legacy = Object.values(records || {}).map(value => {
@@ -18217,12 +18232,16 @@ ${passage.text || ''}`, 420));
     const rawInstructions = legacy?.instructions || legacy?.directives || legacy?.rules || [];
     const instructions = (Array.isArray(rawInstructions) ? rawInstructions : [rawInstructions])
       .filter(value => typeof value === 'string').map(value => compact(value, 900)).filter(Boolean).slice(0, 24);
-    if (!instructions.length) return { prompts, migrated: false };
+    if (!instructions.length) {
+      await markLegacyOocMigrationDone('no_legacy_instruction');
+      return { prompts, migrated: false };
+    }
     const purpose = compact(legacy.purpose || legacy.role || legacy.goal || '', 800);
     const instruction = [purpose ? '목표: ' + purpose : '', ...instructions.map(item => '- ' + item)].filter(Boolean).join('\n');
     prompts.before ||= {};
     prompts.before.shadow_act = { ...shadow, mode: 'replace', customPrompt: compact(instruction, 20000) };
     if (!await writePromptOverrides(prompts)) throw new Error('이전 사용자 창작 지침을 보존하지 못했습니다. 원본 자료는 유지됩니다.');
+    await markLegacyOocMigrationDone('migrated');
     syncCreativePromptIntoGui('shadow_act', prompts.before.shadow_act.customPrompt);
     return { prompts, migrated: true };
   };
@@ -18538,13 +18557,21 @@ ${passage.text || ''}`, 420));
       customPrompt: '',
       extraPrompt: ''
     };
-    await writePromptOverrides(context.prompts);
+    if (!await writePromptOverrides(context.prompts)) {
+      const state = ensureCreativeOocState();
+      const reason = `${context.targetDef.label} 창작 지침을 비우지 못했습니다. 저장된 지침은 그대로입니다.`;
+      state.lastError = reason;
+      state.statusText = reason;
+      state.statusState = 'error';
+      throw new Error(reason);
+    }
     syncCreativePromptIntoGui(context.targetStage, '');
     Runtime.settings = null;
     Runtime.settingsLoadedAt = 0;
     const state = ensureCreativeOocState();
     state.summariesByStage[context.targetStage] = '';
     state.revisionsByStage[context.targetStage] = 0;
+    state.lastError = '';
     state.statusText = `${context.targetDef.label} 창작 지침을 비웠습니다.`;
     state.statusState = 'idle';
     clearRequestReuseCache();
