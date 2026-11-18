@@ -13,7 +13,7 @@ const withPlaceholder = `${BODY}\n\n---\n[LBDATA START]\n<lb-lazy id="lb-xnai" /
 const illustrated = `하연은 이불을 끌어안았다. "세지 마."\n\n<lb-xnai id="scene-11" operation="bc5aa5af-291e-459d-b3b6-9728866a269b" scene="11">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 const rewritten = `하연은 이불을 걷어찼다. "세도 돼."\n\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 
-const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illustrated, label = 'illustration'} = {}) => {
+const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illustrated, label = 'illustration', rulesAfter = null} = {}) => {
   let outputListener;
   const fixture = await serverFixture({mode: 'server_only', host: {addRisuChatListener: async (_kind, handler) => { outputListener = handler; return true; }}});
   try {
@@ -54,7 +54,8 @@ const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illus
     assert.equal(f.control.calls.length, 1, 'the first capture runs one Micro job');
     assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified');
 
-    f.chat.message[1].data = rawOnly;
+    // rulesAfter: the message stays byte-for-byte; only the source rules change (a tag rule is added).
+    if (rulesAfter) await f.r.api.setSourceEditRules(rulesAfter); else f.chat.message[1].data = rawOnly;
     const preRecaptureReader = await f.r.api.readActiveMicroMemoryForTurn(1);
     assert.equal(preRecaptureReader.status, 'verified', 'Micro reader stays verified before receipt recapture on illustration-only raw edit: ' + JSON.stringify({status: preRecaptureReader.status, reason: preRecaptureReader.reason}));
     const preRecaptureStatus = await f.r.api.getReceiptRecoveryStatus();
@@ -77,6 +78,26 @@ const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illus
     const stale = await f.r.api.debugReadActiveMicroMemory(1);
     assert.notEqual(stale.status, 'verified', 'a real text change still needs a new analysis');
   } finally { await fixture.close?.(); }
+};
+
+// Adding a tag rule changes the analyzed text of every turn carrying that tag, but not the turn:
+// the raw bytes are the same, so lens notes stay current. A real text change still makes them stale.
+const lensRuleCase = async () => {
+  const f = await lensFixture({ beforeRun: async f => { const row = f.chat.message.find(m => m.role !== 'user'); row.data = row.data + '\n<status-window>HP 10</status-window>'; } });
+  try {
+    f.setReply({ items: [{ label: '약속', text: '지호의 은빛 열쇠 반환 약속', refs: ['t2-a'], quote: '오늘 돌려주겠다고 약속했다', target: '지호' }] });
+    await f.add('약속 렌즈', 'active', { recall: { role: 'relevant' } });
+    const recall = async () => JSON.parse(JSON.stringify(await f.api.recallLensMemories({ query: '지호 은빛 열쇠 약속', canonicalBudgetChars: 12000 })));
+    const staleCount = result => (result.skippedCandidates || []).filter(row => row.reasonCode === 'stale_source_revision').length;
+    assert.ok((await recall()).injectedItems.length > 0, 'the note is recalled');
+    await f.api.setSourceEditRules(STATUS_RULES);
+    const afterRule = await recall();
+    assert.equal(staleCount(afterRule), 0, 'adding a tag rule does not make the note stale');
+    assert.ok(afterRule.injectedItems.length > 0, 'the note is still recalled after the rule change');
+    const row = f.chat.message.find(m => m.role !== 'user');
+    row.data = `${row.data} 그리고 전혀 다른 문장이 덧붙었다.`;
+    assert.ok(staleCount(await recall()) > 0, 'a real text change after the rule change still makes the note stale');
+  } finally { await f.close?.(); }
 };
 
 const lensCase = async () => {
@@ -108,6 +129,9 @@ const withStatus = hp => `${BODY}\n\n<status-window>HP ${hp} · 위치: 침실</
 (async () => {
   await microCase();
   await microCase({rules: STATUS_RULES, first: withStatus(10), rawOnly: withStatus(9), label: 'user-ignored tag'});
+  // The tag existed before any rule for it; adding the rule keeps the turn's analysis.
+  await microCase({first: withStatus(10), rulesAfter: STATUS_RULES, label: 'tag-rule-added'});
+  await lensRuleCase();
   await lensCase();
   console.log('libra_text_equivalent_revision_test: ok');
 })().catch(error => { console.error(error); process.exit(1); });

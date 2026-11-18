@@ -41118,6 +41118,20 @@ function createLibraReadonlySourceContext(owner) {
       user: pair.user.text,
       assistant: pair.assistant.text
     })));
+    // 같은 턴 (one rule for every revision check): the same messages whose raw bytes did not change,
+    // so only the source rules moved (a tag rule was added or edited). Paired with an unchanged
+    // analyzed text (sourceDigest), which covers raw changes the rules leave out (illustrations, an
+    // ignored status window), a turn keeps its analysis without per-tag exceptions in code.
+    const sameCompletedTurnRaw = (left, right) => ['user', 'assistant'].every(role => {
+      const a = asArray(left?.[role]?.rawPayloadDigests), b = asArray(right?.[role]?.rawPayloadDigests);
+      return a.length > 0 && JSON.stringify(a) === JSON.stringify(b)
+        && JSON.stringify(asArray(left?.[role]?.chatIds)) === JSON.stringify(asArray(right?.[role]?.chatIds));
+    });
+    // Raw identity of a batch: the same messages with the same raw bytes. Lens notes record it so a
+    // later change of the source rules alone (원문 태그 규칙) does not make them stale.
+    const rawSourceDigest = batch => digest(batch.map(pair => ({ turn: pair.turn,
+      user: [asArray(pair?.user?.chatIds), asArray(pair?.user?.rawPayloadDigests)],
+      assistant: [asArray(pair?.assistant?.chatIds), asArray(pair?.assistant?.rawPayloadDigests)] })));
     const completedTurnRevisionId = pair => digest({
       turn: Number(pair?.turn || 0),
       user: {
@@ -41285,7 +41299,8 @@ function createLibraReadonlySourceContext(owner) {
         const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveReceiptValidationContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
         if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
-          || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId) || sourceDigest([pair]) !== receipt.sourceDigest)
+          || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId)
+          || (sourceDigest([pair]) !== receipt.sourceDigest && !(options.allowProjectedEquivalent===true&&sameCompletedTurnRaw(receipt, pair))))
           return empty('stale_source', 'raw_packet_current_source_changed');
         const currentPacket = await buildCompletedTurnRawPacket(context, pair);
         const withIdentity=ref.originRelation==='current_original_capture';
@@ -41672,7 +41687,10 @@ function createLibraReadonlySourceContext(owner) {
       }
       const pairs = options.pairs || buildPairs(context.chat, scopeKey);
       const pair = pairs[turn - 1];
-      if (!pair || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== revisionId) || sourceDigest([pair]) !== head.sourceDigest) {
+      // With allowProjectedEquivalent, a changed analyzed text is still this turn when the raw bytes
+      // are unchanged (only the source rules moved); that is checked once the receipt is read.
+      const rulesOnly = options.allowProjectedEquivalent === true && pair && sourceDigest([pair]) !== head.sourceDigest;
+      if (!pair || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== revisionId) || (!rulesOnly && sourceDigest([pair]) !== head.sourceDigest)) {
         return empty('stale_source', 'current_pair_revision_changed');
       }
       let receipt;
@@ -41684,12 +41702,13 @@ function createLibraReadonlySourceContext(owner) {
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
+      if (rulesOnly && !sameCompletedTurnRaw(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
       const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
       if (!finalPair || hostWorldlineIdForScope(scope) !== worldlineId
-        || sourceDigest([finalPair])!==head.sourceDigest
+        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&sameCompletedTurnRaw(receipt, finalPair)))
         || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(finalPair) !== revisionId)) {
         return empty('stale_source', 'source_changed_during_read');
       }
@@ -53731,36 +53750,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (survivor) await storage.setVerifiedJson(storageKey, survivor, scope);
       return survivor;
     };
-    // An earlier receipt of a turn that still matches the current one in everything Micro reads:
-    // the same user and assistant messages, the same analyzed text (sourceDigest), and raw bytes
-    // differing only in content the source rules leave out: the user's tag rules (원문 재분석의 태그
-    // 관리) plus LightBoard illustration/lazy/LBDATA blocks. The receipt itself stays bound to the
-    // raw bytes; other raw-only variants (stage markers, hidden raw rerolls) still produce a fresh
-    // Micro provenance.
-    const stripIllustrationRawOnly = value => string(value || '')
-      .replace(/\[LBDATA START\][\s\S]*?(?:\[LBDATA END\]|$)/gi, '')
-      .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\s\S]*?<\/lb-xnai\s*>/gi, '')
-      .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '')
-      .replace(/<lb-lazy\b(?:"[^"]*"|'[^']*'|[^'">])*?>[\s\S]*?<\/lb-lazy\s*>/gi, '')
-      .replace(/<lb-lazy\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    // The user's tag rules first (the same projection the analyzed text uses), then the fixed
-    // illustration carriers, so a default setup behaves as before and custom rules extend it.
-    const neutralRawSegment = value => stripIllustrationRawOnly(memorySuiteProjectSourceTags(string(value || ''), 'libra'));
-    const sameIllustrationNeutralRaw = (leftReceipt, rightReceipt) => {
-      if (!leftReceipt?.rawSourcePacket || !rightReceipt?.rawSourcePacket) return false;
-      for (const role of ['user', 'assistant']) {
-        const leftSegs = asArray(leftReceipt.rawSourcePacket?.[role]?.segments);
-        const rightSegs = asArray(rightReceipt.rawSourcePacket?.[role]?.segments);
-        if (!leftSegs.length || leftSegs.length !== rightSegs.length) return false;
-        for (let i = 0; i < leftSegs.length; i += 1) {
-          if (string(leftSegs[i]?.rawType || '') !== string(rightSegs[i]?.rawType || '')) return false;
-          if (neutralRawSegment(leftSegs[i]?.rawValue) !== neutralRawSegment(rightSegs[i]?.rawValue)) return false;
-        }
-      }
-      return true;
-    };
+    // An earlier receipt of a turn that is still the same turn (sameCompletedTurnRaw, or the same
+    // analyzed text): its Micro analysis stays bound to it. One rule replaces the former fixed
+    // LightBoard list, so a new tag set to be ignored in 원문 재분석의 태그 관리 needs no code.
     const readTextEquivalentReceipt = async (scope, worldlineId, sessionEpoch, turn, revisionId, current) => {
       const receiptKey = key.completedTurnReceipt(scope, worldlineId, sessionEpoch, turn, revisionId);
       let receipt;
@@ -53769,9 +53761,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (receipt?.schema !== 'libra.completed_turn_receipt.v1' || receipt.scopeKey !== current?.scopeKey
         || receipt.worldlineId !== worldlineId || Number(receipt.sessionEpoch) !== Number(sessionEpoch)
         || Number(receipt.turn) !== Number(turn) || receipt.revisionId !== revisionId
-        || completedTurnRevisionId(receipt) !== revisionId || receipt.sourceDigest !== current.sourceDigest
+        || completedTurnRevisionId(receipt) !== revisionId
         || !sameMessages('user') || !sameMessages('assistant')
-        || !sameIllustrationNeutralRaw(receipt, current)) return null;
+        || (receipt.sourceDigest !== current.sourceDigest && !sameCompletedTurnRaw(receipt, current))) return null;
       return { status: 'verified', reason: '', receipt, receiptKey };
     };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
@@ -53818,10 +53810,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try { head = candidateHead === undefined ? await storage.getVerifiedJson(headKey, scope, null) : candidateHead; }
       catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
       if (!head) return empty('missing', 'micro_head_absent');
-      // A newer receipt of the same messages with the same analyzed text (only raw-only content such
-      // as LightBoard illustrations changed) keeps the analysis bound to the earlier receipt. Live
-      // chat 2026-11-17: illustrations made new receipts for T8-T11 and their Micro read as missing.
-      const bound = head.sourceRevisionId !== active.receipt.revisionId && head.sourceDigest === active.receipt.sourceDigest
+      // A newer receipt of the same turn (same raw bytes under changed source rules, or the same
+      // analyzed text under raw changes the rules leave out) keeps the analysis bound to the earlier
+      // receipt. Live chat 2026-11-17: illustrations made new receipts for T8-T11 and their Micro
+      // read as missing; adding a tag rule did the same to every turn carrying that tag.
+      const bound = head.sourceRevisionId !== active.receipt.revisionId
         ? (await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, head.sourceRevisionId, active.receipt) || active)
         : active;
       const recordKey = key.microMemory(scope, worldlineId, sessionEpoch, turn,
@@ -74504,6 +74497,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         scopeKey, worldlineId,
         turnRange: { start: Number(startTurn), end: Number(endTurn) },
         sourceDigest: digestValue,
+        rawSourceDigest: rawSourceDigest(batch),
         sourceRevisionId: `lrev_${digest([scopeKey, worldlineId, startTurn, endTurn, digestValue, revisionIds]).slice(0, 16)}`,
         batch: clone(batch)
       };
@@ -74557,14 +74551,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           let revision = null;
           if (batch.length === end - start + 1) {
             const bodyDigest = sourceDigest(batch);
-            revision = { bodyDigest, revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}` };
+            revision = { bodyDigest, rawDigest: rawSourceDigest(batch), revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}` };
           }
           revisions.set(rangeKey, revision);
         }
         const revision = revisions.get(rangeKey);
-        // The analyzed text decides: a raw-only change (LightBoard illustrations, packets) keeps the
-        // note current. Live chat 2026-11-17: illustrations made the T6-T10 notes stale.
-        return revision != null && revision.bodyDigest === record.sourceDigest;
+        // 같은 턴: the same analyzed text (a raw change the rules leave out, such as illustrations), or
+        // the same raw bytes (only the source rules changed). Notes written before rawSourceDigest
+        // existed follow the analyzed text alone.
+        return revision != null && (revision.bodyDigest === record.sourceDigest
+          || (!!record.rawSourceDigest && revision.rawDigest === record.rawSourceDigest));
       };
     };
 
@@ -75393,7 +75389,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const recordKeyValue = lensRecordKey(token.worldlineId, token.turnRange);
       const existingRecords = trialRun ? {} : await loadLensRecordsMap(scope, lens.lensId);
       const existing = existingRecords[recordKeyValue] || null;
-      if (opts.skipIfCurrent === true && existing && existing.sourceDigest === token.sourceDigest && existing.instructionRevision === lens.instructionRevision) {
+      if (opts.skipIfCurrent === true && existing && (existing.sourceDigest === token.sourceDigest || (existing.rawSourceDigest && existing.rawSourceDigest === token.rawSourceDigest)) && existing.instructionRevision === lens.instructionRevision) {
         return { ok: true, status: 'unchanged', lensId: lens.lensId, trialRun, record: clone(existing) };
       }
       let canonicalSummary = '';
@@ -75479,7 +75475,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         recordKey: recordKeyValue, lensId: lens.lensId, lensNameSnapshot: lens.name,
         instructionRevision: lens.instructionRevision, instructionText:lens.instructionText, evidenceMode: lens.evidenceMode,
         scopeKey: token.scopeKey, worldlineId: token.worldlineId, turnRange: clone(token.turnRange),
-        sourceRevisionId: token.sourceRevisionId, sourceDigest: token.sourceDigest,
+        sourceRevisionId: token.sourceRevisionId, sourceDigest: token.sourceDigest, rawSourceDigest: token.rawSourceDigest || '',
         canonicalContextIncluded: Boolean(canonicalSummary), trackedTime: lens.trackTime === true, trackedSubject: lens.trackSubject === true, runId, createdAt: finishedAt,
         model: run.model, presetName: run.presetName, items: clone(admission.acceptedItems),
         ...(closureResult.closures.length ? { closures: closureResult.closures } : {})
