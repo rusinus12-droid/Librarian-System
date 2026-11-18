@@ -31,13 +31,21 @@ const MESSAGES = [
 test('default rules leave out what the built-in cleanup leaves out, and a saved set missing them is detected', () => {
   const api = sdk();
   const defaults = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules('libra'));
-  for (const name of ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker', 'lb-xnai', 'thoughts']) assert.ok(defaults.ignoredTags.includes(name), name);
+  for (const name of ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker', 'lb-xnai', 'thoughts']) assert.ok(defaults.ignoredTags.includes(name), 'libra: ' + name);
   const text = api.memorySuiteProjectSourceRules('하연이 웃었다.\n<img src="a.png">\n<lb-stage id="1">무대</lb-stage>\n<lb-lazy id="x" />\n그녀는 창밖을 보았다.', defaults).text;
   assert.doesNotMatch(text, /<img|lb-stage|lb-lazy/, 'images and LightBoard markers do not reach the analysis');
   assert.match(text, /하연이 웃었다[\s\S]*창밖을 보았다/);
-  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED)), ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
-  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags({ ...OLD_SAVED, unwrapTags: ['img'], ignoredTags: [...OLD_SAVED.ignoredTags, 'lb-lazy', 'lb-stage', 'lb-stage-marker'] })), [], 'any action counts as handled');
-  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(null)), []);
+  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'libra')), ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
+  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags({ ...OLD_SAVED, unwrapTags: ['img'], ignoredTags: [...OLD_SAVED.ignoredTags, 'lb-lazy', 'lb-stage', 'lb-stage-marker'] }, 'libra')), [], 'any action counts as handled');
+  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(null, 'libra')), []);
+  // Each owner's defaults match its own built-in cleanup (measured on the real GUI preview):
+  // Flashback drops images and lazy markers, HAYAKU keeps all four.
+  const flashback = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules('flashback')).ignoredTags;
+  assert.deepEqual(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'].filter(name => flashback.includes(name)), ['img', 'lb-lazy']);
+  const hayaku = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules('hayaku')).ignoredTags;
+  assert.deepEqual(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'].filter(name => hayaku.includes(name)), []);
+  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'flashback')), ['img', 'lb-lazy']);
+  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'hayaku')), [], 'HAYAKU never shows the notice');
 });
 
 test('the tag inventory reads treatment from the projection, so nested and excluded items are not offered again', () => {

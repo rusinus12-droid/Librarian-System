@@ -37,20 +37,27 @@ function memorySuiteProjectSourceTags(value, owner) {
   return body;
 }
 // Rules are a projection, never an authorization to rewrite stored evidence.
-// Presentation markup the built-in cleanup (no saved rules) already leaves out of the analyzed text.
-// Saved rules replace that cleanup, so the defaults carry them too: saving one new rule must not
-// quietly bring images and LightBoard stage/lazy markers back into every turn's analysis.
-const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
+// Presentation markup each owner's built-in cleanup (no saved rules) already leaves out of the
+// analyzed text. Saved rules replace that cleanup, so each owner's defaults carry exactly its own:
+// saving one new rule changes nothing else in that plugin's analysis. The cleanups differ
+// (measured on the real GUI preview): LIBRA drops all four, Flashback images and lazy markers,
+// HAYAKU none.
+const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze({
+  libra: Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']),
+  flashback: Object.freeze(['img', 'lb-lazy']),
+  hayaku: Object.freeze([])
+});
+function memorySuiteDefaultPresentationTags(owner) { return [...(MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS[owner] || [])]; }
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
-// Default presentation tags a saved rule set does not handle in any way (any action counts).
-function memorySuiteMissingDefaultSourceTags(rules) {
+// This owner's default presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules, owner) {
   if(!rules||typeof rules!=='object')return [];
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
-  return MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS.filter(name=>!handled.has(name));
+  return memorySuiteDefaultPresentationTags(owner).filter(name=>!handled.has(name));
 }
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());

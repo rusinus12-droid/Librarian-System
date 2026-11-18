@@ -51337,6 +51337,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const registerMemoryBridgeIpc = async (allowRetry = true) => {
     await getGradiaPluginReadOwner().start().catch(() => false);
+    void getHayakuSourceRuleSync().start();
     if (memoryBridgeIpcRegistered) return true;
     const api = apiCandidates().find(candidate => (
       typeof candidate?.addPluginChannelListener === 'function'
@@ -55542,20 +55543,27 @@ function memorySuiteProjectSourceTags(value, owner) {
   return body;
 }
 // Rules are a projection, never an authorization to rewrite stored evidence.
-// Presentation markup the built-in cleanup (no saved rules) already leaves out of the analyzed text.
-// Saved rules replace that cleanup, so the defaults carry them too: saving one new rule must not
-// quietly bring images and LightBoard stage/lazy markers back into every turn's analysis.
-const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
+// Presentation markup each owner's built-in cleanup (no saved rules) already leaves out of the
+// analyzed text. Saved rules replace that cleanup, so each owner's defaults carry exactly its own:
+// saving one new rule changes nothing else in that plugin's analysis. The cleanups differ
+// (measured on the real GUI preview): LIBRA drops all four, Flashback images and lazy markers,
+// HAYAKU none.
+const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze({
+  libra: Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']),
+  flashback: Object.freeze(['img', 'lb-lazy']),
+  hayaku: Object.freeze([])
+});
+function memorySuiteDefaultPresentationTags(owner) { return [...(MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS[owner] || [])]; }
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
-// Default presentation tags a saved rule set does not handle in any way (any action counts).
-function memorySuiteMissingDefaultSourceTags(rules) {
+// This owner's default presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules, owner) {
   if(!rules||typeof rules!=='object')return [];
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
-  return MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS.filter(name=>!handled.has(name));
+  return memorySuiteDefaultPresentationTags(owner).filter(name=>!handled.has(name));
 }
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
@@ -55928,7 +55936,15 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-input-finder,.ms-source-settings .ms-input-defaults-notice{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-finder>button{justify-self:start}
 .ms-source-settings .ms-finder-list{display:grid;gap:6px}.ms-source-settings .ms-finder-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px);background:var(--surface,transparent)}.ms-source-settings .ms-finder-row[data-treatment]:not([data-treatment=analyzed]){opacity:.72}
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
-@media(max-width:600px){.ms-source-settings .ms-finder-row{flex-direction:column;align-items:stretch}}
+.ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
+.ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-input-sync>p:empty{display:none}
+/* The recent-messages list already shows the last message; the single output stays for tools. */
+.ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
+.ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
+.ms-source-settings .ms-preview-head{display:flex;gap:8px;align-items:baseline;justify-content:space-between;flex-wrap:wrap;font-size:12px}.ms-source-settings .ms-preview-item pre{margin:0;max-height:260px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+.ms-source-settings .ms-preview-item del{text-decoration:line-through;opacity:.55;background:color-mix(in srgb,var(--danger,#c0392b) 14%,transparent);border-radius:3px}
+@media(max-width:600px){.ms-source-settings .ms-finder-row{flex-direction:column;align-items:stretch}.ms-source-settings .ms-finder-actions{flex-wrap:wrap}.ms-source-settings .ms-finder-actions button{flex:1 1 auto;white-space:nowrap}.ms-source-settings .ms-input-row select{min-width:8.5em}}
 `;}
 // The finder section shared by every source-rule editor. config: readSamples() → raw texts,
 // draft() → current draft rules (throws while invalid), addRule(name, action), busy().
@@ -55966,7 +55982,7 @@ function mountMemorySuiteSourceTagFinder(host, config) {
   };
   button.onclick=async()=>{
     if(reading||config.busy?.()===true)return;reading=true;button.disabled=true;status.textContent='최근 메시지를 읽는 중…';list.replaceChildren();
-    try{const texts=await config.readSamples();samples=(Array.isArray(texts)?texts:[]).filter(value=>typeof value==='string');render();}
+    try{const texts=await config.readSamples();samples=memorySuiteSourceSampleItems(texts).map(item=>item.text);render();}
     catch{samples=null;status.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 시도하세요.';}
     finally{reading=false;button.disabled=false;}
   };
@@ -55978,11 +55994,195 @@ function mountMemorySuiteMissingDefaultsNotice(host, config) {
   const box=make('div'),text=make('p'),add=make('button','빠진 기본 규칙 추가');box.className='ms-input-defaults-notice';box.dataset.sourceMissingDefaults='';box.hidden=true;add.type='button';add.dataset.sourceMissingDefaultsAdd='';
   box.append(text,add);host.append(box);
   const update=rules=>{
-    const missing=memorySuiteMissingDefaultSourceTags(rules);box.hidden=!missing.length;
+    const missing=memorySuiteMissingDefaultSourceTags(rules,config.owner);box.hidden=!missing.length;
     text.textContent=missing.length?'저장된 규칙에 기본 정리 대상이 빠져 있어, 다음 표시용 태그가 분석에 들어갑니다: '+missing.map(name=>'<'+name+'>').join(', ')+'. 추가한 뒤 적용을 누르면 규칙 저장 전과 같게 빠집니다.':'';
-    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules))config.addRule(name,'ignoredTags');box.hidden=true;};
+    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules,config.owner))config.addRule(name,'ignoredTags');box.hidden=true;};
   };
   return {update};
+}
+// Samples may be plain strings or {text, role}; every consumer reads them through this.
+const memorySuiteSourceSampleItems=samples=>(Array.isArray(samples)?samples:[]).map(item=>typeof item==='string'?{text:item,role:''}:item&&typeof item.text==='string'?{text:item.text,role:String(item.role||'')}:null).filter(Boolean);
+// 미리보기: the same steps as memorySuiteProjectSourceRules, tracking which characters of the
+// message each step removes. When the tracked result does not equal the real projection the
+// marks are not shown (exact:false), so the preview never displays a result the analysis lacks.
+function memorySuiteMarkSourceProjection(value, rules) {
+  const source=memorySuiteStripInternalSource(String(value??''));
+  let body=source,index=Array.from({length:source.length},(_,i)=>i);
+  const keep=new Uint8Array(source.length);
+  const erase=ranges=>{
+    if(!ranges.length)return;
+    const drop=new Uint8Array(body.length);
+    for(const r of ranges)for(let i=Math.max(0,r.start);i<Math.min(body.length,r.end);i++)drop[i]=1;
+    let next='';const nextIndex=[];
+    for(let i=0;i<body.length;i++)if(!drop[i]){next+=body[i];nextIndex.push(index[i]);}
+    body=next;index=nextIndex;
+  };
+  let failedBack=false;
+  if(rules.sourceTags.length){
+    const parsed=memorySuiteSourceRanges(body,rules.sourceTags);
+    if(parsed.tokens.length){
+      if(parsed.invalid||parsed.ranges.length!==1||parsed.tokens.length!==2||!body.slice(parsed.ranges[0]?.innerStart,parsed.ranges[0]?.innerEnd).trim())failedBack=true;
+      else{const r=parsed.ranges[0];erase([{start:0,end:r.innerStart},{start:r.innerEnd,end:body.length}]);}
+    }
+  }
+  if(!failedBack){
+    const dropped=memorySuiteSourceRanges(body,rules.ignoredTags);
+    if(!dropped.invalid)erase(dropped.ranges.filter(r=>{const opening=body.slice(r.start,r.innerStart);return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());}));
+    const unwrapped=memorySuiteSourceRanges(body,rules.unwrapTags);
+    if(!unwrapped.invalid)erase(unwrapped.tokens);
+    const patterns={'html-comment':/<!--[\s\S]*?-->/g,'lbdata':/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'inlay':/\{\{inlay::[^{}\r\n]+\}\}/gi,
+      'suite-blocks':/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]|<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi};
+    for(const control of rules.controls)if(patterns[control])erase([...body.matchAll(patterns[control])].map(m=>({start:m.index,end:m.index+m[0].length})));
+  }
+  if(failedBack){body=source;index=Array.from({length:source.length},(_,i)=>i);}
+  for(const i of index)keep[i]=1;
+  const segments=[];
+  for(let i=0;i<source.length;i++){const removed=!keep[i],last=segments.at(-1);if(last&&last.removed===removed)last.text+=source[i];else segments.push({text:source[i],removed});}
+  let expected='';try{expected=memorySuiteProjectSourceRules(source,rules).text;}catch{expected=null;}
+  return {segments,text:body,exact:expected!==null&&expected===body,fallback:failedBack};
+}
+// Recent messages under the draft rules, removed parts struck through. Read-only and local.
+function mountMemorySuiteSourcePreviewList(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('div'),legend=make('small'),list=make('div');area.className='ms-preview-list';area.dataset.sourcePreviewList='';area.hidden=true;list.className='ms-preview-items';
+  legend.textContent='최근 메시지 · 취소선은 분석에서 빠지는 부분입니다.';area.append(legend,list);host.append(area);
+  let samples=null,serial=0;
+  const render=async()=>{
+    if(!samples)return;const token=++serial;
+    let rules=null;try{rules=config.draft();}catch{}
+    const legacy=config.legacy?.()===true&&typeof config.projectLegacy==='function';
+    legend.textContent=legacy?'최근 메시지 · 아직 저장한 규칙이 없어 플러그인 자체 정리 결과를 보여 줍니다. 규칙을 바꾸면 빠지는 부분이 취소선으로 표시됩니다.':'최근 메시지 · 취소선은 분석에서 빠지는 부분입니다.';
+    const cards=[];
+    for(const [n,item] of samples.entries()){
+      const card=make('article'),head=make('div'),pre=make('pre');card.className='ms-preview-item';card.dataset.sourcePreviewItem=String(n);head.className='ms-preview-head';
+      head.append(make('strong',(samples.length-n===1?'마지막 메시지':'최근 '+(samples.length-n)+'번째 메시지')+(item.role?' · '+({user:'사용자',assistant:'응답',char:'응답',model:'응답'}[item.role]||item.role):'')));
+      if(legacy){
+        let text='';try{text=String(await config.projectLegacy(item)??'').replace(/\r\n/g,'\n').trim();}catch{text='';}
+        pre.textContent=text||'(분석할 내용 없음)';
+      }else if(rules){
+        const marked=memorySuiteMarkSourceProjection(item.text,rules);
+        if(marked.exact){
+          for(const segment of marked.segments){const node=segment.removed?make('del',segment.text):doc.createTextNode(segment.text);pre.append(node);}
+          const removed=marked.segments.filter(segment=>segment.removed).reduce((sum,segment)=>sum+segment.text.length,0);
+          head.append(make('small',removed?removed.toLocaleString('ko-KR')+'자 빠짐':'빠지는 부분 없음'));
+        }else{pre.textContent=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(item.text),rules).text.replace(/\r\n/g,'\n').trim();head.append(make('small','분석 입력 (빠진 부분 표시 불가)'));}
+        if(marked.fallback)card.dataset.sourcePreviewWarning='';
+      }else{pre.textContent=item.text;head.append(make('small','규칙 초안에 오류가 있어 원문 그대로 표시'));}
+      card.append(head,pre);cards.push(card);
+      if(token!==serial)return;
+    }
+    if(token!==serial)return;
+    list.replaceChildren(...cards);area.hidden=!cards.length;
+  };
+  const load=async()=>{
+    const token=++serial;
+    try{const items=memorySuiteSourceSampleItems(await config.readSamples());if(token!==serial)return;samples=items.slice(-5);}
+    catch{samples=null;area.hidden=true;return;}
+    await render();
+  };
+  return {load,refresh:()=>{void render();}};
+}
+// 세 플러그인 동시 적용: LIBRA, HAYAKU and Flashback keep their own copies of the source rules
+// and compare or copy them over plugin IPC. Only the three suite plugins may ask, the request
+// carries normalized rules only, and each receiver saves through its own policy (busy and
+// internal-rule checks included). Nothing else is exchanged.
+const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
+const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
+const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory'});
+const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback'});
+function createMemorySuiteSourceRuleSync(config) {
+  const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
+  if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
+  const peers=Object.keys(MEMORY_SUITE_SOURCE_RULE_PEERS).filter(key=>key!==owner);
+  const pending=new Map();let started=false,starting=null,disposed=false,serial=0;
+  const api=()=>{try{return config.api();}catch{return null;}};
+  const fingerprint=rules=>rules?JSON.stringify(memorySuiteNormalizeSourceRules(rules)):'';
+  const reply=(target,message,result,error)=>Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'response',id:message.id,action:message.action,...(error?{error}:{result})})).catch(()=>{});
+  const handler=async(message,metadata={})=>{
+    if(disposed||!message||typeof message!=='object'||message.schema!==MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA||typeof message.id!=='string'||message.id.length>160)return;
+    const sender=String(metadata?.sender||'');
+    if(!Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)||sender===self)return;
+    if(message.kind==='response'){const record=pending.get(message.id);if(!record||record.target!==sender)return;pending.delete(message.id);clearTimeout(record.timer);record.resolve(message.error?{ok:false,error:String(message.error)}:{ok:true,result:message.result||{}});return;}
+    if(message.kind!=='request')return;
+    try{
+      await config.policy.ready();
+      if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null});
+      if(message.action==='apply'){
+        if(config.isDisposed?.()===true)throw Error('SOURCE_RULE_SYNC_DISPOSED');
+        const rules=memorySuiteNormalizeSourceRules(message.rules);
+        await config.policy.setSourceRules(rules);
+        config.onRemoteApply?.(rules);
+        return void reply(sender,message,{owner,applied:true,rules:memorySuiteSourceRules(owner)||null});
+      }
+      throw Error('SOURCE_RULE_SYNC_ACTION_INVALID');
+    }catch(error){reply(sender,message,null,String(error?.message||error).slice(0,300));}
+  };
+  const start=()=>{
+    if(started||disposed)return Promise.resolve(started);
+    if(!starting)starting=(async()=>{const host=api();if(typeof host?.addPluginChannelListener!=='function'||typeof host?.postPluginChannelMessage!=='function')return false;
+      if(await host.addPluginChannelListener(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler)===false)return false;started=true;return true;})().catch(()=>false).finally(()=>{starting=null;});
+    return starting;
+  };
+  const ask=async(peer,action,body={},timeoutMs=3000)=>{
+    if(!await start())return {ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'};
+    const id=self+':'+Date.now().toString(36)+':'+(++serial),target=MEMORY_SUITE_SOURCE_RULE_PEERS[peer];
+    return await new Promise(resolve=>{
+      const record={target,resolve,timer:setTimeout(()=>{pending.delete(id);resolve({ok:false,error:'SOURCE_RULE_SYNC_TIMEOUT'});},timeoutMs)};
+      pending.set(id,record);
+      Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'request',id,action,...body}))
+        .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
+    });
+  };
+  // state per peer: same | different | built_in (no saved rules there) | absent (no answer).
+  const compare=async()=>{
+    await config.policy.ready();const mine=fingerprint(memorySuiteSourceRules(owner));
+    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
+      if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
+      const theirs=answer.result?.rules?fingerprint(answer.result.rules):'';
+      return [peer,{state:!theirs?(mine?'built_in':'same'):theirs===mine?'same':'different'}];}));
+    return Object.fromEntries(answers);
+  };
+  const applyToPeers=async(rules,only=peers)=>{
+    const normalized=memorySuiteNormalizeSourceRules(rules);
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply',{rules:normalized},6000)]));
+    return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
+  };
+  const dispose=async()=>{disposed=true;for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+    if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
+  return Object.freeze({owner,peers,start,compare,applyToPeers,dispose});
+}
+// The editor's view of the other two plugins: whether their rules match, and one action to copy
+// this plugin's saved rules to them. Applying here with the box checked does the same.
+function mountMemorySuiteSourceRuleSyncPanel(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const area=make('section'),title=make('strong','다른 기억 플러그인'),list=make('div'),actions=make('div'),copy=make('button','이 규칙을 다른 플러그인에도 적용'),recheck=make('button','다시 확인'),status=make('p');
+  const together=make('label'),box=make('input');box.type='checkbox';box.checked=true;box.dataset.sourceRuleSyncTogether='';together.className='ms-sync-together';together.append(box,make('span','적용할 때 다른 기억 플러그인에도 같은 규칙 적용'));
+  area.className='ms-input-sync';area.dataset.sourceRuleSync='';list.className='ms-sync-list';list.dataset.sourceRuleSyncList='';actions.className='ms-sync-actions';
+  copy.type=recheck.type='button';copy.dataset.sourceRuleSyncCopy='';recheck.dataset.sourceRuleSyncRecheck='';status.dataset.sourceRuleSyncStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+  actions.append(copy,recheck);area.append(title,together,list,actions,status);host.append(area);
+  const stateLabels={same:'같은 규칙',different:'규칙이 다름',built_in:'규칙 저장 안 함 · 자체 정리 사용',absent:'응답 없음 (꺼져 있거나 설치되지 않음)',error:'확인 실패',checking:'확인 중…'};
+  let states={},busy=false;
+  const draw=()=>{
+    list.replaceChildren(...config.sync.peers.map(peer=>{const row=make('div'),name=make('b',MEMORY_SUITE_SOURCE_RULE_LABELS[peer]),state=make('span',stateLabels[states[peer]?.state||'checking']);
+      row.className='ms-sync-row';row.dataset.sourceRuleSyncPeer=peer;row.dataset.state=states[peer]?.state||'checking';row.append(name,state);return row;}));
+    const reachable=config.sync.peers.filter(peer=>['different','built_in'].includes(states[peer]?.state));
+    copy.disabled=busy||config.busy?.()===true||!config.savedRules()||config.dirty?.()===true||!reachable.length;
+    recheck.disabled=busy;
+  };
+  const check=async()=>{busy=true;states={};draw();try{states=await config.sync.compare();}catch{states={};}finally{busy=false;draw();}};
+  const sendTo=async(rules,peers)=>{
+    busy=true;draw();status.textContent='다른 플러그인에 적용 중…';
+    try{
+      const results=await config.sync.applyToPeers(rules,peers);
+      const parts=Object.entries(results).map(([peer,result])=>MEMORY_SUITE_SOURCE_RULE_LABELS[peer]+(result.ok?' 적용됨':' 실패('+(/BUSY/.test(result.error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(result.error||'')?'응답 없음':result.error)+')'));
+      status.textContent=parts.length?parts.join(' · '):'적용할 플러그인이 없습니다.';
+    }finally{busy=false;await check();}
+  };
+  copy.onclick=()=>{const rules=config.savedRules();if(!rules||busy)return;void sendTo(rules,config.sync.peers.filter(peer=>['different','built_in'].includes(states[peer]?.state)));};
+  recheck.onclick=()=>{if(!busy)void check();};
+  // Called by the editor after its own 적용 succeeded.
+  const afterApply=async rules=>{if(!box.checked){await check();return;}const targets=config.sync.peers.filter(peer=>states[peer]?.state!=='absent');await sendTo(rules,targets);};
+  return {check,afterApply,refresh:draw};
 }
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
@@ -56017,14 +56217,14 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
     const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
-    const noticeHost=make('div'),finderHost=make('div');
-    box.append(style,toolbar,status,noticeHost,hint,head,list);
+    const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
+    box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
-    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(finderHost,previewArea);
+    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
     const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
@@ -56078,7 +56278,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     function changed() {
       if(!loaded||applying)return;
       if(!rows.some(isEmpty))addRow();
-      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();finder?.refresh();
+      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();finder?.refresh();previewList.refresh();syncPanel?.refresh();
     }
     // A rule chosen in the finder or the defaults notice lands in the draft; 적용 still saves it.
     function addFoundRule(name,key) {
@@ -56090,7 +56290,12 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const draftOrNull=()=>{try{return readDraft();}catch{return null;}};
     const finder=mountMemorySuiteSourceTagFinder(finderHost,{draft:readDraft,addRule:addFoundRule,busy:()=>!loaded||applying,
       readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[(await config.readSample?.())?.text].filter(value=>typeof value==='string')});
-    const missingNotice=mountMemorySuiteMissingDefaultsNotice(noticeHost,{draft:draftOrNull,addRule:addFoundRule,busy:()=>!loaded||applying});
+    const missingNotice=mountMemorySuiteMissingDefaultsNotice(noticeHost,{owner,draft:draftOrNull,addRule:addFoundRule,busy:()=>!loaded||applying});
+    const draftUnchanged=()=>{try{return fingerprint(readDraft())===initial;}catch{return false;}};
+    // Recent messages with removed parts struck through; before any saved rule, the plugin's own cleanup.
+    const previewList=mountMemorySuiteSourcePreviewList(previewListHost,{draft:readDraft,legacy:()=>legacy&&draftUnchanged(),projectLegacy:item=>config.projectLegacySample?.(item),
+      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[]});
+    const syncPanel=config.ruleSync?mountMemorySuiteSourceRuleSyncPanel(syncHost,{sync:config.ruleSync,savedRules:()=>memorySuiteSourceRules(owner),dirty:()=>!draftUnchanged(),busy:()=>!loaded||applying}):null;
     function addRow(value=null,key='ignoredTags',control=null) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
@@ -56123,18 +56328,18 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     apply.onclick=async()=>{
       if(!loaded||applying||disposed())return;
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
       applying=true;status.textContent='적용 중…';setEnabled();
-      try{await setSourceRules(rules);if(disposed())return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();}
+      try{await setSourceRules(rules);if(disposed())return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));}
       catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);}
       finally{applying=false;if(!disposed())setEnabled();}
     };
     previewButton.onclick=async()=>{
       if(!loaded||readingSample||disposed()||typeof config.readSample!=='function')return;
-      readingSample=true;sample=null;const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
+      readingSample=true;sample=null;void previewList.load();const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
       try{
         const result=await config.readSample();if(disposed()||version!==previewVersion)return;
         if(result==null){previewStatus.textContent='현재 채팅에 미리 볼 메시지가 없습니다.';return;}
@@ -56144,7 +56349,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       finally{readingSample=false;if(!disposed())setEnabled();}
     };
     status.textContent='저장된 규칙을 읽는 중…';
-    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';void syncPanel?.check();if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
 
 function memorySuiteReanalysisGridCss(){return `
@@ -56418,11 +56623,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return row?{text:rawMessagePayload(row),role:normalizeMessageRole(row.role||roleFromUserFlag(row)),label:'현재 채팅의 마지막 메시지'}:null;},
     // The tag finder reads the last 20 messages the same way, raw and unprojected.
     readSamples:async()=>{const scope=await RisuCompat.currentChatScope();if(!scope?.confident||scope.chatMessagesAvailable!==true)return [];
-      return ensureArray(scope.chatMessages).filter(m=>/^(?:user|assistant|human|model)$/.test(normalizeMessageRole(m?.role||roleFromUserFlag(m)))).slice(-20).map(row=>rawMessagePayload(row));},
+      return ensureArray(scope.chatMessages).filter(m=>/^(?:user|assistant|human|model)$/.test(normalizeMessageRole(m?.role||roleFromUserFlag(m)))).slice(-20).map(row=>({text:rawMessagePayload(row),role:normalizeMessageRole(row.role||roleFromUserFlag(row))}));},
     projectLegacySample:sample=>canonicalHistoryText(sample.text,sample.role)
   };
   const getHayakuSourceInput=()=>hayakuSourceInput||(hayakuSourceInput=createMemorySuiteSourceInputPolicy(hayakuSourceInputConfig));
-  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded});
+  // Compares and copies source rules with LIBRA and Flashback over plugin IPC (원문 태그 규칙 동시 적용).
+  let hayakuSourceRuleSync=null;
+  const getHayakuSourceRuleSync=()=>hayakuSourceRuleSync||(hayakuSourceRuleSync=createMemorySuiteSourceRuleSync({owner:'hayaku',policy:getHayakuSourceInput(),isDisposed:()=>Memory.unloaded,
+    api:()=>apiCandidates().find(candidate=>typeof candidate?.addPluginChannelListener==='function'&&typeof candidate?.postPluginChannelMessage==='function')||RisuCompat.api()}));
+  const mountHayakuSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...hayakuSourceInputConfig,policy:getHayakuSourceInput(),ruleSync:getHayakuSourceRuleSync(),isDisposed:()=>Memory.unloaded});
   // Selection pins packet revisions and source topology. Text is read again on Apply.
   const HAYAKU_REANALYSIS_MAX_TURNS = 512;
   const hayakuReanalysisRecordBinding = (record, scopeKey) => {
@@ -64078,6 +64287,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         Memory.nativeRecovery.confirmationTimers?.clear();
         Memory.nativeRecovery.manualBatchCancelRequested=true;
         await gradiaPluginReadOwner?.dispose();
+        await hayakuSourceRuleSync?.dispose();
         hayakuSourceInput?.dispose();
         stopWorldlineTopologyObserver();
         if (Memory.ledgerViewer.jobTicker) {
