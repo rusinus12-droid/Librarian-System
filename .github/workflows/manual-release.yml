@@ -240,6 +240,7 @@ jobs:
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
             PROGRAM/tests/gradia_world_dynamics_aide_test.cjs \
+            PROGRAM/tests/gradia_intimacy_aide_test.cjs \
             PROGRAM/tests/gradia_profile_initiative_test.cjs \
             PROGRAM/tests/gradia_rp_pacing_prompt_test.cjs \
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \

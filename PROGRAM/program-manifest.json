@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-18T09:08:16.742Z",
+  "generatedAt": "2026-11-18T14:09:50.203Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -1834,6 +1834,10 @@
     "docs/gradia/HYPAV3-REMOVAL-20261010.md": {
       "sha256": "13ef5497d39c5a88074a3516196e9b7a7bdfbae1067062d58059a808cdc16847",
       "bytes": 1530
+    },
+    "docs/gradia/INTIMACY-AIDE-DESIGN-20261118.md": {
+      "sha256": "a19bf6d385b0f363928663a3cc0e7dabda93d08ae116e8f62f305c583e12878b",
+      "bytes": 7621
     },
     "docs/gradia/LIB-COMPAT-CONTRACT-20261104.md": {
       "sha256": "fcbcea5fd3d0d63f6a72e474d0a92decb5d1c507321b1b05d3b883f75c8d72b7",
@@ -3856,7 +3860,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "c6744b3d90e0a14981cb010922e1a2dd50452ef7a83dc5f3f453480cde109875",
+      "sha256": "de3f376f90ee8b44f9fa17ce5fcdadca25bab8b707a04af0415b51c2ed64a275",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4264,8 +4268,8 @@
       "bytes": 3884603
     },
     "plugins/GRADIA.js": {
-      "sha256": "2b7e573385eca4c62742f22f55a98ad0a755f42add1bc674ad97de02852869a9",
-      "bytes": 3364958
+      "sha256": "2be37360716d2f8cbbda6baba0a5d11cf38bc096286542f98d575425b715214a",
+      "bytes": 3415480
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "07e68fe8949e2b898f0f08443834eacb3b8b9a78c656dbc09da55de0fa92787a",
@@ -6651,6 +6655,10 @@
       "sha256": "e710229a3cacdcc5ca939f1d4fb4815093e2b2f78e6c34041dcb5f5fd387efa8",
       "bytes": 14818
     },
+    "tests/gradia_intimacy_aide_test.cjs": {
+      "sha256": "dbd6e310e8c5c6f427ed10c8f73859c3662673134b772c2dcc29f59bd5cbaa4e",
+      "bytes": 10572
+    },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",
       "bytes": 4773
@@ -6820,8 +6828,8 @@
       "bytes": 31532
     },
     "tests/gradia/aide-reasoning-patch.test.cjs": {
-      "sha256": "80909741a9beb09b48f1d27f579f91980fde5eb7e0f241b675d36e1fd9d1f9d1",
-      "bytes": 10324
+      "sha256": "fea7d9d097850b027b37b8b8edf86999188b545c10f03c9273b0b5602186c44f",
+      "bytes": 10531
     },
     "tests/gradia/author-note-all-stages.test.cjs": {
       "sha256": "77ddeede255504bf53aeb68d0b4829c688b048dfa6c772598ae3b51334bd6530",
