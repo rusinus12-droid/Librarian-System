@@ -137,3 +137,46 @@ test('바꾼 설정 lists what differs from the defaults and can restore one', a
     assert.equal(d.querySelectorAll('[data-changed-settings] .changed-row').length, before);
   } finally { await f.close(); }
 });
+
+// ---- Phase 3: one table for every stage's use, preset and limits ----
+
+test('the stage table lists stages in run order and edits the same values as the stage panels', async () => {
+  const f = await gradia();
+  try {
+    await f.plugin.openSettingsGui();
+    await f.plugin.debugNavigateGui('pipeline');
+    const d = f.doc;
+    const box = await until(() => d.querySelector('section[data-page="pipeline"] [data-stage-matrix] table'), 'stage table');
+    const rows = [...box.querySelectorAll('[data-matrix-row]')].map(node => node.dataset.matrixRow);
+    assert.deepEqual(rows, ['shadow_act', 'aide_character', 'aide_body_state', 'aide_intimacy', 'aide_world', 'aide_world_dynamics', 'aide_plot', 'aide_forced_bond']);
+    const cell = (id, field) => box.querySelector(`[data-matrix-row="${id}"] [data-matrix-field="${field}"]`);
+    const turns = cell('aide_world', 'turnWindow');
+    turns.value = '12'; change(f, turns);
+    await until(() => d.querySelector('.stage-detail[data-detail="world"] [data-turns]').value === '12', 'panel follows the table');
+    assert.ok(cell('aide_world', 'turnWindow').closest('td').classList.contains('is-changed'), 'a changed value is marked');
+    const cap = cell('aide_plot', 'maxChars');
+    cap.value = '999999'; change(f, cap);
+    await until(() => cell('aide_plot', 'maxChars').value === '60000', 'clamped like the panel');
+    const enabled = cell('aide_intimacy', 'enabled');
+    enabled.checked = true; change(f, enabled);
+    await until(() => d.querySelector('#on-s8').checked === true, 'panel switch follows the table');
+    const status = box.querySelector('[data-matrix-row="aide_intimacy"] [data-matrix-status]');
+    await until(() => /실행 안 됨/.test(status.textContent) && /성인 장면 표현이 OFF/.test(status.textContent), 'status gives the reason');
+    assert.match(box.querySelector('[data-matrix-row="aide_body_state"] [data-matrix-status]').textContent, /꺼짐/);
+  } finally { await f.close(); }
+});
+
+test('a value applied to every stage reaches every row', async () => {
+  const f = await gradia();
+  try {
+    await f.plugin.openSettingsGui();
+    await f.plugin.debugNavigateGui('pipeline');
+    const d = f.doc;
+    const box = await until(() => d.querySelector('[data-stage-matrix] table'), 'stage table');
+    box.querySelector('[data-matrix-bulk="timeoutSeconds"]').value = '90';
+    box.querySelector('[data-matrix-bulk-apply="timeoutSeconds"]').click();
+    await until(() => [...box.querySelectorAll('[data-matrix-field="timeoutSeconds"]')].every(node => node.value === '90'), 'every row at 90 s');
+    const state = f.plugin.debugGuiStateInfo();
+    assert.equal(state.dirty, true, 'the change waits for save');
+  } finally { await f.close(); }
+});
