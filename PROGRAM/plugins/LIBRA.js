@@ -53594,17 +53594,57 @@ function mountMemorySuiteReanalysisReview(container,config) {
           return spans;
         })
       });
+      const parseMicroProducerEnvelope = rawContent => {
+        const raw = string(rawContent || '').trim();
+        if (!raw) return { jsonValid: false, envelope: null };
+        const fenced = raw.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
+        const candidateText = fenced ? fenced[1] : raw;
+        let parsed = null;
+        try {
+          parsed = JSON.parse(candidateText);
+        } catch (_) {
+          parsed = relaxedJsonParse(candidateText) || relaxedJsonParse(raw);
+        }
+        if (!parsed || !isPlainObject(parsed)) return { jsonValid: false, envelope: null };
+        if (parsed.schema === 'libra.micro_producer_envelope.v1') return { jsonValid: true, envelope: parsed };
+        if (parsed.schema === 'libra.micro_memory.v1') {
+          return {
+            jsonValid: true,
+            envelope: {
+              schema: 'libra.micro_producer_envelope.v1',
+              personCandidates: { spans: [], relations: [] },
+              micro: parsed
+            }
+          };
+        }
+        if (isPlainObject(parsed.micro)
+          && (parsed.micro.schema === 'libra.micro_memory.v1' || Array.isArray(parsed.micro.claims))) {
+          return {
+            jsonValid: true,
+            envelope: {
+              ...parsed,
+              schema: 'libra.micro_producer_envelope.v1',
+              personCandidates: isPlainObject(parsed.personCandidates) ? parsed.personCandidates : { spans: [], relations: [] },
+              micro: parsed.micro.schema === 'libra.micro_memory.v1'
+                ? parsed.micro
+                : { ...parsed.micro, schema: 'libra.micro_memory.v1' }
+            }
+          };
+        }
+        return { jsonValid: true, envelope: null };
+      };
       const startedAt = Date.now();
-      // Reasoning models on cloud routes take 20-60 s per Micro call, more when a canonical
-      // analysis runs alongside; 45 s for both attempts lost turns to provider timeouts.
-      const deadlineAt = startedAt + MICRO_PROVIDER_TIMEOUT_MS;
+      const microTimeoutMs = microProviderTimeoutMsForSettings(settings);
+      // Honor the user's librarian stage timeout (up to 300s) with a 120s floor so slow cloud
+      // reasoning routes are not cut short before the configured deadline.
+      const deadlineAt = startedAt + microTimeoutMs;
       const maxPhysicalAttempts = options.maxPhysicalAttempts === 1 ? 1 : 2;
       const executionState = {};
       let result;
       try {
         result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID, systemPrompt, userPrompt, {
           taskKind: 'micro_memory', taskSettingsSnapshot: settings, signal, presetName: microPresetNameForSettings(settings),
-          maxTokens: 16384, reasoningBudgetCapTokens: 4096, timeoutMs: MICRO_PROVIDER_TIMEOUT_MS, deadlineAt,
+          maxTokens: 16384, reasoningBudgetCapTokens: 4096, timeoutMs: microTimeoutMs, deadlineAt,
           extraCalls: maxPhysicalAttempts - 1, maxCorrectiveRetries: maxPhysicalAttempts - 1,
           __executionState: executionState,
           validateMicroSubmission: options.validateSubmission,
@@ -53612,11 +53652,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
           forceNonStreaming: true, disablePromptCache: true, temp: 0.1
         });
         const firstRequests = Math.max(1, Number(result?.execution?.requestCount || 1));
-        if (providerOutputWasTruncated(result) && firstRequests < maxPhysicalAttempts && Date.now() < deadlineAt) {
+        const firstParsed = result?.ok === true ? parseMicroProducerEnvelope(result.content) : null;
+        if ((providerOutputWasTruncated(result) || (result?.ok === true && !firstParsed?.envelope))
+          && firstRequests < maxPhysicalAttempts && Date.now() < deadlineAt) {
           result = await LibraProviderBridge.callTask(LIBRARIAN_STAGE_ID,
-            systemPrompt + '\nRETRY: the previous response repeated claims and exhausted output. Extract each distinct supported fact ONCE, omit duplicate paraphrases, and close the JSON. Do not impose a top-N or omit independent facts.', userPrompt, {
+            systemPrompt + '\nRETRY: the previous response repeated claims, truncated, or omitted the libra.micro_producer_envelope.v1 wrapper. Return ONE complete JSON object with schema libra.micro_producer_envelope.v1, extract each distinct supported fact ONCE, omit duplicate paraphrases, and close the JSON. Do not impose a top-N or omit independent facts.', userPrompt, {
               taskKind:'micro_memory',taskSettingsSnapshot:settings,signal,presetName:microPresetNameForSettings(settings),maxTokens:16384,reasoningBudgetCapTokens:4096,
-              timeoutMs:MICRO_PROVIDER_TIMEOUT_MS,deadlineAt,extraCalls:0,maxCorrectiveRetries:0,jsonMode:true,structuredTask:true,
+              timeoutMs:microTimeoutMs,deadlineAt,extraCalls:0,maxCorrectiveRetries:0,jsonMode:true,structuredTask:true,
               __executionState: executionState,
               validateMicroSubmission: options.validateSubmission,
               forceNonStreaming:true,disablePromptCache:true,temp:0
@@ -53648,21 +53690,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if (current.status !== 'verified' || current.receipt.revisionId !== receipt.revisionId
         || current.receipt.sourceDigest !== receipt.sourceDigest) return pending('source_changed_after_provider', provider, false);
       if (result?.ok !== true) return pending(`provider_${compact(result?.reason || 'unavailable', 240)}`, provider);
-      let envelope;
-      try {
-        const raw = string(result.content || '').trim();
-        const fenced = raw.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
-        const candidateText = fenced ? fenced[1] : raw;
-        try {
-          envelope = JSON.parse(candidateText);
-        } catch (_) {
-          envelope = relaxedJsonParse(candidateText) || relaxedJsonParse(raw);
-        }
-      }
-      catch (_) { return pending('producer_json_invalid', provider); }
-      if (!envelope || envelope?.schema !== 'libra.micro_producer_envelope.v1' || !isPlainObject(envelope)) {
-        return pending('producer_schema_invalid', provider);
-      }
+      const parsedEnvelope = parseMicroProducerEnvelope(result.content);
+      if (!parsedEnvelope.jsonValid) return pending('producer_json_invalid', provider);
+      const envelope = parsedEnvelope.envelope;
+      if (!envelope) return pending('producer_schema_invalid', provider);
       let registry;
       try { registry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null) || {}; }
       catch (error) { registry = null; }
@@ -53963,6 +53994,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return 'unknown';
     };
     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 15000;
+    const microProviderTimeoutMsForSettings = (settings = {}) => clampInt(
+      Math.max(MICRO_PROVIDER_TIMEOUT_MS, Number(settings?.stageOptions?.[LIBRARIAN_STAGE_ID]?.timeout_ms || 0) || 0),
+      MICRO_PROVIDER_TIMEOUT_MS, 300000, MICRO_PROVIDER_TIMEOUT_MS
+    );
     const microInvocationsInFlight = new Set();
     // hostSource ({context, pairs}) lets a caller that already read the host share that read with
     // the Micro reader's own source checks instead of having each of them read the host again.
@@ -54612,8 +54647,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(permit.status!=='current')return {status:permit.status,reason:permit.reason};
         // The lease starts with the call: a job that waited in the Micro queue behind a
         // canonical analysis would otherwise start with an already expired lease.
+        const leaseTimeoutMs = microProviderTimeoutMsForSettings(await loadSettings().catch(() => ({})));
         work = { ...work, phase: 'invoking',invocationStartedAt:Date.now(),
-          leaseExpiresAt: Date.now() + MICRO_PROVIDER_TIMEOUT_MS + MICRO_LEASE_MARGIN_MS,
+          leaseExpiresAt: Date.now() + leaseTimeoutMs + MICRO_LEASE_MARGIN_MS,
           attemptHistory:[...asArray(work.attemptHistory),{
             attemptId:string(work.attemptId),status:'started',physicalAttemptsUsed:0}] };
         await storage.setVerifiedJson(workKey, work, scope);
