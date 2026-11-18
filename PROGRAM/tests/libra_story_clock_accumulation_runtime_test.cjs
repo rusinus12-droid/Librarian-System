@@ -83,6 +83,7 @@ const pureTimeline = core => {
       }
       const prompt = f.control.calls[f.control.calls.length - 1];
       assert.ok(JSON.stringify(prompt).includes('TIME ADVANCE'), 'the existing Micro call carries the time_advance request');
+      assert.ok(JSON.stringify(prompt).includes('NEVER inside micro'), 'the Micro prompt forbids nesting timeAdvance inside micro');
       const microCalls = f.control.calls.length;
 
       clock = await api.getStoryClock();
@@ -132,6 +133,31 @@ const pureTimeline = core => {
       assert.equal(recall.storyClock.current.day, 2);
       assert.ok(recall.renderedBlock.includes('[STORY CLOCK] 현재: 기록 2일째 · 아침 · 2026-04-02 (T8 기준)'), recall.renderedBlock);
       assert.ok(microCalls > 0);
+
+      // Regression: a model that emits timeAdvance both inside envelope.micro and at the root
+      // (or only inside envelope.micro) must not fail micro validation with schema_or_field_invalid.
+      const nestedCases = [
+        {turn: 9, text: '그날 저녁, 민아는 창문을 닫았다.', rootAdvance: {kind: 'same_day', timeOfDay: 'evening'}, nestedAdvance: {kind: 'same_day', timeOfDay: 'evening'}, expectedDay: 2, expectedTod: 'evening'},
+        {turn: 10, text: '다음 날 아침, 민아는 편지를 읽었다.', rootAdvance: undefined, nestedAdvance: {kind: 'days', days: 1, timeOfDay: 'morning'}, expectedDay: 3, expectedTod: 'morning'}
+      ];
+      for (const item of nestedCases) {
+        f.control.onCall = async () => {
+          const {receipt} = await api.debugReadActiveCompletedTurnReceipt(item.turn);
+          const env = envelope(receipt, item.turn, item.rootAdvance);
+          env.micro.timeAdvance = item.nestedAdvance;
+          return {type: 'success', result: JSON.stringify(env)};
+        };
+        f.chat.message.push({role: 'user', chatId: `t${item.turn}-u`, data: '계속'}, {role: 'assistant', chatId: `t${item.turn}-a`, data: item.text});
+        listener({char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1});
+        await waitFor(() => api.getCaptureBackendState().lastMicroPublication?.turn === item.turn, 15000);
+        assert.equal(api.getCaptureBackendState().lastMicroPublication?.status, 'verified', `turn ${item.turn} verified despite nested timeAdvance`);
+        await waitFor(async () => Boolean((await api.getStoryClock()).entries.find(e => e.turn === item.turn)?.known), 5000);
+        const updatedClock = await api.getStoryClock();
+        const entry = updatedClock.entries.find(e => e.turn === item.turn);
+        assert.equal(entry.day, item.expectedDay);
+        assert.equal(entry.timeOfDay, item.expectedTod);
+      }
+
       console.log(`PASS story clock accumulation, anchor, correction, persistence and lens days in ${mode}`);
     } finally { await fixture.cleanup(); }
   }
