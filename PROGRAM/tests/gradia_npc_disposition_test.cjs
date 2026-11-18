@@ -201,3 +201,26 @@ test('the Character AIDE panel edits the default and per-NPC dispositions for th
   panel.querySelector('[data-npc-disposition-action="remove"]').click();
   await f.wait(() => panel.querySelector('[data-npc-disposition-list] .empty'), 'row removed');
 });
+
+// Regression (2026-11-18 log): with no extension AIDE on, the run built no alias index, so a
+// default-only disposition listed the group card's name as the one person in the scene and the
+// member actually present got no stance. The index now follows the disposition itself.
+test('a default-only disposition names the people in the scene, not a group card, with no extension AIDE on', async t => {
+  const chat = { id: 'h', message: [
+    { role: 'user', chatId: 'u1', data: '동아리방 문을 연다.' },
+    { role: 'assistant', chatId: 'a1', data: '천소연이 창가에 기대 선 채 고개만 돌렸다.' }
+  ] };
+  const character = { chaId: 'c', name: '클로젬 여행동아리', chats: [chat], chatPage: 0, lorebook: [
+    { key: '천소연', comment: '천소연', content: '천소연: 여행동아리 부원. 말수가 적고 경계심이 강하다.', mode: 'normal', insertorder: 100, alwaysActive: true }
+  ] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '천소연이 창밖을 보았다.');
+  await withDisposition(f, {}, { default: 'hostile', npcs: [] });
+  await runTurn(f, '천소연에게 말을 건다.');
+  const body = f.prompts.find(item => stageOf(item) === 'aide_character');
+  assert.ok(body, 'character AIDE was called');
+  const all = allOf(body);
+  assert.match(all, /- Every other NPC: hostile \(적대\) by default · in the scene now: 천소연\./);
+  assert.doesNotMatch(all, /in the scene now:[^\n]*클로젬 여행동아리/);
+  assert.match(all, /WHAT IT IS, AND WHAT IT IS NOT: the disposition is a bias in how the NPC reads and receives the persona/);
+});
