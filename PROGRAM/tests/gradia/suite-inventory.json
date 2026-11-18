@@ -6,6 +6,7 @@
     "aide-full-draft-recovery-gui.test.cjs",
     "aide-full-draft-recovery.test.cjs",
     "aide-reasoning-patch.test.cjs",
+    "author-note-all-stages.test.cjs",
     "bianca-injection-gui.test.cjs",
     "bianca-injection.test.cjs",
     "context-degradation-gui.test.cjs",
