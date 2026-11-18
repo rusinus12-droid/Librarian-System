@@ -87574,7 +87574,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('span',{class:"eyebrow",text:'WORLDLINE CONTINUITY & MEMORY'}),
           guiEl('h3',{text:'세계선 · 기억 연속성'})
         ]),
-        guiEl('button',{class:'btn btn--sm',type:'button',text:'원문 태그 필터',title:'분석에서 뺄 태그와 표식을 정합니다',dataset:{libraOpenTagFilter:'true'},onClick:()=>selectBookSettingsRoomSection('source_edits')}),
         guiEl('div',{class:"wl-badges"},[
           guiEl('span',{class:"badge",text:`총 ${totalTurns}턴`}),
           countBadge('영수증',verifiedReceipts,totalTurns),
@@ -87592,6 +87591,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       lanes,
       guiEl('div',{class:"cluster"},[
         guiEl('button',{class:'btn btn--sm',type:'button',disabled:state.loading,text:state.loading?'상태 읽는 중…':'상태 새로고침',onClick:()=>void loadBookReceiptRecoveryStatus(true,{lens:true})}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'원문 태그 필터',title:'분석에서 뺄 태그와 표식을 정합니다',dataset:{libraOpenTagFilter:'true'},onClick:()=>selectBookSettingsRoomSection('source_edits')}),
         missingCount>0?guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:`누락된 ${missingCount}개 턴 재분석`,onClick:()=>{
           if(typeof showLibraSourceReanalysisDrawer==='function'){
             void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:state.scopeKey,startTurns:missingTurnList.map(item=>item.turn)});
