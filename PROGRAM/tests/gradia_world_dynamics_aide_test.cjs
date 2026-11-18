@@ -392,7 +392,9 @@ test('the 세계 동역학 panel shows the last readings, turns the stage on and
   await f.host.plugin.debugNavigateGui('pipeline');
   const panel = f.document.querySelector('.stage-detail[data-detail="world_dynamics"]');
   assert.ok(panel, 'the pipeline page renders the 세계 동역학 panel');
-  assert.match(panel.querySelector('[data-world-dynamics-readings]').textContent, /영주의 병사 파견 · 보류.*하루째 이동 중/, 'last run readings show with their status');
+  // 2026-11-18: readings belong to the chat and show on the 이 채팅 page; the panel points there.
+  assert.ok(panel.querySelector('[data-go="chat"][data-go-sub="readings"]'), 'the panel points to the 이 채팅 page');
+  assert.match(f.document.querySelector('section[data-page="chat"] [data-world-dynamics-readings]').textContent, /영주의 병사 파견 · 보류.*하루째 이동 중/, 'last run readings show with their status');
   const toggle = panel.querySelector('#on-s7');
   assert.equal(toggle.checked, false);
   toggle.checked = true;
@@ -411,7 +413,7 @@ test('with no run yet the panel says so, and the stage sits under 세계관 AIDE
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
   const panel = f.document.querySelector('.stage-detail[data-detail="world_dynamics"]');
-  assert.match(panel.querySelector('[data-world-dynamics-readings]').textContent, /아직 판독이 없습니다/);
+  assert.match(f.document.querySelector('section[data-page="chat"] [data-world-dynamics-readings]').textContent, /아직 판독이 없습니다/);
   assert.equal(panel.querySelector('#on-s7').checked, false, 'off by default');
   const rows = [...f.document.querySelectorAll('#ladder [data-select-row]')].map(node => node.dataset.selectRow);
   assert.equal(rows[rows.indexOf('world') + 1], 'world_dynamics', rows.join(' > '));

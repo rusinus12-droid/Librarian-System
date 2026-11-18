@@ -234,19 +234,23 @@ test('the 상태 panel turns the stage on, edits per-chat cards, saves the repro
   await f.host.plugin.debugNavigateGui('pipeline');
   const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
   assert.ok(panel, 'the pipeline page renders the 상태 panel');
-  assert.match(panel.querySelector('[data-body-state-readings]').textContent, /민아.*발목 염좌 3일째/, 'last run readings show');
+  // 2026-11-18: cards and readings belong to the chat, so they live on the 이 채팅 page; the stage
+  // panel keeps the stage switch, the reproduction switch and a pointer.
+  const chat = f.document.querySelector('section[data-page="chat"]');
+  assert.ok(panel.querySelector('[data-go="chat"][data-go-sub="state"]'), 'the 상태 panel points to the 이 채팅 page');
+  assert.match(chat.querySelector('[data-body-state-readings]').textContent, /민아.*발목 염좌 3일째/, 'last run readings show');
   const change = node => node.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
   const toggle = panel.querySelector('#on-s6');
   assert.equal(toggle.checked, false);
   toggle.checked = true; change(toggle);
   const reproduction = panel.querySelector('[data-body-state-field="reproduction"]');
   reproduction.checked = true; change(reproduction);
-  panel.querySelector('[data-body-state-action="add"]').click();
-  const name = await f.wait(() => panel.querySelector('[data-body-state-card-field="name"]'), 'card editor');
+  chat.querySelector('[data-body-state-action="add"]').click();
+  const name = await f.wait(() => chat.querySelector('[data-body-state-card-field="name"]'), 'card editor');
   name.value = '민아'; change(name);
-  const cycle = await f.wait(() => panel.querySelector('[data-body-state-card-field="cycleLength"]'), 'cycle field');
+  const cycle = await f.wait(() => chat.querySelector('[data-body-state-card-field="cycleLength"]'), 'cycle field');
   cycle.value = '30'; change(cycle);
-  const contraception = await f.wait(() => panel.querySelector('[data-body-state-card-field="contraception"]'), 'contraception field');
+  const contraception = await f.wait(() => chat.querySelector('[data-body-state-card-field="contraception"]'), 'contraception field');
   contraception.value = 'pill'; change(contraception);
   f.document.querySelector('#savebar [data-save]').click();
   await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
@@ -427,8 +431,8 @@ test('a positive verdict runs on the timeline, and the 상태 panel can pin it t
   assert.match(verdict.conception, /^이야기 \d+일째$/);
 
   await f.host.plugin.openSettingsGui();
-  await f.host.plugin.debugNavigateGui('pipeline');
-  const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"]');
   const pin = await f.wait(() => panel.querySelector('[data-body-state-action="pin"]'), 'pin button');
   assert.ok(panel.querySelector('[data-body-state-verdicts]').textContent.includes(`세라 · 임신 판정 (수정 ${verdict.conception})`));
   pin.click();

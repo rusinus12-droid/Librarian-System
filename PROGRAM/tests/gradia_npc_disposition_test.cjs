@@ -162,7 +162,7 @@ test('with Forced Bond active the disposition keeps the direction and the bond o
   assert.match(plot, /With Forced Bond \(억결\) active: the disposition sets the direction/);
 });
 
-test('the Character AIDE panel edits the default and per-NPC dispositions for this chat only', async t => {
+test('the 이 채팅 page edits the default and per-NPC dispositions for this chat only', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.');
   await configure(f);
@@ -170,8 +170,14 @@ test('the Character AIDE panel edits the default and per-NPC dispositions for th
   const scopeKey = f.host.plugin.debugActiveScopeKey();
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
-  const panel = f.document.querySelector('.stage-detail[data-detail="char"] [data-npc-disposition-panel]');
-  assert.ok(panel, 'the Character AIDE detail has the disposition panel');
+  // 2026-11-18: the disposition applies to the whole chat, so it lives on the 이 채팅 page; the
+  // Character AIDE panel keeps only a pointer to it.
+  const pointer = f.document.querySelector('.stage-detail[data-detail="char"] [data-go="chat"][data-go-sub="disposition"]');
+  assert.ok(pointer, 'the Character AIDE panel points to the 이 채팅 page');
+  assert.equal(f.document.querySelector('.stage-detail[data-detail="char"] [data-npc-disposition-panel]'), null, 'no disposition editor inside the stage panel');
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"] [data-npc-disposition-panel]');
+  assert.ok(panel, 'the 이 채팅 page has the disposition panel');
   assert.ok(panel.querySelector('[data-npc-disposition-list] .empty'), 'empty state before any row');
   const levels = [...panel.querySelectorAll('[data-npc-disposition-field="default"] option')].map(node => node.textContent);
   assert.deepEqual(levels, ['로어 그대로 (미지정)', '적대', '비호감', '아는 사이', '호감', '애정']);
