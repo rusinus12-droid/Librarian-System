@@ -26180,6 +26180,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const sceneText = [...messages.map(message => message?.content || ''), recent.latestUser || ''].join('\n');
     return continuityEntitiesInText(sceneText, index).filter(name => EXTENSION_PERSON_NAME_RE.test(name));
   };
+  // The character card's name, when it names a person. A group or world card ("클로젬 여행동아리")
+  // is a cast, not a character: treating it as one gave NPC disposition, 억결's automatic bonds,
+  // and 상태's cast a person who does not exist (2026-11-18 log). The card counts when the scene
+  // names it, or when it reads as a person's name and the alias index knows it or nobody else is
+  // in the scene.
+  const extensionCardPerson = (recent = {}, scenePeople = extensionScenePeople(recent)) => {
+    const cardName = compact(Runtime.activeCharacterName || '', 80);
+    if (!cardName) return '';
+    const sceneText = [...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : []).map(message => message?.content || ''), recent.latestUser || ''].join('\n');
+    if (extensionLineNames(sceneText, cardName)) return cardName;
+    return EXTENSION_PERSON_NAME_RE.test(cardName) && (!!extensionEntityEntry(cardName) || !scenePeople.length) ? cardName : '';
+  };
   // Evidence is matched by name, deterministically and without a model call. A
   // persona bond matches lines naming the other party; an NPC bond needs both names.
   const forcedBondMatches = (line, card) => {
@@ -26252,7 +26264,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // bond's tone from canon, lore and the scene. These auto bonds act like cards this turn.
   const forcedBondAutoCards = (recent = {}) => {
     const people = [];
-    for (const name of [compact(Runtime.activeCharacterName || '', 80), ...extensionScenePeople(recent)]) {
+    const scenePeople = extensionScenePeople(recent);
+    for (const name of [extensionCardPerson(recent, scenePeople), ...scenePeople]) {
       if (!name || bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName)) continue;
       if (people.some(known => extensionSamePerson(known, name))) continue;
       people.push(name);
@@ -26368,12 +26381,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // A name the alias index does not know still counts when the recent scene or the input names it.
     const sceneText = [...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : []).map(message => message?.content || ''), recent.latestUser || ''].join('\n');
     const scenePeople = extensionScenePeople(recent);
-    // The character card's name is a person only when it reads as one or the scene names it. A
-    // group card ("클로젬 여행동아리") is a cast, not an NPC: its members come from the scene.
-    const cardName = compact(Runtime.activeCharacterName || '', 80);
-    const cardIsPerson = !!cardName && (extensionLineNames(sceneText, cardName)
-      || (EXTENSION_PERSON_NAME_RE.test(cardName) && (!!extensionEntityEntry(cardName) || !scenePeople.length)));
-    const present = [cardIsPerson ? cardName : '', ...scenePeople]
+    const present = [extensionCardPerson(recent, scenePeople), ...scenePeople]
       .filter(name => name && !bodyStateIsPersona(name) && !extensionSamePerson(name, Runtime.activePersonaName))
       .filter((name, index, list) => list.findIndex(other => other === name || extensionSamePerson(other, name)) === index);
     const inScene = name => present.some(known => extensionSamePerson(known, name) || known === name) || extensionLineNames(sceneText, name);
@@ -26661,7 +26669,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...extensionScenePeople(recent),
       ...bodyStateCardsForScope(settings, scopeKey).map(card => card.name).filter(Boolean),
       ...forcedBondCardsForScope(settings, scopeKey).flatMap(card => [card.from, card.to]),
-      compact(Runtime.activeCharacterName || '', 80),
+      extensionCardPerson(recent),
       compact(Runtime.activePersonaName || '', 80)
     ].filter(Boolean).map(name => (bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName) ? FORCED_BOND_PERSONA : name));
     const unique = [];
@@ -27002,10 +27010,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const entries = bodyStateEvidenceLines(recent, settings);
     const timeOfDay = bodyStateTimeOfDay(recent, clock);
     const scenePeople = extensionScenePeople(recent);
+    const cardPerson = extensionCardPerson(recent, scenePeople);
     const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
       clock,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
-        || (name !== FORCED_BOND_PERSONA && extensionSamePerson(name, Runtime.activeCharacterName))
+        || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
     const libHits = entries.some(entry => entry.source === 'LIB');
     return compact([
