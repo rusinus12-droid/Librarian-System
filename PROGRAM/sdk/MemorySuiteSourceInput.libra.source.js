@@ -61,6 +61,82 @@ function memorySuiteMissingDefaultSourceTags(rules) {
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
   return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
 }
+// 기억 주입 공통 예산: one total for the recalled evidence the three memory plugins inject into a
+// request, split by fixed shares. It is stored with each plugin's source-input preferences and
+// kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
+// its own budget setting. Each plugin still shrinks below its share when the context is short.
+const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+function memorySuiteDefaultRecallBudget() {
+  return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
+}
+function memorySuiteNormalizeRecallBudget(input) {
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  const total=Number(input.totalChars);
+  if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
+  const shares={};
+  for(const owner of MEMORY_SUITE_RECALL_OWNERS){
+    const value=Number(input.shares?.[owner]);
+    if(!Number.isInteger(value)||value<0||value>100)throw Error('RECALL_BUDGET_INVALID: 비율은 0~100 사이의 정수입니다.');
+    shares[owner]=value;
+  }
+  if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
+  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+}
+function memorySuiteRecallBudget(owner, next) {
+  const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
+  if(next!==undefined)policies.set(owner,next);
+  return policies.get(owner)||null;
+}
+// This plugin's share in characters while the shared budget is on; null when it is off.
+function memorySuiteRecallShareChars(owner) {
+  const budget=memorySuiteRecallBudget(owner);
+  if(!budget||budget.enabled!==true||!MEMORY_SUITE_RECALL_OWNERS.includes(owner))return null;
+  return Math.floor(budget.totalChars*budget.shares[owner]/100);
+}
+// 중복 제거: what the other memory plugins already put into this request (the request hooks run one
+// after another, each receiving the previous result), so a later plugin can leave out text that is
+// already there. Only verbatim repeats count; different wording of the same turn is kept.
+const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
+  libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
+  // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
+  // up to the packet-writing instructions that follow them.
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+    /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
+    /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
+  flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
+    /\[VECTOR RAG MEMORY\]([\s\S]*?)\[\/VECTOR RAG MEMORY\]/gi])
+});
+const memorySuiteRecallNorm = value => String(value??'').normalize('NFKC').toLowerCase()
+  .replace(/[\s"'`“”‘’「」『』()\[\]{}<>.,!?;:~…·*_=+|\/\\—–-]/g,'');
+// Sentences of an item, without list marks, leading [labels] or a short "field:" label, so
+// "- [T3] 문장" and "- summary: 문장" both match "문장".
+const memorySuiteRecallPieces = value => String(value??'').split(/\n+|(?<=[.!?。！？…])\s+/)
+  .map(line=>memorySuiteRecallNorm(line.replace(/^\s*(?:[-*•]\s*)?(?:\[[^\]\n]{1,40}\]\s*)*(?:[A-Za-z가-힣][A-Za-z가-힣 _]{0,23}:\s+)?/,''))).filter(piece=>piece.length>=8);
+function memorySuitePeerRecallIndex(messages, owner) {
+  const parts=[],owners=new Set();
+  const bodyOf=message=>typeof message?.content==='string'?message.content
+    :Array.isArray(message?.content)?message.content.map(part=>typeof part==='string'?part:typeof part?.text==='string'?part.text:'').join('\n'):'';
+  for(const message of Array.isArray(messages)?messages:[]){
+    const body=bodyOf(message);if(!body)continue;
+    for(const [peer,patterns] of Object.entries(MEMORY_SUITE_RECALL_BLOCKS)){
+      if(peer===owner)continue;
+      for(const pattern of patterns){pattern.lastIndex=0;for(const hit of body.matchAll(pattern)){if(hit[1]&&hit[1].trim()){parts.push(hit[1]);owners.add(peer);}}}
+    }
+  }
+  const text=memorySuiteRecallNorm(parts.join('\n'));
+  // Share of an item's characters (sentence by sentence) already present in a peer block.
+  const ratio=value=>{
+    if(!text)return 0;
+    const pieces=memorySuiteRecallPieces(value);let total=0,covered=0;
+    for(const piece of pieces){total+=piece.length;if(text.includes(piece))covered+=piece.length;}
+    return total?covered/total:0;
+  };
+  let digest=0;for(let i=0;i<text.length;i++)digest=(digest*31+text.charCodeAt(i))>>>0;
+  return Object.freeze({owners:[...owners].sort(),chars:text.length,digest:text?owners.size+':'+text.length+':'+digest.toString(36):'',
+    ratio,covered:(value,threshold=0.8)=>ratio(value)>=threshold});
+}
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
   if(next!==undefined) policies.set(owner,next);
@@ -220,8 +296,11 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
       value.externalRulesVersion=1;
       if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      // A malformed stored budget is ignored (shared budget off) rather than blocking the plugin.
+      let budget=null;if(value.recallBudget){try{budget=memorySuiteNormalizeRecallBudget(value.recallBudget);}catch(_){budget=null;}}
+      if(budget)value.recallBudget=budget;else delete value.recallBudget;
       preferences=value;
-      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);
+      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);memorySuiteRecallBudget(owner,budget);
       return value;
     })().finally(()=>{loading=null;});
     return loading;
@@ -248,6 +327,23 @@ function createMemorySuiteSourceInputPolicy(config) {
     saving=work;return work.finally(()=>{if(saving===work)saving=null;});
   }
   const setSourceRules=input=>save(null,input);
+  const recallBudget=()=>clone(memorySuiteRecallBudget(owner)||memorySuiteDefaultRecallBudget());
+  // The shared recall budget lives in the same stored preferences; saving it keeps every other field.
+  function setRecallBudget(input) {
+    if(saving||config.busy?.()===true)return Promise.reject(Error('RECALL_BUDGET_BUSY: 현재 요청·처리가 끝난 뒤 저장하세요.'));
+    const work=(async()=>{
+      await ready();
+      const budget=memorySuiteNormalizeRecallBudget(input);
+      const desired={...preferences,recallBudget:budget},body=JSON.stringify(desired);
+      if(disposed||config.busy?.()===true)throw Error('RECALL_BUDGET_BUSY');
+      if(await config.write(body)===false)throw Error('SOURCE_INPUT_WRITE_REJECTED');
+      const raw=await config.read();if((typeof raw==='string'?raw:JSON.stringify(raw))!==body)throw Error('SOURCE_INPUT_READBACK_FAILED');
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      preferences=desired;memorySuiteRecallBudget(owner,budget);
+      return recallBudget();
+    })();
+    saving=work;return work.finally(()=>{if(saving===work)saving=null;});
+  }
   // readSample is an explicit local read: string or {text,label?,role?}; never stored.
   // projectLegacySample preserves the owner's actual normalizer until rules are edited.
   function mountControls(container) {
@@ -379,7 +475,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed)return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed)status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
-  return Object.freeze({ready,sourceRules,setSourceRules,setIgnoredTags:input=>save(input),
+  return Object.freeze({ready,sourceRules,setSourceRules,recallBudget,setRecallBudget,setIgnoredTags:input=>save(input),
     ignoredTags:()=>[...memorySuiteSourceTagPolicy(owner)],mountControls,dispose:()=>{disposed=true;}});
 }
 // Keep the established LIBRA factory name for existing consumers.

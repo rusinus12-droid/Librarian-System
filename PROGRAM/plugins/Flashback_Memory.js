@@ -31875,6 +31875,82 @@ function memorySuiteMissingDefaultSourceTags(rules) {
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
   return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
 }
+// 기억 주입 공통 예산: one total for the recalled evidence the three memory plugins inject into a
+// request, split by fixed shares. It is stored with each plugin's source-input preferences and
+// kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
+// its own budget setting. Each plugin still shrinks below its share when the context is short.
+const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+function memorySuiteDefaultRecallBudget() {
+  return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
+}
+function memorySuiteNormalizeRecallBudget(input) {
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  const total=Number(input.totalChars);
+  if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
+  const shares={};
+  for(const owner of MEMORY_SUITE_RECALL_OWNERS){
+    const value=Number(input.shares?.[owner]);
+    if(!Number.isInteger(value)||value<0||value>100)throw Error('RECALL_BUDGET_INVALID: 비율은 0~100 사이의 정수입니다.');
+    shares[owner]=value;
+  }
+  if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
+  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+}
+function memorySuiteRecallBudget(owner, next) {
+  const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
+  if(next!==undefined)policies.set(owner,next);
+  return policies.get(owner)||null;
+}
+// This plugin's share in characters while the shared budget is on; null when it is off.
+function memorySuiteRecallShareChars(owner) {
+  const budget=memorySuiteRecallBudget(owner);
+  if(!budget||budget.enabled!==true||!MEMORY_SUITE_RECALL_OWNERS.includes(owner))return null;
+  return Math.floor(budget.totalChars*budget.shares[owner]/100);
+}
+// 중복 제거: what the other memory plugins already put into this request (the request hooks run one
+// after another, each receiving the previous result), so a later plugin can leave out text that is
+// already there. Only verbatim repeats count; different wording of the same turn is kept.
+const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
+  libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
+  // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
+  // up to the packet-writing instructions that follow them.
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+    /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
+    /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
+  flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
+    /\[VECTOR RAG MEMORY\]([\s\S]*?)\[\/VECTOR RAG MEMORY\]/gi])
+});
+const memorySuiteRecallNorm = value => String(value??'').normalize('NFKC').toLowerCase()
+  .replace(/[\s"'`“”‘’「」『』()\[\]{}<>.,!?;:~…·*_=+|\/\\—–-]/g,'');
+// Sentences of an item, without list marks, leading [labels] or a short "field:" label, so
+// "- [T3] 문장" and "- summary: 문장" both match "문장".
+const memorySuiteRecallPieces = value => String(value??'').split(/\n+|(?<=[.!?。！？…])\s+/)
+  .map(line=>memorySuiteRecallNorm(line.replace(/^\s*(?:[-*•]\s*)?(?:\[[^\]\n]{1,40}\]\s*)*(?:[A-Za-z가-힣][A-Za-z가-힣 _]{0,23}:\s+)?/,''))).filter(piece=>piece.length>=8);
+function memorySuitePeerRecallIndex(messages, owner) {
+  const parts=[],owners=new Set();
+  const bodyOf=message=>typeof message?.content==='string'?message.content
+    :Array.isArray(message?.content)?message.content.map(part=>typeof part==='string'?part:typeof part?.text==='string'?part.text:'').join('\n'):'';
+  for(const message of Array.isArray(messages)?messages:[]){
+    const body=bodyOf(message);if(!body)continue;
+    for(const [peer,patterns] of Object.entries(MEMORY_SUITE_RECALL_BLOCKS)){
+      if(peer===owner)continue;
+      for(const pattern of patterns){pattern.lastIndex=0;for(const hit of body.matchAll(pattern)){if(hit[1]&&hit[1].trim()){parts.push(hit[1]);owners.add(peer);}}}
+    }
+  }
+  const text=memorySuiteRecallNorm(parts.join('\n'));
+  // Share of an item's characters (sentence by sentence) already present in a peer block.
+  const ratio=value=>{
+    if(!text)return 0;
+    const pieces=memorySuiteRecallPieces(value);let total=0,covered=0;
+    for(const piece of pieces){total+=piece.length;if(text.includes(piece))covered+=piece.length;}
+    return total?covered/total:0;
+  };
+  let digest=0;for(let i=0;i<text.length;i++)digest=(digest*31+text.charCodeAt(i))>>>0;
+  return Object.freeze({owners:[...owners].sort(),chars:text.length,digest:text?owners.size+':'+text.length+':'+digest.toString(36):'',
+    ratio,covered:(value,threshold=0.8)=>ratio(value)>=threshold});
+}
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
   if(next!==undefined) policies.set(owner,next);
@@ -32034,8 +32110,11 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
       value.externalRulesVersion=1;
       if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      // A malformed stored budget is ignored (shared budget off) rather than blocking the plugin.
+      let budget=null;if(value.recallBudget){try{budget=memorySuiteNormalizeRecallBudget(value.recallBudget);}catch(_){budget=null;}}
+      if(budget)value.recallBudget=budget;else delete value.recallBudget;
       preferences=value;
-      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);
+      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);memorySuiteRecallBudget(owner,budget);
       return value;
     })().finally(()=>{loading=null;});
     return loading;
@@ -32062,6 +32141,23 @@ function createMemorySuiteSourceInputPolicy(config) {
     saving=work;return work.finally(()=>{if(saving===work)saving=null;});
   }
   const setSourceRules=input=>save(null,input);
+  const recallBudget=()=>clone(memorySuiteRecallBudget(owner)||memorySuiteDefaultRecallBudget());
+  // The shared recall budget lives in the same stored preferences; saving it keeps every other field.
+  function setRecallBudget(input) {
+    if(saving||config.busy?.()===true)return Promise.reject(Error('RECALL_BUDGET_BUSY: 현재 요청·처리가 끝난 뒤 저장하세요.'));
+    const work=(async()=>{
+      await ready();
+      const budget=memorySuiteNormalizeRecallBudget(input);
+      const desired={...preferences,recallBudget:budget},body=JSON.stringify(desired);
+      if(disposed||config.busy?.()===true)throw Error('RECALL_BUDGET_BUSY');
+      if(await config.write(body)===false)throw Error('SOURCE_INPUT_WRITE_REJECTED');
+      const raw=await config.read();if((typeof raw==='string'?raw:JSON.stringify(raw))!==body)throw Error('SOURCE_INPUT_READBACK_FAILED');
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      preferences=desired;memorySuiteRecallBudget(owner,budget);
+      return recallBudget();
+    })();
+    saving=work;return work.finally(()=>{if(saving===work)saving=null;});
+  }
   // readSample is an explicit local read: string or {text,label?,role?}; never stored.
   // projectLegacySample preserves the owner's actual normalizer until rules are edited.
   function mountControls(container) {
@@ -32193,7 +32289,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed)return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed)status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
-  return Object.freeze({ready,sourceRules,setSourceRules,setIgnoredTags:input=>save(input),
+  return Object.freeze({ready,sourceRules,setSourceRules,recallBudget,setRecallBudget,setIgnoredTags:input=>save(input),
     ignoredTags:()=>[...memorySuiteSourceTagPolicy(owner)],mountControls,dispose:()=>{disposed=true;}});
 }
 // Keep the established LIBRA factory name for existing consumers.
@@ -32248,7 +32344,7 @@ function memorySuiteSourceFinderCss(){return `
 .ms-source-settings .ms-finder-text{display:grid;gap:2px;min-width:0}.ms-source-settings .ms-finder-text code{font:600 12.5px/1.4 var(--font-mono,ui-monospace,monospace)}.ms-source-settings .ms-finder-example{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ms-source-settings .ms-finder-actions{display:flex;gap:6px;flex:none}.ms-source-settings .ms-input-defaults-notice>button{justify-self:start}
 .ms-source-settings .ms-input-sync{display:grid;gap:8px;padding:12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-sync-together{display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer}.ms-source-settings .ms-sync-together input{width:auto;margin:0}
 .ms-source-settings .ms-sync-list{display:grid;gap:4px}.ms-source-settings .ms-sync-row{display:flex;gap:10px;align-items:baseline;font-size:12.5px}.ms-source-settings .ms-sync-row b{min-width:72px}.ms-source-settings .ms-sync-row[data-state=different] span,.ms-source-settings .ms-sync-row[data-state=built_in] span{font-weight:650}.ms-source-settings .ms-sync-row[data-state=absent] span{opacity:.7}
-.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-input-sync>p:empty{display:none}
+.ms-source-settings .ms-sync-actions{display:flex;gap:8px;flex-wrap:wrap}.ms-source-settings .ms-budget-shares{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}@media(max-width:600px){.ms-source-settings .ms-budget-shares{grid-template-columns:1fr}}.ms-source-settings .ms-input-sync>p:empty{display:none}
 /* The recent-messages list already shows the last message; the single output stays for tools. */
 .ms-source-settings .ms-input-preview:has([data-source-preview-list]:not([hidden])) :is([data-source-input-output],[data-source-input-preview-status]){display:none}
 .ms-source-settings .ms-preview-list{display:grid;gap:8px}.ms-source-settings .ms-preview-items{display:grid;gap:8px}.ms-source-settings .ms-preview-item{display:grid;gap:4px;padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-sm,8px)}
@@ -32404,7 +32500,9 @@ function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
   if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
   const peers=Object.keys(MEMORY_SUITE_SOURCE_RULE_PEERS).filter(key=>key!==owner);
-  const pending=new Map(),subscribers=new Set();let started=false,starting=null,disposed=false,serial=0;
+  const pending=new Map(),subscribers=new Set(),budgetSubscribers=new Set();let started=false,starting=null,disposed=false,serial=0;
+  const budgetFingerprint=budget=>budget?JSON.stringify(memorySuiteNormalizeRecallBudget(budget)):'';
+  const myBudget=()=>typeof config.policy.recallBudget==='function'?config.policy.recallBudget():null;
   const api=()=>{try{return config.api();}catch{return null;}};
   const fingerprint=rules=>rules?JSON.stringify(memorySuiteNormalizeSourceRules(rules)):'';
   // 공통 기준: a plugin without saved rules runs the shared defaults, so it is compared by them.
@@ -32429,6 +32527,17 @@ function createMemorySuiteSourceRuleSync(config) {
         await config.policy.setSourceRules(rules);
         notify(memorySuiteSourceRules(owner)||rules);
         return void reply(sender,message,{owner,applied:true,rules:memorySuiteSourceRules(owner)||null});
+      }
+      // 기억 주입 공통 예산: the same compare-and-set exchange as the rules.
+      if(message.action==='describe_budget'){if(!myBudget())throw Error('RECALL_BUDGET_UNSUPPORTED');return void reply(sender,message,{owner,budget:budgetFingerprint(myBudget())});}
+      if(message.action==='apply_budget'){
+        if(config.isDisposed?.()===true)throw Error('SOURCE_RULE_SYNC_DISPOSED');
+        if(typeof config.policy.setRecallBudget!=='function')throw Error('RECALL_BUDGET_UNSUPPORTED');
+        const budget=memorySuiteNormalizeRecallBudget(message.budget);
+        if(typeof message.expected==='string'&&message.expected!==budgetFingerprint(myBudget()))throw Error('SOURCE_RULE_SYNC_CONFLICT');
+        const saved=await config.policy.setRecallBudget(budget);
+        for(const fn of [...budgetSubscribers]){try{fn(saved);}catch{}}
+        return void reply(sender,message,{owner,applied:true,budget:budgetFingerprint(saved)});
       }
       throw Error('SOURCE_RULE_SYNC_ACTION_INVALID');
     }catch(error){reply(sender,message,null,String(error?.message||error).slice(0,300));}
@@ -32468,11 +32577,25 @@ function createMemorySuiteSourceRuleSync(config) {
     const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply',{rules:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
+  const compareBudget=async()=>{
+    await config.policy.ready();const mine=budgetFingerprint(myBudget());
+    const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe_budget');
+      if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
+      const theirs=String(answer.result?.budget||'');
+      return [peer,{state:theirs&&theirs===mine?'same':'different',...(theirs?{fingerprint:theirs}:{})}];}));
+    return Object.fromEntries(answers);
+  };
+  const applyBudgetToPeers=async(budget,only=peers,expected={})=>{
+    const normalized=memorySuiteNormalizeRecallBudget(budget);
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply_budget',{budget:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
+    return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
+  };
+  const subscribeBudget=fn=>{if(typeof fn!=='function')return()=>{};budgetSubscribers.add(fn);return()=>{budgetSubscribers.delete(fn);};};
   // Editors listen here so a rule applied from another plugin shows up in an open editor.
   const subscribe=fn=>{if(typeof fn!=='function')return()=>{};subscribers.add(fn);return()=>{subscribers.delete(fn);};};
-  const dispose=async()=>{disposed=true;subscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+  const dispose=async()=>{disposed=true;subscribers.clear();budgetSubscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
     if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
-  return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,dispose});
+  return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,compareBudget,applyBudgetToPeers,subscribeBudget,dispose});
 }
 // The editor's view of the other two plugins: whether their rules match, and one action to copy
 // this plugin's saved rules to them. Applying here with the box checked does the same.
@@ -32514,6 +32637,73 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
   const afterApply=async rules=>{await check();if(box.checked)await sendTo(rules);};
   return {check,afterApply,refresh:draw};
 }
+// 기억 주입 공통 예산 panel: one total split by fixed shares, saved here and in the other memory
+// plugins (only those that differ, each guarded by what was seen there). Off = each plugin's own budget.
+function mountMemorySuiteRecallBudgetPanel(host, config) {
+  const doc=host.ownerDocument,make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
+  const owners=MEMORY_SUITE_RECALL_OWNERS,labels=MEMORY_SUITE_SOURCE_RULE_LABELS;
+  const area=make('section'),title=make('strong','기억 주입 공통 예산'),note=make('small','켜면 LIBRA·HAYAKU·Flashback이 요청에 넣는 기억을 전체 예산 안에서 정한 비율로 나눕니다. 각 플러그인의 자체 예산 설정 대신 이 몫을 쓰며, 문맥이 부족하면 그보다 더 줄입니다. 다른 플러그인이 이미 넣은 문장과 같은 문장은 나중에 넣는 쪽이 뺍니다.');
+  const enabledLabel=make('label'),enabled=make('input');enabled.type='checkbox';enabled.dataset.recallBudgetEnabled='';enabledLabel.className='ms-sync-together';enabledLabel.append(enabled,make('span','공통 예산 사용'));
+  const totalLabel=make('label'),total=make('input');total.type='number';total.min=String(MEMORY_SUITE_RECALL_TOTAL_MIN);total.max=String(MEMORY_SUITE_RECALL_TOTAL_MAX);total.step='500';total.dataset.recallBudgetTotal='';totalLabel.append(make('span','전체 예산(자)'),total);
+  const shareRow=make('div'),shares={};shareRow.className='ms-budget-shares';
+  for(const owner of owners){const label=make('label'),input=make('input');input.type='number';input.min='0';input.max='100';input.step='5';input.dataset.recallBudgetShare=owner;label.append(make('span',labels[owner]+' 비율(%)'),input);shares[owner]=input;shareRow.append(label);}
+  const summary=make('p'),actions=make('div'),apply=make('button','예산 적용'),status=make('p'),peerList=make('div');
+  summary.dataset.recallBudgetSummary='';apply.type='button';apply.dataset.recallBudgetApply='';apply.className='ms-input-apply';actions.className='ms-sync-actions';actions.append(apply);
+  status.dataset.recallBudgetStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');peerList.className='ms-sync-list';peerList.dataset.recallBudgetPeers='';
+  area.className='ms-input-sync';area.dataset.recallBudget='';area.append(title,note,enabledLabel,totalLabel,shareRow,summary,actions,status,peerList);host.append(area);
+  const fingerprint=budget=>JSON.stringify(memorySuiteNormalizeRecallBudget(budget));
+  let loaded=false,busy=false,initial='',savedAtFill='',overwriteConfirmed=false,peerStates={};
+  const draft=()=>memorySuiteNormalizeRecallBudget({version:1,enabled:enabled.checked,totalChars:Number(total.value),shares:Object.fromEntries(owners.map(owner=>[owner,Number(shares[owner].value)]))});
+  const draftOrNull=()=>{try{return draft();}catch{return null;}};
+  const savedFingerprint=()=>{try{return fingerprint(config.policy.recallBudget());}catch{return '';}};
+  const peerLabels={same:'같은 예산',different:'예산이 다름',absent:'응답 없음',error:'확인 실패',checking:'확인 중…'};
+  const draw=()=>{
+    const value=draftOrNull();
+    if(value){summary.textContent=(value.enabled?'적용 시 ':'꺼짐 · 켜면 ')+owners.map(owner=>labels[owner]+' '+Math.floor(value.totalChars*value.shares[owner]/100).toLocaleString('ko-KR')+'자').join(' · ')
+      +(value.enabled&&owners.some(owner=>owner==='flashback'&&Math.floor(value.totalChars*value.shares[owner]/100)<800)?' · Flashback은 800자 미만이면 기억을 넣지 않습니다.':'');}
+    else{let message='';try{draft();}catch(e){message=String(e.message||e).replace(/^RECALL_BUDGET_INVALID:?\s*/,'');}summary.textContent=message||'값을 확인하세요.';}
+    const dirty=!value||fingerprint(value)!==initial;
+    apply.disabled=!loaded||busy||!value||!dirty||config.busy?.()===true;
+    for(const node of [enabled,total,...Object.values(shares)])node.disabled=!loaded||busy;
+    peerList.replaceChildren(...(config.sync?config.sync.peers:[]).map(peer=>{const row=make('div'),name=make('b',labels[peer]),state=make('span',peerLabels[peerStates[peer]?.state||'checking']);
+      row.className='ms-sync-row';row.dataset.recallBudgetPeer=peer;row.dataset.state=peerStates[peer]?.state||'checking';row.append(name,state);return row;}));
+  };
+  const fill=()=>{const value=config.policy.recallBudget();enabled.checked=value.enabled;total.value=String(value.totalChars);for(const owner of owners)shares[owner].value=String(value.shares[owner]);
+    initial=fingerprint(value);savedAtFill=savedFingerprint();overwriteConfirmed=false;draw();};
+  const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
+  const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
+  for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
+  apply.onclick=async()=>{
+    if(!loaded||busy||config.busy?.()===true)return;
+    let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
+    if(savedFingerprint()!==savedAtFill&&!overwriteConfirmed){overwriteConfirmed=true;status.textContent='그사이 다른 기억 플러그인에서 예산이 바뀌었습니다. 이 값으로 덮어쓰려면 예산 적용을 한 번 더 누르세요.';return;}
+    busy=true;status.textContent='적용 중…';draw();
+    try{
+      await config.policy.setRecallBudget(value);fill();
+      if(config.sync){
+        await check();
+        const targets=config.sync.peers.filter(peer=>peerStates[peer]?.state==='different');
+        if(targets.length){
+          const expected=Object.fromEntries(targets.filter(peer=>typeof peerStates[peer]?.fingerprint==='string').map(peer=>[peer,peerStates[peer].fingerprint]));
+          const results=await config.sync.applyBudgetToPeers(value,targets,expected);
+          status.textContent='예산을 적용했습니다. '+Object.entries(results).map(([peer,result])=>labels[peer]+(result.ok?' 적용됨':' 실패('+reason(result.error)+')')).join(' · ');
+          await check();
+        }else status.textContent='예산을 적용했습니다.';
+      }else status.textContent='예산을 적용했습니다.';
+    }catch(e){status.textContent='적용 실패: '+String(e.message||e);}
+    finally{busy=false;draw();}
+  };
+  // Another plugin applied a budget here: an untouched panel shows it, an edited one keeps the draft.
+  const unsubscribe=config.sync?.subscribeBudget?.(()=>{
+    if(!area.isConnected||config.isDisposed?.()===true){unsubscribe();return;}
+    if(!loaded||busy)return;
+    if(fingerprint(draftOrNull()||config.policy.recallBudget())===initial){fill();status.textContent='다른 기억 플러그인에서 바뀐 예산을 불러왔습니다.';void check();}
+    else{overwriteConfirmed=false;status.textContent='다른 기억 플러그인에서 예산을 바꿨습니다. 지금 값을 적용하면 그 예산을 덮어씁니다.';void check();}
+  })||(()=>{});
+  const load=()=>{loaded=true;fill();void check();};
+  draw();
+  return {load,refresh:draw};
+}
 function mountMemorySuiteSourceInputControls(container, config) {
     const {owner,policy}=config,loadPreferences=()=>policy.ready(),sourceRules=()=>policy.sourceRules(),setSourceRules=rules=>policy.setSourceRules(rules);
     const disposed=()=>config.isDisposed?.()===true;
@@ -32547,19 +32737,20 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
     const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
-    const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
+    const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div'),budgetHost=make('div');
     // Rules saved meanwhile by another memory plugin (동시 적용) while this draft was being edited.
     const remoteNotice=make('div'),remoteText=make('p'),remoteLoad=make('button','바뀐 규칙 불러오기');
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
+    const budgetPanel=typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    box.append(budgetHost);const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -32708,7 +32899,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       finally{readingSample=false;if(!disposed())setEnabled();}
     };
     status.textContent='저장된 규칙을 읽는 중…';
-    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';void syncPanel?.check();if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+    loadPreferences().then(()=>{if(disposed())return;loaded=true;fill();status.textContent='';void syncPanel?.check();budgetPanel?.load();if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed())status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
 
 function memorySuiteReanalysisGridCss(){return `
@@ -38694,6 +38885,8 @@ const MemorySuiteHealthRecovery = (() => {
     } : {})
   });
   const flashbackUnitSourceKey = record => stableHash(`${text(record?.scopeKey || '')}\n${text(record?.turnNodeId || record?.variantId || '')}\n${text(record?.sourceRevision || record?.sourceHash || '')}\n${text(record?.text || '')}`);
+  // Peer blocks seen by this request's hook, per recall object (see 중복 제거 in beforeRequest).
+  const flashbackPeerRecallIndexes = new WeakMap(), flashbackPeerRecallDropped = new WeakMap();
   const prepareFlashbackEvidenceUnits = (recall, settings) => {
     const previous = flashbackRecallPreparations.get(recall) || {};
     const policyKey = stableHash(JSON.stringify(settings || {}));
@@ -38715,6 +38908,7 @@ const MemorySuiteHealthRecovery = (() => {
     const groupOf = new Map();
     groups.forEach((group, index) => group.items.forEach(item => groupOf.set(flashbackPlanId(item), { group, index })));
     const units = [];
+    let peerDropped = 0;
     for (const item of items) {
       try {
         const record = item.record || {}, id = flashbackPlanId(item);
@@ -38738,22 +38932,32 @@ const MemorySuiteHealthRecovery = (() => {
           variants.push({ text: excerpt.text, textSpace: 'diegetic_source', start: exact ? start : null,
             end: exact ? end : null, sourceDigest: flashbackUnitSourceKey(record), fragmentDigest: stableHash(excerpt.text), rawOffset: null });
         }
+        // A variant mostly repeated verbatim by a peer plugin's block is left out; a unit with none left is dropped.
+        const peerRecall = settings?.memorySuitePeerRecallDigest ? flashbackPeerRecallIndexes.get(recall) : null;
+        if (peerRecall) {
+          const kept = variants.filter(variant => !peerRecall.covered(variant.text));
+          if (kept.length < variants.length) peerDropped += variants.length - kept.length;
+          variants.splice(0, variants.length, ...kept);
+        }
         if (!variants.length) continue;
         units.push({ id, item, variants, sourceKey: flashbackUnitSourceKey(record), group: groupOf.get(id),
           reasons: flashbackMustCarryReasons(item, context), score: Number(item.score || 0) });
       } catch (_) { /* Malformed optional fields exclude this unit, not the recall. */ }
     }
     const stateSeen = new Set();
+    const statePeerRecall = settings?.memorySuitePeerRecallDigest ? flashbackPeerRecallIndexes.get(recall) : null;
     for (const fact of (Array.isArray(recall.currentStateFacts) ? recall.currentStateFacts : []).slice(0, 14)) {
       try {
         const sentence = structuredStateSentence(fact);
         if (!sentence || stateSeen.has(sentence)) continue;
+        if (statePeerRecall?.covered(sentence)) { peerDropped += 1; continue; }
         stateSeen.add(sentence);
         units.push({ id: `state:${stableHash(sentence)}`, state: true, fact, score: 1, reasons: ['latest_state'],
           variants: [{ text: sentence, textSpace: 'derived_state', start: null, end: null, fragmentDigest: stableHash(sentence), rawOffset: null }] });
       } catch (_) {}
     }
     const requirements = buildFlashbackEvidenceRequirements(items, policySettings, context);
+    if (settings?.memorySuitePeerRecallDigest) flashbackPeerRecallDropped.set(recall, peerDropped);
     const value = { ...previous, units, items, context, settings: policySettings, policyKey, requirements };
     flashbackRecallPreparations.set(recall, value);
     return value;
@@ -43865,14 +44069,17 @@ const MemorySuiteHealthRecovery = (() => {
       }
       break;
       }
-      const rawHostInjectionBudget = flashbackHostInjectionBudget(messages, scopeBundle.snapshot, settings);
+      // 기억 주입 공통 예산: while it is on, Flashback's share replaces its own injection budget.
+      const sharedRecallChars = memorySuiteRecallShareChars('flashback');
+      const ownInjectionChars = sharedRecallChars ?? Math.max(0, Number(settings.maxInjectionChars || 0) || 0);
+      const rawHostInjectionBudget = flashbackHostInjectionBudget(messages, scopeBundle.snapshot, { ...settings, maxInjectionChars: ownInjectionChars });
       const contextDynamicAllowance = rawHostInjectionBudget.available
         ? Math.max(0, Math.floor(Number(rawHostInjectionBudget.remainingTokens || 0) * 3) - staticContract.chars)
-        : Math.max(0, Number(settings.maxInjectionChars || 0) || 0);
-      const dynamicAllowedChars = Math.min(
-        Math.max(0, Number(settings.maxInjectionChars || 0) || 0),
-        contextDynamicAllowance
-      );
+        : ownInjectionChars;
+      const dynamicAllowedChars = Math.min(ownInjectionChars, contextDynamicAllowance);
+      // 중복 제거: excerpts another memory plugin already put into this request verbatim.
+      const peerRecall = memorySuitePeerRecallIndex(messages, 'flashback');
+      flashbackPeerRecallIndexes.set(recall, peerRecall);
       const hostInjectionBudget = {
         ...rawHostInjectionBudget,
         staticContractChars: staticContract.chars,
@@ -43882,7 +44089,8 @@ const MemorySuiteHealthRecovery = (() => {
       ensureHookDeadline('beforeRequest host injection budget');
       const budgetedRecallSettings = {
         ...settings,
-        maxInjectionChars: dynamicAllowedChars
+        maxInjectionChars: dynamicAllowedChars,
+        ...(peerRecall.digest ? { memorySuitePeerRecallDigest: peerRecall.digest } : {})
       };
       const evidenceBudgetPlan = budgetedRecallSettings.maxInjectionChars >= 800
         ? planFlashbackEvidenceBudget(recall, budgetedRecallSettings, dynamicAllowedChars)
@@ -43893,6 +44101,8 @@ const MemorySuiteHealthRecovery = (() => {
       Runtime.lastRecall = {
         at: Date.now(),
         scopeKey: scope.scopeKey,
+        recallBudgetSource: sharedRecallChars == null ? 'own_setting' : 'memory_suite_shared',
+        peerRecallDedup: peerRecall.chars ? { owners: peerRecall.owners, droppedVariants: Number(flashbackPeerRecallDropped.get(recall) || 0) } : null,
         requestClass: {
           main: requestClass.main === true,
           auxiliary: requestClass.auxiliary === true,
@@ -51260,7 +51470,7 @@ ${cleanedText}`, 80),
       <details class="fold"><summary>세부 값 <span class="hint">검색 수 · 근거 · 문맥</span></summary><div class="fold__body grid g2">
         ${field('topK','Top K',settings.topK,'type="number" min="1" max="80"')}${field('minScore','최소 점수',settings.minScore,'type="number" min="0" max="1" step="0.01"')}
         ${field('candidateLimit','후보 수',settings.candidateLimit,'type="number" min="8" max="400"')}${field('gateHighCosine','고유사도 기준',settings.gateHighCosine,'type="number" min="0" max="1" step="0.01"')}
-        ${field('maxInjectionChars','최대 주입 글자',settings.maxInjectionChars,'type="number" min="800" max="8000" step="100"')}${field('hookRecallTimeoutMs','요청 훅 리콜 제한시간(ms)',settings.hookRecallTimeoutMs,'type="number" min="1000" max="'+HOOK_RECALL_TIMEOUT_MAX_MS+'" step="250"')}
+        ${field('maxInjectionChars',memorySuiteRecallShareChars('flashback') == null ? '최대 주입 글자' : `최대 주입 글자 (공통 예산 사용 중: Flashback 몫 ${memorySuiteRecallShareChars('flashback').toLocaleString('ko-KR')}자 적용)`,settings.maxInjectionChars,'type="number" min="800" max="8000" step="100"')}${field('hookRecallTimeoutMs','요청 훅 리콜 제한시간(ms)',settings.hookRecallTimeoutMs,'type="number" min="1000" max="'+HOOK_RECALL_TIMEOUT_MAX_MS+'" step="250"')}
         ${field('recallRelatednessWeight','관련 기억 비중(%)',settings.recallRelatednessWeight,'type="number" min="0" max="100"')}${field('recallRecencyWeight','최근 기억 비중(%)',settings.recallRecencyWeight,'type="number" min="0" max="100"')}
         ${field('recallContextMessages','리콜 문맥 채팅 수',settings.recallContextMessages,'type="number" min="0" max="20"')}${field('recallStabilityBoost','리콜 안정성 보너스',settings.recallStabilityBoost,'type="number" min="0" max="0.12" step="0.005"')}
         <div class="stack">${setting('currentSceneTailEnabled','현재 장면 보강','현재 장면의 직접 근거를 함께 검사합니다.',settings.currentSceneTailEnabled)}${setting('entityFocusedRecallEnabled','엔티티 집중 회수','인물·대상 근거를 추가로 비교합니다.',settings.entityFocusedRecallEnabled)}${setting('episodeIndexEnabled','에피소드 인덱스','파생 인덱스를 리콜 확장에 사용합니다.',settings.episodeIndexEnabled)}${setting('contextualRecall','문맥 중심 의미 검색','최근 대화와 현재 입력을 함께 비교합니다.',settings.contextualRecall)}${setting('adaptiveContextWindow','적응형 최근 문맥','문맥 중심 검색을 끈 경우에 적용합니다.',settings.adaptiveContextWindow)}${setting('multiQueryRecall','다중 주제 리콜','현재 요청의 독립 주제를 보존합니다.',settings.multiQueryRecall)}${setting('contradictionBundleEnabled','상태 변화 묶음','서로 다른 사실 상태를 한 근거 묶음으로 유지합니다.',settings.contradictionBundleEnabled)}${setting('multiResolutionRecallEnabled','다중 해상도 에피소드 확장','필요한 경우 관련 에피소드 문맥을 확장합니다.',settings.multiResolutionRecallEnabled)}${setting('recallStabilityEnabled','장면 리콜 안정화','연속 요청의 유효한 선택을 안정화합니다.',settings.recallStabilityEnabled)}</div>
@@ -56250,6 +56460,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       setSourceEditIgnoredTags: tags => getFlashbackSourceInput().setIgnoredTags(tags),
       getSourceEditIgnoredTags: () => getFlashbackSourceInput().ignoredTags(),
       setSourceEditRules: rules => getFlashbackSourceInput().setSourceRules(rules),
+      // 기억 주입 공통 예산 (shared with the other memory plugins through the source-rule sync channel).
+      getMemorySuiteRecallBudget: async () => { await getFlashbackSourceInput().ready(); return getFlashbackSourceInput().recallBudget(); },
+      setMemorySuiteRecallBudget: budget => getFlashbackSourceInput().setRecallBudget(budget),
       getSourceEditRules: () => getFlashbackSourceInput().sourceRules(),
     reviewSourceEdits: keys => getFlashbackRecoveryActions().preview('explicit_reanalysis',keys),
     previewSourceEdits: keys => getFlashbackRecoveryActions().preview('explicit_reanalysis',keys),
