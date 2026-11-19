@@ -46525,14 +46525,18 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (app.dataset.productEvents === 'true') return;
     app.dataset.productEvents = 'true';
     // Ctrl/⌘+K anywhere in the settings window, or "/" outside a text field, opens settings search.
-    app.ownerDocument?.addEventListener('keydown', event => {
-      if (!Gui.app?.isConnected || Gui.closeDialogOpen) return;
-      const typing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]');
-      if (((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') || (event.key === '/' && !typing)) {
-        event.preventDefault();
-        openSettingsSearch();
-      }
-    });
+    const doc = app.ownerDocument;
+    if (doc && !doc.__sgaGradiaSearchKeybound) {
+      doc.__sgaGradiaSearchKeybound = true;
+      doc.addEventListener('keydown', event => {
+        if (!Gui.app?.isConnected || Gui.closeDialogOpen) return;
+        const typing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]');
+        if (((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') || (event.key === '/' && !typing)) {
+          event.preventDefault();
+          openSettingsSearch();
+        }
+      });
+    }
     app.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
@@ -47657,8 +47661,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const applyStageMatrixBulk = field => {
     const box = Gui.app?.querySelector('[data-stage-matrix]');
     const control = box?.querySelector(`[data-matrix-bulk="${field}"]`);
-    if (!control || control.value === '') { guiSetStatus('모든 단계에 넣을 값을 먼저 입력하세요.'); return; }
+    if (!control || String(control.value).trim() === '') { guiSetStatus('모든 단계에 넣을 값을 먼저 입력하세요.'); return; }
     const value = field === 'presetName' && control.value === '__default__' ? '' : control.value;
+    if (STAGE_MATRIX_FIELDS[field] && !Number.isFinite(Number(value))) {
+      guiSetStatus('유효한 숫자를 입력하세요.');
+      return;
+    }
     let changed = 0;
     for (const stageId of stageMatrixRows()) if (applyStageMatrixValue(stageId, field, value)) changed += 1;
     control.value = '';
