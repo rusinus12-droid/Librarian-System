@@ -174,3 +174,56 @@ test('authoritative same-visible-text raw variant publishes the current source p
     assert.equal(fx.getRecords('libra.completed_turn_receipt.v1').length,2);assert.equal(f.control.calls.length,2);
   }finally{await fx.cleanup();}
 });
+
+test('post-otherax reconcile captures a turn committed after late_commit_reconcile ran',async()=>{
+  const timers={early:[],late:[]};
+  const fx=await serverFixture({mode:'server_only',host:{addRisuChatListener:async()=>true},contextGlobals:{
+    setTimeout:(fn,ms,...args)=>{
+      const source=String(fn);
+      if(source.includes('LIBRA delayed capture failover failed')){timers.early.push(fn);return {unref(){}};}
+      if(source.includes('afterRequest_late_commit_reconcile')){timers.late.push(fn);return {unref(){}};}
+      return setTimeout(fn,ms,...args);
+    },clearTimeout
+  }});
+  try{
+    const f=fx.f,core=f.r.core;
+    f.chat.message=f.chat.message.slice(0,2);f.chat.messages=f.chat.message;f.control.onCall=async args=>microResult(args);
+    f.chat.message.push({role:'user',chatId:'aux-u2',data:'Store an iron key.'});
+    const settings=await f.r.api.getLibraMemorySettings();await f.r.api.saveLibraMemorySettings({...settings,autoAnalyze:true});
+    await core.beforeRequest([{role:'user',content:'Store an iron key.'}],'model');
+    await core.afterRequest('Mara stored an iron key.','model');
+    timers.early[0]();await waitFor(()=>core.state.captureBackend==='script_output_legacy',5000);
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===1,15000);
+    // Simulate late_commit_reconcile firing before the host commits turn 2 to chat.
+    timers.late[0]();
+    await waitFor(()=>core.state.lastScanSchedule?.reason==='afterRequest_late_commit_reconcile'&&core.state.lastScanSchedule?.phase==='complete',15000);
+    assert.equal(core.state.mainAfterRequestHealth?.microBoundary?.committedRevisionId,undefined);
+    f.chat.message.push({role:'assistant',chatId:'aux-a2',data:'Mara stored an iron key.'});
+    await core.afterRequest('Auxiliary helper result.','otherax');
+    assert.equal(core.state.lastAfterRequest?.blockedReason,'non_model_request:otherax');
+    assert.equal(core.state.mainAfterRequestHealth?.postAuxReconcileScheduled,true);
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===2,15000);
+    assert.equal((await f.r.api.debugReadActiveCompletedTurnReceipt(2)).status,'verified');
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(2)).status,'verified');
+    assert.equal(f.control.calls.length,1);
+  }finally{await fx.cleanup();}
+});
+
+test('post-otherax reconcile does not fire after CHAT_OUTPUT_V3 already observed the turn',async()=>{
+  const {fx,listener,event}=await fixture('server_only');
+  try{
+    const f=fx.f,core=f.r.core;
+    const settings=await f.r.api.getLibraMemorySettings();await f.r.api.saveLibraMemorySettings({...settings,autoAnalyze:true});
+    f.chat.message.push({role:'user',chatId:'v3-u2',data:'Store a silver key.'});
+    await core.beforeRequest([{role:'user',content:'Store a silver key.'}],'model');
+    await core.afterRequest('Mara stored a silver key.','model');
+    f.chat.message.push({role:'assistant',chatId:'v3-a2',data:'Mara stored a silver key.'});
+    await listener({...event(),messageIndex:3});
+    await waitFor(()=>f.r.api.getCaptureBackendState().lastMicroPublication?.turn===2
+      && f.r.api.getCaptureBackendState().lastMicroPublication?.status==='verified',15000);
+    await core.afterRequest('Auxiliary helper result.','otherax');
+    assert.equal(core.state.lastAfterRequest?.blockedReason,'non_model_request:otherax');
+    assert.notEqual(core.state.mainAfterRequestHealth?.postAuxReconcileScheduled,true);
+    assert.notEqual(core.state.lastScanSchedule?.reason,'afterRequest_post_aux_reconcile');
+  }finally{await fx.cleanup();}
+});

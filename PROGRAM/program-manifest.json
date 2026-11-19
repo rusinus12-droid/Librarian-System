@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T11:03:11.510Z",
+  "generatedAt": "2026-11-19T11:18:49.266Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -3876,7 +3876,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "443142d01ffb47824ea244eba7112fdb4a1c015d89c6fa74216746c75148b0b0",
+      "sha256": "db96e9ad86e1586e2a5027615d991f6f4348d8825a35f15c77712904dfeefa8c",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4296,8 +4296,8 @@
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "31f8a3aa63d37716c08ea1237fdcc64baa280c85d8ae6c483737ab5cf17ea9be",
-      "bytes": 6797412
+      "sha256": "4c92ab3bfd5b62cdefd340012394f921552c5351082273301ab7d8958fbb1690",
+      "bytes": 6798442
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -8320,8 +8320,8 @@
       "bytes": 17940
     },
     "tests/libra_capture_lifecycle_accuracy_test.cjs": {
-      "sha256": "f694d67b5121c4b1a25e67445ba9f3449a05a700c7119453b1d782085ea7fa18",
-      "bytes": 14210
+      "sha256": "4b8fe1f700a58c73b3a3c9e49eb54df91e09dac6b9fba2903a3cb91b5054d34e",
+      "bytes": 17815
     },
     "tests/libra_capture_mirror_repair_test.cjs": {
       "sha256": "05aca1b0f35ee11fbc3304d0b3039306dd479b777db04c5c892e18868acd752d",

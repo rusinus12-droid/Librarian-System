@@ -66997,6 +66997,25 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         });
       } else if (!mainNarrativeType) {
         state.lastAfterRequest.blockedReason = `non_model_request:${requestType}`;
+        const pendingHealth = state.mainAfterRequestHealth;
+        const pendingAge = Date.now() - Number(pendingHealth?.at || 0);
+        const alreadyObservedV3 = state.captureBackend === LIBRA_CAPTURE_BACKENDS.CHAT_OUTPUT_V3
+          && state.captureBackendObservedRuns > Number(pendingHealth?.observedRunsAtAfter || 0);
+        if (state.settings?.autoAnalyze !== false
+          && pendingHealth?.microBoundary
+          && !alreadyObservedV3
+          && !pendingHealth.microBoundary.committedRevisionId
+          && !pendingHealth.postAuxReconcileScheduled
+          && pendingAge >= 0 && pendingAge <= TURN_BINDING_FRESHNESS_MS
+          && string(pendingHealth.expectedScope?.scopeKey)) {
+          pendingHealth.postAuxReconcileScheduled = true;
+          scheduleScan({
+            delay: 250,
+            reason: 'afterRequest_post_aux_reconcile',
+            requestType: string(pendingHealth.requestType || 'model') || 'model',
+            expectedScope: clone(pendingHealth.expectedScope)
+          });
+        }
       } else if (!fallbackActive) {
         state.lastAfterRequest.blockedReason = state.settings?.autoAnalyze === false ? 'auto_analyze_disabled' : `capture_backend:${state.captureBackend}`;
       }
