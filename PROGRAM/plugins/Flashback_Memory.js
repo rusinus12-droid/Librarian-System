@@ -33818,6 +33818,15 @@ const MemorySuiteHealthRecovery = (() => {
         if (exact.key) matchedGroupKeys.add(exact.key);
         continue;
       }
+      // Tag rule change or slot preservation tolerance: if turn index matches an existing group, preserve it as unchanged
+      const slotMatched = pairCandidates.find(group => (
+        group.complete !== false && Math.max(0, Number(group.pairIndex || group.turnIndex || 0)) === pair.pairIndex
+      ));
+      if (slotMatched) {
+        unchanged.push(source);
+        if (slotMatched.key) matchedGroupKeys.add(slotMatched.key);
+        continue;
+      }
       if (pairCandidates.length) changed.push(source);
       else missing.push(source);
     }

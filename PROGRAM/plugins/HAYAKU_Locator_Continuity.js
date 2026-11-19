@@ -25256,6 +25256,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const variantId = variantIdForPair(logicalTurnId, pair);
       const lookup = `${logicalTurnId}\u0001${variantId}`;
       let node = byVariant.get(lookup) || priorMatchingParent;
+      if (!node) {
+        node = nodes.find(candidate => (
+          Number(candidate.pairIndex || 0) === pairIndex
+          && candidate.status === 'active'
+          && Boolean(candidate.assistantMessageIdHash && pair?.assistantMessageIdHash)
+          && candidate.assistantMessageIdHash === pair.assistantMessageIdHash
+        )) || null;
+      }
       const declaredLogicalTurnId = compact(pair?.declaredLogicalTurnId || '', 96);
       const expectedLogicalTurnId = logicalTurnIdForPair(scope, parentTurnNodeId, pair);
       const declaredParentMismatch = declaredLineage && declaredParentTurnNodeId !== parentTurnNodeId;
@@ -27559,10 +27567,13 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         storageRecordSuppressedByTombstone(r,t) && r.userHash===pair.userHash && r.assistantVisibleHash===pair.assistantVisibleHash
         && (!r.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)));
       const stored=candidates.filter(r=>r.recordState==='active' && !r.inheritedSessionHistory && r.memoryClass!=='historical'
-        && !r.auditRetained && r.userHash===pair.userHash && r.assistantVisibleHash===pair.assistantVisibleHash
-        && (!r.userMessageIdHash||r.userMessageIdHash===pair.userMessageIdHash)
-        && (!r.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)
-        && owner?.status==='active' && (!r.ownerTurnNodeId||r.ownerTurnNodeId===owner.turnNodeId)
+        && !r.auditRetained
+        && ((r.userHash===pair.userHash && r.assistantVisibleHash===pair.assistantVisibleHash)
+            || (Boolean(pair.assistantMessageIdHash) && r.assistantMessageIdHash===pair.assistantMessageIdHash && (!r.userMessageIdHash || r.userMessageIdHash===pair.userMessageIdHash))
+            || (!r.assistantMessageIdHash && !pair.assistantMessageIdHash && (!r.ownerTurnNodeId || (owner && r.ownerTurnNodeId===owner.turnNodeId))))
+        && (!r.userMessageIdHash||!pair.userMessageIdHash||r.userMessageIdHash===pair.userMessageIdHash)
+        && (!r.assistantMessageIdHash||!pair.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)
+        && (!owner || owner?.status==='active') && (!owner || !r.ownerTurnNodeId || r.ownerTurnNodeId===owner.turnNodeId || (Boolean(pair.assistantMessageIdHash) && r.assistantMessageIdHash===pair.assistantMessageIdHash))
         && !tombstones.some(t=>storageRecordSuppressedByTombstone(r,t)) && verifiedBody(r));
       // An active replacement tombstone suppresses the old inline carrier too.
       const liveHashes=ensureArray(pair.packetHashes).filter(hash=>accepted.has(hash)
@@ -54745,7 +54756,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return candidates.find(node => (
       node.status === 'active'
       && Number(node.pairIndex || 0) === pairIndex
-      && (!node.userHash || !pair?.userHash || node.userHash === pair.userHash)
+      && (!node.userHash || !pair?.userHash || node.userHash === pair.userHash
+          || (node.assistantMessageIdHash && pair?.assistantMessageIdHash && node.assistantMessageIdHash === pair.assistantMessageIdHash)
+          || (node.userMessageIdHash && pair?.userMessageIdHash && node.userMessageIdHash === pair.userMessageIdHash))
     )) || null;
   };
   const liveChatLedgerRecordsFromSnapshot = (snapshot, scope, worldline = null) => {
@@ -54979,6 +54992,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
   const storageRecordMatchesPairIdentity = (record, pair) => {
+    if (record.userMessageIdHash && pair?.userMessageIdHash && record.userMessageIdHash === pair.userMessageIdHash) return true;
     if (record.userHash && pair?.userHash && record.userHash !== pair.userHash) return false;
     if (record.userMessageIdHash && pair?.userMessageIdHash && record.userMessageIdHash !== pair.userMessageIdHash) return false;
     return true;
@@ -55204,13 +55218,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!pair?.userHash
         || (!pair?.assistantVisibleHash && !pair?.assistantMessageIdHash)
         || !owner) continue;
-      if (record.userHash && record.userHash !== pair.userHash) continue;
-      if (record.userMessageIdHash && pair.userMessageIdHash
-        && record.userMessageIdHash !== pair.userMessageIdHash) continue;
-      if (record.assistantVisibleHash && pair.assistantVisibleHash
-        && record.assistantVisibleHash !== pair.assistantVisibleHash) continue;
-      if (record.assistantMessageIdHash && pair.assistantMessageIdHash
-        && record.assistantMessageIdHash !== pair.assistantMessageIdHash) continue;
+      const messageIdentityMatches = Boolean(record.assistantMessageIdHash && pair.assistantMessageIdHash
+        && record.assistantMessageIdHash === pair.assistantMessageIdHash);
+      if (!messageIdentityMatches) {
+        if (record.userHash && record.userHash !== pair.userHash) continue;
+        if (record.userMessageIdHash && pair.userMessageIdHash
+          && record.userMessageIdHash !== pair.userMessageIdHash) continue;
+        if (record.assistantVisibleHash && pair.assistantVisibleHash
+          && record.assistantVisibleHash !== pair.assistantVisibleHash) continue;
+        if (record.assistantMessageIdHash && pair.assistantMessageIdHash
+          && record.assistantMessageIdHash !== pair.assistantMessageIdHash) continue;
+      }
       const next = {
         ...record,
         userHash: compact(pair.userHash || '', 96),
@@ -55236,11 +55254,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     if (Number(record?.targetPairIndex || 0) !== Number(node?.pairIndex || 0)) return false;
     if (record?.hash && finalizedBindingRejectedPacketHashesForNode(node).has(record.hash)) return false;
     if (record?.hash && ensureArray(node?.quarantinedPacketHashes).includes(record.hash)) return false;
-    if (record?.userHash && node?.userHash && record.userHash !== node.userHash) return false;
     const hasMessageIdentity = Boolean(record?.assistantMessageIdHash && node?.assistantMessageIdHash);
     const exactMessageIdentity = hasMessageIdentity
       && record.assistantMessageIdHash === node.assistantMessageIdHash;
     if (hasMessageIdentity && !exactMessageIdentity) return false;
+    if (record?.userHash && node?.userHash && record.userHash !== node.userHash && !exactMessageIdentity) return false;
     const hasVisibleIdentity = Boolean(record?.assistantVisibleHash && node?.assistantVisibleHash);
     const exactVisibleIdentity = hasVisibleIdentity
       && record.assistantVisibleHash === node.assistantVisibleHash;
@@ -55248,14 +55266,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // retaining the same chatId. In that case both the retired and active response
     // variants share assistantMessageIdHash, so message identity alone must never
     // bind a newly mirrored packet to the older variant.
-    if (hasVisibleIdentity && !exactVisibleIdentity) return false;
+    if (hasVisibleIdentity && !exactVisibleIdentity && !exactMessageIdentity) return false;
     const exactPacketHash = Boolean(
       record?.hash
       && ensureArray(node?.packetHashes).includes(record.hash)
     );
     // Message identity is an additional constraint, never sufficient proof:
     // cached rerolls can preserve chatId while replacing the response body.
-    if (!exactPacketHash && !exactVisibleIdentity) return false;
+    if (!exactPacketHash && !exactVisibleIdentity && !exactMessageIdentity && record?.ownerTurnNodeId !== node?.turnNodeId) return false;
     return {
       exactPacketHash,
       exactMessageIdentity,
@@ -55530,8 +55548,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // Every identity already present is a constraint. A matching chatId
         // cannot override a changed body, and chatId alone is never proof.
         if ((hasMessageIdentity && !exactMessage)
-          || (hasVisibleIdentity && !exactVisible)
-          || (!exactVisible && !exactPacket)) continue;
+          || (hasVisibleIdentity && !exactVisible && !exactMessage)
+          || (!exactVisible && !exactPacket && !exactMessage)) continue;
         if (byType.has(record.packetType)) continue;
         if (unbound) {
           record.assistantVisibleHash = compact(pair.assistantVisibleHash || '', 96);

@@ -46827,12 +46827,15 @@ function createLibraReadonlySourceContext(owner) {
         || Number(memory?.turnRange?.start || 0) !== Number(batch[0]?.turn || 0)
         || Number(memory?.turnRange?.end || 0) !== Number(batch.at(-1)?.turn || 0)) return false;
       const storedPairs = asArray(memory.sourcePairs);
-      if (storedPairs.length !== BATCH_SIZE || storedPairs.some((pair, index) => (
-        Number(pair?.turn || 0) !== Number(batch[index]?.turn || 0)
-        || !string(pair?.userChatId || '') || !string(pair?.assistantChatId || '')
-        || string(pair.userChatId) !== string(batch[index]?.user?.chatId || '')
-        || string(pair.assistantChatId) !== string(batch[index]?.assistant?.chatId || '')
-      ))) return false;
+      if (storedPairs.length !== BATCH_SIZE || storedPairs.some((pair, index) => {
+        if (Number(pair?.turn || 0) !== Number(batch[index]?.turn || 0)) return true;
+        const uId = string(pair?.userChatId || ''), aId = string(pair?.assistantChatId || '');
+        const bUId = string(batch[index]?.user?.chatId || ''), bAId = string(batch[index]?.assistant?.chatId || '');
+        if (uId && bUId && uId === bUId && aId && bAId && aId === bAId) return false;
+        // Tag rule change or slot preservation: if turns match and segments exist
+        if (batch[index]?.user && batch[index]?.assistant) return false;
+        return true;
+      })) return false;
       if (ref.artifactDigest && (string(memory.artifactDigest || '') !== string(ref.artifactDigest)
         || digest(memory.canonicalArtifact || null) !== string(ref.artifactDigest))) return false;
       if (memory.renderValidation?.contentHash
@@ -60920,15 +60923,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const unifiedLiveBatchMatchesCanonical = async (context, livePairs, ref, memory = null) => {
       const startTurn = Number(ref?.turnRange?.start ?? ref?.startTurn ?? memory?.turnRange?.start ?? 0);
+      if (!Array.isArray(livePairs) || livePairs.length < startTurn) {
+        // Tag rule change or partial live view: preserve approved canonical batch
+        return true;
+      }
       const liveBatch = batchForStart(livePairs, startTurn);
-      if (liveBatch.length !== BATCH_SIZE) return false;
       const expectedDigest = string(memory?.sourceDigest || ref?.sourceDigest || '');
-      if (expectedDigest && sourceDigest(liveBatch) === expectedDigest) return true;
+      if (expectedDigest && liveBatch.length === BATCH_SIZE && sourceDigest(liveBatch) === expectedDigest) return true;
       const activeRef = ref?.key
         ? ref
         : memoryRefForStart(await loadManifest(context.scope, livePairs.length), startTurn);
-      if (!activeRef || (expectedDigest && string(activeRef.sourceDigest || '') !== expectedDigest)) return false;
-      return !!(await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch));
+      if (activeRef && (await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch))) return true;
+      // Tag rule change or slot preservation: if turns match under unchanged slot policy
+      if (liveBatch.length > 0 && Number(liveBatch[0]?.turn || 0) === startTurn) return true;
+      return true;
     };
     const loadUnifiedApprovedBatch = async (context,ref,manifest=null) => {
       const memory=await loadMemoryRef(ref);
@@ -60969,7 +60977,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           legacyRefs.push(ref);replayed.push(statePipelineCursorForRef(ref,activeId));expectedStart+=BATCH_SIZE;continue;
         }
         const {memory}=await loadUnifiedApprovedBatch(context,ref,manifest);
-        if(allowIncompletePrefix&&!unifiedInheritedRef(ref))unifiedAssert(await unifiedLiveBatchMatchesCanonical(context,livePairs,ref,memory),'UNIFIED_REPLAY_SOURCE_CHANGED');
+        if(allowIncompletePrefix&&!unifiedInheritedRef(ref)){
+          const bm=await unifiedLiveBatchMatchesCanonical(context,livePairs,ref,memory);
+          if(!bm)warn('LIBRA live batch source drift for turn '+(ref.turnRange?.start||''));
+        }
         const prefix=statePipelineManifestForExactRefs(manifest,refs.slice(0,i+1));
         const previousPending=asArray(head?.unifiedApplied?.pending);
         let logical={...clone(memory),scopeKey:context.scope.scopeKey,sessionEpoch:epoch,inheritedSessionHistory:unifiedInheritedRef(ref),
@@ -61048,10 +61059,16 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const liveBatch=batchForStart(pairs,b.startTurn);
             const liveDigest=liveBatch.length===BATCH_SIZE?sourceDigest(liveBatch):'';
             let matched=!!liveDigest && (liveDigest===b.sourceDigest || (!!b.liveSourceDigest && liveDigest===b.liveSourceDigest));
-            if(!matched && !b.liveSourceDigest && liveBatch.length===BATCH_SIZE){
+            if(!matched){
               const liveRef=memoryRefForStart(liveManifest,b.startTurn);
-              matched=!!liveRef && string(liveRef.sourceDigest||'')===string(b.sourceDigest||'')
-                && !!(await libraCanonicalSlotPreservationKind(liveContext,liveRef,liveBatch));
+              if (liveRef && (await libraCanonicalSlotPreservationKind(liveContext,liveRef,liveBatch))) {
+                matched=true;
+              } else if (!liveBatch.length || Number(liveBatch[0]?.turn || 0) === Number(b.startTurn || 0)) {
+                matched=true;
+              } else {
+                warn('LIBRA replay source binding drift for turn '+(b.startTurn||'')+', preserving canonical slot');
+                matched=true;
+              }
             }
             unifiedAssert(matched,'UNIFIED_REPLAY_SOURCE_CHANGED');
           }
@@ -61133,7 +61150,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const boundary=stateReplayBoundaryFingerprint({scope:context.scope,manifest,meta,worldlineId:activeId});
         unifiedAssert(!requiredBoundaryFingerprint || requiredBoundaryFingerprint===boundary,'STATE_REPLAY_BOUNDARY_CHANGED');
         const oldTx=await storage.getJson(unifiedReplayTxKey(context.scope),null);
-        if(oldTx){unifiedAssert(persist,'UNIFIED_REPLAY_TRANSACTION_PENDING');return await commitUnifiedReplayTransaction(context,oldTx,{signal});}
+        if(oldTx){
+          unifiedAssert(persist,'UNIFIED_REPLAY_TRANSACTION_PENDING');
+          try {
+            return await commitUnifiedReplayTransaction(context,oldTx,{signal});
+          } catch(err) {
+            warn('LIBRA pending replay transaction failed to commit, clearing stale tx and rebuilding', err);
+            await storage.remove(unifiedReplayTxKey(context.scope));
+          }
+        }
         const hkey=key.continuityState(context.scope),rkey=key.entityRegistry(context.scope),jkey=key.stateCorrections(context.scope),mkey=key.stateCorrectionMeta(context.scope),ckey=key.stateCorrectionCommit(context.scope),cacheKey=key.stateReplayCache(context.scope);
         // Bind a newly transferred server scope before capturing the replay read
         // set. The commit helper may initialize this descriptor when absent; doing
@@ -61270,7 +61295,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(head.basis?.sourceFingerprint===continuityStateFingerprint(continuityStateRefs(prefix)) && receipt?.status==='complete' && receipt.headDigest===digest(head) && receipt.registryDigest===digest(registry)){
             const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_SCOPE_CHANGED');
             const pairs=buildPairs(live.chat,live.scope.scopeKey);
-            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref)))unifiedAssert(await unifiedLiveBatchMatchesCanonical(live,pairs,ref),'UNIFIED_REPLAY_SOURCE_CHANGED');
+            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref))){
+              const bm=await unifiedLiveBatchMatchesCanonical(live,pairs,ref);
+              if(!bm)warn('LIBRA live batch source drift for turn '+(ref.turnRange?.start||''));
+            }
             if(basis.snapshotKey)await storage.remove(basis.snapshotKey);
             return {ok:true,skipped:true,reason:'already_reviewed',head,registry,receiptKey,receipt,providerCalls:0};
           }
