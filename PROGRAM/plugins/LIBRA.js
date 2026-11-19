@@ -47817,9 +47817,17 @@ function createLibraReadonlySourceContext(owner) {
     }
     return table;
   };
+  const entityMentionedIn = (body, name) => {
+    if (!body || !name) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (/^[a-z0-9 _-]+$/i.test(name)) {
+      return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(body);
+    }
+    return new RegExp(`(?:^|[^가-힣a-z0-9])${escaped}(?:$|[^가-힣a-z0-9]|(?:은|는|이|가|을|를|의|에|에게|에서|와|과|도|만|로|으로|께서|한테|랑|이랑|야|아|씨|님|군|양)(?:$|[^가-힣a-z0-9]))`, 'u').test(body);
+  };
   const mentionedEntities = (text, table) => {
     const body = normalize(text), found = new Set();
-    if (body) for (const entity of array(table)) if (entity.names.some(name => body.includes(name))) found.add(entity.id);
+    if (body) for (const entity of array(table)) if (entity.names.some(name => entityMentionedIn(body, name))) found.add(entity.id);
     return found;
   };
   const identitySignal = (queryEntities, text, table) => {
@@ -48159,6 +48167,8 @@ function createLibraReadonlySourceContext(owner) {
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
     const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+    const characterEntityIds = new Set(array(entities).filter(entity => entity.axis === 'characters').map(entity => entity.id));
+    const queryCharacterEntities = new Set([...queryEntities].filter(id => characterEntityIds.has(id)));
     // Source statements behind a State field that answers the question travel with it
     // when the question asks how or what exactly, not what is true now.
     const linkedKeys = new Set();
@@ -48178,20 +48188,29 @@ function createLibraReadonlySourceContext(owner) {
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
-      const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
+      const rowCharacterEntities = queryCharacterEntities.size
+        ? [...mentionedEntities(row.text, entities)].filter(id => characterEntityIds.has(id))
+        : [];
+      const entityMismatch = queryCharacterEntities.size > 0
+        && rowCharacterEntities.length > 0
+        && !rowCharacterEntities.some(id => queryCharacterEntities.has(id))
+        && (row.axis === 'characters' || row.axis === 'relationships' || row.family === 'lens');
+      const linkedVal = row.family !== 'state' && !entityMismatch && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
-      const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
+      const strongLexical = exactVal > 0 || ngramVal >= 0.22 || bm25Val >= 0.6;
+      const relevant = !q || (!entityMismatch && (identityVal > 0 || linkedVal > 0 || semanticVal > 0 || strongLexical));
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const baseScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = entityMismatch ? baseScore * 0.15 : baseScore;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal, relevant, entityMismatch }
       };
     });
 
     const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
-    candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
+    candidates.sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch) || b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map(), contextLensGroups = new Set();
     const suppressedEvidenceDuplicates = new Set();
@@ -48232,14 +48251,16 @@ function createLibraReadonlySourceContext(owner) {
     // question still keeps room for those records: State then leads with a third of the evidence share.
     const evidenceItems = groups.find(group => group.key === 'evidence')?.items || maxItems;
     const stateLeadLimit = ['history','detail'].includes(plan?.intent) ? Math.max(1, Math.ceil(evidenceItems / 3)) : evidenceItems;
-    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0)
+    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0 && !row.signals.entityMismatch)
       .sort((a, b) => b.score - a.score).slice(0, stateLeadLimit).map(row => row.id));
     const tier = row => row.family !== 'state' ? 1 : leadingState.has(row.id) ? 0 : 2;
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
       if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
+        || Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
         || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
-      return tier(a) - tier(b)
+      return Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
+        || tier(a) - tier(b)
         || (plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score);
     }) : candidates;
     for (const group of groups) {
@@ -48247,6 +48268,8 @@ function createLibraReadonlySourceContext(owner) {
         let used = 0, count = 0;
         for (const row of ordered.filter(row => (row.family === 'lens') === (group.key === 'lens'))) {
           if (count >= group.items) break;
+          if (q && row.signals.entityMismatch) continue;
+          if (q && !row.signals.relevant && !(row.family === 'lens' && row.lensItem?.floorPassed !== false)) continue;
           const cost = costOf(row);
           if (used + cost <= targetCharacters && add(row)) { used += cost; count++; }
         }
@@ -48259,10 +48282,15 @@ function createLibraReadonlySourceContext(owner) {
     for (let n = 0; n < minimumPerAxis; n++) for (const axis of axes) {
       if (selected.filter(row => row.axis === axis).length > n) continue;
       const ranked = candidates.filter(row => row.axis === axis && !seen.has(row.id))
-        .sort((a, b) => Number(b.family === 'state') - Number(a.family === 'state') || b.score - a.score);
+        .sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch)
+          || Number(b.signals.relevant) - Number(a.signals.relevant)
+          || Number(b.family === 'state') - Number(a.family === 'state')
+          || b.score - a.score);
       for (const row of ranked) if (floorUsed[axis] + costOf(row) <= floorBudget && add(row)) { floorUsed[axis] += costOf(row); break; }
     }
-    for (const row of ordered) if (row.family === 'state' || row.family === 'lens' || row.score > 0) add(row);
+    for (const row of ordered) {
+      if (!q ? (row.family === 'state' || row.family === 'lens' || row.score > 0) : (row.signals.relevant && !row.signals.entityMismatch)) add(row);
+    }
     for (const [family, allocation] of Object.entries(familyAllocation)) {
       const chosen = selected.filter(row => family === 'evidence' ? row.family !== 'lens' : row.family === family);
       allocation.selected = chosen.length;
@@ -48392,10 +48420,13 @@ function createLibraReadonlySourceContext(owner) {
     }
     const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
-    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
+    const relevantAnchors = queryText
+      ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
+      : anchors.items;
+    const refs = engine.rankCatalog(frame.refs, queryText, relevantAnchors,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
-    const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
+    const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
       limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
@@ -63429,12 +63460,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const sceneReferenceCue = /(?:그래서|그다음|계속|이어|아까|방금|그녀|그 사람|그것|그곳|then|continue|after that|what next|それで|続)/i.test(currentText);
       let sceneWeight = 0;
       if (!explicitShift && sceneText) {
-        if (currentText.length <= 36 || sceneReferenceCue) sceneWeight = 0.55;
-        else if (currentText.length <= 120) sceneWeight = 0.35;
-        else sceneWeight = 0.15;
+        if (currentText.length <= 36 || sceneReferenceCue) sceneWeight = 0.50;
+        else if (currentText.length <= 120) sceneWeight = 0.22;
+        else sceneWeight = 0.10;
       }
       const queryType = classifyQueryType(currentText);
-      if (queryType === QUERY_TYPES.CONTINUATION && !explicitShift) sceneWeight = Math.max(sceneWeight, 0.45);
+      if (queryType === QUERY_TYPES.CONTINUATION && !explicitShift) sceneWeight = Math.max(sceneWeight, 0.40);
       const sparseText = sceneWeight >= 0.35 && sceneText ? `${currentText}\n${sceneText}` : currentText;
       return {
         currentText,
@@ -76287,7 +76318,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // Korean text is matched by character bigrams, so one shared bigram is too weak a signal for
       // a longer input.
       const minOverlap = queryTokens.size >= 6 ? 2 : 1;
-      const scenePairs = pairs.filter(pair => cutoff == null || pair.turn <= Number(cutoff)).slice(-2).reverse();
+      const lensSceneLimit = queryBundle?.explicitShift === true ? 0
+        : (Number.isFinite(Number(queryBundle?.sceneWeight)) && Number(queryBundle?.sceneWeight) < 0.35 ? 1 : 2);
+      const scenePairs = lensSceneLimit > 0
+        ? pairs.filter(pair => cutoff == null || pair.turn <= Number(cutoff)).slice(-lensSceneLimit).reverse()
+        : [];
       const sceneText = [queryText, ...scenePairs.flatMap(pair => [pair.user?.text, pair.assistant?.text])].map(value => string(value || '')).join('\n');
       const scenePositions = new Map();
       const scenePosition = person => {

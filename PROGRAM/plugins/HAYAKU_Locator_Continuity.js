@@ -23884,15 +23884,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       candidateVisits+=scoreMap.size;
       const ranked=[];
+      let maxScore=0,maxWordScore=0;
       for(const [index,score]of scoreMap){
         if(!(score>0))continue;
         const {row,key}=docs[index];
         const wordScore=wordScoreMap.get(index)||0;
-        ranked.push({row,key,score,lexical:wordScore*(1+broadness*compiled.information[index])});
+        if(score>maxScore)maxScore=score;
+        if(wordScore>maxWordScore)maxWordScore=wordScore;
+        ranked.push({row,key,score,wordScore,lexical:wordScore*(1+broadness*compiled.information[index])});
       }
-      ranked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
-      scoredRows+=ranked.length;
-      ranked.forEach((hit,index)=>{const rank=index+1;
+      const filteredRanked=maxWordScore>0
+        ? ranked.filter(hit=>hit.wordScore>0||hit.score>=Math.max(0.55,maxScore*0.22))
+        : ranked;
+      filteredRanked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
+      scoredRows+=filteredRanked.length;
+      filteredRanked.forEach((hit,index)=>{const rank=index+1;
         if(!best.has(hit.key)||best.get(hit.key).rank>rank)best.set(hit.key,{...hit,rank});});
     }
     Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
@@ -23914,26 +23920,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const localRecallRefs = row => [row.id,row.publicRef,row.locator?.uri,...ensureArray(row._recallIdentityRefs),...ensureArray(row._recordRefs)].filter(value=>typeof value==='string'&&value);
   const localRecallDeclaredTargets = row => Object.entries(row.links||{})
     .filter(([key])=>key.endsWith('Refs')).flatMap(([,values])=>ensureArray(values)).filter(value=>typeof value==='string');
-  const localRecallExpand = (allRows, seeds, settings) => {
+  const hayakuRowEntityNames = row => uniq([
+    ...ensureArray(row._recallEntityRefs),
+    ...ensureArray(row.entityNames),
+    row.axis==='entity'||row.domain==='entity' ? (row.name||row.label||row.entityName||'') : ''
+  ].map(value=>String(value||'').trim().toLowerCase()).filter(Boolean), 24);
+  const localRecallExpand = (allRows, seeds, settings, queryEntitySet = null) => {
     if(settings.graphClosureRecallEnabled===false || settings.typedMemoryGraphEnabled===false)return [];
-    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map(),rowIndexMap=new Map();
+    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map();
     const add=(map,key,row)=>{if(!key)return;const list=map.get(key)||[];list.push(row);map.set(key,list);};
     for(let idx=0;idx<allRows.length;idx++){
       const row=allRows[idx];
-      rowIndexMap.set(row,idx);
       localRecallRefs(row).forEach(ref=>add(refs,ref,row));
       localRecallDeclaredTargets(row).forEach(ref=>add(reverseRefs,ref,row));
       add(source,row.packetHash,row);add(scenes,row.scene_id||row.sceneId,row);
       ensureArray(row._recallEntityRefs).forEach(ref=>add(entities,ref,row));
     }
+    const entityFilter=row=>{
+      if(!queryEntitySet||!queryEntitySet.size)return true;
+      const axis=String(row.axis||row.domain||'');
+      if(axis!=='entity')return true;
+      const names=hayakuRowEntityNames(row);
+      return !names.length||names.some(name=>queryEntitySet.has(name));
+    };
     const queues=seeds.map(seed=>{
       const related=[];
       localRecallDeclaredTargets(seed).forEach(ref=>related.push(...(refs.get(ref)||[])));
       localRecallRefs(seed).forEach(ref=>related.push(...(reverseRefs.get(ref)||[])));
       if(settings.hierarchicalEpisodeMemoryEnabled!==false){
-        related.push(...(source.get(seed.packetHash)||[]),...(scenes.get(seed.scene_id||seed.sceneId)||[]));
-        ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[])));
-        const at=rowIndexMap.get(seed)??-1;if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
+        related.push(...(source.get(seed.packetHash)||[]).filter(entityFilter),...(scenes.get(seed.scene_id||seed.sceneId)||[]).filter(entityFilter));
+        ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[]).filter(entityFilter)));
       }
       const seedKey=localRecallSourceKey(seed);
       return related.filter(row=>localRecallSourceKey(row)!==seedKey);
@@ -23947,6 +23963,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       && !requestKnowledgeUnavailableForRow(row,queryText,context,settings)
       && ensureArray(row.projectionVisibilityBoundaries).every(visibility=>!isKnowledgeUnavailableForQuery({...row,visibility},queryText,context))).map(row=>[localRecallSourceKey(row),row])).values()];
     const byKey=new Map(rows.map(row=>[localRecallSourceKey(row),row]));
+    const queryEntities=new Set(queryMentionedEntities(store,queryText).map(name=>String(name||'').trim().toLowerCase()).filter(Boolean));
     const direct=computedRanks?computedRanks[0].map(key=>byKey.get(key)).filter(Boolean):localRecallRank(rows,[queryText]);
     const directRanks=new Map(direct.map((row,index)=>[localRecallSourceKey(row),index+1]));
     const recent=computedRanks?computedRanks[1].map(key=>byKey.get(key)).filter(Boolean):localRecallRank(rows,ensureArray(settings.retrievalRecentContext?.topics));
@@ -23958,15 +23975,26 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           -Number(a.locator?.worldlineOrdinal||a.worldlineOrdinal||a.locator?.sourcePairIndex||a.sourcePairIndex||0)
         ||localRecallSourceKey(a).localeCompare(localRecallSourceKey(b)));
     const seeds=localRecallFairMerge([direct,recent,current],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
-    const linked=localRecallExpand(rows,seeds,settings);
+    const linked=localRecallExpand(rows,seeds,settings,queryEntities);
     const queues=[direct,recent,current,linked];
-    const scores=new Map();queues.forEach(queue=>queue.forEach((row,index)=>{
-      const key=localRecallSourceKey(row);scores.set(key,(scores.get(key)||0)+1/(60+index+1));}));
-    const candidates=localRecallFairMerge(queues,PACKET_CORE_RECALL_CANDIDATE_LIMIT).map(row=>({...row,
-      score:scores.get(localRecallSourceKey(row))||0,_localRecall:true,
-      _recallDirectRank:directRanks.get(localRecallSourceKey(row))||0,
-      scoreBreakdown:{localRecall:true,relevanceEvidence:scores.get(localRecallSourceKey(row))||0},
-      _recallSupply:queues.map((queue,i)=>queue.includes(row)?i:null).filter(i=>i!==null)}));
+    const recentWeight=Math.max(0.15,Math.min(1,Number(settings.retrievalRecentContext?.supportWeight??1)||1));
+    const queueWeights=[1,recentWeight,direct.length?0.5:1,0.75];
+    const scores=new Map();queues.forEach((queue,qi)=>queue.forEach((row,index)=>{
+      const key=localRecallSourceKey(row);scores.set(key,(scores.get(key)||0)+queueWeights[qi]/(60+index+1));}));
+    const candidates=localRecallFairMerge(queues,PACKET_CORE_RECALL_CANDIDATE_LIMIT).map(row=>{
+      const key=localRecallSourceKey(row);
+      const axis=String(row.axis||row.domain||'');
+      const names=queryEntities.size&&axis==='entity'?hayakuRowEntityNames(row):[];
+      const entityMismatch=queryEntities.size>0&&axis==='entity'&&names.length>0&&!names.some(name=>queryEntities.has(name));
+      const baseScore=scores.get(key)||0;
+      const finalScore=entityMismatch?baseScore*0.15:baseScore;
+      return {...row,
+        score:finalScore,_localRecall:true,
+        _recallDirectRank:entityMismatch?0:(directRanks.get(key)||0),
+        _recallEntityMismatch:entityMismatch,
+        scoreBreakdown:{localRecall:true,relevanceEvidence:finalScore,entityMismatch},
+        _recallSupply:queues.map((queue,i)=>queue.includes(row)?i:null).filter(i=>i!==null)};
+    });
     const sourceContext=localRecallSourceContexts.get(store);
     if(sourceContext){
       const keys=[...new Set(candidates.map(row=>row[localRecallProjectionReference]).filter(key=>typeof key==='string'))].slice(0,PACKET_CORE_RECALL_CANDIDATE_LIMIT);
@@ -24746,7 +24774,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   const adaptiveRecentContextCount = (query = '', settings = Memory.settings || DEFAULT_SETTINGS) => {
     const configured=Math.max(0,Math.min(20,Math.floor(Number(settings.recallContextMessages??DEFAULT_SETTINGS.recallContextMessages)||0)));
-    return {count:configured,configured,reason:configured?'fixed_source_window':'disabled',ambiguous:false,supportWeight:configured?1:0};
+    if(!configured)return {count:0,configured:0,reason:'disabled',ambiguous:false,supportWeight:0};
+    const q=localRecallQueryText(query).trim();
+    if(!q)return {count:configured,configured,reason:'empty_query',ambiguous:true,supportWeight:1};
+    const isTopicShift=/(?:한편|다른 이야기|주제를 바꿔|시간을 돌려|몇 년 전|완전히 다른|meanwhile|different topic|change the subject|years? ago|flashback|一方|別の話)/i.test(q);
+    if(isTopicShift)return {count:Math.min(configured,1),configured,reason:'topic_shift',ambiguous:false,supportWeight:0.25};
+    const isReferential=Boolean(RecallKeywordFeatures?.referential?.(q));
+    const isContinuation=Boolean(RecallKeywordFeatures?.continuation?.(q));
+    if(isReferential||isContinuation||q.length<=36)return {count:configured,configured,reason:'continuation_or_referential',ambiguous:true,supportWeight:1};
+    if(settings.adaptiveContextWindow!==false&&q.length>80)return {count:Math.min(configured,2),configured,reason:'self_contained_query',ambiguous:false,supportWeight:0.45};
+    return {count:configured,configured,reason:'balanced_context_window',ambiguous:false,supportWeight:0.65};
   };
   const hayakuRecentContextMessageText = message => {
     if (!message || typeof message !== 'object') return '';
@@ -24774,8 +24811,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const take=body.slice(0,Math.max(0,remaining-12));if(!take)break;
       rows.push({role:roleOf(source[index])==='model'?'assistant':roleOf(source[index]),index,text:take,truncated:take.length<body.length});remaining-=take.length+12;}
     rows.reverse();const body=rows.map(row=>row.role.toUpperCase()+': '+row.text).join('\n');
-    return {version:LOCAL_RECALL_VERSION,active:!!body,configuredMessages:profile.count,requestedMessages:profile.count,
-      messagesUsed:rows.length,reason:profile.reason,ambiguous:false,supportWeight:body?1:0,text:body,hash:body?stableHash64(body):'',
+    return {version:LOCAL_RECALL_VERSION,active:!!body,configuredMessages:profile.configured,requestedMessages:profile.count,
+      messagesUsed:rows.length,reason:profile.reason,ambiguous:profile.ambiguous,supportWeight:body?profile.supportWeight:0,text:body,hash:body?stableHash64(body):'',
       windowIndices:positions.slice().reverse(),topics:rows.map(row=>row.text),queryTopics:[queryText],primaryTokens:localRecallWords(queryText),
       supportTokens:localRecallWords(body),canonicalTokens:[],conceptTokens:[],semanticFrameTokens:[],entityTokens:[],
       rows:rows.map(row=>({role:row.role,index:row.index,preview:row.text.slice(0,180),truncated:row.truncated}))};
@@ -37235,13 +37272,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return m.cost;
     };
     const tie=(a,b)=>weightedScoreOf(b)-weightedScoreOf(a)||fulfilledOf(b)-fulfilledOf(a)||duplicateOf(a)-duplicateOf(b)||costOf(a)-costOf(b)||a.id.localeCompare(b.id);
+    const groupEntityMismatch=group=>group.units.some(unit=>ensureArray(unit.origins).some(origin=>origin?.row?._recallEntityMismatch===true));
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
-      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane));
+      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane)&&!groupEntityMismatch(group));
       candidates.sort((a,b)=>a.priority-b.priority||tie(a,b));
       if(candidates.length)reservedLanes.add(candidates[0].id);
     }
-    const groupPriority=group=>reservedLanes.has(group.id)?Math.min(1.5,group.priority):group.priority;
+    const groupPriority=group=>groupEntityMismatch(group)?Math.max(3,group.priority):reservedLanes.has(group.id)?Math.min(1.5,group.priority):group.priority;
     // These identities already certify the synchronous preparation's rows.
     // Reuse them during bounded feasibility checks rather than rehashing each
     // public body for every pair in every trial.

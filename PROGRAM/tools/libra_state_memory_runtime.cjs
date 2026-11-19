@@ -62,10 +62,13 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     }
     const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
-    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
+    const relevantAnchors = queryText
+      ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
+      : anchors.items;
+    const refs = engine.rankCatalog(frame.refs, queryText, relevantAnchors,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
-    const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
+    const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
       limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,

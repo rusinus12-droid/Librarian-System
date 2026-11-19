@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T01:13:57.859Z",
+  "generatedAt": "2026-11-19T03:08:45.084Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -3864,7 +3864,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "fc9a9fa9988a122fd43229a348c06aed2746d25065d3a33f65430fcbb0433671",
+      "sha256": "aa57a43c1af772d1a36030a3b6ed5ca0389866e7be16ef64e2f0ea75beb027c8",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4268,24 +4268,24 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "7dfcfb013b6aa34cefb9962f6846863555a01adad36340b756a8ed551138eaea",
-      "bytes": 3884603
+      "sha256": "12f6114d9cf46cb869a492fbe8051b05a025f52484c5bcdaaed4448ac8d53e5e",
+      "bytes": 3894976
     },
     "plugins/GRADIA.js": {
       "sha256": "c8c7a5ae1d181bcac580a965a9abac9e56b5bf96ea5e20b17b322c97f247df9e",
       "bytes": 3471154
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "07e68fe8949e2b898f0f08443834eacb3b8b9a78c656dbc09da55de0fa92787a",
-      "bytes": 4309914
+      "sha256": "16ad1fd3ee4cd4f126faf7faab9ec60af0cc4d87bc600ccd01b82cafc87bd083",
+      "bytes": 4312814
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "14087ad3959c27c44dff43bbc609ef2aa938fa0453b29ab22e5822d4a9d0399e",
-      "bytes": 6736750
+      "sha256": "dc37b3b617cbc15e8b6866f61403db1e8b17f5671e1f9271d251fb4e49b8fdfe",
+      "bytes": 6739250
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -12172,12 +12172,12 @@
       "bytes": 3516
     },
     "tools/libra_state_memory_engine.cjs": {
-      "sha256": "cc8f94a2498cd14a9e66a4277f60e223fa0d94ca45872573e0c94e25be26ce7f",
-      "bytes": 39421
+      "sha256": "2e4b32f2c0e8b8932a079a16a2208d8edee0511fb9ba5d88742c6957ae4bb679",
+      "bytes": 41509
     },
     "tools/libra_state_memory_runtime.cjs": {
-      "sha256": "fbe7a1f398df70fac59acc945cdd262b0a3cfaececdf706a9fc1db76650f8241",
-      "bytes": 18515
+      "sha256": "e0f995ee33a58157ab3d9cfaa108eae62f2e55a1776e15c4717aec119bda1e87",
+      "bytes": 18689
     },
     "tools/llm_fail_gate_unit_test.js": {
       "sha256": "cae70ac4a93fe34c81df139b8ecc15583ee1297adc7873d23b164ffb9972d67c",
