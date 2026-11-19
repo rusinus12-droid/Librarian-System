@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T05:49:49.586Z",
+  "generatedAt": "2026-11-19T07:24:28.859Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -3254,6 +3254,10 @@
     "docs/MEMORY_SUITE_INTEGRATED_DESIGN_v1_5_STATUS_KO.md": {
       "sha256": "7ff39afbd92d319aa58ed07b1a1813e267f421ef5d042f72a820877a630c7dfa",
       "bytes": 1442
+    },
+    "docs/MEMORY_SUITE_RECALL_SHARE_20261119.md": {
+      "sha256": "46080834d167bc0aeb34bb67fe7433c0015cd448b28ebceb0aa96a61ddd36a79",
+      "bytes": 6513
     },
     "docs/MEMORY_SUITE_SERVER_READ_FAILURES_20261029.md": {
       "sha256": "6bbe32e9514f294d9e851cc603b36ec2e2afb7116709386833d8870b21d36306",
@@ -10358,6 +10362,10 @@
     "tests/memory_suite_global_storage_mode_contract_test.cjs": {
       "sha256": "dd28223e6017c3d996b63b5ae9b5a9242f9acb923825c7ad7f98157fe912b6f2",
       "bytes": 1318
+    },
+    "tests/memory_suite_recall_share_test.cjs": {
+      "sha256": "7a5f1d7bccc2fec45f11b4841a9b2d6b4f2c4490b96d8605c8760f0f85137eab",
+      "bytes": 21634
     },
     "tests/mobile_gpu_effect_contract_test.cjs": {
       "sha256": "043f1f90d5b30e457232652bacf5eb270cc220c020238186a4589cc52185b6be",
