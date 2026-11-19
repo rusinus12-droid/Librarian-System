@@ -58,9 +58,14 @@ const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illus
     if (rulesAfter) await f.r.api.setSourceEditRules(rulesAfter); else f.chat.message[1].data = rawOnly;
     const preRecaptureReader = await f.r.api.readActiveMicroMemoryForTurn(1);
     assert.equal(preRecaptureReader.status, 'verified', 'Micro reader stays verified before receipt recapture on illustration-only raw edit: ' + JSON.stringify({status: preRecaptureReader.status, reason: preRecaptureReader.reason}));
+    // 같은 턴 판정의 단일 기준 (2026-11-19): the stored receipt row agrees with Micro instead of
+    // reporting the turn missing, and State admission is not blocked by the receipt.
     const preRecaptureStatus = await f.r.api.getReceiptRecoveryStatus();
-    assert.equal(preRecaptureStatus.receiptStages?.[0]?.status, 'stale_source', 'receipt stage reports stale_source until recapture');
+    assert.equal(preRecaptureStatus.receiptStages?.[0]?.status, 'verified', 'the stored receipt stays valid for a ' + label + ' change: ' + JSON.stringify(preRecaptureStatus.receiptStages?.[0]));
     assert.equal((preRecaptureStatus.microJobs || []).find(job => Number(job.turn) === 1)?.status, 'succeeded', 'micro job stage remains succeeded on text-equivalent raw edit');
+    const admissionBlocked = result => result?.status === 'stale_source' && ['micro_receipt_changed', 'current_pair_revision_changed'].includes(result.reason);
+    const preRecaptureAdmission = await f.r.api.debugAdmitActiveMicroStateClaim(1, 0);
+    assert.ok(!admissionBlocked(preRecaptureAdmission), 'State admission reads the same-turn receipt before recapture: ' + JSON.stringify(preRecaptureAdmission));
     await recapture();
     assert.notEqual(await receiptRevision(), analyzed, 'the raw change still makes a new receipt (formula unchanged)');
     const carried = await f.r.api.debugReadActiveMicroMemory(1);
@@ -70,10 +75,17 @@ const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illus
     const row = jobs.find(job => Number(job.turn) === 1);
     assert.ok(!row || row.reason !== 'micro_work_missing', 'the turn is not reported as micro_work_missing: ' + JSON.stringify(row));
     assert.equal(f.control.calls.length, 1, 'no Micro job reruns for a ' + label + ' change');
+    // The record is carried from the earlier receipt; admission binds to that receipt, not the newer key.
+    const carriedAdmission = await f.r.api.debugAdmitActiveMicroStateClaim(1, 0);
+    assert.ok(!admissionBlocked(carriedAdmission), 'State admission accepts a carried Micro record: ' + JSON.stringify(carriedAdmission));
 
     f.chat.message[1].data = rewritten;
     const staleReader = await f.r.api.readActiveMicroMemoryForTurn(1);
     assert.equal(staleReader.status, 'stale_source', 'Micro reader marks a real text change stale immediately');
+    const staleStatus = await f.r.api.getReceiptRecoveryStatus();
+    assert.equal(staleStatus.receiptStages?.[0]?.status, 'stale_source', 'a real text change still reports the receipt stale');
+    const staleAdmission = await f.r.api.debugAdmitActiveMicroStateClaim(1, 0);
+    assert.equal(staleAdmission?.status, 'stale_source', 'State admission still refuses a real text change: ' + JSON.stringify(staleAdmission));
     await recapture();
     const stale = await f.r.api.debugReadActiveMicroMemory(1);
     assert.notEqual(stale.status, 'verified', 'a real text change still needs a new analysis');

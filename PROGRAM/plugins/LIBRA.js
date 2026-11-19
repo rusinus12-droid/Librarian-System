@@ -41834,6 +41834,13 @@ function createLibraReadonlySourceContext(owner) {
       if(nativeReadFrames.get(scope)?.background)receiptReadScopes.set(receipt,scope);
       return { status: 'verified', reason: '', receipt, head, receiptKey, headKey };
     };
+    // 같은 턴 판정의 단일 기준: the receipt status row and every Micro→State admission read the
+    // stored receipt through this. A turn whose raw bytes are unchanged (only the 원문 태그 규칙
+    // moved) or whose analyzed text is unchanged keeps its receipt; only a real source edit is stale.
+    // Live chat 2026-11-19: applying tag rules marked every receipt 누락 while Micro read 분석 완료,
+    // and State admission stopped at the last Canonical turn.
+    const readSameTurnReceipt = (scope, worldlineId, sessionEpoch, turn, options = {}) =>
+      readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, { ...options, allowProjectedEquivalent: true });
     // Read the existing immutable source receipts. The current host chat is used only
     // by readActiveCompletedTurnReceipt to reject stale revisions; it never supplies
     // dialogue text to this set or to its consumers.
@@ -42143,7 +42150,7 @@ function createLibraReadonlySourceContext(owner) {
               const identity=receiptRecoveryIdentity(context,pair);
               const jobId='receipt_'+digest(identity),job=state.receiptRecoveryJobs.get(jobId);
               let active;
-              try {active=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn,{context,pairs});}
+              try {active=await readSameTurnReceipt(scope,identity.worldlineId,0,pair.turn,{context,pairs});}
               catch (_) {active={status:'unavailable',reason:'receipt_status_read_unavailable'};}
               receiptStages.push({turn:pair.turn,scopeKey:scope.scopeKey,jobId,
                 identity,receiptRef:active.status==='verified'?active.receiptKey:null,
@@ -42152,18 +42159,10 @@ function createLibraReadonlySourceContext(owner) {
                 reason:active.status==='verified'?'':reason||job?.reason||active.reason||'',
                 cycle:Number(job?.cycle||1),attempts:Number(job?.attempts||0),
                 writeOutcome:string(job?.writeOutcome||'not_started')});
-             let microActive=active.status==='verified'?active:null;
-             let microProjected=false;
-             if(!microActive&&active.status==='stale_source'&&active.reason==='current_pair_revision_changed'){
-               try {
-                 const projected=await readActiveCompletedTurnReceipt(scope,identity.worldlineId,0,pair.turn,
-                   {context,pairs,allowProjectedEquivalent:true});
-                 if(projected.status==='verified'){microActive=projected;microProjected=true;}
-               } catch (_) {}
-             }
+             const microActive=active.status==='verified'?active:null;
              if(microActive){
                let stage;
-               try {stage=await readMicroStageStatus(scope,microActive,{context,pairs,...(microProjected?{allowProjectedEquivalent:true}:{})});}
+               try {stage=await readMicroStageStatus(scope,microActive,{context,pairs,allowProjectedEquivalent:true});}
                catch (_) {stage={receiptRef:microActive.receiptKey,revisionId:microActive.receipt.revisionId,
                  sourceDigest:microActive.receipt.sourceDigest,turn:microActive.receipt.turn,
                  status:'unavailable',reason:'micro_status_read_unavailable'};}
@@ -54215,6 +54214,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return { status: 'verified', reason: '', record, receipt: bound.receipt,
         head, recordKey, headKey, ...(bound !== active ? { currentReceipt: active.receipt, carriedFromRevisionId: bound.receipt.revisionId } : {}) };
     };
+    // The receipt a Micro record's claims were extracted from. When readActiveMicroMemory carried the
+    // record from an earlier text-equivalent receipt, the current receipt names a newer revision; the
+    // claims (and their evidence quotes) still belong to the earlier one it already verified.
+    const microBoundSource = (active, source) => source?.status === 'verified' && active?.currentReceipt
+      && source.receipt?.revisionId === active.currentReceipt.revisionId
+      && source.receiptKey !== active.record?.receiptKey
+      ? { status: 'verified', reason: '', receipt: active.receipt, receiptKey: active.record.receiptKey }
+      : source;
     const readMicroReaderTurn = async (scope, turn, options = {}) => {
       const active = await readActiveMicroMemory(scope, hostWorldlineIdForScope(scope), 0, turn,
         { allowProjectedEquivalent: true, ...options });
@@ -55742,9 +55749,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const context = readOnly && options.context ? options.context : await resolveContext();
       if (context.scope.scopeKey !== scope.scopeKey) return { status: 'stale_source', reason: 'scope_changed' };
       const currentSourcePairs = readOnly && Array.isArray(options.pairs) ? options.pairs : buildPairs(context.chat, scope.scopeKey);
-      const active = readOnly && options.active ? options.active : await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
+      const active = readOnly && options.active ? options.active : await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs, allowProjectedEquivalent: true });
       if (active.status !== 'verified') return { status: active.status, reason: active.reason || '' };
-      const source = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs });
+      const source = microBoundSource(active, await readSameTurnReceipt(scope, worldlineId, sessionEpoch, turn, { context, pairs: currentSourcePairs }));
       if (source.status !== 'verified' || source.receiptKey !== active.record.receiptKey) {
         return { status: 'stale_source', reason: 'micro_receipt_changed' };
       }
@@ -55841,7 +55848,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if (options.readOnly === true) return { status: 'pending_reconciliation', reason: 'admission_decision_replay_mismatch' };
         throw new Error('LIBRA_MICRO_STATE_ADMISSION_READBACK_FAILED');
       }
-      const current = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn);
+      const current = await readActiveMicroMemory(scope, worldlineId, sessionEpoch, turn, { allowProjectedEquivalent: true });
       if (current.status !== 'verified' || current.record.analysisRevisionId !== active.record.analysisRevisionId) {
         return { status: 'stale_source', reason: 'micro_changed_after_admission' };
       }
@@ -56011,7 +56018,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await prefetchMicroTurnReads(scope, worldlineId, overlapTurns);
         for (const turn of overlapTurns) {
           let active;
-          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
+          try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true }); }
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
@@ -56062,7 +56069,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
               let sourceVerified = false;
               try {
-                const source = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, turn, { context, pairs });
+                const source = microBoundSource(active, await readSameTurnReceipt(scope, worldlineId, 0, turn, { context, pairs }));
                 sourceVerified = source.status === 'verified'
                   && source.receiptKey === active.record.receiptKey
                   && validateMicroCandidate({ schema: 'libra.micro_memory.v1',
@@ -56232,7 +56239,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         Array.from({ length: Math.max(0, pairs.length - canonicalThroughTurn) }, (_, index) => canonicalThroughTurn + 1 + index));
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
         let active;
-        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true }); }
+        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true }); }
         catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
         if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
           pendingClaims.push({ turn, reason: active.reason || active.status });
@@ -62718,7 +62725,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const admitPublishedMicroStateClaims = async (scope, worldlineId, sessionEpoch, turn) => {
       const summary = { admitted: 0, pending: 0, pendingReconciliation: 0 };
       let active;
-      try { active = await withBackgroundReadJob(scope,observed=>readActiveMicroMemory(observed, worldlineId, sessionEpoch, turn)); }
+      try { active = await withBackgroundReadJob(scope,observed=>readActiveMicroMemory(observed, worldlineId, sessionEpoch, turn, { allowProjectedEquivalent: true })); }
       catch (_) { summary.pendingReconciliation += 1; return summary; }
       if (active.status === 'missing') return summary;
       if (active.status !== 'verified') { summary.pendingReconciliation += 1; return summary; }
