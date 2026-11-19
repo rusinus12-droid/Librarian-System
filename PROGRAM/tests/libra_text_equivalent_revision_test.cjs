@@ -138,6 +138,179 @@ const lensCase = async () => {
 const STATUS_RULES = {version: 1, ignoredTags: ['lb-xnai', 'status-window'], unwrapTags: [], sourceTags: [], controls: ['html-comment', 'lbdata']};
 const withStatus = hp => `${BODY}\n\n<status-window>HP ${hp} · 위치: 침실</status-window>`;
 
+const recallAndCanonicalAcrossTextEquivalentRevisionCase = async () => {
+  let outputListener;
+  const fixture = await serverFixture({
+    mode: 'server_only',
+    host: {addRisuChatListener: async (_kind, handler) => { outputListener = handler; return true; }}
+  });
+  try {
+    const {f} = fixture;
+    const baseTurn1 = f.chat.message[1].data;
+    f.chat.message[1].data = `${baseTurn1}\n\n---\n[LBDATA START]\n<lb-lazy id="lb-xnai" />\n[LBDATA END]\n---`;
+    f.control.onCall = async args => {
+      const receipt = (await f.r.api.debugReadActiveCompletedTurnReceipt(1)).receipt;
+      const quote = receipt.assistant.text.slice(0, 20);
+      return {
+        type: 'success',
+        result: JSON.stringify({
+          schema: 'libra.micro_producer_envelope.v1',
+          personCandidates: {spans: [], relations: []},
+          micro: {
+            schema: 'libra.micro_memory.v1',
+            scopeKey: receipt.scopeKey,
+            worldlineId: receipt.worldlineId,
+            sessionEpoch: receipt.sessionEpoch,
+            turn: receipt.turn,
+            sourceRevisionId: receipt.revisionId,
+            sourceDigest: receipt.sourceDigest,
+            claims: [{
+              changeKind: 'event',
+              text: 'turn 1 micro event',
+              actor: '',
+              target: '',
+              temporalRole: 'current',
+              certainty: 'confirmed',
+              epistemicStatus: 'observed',
+              stateChangeType: 'none',
+              evidence: {
+                role: 'assistant',
+                messageId: receipt.assistant.chatId,
+                startOffset: 0,
+                endOffset: quote.length,
+                exactQuote: quote
+              }
+            }]
+          }
+        })
+      };
+    };
+    outputListener({char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 1});
+    await waitFor(() => f.r.api.getCaptureBackendState().lastOutputCapture?.receiptStatus
+      && f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 1, 15000);
+    assert.equal((await f.r.api.debugReadActiveMicroMemory(1)).status, 'verified');
+
+    // Text-equivalent edit to turn 1 before Canonical cold start must not trigger CANONICAL_COMPLETED_RECEIPT_UNAVAILABLE:.
+    f.chat.message[1].data = `${baseTurn1}\n\n<lb-xnai id="scene-11" operation="bc5aa5af-291e-459d-b3b6-9728866a269b" scene="11">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
+    f.control.onCall = async () => ({type: 'success', result: JSON.stringify(f.control.artifact)});
+    const cold = await f.run();
+    assert.equal(cold.completed, 1, 'Canonical cold start completes across text-equivalent turn-1 revision: ' + JSON.stringify(cold));
+    const mem1 = await f.getMemory(1);
+    assert.equal(mem1?.status, 'committed', 'memory 1 commits cleanly across text-equivalent revision');
+
+    // Capture turn 6 with both a State-admitted Micro claim and a recallable Micro claim, then exercise live recall across text-equivalent edits.
+    f.chat.message.push(
+      {role: 'user', chatId: 't6-u', data: '도서관 정문과 은밀한 비밀 열쇠함을 확인한다.'},
+      {role: 'assistant', chatId: 't6-a', data: '도서관 정문이 열렸다. 도서관 비밀 열쇠함에는 붉은 인장이 찍혀 있다.\n\n---\n[LBDATA START]\n<lb-lazy id="lb-xnai" />\n[LBDATA END]\n---'}
+    );
+    f.control.onCall = async args => {
+      const input = JSON.parse(args[0].messages[1].content);
+      const q1 = '도서관 정문이 열렸다';
+      const q2 = '도서관 비밀 열쇠함에는 붉은 인장이 찍혀 있다';
+      const s1 = input.assistant.text.indexOf(q1);
+      const s2 = input.assistant.text.indexOf(q2);
+      assert(s1 >= 0 && s2 >= 0, 'turn 6 quotes must match analyzed assistant text');
+      return {
+        type: 'success',
+        result: JSON.stringify({
+          schema: 'libra.micro_producer_envelope.v1',
+          personCandidates: {spans: [], relations: []},
+          micro: {
+            schema: 'libra.micro_memory.v1',
+            ...input.binding,
+            claims: [
+              {
+                changeKind: 'world',
+                text: `${q1}.`,
+                actor: '',
+                target: '도서관',
+                temporalRole: 'current',
+                certainty: 'confirmed',
+                epistemicStatus: 'observed',
+                stateChangeType: 'set',
+                stateIntent: {
+                  domain: 'world',
+                  target: {entityName: '도서관'},
+                  field: 'doorStatus',
+                  operation: 'set',
+                  value: '열렸다'
+                },
+                evidence: {
+                  role: 'assistant',
+                  messageId: input.assistant.messageId,
+                  startOffset: s1,
+                  endOffset: s1 + q1.length,
+                  exactQuote: q1
+                }
+              },
+              {
+                changeKind: 'world',
+                text: `${q2}.`,
+                actor: '',
+                target: '비밀 열쇠함',
+                temporalRole: 'current',
+                certainty: 'confirmed',
+                epistemicStatus: 'observed',
+                stateChangeType: 'none',
+                evidence: {
+                  role: 'assistant',
+                  messageId: input.assistant.messageId,
+                  startOffset: s2,
+                  endOffset: s2 + q2.length,
+                  exactQuote: q2
+                }
+              }
+            ]
+          }
+        })
+      };
+    };
+    outputListener({char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: 11});
+    await waitFor(() => f.r.api.getCaptureBackendState().lastMicroPublication?.turn === 6
+      && f.r.api.getCaptureBackendState().lastMicroPublication?.stateAdmission?.admitted >= 1, 15000);
+    const analyzedRev6 = (await f.r.api.debugReadActiveCompletedTurnReceipt(6))?.receipt?.revisionId || '';
+    assert.ok(analyzedRev6, 'turn 6 receipt revision exists');
+    const callsAfterTurn6 = f.control.calls.length;
+    f.control.onCall = async () => { throw new Error('recall must not invoke a drafting provider'); };
+
+    f.chat.message[11].data = '도서관 정문이 열렸다. 도서관 비밀 열쇠함에는 붉은 인장이 찍혀 있다.\n\n<lb-xnai id="scene-12" operation="bc5aa5af-291e-459d-b3b6-9728866a269b" scene="12">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>\n\n---\n[LBDATA START]\n[LBDATA END]\n---';
+
+    const verifyRecallAndState = async phase => {
+      const ctx = await f.r.api.getResponseContext({currentInput: '도서관 비밀 열쇠함과 도서관 정문 상태를 반영해서 이어줘.'});
+      assert.equal((await f.r.api.validateResponseContext(ctx)).current, true, `${phase}: ResponseContext stays current`);
+      const lib = ctx.values.currentHead.world.find(row => row.name === '도서관');
+      assert.equal(lib?.state?.doorStatus, '열렸다', `${phase}: Micro-derived State stays active`);
+      const delivered = await f.control.hooks.beforeRequest([{role: 'user', content: '도서관 비밀 열쇠함과 도서관 정문 상태를 반영해서 이어줘.'}], 'model');
+      const injectionMeta = f.r.api.getRuntime().lastMemoryInjectionMeta;
+      assert.ok(!injectionMeta?.errorCode, `${phase}: beforeRequest succeeds without CONSUMER_MICRO_CHANGED: ${JSON.stringify(injectionMeta)}`);
+      assert.equal(injectionMeta?.finalVerification?.status, 'verified', `${phase}: finalVerification stays verified`);
+      const viewerRows = Array.from(f.r.api.getLastMemoryRecallViewer()?.rows || []);
+      assert.ok(viewerRows.some(row => row.family === 'micro'), `${phase}: Micro row is indexed and recalled`);
+      const deliveredText = JSON.stringify(delivered);
+      assert.ok(deliveredText.includes('붉은 인장') && deliveredText.includes('열렸다'), `${phase}: delivered recall contains Micro observation and State field`);
+      assert.equal(f.control.calls.length, callsAfterTurn6, `${phase}: no redundant Micro job ran`);
+    };
+
+    await verifyRecallAndState('before-recapture');
+
+    const recovery = await f.r.api.recheckReceiptRecovery({turn: 6});
+    if (recovery?.jobId && recovery.status !== 'verified') {
+      await f.r.api.runReceiptRecoveryJob({jobId: recovery.jobId}).catch(() => null);
+    }
+    await waitFor(async () => {
+      const next = await f.r.api.debugReadActiveCompletedTurnReceipt(6);
+      return next?.status === 'verified' && next?.receipt?.revisionId && next.receipt.revisionId !== analyzedRev6;
+    }, 15000);
+    const carriedTurn6 = await f.r.api.debugReadActiveMicroMemory(6);
+    assert.equal(carriedTurn6.status, 'verified');
+    assert.equal(carriedTurn6.carriedFromRevisionId, analyzedRev6, 'turn 6 Micro record is carried across recapture');
+
+    await verifyRecallAndState('after-recapture');
+  } finally {
+    await fixture.cleanup();
+  }
+};
+
 (async () => {
   await microCase();
   await microCase({rules: STATUS_RULES, label: 'illustration-with-saved-rules'});
@@ -147,5 +320,6 @@ const withStatus = hp => `${BODY}\n\n<status-window>HP ${hp} · 위치: 침실</
   await microCase({first: withStatus(10), rulesAfter: STATUS_RULES, label: 'tag-rule-added'});
   await lensRuleCase();
   await lensCase();
+  await recallAndCanonicalAcrossTextEquivalentRevisionCase();
   console.log('libra_text_equivalent_revision_test: ok');
 })().catch(error => { console.error(error); process.exit(1); });

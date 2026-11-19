@@ -36063,7 +36063,7 @@ function createLibraReadonlySourceContext(owner) {
             // below still reads the live context once more.
             if (!proofPairs) proofPairs = buildPairs(context.chat, context.scope.scopeKey);
             current = await readActiveMicroMemory(context.scope, proof.worldlineId, proof.sessionEpoch, proof.turn,
-              { context, pairs: proofPairs, skipFinalContextCheck: true });
+              { context, pairs: proofPairs, skipFinalContextCheck: true, allowProjectedEquivalent: true });
             if (current.status !== 'verified' || current.headKey !== proof.headKey || current.recordKey !== proof.recordKey) {
               throw consumerContractError('CONSUMER_MICRO_CHANGED');
             }
@@ -41355,7 +41355,7 @@ function createLibraReadonlySourceContext(owner) {
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
         if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
           || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId)
-          || (sourceDigest([pair]) !== receipt.sourceDigest && !(options.allowProjectedEquivalent===true&&sameCompletedTurnRaw(receipt, pair))))
+          || (sourceDigest([pair]) !== receipt.sourceDigest && !(options.allowProjectedEquivalent===true&&isTextEquivalentCompletedTurn(receipt, pair))))
           return empty('stale_source', 'raw_packet_current_source_changed');
         const currentPacket = await buildCompletedTurnRawPacket(context, pair);
         const withIdentity=ref.originRelation==='current_original_capture';
@@ -41724,11 +41724,20 @@ function createLibraReadonlySourceContext(owner) {
           /* Receipt persistence continues; unproved Micro remains unknown. */
           noteMicroPlanRefusal('plan_reservation_failed:' + string(error?.code || error?.message || 'error').slice(0, 80));
         }
-      } else if (!priorReceipt) {
-        // The Micro worker can only ever answer "work journal missing" for this
-        // turn, so record the actual admission decision while it is still known.
-        noteMicroPlanRefusal(options.microPlanReason
-          || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing'));
+      } else if (!priorReceipt && options.suppressPlanRefusal !== true) {
+        let carriedEquivalent = null;
+        try {
+          const priorMicroHead = await storage.getVerifiedJson(key.microMemoryHead(scope, worldlineId, sessionEpoch, turn), scope, null);
+          if (priorMicroHead?.analysisStatus === 'verified' && priorMicroHead?.sourceRevisionId && priorMicroHead.sourceRevisionId !== revisionId) {
+            carriedEquivalent = await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, receipt);
+          }
+        } catch (_) {}
+        if (!carriedEquivalent) {
+          // The Micro worker can only ever answer "work journal missing" for this
+          // turn, so record the actual admission decision while it is still known.
+          noteMicroPlanRefusal(options.microPlanReason
+            || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing'));
+        }
       }
       // A verified immutable receipt is sufficient: transport only its pointer.
       if (!priorReceipt) {
@@ -42447,14 +42456,18 @@ function createLibraReadonlySourceContext(owner) {
     // is attempted once per runtime, so a turn that cannot be analyzed does not loop.
     const RECEIPT_GAP_REPAIR_LIMIT = 4, RECEIPT_GAP_SCAN_INTERVAL_MS = 30000;
     const receiptGapAttempts = new Set();
-    let receiptGapScannedAt = 0;
+    let receiptGapScannedAt = 0, receiptGapScannedScopeKey = '', receiptGapScannedTurnCount = -1;
     const findCompletedTurnGaps = async (context, pairs, tail, options = {}) => {
-      if (Date.now() - receiptGapScannedAt < RECEIPT_GAP_SCAN_INTERVAL_MS) return [];
       const scopeKey = string(context?.scope?.scopeKey || ''), worldlineId = hostWorldlineIdForScope(context.scope);
+      const turnCount = asArray(pairs).length;
+      if (Date.now() - receiptGapScannedAt < RECEIPT_GAP_SCAN_INTERVAL_MS
+        && scopeKey === receiptGapScannedScopeKey && turnCount === receiptGapScannedTurnCount) return [];
       const inTail = new Set(asArray(tail).map(pair => Number(pair.turn)));
       const older = asArray(pairs).filter(pair => !inTail.has(Number(pair.turn)));
       if (!scopeKey || !worldlineId || !older.length) return [];
       receiptGapScannedAt = Date.now();
+      receiptGapScannedScopeKey = scopeKey;
+      receiptGapScannedTurnCount = turnCount;
       try { if ((await loadMemorySettings()).enabled === false) return []; } catch (_) { return []; }
       const prefix = `${PREFIX}:scope:${scopeKey}:`, micros = new Set(), works = new Map();
       const escaped = worldlineId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -42517,10 +42530,12 @@ function createLibraReadonlySourceContext(owner) {
       const historical = options.allowHistoricalBackfill === true
         || ['manual_cold_start', 'manual_cold_start_retry', 'historical_reanalysis'].includes(reason.toLowerCase());
       const maxPairs = historical ? 32 : BATCH_SIZE;
-      let candidates = asArray(pairs).slice(-maxPairs);
+      let settledContext = context;
+      let settledPairs = asArray(pairs);
+      let candidates = settledPairs.slice(-maxPairs);
       const result = { at: Date.now(), scopeKey: string(context?.scope?.scopeKey || ''),
-        examined: candidates.length, olderUnexamined: Math.max(0, asArray(pairs).length - candidates.length),
-        verified: 0, pending: 0, capturePending: 0, inventoryPending: 0, gaps: [] };
+        examined: candidates.length, olderUnexamined: Math.max(0, settledPairs.length - candidates.length),
+        verified: 0, verifiedTurns: [], pending: 0, capturePending: 0, inventoryPending: 0, gaps: [] };
       if (!historical && candidates.length) {
         let observed = candidates.map(pair => `${pair.turn}:${completedTurnRevisionId(pair)}`).join('|');
         let stable = false;
@@ -42537,6 +42552,8 @@ function createLibraReadonlySourceContext(owner) {
           // Pair candidates and their receipt/recovery authority must use the
           // same settled host snapshot, including a commit after the scan began.
           context = {...live,scope:context.scope};
+          settledContext = live;
+          settledPairs = freshPairs;
           const fresh = freshPairs.slice(-maxPairs);
           const signature = fresh.map(pair => `${pair.turn}:${completedTurnRevisionId(pair)}`).join('|');
           candidates = fresh;
@@ -42554,10 +42571,19 @@ function createLibraReadonlySourceContext(owner) {
       }
       if (!historical) {
         try {
-          const gapPairs = await findCompletedTurnGaps(context, pairs, candidates, { includeUnplanned: true });
-          if (gapPairs.length) { candidates = [...gapPairs, ...candidates]; result.examined = candidates.length; result.gapRepairs = gapPairs.map(pair => Number(pair.turn)); }
+          const gapPairs = await findCompletedTurnGaps(context, settledPairs, settledPairs.slice(-1), { includeUnplanned: true });
+          if (gapPairs.length) {
+            result.gapRepairs = gapPairs.map(pair => Number(pair.turn));
+            const candidateTurns = new Set(candidates.map(pair => Number(pair.turn)));
+            const extraGaps = gapPairs.filter(pair => !candidateTurns.has(Number(pair.turn)));
+            if (extraGaps.length) {
+              candidates = [...extraGaps, ...candidates];
+              result.examined = candidates.length;
+            }
+          }
         } catch (error) { result.gaps.push({ turn: 0, reason: `gap_scan:${compact(error?.message || error, 200)}` }); }
       }
+      const gapTurns = new Set(asArray(result.gapRepairs));
       const inventoryTurns = [];
       const microTurns = [];
       for (const pair of candidates) {
@@ -42580,10 +42606,12 @@ function createLibraReadonlySourceContext(owner) {
           const persisted = await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', {
             deferInventory: true, beforeWrite: preparationGuard,
             admitMicroPlan:microPlanProof.ok, microPlanReason:microPlanProof.reason,
-            microPlanBoundary:recoveryBoundary,mainAfterRequestBoundary
+            microPlanBoundary:recoveryBoundary,mainAfterRequestBoundary,
+            suppressPlanRefusal: gapTurns.has(Number(pair.turn))
           });
           await preparationGuard?.();
           result.verified += 1;
+          if (persisted?.status === 'verified') result.verifiedTurns.push(Number(pair.turn));
           if (persisted.captureStatus !== 'verified') result.capturePending += 1;
           inventoryTurns.push(Number(pair.turn));
           microTurns.push({ turn: Number(pair.turn), revisionId: persisted.revisionId });
@@ -42607,13 +42635,13 @@ function createLibraReadonlySourceContext(owner) {
         }
       }));
       await preparationGuard?.();
-      const gapTurns = new Set(asArray(result.gapRepairs));
       for (const item of microTurns) {
         // A gap turn's earlier attempt ended without a Micro (outcome unknown, failed):
         // re-open it once through the explicit retry path instead of re-reading that result.
         void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
           0, item.turn, item.revisionId, gapTurns.has(item.turn) ? { manual: true, reason: 'receipt_gap_repair' } : {});
       }
+      Object.defineProperty(result, 'settledSnapshot', { value: { context: settledContext, pairs: settledPairs } });
       state.lastSourceReceiptReconcile = result;
       return result;
     };
@@ -55181,9 +55209,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const microPending=asArray(view?.head?.microProjection?.pendingClaims);
       const reviewTurns=new Set([...microPending.map(p=>Number(p.turn)),...Object.values(policy.decisions).filter(d=>d.row?.kind==='micro').map(d=>Number(d.row.turn))]);
       for(const pair of pairs.filter(p=>reviewTurns.has(p.turn))){
-        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
+        let active;try{active=await readActiveMicroMemory(scope,hostWorldline,0,pair.turn,{context,pairs,allowProjectedEquivalent:true});}catch(error){unavailable.push({kind:'micro',turn:pair.turn,reason:'storage_unverified'});continue;}
         if(active.status!=='verified'||active.record.analysisStatus!=='verified')continue;
-        if(active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair])){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
+        if((active.record.sourceRevisionId!==completedTurnRevisionId(pair)||active.record.sourceDigest!==sourceDigest([pair]))&&!(active.receipt&&isTextEquivalentCompletedTurn(active.receipt,pair))){unavailable.push({kind:'micro',turn:pair.turn,reason:'current_source_changed'});continue;}
         dependencies.set(active.recordKey,active.record);dependencies.set(active.headKey,active.head);dependencies.set(active.record.receiptKey,active.receipt);
         reviewProofs.push(activeMicroConsumptionProof(active));
         const validated=microRecallMemoryFromRecord(active.record,active.receipt,active.recordKey);if(!validated)continue;
@@ -59199,20 +59227,21 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(expectedRefs)unifiedAssert(asArray(expectedRefs).length===BATCH_SIZE,'CANONICAL_ORIGINAL_RAW_REFS_INVALID');
       const rows=await Promise.all(expectedBatch.map(async (pair,index)=>{
         const active=await readActiveCompletedTurnReceipt(scope,worldlineId,0,Number(pair.turn),{allowProjectedEquivalent:true,...(jobContext?{context}:{})});
-        unifiedAssert(active.status==='verified'&&sourceDigest([pair])===active.receipt?.sourceDigest,
-          'CANONICAL_COMPLETED_RECEIPT_UNAVAILABLE:'+active.reason);
+        unifiedAssert(active.status==='verified'&&(sourceDigest([pair])===active.receipt?.sourceDigest||isTextEquivalentCompletedTurn(active.receipt,pair)),
+          'CANONICAL_COMPLETED_RECEIPT_UNAVAILABLE:'+(active.reason||'receipt_source_digest_mismatch'));
         const expectedRef=expectedRefs?.[index]||null;
         let receipt=active.receipt,receiptKey=active.receiptKey;
         if(expectedRef){
           unifiedAssert(expectedRef.scopeKey===scope.scopeKey&&expectedRef.worldlineId===worldlineId
             &&Number(expectedRef.sessionEpoch)===0&&Number(expectedRef.turn)===Number(pair.turn)
-            &&expectedRef.sourceDigest===sourceDigest([pair]),'CANONICAL_ORIGINAL_RAW_REFS_INVALID');
+            &&typeof expectedRef.sourceDigest==='string'&&expectedRef.sourceDigest.length>0,'CANONICAL_ORIGINAL_RAW_REFS_INVALID');
           receiptKey=key.completedTurnReceipt(scope,worldlineId,0,Number(pair.turn),expectedRef.sourceRevisionId);
           receipt=await storage.getVerifiedJson(receiptKey,scope,null);
           unifiedAssert(receipt?.schema==='libra.completed_turn_receipt.v1'&&receipt.scopeKey===scope.scopeKey
             &&receipt.worldlineId===worldlineId&&Number(receipt.sessionEpoch)===0&&Number(receipt.turn)===Number(pair.turn)
             &&receipt.revisionId===expectedRef.sourceRevisionId&&completedTurnRevisionId(receipt)===receipt.revisionId
-            &&receipt.sourceDigest===sourceDigest([pair]),'CANONICAL_CONSUMED_RECEIPT_CHANGED');
+            &&receipt.sourceDigest===expectedRef.sourceDigest
+            &&(receipt.sourceDigest===sourceDigest([pair])||isTextEquivalentCompletedTurn(receipt,pair)),'CANONICAL_CONSUMED_RECEIPT_CHANGED');
         }
         // Revalidate the exact immutable capture consumed by this analysis. A
         // newer tag-only capture may become active without rebasing this job.
@@ -59224,7 +59253,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(expectedRefs)unifiedAssert(JSON.stringify(refs)===JSON.stringify(expectedRefs),'CANONICAL_ORIGINAL_RAW_VARIANT_CHANGED');
       const final=jobContext ? await resolveJobContext(jobContext) : await resolveContext(),pairs=buildPairs(final.chat,final.scope.scopeKey);
       unifiedAssert(final.scope.scopeKey===scope.scopeKey && hostWorldlineIdForScope(final.scope)===worldlineId
-        && expectedBatch.every(pair=>{const current=pairs[Number(pair.turn)-1];return current&&sourceDigest([current])===sourceDigest([pair])
+        && expectedBatch.every(pair=>{const current=pairs[Number(pair.turn)-1];return current&&(sourceDigest([current])===sourceDigest([pair])||isTextEquivalentCompletedTurn(pair,current))
           && digest(sourcePairs([current]))===digest(sourcePairs([pair]));}),
         'CANONICAL_COMPLETED_RECEIPT_SOURCE_CHANGED');
       return {batch,refs};
@@ -59246,14 +59275,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const worldlineId = hostWorldlineIdForScope(scope), turns = [], refs = [];
       for (const pair of batch) {
         const expected = asArray(rawRefs).find(ref => Number(ref.turn) === Number(pair.turn));
-        const active = await readActiveMicroMemory(scope, worldlineId, 0, pair.turn);
+        const active = await readActiveMicroMemory(scope, worldlineId, 0, pair.turn, { allowProjectedEquivalent: true, ...(jobContext ? { context } : {}) });
         if (active.status !== 'verified') {
           turns.push({turn: pair.turn, status: active.status, reason: string(active.reason)});
           continue;
         }
         const record = active.record;
-        if (!expected || record.sourceRevisionId !== expected.sourceRevisionId
-          || record.sourceDigest !== sourceDigest([pair])
+        const sameOrEquivalent = (record.sourceRevisionId === expected?.sourceRevisionId && record.sourceDigest === sourceDigest([pair]))
+          || (active.receipt && isTextEquivalentCompletedTurn(active.receipt, pair));
+        if (!expected || !sameOrEquivalent
           || !microRecallMemoryFromRecord(record, active.receipt, active.recordKey)) {
           turns.push({turn: pair.turn, status: 'excluded', reason: 'micro_source_binding_invalid'});
           continue;
@@ -62866,7 +62896,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
     // job always reports, so a chat rolled back to an earlier turn is not stuck on the old one.
     const shouldUpdateLastMicroPublication = (scopeKey, turn, request = {}) => {
       const current = state.lastMicroPublication;
-      if (request?.reason !== 'micro_gap_repair') return true;
+      if (!['micro_gap_repair', 'receipt_gap_repair'].includes(request?.reason)) return true;
       return !current || current.scopeKey !== scopeKey || Number(turn || 0) >= Number(current.turn || 0);
     };
     const scheduleMicroForTurn = (scope, worldlineId, sessionEpoch, turn, revisionId, request={}) => {
@@ -63037,15 +63067,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return await enqueue(context.scope.scopeKey, async () => {
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         if (state.deletingScopes.has(context.scope.scopeKey)) return { ok: true, skipped: true, reason: 'scope_deleting' };
-        const pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
+        let pairs = buildPairs(context.chat, context?.scope?.scopeKey || '');
         // An explicit historical selection prepares each selected batch's own five
         // receipts right before it runs. Sweeping the whole 32-turn tail first only
         // delays the first batch and touches turns nobody selected.
         const explicitHistoricalSelection = options.allowHistoricalBackfill === true && asArray(options.startTurns).length > 0;
         const receiptPreparation = explicitHistoricalSelection
           ? { at: Date.now(), scopeKey: string(context.scope.scopeKey || ''), examined: 0, olderUnexamined: pairs.length,
-              verified: 0, pending: 0, capturePending: 0, inventoryPending: 0, gaps: [], deferredToSelectedBatches: true }
+              verified: 0, verifiedTurns: [], pending: 0, capturePending: 0, inventoryPending: 0, gaps: [], deferredToSelectedBatches: true }
           : await reconcileCompletedTurnReceipts(context, pairs, options);
+        if (receiptPreparation?.settledSnapshot?.context && sameSnapshotScope(receiptPreparation.settledSnapshot.context.scope, context.scope)) {
+          context = { ...context, ...receiptPreparation.settledSnapshot.context };
+          pairs = receiptPreparation.settledSnapshot.pairs;
+        }
         let manifest = await loadManifest(context.scope, pairs.length);
         if (state.disposed) return { ok: true, skipped: true, reason: 'runtime_disposed' };
         manifest = await migrateTerminalInFlightFailure(context, manifest);
@@ -63239,10 +63273,14 @@ function mountMemorySuiteReanalysisReview(container,config) {
           }
           try {
             // Live settling can move the tail after a benign later append.
-            // Use the actual prepared window rather than the scan's old length.
+            // Use the actual verified turn set rather than only the scan's old window.
+            const verifiedTurnSet = new Set(asArray(receiptPreparation.verifiedTurns).map(Number));
             const receiptTailStart = receiptPreparation.olderUnexamined + 1;
             const receiptTailEnd = receiptPreparation.olderUnexamined + receiptPreparation.examined;
-            if (startTurn < receiptTailStart || startTurn + BATCH_SIZE - 1 > receiptTailEnd) {
+            const batchReceiptsVerified = verifiedTurnSet.size > 0
+              ? Array.from({ length: BATCH_SIZE }, (_, idx) => startTurn + idx).every(turn => verifiedTurnSet.has(turn))
+              : (startTurn >= receiptTailStart && startTurn + BATCH_SIZE - 1 <= receiptTailEnd && !Number(receiptPreparation.pending || 0));
+            if (!batchReceiptsVerified) {
               await prepareSelectedCompletedTurnReceipts(context, pairs, startTurn, {
                 ...options, allowHistoricalBackfill
               });
@@ -68676,7 +68714,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       if(kind==='micro'){
         const scopeMode = string((await MemorySuiteStorageBridge.getScopeMode(scope, false))?.mode || 'plugin_only');
         const readerScope = { ...scope, _cachedMode: scopeMode };
-        const options = { context, pairs, skipFinalContextCheck: true, cachedScope: readerScope, fastInspect: true };
+        const options = { context, pairs, skipFinalContextCheck: true, cachedScope: readerScope, fastInspect: true, allowProjectedEquivalent: true };
         const batchSize = 8;
         const microItems = [];
         for (let i = 0; i < pairs.length; i += batchSize) {
@@ -70960,6 +70998,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
       const allowed = new Set(asArray(turns).map(Number));
       const revisions = new Map(asArray(pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
+      const pairByTurn = new Map(asArray(pairs).map(pair => [Number(pair.turn), pair]));
       for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
       const at = Date.now();
       // An entry is reused only while its turn still has the source revision it was read for.
@@ -70976,8 +71015,12 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           await frame.prefetch(keys);
           for (const [index, turn] of pending.entries()) {
             const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
-            const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
-              && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
+            const pair = pairByTurn.get(turn);
+            const validShape = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
+              && projection?.schema === 'libra.micro_recall_projection.v1';
+            const usable = validShape && (head.sourceRevisionId === revisions.get(turn)
+              || (!!pair && !!head.sourceRevisionId && (await readTextEquivalentReceipt(scanScope, worldline, 0, turn, head.sourceRevisionId,
+                { scopeKey: string(scanScope.scopeKey), sourceDigest: sourceDigest([pair]), user: pair.user, assistant: pair.assistant }))?.status === 'verified'));
             cache.turns.set(turn, { revision: revisions.get(turn), at,
               text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
           }
@@ -71386,7 +71429,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
           // The enclosing selection validates its captured context and source proofs
           // again before delivery; avoid another host context read for every candidate.
-          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true });
+          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true });
           if (active.status !== 'verified') return null;
           const memory = microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey);
           if (!memory) throw Error('LIBRA_STATE_MICRO_INVALID');

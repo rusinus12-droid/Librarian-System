@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T14:02:02.988Z",
+  "generatedAt": "2026-11-19T14:54:06.274Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -3880,7 +3880,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "48a333a6a045abcbcc0b0f52891b87a7c3109758e527771a62b3eb005c692c35",
+      "sha256": "16a91c35e98fb191847ef7e93e77d30a903a8ae8d3bd6b188329b06461a00f0c",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4300,8 +4300,8 @@
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "ff0fb050f3d82ef1cc94e2a596b3c4354bce1697537d40d73d5a8579f51728bf",
-      "bytes": 6799478
+      "sha256": "ab9b3d8fd7f7c83699ad3e904b8a0408067d266d32e0c8b41a5befe618fa6b00",
+      "bytes": 6803030
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -4336,8 +4336,8 @@
       "bytes": 11467
     },
     "sdk/LibraStateMemoryOwner.source.js": {
-      "sha256": "a6fdc1025c70d2bf21c59598bb9d466cc8fe11e7e7e2d1cd587ea5f80951c99a",
-      "bytes": 42582
+      "sha256": "6b8947da698ee5c90741ea427fb70d80e826679ccab4a92156182b31e0c8c252",
+      "bytes": 43100
     },
     "sdk/MemorySuiteComputeClient.source.js": {
       "sha256": "edd6f287b24337a4f534b9a226f3de79949cd991fe1e85ff6661413dbd7bec60",
@@ -8704,8 +8704,8 @@
       "bytes": 1928
     },
     "tests/libra_last_micro_publication_order_test.cjs": {
-      "sha256": "1f4ebe3684bf4846318caea07af0beb04779cb94f663dee3c3112f45883b59da",
-      "bytes": 2683
+      "sha256": "35381797e007f2b0fa39179564f307a1228da8406119733f30d5b386dccbd9de",
+      "bytes": 3261
     },
     "tests/libra_latest_state_tracking_contract_test.cjs": {
       "sha256": "07c5526b4f28790aa02cdd050a3d5c3ab5b598b6ad49a1affbc40aa1dd827b44",
@@ -10132,8 +10132,8 @@
       "bytes": 3294
     },
     "tests/libra_text_equivalent_revision_test.cjs": {
-      "sha256": "60a5afb646c8de54f463a0e0af9293693e4d266c73ca11c88b12ab2085ab6e7e",
-      "bytes": 11899
+      "sha256": "70b0afc83105274171f6b8446950fea5a326c73ea4d24880998eb230adddc342",
+      "bytes": 20913
     },
     "tests/libra_text_hasher_compatibility_test.cjs": {
       "sha256": "df524526be9420d9705f780e989d588e16e444eccfbde95fdc4fcb536269bf66",
