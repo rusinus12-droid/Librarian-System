@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T07:24:28.859Z",
+  "generatedAt": "2026-11-19T07:31:02.742Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -2670,6 +2670,10 @@
     "docs/HOST_MODEL_VALIDATION_06.md": {
       "sha256": "c4b8d64f0e639f0e4454e59ad5960832de52d6c637a01b7712419f48ca87f3de",
       "bytes": 4288
+    },
+    "docs/HYPAV3_RETIREMENT_POLICY_20261119.md": {
+      "sha256": "340946a96dba0f69ef95caf3b9f32386bd9d1ce687f32e6fb005c4c7bb790c28",
+      "bytes": 7871
     },
     "docs/IMPLEMENTATION_0.3.11.md": {
       "sha256": "d2f203a7b80e7d8da2a50bab3ca50cdaaf949a026e5d9e2fa21962e2be200828",
