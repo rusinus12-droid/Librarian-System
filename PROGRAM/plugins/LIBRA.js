@@ -41182,6 +41182,25 @@ function createLibraReadonlySourceContext(owner) {
       return a.length > 0 && JSON.stringify(a) === JSON.stringify(b)
         && JSON.stringify(asArray(left?.[role]?.chatIds)) === JSON.stringify(asArray(right?.[role]?.chatIds));
     });
+    // 원문 태그 필터 원칙 (docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md): a filter says "do not see
+    // this"; it is never evidence that a turn was revised. Whether a stored turn still matches the
+    // chat is decided by reading BOTH sides through the CURRENT filter: the same messages, and either
+    // the same raw bytes (only the filter moved) or the same text once the current filter is applied
+    // to the stored text as well (only filtered content moved). Adding, editing or removing a rule
+    // therefore never makes an existing receipt or Micro stale; only a change the current filter
+    // still sees does. Every reader applies this by default, not only callers that opt in.
+    const sourceFilterCompareText = value => string(value).replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    const sameTurnUnderCurrentFilter = (stored, current) => !!stored && !!current && ['user', 'assistant'].every(role => {
+      const ids = asArray(stored?.[role]?.chatIds);
+      if (!ids.length || JSON.stringify(ids) !== JSON.stringify(asArray(current?.[role]?.chatIds))) return false;
+      const a = asArray(stored?.[role]?.rawPayloadDigests), b = asArray(current?.[role]?.rawPayloadDigests);
+      if (a.length > 0 && JSON.stringify(a) === JSON.stringify(b)) return true;
+      const storedText = string(stored?.[role]?.text), currentText = sourceFilterCompareText(current?.[role]?.text);
+      if (sourceFilterCompareText(storedText) === currentText) return true;
+      let reprojected = '';
+      try { reprojected = cleanMessageText(role, { data: storedText }); } catch (_) { return false; }
+      return sourceFilterCompareText(reprojected) === currentText;
+    });
     // Raw identity of a batch: the same messages with the same raw bytes. Lens notes record it so a
     // later change of the source rules alone (원문 태그 규칙) does not make them stale.
     const rawSourceDigest = batch => digest(batch.map(pair => ({ turn: pair.turn,
@@ -41353,13 +41372,16 @@ function createLibraReadonlySourceContext(owner) {
         // existing immutable packet can authorize acknowledgement or analysis.
         const context = options.jobContext ? await resolveJobContext(options.jobContext) : await resolveReceiptValidationContext(), pair = string(context?.scope?.scopeKey || '') === receipt.scopeKey
           ? buildPairs(context.chat, receipt.scopeKey)[Number(receipt.turn) - 1] : null;
-        if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId
-          || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== receipt.revisionId)
-          || (sourceDigest([pair]) !== receipt.sourceDigest && !(options.allowProjectedEquivalent===true&&isTextEquivalentCompletedTurn(receipt, pair))))
+        const exactPair = !!pair && completedTurnRevisionId(pair) === receipt.revisionId && sourceDigest([pair]) === receipt.sourceDigest;
+        // The source tag filter never revises a turn (sameTurnUnderCurrentFilter), with or without
+        // allowProjectedEquivalent; that option additionally admits line-bounded packet augmentation.
+        const filterEquivalent = !exactPair && !!pair && (sameTurnUnderCurrentFilter(receipt, pair)
+          || (options.allowProjectedEquivalent===true && isTextEquivalentCompletedTurn(receipt, pair)));
+        if (!pair || hostWorldlineIdForScope(context.scope) !== receipt.worldlineId || (!exactPair && !filterEquivalent))
           return empty('stale_source', 'raw_packet_current_source_changed');
         const currentPacket = await buildCompletedTurnRawPacket(context, pair);
         const withIdentity=ref.originRelation==='current_original_capture';
-        const originalIdentity=options.allowProjectedEquivalent===true
+        const originalIdentity=options.allowProjectedEquivalent===true||filterEquivalent
           ? value=>['user','assistant'].map(role=>asArray(value?.[role]?.segments).map(row=>({
             rawType:row.rawType,contributesText:row.contributesText,
             ...(withIdentity?{messageId:row.messageId,index:row.index,identitySource:row.identitySource}:{})})))
@@ -41506,6 +41528,7 @@ function createLibraReadonlySourceContext(owner) {
       ));
     const isTextEquivalentCompletedTurn = (earlier, later) =>
       sameCompletedTurnRaw(earlier, later)
+      || sameTurnUnderCurrentFilter(earlier, later)
       || sameCompletedTurnNormalizedText(earlier, later)
       || sameCompletedTurnLineBoundedAugmentation(earlier, later);
     // A current HAYAKU packet carries the generation nonce through output
@@ -41815,29 +41838,33 @@ function createLibraReadonlySourceContext(owner) {
       }
       const pairs = options.pairs || buildPairs(context.chat, scopeKey);
       const pair = pairs[turn - 1];
-      // With allowProjectedEquivalent, a changed analyzed text is still this turn when the raw bytes
-      // are unchanged (only the source rules moved); that is checked once the receipt is read.
-      const rulesOnly = options.allowProjectedEquivalent === true && pair && sourceDigest([pair]) !== head.sourceDigest;
-      if (!pair || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(pair) !== revisionId) || (!rulesOnly && sourceDigest([pair]) !== head.sourceDigest)) {
-        return empty('stale_source', 'current_pair_revision_changed');
-      }
+      // A pair whose projection moved is decided once the receipt is read. The source tag filter
+      // never revises a turn (sameTurnUnderCurrentFilter, applied on every path);
+      // allowProjectedEquivalent additionally admits HAYAKU's line-bounded packet augmentation.
+      const exactAgainst = candidate => !!candidate && completedTurnRevisionId(candidate) === revisionId && sourceDigest([candidate]) === head.sourceDigest;
+      if (!pair) return empty('stale_source', 'current_pair_revision_changed');
+      const projectionMoved = !exactAgainst(pair);
       let receipt;
       try { receipt = await storage.getVerifiedJson(receiptKey, scope, null); }
-      catch (error) { return empty('pending_reconciliation', compact(error?.message || error, 300)); }
+      catch (error) {
+        if (projectionMoved) return empty('stale_source', 'current_pair_revision_changed');
+        return empty('pending_reconciliation', compact(error?.message || error, 300));
+      }
       if (receipt?.schema !== 'libra.completed_turn_receipt.v1' || receipt.scopeKey !== scopeKey
         || receipt.worldlineId !== worldlineId || Number(receipt.sessionEpoch) !== sessionEpoch
         || Number(receipt.turn) !== turn || receipt.revisionId !== revisionId
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
+        if (projectionMoved) return empty('stale_source', 'current_pair_revision_changed');
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
-      if (rulesOnly && !isTextEquivalentCompletedTurn(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
+      const stillThisTurn = candidate => exactAgainst(candidate) || sameTurnUnderCurrentFilter(receipt, candidate)
+        || (options.allowProjectedEquivalent === true && isTextEquivalentCompletedTurn(receipt, candidate));
+      if (projectionMoved && !stillThisTurn(pair)) return empty('stale_source', 'current_pair_revision_changed');
       const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
-      if (!finalPair || hostWorldlineIdForScope(scope) !== worldlineId
-        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&isTextEquivalentCompletedTurn(receipt, finalPair)))
-        || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(finalPair) !== revisionId)) {
+      if (!finalPair || hostWorldlineIdForScope(scope) !== worldlineId || !stillThisTurn(finalPair)) {
         return empty('stale_source', 'source_changed_during_read');
       }
       if(nativeReadFrames.get(scope)?.background)receiptReadScopes.set(receipt,scope);
@@ -46827,15 +46854,14 @@ function createLibraReadonlySourceContext(owner) {
         || Number(memory?.turnRange?.start || 0) !== Number(batch[0]?.turn || 0)
         || Number(memory?.turnRange?.end || 0) !== Number(batch.at(-1)?.turn || 0)) return false;
       const storedPairs = asArray(memory.sourcePairs);
-      if (storedPairs.length !== BATCH_SIZE || storedPairs.some((pair, index) => {
-        if (Number(pair?.turn || 0) !== Number(batch[index]?.turn || 0)) return true;
-        const uId = string(pair?.userChatId || ''), aId = string(pair?.assistantChatId || '');
-        const bUId = string(batch[index]?.user?.chatId || ''), bAId = string(batch[index]?.assistant?.chatId || '');
-        if (uId && bUId && uId === bUId && aId && bAId && aId === bAId) return false;
-        // Tag rule change or slot preservation: if turns match and segments exist
-        if (batch[index]?.user && batch[index]?.assistant) return false;
-        return true;
-      })) return false;
+      // The slot is the same U+A messages. Message IDs do not depend on the source tag filter, so a
+      // filter change alone always passes here; a reroll or branch (different IDs) never does.
+      if (storedPairs.length !== BATCH_SIZE || storedPairs.some((pair, index) => (
+        Number(pair?.turn || 0) !== Number(batch[index]?.turn || 0)
+        || !string(pair?.userChatId || '') || !string(pair?.assistantChatId || '')
+        || string(pair.userChatId) !== string(batch[index]?.user?.chatId || '')
+        || string(pair.assistantChatId) !== string(batch[index]?.assistant?.chatId || '')
+      ))) return false;
       if (ref.artifactDigest && (string(memory.artifactDigest || '') !== string(ref.artifactDigest)
         || digest(memory.canonicalArtifact || null) !== string(ref.artifactDigest))) return false;
       if (memory.renderValidation?.contentHash
@@ -60923,20 +60949,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const unifiedLiveBatchMatchesCanonical = async (context, livePairs, ref, memory = null) => {
       const startTurn = Number(ref?.turnRange?.start ?? ref?.startTurn ?? memory?.turnRange?.start ?? 0);
-      if (!Array.isArray(livePairs) || livePairs.length < startTurn) {
-        // Tag rule change or partial live view: preserve approved canonical batch
-        return true;
-      }
-      const liveBatch = batchForStart(livePairs, startTurn);
+      const liveBatch = batchForStart(asArray(livePairs), startTurn);
+      if (liveBatch.length !== BATCH_SIZE) return false;
       const expectedDigest = string(memory?.sourceDigest || ref?.sourceDigest || '');
-      if (expectedDigest && liveBatch.length === BATCH_SIZE && sourceDigest(liveBatch) === expectedDigest) return true;
+      if (expectedDigest && sourceDigest(liveBatch) === expectedDigest) return true;
+      // A source tag filter change moves sourceDigest but not the slot: the same U+A message IDs
+      // keep the approved batch (libraCanonicalSlotPreservationKind). A reroll, branch or rollback
+      // does not.
       const activeRef = ref?.key
         ? ref
         : memoryRefForStart(await loadManifest(context.scope, livePairs.length), startTurn);
-      if (activeRef && (await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch))) return true;
-      // Tag rule change or slot preservation: if turns match under unchanged slot policy
-      if (liveBatch.length > 0 && Number(liveBatch[0]?.turn || 0) === startTurn) return true;
-      return true;
+      if (!activeRef || (expectedDigest && string(activeRef.sourceDigest || '') !== expectedDigest)) return false;
+      return !!(await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch));
     };
     const loadUnifiedApprovedBatch = async (context,ref,manifest=null) => {
       const memory=await loadMemoryRef(ref);
@@ -60977,10 +61001,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           legacyRefs.push(ref);replayed.push(statePipelineCursorForRef(ref,activeId));expectedStart+=BATCH_SIZE;continue;
         }
         const {memory}=await loadUnifiedApprovedBatch(context,ref,manifest);
-        if(allowIncompletePrefix&&!unifiedInheritedRef(ref)){
-          const bm=await unifiedLiveBatchMatchesCanonical(context,livePairs,ref,memory);
-          if(!bm)warn('LIBRA live batch source drift for turn '+(ref.turnRange?.start||''));
-        }
+        if(allowIncompletePrefix&&!unifiedInheritedRef(ref))unifiedAssert(await unifiedLiveBatchMatchesCanonical(context,livePairs,ref,memory),'UNIFIED_REPLAY_SOURCE_CHANGED');
         const prefix=statePipelineManifestForExactRefs(manifest,refs.slice(0,i+1));
         const previousPending=asArray(head?.unifiedApplied?.pending);
         let logical={...clone(memory),scopeKey:context.scope.scopeKey,sessionEpoch:epoch,inheritedSessionHistory:unifiedInheritedRef(ref),
@@ -61059,16 +61080,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
             const liveBatch=batchForStart(pairs,b.startTurn);
             const liveDigest=liveBatch.length===BATCH_SIZE?sourceDigest(liveBatch):'';
             let matched=!!liveDigest && (liveDigest===b.sourceDigest || (!!b.liveSourceDigest && liveDigest===b.liveSourceDigest));
-            if(!matched){
+            // A filter change moves the digest but not the slot (same message IDs).
+            if(!matched && liveBatch.length===BATCH_SIZE){
               const liveRef=memoryRefForStart(liveManifest,b.startTurn);
-              if (liveRef && (await libraCanonicalSlotPreservationKind(liveContext,liveRef,liveBatch))) {
-                matched=true;
-              } else if (!liveBatch.length || Number(liveBatch[0]?.turn || 0) === Number(b.startTurn || 0)) {
-                matched=true;
-              } else {
-                warn('LIBRA replay source binding drift for turn '+(b.startTurn||'')+', preserving canonical slot');
-                matched=true;
-              }
+              matched=!!liveRef && string(liveRef.sourceDigest||'')===string(b.sourceDigest||'')
+                && !!(await libraCanonicalSlotPreservationKind(liveContext,liveRef,liveBatch));
             }
             unifiedAssert(matched,'UNIFIED_REPLAY_SOURCE_CHANGED');
           }
@@ -61295,10 +61311,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(head.basis?.sourceFingerprint===continuityStateFingerprint(continuityStateRefs(prefix)) && receipt?.status==='complete' && receipt.headDigest===digest(head) && receipt.registryDigest===digest(registry)){
             const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_SCOPE_CHANGED');
             const pairs=buildPairs(live.chat,live.scope.scopeKey);
-            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref))){
-              const bm=await unifiedLiveBatchMatchesCanonical(live,pairs,ref);
-              if(!bm)warn('LIBRA live batch source drift for turn '+(ref.turnRange?.start||''));
-            }
+            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref)))unifiedAssert(await unifiedLiveBatchMatchesCanonical(live,pairs,ref),'UNIFIED_REPLAY_SOURCE_CHANGED');
             if(basis.snapshotKey)await storage.remove(basis.snapshotKey);
             return {ok:true,skipped:true,reason:'already_reviewed',head,registry,receiptKey,receipt,providerCalls:0};
           }

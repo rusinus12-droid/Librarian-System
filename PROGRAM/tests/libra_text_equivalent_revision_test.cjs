@@ -13,7 +13,11 @@ const withPlaceholder = `${BODY}\n\n---\n[LBDATA START]\n<lb-lazy id="lb-xnai" /
 const illustrated = `하연은 이불을 끌어안았다. "세지 마."\n\n<lb-xnai id="scene-11" operation="bc5aa5af-291e-459d-b3b6-9728866a269b" scene="11">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 const rewritten = `하연은 이불을 걷어찼다. "세도 돼."\n\n그녀는 창밖을 보았다.\n\n---\n[LBDATA START]\n[LBDATA END]\n---`;
 
-const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illustrated, label = 'illustration', rulesAfter = null} = {}) => {
+// filterOnly (원문 태그 필터 원칙, docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md): everything that
+// moved is something the current source tag filter does not see (a rule was added or removed, or
+// only filtered markup changed). The turn was not revised at all: the default receipt reader keeps
+// the stored receipt, recovery writes no new revision, and nothing reruns.
+const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illustrated, label = 'illustration', rulesAfter = null, filterOnly = true} = {}) => {
   let outputListener;
   const fixture = await serverFixture({mode: 'server_only', host: {addRisuChatListener: async (_kind, handler) => { outputListener = handler; return true; }}});
   try {
@@ -66,16 +70,26 @@ const microCase = async ({rules = null, first = withPlaceholder, rawOnly = illus
     const admissionBlocked = result => result?.status === 'stale_source' && ['micro_receipt_changed', 'current_pair_revision_changed'].includes(result.reason);
     const preRecaptureAdmission = await f.r.api.debugAdmitActiveMicroStateClaim(1, 0);
     assert.ok(!admissionBlocked(preRecaptureAdmission), 'State admission reads the same-turn receipt before recapture: ' + JSON.stringify(preRecaptureAdmission));
-    await recapture();
-    assert.notEqual(await receiptRevision(), analyzed, 'the raw change still makes a new receipt (formula unchanged)');
-    const carried = await f.r.api.debugReadActiveMicroMemory(1);
-    assert.equal(carried.status, 'verified', 'Micro stays verified: ' + JSON.stringify({status: carried.status, reason: carried.reason}));
-    assert.equal(carried.carriedFromRevisionId, analyzed, 'it is the analysis of the earlier, text-equivalent receipt');
+    if (filterOnly) {
+      const direct = await f.r.api.debugReadActiveCompletedTurnReceipt(1);
+      assert.equal(direct.status, 'verified', label + ': the default (strict) receipt reader agrees; a filter change is not a revision: ' + JSON.stringify({status: direct.status, reason: direct.reason}));
+      const recheck = await f.r.api.recheckReceiptRecovery({turn: 1});
+      if (recheck?.jobId && recheck.status !== 'verified') await f.r.api.runReceiptRecoveryJob({jobId: recheck.jobId}).catch(() => null);
+      assert.equal(await receiptRevision(), analyzed, label + ': receipt recovery keeps the stored receipt; no new revision is written');
+      const kept = await f.r.api.debugReadActiveMicroMemory(1);
+      assert.equal(kept.status, 'verified', label + ': Micro stays verified: ' + JSON.stringify({status: kept.status, reason: kept.reason}));
+    } else {
+      await recapture();
+      assert.notEqual(await receiptRevision(), analyzed, 'a change the filter still sees makes a new receipt');
+      const carried = await f.r.api.debugReadActiveMicroMemory(1);
+      assert.equal(carried.status, 'verified', 'Micro stays verified: ' + JSON.stringify({status: carried.status, reason: carried.reason}));
+      assert.equal(carried.carriedFromRevisionId, analyzed, 'it is the analysis of the earlier, text-equivalent receipt');
+    }
     const jobs = (await f.r.api.getReceiptRecoveryStatus()).microJobs || [];
     const row = jobs.find(job => Number(job.turn) === 1);
     assert.ok(!row || row.reason !== 'micro_work_missing', 'the turn is not reported as micro_work_missing: ' + JSON.stringify(row));
     assert.equal(f.control.calls.length, 1, 'no Micro job reruns for a ' + label + ' change');
-    // The record is carried from the earlier receipt; admission binds to that receipt, not the newer key.
+    // The record is carried from (or still bound to) the earlier receipt; admission binds to it.
     const carriedAdmission = await f.r.api.debugAdmitActiveMicroStateClaim(1, 0);
     assert.ok(!admissionBlocked(carriedAdmission), 'State admission accepts a carried Micro record: ' + JSON.stringify(carriedAdmission));
 
@@ -297,13 +311,13 @@ const recallAndCanonicalAcrossTextEquivalentRevisionCase = async () => {
     if (recovery?.jobId && recovery.status !== 'verified') {
       await f.r.api.runReceiptRecoveryJob({jobId: recovery.jobId}).catch(() => null);
     }
-    await waitFor(async () => {
-      const next = await f.r.api.debugReadActiveCompletedTurnReceipt(6);
-      return next?.status === 'verified' && next?.receipt?.revisionId && next.receipt.revisionId !== analyzedRev6;
-    }, 15000);
-    const carriedTurn6 = await f.r.api.debugReadActiveMicroMemory(6);
-    assert.equal(carriedTurn6.status, 'verified');
-    assert.equal(carriedTurn6.carriedFromRevisionId, analyzedRev6, 'turn 6 Micro record is carried across recapture');
+    // The illustration is filtered out (원문 태그 필터 원칙): turn 6 was not revised, so recovery
+    // keeps the analyzed receipt instead of writing a new revision, and its Micro stays bound to it.
+    const keptReceipt6 = await f.r.api.debugReadActiveCompletedTurnReceipt(6);
+    assert.equal(keptReceipt6?.status, 'verified', 'turn 6 receipt stays verified under the strict reader');
+    assert.equal(keptReceipt6?.receipt?.revisionId, analyzedRev6, 'a filtered-only edit writes no new receipt revision');
+    const keptTurn6 = await f.r.api.debugReadActiveMicroMemory(6);
+    assert.equal(keptTurn6.status, 'verified', 'turn 6 Micro record stays verified');
 
     await verifyRecallAndState('after-recapture');
   } finally {
@@ -315,7 +329,9 @@ const recallAndCanonicalAcrossTextEquivalentRevisionCase = async () => {
 // unchanged-slot ownership), State replay (allowIncompletePrefix: true, used by post-commit
 // memory-first State tracking and recovery) must still accept the preserved slot without failing
 // on UNIFIED_REPLAY_SOURCE_CHANGED, while a reroll (changed chatId) or rollback still fails closed.
-const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async () => {
+// ruleChange: turn 1 already carries a status window when its batch commits; afterwards only a
+// source tag rule for it is added (원문 태그 필터 원칙). The committed canonical batches stay bound.
+const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async ({ruleChange = false} = {}) => {
   const seam = '    const unifiedStateReadProjection = head =>';
   const fixture = await serverFixture({
     mode: 'server_only',
@@ -327,6 +343,7 @@ const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async () => {
   });
   try {
     const {f} = fixture;
+    if (ruleChange) f.chat.message[1].data = `${f.chat.message[1].data}\n\n<status-window>HP 10 · 위치: 서고</status-window>`;
     const baseT1 = f.chat.message[1].data;
     assert.equal((await f.run()).completed, 1, 'batch 1 commits');
     assert.equal(fixture.getHead()?.throughTurn, 5);
@@ -335,7 +352,8 @@ const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async () => {
     assert.equal(fixture.getHead()?.throughTurn, 10);
 
     // Apply an illustration-only raw edit to turn 1 (same chatId slot) after T1..T10 committed.
-    f.chat.message[1].data = `${baseT1}\n\n<lb-xnai id="scene-99" operation="op-99" scene="99">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>`;
+    if (ruleChange) await f.r.api.setSourceEditRules(STATUS_RULES);
+    else f.chat.message[1].data = `${baseT1}\n\n<lb-xnai id="scene-99" operation="op-99" scene="99">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>`;
     const callsBeforeReplay = f.control.calls.length;
     const probe = f.r.context.__stateReplayProbe;
     const context = await probe.resolveContext();
@@ -369,13 +387,17 @@ const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async () => {
 (async () => {
   await microCase();
   await microCase({rules: STATUS_RULES, label: 'illustration-with-saved-rules'});
-  await microCase({first: BODY, rawOnly: `${BODY}\n\n[상태창: HP 100]`, label: 'line-bounded module block'});
+  // An unfiltered line the current filter still sees: a real source change, carried by line-bounded equivalence.
+  await microCase({first: BODY, rawOnly: `${BODY}\n\n[상태창: HP 100]`, label: 'line-bounded module block', filterOnly: false});
   await microCase({rules: STATUS_RULES, first: withStatus(10), rawOnly: withStatus(9), label: 'user-ignored tag'});
   // The tag existed before any rule for it; adding the rule keeps the turn's analysis.
   await microCase({first: withStatus(10), rulesAfter: STATUS_RULES, label: 'tag-rule-added'});
+  // Removing that rule again (the tag is seen again) is no revision either: the raw bytes are the same.
+  await microCase({rules: STATUS_RULES, first: withStatus(10), rulesAfter: {version: 1, ignoredTags: ['lb-xnai'], unwrapTags: [], sourceTags: [], controls: ['html-comment', 'lbdata']}, label: 'tag-rule-removed'});
   await lensRuleCase();
   await lensCase();
   await recallAndCanonicalAcrossTextEquivalentRevisionCase();
   await stateReplayAcrossPreservedSlotAndTextEquivalentEditCase();
+  await stateReplayAcrossPreservedSlotAndTextEquivalentEditCase({ruleChange: true});
   console.log('libra_text_equivalent_revision_test: ok');
 })().catch(error => { console.error(error); process.exit(1); });

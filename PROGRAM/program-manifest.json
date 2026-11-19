@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T15:50:44.215Z",
+  "generatedAt": "2026-11-19T22:36:15.286Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -4056,8 +4056,8 @@
       "bytes": 2843
     },
     "docs/SOURCE_RULES_20260914.md": {
-      "sha256": "89103df8dcf4f670bb11b62321ddf1a3f362daaf0eafcbdb8e6c3a800a2e92c8",
-      "bytes": 7770
+      "sha256": "12212cd4057c35ecbef70ff3998f9ec701c169db6bcfb93e8587445c7ff49b1a",
+      "bytes": 7963
     },
     "docs/SOURCE_TRACKING_MODES_20260913.md": {
       "sha256": "14c86b63f6b13f9db47a636c2b8e96bdbe2f3c64b90b0fcf3e7db03427495134",
@@ -4284,24 +4284,24 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "9a4001b6b8b5bb9a615b11721556ef7888b4a02a5c50b434491499493f8bd53f",
-      "bytes": 3929077
+      "sha256": "1ec3be67c4221ab5f18e3f6b2ced26fa955411f7917a0498e5456a5fdf8e0670",
+      "bytes": 3929534
     },
     "plugins/GRADIA.js": {
       "sha256": "1dd51594ed6dc270a6fe25f20db4987af9f7507fd65cddea51f9a2e6a7587042",
       "bytes": 3616985
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "4554295c9d33c172af82aeaa779b4efddf2b5d48925ff1eb2451974d0ec634e5",
-      "bytes": 4348943
+      "sha256": "33ca9b92b67f1e641ce9b1a80d9de21c22afa62df024a809c69a86618a2979c1",
+      "bytes": 4350605
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "9d6444c3263001b84583321849a609b964c888dab2a39306842212e30a48d6e9",
-      "bytes": 6809770
+      "sha256": "4e9cfcbd581a070c5a968f9fc8526978a313315161d5c0a30caf3e8a5a8e5875",
+      "bytes": 6812808
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -10136,8 +10136,8 @@
       "bytes": 3294
     },
     "tests/libra_text_equivalent_revision_test.cjs": {
-      "sha256": "264e43dcf2f4c1d5f5a1af966d79c3d261a48a08aed170cd84c55c575395a822",
-      "bytes": 23855
+      "sha256": "9c1132c2d4edfcf1bf31377f29d51062c115f8fb00254a7d62284159231922a8",
+      "bytes": 26290
     },
     "tests/libra_text_hasher_compatibility_test.cjs": {
       "sha256": "df524526be9420d9705f780e989d588e16e444eccfbde95fdc4fcb536269bf66",
