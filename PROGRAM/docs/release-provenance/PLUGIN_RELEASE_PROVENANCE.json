@@ -285,8 +285,8 @@
     "plugins": {
       "flashback": {
         "version": "2.0.6",
-        "sha256": "5c58c12beb993d124014a24602b8f5a183db2cbf71438b25bb39aaf34c18634f",
-        "bytes": 3920135
+        "sha256": "9a4001b6b8b5bb9a615b11721556ef7888b4a02a5c50b434491499493f8bd53f",
+        "bytes": 3929077
       },
       "hayaku": {
         "version": "4.0.7",
@@ -295,8 +295,8 @@
       },
       "libra": {
         "version": "3.0.8",
-        "sha256": "ab9b3d8fd7f7c83699ad3e904b8a0408067d266d32e0c8b41a5befe618fa6b00",
-        "bytes": 6803030
+        "sha256": "9d6444c3263001b84583321849a609b964c888dab2a39306842212e30a48d6e9",
+        "bytes": 6809770
       },
       "lia": {
         "version": "0.30.3",
@@ -310,8 +310,8 @@
       },
       "gradia": {
         "version": "1.1.4",
-        "sha256": "58da9c535099dde230cc9ff55270294fadb427b9042295ea37667b136ead2896",
-        "bytes": 3604865
+        "sha256": "1dd51594ed6dc270a6fe25f20db4987af9f7507fd65cddea51f9a2e6a7587042",
+        "bytes": 3616985
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

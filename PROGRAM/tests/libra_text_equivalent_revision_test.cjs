@@ -311,6 +311,61 @@ const recallAndCanonicalAcrossTextEquivalentRevisionCase = async () => {
   }
 };
 
+// When an earlier batch's raw message receives an illustration/tag edit (text-equivalent under
+// unchanged-slot ownership), State replay (allowIncompletePrefix: true, used by post-commit
+// memory-first State tracking and recovery) must still accept the preserved slot without failing
+// on UNIFIED_REPLAY_SOURCE_CHANGED, while a reroll (changed chatId) or rollback still fails closed.
+const stateReplayAcrossPreservedSlotAndTextEquivalentEditCase = async () => {
+  const seam = '    const unifiedStateReadProjection = head =>';
+  const fixture = await serverFixture({
+    mode: 'server_only',
+    transformSource: source => {
+      assert.ok(source.includes(seam), 'missing unifiedStateReadProjection seam');
+      return source.replace(seam,
+        '    globalThis.__stateReplayProbe = { rebuildUnifiedStateForWorldline, resolveContext };\n' + seam);
+    }
+  });
+  try {
+    const {f} = fixture;
+    const baseT1 = f.chat.message[1].data;
+    assert.equal((await f.run()).completed, 1, 'batch 1 commits');
+    assert.equal(fixture.getHead()?.throughTurn, 5);
+    require('./fixtures/libra_server_runtime_fixture.cjs').fiveMore(f);
+    assert.equal((await f.run()).completed, 1, 'batch 2 commits');
+    assert.equal(fixture.getHead()?.throughTurn, 10);
+
+    // Apply an illustration-only raw edit to turn 1 (same chatId slot) after T1..T10 committed.
+    f.chat.message[1].data = `${baseT1}\n\n<lb-xnai id="scene-99" operation="op-99" scene="99">{{inlay::e301919e-a602-4d23-84ea-c33e5c71ed4e}}</lb-xnai>`;
+    const callsBeforeReplay = f.control.calls.length;
+    const probe = f.r.context.__stateReplayProbe;
+    const context = await probe.resolveContext();
+    const replay = await probe.rebuildUnifiedStateForWorldline({
+      context,
+      manifest: fixture.getManifest(),
+      reason: 'memory_first_contiguous_state',
+      allowIncompletePrefix: true
+    });
+    assert.equal(replay.ok, true, 'allowIncompletePrefix replay succeeds across text-equivalent edit: ' + JSON.stringify(replay));
+    assert.equal(replay.head?.throughTurn, 10);
+    assert.equal(replay.head?.status, 'ready');
+    assert.equal(f.control.calls.length, callsBeforeReplay, 'replay uses no model calls');
+
+    // Reroll / branch change on turn 1 (changed assistant chatId) MUST still fail closed with UNIFIED_REPLAY_SOURCE_CHANGED.
+    f.chat.message[1].chatId = 'rerolled-t1-a';
+    const rerolledContext = await probe.resolveContext();
+    const blocked = await probe.rebuildUnifiedStateForWorldline({
+      context: rerolledContext,
+      manifest: fixture.getManifest(),
+      reason: 'memory_first_contiguous_state',
+      allowIncompletePrefix: true
+    });
+    assert.equal(blocked.ok, false, 'changed chatId slot still fails replay');
+    assert.match(String(blocked.error || blocked.code || ''), /UNIFIED_REPLAY_SOURCE_CHANGED/);
+  } finally {
+    await fixture.cleanup();
+  }
+};
+
 (async () => {
   await microCase();
   await microCase({rules: STATUS_RULES, label: 'illustration-with-saved-rules'});
@@ -321,5 +376,6 @@ const recallAndCanonicalAcrossTextEquivalentRevisionCase = async () => {
   await lensRuleCase();
   await lensCase();
   await recallAndCanonicalAcrossTextEquivalentRevisionCase();
+  await stateReplayAcrossPreservedSlotAndTextEquivalentEditCase();
   console.log('libra_text_equivalent_revision_test: ok');
 })().catch(error => { console.error(error); process.exit(1); });

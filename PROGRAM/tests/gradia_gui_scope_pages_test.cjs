@@ -21,12 +21,16 @@ test('the sidebar offers 작성 방식 and 이 채팅, and each control lives in
     const d = f.doc;
     const nav = [...d.querySelectorAll('.sidebar .nav-item[data-go]')].map(node => node.dataset.go);
     assert.deepEqual(nav.slice(nav.indexOf('pipeline'), nav.indexOf('pipeline') + 3), ['pipeline', 'writing', 'chat']);
-    for (const attr of ['data-npc-disposition-panel', 'data-forced-bond-cards', 'data-forced-bond-proposals', 'data-body-state-cards', 'data-intimacy-cards', 'data-scene-variance',
+    for (const attr of ['data-npc-disposition-panel', 'data-forced-bond-cards', 'data-body-state-cards', 'data-intimacy-cards', 'data-scene-variance',
       'data-body-state-readings', 'data-world-dynamics-readings', 'data-intimacy-readings']) {
       assert.equal(d.querySelectorAll(`[${attr}]`).length, 1, attr + ' exists once');
       assert.ok(d.querySelector(`section[data-page="${attr === 'data-scene-variance' ? 'writing' : 'chat'}"] [${attr}]`), attr + ' is on its scope page');
       assert.equal(d.querySelector(`.stage-detail [${attr}]`), null, attr + ' is not inside a stage panel');
     }
+    assert.equal(d.querySelector('[data-forced-bond-proposals]'), null, 'AI-proposed relationship section is removed');
+    const dispAuto = d.querySelectorAll('section[data-page="chat"] [data-npc-disposition-field="auto"]');
+    assert.equal(dispAuto.length, 1, 'NPC disposition auto-card toggle exists once');
+    assert.equal(dispAuto[0].checked, true, 'NPC disposition auto-card generation is on by default');
     for (const key of ['nsfwMode', 'nsfwGuidanceEnabled', 'nsfwInjectFinalRequest', 'biancaInject']) {
       assert.ok(d.querySelector(`section[data-page="writing"] [data-existing-response-field="${key}"]`), key + ' on 작성 방식');
       assert.equal(d.querySelector(`.stage-detail[data-detail="main"] [data-existing-response-field="${key}"]`), null, key + ' left the main card');

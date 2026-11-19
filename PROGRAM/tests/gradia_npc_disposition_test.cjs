@@ -283,3 +283,34 @@ test('a disposition profile from 인물 AIDE becomes a stored lore card that act
   assert.equal(after.length, 1);
   assert.equal(after[0].level, 'dislike');
 });
+
+test('missing present NPCs stay listed under MISSING DISPOSITION CARDS after another NPC has a card, and auto toggle works in GUI', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await configure(f);
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    const extra = stage === 'aide_character'
+      ? { disposition_profiles: [{ name: '준호', level: 'dislike', note: '거리 둠', basis: '로어' }] }
+      : {};
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [], ...extra };
+    if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
+    else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
+    else f.controls.output = '준호가 고개를 돌렸다.';
+  };
+  await runTurn(f, '민아와 준호를 함께 본다.');
+  // Turn 2: 준호 is covered, while 민아 (character card person) is still missing and listed outside detail-collapse bounds.
+  await runTurn(f, '민아에게 인사를 건넨다.');
+  const charPrompt = allOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
+  assert.match(charPrompt, /MISSING DISPOSITION CARDS: 민아\./);
+
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const toggle = f.document.querySelector('[data-npc-disposition-panel] [data-npc-disposition-field="auto"]');
+  assert.ok(toggle && toggle.checked, 'auto disposition card toggle exists and defaults to checked');
+  toggle.checked = false;
+  toggle.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
+  assert.equal(String((await f.host.plugin.getRuntimeSettings()).npc_disposition_auto), 'false');
+});

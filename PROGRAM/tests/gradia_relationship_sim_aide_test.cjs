@@ -232,3 +232,46 @@ test('the roll is a stable function of its seed', async t => {
   assert.equal(f.host.plugin.debugRelationshipSimRoll('scope|bond|confession|persona|1|2'), a);
   assert.ok(a >= 0 && a < 100);
 });
+
+test('places, dates, and events stay world-neutral, support rich categories, and preserve aliases', async t => {
+  const { f } = await start(t, {
+    pair: { status: 'lovers' },
+    extras: { [HOST]: {
+      relationship_profiles: [{
+        name: '준호',
+        places_liked: '수영장, 전망대, 아쿠아리움, 보드게임 카페, 방탈출 카페, 특정 인물의 집, 캡슐호텔, 찜찔방, 목욕탕',
+        places_disliked: '화장실, 한강',
+        times_liked: '밤'.replace('밤', '늦저녁'),
+        times_disliked: '',
+        dates_liked: '등산, 서핑·수상 레저, 연극, 공연·콘서트, 뮤지컬, 게임, 보드게임, 스포츠(익스트림), 스포츠(레저), 조깅·러닝, 산책, 홈데이트',
+        dates_disliked: '한옥거리',
+        events_liked: '직접 만든 기념품, 직접 차린 식사, 깜짝 마중, 야경·별빛 서프라이즈',
+        events_disliked: '축하 전화 릴레이',
+        love_styles: '낭만적 사랑',
+        birthday: '', sulk: '',
+        basis: '활동적인 취향(캐릭터 로어).'
+      }]
+    } }
+  });
+  await runTurn(f, '준호의 집에서 아쿠아리움으로 놀러 가자고 말한다.');
+  const sys = hostSystem(f);
+  assert.match(sys, /WORLD ADAPTATION: adapt every place, date, and event concept to this story’s actual world/);
+  assert.doesNotMatch(sys, /한강|한옥거리|명동|홍대|강남역|경복궁|창덕궁/);
+  const prep = await f.host.plugin.debugRelationshipSimPrepare({
+    recent: {
+      latestUser: '준호의 집에 갔다.',
+      visibleMessages: [{ role: 'assistant', content: '비가 내렸다.' }],
+      runLineage: { runId: 'run-home', currentInputHash: '', priorAssistantHash: '' }
+    }
+  });
+  assert.equal(prep.scene.place, 'someones_home', 'someone’s home beats generic home on overlap');
+  const raw = f.values.get(LORE_KEY) ?? f.local.get(LORE_KEY);
+  const card = Object.values((typeof raw === 'string' ? JSON.parse(raw) : raw).cards.romancePrefs || {}).flat()[0];
+  assert.ok(card, 'expanded profile card is saved');
+  assert.deepEqual(card.places.liked, ['pool', 'observatory', 'aquarium', 'boardgame_cafe', 'escape_room', 'someones_home', 'capsule_hotel', 'jjimjilbang', 'bathhouse']);
+  assert.deepEqual(card.places.disliked, ['restroom', 'riverside']);
+  assert.deepEqual(card.dates.liked, ['hiking', 'surfing', 'play', 'performance', 'musical', 'gaming', 'board_game', 'extreme_sports', 'leisure_sports', 'jogging', 'walk', 'home_date']);
+  assert.deepEqual(card.dates.disliked, ['old_quarter']);
+  assert.deepEqual(card.events.liked, ['handmade_keepsake', 'home_cooked_meal', 'surprise_waiting', 'night_sky_outing']);
+  assert.deepEqual(card.events.disliked, ['call_relay']);
+});

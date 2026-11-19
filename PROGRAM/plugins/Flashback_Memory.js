@@ -38792,6 +38792,12 @@ const MemorySuiteHealthRecovery = (() => {
       previousTurnRecall,
       personIsolation: {
         dictionary: discoveredPeople.dictionary.slice(0, 48),
+        entries: discoveredPeople.entries.slice(0, 48).map(entry => ({
+          name: text(entry.canonical || entry.normalized || '').trim(),
+          aliases: Array.isArray(entry.aliases) ? entry.aliases.map(a => text(a).trim()).filter(Boolean).slice(0, 8) : [],
+          source: text(entry.source || 'auto_raw_records'),
+          score: Number.isFinite(Number(entry.confidenceScore)) ? Number(Number(entry.confidenceScore).toFixed(1)) : null
+        })).filter(entry => entry.name),
         queryTargets: discoveredPeople.queryTargets.slice(0, 12),
         mismatchedCount: scoredRaw.filter(item => item?.components?.entityMismatch === true).length
       },
@@ -50505,8 +50511,8 @@ ${cleanedText}`, 80),
     const personTargets = Array.isArray(personIso?.queryTargets) ? personIso.queryTargets : [];
     const personMismatched = Math.max(0, Number(personIso?.mismatchedCount || 0) || 0);
     const personIsoHtml = personDict.length
-      ? `<div class="lab__meta" style="margin-top:6px">자동 인물 사전(${formatNumber(personDict.length)}명): ${escapeHtml(personDict.slice(0, 12).join(', '))}${personDict.length > 12 ? ` 외 ${formatNumber(personDict.length - 12)}명` : ''} · 이번 쿼리 타깃: ${escapeHtml(personTargets.length ? personTargets.join(', ') : '없음(일반 회상)')}${personMismatched > 0 ? ` · 타 인물 감점 ${formatNumber(personMismatched)}건` : ''}</div>`
-      : '';
+      ? `<div class="lab__meta" style="margin-top:6px">자동 인물 사전(${formatNumber(personDict.length)}명): ${escapeHtml(personDict.slice(0, 12).join(', '))}${personDict.length > 12 ? ` 외 ${formatNumber(personDict.length - 12)}명` : ''} · 이번 쿼리 타깃: ${escapeHtml(personTargets.length ? personTargets.join(', ') : '없음(일반 회상)')}${personMismatched > 0 ? ` · 타 인물 감점 ${formatNumber(personMismatched)}건` : ''} <button class="btn btn--sm" type="button" data-fb-open-person-dict style="margin-left:8px">인물 사전 열람</button></div>`
+      : `<div class="lab__meta" style="margin-top:6px">자동 인물 사전: 등록된 인물 없음 <button class="btn btn--sm" type="button" data-fb-open-person-dict style="margin-left:8px">인물 사전 열람</button></div>`;
     return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div>${personIsoHtml}</div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || '이번 세션에서 주입된 프롬프트가 없습니다.')}</pre></div></details>`;
   };
 
@@ -51684,7 +51690,7 @@ ${cleanedText}`, 80),
     const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div><details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
     const settingsBody = buildAdvancedTab(settings);
     const pages = [
-      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="card" id="turnVectorCard"><div class="card__head"><div><h2 class="card__title">턴별 벡터 상태</h2><p class="card__desc">${escapeHtml(turnVectorSummary)}</p></div>${turnVectorBadgeHtml}</div>${turnVectorRowsHtml}</div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
+      `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="openPersonDictBtn" type="button" data-fb-open-person-dict>인물 사전 열람</button><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="card" id="turnVectorCard"><div class="card__head"><div><h2 class="card__title">턴별 벡터 상태</h2><p class="card__desc">${escapeHtml(turnVectorSummary)}</p></div>${turnVectorBadgeHtml}</div>${turnVectorRowsHtml}</div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
       `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
       `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
       `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','이전 · 검증',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
@@ -51786,7 +51792,8 @@ ${cleanedText}`, 80),
           return;
         }
         if (event.key === 'Tab') {
-          const focusable = [confirmMode ? cancelBtn : null, okBtn, actionBtn].filter(Boolean);
+          const innerInputs = Array.from(box.querySelectorAll('input:not([disabled]):not([hidden])'));
+          const focusable = [...innerInputs, confirmMode ? cancelBtn : null, okBtn, actionBtn].filter(Boolean);
           const first = focusable[0];
           const last = focusable[focusable.length - 1];
           const active = doc.activeElement;
@@ -51809,6 +51816,7 @@ ${cleanedText}`, 80),
       backdrop.appendChild(box);
       doc.body.appendChild(backdrop);
       (actionBtn || (confirmMode && options.initialFocus === 'cancel' ? cancelBtn : okBtn)).focus();
+      options.onReady?.(cleanup, box, msgEl);
     } catch (error) {
       console.log(`[${PLUGIN_NAME}] dialog fallback`, title, message, error);
       resolve(!confirmMode);
@@ -51820,6 +51828,133 @@ ${cleanedText}`, 80),
   const guiError = async (prefix, error) => {
     setBusy(false);
     await guiAlert(`${prefix}: ${formatErrorMessage(error)}`, '오류');
+  };
+
+  const resolvePersonDictionaryForGui = async () => {
+    const scope = await resolveCurrentScopeForGui();
+    const scopeKey = text(scope?.scopeKey || '');
+    if (!scopeKey) {
+      return {
+        scope,
+        originLabel: '현재 채팅 없음',
+        entries: [],
+        queryTargets: [],
+        mismatchedCount: 0,
+        recordCount: 0,
+        recallAt: 0
+      };
+    }
+    const recall = Runtime.lastRecall && (!Runtime.lastRecall.scopeKey || Runtime.lastRecall.scopeKey === scopeKey)
+      ? Runtime.lastRecall : null;
+    const personIso = recall?.personIsolation && typeof recall.personIsolation === 'object' ? recall.personIsolation : null;
+    if (personIso) {
+      const rawEntries = Array.isArray(personIso.entries) && personIso.entries.length
+        ? personIso.entries
+        : (Array.isArray(personIso.dictionary) ? personIso.dictionary : []).map(name => ({
+            name: text(name).trim(),
+            aliases: [],
+            source: 'auto_raw_records',
+            score: null
+          })).filter(entry => entry.name);
+      return {
+        scope,
+        originLabel: '최근 리콜 기준',
+        entries: rawEntries,
+        queryTargets: Array.isArray(personIso.queryTargets) ? personIso.queryTargets.map(v => text(v).trim()).filter(Boolean) : [],
+        mismatchedCount: Math.max(0, Number(personIso.mismatchedCount || 0) || 0),
+        recordCount: Number(recall.storedRecords ?? recall.totalRecords ?? 0) || 0,
+        recallAt: Number(recall.at || 0) || 0
+      };
+    }
+    const loaded = await loadScopeRecords(scope, { readOnly: true });
+    const catalog = queryCatalogForManifest(loaded.manifest);
+    const discovered = discoverFlashbackSessionPeople(scopeKey, loaded.records, '', catalog.entries);
+    const entries = discovered.entries.slice(0, 48).map(entry => ({
+      name: text(entry.canonical || entry.normalized || '').trim(),
+      aliases: Array.isArray(entry.aliases) ? entry.aliases.map(a => text(a).trim()).filter(Boolean).slice(0, 8) : [],
+      source: text(entry.source || 'auto_raw_records'),
+      score: Number.isFinite(Number(entry.confidenceScore)) ? Number(Number(entry.confidenceScore).toFixed(1)) : null
+    })).filter(entry => entry.name);
+    return {
+      scope,
+      originLabel: '저장된 기억 원문 분석 기준',
+      entries,
+      queryTargets: [],
+      mismatchedCount: 0,
+      recordCount: loaded.records.length,
+      recallAt: 0
+    };
+  };
+
+  const personDictionarySourceLabel = source => ({
+    auto_raw_records: '원문 자동 추출',
+    auto_user_query: '입력 자동 추출'
+  })[source] || '로어 · 사전';
+
+  const renderPersonDictionaryDialogHtml = (snapshot = {}) => {
+    const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
+    const targetSet = new Set((Array.isArray(snapshot.queryTargets) ? snapshot.queryTargets : []).map(v => RecallKeywordFeatures.normalize(v)));
+    const mismatchedCount = Math.max(0, Number(snapshot.mismatchedCount || 0) || 0);
+    const originLabel = text(snapshot.originLabel || '저장된 기억 원문 분석 기준');
+    const summaryChips = [
+      `<span class="chip">등록 인물 <b>${formatNumber(entries.length)}명</b></span>`,
+      `<span class="chip">${escapeHtml(originLabel)}</span>`,
+      targetSet.size ? `<span class="chip">이번 쿼리 타깃 ${escapeHtml(snapshot.queryTargets.join(', '))}</span>` : '',
+      mismatchedCount > 0 ? `<span class="chip">타 인물 감점 ${formatNumber(mismatchedCount)}건</span>` : ''
+    ].filter(Boolean).join('');
+    const listHtml = entries.length
+      ? `<div class="search"><i data-i="search" data-size="sm"></i><input id="fbPersonDictSearch" class="input" type="search" placeholder="인물 이름 또는 별칭 검색" aria-label="인물 사전 검색"></div>
+         <p class="hint" id="fbPersonDictFilterStatus" style="margin:0">전체 ${formatNumber(entries.length)}명 표시 중</p>
+         <div class="list" id="fbPersonDictList" style="max-height:48vh;overflow:auto">${entries.map((entry, idx) => {
+           const name = text(entry.name || '').trim();
+           const aliases = Array.isArray(entry.aliases) ? entry.aliases.map(a => text(a).trim()).filter(Boolean) : [];
+           const srcLabel = personDictionarySourceLabel(entry.source);
+           const isTarget = targetSet.has(RecallKeywordFeatures.normalize(name));
+           const scoreText = Number.isFinite(Number(entry.score)) ? `신뢰도 ${Number(entry.score).toFixed(1)}` : '';
+           const metaParts = [srcLabel, scoreText, aliases.length ? `별칭: ${aliases.join(', ')}` : ''].filter(Boolean);
+           const searchHay = [name, ...aliases, srcLabel].join(' ').toLowerCase();
+           return `<div class="row" data-fb-person-row data-search-text="${escapeHtml(searchHay)}"><span class="badge">${formatNumber(idx + 1)}</span><div><div class="row__title">${escapeHtml(name)}</div><div class="row__meta">${escapeHtml(metaParts.join(' · '))}</div></div><div class="cluster">${isTarget ? '<span class="badge badge--ok">이번 쿼리 타깃</span>' : ''}<span class="badge">${escapeHtml(srcLabel)}</span></div></div>`;
+         }).join('')}</div>`
+      : `<div class="empty"><b>등록된 인물이 없습니다.</b><span>현재 채팅에 저장된 기억에서 추출되거나 사전·로어에 등록된 인물이 아직 없습니다.</span></div>`;
+    return `<div class="stack stack--sm"><div class="cluster">${summaryChips}</div><p class="hint" style="margin:0">리콜 시 최대 48명까지 자동 인물 사전에 반영됩니다. 읽기 전용 조회입니다.</p>${listHtml}</div>`;
+  };
+
+  const openPersonDictionaryDialog = async () => {
+    try {
+      const snapshot = await resolvePersonDictionaryForGui();
+      const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
+      return await guiDialog('', {
+        title: '자동 인물 사전',
+        badgeHtml: `<span class="badge">${formatNumber(entries.length)}명</span>`,
+        bodyHtml: renderPersonDictionaryDialogHtml(snapshot),
+        okText: '닫기',
+        confirm: false,
+        onReady: (_cleanup, box) => {
+          const input = box.querySelector('#fbPersonDictSearch');
+          const status = box.querySelector('#fbPersonDictFilterStatus');
+          const rows = Array.from(box.querySelectorAll('[data-fb-person-row]'));
+          if (!input || !rows.length) return;
+          input.addEventListener('input', () => {
+            const q = text(input.value || '').trim().toLowerCase();
+            let shown = 0;
+            for (const row of rows) {
+              const hay = text(row.getAttribute('data-search-text') || '');
+              const match = !q || hay.includes(q);
+              row.hidden = !match;
+              if (match) shown += 1;
+            }
+            if (status) {
+              status.textContent = q
+                ? `검색 결과 ${formatNumber(shown)}명 / 전체 ${formatNumber(rows.length)}명`
+                : `전체 ${formatNumber(rows.length)}명 표시 중`;
+            }
+          });
+        }
+      });
+    } catch (error) {
+      await guiError('인물 사전 열람 실패', error);
+      return false;
+    }
   };
 
   // Session-local display only. A popup never grants storage/provider authority.
@@ -54279,6 +54414,15 @@ ${cleanedText}`, 80),
         setTopMoreMenuOpen(false);
       });
     }
+    if (root.dataset?.flashbackPersonDictBound !== '1') {
+      if (root.dataset) root.dataset.flashbackPersonDictBound = '1';
+      root.addEventListener?.('click', event => {
+        const trigger = event?.target?.closest?.('[data-fb-open-person-dict]');
+        if (!trigger || !root.contains?.(trigger)) return;
+        event?.preventDefault?.();
+        void openPersonDictionaryDialog();
+      });
+    }
     getGuiNode('clearActivityLogBtn')?.addEventListener('click', () => {
       clearActivityLog();
     });
@@ -56557,6 +56701,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   publicApi._test.getManualEditorRecordText = getManualEditorRecordText;
   publicApi._test.manualEditorRecordStatus = manualEditorRecordStatus;
   publicApi._test.renderLastRecallPanel = renderLastRecallPanel;
+  publicApi._test.resolvePersonDictionaryForGui = resolvePersonDictionaryForGui;
+  publicApi._test.renderPersonDictionaryDialogHtml = renderPersonDictionaryDialogHtml;
+  publicApi._test.openPersonDictionaryDialog = openPersonDictionaryDialog;
   publicApi._test.normalizeFlashbackGuiTab = normalizeFlashbackGuiTab;
   publicApi._test.flashbackOverviewHealth = flashbackOverviewHealth;
   publicApi._test.flashbackOverviewRecallSummary = flashbackOverviewRecallSummary;

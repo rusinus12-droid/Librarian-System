@@ -98,6 +98,7 @@ id_ed25519*
 /PROGRAM/dist/
 /PROGRAM/build/
 /PROGRAM/releases/
+/.development/
 /.development/build/
 /.development/evidence/
 /.development/STATUS.json

@@ -60918,6 +60918,18 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return finalizeUnifiedPendingState(head);
     };
 
+    const unifiedLiveBatchMatchesCanonical = async (context, livePairs, ref, memory = null) => {
+      const startTurn = Number(ref?.turnRange?.start ?? ref?.startTurn ?? memory?.turnRange?.start ?? 0);
+      const liveBatch = batchForStart(livePairs, startTurn);
+      if (liveBatch.length !== BATCH_SIZE) return false;
+      const expectedDigest = string(memory?.sourceDigest || ref?.sourceDigest || '');
+      if (expectedDigest && sourceDigest(liveBatch) === expectedDigest) return true;
+      const activeRef = ref?.key
+        ? ref
+        : memoryRefForStart(await loadManifest(context.scope, livePairs.length), startTurn);
+      if (!activeRef || (expectedDigest && string(activeRef.sourceDigest || '') !== expectedDigest)) return false;
+      return !!(await libraCanonicalSlotPreservationKind(context, activeRef, liveBatch));
+    };
     const loadUnifiedApprovedBatch = async (context,ref,manifest=null) => {
       const memory=await loadMemoryRef(ref);
       unifiedAssert(unifiedRecordAdmissionValid(memory,ref),'UNIFIED_RECORD_ADMISSION_MISMATCH');
@@ -60957,7 +60969,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           legacyRefs.push(ref);replayed.push(statePipelineCursorForRef(ref,activeId));expectedStart+=BATCH_SIZE;continue;
         }
         const {memory}=await loadUnifiedApprovedBatch(context,ref,manifest);
-        if(allowIncompletePrefix&&!unifiedInheritedRef(ref))unifiedAssert(sourceDigest(batchForStart(livePairs,ref.turnRange.start))===memory.sourceDigest,'UNIFIED_REPLAY_SOURCE_CHANGED');
+        if(allowIncompletePrefix&&!unifiedInheritedRef(ref))unifiedAssert(await unifiedLiveBatchMatchesCanonical(context,livePairs,ref,memory),'UNIFIED_REPLAY_SOURCE_CHANGED');
         const prefix=statePipelineManifestForExactRefs(manifest,refs.slice(0,i+1));
         const previousPending=asArray(head?.unifiedApplied?.pending);
         let logical={...clone(memory),scopeKey:context.scope.scopeKey,sessionEpoch:epoch,inheritedSessionHistory:unifiedInheritedRef(ref),
@@ -61028,8 +61040,22 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const backend=await requireUnifiedStorageBackend(context);unifiedAssert(!!backend===!!tx.serverReadSet,'UNIFIED_REPLAY_BACKEND_CHANGED');
         const liveContext=await resolveContext();
         unifiedAssert(liveContext.scope.scopeKey===tx.scopeKey,'UNIFIED_SCOPE_CHANGED');
-        if(tx.result?.sourceBindings){const pairs=buildPairs(liveContext.chat,liveContext.scope.scopeKey);for(const b of tx.result.sourceBindings)unifiedAssert(sourceDigest(batchForStart(pairs,b.startTurn))===b.sourceDigest,'UNIFIED_REPLAY_SOURCE_CHANGED');}
-        unifiedAssert((tx.serverReadSet?unifiedServerManifestIdentity:unifiedManifestIdentity)(await storage.getJson(key.manifest(context.scope),null))===tx.manifestDigest,'STATE_REPLAY_BOUNDARY_CHANGED');
+        const liveManifest=await storage.getJson(key.manifest(context.scope),null);
+        unifiedAssert((tx.serverReadSet?unifiedServerManifestIdentity:unifiedManifestIdentity)(liveManifest)===tx.manifestDigest,'STATE_REPLAY_BOUNDARY_CHANGED');
+        if(tx.result?.sourceBindings){
+          const pairs=buildPairs(liveContext.chat,liveContext.scope.scopeKey);
+          for(const b of tx.result.sourceBindings){
+            const liveBatch=batchForStart(pairs,b.startTurn);
+            const liveDigest=liveBatch.length===BATCH_SIZE?sourceDigest(liveBatch):'';
+            let matched=!!liveDigest && (liveDigest===b.sourceDigest || (!!b.liveSourceDigest && liveDigest===b.liveSourceDigest));
+            if(!matched && !b.liveSourceDigest && liveBatch.length===BATCH_SIZE){
+              const liveRef=memoryRefForStart(liveManifest,b.startTurn);
+              matched=!!liveRef && string(liveRef.sourceDigest||'')===string(b.sourceDigest||'')
+                && !!(await libraCanonicalSlotPreservationKind(liveContext,liveRef,liveBatch));
+            }
+            unifiedAssert(matched,'UNIFIED_REPLAY_SOURCE_CHANGED');
+          }
+        }
         unifiedAssert(digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null))===tx.worldlineDigest,'STATE_REPLAY_BOUNDARY_CHANGED');
         for(const [k,g] of grouped)unifiedAssert(g.values.some(v=>digest(v)===digest(awaitedValues.get(k))),'UNIFIED_REPLAY_EXTERNAL_WRITE');
       };
@@ -61147,9 +61173,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const head=candidate.head;
         const appliedManifest=allowIncompletePrefix?statePipelineManifestForExactRefs(manifest,candidate.appliedRefs):manifest;
         head.basis=continuityStateBasis(continuityStateRefs(appliedManifest).filter(r=>r.inherited||r.sessionEpoch<0||r.end<=cutoff),{replayFingerprint});head.updatedAt=nowIso();
+        const livePairsForBindings=allowIncompletePrefix?buildPairs(context.chat,context.scope.scopeKey):null;
         const result={ok:true,head:clone(head),registry:clone(candidate.registry),worldlineId:activeId,appliedDeltas:0,appliedCorrections:candidate.appliedCorrections,canonicalCount:candidate.canonicalCount,
           reason,replayFingerprint,replayJournalDigest:stateCorrectionReplayJournalDigest(store),providerCalls:0,localReplay:true,
-          ...(allowIncompletePrefix?{pendingBoundary:candidate.pendingBoundary,sourceBindings:candidate.appliedRefs.filter(r=>!unifiedInheritedRef(r)).map(r=>({startTurn:r.turnRange.start,sourceDigest:r.sourceDigest}))}:{})};
+          ...(allowIncompletePrefix?{pendingBoundary:candidate.pendingBoundary,sourceBindings:candidate.appliedRefs.filter(r=>!unifiedInheritedRef(r)).map(r=>{const liveBatch=batchForStart(livePairsForBindings,r.turnRange.start);return {startTurn:r.turnRange.start,sourceDigest:r.sourceDigest,liveSourceDigest:liveBatch.length===BATCH_SIZE?sourceDigest(liveBatch):''};})}:{})};
         if(!persist)return result;
         unifiedAssert(candidate.lastMemory || candidate.canonicalCount===0||candidate.head.unifiedCoverage?.typedCount===0,'UNIFIED_REPLAY_EMPTY');
         for(const [k,v] of before)unifiedAssert(digest(await storage.getJson(k,null))===digest(v),'UNIFIED_REPLAY_EXTERNAL_WRITE');
@@ -61243,7 +61270,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           if(head.basis?.sourceFingerprint===continuityStateFingerprint(continuityStateRefs(prefix)) && receipt?.status==='complete' && receipt.headDigest===digest(head) && receipt.registryDigest===digest(registry)){
             const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_SCOPE_CHANGED');
             const pairs=buildPairs(live.chat,live.scope.scopeKey);
-            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref)))unifiedAssert(sourceDigest(batchForStart(pairs,ref.turnRange.start))===ref.sourceDigest,'UNIFIED_REPLAY_SOURCE_CHANGED');
+            for(const ref of refs.filter(ref=>!unifiedInheritedRef(ref)))unifiedAssert(await unifiedLiveBatchMatchesCanonical(live,pairs,ref),'UNIFIED_REPLAY_SOURCE_CHANGED');
             if(basis.snapshotKey)await storage.remove(basis.snapshotKey);
             return {ok:true,skipped:true,reason:'already_reviewed',head,registry,receiptKey,receipt,providerCalls:0};
           }
@@ -61269,9 +61296,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(basis.snapshotKey)await storage.remove(basis.snapshotKey);
         return {...result,skipped:false};
       }
-      const batch=batchForStart(buildPairs(context.chat,context.scope.scopeKey),memory.turnRange.start);
-      unifiedAssert(sourceDigest(batch)===memory.sourceDigest,'UNIFIED_STATE_SOURCE_CHANGED');
-      const validation=validateUnifiedArtifact(memory.canonicalArtifact,batch,{allowLegacyProfileStrings:true});
+      const livePairs=buildPairs(context.chat,context.scope.scopeKey);
+      const batch=batchForStart(livePairs,memory.turnRange.start);
+      const exactSourceMatch=sourceDigest(batch)===memory.sourceDigest;
+      unifiedAssert(exactSourceMatch||await unifiedLiveBatchMatchesCanonical(context,livePairs,verified.activeRef,memory),'UNIFIED_STATE_SOURCE_CHANGED');
+      const validationBatch=exactSourceMatch?batch:(await unifiedEvidenceRead(memory)).batch;
+      const validation=validateUnifiedArtifact(memory.canonicalArtifact,validationBatch,{allowLegacyProfileStrings:true});
       unifiedAssert(validation.ok,'UNIFIED_STATE_ARTIFACT_INVALID');
       unifiedAssert(renderUnifiedArtifact(memory.canonicalArtifact)===memory.text,'UNIFIED_STATE_RENDER_MISMATCH');
       const txKey=`${key.entityRegistry(context.scope)}:unified-tx:${memory.memoryId}:${memory.revision}`;
@@ -61316,7 +61346,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const current=await resolveContext();unifiedAssert(current.scope.scopeKey===basis.scopeKey,'UNIFIED_SCOPE_CHANGED');
         unifiedAssert(digest(await storage.getJson(key.stateWorldlineMeta(context.scope),null))===basis.worldlineDigest,'UNIFIED_WORLDLINE_CHANGED');
         const verifiedNow=await verifyCanonicalCommitEnvelope({context:current,envelope});unifiedAssert(verifiedNow.ok,'UNIFIED_STATE_CANONICAL_CHANGED');
-        unifiedAssert(sourceDigest(batchForStart(buildPairs(current.chat,current.scope.scopeKey),memory.turnRange.start))===memory.sourceDigest,'UNIFIED_STATE_SOURCE_CHANGED');
+        const guardPairs=buildPairs(current.chat,current.scope.scopeKey);
+        unifiedAssert(sourceDigest(batchForStart(guardPairs,memory.turnRange.start))===memory.sourceDigest||await unifiedLiveBatchMatchesCanonical(current,guardPairs,verifiedNow.activeRef,memory),'UNIFIED_STATE_SOURCE_CHANGED');
         await assertLibraStateCanonicalSlot(memory);
         const h=await storage.getJson(key.continuityState(context.scope),null),r=await storage.getJson(key.entityRegistry(context.scope),null);
         unifiedAssert([tx.baselineHead,tx.headDigest].includes(digest(h)) && [tx.baselineRegistry,tx.registryDigest].includes(digest(r)),'UNIFIED_STATE_EXTERNAL_WRITE');
@@ -62462,7 +62493,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unifiedAssert(!state.disposed && !!(await requireUnifiedStorageBackend(context)),'UNIFIED_VECTOR_BACKEND_CHANGED');
         const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_VECTOR_SCOPE_CHANGED');
         const valid=await verifyCanonicalCommitEnvelope({context:live,envelope});unifiedAssert(valid.ok,'UNIFIED_VECTOR_CANONICAL_CHANGED');
-        unifiedAssert(sourceDigest(batchForStart(buildPairs(live.chat,live.scope.scopeKey),memory.turnRange.start))===memory.sourceDigest,'UNIFIED_VECTOR_SOURCE_CHANGED');
+        const livePairs=buildPairs(live.chat,live.scope.scopeKey);
+        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
         await assertLibraStateCanonicalSlot(memory);
         unifiedAssert(embeddingConfigSignature(await loadEmbeddingSettings())===configBefore,'UNIFIED_VECTOR_MODEL_CHANGED');
         return valid.manifest;
@@ -62536,7 +62568,8 @@ function mountMemorySuiteReanalysisReview(container,config) {
         unifiedAssert(!state.disposed && (await MemorySuiteStorageBridge.getMode())==='plugin_only','UNIFIED_VECTOR_BACKEND_CHANGED');
         const live=await resolveContext();unifiedAssert(live.scope.scopeKey===context.scope.scopeKey,'UNIFIED_VECTOR_SCOPE_CHANGED');
         const valid=await verifyCanonicalCommitEnvelope({context:live,envelope});unifiedAssert(valid.ok,'UNIFIED_VECTOR_CANONICAL_CHANGED');
-        unifiedAssert(sourceDigest(batchForStart(buildPairs(live.chat,live.scope.scopeKey),memory.turnRange.start))===memory.sourceDigest,'UNIFIED_VECTOR_SOURCE_CHANGED');
+        const livePairs=buildPairs(live.chat,live.scope.scopeKey);
+        unifiedAssert(sourceDigest(batchForStart(livePairs,memory.turnRange.start))===memory.sourceDigest||await unifiedLiveBatchMatchesCanonical(live,livePairs,valid.activeRef,memory),'UNIFIED_VECTOR_SOURCE_CHANGED');
         await assertLibraStateCanonicalSlot(memory);
         unifiedAssert(embeddingConfigSignature(await loadEmbeddingSettings())===configBefore,'UNIFIED_VECTOR_MODEL_CHANGED');
         return valid.manifest;
@@ -66507,7 +66540,10 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
     // Identify completed turns whose assistant text is already visible in the current
     // request's raw conversation. Prefers RisuAI message IDs (memo === assistant.chatId),
     // falling back to canonical raw-text inclusion when memos are absent or unmatched.
-    const canonicalVisibleTurnText = value => stripLegacyResponseArtifacts(stripExternalHostMemoryBlocks(string(value || '')))
+    const canonicalVisibleTurnText = value => memorySuiteProjectSourceTags(
+      stripLegacyResponseArtifacts(stripExternalHostMemoryBlocks(string(value || ''))),
+      'libra'
+    )
       .replace(/\r\n/g, '\n')
       .replace(/\s+/g, ' ')
       .trim();
@@ -79796,6 +79832,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .recall-tag--other{background:var(--surface3);border-color:var(--border2);color:var(--text2)}.t-libra .recall-mix__part.recall-tag--other,.t-libra .recall-dot.recall-tag--other{background:var(--text3)}',
     '@container app (max-width:640px){.t-libra .recall-line{grid-template-columns:minmax(0,1fr);gap:4px}.t-libra .recall-list{max-height:340px}}',
     '.t-libra .recall-note__final{display:grid;gap:6px}.t-libra .recall-note__final p{margin:0;font-size:12px;color:var(--text2)}.t-libra .recall-note__links{display:flex;gap:14px;flex-wrap:wrap}',
+    '.t-libra .recall-excluded{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);padding:8px 12px;font-size:12.5px;color:var(--text2)}',
+    '.t-libra .recall-excluded--empty{display:flex;align-items:center;justify-content:space-between}',
+    '.t-libra .recall-excluded__summary{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;list-style:none}.t-libra .recall-excluded__summary::-webkit-details-marker{display:none}',
+    '.t-libra .recall-excluded__status{display:inline-flex;align-items:center;gap:4px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.t-libra .recall-excluded__status b{color:var(--text)}',
+    '.t-libra .recall-excluded__toggle{flex:none;color:var(--accent-ink);font:650 12px/1.3 var(--font-sans);text-decoration:underline;text-underline-offset:2px}',
+    '.t-libra .recall-excluded__turns{margin:8px 0 0}',
+    '.t-libra .recall-excluded__list{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px;max-height:220px;overflow:auto}',
+    '.t-libra .recall-excluded__item{padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);display:grid;gap:4px}',
+    '.t-libra .recall-excluded__text{margin:0;font-size:12.5px;line-height:1.55;color:var(--text);overflow-wrap:anywhere}',
     // Versions keep their own scroll range when the execution tab below changes height.
     '.t-libra [data-canonical-variant-dialog] .drawer{min-width:0;min-height:0;max-width:100%}',
     '.t-libra [data-canonical-variant-dialog] .drawer__head{flex-shrink:0;min-width:0}.t-libra [data-canonical-variant-dialog] .drawer__head>div{min-width:0;overflow-wrap:anywhere}',
@@ -91496,10 +91541,16 @@ advanced
   // and the lines themselves. It reads the delivery receipt only and grants no authority.
   const BOOK_RECALL_FAMILIES = Object.freeze([['lens', '렌즈'], ['state', '상태'], ['canonical', '정본'], ['micro', 'Micro'], ['other', '기타']]);
   const BOOK_RECALL_INTENTS = Object.freeze({ current: '현재 상태 우선', history: '과거 경위 우선', detail: '정확한 발언 우선', mixed: '관련도 순' });
-  const bookDeliveryNoteKey = ({binding, delivery}) => JSON.stringify([
-    canonicalReaderBindingKey(binding), delivery.responseContextRequestId || '', delivery.at,
-    delivery.responseContextDigest || ''
-  ]);
+  const bookDeliveryNoteKey = ({binding, delivery}) => {
+    const excluded = libraGuiObject(libraGuiObject(delivery.recallDiagnostics).recentChatExcluded);
+    return JSON.stringify([
+      canonicalReaderBindingKey(binding), delivery.responseContextRequestId || '', delivery.at,
+      delivery.responseContextDigest || '',
+      Number(excluded.excludedCount ?? (Number(excluded.excludedCanonicalRefs || 0) + Number(excluded.excludedMicroTurns || 0)) ?? libraGuiArray(excluded.items).length),
+      libraGuiArray(excluded.visibleTurns),
+      libraGuiArray(excluded.items).length
+    ]);
+  };
   const bookRecallEntries = view => {
     const known = new Set(BOOK_RECALL_FAMILIES.map(row => row[0]));
     const turnText = range => { const start = Number(range?.start || 0), end = Number(range?.end || 0);
@@ -91557,6 +91608,34 @@ advanced
     draw();
     const mix=guiEl('div',{class:'recall-mix',role:'img','aria-label':families.map(row=>`${row.label} ${row.count}개`).join(', ')},
       families.map(row=>guiEl('span',{class:`recall-mix__part recall-tag--${row.id}`,style:{flexGrow:String(row.count)},title:`${row.label} ${row.count}개`})));
+    const recentChatExcluded=libraGuiObject(diagnostics.recentChatExcluded);
+    const recentExcludedItems=libraGuiArray(recentChatExcluded.items);
+    const recentExcludedVisibleTurns=libraGuiArray(recentChatExcluded.visibleTurns);
+    const recentExcludedCount=Number(recentChatExcluded.excludedCount??(Number(recentChatExcluded.excludedCanonicalRefs||0)+Number(recentChatExcluded.excludedMicroTurns||0))??recentExcludedItems.length);
+    const recentExcludedFooter=(()=>{
+      if(recentExcludedCount<=0){
+        return guiEl('div',{class:'recall-excluded recall-excluded--empty',dataset:{recentExcludedNotes:'true'}},[
+          guiEl('span',{class:'recall-excluded__status'},['최근 턴으로 인해 제외된 기록 ',guiEl('b',{text:'0건'})])]);
+      }
+      const toggleLabel=guiEl('span',{class:'recall-excluded__toggle',dataset:{recentExcludedToggle:'true'},text:'열람'});
+      const summaryEl=guiEl('summary',{class:'recall-excluded__summary'},[
+        guiEl('span',{class:'recall-excluded__status'},['최근 턴으로 인해 제외된 기록 ',guiEl('b',{text:`${recentExcludedCount}건`})]),
+        toggleLabel]);
+      const detailsEl=guiLazyDetails({class:'recall-excluded',dataset:{recentExcludedNotes:'true'}},summaryEl,()=>[
+        recentExcludedVisibleTurns.length?guiEl('p',{class:'hint recall-excluded__turns',text:`현재 요청에 보이는 최근 턴: T${recentExcludedVisibleTurns.join(', T')}`}):null,
+        recentExcludedItems.length?guiEl('ol',{class:'recall-excluded__list'},recentExcludedItems.map(item=>{
+          const family=item?.family==='canonical'?'canonical':'micro';
+          const turnStart=Number(item?.turnStart||0),turnEnd=Number(item?.turn||0);
+          const turnLabel=turnStart>0&&turnStart<turnEnd?`T${turnStart}~${turnEnd}`:`T${turnEnd||turnStart||0}`;
+          return guiEl('li',{class:'recall-excluded__item',dataset:{recentExcludedFamily:family}},[
+            guiEl('div',{class:'recall-line__meta'},[
+              guiEl('span',{class:`recall-tag recall-tag--${family}`,text:family==='canonical'?'정본 요약':'장면 세부'}),
+              guiEl('span',{class:'recall-line__turn',text:turnLabel})]),
+            guiEl('p',{class:'recall-excluded__text',text:libraGuiText(item?.preview)||'(요약 미리보기 없음)'})]);})):guiEl('p',{class:'hint',text:'상세 미리보기 데이터가 없습니다.'})
+      ].filter(Boolean));
+      detailsEl.addEventListener('toggle',()=>{toggleLabel.textContent=detailsEl.open?'접기':'열람';});
+      return detailsEl;
+    })();
     return guiEl('article',{class:'leaf recall-note',dataset:{deliveryNotes:status,deliveryKey}},[...head,
       query?guiEl('blockquote',{class:'recall-query'},[guiEl('span',{class:'recall-query__kicker',text:'이 입력으로 찾은 기억'}),guiEl('p',{text:query}),
         intent?guiEl('span',{class:'chip',text:intent}):null]):null,
@@ -91571,7 +91650,8 @@ advanced
         guiEl('p',{text:'플러그인의 요청 메시지 주입 검증 상태입니다. 제공자 수신이나 모델의 실제 활용 여부를 확인한 기록은 아닙니다.'}),
         guiEl('div',{class:'recall-note__links'},[
           guiEl('button',{class:'linkbtn',type:'button',text:'전달 근거 보기 →',onClick:()=>openBookFinalEvidenceDialog()}),
-          guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})])])
+          guiEl('button',{class:'linkbtn',type:'button',text:'기억 서가 열기 →',onClick:()=>bookNavigate('memory')})])]),
+      recentExcludedFooter
     ]);
   };
 
