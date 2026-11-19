@@ -2079,7 +2079,7 @@
       placement: 'before_plot',
       rank: 5,
       isActive: settings => worldDynamicsStageActive(settings),
-      stageBlock: (stageName, recent, settings, ledger) => worldDynamicsStageBlock(stageName, recent, settings, ledger),
+      stageBlock: (stageName, recent, settings, ledger, phase) => worldDynamicsStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => worldDynamicsJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordWorldDynamicsOutput(ledger, stageName, parsed, settings)
     }),
@@ -2088,7 +2088,7 @@
       placement: 'before_plot',
       rank: 10,
       isActive: settings => bodyStateStageActive(settings),
-      stageBlock: (stageName, recent, settings, ledger) => bodyStateStageBlock(stageName, recent, settings, ledger),
+      stageBlock: (stageName, recent, settings, ledger, phase) => bodyStateStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => bodyStateJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordBodyStateOutput(ledger, stageName, parsed, settings)
     }),
@@ -2097,7 +2097,7 @@
       placement: 'before_plot',
       rank: 15,
       isActive: settings => intimacyStageActive(settings),
-      stageBlock: (stageName, recent, settings, ledger) => intimacyStageBlock(stageName, recent, settings, ledger),
+      stageBlock: (stageName, recent, settings, ledger, phase) => intimacyStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => intimacyJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordIntimacyOutput(ledger, stageName, parsed, settings)
     }),
@@ -26216,14 +26216,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
     [/놀라|깜짝|surpris|startl/i, 'surprise'],
     [/의심|수상|suspic|doubt/i, 'suspicion']
   ]);
-  const forcedBondEmotionSignals = (recentLines = [], card = {}) => recentLines
-    .filter(line => forcedBondMatches(line, card))
-    .flatMap(line => FORCED_BOND_EMOTION_SIGNALS.filter(([pattern]) => pattern.test(line)).map(([, label]) => ({ label, line })))
-    .slice(-3);
+  const forcedBondEmotionSignals = (recentLines = [], card = {}, otherNames = []) => {
+    const out = [];
+    let lastMatchIdx = -1;
+    let lastPrefix = '';
+    recentLines.forEach((line, index) => {
+      const prefix = (line.match(/^(input|scene):/) || [])[1] || '';
+      const direct = forcedBondMatches(line, card);
+      if (direct) {
+        lastMatchIdx = index;
+        lastPrefix = prefix;
+      }
+      // In Korean prose, the subject is often named in the preceding sentence and omitted in the next.
+      const carriesSubject = !direct && lastMatchIdx >= 0 && index - lastMatchIdx <= 1 && prefix === lastPrefix
+        && !otherNames.some(other => extensionLineNames(line, other));
+      if (!direct && !carriesSubject) return;
+      for (const [pattern, label] of FORCED_BOND_EMOTION_SIGNALS) {
+        if (pattern.test(line)) out.push({ label, line });
+      }
+    });
+    return out.slice(-3);
+  };
   const forcedBondEvidencePacket = (recent = {}, settings = {}, cards = []) => {
     const libLines = forcedBondSentences(libEvidencePrompt(settings));
     const recentLines = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .flatMap(message => forcedBondSentences(message?.content).map(line => `${message?.role === 'user' ? 'input' : 'scene'}: ${line}`));
+    const scenePeople = extensionScenePeople(recent);
     const canon = Array.isArray(recent.relationshipCanonLock?.facts) ? recent.relationshipCanonLock.facts : [];
     let libHits = 0;
     const lines = [];
@@ -26232,7 +26250,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const canonLines = canon.map(fact => fact?.text || '').filter(line => forcedBondMatches(line, card)).slice(0, 3).map(line => compact(line, 260));
       const lib = pick(libLines, 4);
       const scene = pick(recentLines, 4);
-      const signals = forcedBondEmotionSignals(recentLines, card);
+      const cardNames = [card.from, card.to].filter(name => name && name !== FORCED_BOND_PERSONA);
+      const otherNames = scenePeople.filter(person => !bodyStateIsPersona(person) && !extensionSamePerson(person, Runtime.activePersonaName)
+        && !cardNames.some(known => extensionSamePerson(known, person)));
+      const signals = forcedBondEmotionSignals(recentLines, card, otherNames);
       libHits += lib.length;
       lines.push(`- ${card.id}: ${forcedBondDisplayName(card.from)} → ${forcedBondDisplayName(card.to)} (${card.direction === 'mutual' ? 'mutual' : 'one-way'}) · tones: ${card.tones.length ? card.tones.join(', ') : `read from canon, lore and the scene (${card.origin === 'auto' ? 'auto bond, no user card' : 'no tone chosen'})`} · card stage: ${card.stage || 'read from evidence'} · ${card.visibility} · pace: ${card.pressure}${card.limits.length ? ` · limits: ${card.limits.join('; ')}` : ''}`);
       for (const line of canonLines) lines.push(`  canon: ${line}`);
@@ -26265,7 +26286,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const forcedBondAutoCards = (recent = {}) => {
     const people = [];
     const scenePeople = extensionScenePeople(recent);
-    for (const name of [extensionCardPerson(recent, scenePeople), ...scenePeople]) {
+    const inputText = String(recent?.latestUser || '');
+    const inputPeople = inputText ? scenePeople.filter(name => extensionLineNames(inputText, name)) : [];
+    for (const name of [extensionCardPerson(recent, scenePeople), ...inputPeople, ...scenePeople]) {
       if (!name || bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName)) continue;
       if (people.some(known => extensionSamePerson(known, name))) continue;
       people.push(name);
@@ -26309,13 +26332,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const duty = forcedBondStageActive(settings) ? extensionAideDuty('aide_forced_bond', stageName, FORCED_BOND_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const cards = forcedBondCardsInPlay(settings, recent);
-    if (!cards.length && forcedBondOutputKind(stageName, settings) !== 'readings') return '';
+    const kind = forcedBondOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : kind;
+    if (!cards.length && kind !== 'readings') {
+      if (outputKind !== 'check') return '';
+      return [
+        '[FORCED BOND (억결) — RELATIONSHIP TENSION]',
+        'No bond cards or scene partners are in play this turn.',
+        'OUTPUT: add a top-level "bond_check" array; leave it empty.'
+      ].join('\n');
+    }
     const hasAuto = cards.some(card => card.origin === 'auto');
     const gate = forcedBondModeGate(settings);
     const appearanceAllowed = gate !== 'staging' && settings.forcedBondForceAppearance !== false;
     const tones = hasAuto || cards.some(card => !card.tones.length) ? Object.keys(FORCED_BOND_TONES) : Array.from(new Set(cards.flatMap(card => card.tones)));
     const priorChecks = forcedBondPriorChecks(ledger);
-    const kind = forcedBondOutputKind(stageName, settings);
     return [
       '[FORCED BOND (억결) — RELATIONSHIP TENSION]',
       'The user wants the scene to keep forming and moving the relationships below: how these people relate, read, trust, test, owe, or resent each other. A bond’s tone can be trust, wariness, curiosity, rivalry, debt, affection, hatred, or a mix. Romance is one possibility among many: do not steer a bond toward romance unless the user or what has developed already points there.',
@@ -26342,9 +26373,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       cards.length ? `BONDS AND EVIDENCE:\n${forcedBondEvidencePacket(recent, settings, cards)}` : 'BONDS: no user card and no other person in the scene this turn. Notice a bond the scene shows and propose it; do not invent a person.',
       priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "bond_check" array with one item per bond this draft touches, judged only from your own duty. Item fields: card (card id); verdict (confirm, adjust, or uncertain); claim (the reading you checked); reason (your evidence-based reason); evidence (canon, LIB, recent, or draft). Use an empty array when no bond is touched.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "bond_readings" array, one item per bond in play this turn, with fields card (card id), tones (tone ids), stage (stranger, aware, tension, expressed, or settled), and evidence (canon, LIB, recent, or card). Add a top-level "bond_proposals" array for at most two new bonds the scene clearly shows, with fields from, to, tones (tone ids), and why (a short reason). Tone ids: ' + Object.keys(FORCED_BOND_TONES).join(', ') + '. Use empty arrays when there is nothing to report.'
           : ''
     ].filter(Boolean).join('\n');
@@ -26494,7 +26525,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const BODY_STATE_RECOVERY_RE = /나았|회복|완치|열이\s*내렸|괜찮아졌|아물|recovered|healed/i;
   const BODY_STATE_MEDICATION_RE = /약을|복용|진통제|해열제|처방|병원|치료|붕대|깁스|medicine|pill\b|bandage|cast\b/i;
   const BODY_STATE_PERIOD_START_RE = /생리(?:를|가)?\s*(?:시작|터졌)|월경\s*시작|period\s+(?:started|began)/i;
-  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|slept together|had sex|intercourse/i;
+  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|안에\s*쌌|속에\s*쌌|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|가득)|slept together|had sex|intercourse/i;
   const BODY_STATE_CONTRACEPTION = Object.freeze({
     // Multiplier on the per-act conception chance under typical use.
     none: Object.freeze({ label: '피임 안 함', factor: 1, pattern: /피임\s*(?:안|없이|하지)|콘돔\s*없이|without (?:a )?condom|no protection/i }),
@@ -26600,11 +26631,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   const bodyStateDaysBetween = (from, to) => {
     if (!from || !to) return null;
-    const year = from.y && to.y ? null : 2001;
+    const hasFeb29 = (from.m === 2 && from.d === 29) || (to.m === 2 && to.d === 29);
+    const year = from.y && to.y ? null : (hasFeb29 ? 2004 : 2001);
     const start = Date.UTC(year || from.y, from.m - 1, from.d);
     const end = Date.UTC(year || to.y, to.m - 1, to.d);
     let days = Math.round((end - start) / 86400000);
-    if (year && days < 0) days += 365;
+    if (year && days < 0) days += hasFeb29 ? 366 : 365;
     return days >= 0 && days < 3660 ? days : null;
   };
   const bodyStateRelativeDays = value => {
@@ -26830,7 +26862,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const bodyStateCharacterReport = (name, entries, settings, now, gate, scopeKey, context = {}) => {
     const { clock = null, present = false } = context;
-    const card = bodyStateCardsForScope(settings, scopeKey).find(item => item.name && item.name === name) || null;
+    const card = bodyStateCardsForScope(settings, scopeKey)
+      .find(item => item.name && (item.name === name || extensionSamePerson(item.name, name))) || null;
     const mine = entries.filter(entry => bodyStateLineMentions(entry.line, name));
     const lines = [];
     const evidence = mine.slice(-6).map(entry => `  ${entry.source}: ${compact(entry.line, 220)}`);
@@ -26840,10 +26873,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const latest = pattern => [...mine].reverse().find(entry => pattern.test(entry.line)) || null;
     // An onset is the latest mention that is not itself a recovery line.
     const latestOnset = pattern => [...mine].reverse().find(entry => pattern.test(entry.line) && !BODY_STATE_RECOVERY_RE.test(entry.line)) || null;
-    const recovered = latest(BODY_STATE_RECOVERY_RE);
-    const describe = (entry, label, range) => {
+    const allConditionPatterns = [...Object.values(BODY_STATE_ILLNESS).map(def => def.pattern), BODY_STATE_INJURY_RE];
+    // A recovery line clears a condition only if it mentions that condition or is generic
+    // (names no other specific illness/injury), so "감기가 나았다" never clears a fracture.
+    const recoveryAfter = (entry, ownPattern = null) => {
+      const onsetIndex = mine.indexOf(entry);
+      if (onsetIndex < 0) return null;
+      const others = allConditionPatterns.filter(pat => pat !== ownPattern);
+      for (let idx = mine.length - 1; idx > onsetIndex; idx -= 1) {
+        const cand = mine[idx];
+        if (!BODY_STATE_RECOVERY_RE.test(cand.line)) continue;
+        if (ownPattern && ownPattern.test(cand.line)) return cand;
+        if (ownPattern === BODY_STATE_INJURY_RE && /아물|상처|부상|다친|깁스|붕대|healed/i.test(cand.line)) return cand;
+        if (ownPattern !== BODY_STATE_INJURY_RE && /아물/.test(cand.line)) continue;
+        if (others.every(pat => !pat.test(cand.line))) return cand;
+      }
+      return null;
+    };
+    const describe = (entry, label, range, ownPattern = null) => {
       const elapsed = bodyStateElapsed(entry, now, clock);
-      if (recovered && mine.indexOf(recovered) > mine.indexOf(entry)) return `${label}: recovery recorded after onset (${recovered.source})`;
+      const recovered = recoveryAfter(entry, ownPattern);
+      if (recovered) return `${label}: recovery recorded after onset (${recovered.source})`;
       if (elapsed.days === null) return `${label}: onset recorded, day unknown — do not state how long it has lasted`;
       const stage = range
         ? (elapsed.days < range[0] ? 'ongoing' : elapsed.days <= range[1] ? 'likely easing' : 'expected to be over unless the story says otherwise')
@@ -26852,15 +26902,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
     for (const [id, def] of Object.entries(BODY_STATE_ILLNESS)) {
       const entry = latestOnset(def.pattern);
-      if (entry) lines.push(`  ${describe(entry, def.label, def.days)}; signs: ${def.signs} [${id}]`);
+      if (entry) lines.push(`  ${describe(entry, def.label, def.days, def.pattern)}; signs: ${def.signs} [${id}]`);
     }
-    const injury = latestOnset(BODY_STATE_INJURY_RE);
-    if (injury) {
-      const severity = /심한|깊은|크게|severe|deep|badly/i.test(injury.line) ? 'severe' : /살짝|가볍|경미|약간|slight|minor/i.test(injury.line) ? 'mild' : 'moderate';
-      lines.push(`  ${describe(injury, `injury (${severity})`, BODY_STATE_INJURY_HEAL_DAYS[severity])}`);
+    const injuryOnsets = mine.filter(entry => BODY_STATE_INJURY_RE.test(entry.line) && !BODY_STATE_RECOVERY_RE.test(entry.line));
+    if (injuryOnsets.length) {
+      const bySeverity = {};
+      for (const entry of injuryOnsets) {
+        const severity = /심한|깊은|크게|severe|deep|badly/i.test(entry.line) ? 'severe' : /살짝|가볍|경미|약간|slight|minor/i.test(entry.line) ? 'mild' : 'moderate';
+        bySeverity[severity] = entry;
+      }
+      for (const severity of ['severe', 'moderate', 'mild']) {
+        if (bySeverity[severity]) lines.push(`  ${describe(bySeverity[severity], `injury (${severity})`, BODY_STATE_INJURY_HEAL_DAYS[severity], BODY_STATE_INJURY_RE)}`);
+      }
     }
     const symptom = latestOnset(BODY_STATE_SYMPTOM_RE);
-    if (symptom && !lines.length) lines.push(`  ${describe(symptom, 'symptom', null)}`);
+    if (symptom && !lines.length) lines.push(`  ${describe(symptom, 'symptom', null, BODY_STATE_SYMPTOM_RE)}`);
     const medication = latest(BODY_STATE_MEDICATION_RE);
     if (medication) lines.push(`  treatment recorded (${medication.source})`);
 
@@ -26869,15 +26925,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const today = bodyStateDayNumber(clock, now);
     // Without a card length, a seeded length (26–32 days) keeps each person's cycle stable.
     const length = card?.cycleLength || (fertility.value ? 26 + Math.floor(bodyStateSeedRoll(`${scopeKey}|${name}|cycle-length`) * 7) : BODY_STATE_DEFAULT_CYCLE);
-    const periodDate = card?.lastPeriodStart ? bodyStateParseDate(card.lastPeriodStart) : null;
+    const cardPeriodDays = card?.lastPeriodStart ? bodyStateCardDays(card.lastPeriodStart, now, today) : null;
     let cycleDay = null;
     let cycleConfidence = 'unknown';
     if (periodEntry) {
       const elapsed = bodyStateElapsed(periodEntry, now, clock);
       if (elapsed.days !== null) { cycleDay = (elapsed.days % length) + 1; cycleConfidence = elapsed.confidence; }
-    } else if (periodDate && now) {
-      const days = bodyStateDaysBetween(periodDate, now);
-      if (days !== null) { cycleDay = (days % length) + 1; cycleConfidence = 'confirmed (card)'; }
+    } else if (cardPeriodDays !== null) {
+      cycleDay = (cardPeriodDays % length) + 1;
+      cycleConfidence = 'confirmed (card)';
     } else if (fertility.value && today) {
       // No date from the story or the card: a fixed-seed cycle start, counted on the story day.
       const offset = Math.floor(bodyStateSeedRoll(`${scopeKey}|${name}|cycle-offset`) * length);
@@ -26955,13 +27011,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate && newestRecord?.kind !== 'pregnant') {
       const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
         .filter(entry => closedAt === null || (() => { const days = recordAge(entry).days; return days === null || days < closedAt; })());
+      const seenContactKeys = new Set();
       for (const exposure of exposures.slice(-3)) {
         if (fertility.value === null) {
           lines.push(`  sexual contact recorded (${exposure.source}); whether this person can conceive is unknown (no card setting, no profile gender) — do not decide a pregnancy`);
           continue;
         }
         const method = Object.entries(BODY_STATE_CONTRACEPTION).find(([, def]) => def.pattern.test(exposure.line))?.[0] || card?.contraception || '';
-        let elapsed = bodyStateElapsed(exposure, now, clock);
+        let elapsed = bodyStateElapsed(exposure.full ? { ...exposure, line: exposure.full } : exposure, now, clock);
         // Contact shown in the recent scene with no time phrase happened today.
         if (elapsed.days === null && exposure.source === 'recent') elapsed = { days: 0, confidence: 'estimated (recent scene)' };
         if (cycleDay === null || elapsed.days === null) {
@@ -26976,6 +27033,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         // Keyed to the day of contact, so the verdict stays the same when the event later
         // reaches GRADIA as a LIBRA note instead of a recent-scene line.
         const seedKey = today ? `${scopeKey}|${name}|contact-day:${today.day - elapsed.days}` : `${scopeKey}|${name}|${normalizeForLoreMatch(exposure.line)}`;
+        if (seenContactKeys.has(seedKey)) continue;
+        seenContactKeys.add(seedKey);
         const pregnant = chance > 0 && bodyStateSeedRoll(seedKey) < chance;
         if (pregnant && !pregnancyLine) {
           pregnancyLine = bodyStatePregnancyLine(elapsed.days, 'fixed verdict', card);
@@ -27039,14 +27098,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!bodyStateStageActive(settings)) return '';
     return extensionAideOutputKind('aide_body_state', stageName, settings);
   };
-  const bodyStateStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+  const bodyStateStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = bodyStateStageActive(settings) ? extensionAideDuty('aide_body_state', stageName, BODY_STATE_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const gate = bodyStateModeGate(settings);
     const priorChecks = (Array.isArray(ledger?.bodyStateChecks) ? ledger.bodyStateChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.character}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
       .slice(-16);
-    const kind = bodyStateOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : bodyStateOutputKind(stageName, settings);
     return [
       '[BODY STATE (상태) — CHARACTER CONDITION]',
       'Keep each character’s body state alive in the scene: health signals, injuries, illness, cycle, and (when enabled) pregnancy, as the packet computes them.',
@@ -27065,9 +27124,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       `BODY STATE PACKET:\n${bodyStatePacket(recent, settings)}`,
       priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "state_check" array with one item per character whose body state this draft touches, judged only from your own duty. Item fields: character; verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when none is touched.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "state_readings" array, one item per character in play, with fields character and summary (one short line of the current body state).'
           : ''
     ].filter(Boolean).join('\n');
@@ -27097,7 +27156,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const readings = (Array.isArray(parsed?.stateReadings) ? parsed.stateReadings : [])
       .map(item => ({ character: compact(item?.character || '', 80), summary: compact(item?.summary || '', 240) }))
       .filter(item => item.character && item.summary).slice(0, FORCED_BOND_MAX_CARDS);
-    if (scopeKey && readings.length) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
   };
 
   // ===================== 세계 동역학 AIDE (aide_world_dynamics) =====================
@@ -27138,6 +27197,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const after = value.slice(match.index + match[0].length, match.index + match[0].length + 6);
       const before = value.slice(Math.max(0, match.index - 14), match.index);
       if (/^\s*지\s*(?:않|못|도\s*않)/.test(after)) continue;
+      if (/(?:^|[\s,(])(?:안|못|미처)\s*$/.test(before)) continue;
       if (/(?:\bnot|\bnever|n['’]t|\byet to)\s+(?:been\s+|be\s+)?$/i.test(before)) continue;
       return true;
     }
@@ -27193,7 +27253,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const kind = WORLD_DYNAMICS_KINDS.find(([, pattern]) => pattern.test(entry.line));
     if (!kind) return null;
     const deadline = worldDynamicsDeadline(entry.line, now);
-    const elapsed = bodyStateElapsed(deadline ? { ...entry, line: deadline.rest } : entry, now, clock);
+    // Preserve a LIBRA lens note's leading story-day stamp on entry.full when a note spans multiple sentences.
+    const timingLine = entry.full
+      ? String(entry.full).replace(new RegExp(WORLD_DYNAMICS_DEADLINE_DATE_RE.source, 'gi'), ' ')
+      : (deadline ? deadline.rest : entry.line);
+    const elapsed = bodyStateElapsed({ ...entry, line: timingLine }, now, clock);
     const span = worldDynamicsSpanDays(entry.line);
     const about = elapsed.confidence.startsWith('estimated') ? 'about ' : '';
     const days = count => `${count} day${count === 1 ? '' : 's'}`;
@@ -27249,20 +27313,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
       seen.add(key);
       return true;
     });
-    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line),
+    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.full || entry.line), subjects: worldDynamicsSubjectWords(entry.line),
       ended: worldDynamicsEndedLine(entry.line),
       kinds: WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) }))
       .filter(item => item.ended && (item.kinds.length || item.subjects.size));
     const read = unique.map((entry, index) => {
       const row = worldDynamicsReadLine(entry, now, clock);
-      return row ? { ...row, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
+      return row ? { ...row, index, day: worldDynamicsNoteDay(entry.full || entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
     }).filter(Boolean);
     const later = (end, item) => (item.day !== null && end.day !== null && end.day !== item.day ? end.day > item.day : end.index > item.index);
     // An ending closes a movement only when it is the same matter: same kind, recorded later
     // (by story day, else by order), and naming the same party. The kind alone is not enough:
     // calling off the southern guard's pursuit does not end the northern order's. An ending
     // that names nobody closes a movement only when it is the one such movement before it.
-    const sharesSubject = (end, item) => [...end.subjects].some(word => item.subjects.has(word));
+    const sharesSubject = (end, item) => [...end.subjects].some(word => item.subjects.has(word)
+      || [...item.subjects].some(other => extensionSamePerson(word, other)));
     const endedBy = item => endings.some(end => later(end, item) && (end.kinds.length
       ? end.kinds.includes(item.kind) && (end.subjects.size
         ? sharesSubject(end, item)
@@ -27291,14 +27356,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : ''
     ].filter(Boolean).join('\n'), 3600);
   };
-  const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+  const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = worldDynamicsStageActive(settings) ? extensionAideDuty('aide_world_dynamics', stageName, WORLD_DYNAMICS_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const gate = worldDynamicsModeGate(settings);
     const priorChecks = (Array.isArray(ledger?.worldDynamicsChecks) ? ledger.worldDynamicsChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.movement}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
       .slice(-16);
-    const kind = worldDynamicsOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : worldDynamicsOutputKind(stageName, settings);
     return [
       '[WORLD DYNAMICS (세계 동역학) — OFF-SCENE MOVEMENT]',
       'The world outside the scene is not frozen. What was already set in motion (an order, a pursuit, a deadline, a rumor, an institution’s process) keeps moving on its own terms while the scene looks elsewhere.',
@@ -27320,9 +27385,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       priorChecks.length
         ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note lowers the movement to a fainter trace or holds it back; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
         : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "world_check" array with one item per off-scene movement this draft surfaces or the packet offers as the candidate, judged only from your own duty. Item fields: movement (a short name for it); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is none.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "world_readings" array, one item per movement you considered this turn, with fields movement (a short name), status (surfaced, held, not_due, ended, or unsupported), and summary (one short line). Use an empty array when nothing is on record.'
           : ''
     ].filter(Boolean).join('\n');
@@ -27360,7 +27425,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const readings = (Array.isArray(parsed?.worldReadings) ? parsed.worldReadings : [])
       .map(item => ({ movement: compact(item?.movement || '', 120), status: WORLD_DYNAMICS_STATUSES.includes(item?.status) ? item.status : 'held', summary: compact(item?.summary || '', 240) }))
       .filter(item => item.movement && item.summary).slice(0, WORLD_DYNAMICS_MAX_MOVEMENTS);
-    if (scopeKey && readings.length) Runtime.worldDynamicsReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) Runtime.worldDynamicsReadings[scopeKey] = { at: Date.now(), readings };
   };
 
   // ===================== 정사 AIDE (aide_intimacy) =====================
@@ -27382,7 +27447,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // A kiss or undressing alone is not an encounter; these are acts that only happen inside one.
   const INTIMACY_PHASE_SIGNALS = Object.freeze([
     ['foreplay', /애무|유두|젖꼭지|(?:가슴|젖가슴|유방|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨)|커닐링구스|펠라(?:티오|치오)?|오럴|사까시|쿤닐|클리토리스|음핵|애액|(?:보지|자지|음경|성기|귀두)(?:을|를|에)?\s*(?:만지|만졌|쥐|쥐었|훑|핥|빨|문지)|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|caress(?:ed|ing)? (?:her|his) (?:breast|thigh|nipple)|fondl|foreplay|cunnilingus|fellatio|blowjob|nipple|clit|fingering|fingered/i],
-    ['intercourse', /삽입|박(?:아|혀|히|았|는|을|고|으며)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
+    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
     ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|싸버|싼다|쌌|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
     ['afterplay', /여운(?:에|이|을|속)|후희|베개\s*(?:대화|이야기)|팔베개|숨(?:을|이)?\s*(?:고르|골랐|돌리|가라앉)|뒷정리|(?:닦아\s*주|닦아주|닦아\s*냈)|afterglow|pillow talk|catching (?:his|her|their) breath/i]
   ]);
@@ -27400,7 +27465,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ['후면입위 (standing, from behind)', /후면\s*입위|선\s*채(?:로)?\s*뒤에서|벽(?:을|에)\s*짚|bent over|standing from behind/i],
     ['69', /식스나인|(?:^|[^\d])69(?:[^\d]|$)|sixty-nine/i]
   ]);
-  const intimacyPhaseOf = value => {
+  const intimacyPhaseOf = (value, allowStandaloneAfterplay = false) => {
     const body = String(value || '');
     if (!body) return { phase: 'none', signals: [] };
     const hits = INTIMACY_PHASE_SIGNALS.map(([phase, pattern]) => {
@@ -27408,9 +27473,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
       return match ? { phase, at: match.index, word: match[0] } : null;
     }).filter(Boolean);
     // Afterplay words alone ("여운", "숨을 고르다") are ordinary prose; they mark afterplay only
-    // inside a text that also shows the act.
+    // inside a text that also shows the act, or in a user input immediately following an active encounter.
     const acts = hits.filter(hit => hit.phase !== 'afterplay');
-    if (!acts.length) return { phase: 'none', signals: [] };
+    if (!acts.length) {
+      if (allowStandaloneAfterplay && hits.some(hit => hit.phase === 'afterplay')) {
+        return { phase: 'afterplay', signals: hits.map(hit => compact(hit.word, 24)) };
+      }
+      return { phase: 'none', signals: [] };
+    }
     const top = hits.reduce((best, hit) => (INTIMACY_PHASE_RANK[hit.phase] > INTIMACY_PHASE_RANK[best.phase] ? hit : best), acts[0]);
     return { phase: top.phase, signals: hits.map(hit => compact(hit.word, 24)) };
   };
@@ -27435,10 +27505,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .filter(Boolean);
     if (messages.length && input && messages[messages.length - 1].trim() === input.trim()) messages.pop();
     const window = messages.slice(-INTIMACY_RECENT_WINDOW);
-    const fromInput = intimacyPhaseOf(input);
-    const readings = window.map(intimacyPhaseOf);
+    const readings = window.map(message => intimacyPhaseOf(message));
     const latestIndex = readings.map(item => item.phase !== 'none').lastIndexOf(true);
     const latest = latestIndex >= 0 ? readings[latestIndex] : null;
+    const recentActive = !!latest && latestIndex >= window.length - 2;
+    const fromInput = intimacyPhaseOf(input, recentActive);
     const phase = fromInput.phase !== 'none' ? fromInput.phase : latest?.phase || 'none';
     const previousPhase = latest?.phase || 'none';
     const position = intimacyPositionOf(input) || (latestIndex >= 0 ? intimacyPositionOf(window[latestIndex]) : '')
@@ -27576,16 +27647,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!intimacyStageActive(settings)) return '';
     return extensionAideOutputKind('aide_intimacy', stageName, settings);
   };
-  const intimacyStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+  const intimacyStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = intimacyStageActive(settings) ? extensionAideDuty('aide_intimacy', stageName, INTIMACY_STAGE_DUTY, settings) : '';
     if (!duty) return '';
-    const kind = intimacyOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : intimacyOutputKind(stageName, settings);
     const packet = intimacyPacket(recent);
     if (!packet.scene.engaged) {
       return [
         '[INTIMACY (정사) — SEXUAL ENCOUNTER DEPICTION]',
         'No sexual encounter is under way in the current input or the recent scene. This block does not apply, and it never starts one.',
-        kind === 'check' ? 'OUTPUT: add a top-level "intimacy_check" array; leave it empty.' : kind === 'readings' ? 'OUTPUT: add a top-level "intimacy_readings" array; leave it empty.' : ''
+        outputKind === 'check'
+          ? 'OUTPUT: add a top-level "intimacy_check" array; leave it empty.'
+          : outputKind === 'readings'
+            ? 'OUTPUT: add a top-level "intimacy_readings" array and a top-level "intimacy_profiles" array; leave both empty.'
+            : ''
       ].filter(Boolean).join('\n');
     }
     const gate = intimacyModeGate(settings);
@@ -27620,9 +27695,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       priorChecks.length
         ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names something to repair; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
         : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "intimacy_check" array with one item per problem or confirmation about the encounter in this draft, judged only from your own duty. Item fields: aspect (phase, position, anatomy, continuity, voice, pacing, or preference); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
             `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
@@ -27676,7 +27751,6 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const recordIntimacyProfiles = (scopeKey, profiles, settings = {}) => {
     if (!Runtime.intimacyCards || !Array.isArray(profiles) || !profiles.length) return [];
     const cards = [...intimacyCardsForScope(scopeKey)];
-    const known = new Set(cards.map(card => normalizeContinuityAlias(card.name)));
     const added = [];
     for (const raw of profiles) {
       const card = normalizeIntimacyCard({
@@ -27694,13 +27768,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
         createdAt: new Date().toISOString()
       });
       const key = normalizeContinuityAlias(card?.name || '');
-      if (!card?.name || !key || known.has(key)) continue;
+      if (!card?.name || !key) continue;
+      if (cards.some(existing => normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name))) continue;
       // The persona's tastes are the user's in RP; the stage is told so, and this holds it.
-      if (intimacyModeGate(settings) !== 'novel' && bodyStateIsPersona(card.name)) continue;
+      if (intimacyModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
       if (cards.length >= INTIMACY_MAX_CARDS) break;
       card.id = `intimacy-${Date.now().toString(36)}-${cards.length}`;
       cards.push(card);
-      known.add(key);
       added.push(card);
     }
     if (!added.length) return [];
@@ -27709,6 +27783,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return added;
   };
 
+  const forcedBondSameParty = (left, right) => {
+    if (!left || !right) return false;
+    const leftPersona = bodyStateIsPersona(left) || extensionSamePerson(left, Runtime.activePersonaName);
+    const rightPersona = bodyStateIsPersona(right) || extensionSamePerson(right, Runtime.activePersonaName);
+    if (leftPersona || rightPersona) return leftPersona && rightPersona;
+    return extensionSamePerson(left, right);
+  };
+  const forcedBondSamePair = (left, right, mutual = false) => (
+    (forcedBondSameParty(left.from, right.from) && forcedBondSameParty(left.to, right.to))
+    || (mutual && forcedBondSameParty(left.from, right.to) && forcedBondSameParty(left.to, right.from))
+  );
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
     const checks = normalizeForcedBondCheck(parsed?.bondCheck);
@@ -27720,14 +27805,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     if (!scopeKey) return;
     const readings = normalizeForcedBondReadings(parsed?.bondReadings);
-    if (readings.length) Runtime.forcedBondReadings[scopeKey] = { at: Date.now(), readings };
+    Runtime.forcedBondReadings[scopeKey] = { at: Date.now(), readings };
     const cards = forcedBondCardsForScope(settings, scopeKey);
-    const known = new Set(cards.map(card => `${card.from}>${card.to}`));
+    const matchesCard = item => cards.some(card => forcedBondSamePair(card, item, card.direction === 'mutual'));
     // A proposal whose pair has since become a card is no longer a proposal.
-    const existing = (Runtime.forcedBondProposals[scopeKey] || []).filter(item => !known.has(`${item.from}>${item.to}`));
+    const existing = (Runtime.forcedBondProposals[scopeKey] || []).filter(item => !matchesCard(item));
     for (const proposal of normalizeForcedBondProposals(parsed?.bondProposals)) {
-      const key = `${proposal.from}>${proposal.to}`;
-      if (known.has(key) || existing.some(item => `${item.from}>${item.to}` === key)) continue;
+      if (matchesCard(proposal) || existing.some(item => forcedBondSamePair(item, proposal, true))) continue;
       existing.push({ ...proposal, id: `proposal-${Date.now().toString(36)}-${existing.length}` });
     }
     Runtime.forcedBondProposals[scopeKey] = existing.slice(-FORCED_BOND_MAX_PROPOSALS);
