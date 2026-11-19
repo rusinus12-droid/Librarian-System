@@ -74,7 +74,7 @@ const results = [];
     const system = messages.filter(message => message.role === 'system').map(message => String(message.content)).join('\n');
     assert.match(system, /<LIBRA_CLASSIC_RECALL>/);
     // Lens notes are their own section under the present and the records; each keeps its lens, span and label.
-    assert.match(system, /\[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records\]\n- \[약속 추적\] \(T1–T5 · 약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
+    assert.match(system, /\[PERSPECTIVE NOTES · lens interpretations — below CURRENT STATE and the records\]\n- \[약속 추적\] \(약속\) 지호가 열쇠를 오늘 돌려주기로 약속했다\./);
     const context = f.r.api.getLastResponseContext();
     const validity = await f.r.api.validateResponseContext(context);
     assert.equal(validity.ok, true, JSON.stringify(validity));

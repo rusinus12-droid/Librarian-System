@@ -215,7 +215,7 @@ const check = (name, fn) => Promise.resolve().then(fn).then(() => results.push(n
       assert.ok(recall.injectedItems.length >= 1);
       assert.ok(recall.renderedBlock.startsWith('[LIBRA LENS MEMORY — PERSPECTIVE NOTES (NON-CANONICAL)]'));
       assert.ok(recall.renderedBlock.length <= recall.budgetChars);
-      assert.match(recall.renderedBlock, /\[lens:약속 추적\] \(T\d+–T\d+ · /);
+      assert.match(recall.renderedBlock, /\[lens:약속 추적\] \((?!T\d)/);
       const unrelated = await api.recallLensMemories({ query: '오늘 저녁 메뉴는 뭐야', canonicalBudgetChars: 12000 });
       assert.equal(unrelated.injectedItems.length, 0, 'unrelated input recalls nothing from a relevance lens');
       const tiny = await api.recallLensMemories({ query: '푸른 열쇠', canonicalBudgetChars: 1000 });

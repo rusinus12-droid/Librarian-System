@@ -70,7 +70,7 @@ test('the shared budget is validated, off by default, and gives each plugin its 
 test('peer blocks are found in every plugin format, the plugin\'s own block is ignored, and only verbatim repeats count', () => {
   const api = sdk();
   const messages = [
-    { role: 'system', content: '[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]\n<LIBRA_CLASSIC_RECALL>\n[CURRENT STATE · as of T5 — how things stand now]\n- 은빛 열쇠 — 소지자: 민아\n</LIBRA_CLASSIC_RECALL>' },
+    { role: 'system', content: '[LIBRA CLASSIC RECALL — CURRENT TURN ONLY]\n<LIBRA_CLASSIC_RECALL>\n[CURRENT STATE — how things stand now]\n- 은빛 열쇠 — 소지자: 민아\n</LIBRA_CLASSIC_RECALL>' },
     { role: 'system', content: '[HAYAKU ACTIVE SCENE HEAD]\n- Scene identity: 서재\n앞서 확립된 정황:\n- summary: 지호는 상자를 서랍에 넣고 열쇠를 돌렸다.\n[HAYAKU RUNTIME PACKET SHAPE]\nEmit exactly one current_snapshot packet.\n[/HAYAKU RUNTIME PACKET SHAPE]' },
     { role: 'system', content: [{ type: 'text', text: '[ACTIVE CONTINUITY EVIDENCE]\n[E01] 하연은 창가에 앉아 오래된 편지를 다시 읽었다.\n[/ACTIVE CONTINUITY EVIDENCE]' }] },
     { role: 'user', content: '은빛 열쇠는 어디 있어?' }
@@ -181,10 +181,10 @@ test('LIBRA leaves out lines a peer block already carries, and uses its share wh
   };
   const plain = await ask([]);
   assert.match(plain, /- 은빛 열쇠 — 소지자: 민아/);
-  const withPeer = await ask([{ role: 'system', content: '[ACTIVE CONTINUITY EVIDENCE]\n- [T5 마지막 확인] 은빛 열쇠 — 소지자: 민아\n[/ACTIVE CONTINUITY EVIDENCE]' }]);
+  const withPeer = await ask([{ role: 'system', content: '[ACTIVE CONTINUITY EVIDENCE]\n- [마지막 확인] 은빛 열쇠 — 소지자: 민아\n[/ACTIVE CONTINUITY EVIDENCE]' }]);
   assert.doesNotMatch(withPeer, /- 은빛 열쇠 — 소지자: 민아/, 'the repeated line is left out');
   assert.match(withPeer, /- 은빛 열쇠 — 소유자: 민아/, 'a similar but different line stays');
-  assert.match(withPeer, /\[CURRENT STATE · as of T5/);
+  assert.match(withPeer, /\[CURRENT STATE — how things stand now\]/);
   assert.deepEqual(JSON.parse(JSON.stringify(f.r.api.getRuntime().lastPeerRecallDedup)), { owners: ['flashback'], droppedLines: 1 });
   await f.r.api.setMemorySuiteRecallBudget({ version: 1, enabled: true, totalChars: 1000, shares: { libra: 20, hayaku: 40, flashback: 40 } });
   const small = await ask([]);

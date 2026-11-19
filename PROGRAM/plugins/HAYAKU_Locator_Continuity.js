@@ -36511,7 +36511,9 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       for(const origin of [...ensureArray(left.sourceRows),...ensureArray(right.sourceRows)])origins.set(localRecallSourceKey(origin.row),origin);
       const sourceRows=[...origins.values()],sources=sourceRows.map(({row})=>({id:row.id||row.publicRef||'',source:row.packetHash||row.locator?.sourceHash||'',at:packetSourcePairIndex(row.locator||{}),messageIndex:row.locator?.messageIndex??null}));
       const base=left.localSourceBaseMemory||left.memory;
-      const memory=base+'\n  [sources '+JSON.stringify(sources)+']';
+      // The model sees which records were merged, not where they sit in the chat: turn and message
+      // position stay in sourceRows (locators) for delivery accounting.
+      const memory=base+'\n  [sources '+JSON.stringify(sources.map(({id,source})=>({id,source})))+']';
       return {...left,memory,localSourceBaseMemory:base,lineKey:memory,sourceRows,sourceKeys:[...new Set([...ensureArray(left.sourceKeys),...ensureArray(right.sourceKeys)])],mergedDuplicates:sourceRows.length-1};
     }
     const leftPriority = packetCoreRecallEntryPriority(left);
@@ -36895,7 +36897,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       locale.lead,
       ...values.flatMap(record => [
         '',
-        `[${record.historyScope === 'predecessor_session' ? 'PREDECESSOR ' : ''}T${Math.max(1, Number(record.pairIndex || 1) || 1)} · ${text(record.role || 'assistant').toUpperCase()}${record.epistemicCaution === true ? ' · EPISTEMIC CAUTION' : ''}]`,
+        `[${record.historyScope === 'predecessor_session' ? 'PREDECESSOR · ' : ''}${text(record.role || 'assistant').toUpperCase()}${record.epistemicCaution === true ? ' · EPISTEMIC CAUTION' : ''}]`,
         ...(record.epistemicCaution === true ? [`[Knowledge boundary: ${text(record.epistemicStatus || 'private_or_narrator_only_possible')}]`] : []),
         text(record.text).trim()
       ]),
@@ -37160,7 +37162,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if(body)body+='\n';
       append('[VERBATIM PAST EVIDENCE]');append(rawRecoveryEvidenceLocale(plan.language).lead);
       for(const unit of raw){const record=unit.raw;
-        append('');append(`[${record.historyScope==='predecessor_session'?'PREDECESSOR ':''}T${Math.max(1,Number(record.pairIndex||1)||1)} · ${text(record.role||'assistant').toUpperCase()}${record.epistemicCaution===true?' · EPISTEMIC CAUTION':''}]`);
+        append('');append(`[${record.historyScope==='predecessor_session'?'PREDECESSOR · ':''}${text(record.role||'assistant').toUpperCase()}${record.epistemicCaution===true?' · EPISTEMIC CAUTION':''}]`);
         if(record.epistemicCaution===true)append(`[Knowledge boundary: ${text(record.epistemicStatus||'private_or_narrator_only_possible')}]`);
         const start=body.length+1;append(text(record.text).trim());fragments.push({id:unit.id,start,end:body.length,rowIds:[]});
       }

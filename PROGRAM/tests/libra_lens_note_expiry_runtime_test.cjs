@@ -34,7 +34,7 @@ test('a later run ends a note: recall drops it, the reader keeps and marks it', 
     assert.match(prompt, /OPEN NOTES/);
     assert.match(prompt, /\[n1\] \(T1–T2 · 지호 · 증상\)/, 'the lens is shown its own open notes');
     assert.equal((await lastRun(x.f, x.lens)).counts.closed, 1);
-    assert.match(await recalled(x.f), /이후 종료됨\(T4\)[^\n]*손목이 붓고/, 'a search can still find it, labelled');
+    assert.match(await recalled(x.f), /이후 종료됨[^\n]*손목이 붓고/, 'a search can still find it, labelled');
     assert.doesNotMatch(await sceneOnly(x.f), /손목이 붓고/, 'it no longer comes forward for being in the scene');
     const row = (await memory(x.f, x.lens)).find(item => item.label === '증상');
     assert.ok(row, 'the note is kept');
@@ -49,7 +49,7 @@ test('the turn comes from the quote, and closes nested in an item still count', 
     await x.run(3, 5, { items: [{ label: '회복', text: '지호가 회복했다.', refs: ['t4-a'], basis: '근거', who: ['지호'], whoRef: 't2-a', closes: [{ id: 'n1', ref: 't1-u', quote: QUOTE }] }] });
     const row = (await memory(x.f, x.lens)).find(item => item.label === '증상');
     assert.equal(row.closedBy.ref, 't4-a', 'a wrong turn from the model does not matter');
-    assert.match(await recalled(x.f), /이후 종료됨\(T4\)[^\n]*손목이 붓고/);
+    assert.match(await recalled(x.f), /이후 종료됨[^\n]*손목이 붓고/);
   } finally { await x.f.close?.(); }
 });
 
@@ -74,7 +74,7 @@ test('a span that only ends a note is stored, and analysing that span again reop
   try {
     await reset(x);
     await x.run(3, 5, { items: [], closes: [{ id: 'n1', ref: 't4-a', quote: QUOTE }] });
-    assert.match(await recalled(x.f), /이후 종료됨\(T4\)[^\n]*손목이 붓고/, 'a record with no notes of its own still ends one');
+    assert.match(await recalled(x.f), /이후 종료됨[^\n]*손목이 붓고/, 'a record with no notes of its own still ends one');
     await x.run(3, 5, { items: [{ label: '컨디션', text: '지호가 평소처럼 움직인다.', refs: ['t4-a'], basis: '근거', who: ['지호'], whoRef: 't2-a' }] });
     assert.doesNotMatch(await recalled(x.f), /이후 종료됨[^\n]*손목이 붓고/, 'the new analysis no longer says it ended');
   } finally { await x.f.close?.(); }
@@ -90,7 +90,7 @@ test('an ended note stays ended after a handoff to a new chat', async () => {
     assert.equal((await x.f.api.adoptSessionHandoff({ transferId: 'expiry', targetChatId: target.id })).verified, true);
     const block = await recalled(x.f);
     assert.match(block, /지호가 회복했다/, 'the later note came along');
-    assert.match(block, /이후 종료됨\(T4\)[^\n]*손목이 붓고/, 'the ended one stays labelled');
+    assert.match(block, /이후 종료됨[^\n]*손목이 붓고/, 'the ended one stays labelled');
     const carried = (await memory(x.f, x.lens)).find(item => item.label === '증상');
     assert.equal(carried.closedBy.turn, 4, 'the reader still says why');
   } finally { await x.f.close?.(); }

@@ -352,7 +352,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
           || Array.isArray(value) && !value.length) continue;
         const shown = display(value);
         if (unresolved(shown)) continue;
-        const readable = field === 'status' ? statuses[String(shown)] || format(shown) : field === 'resolvedTurn' ? `T${shown}` : format(shown);
+        // The chat turn a thread closed on is a position in the chat, not story content: not shown.
+        if (field === 'resolvedTurn') continue;
+        const readable = field === 'status' ? statuses[String(shown)] || format(shown) : format(shown);
         if (!readable) continue;
         const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : readable}`;
         const promptText = `${name} — ${fieldLabels[field] || field}: ${readable}`;

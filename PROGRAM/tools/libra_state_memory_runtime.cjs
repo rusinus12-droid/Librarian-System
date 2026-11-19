@@ -117,26 +117,30 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
       turn: item.turn || 0, ...(Number(item.turnStart) > 0 && Number(item.turnStart) < Number(item.turn) ? { turnStart: Number(item.turnStart) } : {}),
       sourceKey: item.sourceKey || frame.stateKey });
     // One document in order of authority: the present first, then what happened, then how a lens read
-    // it, then the source observations. Records are listed oldest first and each keeps its recorded turn,
-    // so a line that is no longer true reads as an earlier moment rather than as the present.
+    // it, then the source observations. The model gets no chat-turn numbers: the order is settled here.
+    // A record newer than the State (the State has not caught up with it yet) goes right after it as a
+    // recent change; every other record is an earlier moment. Within a section, oldest first.
     const render = items => {
       if (!items.length) return '';
-      const span = item => { const end = Number(item.turn || 0), start = Number(item.turnStart || end);
-        return end ? (start && start < end ? `T${start}–${end}` : `T${end}`) : 'T?'; };
       const oldestFirst = list => list.slice().sort((a, b) => Number(a.turnStart || a.turn || 0) - Number(b.turnStart || b.turn || 0)
         || Number(a.turn || 0) - Number(b.turn || 0));
       const family = name => items.filter(item => item.family === name);
       const state = family('state'), lines = [];
       const lastKnown = state.some(item => item.stateStatus === 'last_known');
+      const newerThanState = item => state.length > 0 && stateAsOfTurn != null && Number(item.turn || 0) > Number(stateAsOfTurn);
+      const recent = oldestFirst(items.filter(item => (item.family === 'canonical' || item.family === 'micro') && newerThanState(item)));
       if (state.length) {
-        lines.push(`[CURRENT STATE · ${stateAsOfTurn != null ? `as of T${stateAsOfTurn}` : 'turn unknown'}${lastKnown ? ' · includes last_known' : ''} — how things stand now]`);
-        if (turnLag) lines.push(`(Turns after T${stateAsOfTurn} are not reflected here yet; a record below dated after T${stateAsOfTurn} is newer than this State.)`);
+        lines.push(`[CURRENT STATE${lastKnown ? ' · includes last_known' : ''} — how things stand now]`);
         for (const item of state) lines.push(`- ${item.text}${item.stateStatus === 'last_known' ? ' (last_known)' : ''}`);
+        if (recent.length) {
+          lines.push('[RECENT CHANGES · newer than CURRENT STATE — where they differ from it, these are the present]');
+          for (const item of recent) lines.push(`- ${item.text}`);
+        }
       } else lines.push('[CURRENT STATE · none selected — the records below are earlier moments; do not assert them as the present]');
-      const canonical = oldestFirst(family('canonical'));
+      const canonical = oldestFirst(family('canonical').filter(item => !newerThanState(item)));
       if (canonical.length) {
-        lines.push('[RECORDED HISTORY · canonical · oldest first — true at the recorded turn, not necessarily now]');
-        for (const item of canonical) lines.push(`- (${span(item)}) ${item.text}`);
+        lines.push('[RECORDED HISTORY · canonical · oldest first — true when it happened, not necessarily now]');
+        for (const item of canonical) lines.push(`- ${item.text}`);
       }
       const lens = oldestFirst(family('lens'));
       if (lens.length) {
@@ -146,10 +150,10 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
           lines.push(text.startsWith('- ') ? text : `- ${text}`);
         }
       }
-      const micro = oldestFirst(family('micro'));
+      const micro = oldestFirst(family('micro').filter(item => !newerThanState(item)));
       if (micro.length) {
         lines.push('[SCENE DETAILS · Micro source observations · oldest first]');
-        for (const item of micro) lines.push(`- (${span(item)}) ${item.text}`);
+        for (const item of micro) lines.push(`- ${item.text}`);
       }
       return lines.join('\n');
     };

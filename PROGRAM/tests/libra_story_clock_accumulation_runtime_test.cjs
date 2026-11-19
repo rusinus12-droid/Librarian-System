@@ -131,7 +131,7 @@ const pureTimeline = core => {
       assert.deepEqual([note('CLOCK_NOTE_B').storyDay.day, note('CLOCK_NOTE_B').storyDay.turn], [1, 7]);
       assert.ok(note('CLOCK_NOTE_A').renderedLine.includes('기록 2일째 · 아침 · 2026-04-02'), note('CLOCK_NOTE_A').renderedLine);
       assert.equal(recall.storyClock.current.day, 2);
-      assert.ok(recall.renderedBlock.includes('[STORY CLOCK] 현재: 기록 2일째 · 아침 · 2026-04-02 (T8 기준)'), recall.renderedBlock);
+      assert.ok(recall.renderedBlock.includes('[STORY CLOCK] 현재: 기록 2일째 · 아침 · 2026-04-02\n') && !/\(T\d+ 기준/.test(recall.renderedBlock), recall.renderedBlock);
       assert.ok(microCalls > 0);
 
       // Regression: a model that emits timeAdvance both inside envelope.micro and at the root

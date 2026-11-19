@@ -287,3 +287,31 @@ test('server mode: a request after the read cache expired stays batched instead 
   assert.ok(requests <= 60, 'cold request total: ' + requests);
   console.log(JSON.stringify({ test: 'state_first_cold_request', requests, single }));
 });
+
+test('the State\'s lag is settled in code: a newer record is a recent change and no chat-turn numbers reach the model', async () => {
+  const engine = require('../tools/libra_state_memory_engine.cjs')({ fingerprint: value => value });
+  // State last updated at turn 2 says 지호 holds the key; turn 3 (not yet in State) returns it to 민아.
+  const microRows = {
+    1: [{ id: 'm1', family: 'micro', axis: 'world', turn: 1, sourceKey: 'micro1', text: '지호가 은빛 열쇠를 빌려 갔다.' }],
+    3: [{ id: 'm3', family: 'micro', axis: 'world', turn: 3, sourceKey: 'micro3', text: '민아가 은빛 열쇠를 돌려받아 서랍에 넣었다.' }]
+  };
+  const frame = { head: { throughTurn: 2, world: [{ id: 'key', name: '은빛 열쇠', holderRef: '지호', resolvedTurn: 2 }] },
+    refs: [], turns: [1, 2, 3], settings: {}, identity: 'snapshot', owner: 'libra', scope: { scopeKey: 'scope' }, worldlineId: 'main', stateKey: 'state',
+    stateAuthority: { current: true, pending: false }, check() {},
+    async micro(turn) { return microRows[turn] ? { key: 'micro' + turn, proofs: [], rows: microRows[turn] } : null; },
+    register() { return 'token'; }, async assertCurrent() {}, release() {} };
+  const runtime = require('../tools/libra_state_memory_runtime.cjs')({ engine, capture: async () => frame, fingerprint: value => value, authorityStore: new Map() });
+  const result = await runtime.query({ queryText: '은빛 열쇠' });
+  const text = result.packet.renderedText;
+  assert.equal(result.diagnostics.headFreshness, 'lagging');
+  assert.match(text, /^\[CURRENT STATE — how things stand now\]\n- 은빛 열쇠 — 소지자: 지호\n\[RECENT CHANGES · newer than CURRENT STATE — where they differ from it, these are the present\]\n- 민아가 은빛 열쇠를 돌려받아 서랍에 넣었다\.\n/);
+  assert.match(text, /\[SCENE DETAILS · Micro source observations · oldest first\]\n- 지호가 은빛 열쇠를 빌려 갔다\./, 'an older record stays an earlier moment');
+  assert.doesNotMatch(text, /\bT\d|as of T|turn unknown|종결 기록 턴/, 'no chat-turn numbers or turn fields');
+  assert.equal(result.diagnostics.stateAsOfTurn, 2, 'diagnostics keep the turn');
+  runtime.release(result);
+  // A State that is current has no recent changes: every record is an earlier moment.
+  frame.head.throughTurn = 3;
+  const current = await runtime.query({ queryText: '은빛 열쇠' });
+  assert.doesNotMatch(current.packet.renderedText, /RECENT CHANGES/);
+  runtime.release(current);
+});
