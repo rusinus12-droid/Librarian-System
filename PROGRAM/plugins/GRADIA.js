@@ -898,6 +898,8 @@
   const STORAGE_DRAFT_CHECKPOINTS_KEY = 'serial_gradation_agents_for_rp:draft_checkpoints:v1';
   // 정사 AIDE preference cards, per chat. A key of its own: a GUI settings save never overwrites it.
   const STORAGE_INTIMACY_CARDS_KEY = 'serial_gradation_agents_for_rp:intimacy_cards:v1';
+  // Lore-estimated cards for 상태 AIDE, 억결 AIDE, and NPC 반응 경향성, per chat.
+  const STORAGE_LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
   const LOCAL_PROVIDER_SECRETS_KEY = 'serial_gradation_agents_for_rp:provider_secrets:v1';
   
   const LOCAL_BACKEND_HOSTING_TOKEN_KEY = 'serial_gradation_agents_for_rp:backend_hosting_token:v1';
@@ -1947,7 +1949,9 @@
       pressure: normalizeForcedBondPressure(raw.pressure),
       limits: normalizeStringArray(Array.isArray(raw.limits) ? raw.limits : String(raw.limits || '').split(/[,\n]/), 6, 160),
       appearance: raw.appearance !== false,
-      origin: raw.origin === 'proposal' ? 'proposal' : 'user'
+      basis: compact(raw.basis || '', 360),
+      origin: raw.origin === 'proposal' ? 'proposal' : raw.origin === 'lore' ? 'lore' : 'user',
+      createdAt: compact(raw.createdAt || '', 40)
     };
   };
   const normalizeForcedBondCardList = list => {
@@ -1976,9 +1980,19 @@
     }
     return out;
   };
-  const forcedBondCardsForScope = (settings = {}, scopeKey = '') => (
-    scopeKey ? (normalizeForcedBondCardMap(settings?.forcedBondCards)[scopeKey] || []) : []
-  );
+  const forcedBondCardsForScope = (settings = {}, scopeKey = '') => {
+    if (!scopeKey) return [];
+    const userCards = normalizeForcedBondCardMap(settings?.forcedBondCards)[scopeKey] || [];
+    const loreCards = Runtime.loreCards?.forcedBond?.[scopeKey] || [];
+    if (!loreCards.length) return userCards;
+    const merged = [...userCards];
+    for (const card of loreCards) {
+      if (merged.length >= FORCED_BOND_MAX_CARDS) break;
+      if (merged.some(existing => existing.id === card.id || forcedBondSamePair(existing, card, existing.direction === 'mutual' || card.direction === 'mutual'))) continue;
+      merged.push(card);
+    }
+    return merged;
+  };
   // 억결 AIDE acts for others only where the writing mode lets the model do so.
   // novel: author authority. rp: persona-only lock, others are model-owned.
   // staging: every character is the user's, so no arrival and no invented act.
@@ -2035,7 +2049,15 @@
       let id = compact(row.id || `npc-${index + 1}`, 40);
       for (let n = 2; ids.has(id); n += 1) id = `${compact(row.id || `npc-${index + 1}`, 40)}-${n}`;
       ids.add(id);
-      npcs.push({ id, name: compact(row.name || '', 80), level: normalizeNpcDispositionLevel(row.level), note: compact(row.note || '', 200) });
+      npcs.push({
+        id,
+        name: compact(row.name || '', 80),
+        level: normalizeNpcDispositionLevel(row.level),
+        note: compact(row.note || '', 200),
+        basis: compact(row.basis || '', 360),
+        origin: row.origin === 'lore' ? 'lore' : 'user',
+        createdAt: compact(row.createdAt || '', 40)
+      });
     });
     return { default: normalizeNpcDispositionLevel(raw.default), npcs: npcs.slice(0, NPC_DISPOSITION_MAX_NPCS) };
   };
@@ -2053,9 +2075,20 @@
     }
     return out;
   };
-  const npcDispositionForScope = (settings = {}, scopeKey = '') => (
-    scopeKey ? (normalizeNpcDispositionMap(settings?.npcDisposition)[scopeKey] || { default: '', npcs: [] }) : { default: '', npcs: [] }
-  );
+  const npcDispositionForScope = (settings = {}, scopeKey = '') => {
+    if (!scopeKey) return { default: '', npcs: [] };
+    const userEntry = normalizeNpcDispositionMap(settings?.npcDisposition)[scopeKey] || { default: '', npcs: [] };
+    const loreRows = Runtime.loreCards?.npcDisposition?.[scopeKey] || [];
+    if (!loreRows.length) return userEntry;
+    const npcs = [...userEntry.npcs];
+    for (const row of loreRows) {
+      if (npcs.length >= NPC_DISPOSITION_MAX_NPCS) break;
+      const key = normalizeContinuityAlias(row.name || '');
+      if (npcs.some(existing => existing.id === row.id || (existing.name && (normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, row.name))))) continue;
+      npcs.push(row);
+    }
+    return { default: userEntry.default, npcs };
+  };
   const npcDispositionInPlay = (settings = {}) => {
     if (settings?.mode === 'off' || forcedBondModeGate(settings) === 'skip') return { default: '', npcs: [] };
     const entry = npcDispositionForScope(settings, compact(Runtime.activeScopeKey || '', 512));
@@ -2065,8 +2098,23 @@
     const entry = npcDispositionInPlay(settings);
     return !!entry.default || entry.npcs.length > 0;
   };
+  const npcDispositionEstimatorStage = (settings = {}) => {
+    if (coreAideRuns('aide_character', settings)) return 'aide_character';
+    const running = normalizeAideStageOrder(settings?.aideStageOrder).filter(id => coreAideRuns(id, settings));
+    return running[running.length - 1] || '';
+  };
+  const npcDispositionAutoActive = (settings = {}) => settings?.mode !== 'off'
+    && forcedBondModeGate(settings) !== 'skip'
+    && settings?.npcDispositionAuto !== false
+    && !!npcDispositionEstimatorStage(settings);
+  const npcDispositionNeedsLoreEstimation = (settings = {}) => {
+    if (!npcDispositionAutoActive(settings)) return false;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const userEntry = scopeKey ? (normalizeNpcDispositionMap(settings?.npcDisposition)[scopeKey] || { default: '', npcs: [] }) : { default: '', npcs: [] };
+    return !userEntry.default;
+  };
   // Who needs the run's alias index of people: every extension AIDE and NPC disposition.
-  const sceneEntityIndexNeeded = (settings = {}) => activeExtensionAideStages(settings).length > 0 || npcDispositionActive(settings);
+  const sceneEntityIndexNeeded = (settings = {}) => activeExtensionAideStages(settings).length > 0 || npcDispositionActive(settings) || npcDispositionAutoActive(settings);
   // Extension AIDEs: optional stages beyond the core character/world/plot ladder. Each
   // one declares where it runs, when it is active (including writing-mode gates), the
   // guidance it adds to every draft stage, the structured output fields it asks for, and
@@ -2185,19 +2233,20 @@
   const withExtensionAideStages = (order = [], settings = {}) => placeExtensionAideStages(order, standaloneExtensionAideStages(settings));
   // The NPC disposition block rides here too: it is not an AIDE, but every draft stage must see it.
   const extensionAideStageBlocks = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => [
-    npcDispositionStageBlock(stageName, recent, settings),
+    npcDispositionStageBlock(stageName, recent, settings, phase),
     ...activeExtensionAideStages(settings).map(stageId => EXTENSION_AIDE_DEFS[stageId].stageBlock(stageName, recent, settings, ledger, phase))
   ]
     .filter(Boolean)
     .join('\n\n');
   // Fields are added only while an extension is active, so the schema is unchanged otherwise.
   const withExtensionAideJsonProperties = (schema, stageName, settings = {}) => {
-    const extra = Object.assign({}, scenePurposeJsonProperties(stageName), ...activeExtensionAideStages(settings).map(stageId => EXTENSION_AIDE_DEFS[stageId].jsonProperties(stageName, settings) || {}));
+    const extra = Object.assign({}, scenePurposeJsonProperties(stageName), npcDispositionJsonProperties(stageName, settings), ...activeExtensionAideStages(settings).map(stageId => EXTENSION_AIDE_DEFS[stageId].jsonProperties(stageName, settings) || {}));
     const keys = Object.keys(extra);
     if (!keys.length) return schema;
     return { ...schema, required: [...schema.required, ...keys.filter(key => !schema.required.includes(key))], properties: { ...schema.properties, ...extra } };
   };
   const recordExtensionAideOutputs = (ledger, stageName, parsed = {}, settings = {}) => {
+    recordNpcDispositionOutput(ledger, stageName, parsed, settings);
     for (const stageId of activeExtensionAideStages(settings)) EXTENSION_AIDE_DEFS[stageId].recordOutput(ledger, stageName, parsed, settings);
   };
   const WRITING_MODES = Object.freeze(['novel', 'rp']);
@@ -4030,6 +4079,8 @@ ${BIANCA_PERSONA_TEXT}`;
     intimacyReadings: {},
     // 정사 AIDE preference cards: loaded from storage once, then written through on change.
     intimacyCards: null,
+    // Lore-estimated cards for 상태 AIDE, 억결 AIDE, and NPC 반응 경향성: loaded once and written through.
+    loreCards: null,
     last: null,
     lastAuxiliarySkip: null,
     lastBeforeContext: null,
@@ -7201,6 +7252,7 @@ ${BIANCA_PERSONA_TEXT}`;
       forcedBondAuto: asBool(await runtimeCfg('forced_bond_auto', 'true'), true),
       sceneVariance: normalizeSceneVariance(await runtimeCfg('scene_variance', 'medium')),
       forcedBondCards: normalizeForcedBondCardMap(await runtimeCfg('forced_bond_cards', {})),
+      npcDispositionAuto: asBool(await runtimeCfg('npc_disposition_auto', 'true'), true),
       npcDisposition: normalizeNpcDispositionMap(await runtimeCfg('npc_disposition', {})),
       shadowExtra: beforeExtraPrompts.shadow_act,
       characterExtra: beforeExtraPrompts.aide_character,
@@ -7223,6 +7275,7 @@ ${BIANCA_PERSONA_TEXT}`;
     };
     // Preference cards live in their own store; read once so every stage this run sees them.
     try { await loadIntimacyCards(); } catch (error) { warn('[intimacy cards load failed]', error); }
+    try { await loadLoreCards(); } catch (error) { warn('[lore cards load failed]', error); }
     settings.stageOptions = {};
     for (const def of CONFIGURABLE_STAGE_DEFS) {
       settings.stageOptions[def.id] = normalizeAgentSlotRecord(agentSlots?.[def.id] || {}, {
@@ -24439,13 +24492,16 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       bondCheck: normalizeForcedBondCheck(parsed.bond_check),
       bondReadings: normalizeForcedBondReadings(parsed.bond_readings),
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
+      bondProfiles: Array.isArray(parsed.bond_profiles) ? parsed.bond_profiles : [],
       stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
+      stateProfiles: Array.isArray(parsed.state_profiles) ? parsed.state_profiles : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
       intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
       intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
+      dispositionProfiles: Array.isArray(parsed.disposition_profiles) ? parsed.disposition_profiles : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
       fixation: normalizeStringArray(parsed.fixation, 2, 160),
@@ -26454,7 +26510,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       outputKind === 'check'
         ? 'OUTPUT: add a top-level "bond_check" array with one item per bond this draft touches, judged only from your own duty. Item fields: card (card id); verdict (confirm, adjust, or uncertain); claim (the reading you checked); reason (your evidence-based reason); evidence (canon, LIB, recent, or draft). Use an empty array when no bond is touched.'
         : outputKind === 'readings'
-          ? 'OUTPUT: add a top-level "bond_readings" array, one item per bond in play this turn, with fields card (card id), tones (tone ids), stage (stranger, aware, tension, expressed, or settled), and evidence (canon, LIB, recent, or card). Add a top-level "bond_proposals" array for at most two new bonds the scene clearly shows, with fields from, to, tones (tone ids), and why (a short reason). Tone ids: ' + Object.keys(FORCED_BOND_TONES).join(', ') + '. Use empty arrays when there is nothing to report.'
+          ? [
+            'OUTPUT: add a top-level "bond_readings" array, one item per bond in play this turn, with fields card (card id), tones (tone ids), stage (stranger, aware, tension, expressed, or settled), and evidence (canon, LIB, recent, or card). Add a top-level "bond_proposals" array for at most two new bonds the scene clearly shows, with fields from, to, tones (tone ids), and why (a short reason). Tone ids: ' + Object.keys(FORCED_BOND_TONES).join(', ') + '. Use empty arrays when there is nothing to report.',
+            settings.forcedBondAuto !== false
+              ? 'Also add a top-level "bond_profiles" array (at most two items) for central character pairs in the scene or established in lore who do not have a saved relationship card above (an auto-N line is not a saved card). Estimate each pair from the character card, lorebook, canon, memory evidence, and the scene so far; where lore is silent on details, infer from personality and state so in basis. Fields: from ("@persona" or character name), to (character name), direction ("mutual" or "one_way"), tones (1–4 tone ids), stage (stranger, aware, tension, expressed, or settled), visibility ("hidden" or "known"), pressure ("subtle", "situational", or "explicit"), limits (short strings, may be empty), basis (the lore it rests on). A saved profile becomes a lasting relationship card for this chat and is never overwritten automatically; use an empty array when every pair already has a saved card.'
+              : 'Also add a top-level "bond_profiles" array; leave it empty.'
+          ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
   };
@@ -26484,8 +26545,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- Acts on objects, words, and social moves land fully according to the NPC’s lore and stance. An act on the persona’s body may begin, but its effect on the persona stays open for the user under the existing RP touch rules. Hand the NPC’s stance back to the persona as the pull for the next turn.'
     ];
   };
-  const npcDispositionStageBlock = (stageName, recent = {}, settings = {}) => {
-    if (!npcDispositionActive(settings)) return '';
+  const npcDispositionStageBlock = (stageName, recent = {}, settings = {}, phase = 'writing') => {
+    const shouldAskProfiles = phase !== 'writing' && npcDispositionNeedsLoreEstimation(settings) && stageName === npcDispositionEstimatorStage(settings);
+    const profileOutputLine = `OUTPUT: add a top-level "disposition_profiles" array with one item per NPC present in the scene (never the persona, never a group or world card title) who has no disposition row yet; use an empty array when every present NPC already has one. Estimate each NPC’s baseline attitude toward the persona (${npcDispositionDisplayName()}) from their lore (character card, lorebook, relationship history, and memory evidence); where lore is silent, infer from personality and state so in basis. Fields: name; level (hostile, dislike, acquaintance, like, or affection); note (one short sentence on why or how they hold this attitude toward the persona); basis (the lore it rests on). A saved profile becomes a lasting disposition card for this chat and is never overwritten automatically.`;
+    if (!npcDispositionActive(settings)) return shouldAskProfiles ? ['[LORE ATTITUDE ESTIMATION]', profileOutputLine].join('\n') : '';
     const entry = npcDispositionInPlay(settings);
     // A name the alias index does not know still counts when the recent scene or the input names it.
     const sceneText = [...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : []).map(message => message?.content || ''), recent.latestUser || ''].join('\n');
@@ -26533,6 +26596,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : '- Every other NPC: follows lore (no default disposition).',
       npcDispositionDetailOpen(''),
       `STAGE DUTY: ${duty}`,
+      shouldAskProfiles ? profileOutputLine : '',
       NPC_DISPOSITION_DETAIL_CLOSE,
       NPC_DISPOSITION_BLOCK_END
     ].filter(Boolean).join('\n');
@@ -26548,6 +26612,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...entry.npcs.map(row => `- ${row.name}: ${label(row.level)}`),
       entry.default ? `- Every other NPC: ${label(entry.default)}` : ''
     ].filter(Boolean).join('\n');
+  };
+  const npcDispositionJsonProperties = (stageName, settings = {}) => {
+    if (!npcDispositionNeedsLoreEstimation(settings) || stageName !== npcDispositionEstimatorStage(settings)) return {};
+    const str = { type: 'string' };
+    return {
+      disposition_profiles: {
+        type: 'array',
+        items: closedJsonObject({
+          name: str,
+          level: { type: 'string', enum: Object.keys(NPC_DISPOSITION_LEVELS) },
+          note: str,
+          basis: str
+        })
+      }
+    };
   };
   const normalizeForcedBondCheck = value => (Array.isArray(value) ? value : []).map(item => ({
     card: compact(item?.card || '', 40),
@@ -26576,7 +26655,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
     if (kind === 'readings') return {
       bond_readings: { type: 'array', items: closedJsonObject({ card: str, tones: { type: 'array', items: str }, stage: str, evidence: { type: 'string', enum: ['canon', 'LIB', 'recent', 'card'] } }) },
-      bond_proposals: { type: 'array', items: closedJsonObject({ from: str, to: str, tones: { type: 'array', items: str }, why: str }) }
+      bond_proposals: { type: 'array', items: closedJsonObject({ from: str, to: str, tones: { type: 'array', items: str }, why: str }) },
+      bond_profiles: { type: 'array', items: closedJsonObject({ from: str, to: str, direction: { type: 'string', enum: ['mutual', 'one_way'] }, tones: { type: 'array', items: str }, stage: str, visibility: { type: 'string', enum: ['hidden', 'known'] }, pressure: { type: 'string', enum: [...FORCED_BOND_PRESSURES] }, limits: { type: 'array', items: str }, basis: str }) }
     };
     return {};
   };
@@ -26747,7 +26827,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       knows: ['yes', 'no'].includes(raw.knows) ? raw.knows : 'auto',
       lastBirth: compact(raw.lastBirth || '', 40),
       // yes / no set by the user; auto infers from the profile.
-      canConceive: ['yes', 'no'].includes(raw.canConceive) ? raw.canConceive : 'auto'
+      canConceive: ['yes', 'no'].includes(raw.canConceive) ? raw.canConceive : 'auto',
+      basis: compact(raw.basis || '', 360),
+      origin: raw.origin === 'lore' ? 'lore' : 'user',
+      createdAt: compact(raw.createdAt || '', 40)
     };
   };
   const normalizeBodyStateCardMap = value => {
@@ -26762,7 +26845,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return out;
   };
-  const bodyStateCardsForScope = (settings = {}, scopeKey = '') => (scopeKey ? (normalizeBodyStateCardMap(settings?.bodyStateCards)[scopeKey] || []) : []);
+  const bodyStateCardsForScope = (settings = {}, scopeKey = '') => {
+    if (!scopeKey) return [];
+    const userCards = normalizeBodyStateCardMap(settings?.bodyStateCards)[scopeKey] || [];
+    const loreCards = Runtime.loreCards?.bodyState?.[scopeKey] || [];
+    if (!loreCards.length) return userCards;
+    const merged = [...userCards];
+    for (const card of loreCards) {
+      if (merged.length >= FORCED_BOND_MAX_CARDS) break;
+      const key = normalizeContinuityAlias(card.name || '');
+      if (merged.some(existing => existing.id === card.id || (existing.name && (normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name))))) continue;
+      merged.push(card);
+    }
+    return merged;
+  };
 
   // Same writing-mode rules as 억결: prose mode skips; staging colors only what is recorded.
   const bodyStateModeGate = settings => forcedBondModeGate(settings);
@@ -27205,7 +27301,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       outputKind === 'check'
         ? 'OUTPUT: add a top-level "state_check" array with one item per character whose body state this draft touches, judged only from your own duty. Item fields: character; verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when none is touched.'
         : outputKind === 'readings'
-          ? 'OUTPUT: add a top-level "state_readings" array, one item per character in play, with fields character and summary (one short line of the current body state).'
+          ? [
+            'OUTPUT: add a top-level "state_readings" array, one item per character in play, with fields character and summary (one short line of the current body state).',
+            `Also add a top-level "state_profiles" array with one item per character in the packet who has no saved body-state card yet${gate === 'novel' ? '' : ' (never the persona)'}; empty when every character already has one. Estimate each profile from the character’s lore (character card, lorebook, and memory evidence); where lore is silent, infer from profile/personality and state so in basis. Fields: name; constitution (baseline physique, chronic traits, or sensitivities from lore, or empty); can_conceive (yes, no, or auto from lore gender and biology); cycle_length (21–45 when can_conceive is yes, otherwise 0); contraception (empty, or none, condom, pill, iud, withdrawal, sterilized only when lore states a usual method); basis (the lore it rests on). A saved profile becomes a lasting body-state card for this chat and is never overwritten automatically.`
+          ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
   };
@@ -27213,7 +27312,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const kind = bodyStateOutputKind(stageName, settings);
     const str = { type: 'string' };
     if (kind === 'check') return { state_check: { type: 'array', items: closedJsonObject({ character: str, verdict: { type: 'string', enum: ['confirm', 'adjust', 'uncertain'] }, claim: str, reason: str }) } };
-    if (kind === 'readings') return { state_readings: { type: 'array', items: closedJsonObject({ character: str, summary: str }) } };
+    if (kind === 'readings') return {
+      state_readings: { type: 'array', items: closedJsonObject({ character: str, summary: str }) },
+      state_profiles: {
+        type: 'array',
+        items: closedJsonObject({
+          name: str,
+          constitution: str,
+          can_conceive: { type: 'string', enum: ['yes', 'no', 'auto'] },
+          cycle_length: { type: 'number' },
+          contraception: { type: 'string', enum: ['', ...Object.keys(BODY_STATE_CONTRACEPTION)] },
+          basis: str
+        })
+      }
+    };
     return {};
   };
   const normalizeBodyStateChecks = value => (Array.isArray(value) ? value : []).map(item => ({
@@ -27235,6 +27347,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .map(item => ({ character: compact(item?.character || '', 80), summary: compact(item?.summary || '', 240) }))
       .filter(item => item.character && item.summary).slice(0, FORCED_BOND_MAX_CARDS);
     if (scopeKey) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) recordBodyStateProfiles(scopeKey, parsed?.stateProfiles, settings);
   };
 
   // ===================== 세계 동역학 AIDE (aide_world_dynamics) =====================
@@ -27872,6 +27985,176 @@ Begin directly with the in-world response and finish the complete same-turn draf
     (forcedBondSameParty(left.from, right.from) && forcedBondSameParty(left.to, right.to))
     || (mutual && forcedBondSameParty(left.from, right.to) && forcedBondSameParty(left.to, right.from))
   );
+  const forcedBondPairDismissKey = card => [card?.from, card?.to]
+    .map(party => (bodyStateIsPersona(party) || extensionSamePerson(party, Runtime.activePersonaName) ? FORCED_BOND_PERSONA : normalizeContinuityAlias(party || '')))
+    .sort()
+    .join('::');
+  const isGroupOnlyCardName = name => {
+    const cardName = compact(Runtime.activeCharacterName || '', 80);
+    if (!cardName || !name) return false;
+    return (name === cardName || normalizeContinuityAlias(name) === normalizeContinuityAlias(cardName))
+      && !EXTENSION_PERSON_NAME_RE.test(cardName)
+      && !extensionEntityEntry(cardName);
+  };
+  const emptyLoreCardsStore = () => ({
+    bodyState: {},
+    forcedBond: {},
+    npcDisposition: {},
+    dismissed: { bodyState: {}, forcedBond: {}, npcDisposition: {} }
+  });
+  const normalizeDismissedMap = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const out = {};
+    for (const [rawKey, list] of Object.entries(value)) {
+      const scopeKey = compact(rawKey, 512);
+      const items = normalizeStringArray(Array.isArray(list) ? list : [], 64, 160);
+      if (scopeKey && items.length) out[scopeKey] = items;
+    }
+    return out;
+  };
+  const normalizeLoreCardsStore = raw => {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const npcDisposition = {};
+    const rawDisp = source.npcDisposition && typeof source.npcDisposition === 'object' ? source.npcDisposition : {};
+    for (const [rawKey, list] of Object.entries(rawDisp)) {
+      const scopeKey = compact(rawKey, 512);
+      const entry = normalizeNpcDispositionEntry({ default: '', npcs: Array.isArray(list) ? list : list?.npcs });
+      const rows = entry.npcs.filter(row => row.name && row.level).map(row => ({ ...row, origin: 'lore' }));
+      if (scopeKey && rows.length) npcDisposition[scopeKey] = rows;
+    }
+    const bodyState = normalizeBodyStateCardMap(source.bodyState || {});
+    for (const cards of Object.values(bodyState)) cards.forEach(card => { card.origin = 'lore'; });
+    const forcedBond = normalizeForcedBondCardMap(source.forcedBond || {});
+    for (const cards of Object.values(forcedBond)) cards.forEach(card => { card.origin = 'lore'; });
+    const dismissedRaw = source.dismissed && typeof source.dismissed === 'object' ? source.dismissed : {};
+    return {
+      bodyState,
+      forcedBond,
+      npcDisposition,
+      dismissed: {
+        bodyState: normalizeDismissedMap(dismissedRaw.bodyState),
+        forcedBond: normalizeDismissedMap(dismissedRaw.forcedBond),
+        npcDisposition: normalizeDismissedMap(dismissedRaw.npcDisposition)
+      }
+    };
+  };
+  const ensureLoreCardsMemory = () => {
+    if (!Runtime.loreCards) Runtime.loreCards = emptyLoreCardsStore();
+    return Runtime.loreCards;
+  };
+  const loadLoreCards = async () => {
+    if (Runtime.loreCards) return Runtime.loreCards;
+    const stored = await readObject(STORAGE_LORE_CARDS_KEY, {});
+    Runtime.loreCards = normalizeLoreCardsStore(stored.cards || stored || {});
+    return Runtime.loreCards;
+  };
+  const saveLoreCards = async () => writeObject(STORAGE_LORE_CARDS_KEY, {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    cards: normalizeLoreCardsStore(Runtime.loreCards || {})
+  });
+  const recordBodyStateProfiles = (scopeKey, profiles, settings = {}) => {
+    if (!scopeKey || !Array.isArray(profiles) || !profiles.length) return [];
+    const store = ensureLoreCardsMemory();
+    const existing = bodyStateCardsForScope(settings, scopeKey);
+    const loreList = [...(store.bodyState[scopeKey] || [])];
+    const dismissed = new Set(store.dismissed.bodyState[scopeKey] || []);
+    const added = [];
+    for (const raw of profiles) {
+      const card = normalizeBodyStateCard({
+        name: raw?.name,
+        constitution: raw?.constitution,
+        canConceive: raw?.can_conceive ?? raw?.canConceive,
+        cycleLength: raw?.cycle_length ?? raw?.cycleLength,
+        contraception: raw?.contraception,
+        basis: raw?.basis,
+        origin: 'lore',
+        createdAt: new Date().toISOString()
+      });
+      if (!card?.name) continue;
+      if (card.canConceive === 'no') card.cycleLength = 0;
+      else if (card.canConceive === 'yes' && !card.cycleLength) card.cycleLength = 28;
+      const key = normalizeContinuityAlias(card.name);
+      if (!key || dismissed.has(key) || isGroupOnlyCardName(card.name)) continue;
+      if (bodyStateModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
+      if (!card.constitution && !card.cycleLength && card.canConceive === 'auto' && !card.contraception) continue;
+      if ([...existing, ...loreList].some(item => normalizeContinuityAlias(item.name) === key || extensionSamePerson(item.name, card.name))) continue;
+      if (existing.length + added.length >= FORCED_BOND_MAX_CARDS) break;
+      card.id = `state-lore-${Date.now().toString(36)}-${loreList.length}`;
+      loreList.push(card);
+      added.push(card);
+    }
+    if (!added.length) return [];
+    store.bodyState = { ...store.bodyState, [scopeKey]: loreList };
+    saveLoreCards().catch(error => warn('[lore cards save failed]', error));
+    return added;
+  };
+  const recordForcedBondProfiles = (scopeKey, profiles, settings = {}) => {
+    if (!scopeKey || settings.forcedBondAuto === false || !Array.isArray(profiles) || !profiles.length) return [];
+    const store = ensureLoreCardsMemory();
+    const existing = forcedBondCardsForScope(settings, scopeKey);
+    const loreList = [...(store.forcedBond[scopeKey] || [])];
+    const dismissed = new Set(store.dismissed.forcedBond[scopeKey] || []);
+    const added = [];
+    for (const raw of profiles) {
+      const card = normalizeForcedBondCard({
+        ...raw,
+        origin: 'lore',
+        createdAt: new Date().toISOString()
+      }, loreList.length);
+      if (!card?.to || card.from === card.to || !card.tones.length) continue;
+      if (isGroupOnlyCardName(card.from) || isGroupOnlyCardName(card.to)) continue;
+      if (dismissed.has(forcedBondPairDismissKey(card))) continue;
+      if ([...existing, ...loreList].some(item => forcedBondSamePair(item, card, item.direction === 'mutual' || card.direction === 'mutual'))) continue;
+      if (existing.length + added.length >= FORCED_BOND_MAX_CARDS) break;
+      card.id = `bond-lore-${Date.now().toString(36)}-${loreList.length}`;
+      loreList.push(card);
+      added.push(card);
+    }
+    if (!added.length) return [];
+    store.forcedBond = { ...store.forcedBond, [scopeKey]: loreList };
+    saveLoreCards().catch(error => warn('[lore cards save failed]', error));
+    return added;
+  };
+  const recordNpcDispositionProfiles = (scopeKey, profiles, settings = {}) => {
+    if (!scopeKey || !npcDispositionNeedsLoreEstimation(settings) || !Array.isArray(profiles) || !profiles.length) return [];
+    const store = ensureLoreCardsMemory();
+    const existing = npcDispositionForScope(settings, scopeKey).npcs;
+    const loreList = [...(store.npcDisposition[scopeKey] || [])];
+    const dismissed = new Set(store.dismissed.npcDisposition[scopeKey] || []);
+    const added = [];
+    for (const raw of profiles) {
+      const name = compact(raw?.name || '', 80);
+      const level = normalizeNpcDispositionLevel(raw?.level);
+      const note = compact(raw?.note || '', 200);
+      const basis = compact(raw?.basis || '', 360);
+      const key = normalizeContinuityAlias(name);
+      if (!name || !key || !level || dismissed.has(key) || isGroupOnlyCardName(name)) continue;
+      if (bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName)) continue;
+      if ([...existing, ...loreList].some(row => normalizeContinuityAlias(row.name) === key || extensionSamePerson(row.name, name))) continue;
+      if (existing.length + added.length >= NPC_DISPOSITION_MAX_NPCS) break;
+      const row = {
+        id: `npc-lore-${Date.now().toString(36)}-${loreList.length}`,
+        name,
+        level,
+        note,
+        basis,
+        origin: 'lore',
+        createdAt: new Date().toISOString()
+      };
+      loreList.push(row);
+      added.push(row);
+    }
+    if (!added.length) return [];
+    store.npcDisposition = { ...store.npcDisposition, [scopeKey]: loreList };
+    saveLoreCards().catch(error => warn('[lore cards save failed]', error));
+    return added;
+  };
+  const recordNpcDispositionOutput = (_ledger, stageName, parsed = {}, settings = {}) => {
+    if (!npcDispositionNeedsLoreEstimation(settings) || stageName !== npcDispositionEstimatorStage(settings)) return;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (scopeKey) recordNpcDispositionProfiles(scopeKey, parsed?.dispositionProfiles, settings);
+  };
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
     const checks = normalizeForcedBondCheck(parsed?.bondCheck);
@@ -27884,6 +28167,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!scopeKey) return;
     const readings = normalizeForcedBondReadings(parsed?.bondReadings);
     Runtime.forcedBondReadings[scopeKey] = { at: Date.now(), readings };
+    recordForcedBondProfiles(scopeKey, parsed?.bondProfiles, settings);
     const cards = forcedBondCardsForScope(settings, scopeKey);
     const matchesCard = item => cards.some(card => forcedBondSamePair(card, item, card.direction === 'mutual'));
     // A proposal whose pair has since become a card is no longer a proposal.
@@ -28891,13 +29175,16 @@ Begin directly with the in-world response and finish the complete same-turn draf
       bondCheck: normalizeForcedBondCheck(parsed.bond_check),
       bondReadings: normalizeForcedBondReadings(parsed.bond_readings),
       bondProposals: normalizeForcedBondProposals(parsed.bond_proposals),
+      bondProfiles: Array.isArray(parsed.bond_profiles) ? parsed.bond_profiles : [],
       stateCheck: Array.isArray(parsed.state_check) ? parsed.state_check : [],
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
+      stateProfiles: Array.isArray(parsed.state_profiles) ? parsed.state_profiles : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
       intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
       intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
+      dispositionProfiles: Array.isArray(parsed.disposition_profiles) ? parsed.disposition_profiles : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
       fixation: normalizeStringArray(parsed.fixation, 2, 160),
@@ -30221,19 +30508,22 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         bondCheck: patch.bondCheck,
         bondReadings: patch.bondReadings,
         bondProposals: patch.bondProposals,
+        bondProfiles: patch.bondProfiles,
         stateCheck: patch.stateCheck,
         stateReadings: patch.stateReadings,
+        stateProfiles: patch.stateProfiles,
         worldCheck: patch.worldCheck,
         worldReadings: patch.worldReadings,
         intimacyCheck: patch.intimacyCheck,
         intimacyReadings: patch.intimacyReadings,
         intimacyProfiles: patch.intimacyProfiles,
+        dispositionProfiles: patch.dispositionProfiles,
         scenePurpose: patch.scenePurpose,
         storyArc: patch.storyArc,
         fixation: patch.fixation
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings, intimacyCheck: precomputedAnalysis.intimacyCheck?.length ? precomputedAnalysis.intimacyCheck : patch.intimacyCheck, intimacyReadings: precomputedAnalysis.intimacyReadings?.length ? precomputedAnalysis.intimacyReadings : patch.intimacyReadings, intimacyProfiles: precomputedAnalysis.intimacyProfiles?.length ? precomputedAnalysis.intimacyProfiles : patch.intimacyProfiles }
+        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, bondProfiles: precomputedAnalysis.bondProfiles?.length ? precomputedAnalysis.bondProfiles : patch.bondProfiles, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, stateProfiles: precomputedAnalysis.stateProfiles?.length ? precomputedAnalysis.stateProfiles : patch.stateProfiles, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings, intimacyCheck: precomputedAnalysis.intimacyCheck?.length ? precomputedAnalysis.intimacyCheck : patch.intimacyCheck, intimacyReadings: precomputedAnalysis.intimacyReadings?.length ? precomputedAnalysis.intimacyReadings : patch.intimacyReadings, intimacyProfiles: precomputedAnalysis.intimacyProfiles?.length ? precomputedAnalysis.intimacyProfiles : patch.intimacyProfiles, dispositionProfiles: precomputedAnalysis.dispositionProfiles?.length ? precomputedAnalysis.dispositionProfiles : patch.dispositionProfiles }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -42925,6 +43215,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     forcedBondAuto: settings.forcedBondAuto !== false,
     sceneVariance: normalizeSceneVariance(settings.sceneVariance),
     forcedBondCards: normalizeForcedBondCardMap(settings.forcedBondCards),
+    npcDispositionAuto: settings.npcDispositionAuto !== false,
     npcDisposition: normalizeNpcDispositionMap(settings.npcDisposition),
     bodyStateReproduction: settings.bodyStateReproduction === true,
     bodyStateCards: normalizeBodyStateCardMap(settings.bodyStateCards),
@@ -43228,6 +43519,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       forcedBondAuto: runtime.forcedBondAuto !== false,
       sceneVariance: normalizeSceneVariance(runtime.sceneVariance),
       forcedBondCards: normalizeForcedBondCardMap(runtime.forcedBondCards),
+      npcDispositionAuto: runtime.npcDispositionAuto !== false,
       npcDisposition: normalizeNpcDispositionMap(runtime.npcDisposition),
       builtInStylePreset: normalizeBuiltInStylePreset(runtime.builtInStylePreset),
       skillStageSelections:normalizeSkillStageSelections(runtime.skillStageSelections),
@@ -43318,6 +43610,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         forced_bond_auto: String(runtime.forcedBondAuto !== false),
         scene_variance: normalizeSceneVariance(runtime.sceneVariance),
         forced_bond_cards: JSON.stringify(normalizeForcedBondCardMap(runtime.forcedBondCards)),
+        npc_disposition_auto: String(runtime.npcDispositionAuto !== false),
         npc_disposition: JSON.stringify(normalizeNpcDispositionMap(runtime.npcDisposition)),
         body_state_reproduction: String(runtime.bodyStateReproduction === true),
         body_state_cards: JSON.stringify(normalizeBodyStateCardMap(runtime.bodyStateCards)),
@@ -46882,28 +47175,44 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
       if (!scopeKey) return;
       const map = normalizeBodyStateCardMap(runtime.bodyStateCards);
-      const cards = map[scopeKey] || [];
+      const cards = [...bodyStateCardsForScope(runtime, scopeKey)];
       const card = cards.find(item => item.id === control.dataset.cardId);
       if (!card) return;
       card[key] = control.value;
+      card.origin = 'user';
+      if (Runtime.loreCards?.bodyState?.[scopeKey]?.some(item => item.id === card.id)) {
+        Runtime.loreCards.bodyState[scopeKey] = Runtime.loreCards.bodyState[scopeKey].filter(item => item.id !== card.id);
+        void saveLoreCards().catch(() => {});
+      }
       map[scopeKey] = cards;
       runtime.bodyStateCards = normalizeBodyStateCardMap(map);
       markGuiDirty(); renderBodyStatePanel(Gui.app, runtime); mockupRefreshStatus();
       return;
     }
     if (control.matches?.('[data-npc-disposition-field]')) {
+      const key = control.dataset.npcDispositionField;
+      if (key === 'auto') {
+        runtime.npcDispositionAuto = control.checked === true;
+        markGuiDirty(); if (!inputEvent) mockupRefreshStatus();
+        return;
+      }
       // Names and notes commit on change so typing never re-renders the row mid-word.
       if (inputEvent && control.tagName !== 'SELECT') return;
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
       if (!scopeKey) return;
       const map = normalizeNpcDispositionMap(runtime.npcDisposition);
-      const entry = map[scopeKey] || { default: '', npcs: [] };
-      const key = control.dataset.npcDispositionField;
+      const merged = npcDispositionForScope(runtime, scopeKey);
+      const entry = { default: (map[scopeKey]?.default ?? merged.default) || '', npcs: [...merged.npcs] };
       if (key === 'default') entry.default = control.value;
       else {
         const row = entry.npcs.find(item => item.id === control.dataset.itemId);
-        if (!row || !['name', 'level', 'note'].includes(key)) return;
+        if (!row || !['name', 'level', 'note', 'basis'].includes(key)) return;
         row[key] = control.value;
+        row.origin = 'user';
+        if (Runtime.loreCards?.npcDisposition?.[scopeKey]?.some(item => item.id === row.id)) {
+          Runtime.loreCards.npcDisposition[scopeKey] = Runtime.loreCards.npcDisposition[scopeKey].filter(item => item.id !== row.id);
+          void saveLoreCards().catch(() => {});
+        }
       }
       const next = normalizeNpcDispositionEntry(entry);
       if (npcDispositionEntryIsEmpty(next)) delete map[scopeKey]; else map[scopeKey] = next;
@@ -46929,11 +47238,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (control.matches?.('[data-forced-bond-card-field]')) {
       const key = control.dataset.forcedBondCardField;
       // Names and limits commit on change so a half-typed name never drops the card.
-      if (inputEvent && ['from', 'to', 'limits'].includes(key)) return;
+      if (inputEvent && ['from', 'to', 'limits', 'basis'].includes(key)) return;
       const scopeKey = compact(Runtime.activeScopeKey || '', 512);
       if (!scopeKey) return;
       const map = normalizeForcedBondCardMap(runtime.forcedBondCards);
-      const cards = map[scopeKey] || [];
+      const cards = [...forcedBondCardsForScope(runtime, scopeKey)];
       const card = cards.find(item => item.id === control.dataset.cardId);
       if (!card) return;
       if (key === 'tone') {
@@ -46942,6 +47251,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       } else if (key === 'appearance') card.appearance = control.checked === true;
       else if (key === 'limits') card.limits = String(control.value || '').split(/[,\n]/);
       else card[key] = control.value;
+      card.origin = 'user';
+      if (Runtime.loreCards?.forcedBond?.[scopeKey]?.some(item => item.id === card.id)) {
+        Runtime.loreCards.forcedBond[scopeKey] = Runtime.loreCards.forcedBond[scopeKey].filter(item => item.id !== card.id);
+        void saveLoreCards().catch(() => {});
+      }
       map[scopeKey] = normalizeForcedBondCardList(cards);
       runtime.forcedBondCards = map;
       markGuiDirty(); renderForcedBondPanel(Gui.app, runtime); mockupRefreshStatus();
@@ -47065,6 +47379,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       guiEl('div', { class: 'opt-grid' }, [
         field('누가', input('from', forcedBondPersonLabel(card.from), '페르소나')),
         field('누구에게', input('to', forcedBondPersonLabel(card.to), '인물 이름')),
+        field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: card.origin === 'lore' ? `로어로 추정${card.createdAt ? ` · ${card.createdAt.slice(0, 10)}` : ''}` : card.origin === 'proposal' ? 'AI 제안 수락' : '직접 작성·수정' })),
         field('방향', select('direction', [['one_way', '한쪽만'], ['mutual', '서로']], card.direction)),
         field('단계', select('stage', Object.entries(FORCED_BOND_STAGES), card.stage)),
         field('공개', select('visibility', [['hidden', '숨김'], ['known', '드러남']], card.visibility)),
@@ -47072,6 +47387,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ]),
       field('결 (비우면 장면에서 읽음 · 여러 개 가능)', tones),
       field('금지선', input('limits', card.limits.join(', '), '예: 육체적 진전 없음, 고백하지 않음')),
+      field('근거(로어)', input('basis', card.basis || '', '추정의 근거 또는 메모')),
       guiEl('label', { class: 'check' }, [
         guiEl('input', { type: 'checkbox', checked: card.appearance, dataset: { forcedBondCardField: 'appearance', cardId: card.id } }),
         guiEl('span', { text: '장면에 없으면 등장 계기를 만들 수 있음' })
@@ -47084,6 +47400,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const forcedBondToneLabels = tones => (tones || []).map(tone => FORCED_BOND_TONES[tone]?.label || tone).join('·');
   const renderForcedBondPanel = (app, runtime = mockupRuntime()) => {
     if (!app) return;
+    if (!Runtime.loreCards) void loadLoreCards().then(() => renderForcedBondPanel(Gui.app, runtime)).catch(() => {});
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const appearance = app.querySelector('[data-forced-bond-field="forceAppearance"]');
     if (appearance) appearance.checked = runtime.forcedBondForceAppearance !== false;
@@ -47093,10 +47410,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (addButton) addButton.disabled = !scopeKey;
     const box = app.querySelector('[data-forced-bond-cards]');
     if (box) {
-      const cards = scopeKey ? (normalizeForcedBondCardMap(runtime.forcedBondCards)[scopeKey] || []) : [];
+      const cards = forcedBondCardsForScope(runtime, scopeKey);
       box.replaceChildren(...(cards.length ? cards.map(forcedBondCardEditor) : [guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: scopeKey ? '이 채팅에는 관계 카드가 없습니다.' : '현재 채팅을 아직 확인하지 못했습니다.' }),
-        guiEl('span', { text: scopeKey ? '카드를 추가하거나 AI 제안을 받으면 이 채팅에만 적용됩니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 카드를 추가할 수 있습니다.' })
+        guiEl('span', { text: scopeKey ? '억결 AIDE가 실행되면 로어를 바탕으로 자동 생성되며, 직접 추가하거나 AI 제안을 받을 수도 있습니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 카드를 추가할 수 있습니다.' })
       ])]));
     }
     const proposalBox = app.querySelector('[data-forced-bond-proposals]');
@@ -47120,15 +47437,33 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const cards = map[scopeKey] || [];
     const proposals = Runtime.forcedBondProposals?.[scopeKey] || [];
     if (action === 'add') {
-      if (cards.length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`관계 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
+      if (forcedBondCardsForScope(runtime, scopeKey).length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`관계 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
       cards.push({ id: `bond-${Date.now().toString(36)}`, from: FORCED_BOND_PERSONA, to: '', tones: [] });
     } else if (action === 'remove') {
+      let removedLore = false;
+      const loreList = Runtime.loreCards?.forcedBond?.[scopeKey] || [];
+      const loreHit = loreList.find(card => card.id === itemId);
+      if (loreHit && Runtime.loreCards) {
+        removedLore = true;
+        Runtime.loreCards.forcedBond[scopeKey] = loreList.filter(card => card.id !== itemId);
+        const dismissKey = forcedBondPairDismissKey(loreHit);
+        if (dismissKey) {
+          const cur = Runtime.loreCards.dismissed.forcedBond[scopeKey] || [];
+          if (!cur.includes(dismissKey)) Runtime.loreCards.dismissed.forcedBond[scopeKey] = [...cur, dismissKey];
+        }
+        void saveLoreCards().catch(() => {});
+      }
       const index = cards.findIndex(card => card.id === itemId);
       if (index >= 0) cards.splice(index, 1);
+      else if (removedLore) {
+        renderForcedBondPanel(Gui.app, runtime);
+        mockupRefreshStatus();
+        return;
+      }
     } else if (action === 'accept' || action === 'dismiss') {
       const proposal = proposals.find(item => item.id === itemId);
       Runtime.forcedBondProposals[scopeKey] = proposals.filter(item => item.id !== itemId);
-      if (action === 'accept' && proposal && cards.length < FORCED_BOND_MAX_CARDS) {
+      if (action === 'accept' && proposal && forcedBondCardsForScope(runtime, scopeKey).length < FORCED_BOND_MAX_CARDS) {
         cards.push({ id: `bond-${Date.now().toString(36)}`, from: proposal.from, to: proposal.to, tones: proposal.tones, origin: 'proposal' });
       }
       if (action === 'dismiss') { renderForcedBondPanel(Gui.app, runtime); return; }
@@ -47152,9 +47487,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return guiEl('div', { class: 'note', dataset: { npcDispositionRow: row.id } }, [
       guiEl('div', { class: 'opt-grid' }, [
         field('NPC', guiEl('input', { class: 'input', type: 'text', value: row.name, placeholder: '인물 이름', dataset: { npcDispositionField: 'name', itemId: row.id } })),
-        field('경향성', npcDispositionLevelSelect(row.level, { npcDispositionField: 'level', itemId: row.id }, '선택하세요'))
+        field('경향성', npcDispositionLevelSelect(row.level, { npcDispositionField: 'level', itemId: row.id }, '선택하세요')),
+        field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: row.origin === 'lore' ? `로어로 추정${row.createdAt ? ` · ${row.createdAt.slice(0, 10)}` : ''}` : '직접 작성·수정' }))
       ]),
       field('메모 (선택)', guiEl('input', { class: 'input', type: 'text', value: row.note, placeholder: '예: 페르소나를 가문의 원수로 여긴다', dataset: { npcDispositionField: 'note', itemId: row.id } })),
+      field('근거(로어)', guiEl('input', { class: 'input', type: 'text', value: row.basis || '', placeholder: '추정의 근거', dataset: { npcDispositionField: 'basis', itemId: row.id } })),
       guiEl('div', { class: 'cluster' }, [
         guiEl('button', { class: 'btn btn--sm', type: 'button', text: '삭제', dataset: { npcDispositionAction: 'remove', itemId: row.id } })
       ])
@@ -47162,8 +47499,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const renderNpcDispositionPanel = (app, runtime = mockupRuntime()) => {
     if (!app) return;
+    if (!Runtime.loreCards) void loadLoreCards().then(() => renderNpcDispositionPanel(Gui.app, runtime)).catch(() => {});
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
-    const entry = scopeKey ? (normalizeNpcDispositionMap(runtime.npcDisposition)[scopeKey] || { default: '', npcs: [] }) : { default: '', npcs: [] };
+    const entry = npcDispositionForScope(runtime, scopeKey);
     const current = app.querySelector('[data-npc-disposition-field="default"]');
     if (current) current.replaceWith(npcDispositionLevelSelect(entry.default, { npcDispositionField: 'default' }, '로어 그대로 (미지정)'));
     const defaultSelect = app.querySelector('[data-npc-disposition-field="default"]');
@@ -47173,7 +47511,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const box = app.querySelector('[data-npc-disposition-list]');
     if (box) box.replaceChildren(...(entry.npcs.length ? entry.npcs.map(npcDispositionRowEditor) : [guiEl('div', { class: 'empty' }, [
       guiEl('b', { text: scopeKey ? '개별 지정한 NPC가 없습니다.' : '현재 채팅을 아직 확인하지 못했습니다.' }),
-      guiEl('span', { text: scopeKey ? '기본값과 다르게 반응할 NPC만 추가하세요. 이 채팅에만 적용됩니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 지정할 수 있습니다.' })
+      guiEl('span', { text: scopeKey ? '장면에 등장한 NPC의 경향성이 로어를 바탕으로 자동 추정되며, 직접 추가하거나 수정할 수도 있습니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 지정할 수 있습니다.' })
     ])]));
   };
   const handleNpcDispositionAction = (action, itemId = '') => {
@@ -47183,10 +47521,29 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const map = normalizeNpcDispositionMap(runtime.npcDisposition);
     const entry = map[scopeKey] || { default: '', npcs: [] };
     if (action === 'add') {
-      if (entry.npcs.length >= NPC_DISPOSITION_MAX_NPCS) { guiSetStatus(`경향성은 채팅마다 NPC ${NPC_DISPOSITION_MAX_NPCS}명까지 지정할 수 있습니다.`); return; }
+      if (npcDispositionForScope(runtime, scopeKey).npcs.length >= NPC_DISPOSITION_MAX_NPCS) { guiSetStatus(`경향성은 채팅마다 NPC ${NPC_DISPOSITION_MAX_NPCS}명까지 지정할 수 있습니다.`); return; }
       entry.npcs.push({ id: `npc-${Date.now().toString(36)}`, name: '', level: '', note: '' });
     } else if (action === 'remove') {
+      let removedLore = false;
+      const loreList = Runtime.loreCards?.npcDisposition?.[scopeKey] || [];
+      const loreHit = loreList.find(row => row.id === itemId);
+      if (loreHit && Runtime.loreCards) {
+        removedLore = true;
+        Runtime.loreCards.npcDisposition[scopeKey] = loreList.filter(row => row.id !== itemId);
+        const dismissKey = normalizeContinuityAlias(loreHit.name || '');
+        if (dismissKey) {
+          const cur = Runtime.loreCards.dismissed.npcDisposition[scopeKey] || [];
+          if (!cur.includes(dismissKey)) Runtime.loreCards.dismissed.npcDisposition[scopeKey] = [...cur, dismissKey];
+        }
+        void saveLoreCards().catch(() => {});
+      }
+      const beforeLen = entry.npcs.length;
       entry.npcs = entry.npcs.filter(row => row.id !== itemId);
+      if (entry.npcs.length === beforeLen && removedLore) {
+        renderNpcDispositionPanel(Gui.app, runtime);
+        mockupRefreshStatus();
+        return;
+      }
     } else return;
     const next = normalizeNpcDispositionEntry(entry);
     if (npcDispositionEntryIsEmpty(next)) delete map[scopeKey]; else map[scopeKey] = next;
@@ -47205,12 +47562,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     return guiEl('div', { class: 'note', dataset: { bodyStateCard: card.id } }, [
       guiEl('div', { class: 'opt-grid' }, [
         field('인물', input('name', forcedBondPersonLabel(card.name), '인물 이름')),
+        field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: card.origin === 'lore' ? `로어로 추정${card.createdAt ? ` · ${card.createdAt.slice(0, 10)}` : ''}` : '직접 작성·수정' })),
         field('주기 길이(일)', input('cycleLength', card.cycleLength ? String(card.cycleLength) : '', '비우면 28', 'number')),
         field('마지막 생리 시작일', input('lastPeriodStart', card.lastPeriodStart, '예: 5월 1일')),
         field('평소 피임', contraception),
         field('임신 가능', (() => { const node = guiEl('select', { class: 'select', dataset: { bodyStateCardField: 'canConceive', cardId: card.id } }); mockupOption(node, 'auto', '프로필 성별로 추정'); mockupOption(node, 'yes', '예'); mockupOption(node, 'no', '아니요'); node.value = card.canConceive || 'auto'; return node; })())
       ]),
       field('체질·평소 상태', input('constitution', card.constitution, '예: 감기에 약함, 빈혈기')),
+      field('근거(로어)', input('basis', card.basis || '', '추정의 근거')),
       guiEl('div', { class: 'opt-grid' }, [
         field('수정일(임신)', input('conceptionDate', card.conceptionDate, '예: 2026-04-03, 이야기 12일째')),
         field('상대', input('partner', card.partner, '비워도 됩니다')),
@@ -47224,6 +47583,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   };
   const renderBodyStatePanel = (app, runtime = mockupRuntime()) => {
     if (!app) return;
+    if (!Runtime.loreCards) void loadLoreCards().then(() => renderBodyStatePanel(Gui.app, runtime)).catch(() => {});
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const reproduction = app.querySelector('[data-body-state-field="reproduction"]');
     if (reproduction) reproduction.checked = runtime.bodyStateReproduction === true;
@@ -47231,17 +47591,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (addButton) addButton.disabled = !scopeKey;
     const box = app.querySelector('[data-body-state-cards]');
     if (box) {
-      const cards = scopeKey ? (normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || []) : [];
+      const cards = bodyStateCardsForScope(runtime, scopeKey);
       box.replaceChildren(...(cards.length ? cards.map(bodyStateCardEditor) : [guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: scopeKey ? '이 채팅에는 상태 카드가 없습니다.' : '현재 채팅을 아직 확인하지 못했습니다.' }),
-        guiEl('span', { text: scopeKey ? '이야기가 말해 주지 않는 기본값(주기 길이, 체질 등)이 필요할 때만 추가하세요.' : '채팅을 연 상태에서 설정 창을 다시 열면 카드를 추가할 수 있습니다.' })
+        guiEl('span', { text: scopeKey ? '상태 AIDE가 실행되면 등장 인물의 카드가 로어를 바탕으로 자동 생성되며, 직접 추가할 수도 있습니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 카드를 추가할 수 있습니다.' })
       ])]));
     }
     const readingBox = app.querySelector('[data-body-state-readings]');
     if (readingBox) {
       let verdictBox = app.querySelector('[data-body-state-verdicts]');
       if (!verdictBox) { verdictBox = guiEl('div', { class: 'stack stack--sm', style: 'margin-top:8px', dataset: { bodyStateVerdicts: '' } }); (app.querySelector('[data-body-state-cards]')?.closest('.field') || readingBox).after(verdictBox); }
-      const cardsNow = scopeKey ? (normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || []) : [];
+      const cardsNow = bodyStateCardsForScope(runtime, scopeKey);
       const open = (scopeKey ? Runtime.bodyStateVerdicts?.[scopeKey]?.items || [] : [])
         .filter(item => !cardsNow.some(card => card.name === item.name && card.conceptionDate === item.conception));
       verdictBox.replaceChildren(...open.map(item => guiEl('div', { class: 'note' }, [
@@ -47591,12 +47951,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     // This chat's own data: not defaults to restore, but worth seeing in one list.
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     if (scopeKey) {
-      const disposition = normalizeNpcDispositionMap(runtime.npcDisposition)[scopeKey];
-      if (disposition) add('chat', 'NPC 반응 경향성', [disposition.default, disposition.npcs.length], ['', 0],
+      const disposition = npcDispositionForScope(runtime, scopeKey);
+      if (!npcDispositionEntryIsEmpty(disposition)) add('chat', 'NPC 반응 경향성', [disposition.default, disposition.npcs.length], ['', 0],
         value => [value[0] ? `기본값 ${NPC_DISPOSITION_LEVELS[value[0]]?.label || value[0]}` : '기본값 없음', `개별 ${value[1]}명`].join(' · '), { go: 'chat', sub: 'disposition' });
       const count = (label, cards, sub) => add('chat', label, cards.length, 0, value => `${value}장`, { go: 'chat', sub });
-      count('관계 카드', normalizeForcedBondCardMap(runtime.forcedBondCards)[scopeKey] || [], 'bond');
-      count('상태 카드', normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || [], 'state');
+      count('관계 카드', forcedBondCardsForScope(runtime, scopeKey), 'bond');
+      count('상태 카드', bodyStateCardsForScope(runtime, scopeKey), 'state');
       count('정사 선호 카드', intimacyCardsForScope(scopeKey), 'intimacy');
     }
     return rows;
@@ -47773,20 +48133,46 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const map = normalizeBodyStateCardMap(runtime.bodyStateCards);
     const cards = map[scopeKey] || [];
     if (action === 'add') {
-      if (cards.length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`상태 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
+      if (bodyStateCardsForScope(runtime, scopeKey).length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`상태 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
       cards.push({ id: `state-${Date.now().toString(36)}`, name: '' });
     } else if (action === 'remove') {
+      let removedLore = false;
+      const loreList = Runtime.loreCards?.bodyState?.[scopeKey] || [];
+      const loreHit = loreList.find(card => card.id === itemId);
+      if (loreHit && Runtime.loreCards) {
+        removedLore = true;
+        Runtime.loreCards.bodyState[scopeKey] = loreList.filter(card => card.id !== itemId);
+        const dismissKey = normalizeContinuityAlias(loreHit.name || '');
+        if (dismissKey) {
+          const cur = Runtime.loreCards.dismissed.bodyState[scopeKey] || [];
+          if (!cur.includes(dismissKey)) Runtime.loreCards.dismissed.bodyState[scopeKey] = [...cur, dismissKey];
+        }
+        void saveLoreCards().catch(() => {});
+      }
       const index = cards.findIndex(card => card.id === itemId);
       if (index >= 0) cards.splice(index, 1);
+      else if (removedLore) {
+        renderBodyStatePanel(Gui.app, runtime);
+        mockupRefreshStatus();
+        return;
+      }
     } else if (action === 'pin') {
       // A verdict pinned to the card no longer depends on the contact line being recalled.
       const verdict = (Runtime.bodyStateVerdicts[scopeKey]?.items || []).find(item => item.name === itemId);
       if (!verdict) return;
       let card = cards.find(item => item.name === verdict.name);
       if (!card) {
-        if (cards.length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`상태 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
-        card = { id: `state-${Date.now().toString(36)}`, name: verdict.name };
-        cards.push(card);
+        const loreHit = (Runtime.loreCards?.bodyState?.[scopeKey] || []).find(item => item.name === verdict.name);
+        if (loreHit) {
+          card = { ...loreHit, origin: 'user' };
+          Runtime.loreCards.bodyState[scopeKey] = Runtime.loreCards.bodyState[scopeKey].filter(item => item.id !== loreHit.id);
+          void saveLoreCards().catch(() => {});
+          cards.push(card);
+        } else {
+          if (bodyStateCardsForScope(runtime, scopeKey).length >= FORCED_BOND_MAX_CARDS) { guiSetStatus(`상태 카드는 채팅마다 ${FORCED_BOND_MAX_CARDS}장까지입니다.`); return; }
+          card = { id: `state-${Date.now().toString(36)}`, name: verdict.name };
+          cards.push(card);
+        }
       }
       card.conceptionDate = verdict.conception;
     } else return;
@@ -51076,6 +51462,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     async debugIntimacyLoadCards() {
       Runtime.intimacyCards = null;
       return cloneJson(await loadIntimacyCards());
+    },
+    async debugLoreLoadCards() {
+      Runtime.loreCards = null;
+      return cloneJson(await loadLoreCards());
     },
     debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
       return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });

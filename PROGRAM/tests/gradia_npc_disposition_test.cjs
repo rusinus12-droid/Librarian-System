@@ -230,3 +230,56 @@ test('a default-only disposition names the people in the scene, not a group card
   assert.doesNotMatch(all, /in the scene now:[^\n]*클로젬 여행동아리/);
   assert.match(all, /WHAT IT IS, AND WHAT IT IS NOT: the disposition is a bias in how the NPC reads and receives the persona/);
 });
+
+test('a disposition profile from 인물 AIDE becomes a stored lore card that activates disposition guidance on later turns and nothing overwrites', async t => {
+  const LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
+  const storedDispCards = f => {
+    const raw = f.values.get(LORE_CARDS_KEY) ?? f.local.get(LORE_CARDS_KEY);
+    if (!raw) return {};
+    return (typeof raw === 'string' ? JSON.parse(raw) : raw).cards?.npcDisposition || {};
+  };
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    const extra = stage === 'aide_character'
+      ? { disposition_profiles: [{ name: '준호', level: 'dislike', note: '낯선 이에게 거리를 두고 경계한다', basis: '가문을 지키는 보수적 성격(캐릭터 로어).' }] }
+      : {};
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [], ...extra };
+    if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
+    else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
+    else f.controls.output = '준호가 문 앞에서 차갑게 시선을 두었다.';
+  };
+  await configure(f);
+  await runTurn(f, '준호에게 인사를 건넨다.');
+  const turn1Char = f.prompts.find(item => stageOf(item) === 'aide_character');
+  assert.ok(!allOf(turn1Char).includes('[NPC DISPOSITION'), 'turn 1 before 인물 AIDE settles the profile has no NPC DISPOSITION block');
+  assert.match(allOf(turn1Char), /\[LORE ATTITUDE ESTIMATION\]/);
+  const rows = Object.values(storedDispCards(f)).flat();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, '준호');
+  assert.equal(rows[0].level, 'dislike');
+  assert.equal(rows[0].origin, 'lore');
+
+  f.chat.message.push({ role: 'assistant', chatId: 'a2', data: '준호가 문 앞에서 차갑게 시선을 두었다.' });
+  // Turn 2 returns a conflicting profile for 준호: the saved lore card must not be overwritten.
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    const extra = stage === 'aide_character'
+      ? { disposition_profiles: [{ name: '준호', level: 'affection', note: '덮어쓰기 시도', basis: '무시되어야 함' }] }
+      : {};
+    const base = { ok: true, analysis: { summary: 'checked', constraints: [], risks: [] }, domain: {}, rewrite_directives: [], do_not_reveal: [], pov_limits: [], beats: [], ...extra };
+    if (sys.includes('serial_gradation_agents_for_rp_analysis_')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_analysis_v4', stage, ...base });
+    else if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) f.controls.output = JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage, ...base, edits: [] });
+    else f.controls.output = '준호가 반발짝 물러섰다.';
+  };
+  const out = await runTurn(f, '준호에게 다시 말을 건다.');
+  const charPrompt = allOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
+  assert.match(charPrompt, /\[NPC DISPOSITION \(반응 경향성\) — USER-FIXED STANCE TOWARD THE PERSONA\]/);
+  assert.match(charPrompt, /- 준호: dislike \(비호감\) · in the scene now · user note: 낯선 이에게 거리를 두고 경계한다/);
+  assert.match(JSON.stringify(out), /\[NPC DISPOSITION GUARD\][\s\S]*- 준호: dislike \(비호감\)/);
+  const after = Object.values(storedDispCards(f)).flat();
+  assert.equal(after.length, 1);
+  assert.equal(after[0].level, 'dislike');
+});
