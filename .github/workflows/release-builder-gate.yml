@@ -126,6 +126,7 @@ jobs:
             PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
             PROGRAM/tests/libra_micro_timeout_and_schema_recovery_test.cjs \
             PROGRAM/tests/libra_text_equivalent_revision_test.cjs \
+            PROGRAM/tests/hayaku_source_filter_binding_test.cjs \
             PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
             PROGRAM/tests/gradia/context-degradation.test.cjs \
             PROGRAM/tests/gradia/author-note-all-stages.test.cjs \

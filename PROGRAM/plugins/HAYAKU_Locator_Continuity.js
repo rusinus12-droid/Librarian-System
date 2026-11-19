@@ -25095,6 +25095,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       userHash: compact(node.userHash || '', 96),
       assistantVisibleHash: compact(node.assistantVisibleHash || '', 96),
       assistantMessageIdHash: compact(node.assistantMessageIdHash || '', 96),
+      sourceRawDigest: compact(node.sourceRawDigest || '', 96),
       packetHashes: uniq(ensureArray(node.packetHashes).map(hash => compact(hash, 96)).filter(Boolean), 8),
       quarantinedPacketHashes: uniq(ensureArray(node.quarantinedPacketHashes)
         .map(hash => compact(hash, 96)).filter(Boolean), 16),
@@ -25256,12 +25257,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const variantId = variantIdForPair(logicalTurnId, pair);
       const lookup = `${logicalTurnId}\u0001${variantId}`;
       let node = byVariant.get(lookup) || priorMatchingParent;
+      // A source tag filter change moves the visible hashes (and so the signature) of the same
+      // turn. Keep its node only when the turn is proven the same (hayakuSameTurnSource); a reroll
+      // or another branch gets its own node as before.
       if (!node) {
         node = nodes.find(candidate => (
           Number(candidate.pairIndex || 0) === pairIndex
           && candidate.status === 'active'
-          && Boolean(candidate.assistantMessageIdHash && pair?.assistantMessageIdHash)
-          && candidate.assistantMessageIdHash === pair.assistantMessageIdHash
+          && candidate.parentTurnNodeId === parentTurnNodeId
+          && hayakuSameTurnSource(candidate, pair)
         )) || null;
       }
       const declaredLogicalTurnId = compact(pair?.declaredLogicalTurnId || '', 96);
@@ -25444,6 +25448,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           userHash: compact(pair.userHash || '', 96),
           assistantVisibleHash: compact(pair.assistantVisibleHash || '', 96),
           assistantMessageIdHash: compact(pair.assistantMessageIdHash || '', 96),
+          sourceRawDigest: compact(pair.sourceRawDigest || '', 96),
           packetHashes: acceptedPacketHashes,
           quarantinedPacketHashes,
           finalizedBindingRejections,
@@ -25473,6 +25478,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           userHash: compact(pair.userHash || node.userHash || '', 96),
           assistantVisibleHash: compact(pair.assistantVisibleHash || '', 96),
           assistantMessageIdHash: compact(pair.assistantMessageIdHash || '', 96),
+          sourceRawDigest: compact(pair.sourceRawDigest || '', 96),
           packetHashes: acceptedPacketHashes,
           quarantinedPacketHashes,
           finalizedBindingRejections,
@@ -26278,6 +26284,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     let pendingUserMessageIdentityStable = false;
     let pendingUserMessageIndex = -1;
     let pendingUserMessageTime = 0;
+    let pendingUserRawHash = '';
     const seenRevisionKeys = [];
     ensureArray(chatMessages).forEach((message, index) => {
       const projection = messageRevisionProjection(message, index, scope?.key || '', { diagnostics: true });
@@ -26291,6 +26298,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         pendingUserMessageIdentityStable = projection.sourceMessageStable === true;
         pendingUserMessageIndex = index;
         pendingUserMessageTime = Math.max(0, Number(message?.time || 0) || 0);
+        pendingUserRawHash = stableHash64(text(body));
         return;
       }
       if (!/^(?:assistant|model)$/i.test(role)) return;
@@ -26336,6 +26344,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         userMessageTime: pendingUserMessageTime,
         assistantVisibleHash: messageRevisionVisibleHash(projection, scope?.key || ''),
         assistantLegacyVisibleHash: projection.legacyVisibleHash || '',
+        // Same digest as hayakuRawSourceDigest over the unfiltered U+A bodies.
+        sourceRawDigest: stableHash64([pendingUserRawHash, stableHash64(text(body))].join('\u0001')),
         packetHashes,
         validPacketHashes: packetDiagnostics.filter(record => record.valid).map(record => record.hash),
         validPacketTypes: uniq(packetDiagnostics.filter(record => record.valid).map(record => record.packetType), 8),
@@ -27568,12 +27578,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         && (!r.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)));
       const stored=candidates.filter(r=>r.recordState==='active' && !r.inheritedSessionHistory && r.memoryClass!=='historical'
         && !r.auditRetained
-        && ((r.userHash===pair.userHash && r.assistantVisibleHash===pair.assistantVisibleHash)
-            || (Boolean(pair.assistantMessageIdHash) && r.assistantMessageIdHash===pair.assistantMessageIdHash && (!r.userMessageIdHash || r.userMessageIdHash===pair.userMessageIdHash))
-            || (!r.assistantMessageIdHash && !pair.assistantMessageIdHash && (!r.ownerTurnNodeId || (owner && r.ownerTurnNodeId===owner.turnNodeId))))
-        && (!r.userMessageIdHash||!pair.userMessageIdHash||r.userMessageIdHash===pair.userMessageIdHash)
-        && (!r.assistantMessageIdHash||!pair.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)
-        && (!owner || owner?.status==='active') && (!owner || !r.ownerTurnNodeId || r.ownerTurnNodeId===owner.turnNodeId || (Boolean(pair.assistantMessageIdHash) && r.assistantMessageIdHash===pair.assistantMessageIdHash))
+        // Same visible hashes, or the same turn under a changed source tag filter (hayakuSameTurnSource).
+        && ((r.userHash===pair.userHash && r.assistantVisibleHash===pair.assistantVisibleHash) || hayakuSameTurnSource(r,pair))
+        && (!r.userMessageIdHash||r.userMessageIdHash===pair.userMessageIdHash)
+        && (!r.assistantMessageIdHash||r.assistantMessageIdHash===pair.assistantMessageIdHash)
+        && owner?.status==='active' && (!r.ownerTurnNodeId||r.ownerTurnNodeId===owner.turnNodeId)
         && !tombstones.some(t=>storageRecordSuppressedByTombstone(r,t)) && verifiedBody(r));
       // An active replacement tombstone suppresses the old inline carrier too.
       const liveHashes=ensureArray(pair.packetHashes).filter(hash=>accepted.has(hash)
@@ -54756,9 +54765,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return candidates.find(node => (
       node.status === 'active'
       && Number(node.pairIndex || 0) === pairIndex
-      && (!node.userHash || !pair?.userHash || node.userHash === pair.userHash
-          || (node.assistantMessageIdHash && pair?.assistantMessageIdHash && node.assistantMessageIdHash === pair.assistantMessageIdHash)
-          || (node.userMessageIdHash && pair?.userMessageIdHash && node.userMessageIdHash === pair.userMessageIdHash))
+      && (!node.userHash || !pair?.userHash || node.userHash === pair.userHash || hayakuSameTurnSource(node, pair))
     )) || null;
   };
   const liveChatLedgerRecordsFromSnapshot = (snapshot, scope, worldline = null) => {
@@ -54992,8 +54999,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     };
   };
   const storageRecordMatchesPairIdentity = (record, pair) => {
-    if (record.userMessageIdHash && pair?.userMessageIdHash && record.userMessageIdHash === pair.userMessageIdHash) return true;
-    if (record.userHash && pair?.userHash && record.userHash !== pair.userHash) return false;
+    if (record.userMessageIdHash && pair?.userMessageIdHash && record.userMessageIdHash !== pair.userMessageIdHash) return false;
+    // A filter-only change moves userHash; the same turn is still proven by hayakuSameTurnSource.
+    if (record.userHash && pair?.userHash && record.userHash !== pair.userHash && !hayakuSameTurnSource(record, pair)) return false;
     if (record.userMessageIdHash && pair?.userMessageIdHash && record.userMessageIdHash !== pair.userMessageIdHash) return false;
     return true;
   };
@@ -55218,16 +55226,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (!pair?.userHash
         || (!pair?.assistantVisibleHash && !pair?.assistantMessageIdHash)
         || !owner) continue;
-      const messageIdentityMatches = Boolean(record.assistantMessageIdHash && pair.assistantMessageIdHash
-        && record.assistantMessageIdHash === pair.assistantMessageIdHash);
-      if (!messageIdentityMatches) {
+      // Message ids always constrain. Visible hashes may differ only when the turn is proven the
+      // same under a changed source tag filter (hayakuSameTurnSource), never by the id alone.
+      if (record.userMessageIdHash && pair.userMessageIdHash
+        && record.userMessageIdHash !== pair.userMessageIdHash) continue;
+      if (record.assistantMessageIdHash && pair.assistantMessageIdHash
+        && record.assistantMessageIdHash !== pair.assistantMessageIdHash) continue;
+      const filterOnlyChange = hayakuSameTurnSource(record, pair);
+      if (!filterOnlyChange) {
         if (record.userHash && record.userHash !== pair.userHash) continue;
-        if (record.userMessageIdHash && pair.userMessageIdHash
-          && record.userMessageIdHash !== pair.userMessageIdHash) continue;
         if (record.assistantVisibleHash && pair.assistantVisibleHash
           && record.assistantVisibleHash !== pair.assistantVisibleHash) continue;
-        if (record.assistantMessageIdHash && pair.assistantMessageIdHash
-          && record.assistantMessageIdHash !== pair.assistantMessageIdHash) continue;
       }
       const next = {
         ...record,
@@ -55258,7 +55267,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const exactMessageIdentity = hasMessageIdentity
       && record.assistantMessageIdHash === node.assistantMessageIdHash;
     if (hasMessageIdentity && !exactMessageIdentity) return false;
-    if (record?.userHash && node?.userHash && record.userHash !== node.userHash && !exactMessageIdentity) return false;
+    // Visible hashes move with the source tag filter; the same U+A messages with the same raw bytes
+    // or the same packet are still this turn (hayakuSameTurnSource). The message id alone is not.
+    const sameTurnUnderFilter = hayakuSameTurnSource(record, node);
+    if (record?.userHash && node?.userHash && record.userHash !== node.userHash && !sameTurnUnderFilter) return false;
     const hasVisibleIdentity = Boolean(record?.assistantVisibleHash && node?.assistantVisibleHash);
     const exactVisibleIdentity = hasVisibleIdentity
       && record.assistantVisibleHash === node.assistantVisibleHash;
@@ -55266,14 +55278,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // retaining the same chatId. In that case both the retired and active response
     // variants share assistantMessageIdHash, so message identity alone must never
     // bind a newly mirrored packet to the older variant.
-    if (hasVisibleIdentity && !exactVisibleIdentity && !exactMessageIdentity) return false;
+    if (hasVisibleIdentity && !exactVisibleIdentity && !sameTurnUnderFilter) return false;
     const exactPacketHash = Boolean(
       record?.hash
       && ensureArray(node?.packetHashes).includes(record.hash)
     );
     // Message identity is an additional constraint, never sufficient proof:
     // cached rerolls can preserve chatId while replacing the response body.
-    if (!exactPacketHash && !exactVisibleIdentity && !exactMessageIdentity && record?.ownerTurnNodeId !== node?.turnNodeId) return false;
+    if (!exactPacketHash && !exactVisibleIdentity && !sameTurnUnderFilter) return false;
     return {
       exactPacketHash,
       exactMessageIdentity,
@@ -55547,9 +55559,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (unbound && !exactPacket) continue;
         // Every identity already present is a constraint. A matching chatId
         // cannot override a changed body, and chatId alone is never proof.
+        // A changed visible hash is tolerated only for the same turn under a changed source tag
+        // filter (same messages and raw bytes or packet: hayakuSameTurnSource).
+        const sameTurnUnderFilter = hayakuSameTurnSource(record, pair);
         if ((hasMessageIdentity && !exactMessage)
-          || (hasVisibleIdentity && !exactVisible && !exactMessage)
-          || (!exactVisible && !exactPacket && !exactMessage)) continue;
+          || (hasVisibleIdentity && !exactVisible && !sameTurnUnderFilter)
+          || (!exactVisible && !exactPacket && !sameTurnUnderFilter)) continue;
         if (byType.has(record.packetType)) continue;
         if (unbound) {
           record.assistantVisibleHash = compact(pair.assistantVisibleHash || '', 96);
@@ -55666,6 +55681,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
  * Own-iframe diff and immutable, owner-scoped approved-input evidence.
  * Never writes chat messages, calls a model, or grants another owner's consent.
  */
+// 원문 태그 필터 원칙 (docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md). userHash/assistantVisibleHash
+// hash the filtered text, so a source tag filter change moves them without any edit. A stored
+// record or turn node is still this turn when its visible hashes match, or when it is the same
+// U+A messages AND either the unfiltered bytes are the same (sourceRawDigest: only the filter
+// moved) or it carries the same HAYAKU packet (packets are outside the filter; a reroll, cached
+// or not, writes a new packet). A message id alone is never proof: a cached reroll keeps it.
+function hayakuSameTurnSource(stored, pair) {
+  if (!stored || !pair) return false;
+  const s = value => String(value ?? '');
+  if (s(stored.userHash) && s(stored.userHash) === s(pair.userHash)
+    && s(stored.assistantVisibleHash) && s(stored.assistantVisibleHash) === s(pair.assistantVisibleHash)) return true;
+  const aId = s(stored.assistantMessageIdHash), pId = s(pair.assistantMessageIdHash);
+  if (!aId || !pId || aId !== pId) return false;
+  const uId = s(stored.userMessageIdHash), puId = s(pair.userMessageIdHash);
+  if (uId && puId && uId !== puId) return false;
+  const raw = s(stored.sourceRawDigest);
+  if (raw && raw === s(pair.sourceRawDigest)) return true;
+  const storedPackets = [...(Array.isArray(stored.packetHashes) ? stored.packetHashes : []), stored.hash].map(s).filter(Boolean);
+  const livePackets = new Set((Array.isArray(pair.packetHashes) ? pair.packetHashes : []).map(s).filter(Boolean));
+  return storedPackets.some(hash => livePackets.has(hash));
+}
 function memorySuiteReviewFingerprint(value) {
   const body = typeof value === 'string' ? value : JSON.stringify(value);
   let a = 2166136261, b = 2246822507;

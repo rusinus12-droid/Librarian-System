@@ -33764,6 +33764,20 @@ const MemorySuiteHealthRecovery = (() => {
     const projected = sanitizeAssistantForMemory(body, { stripRolePrefix: false });
     return projected !== body && projected !== body.trim();
   };
+  const sameRawSourceTurnGroup = (groups = [], source = {}) => {
+    const rawDigest = text(source?.metadata?.sourceRawDigest || '');
+    // live:<position>:<role>:<hash> ids hash the projected content, so they move with the rules;
+    // the position is pairIndex and the content is the raw digest. Native message ids must match.
+    const nativeIds = list => uniqueTextList(list || [], 32).map(String).filter(id => !/^live:\d+:(?:user|assistant):/.test(id));
+    const ids = nativeIds(source?.sourceMessageIds);
+    const pairIndex = Math.max(0, Number(source?.pairIndex || source?.turnIndex || 0) || 0);
+    if (!rawDigest || !pairIndex) return null;
+    return groups.find(group => group.complete !== false
+      && Math.max(0, Number(group.pairIndex || group.turnIndex || 0) || 0) === pairIndex
+      && group.records.length > 0
+      && group.records.every(record => text(record?.metadata?.sourceRawDigest || '') === rawDigest)
+      && group.records.every(record => safeStringify(nativeIds(record?.sourceMessageIds)) === safeStringify(ids))) || null;
+  };
   const diffLiveChatSourcesAgainstRecords = (sources = [], records = [], options = {}) => {
     const groups = responseGroupsForWorldline(records);
     const groupsBySourceHash = new Map();
@@ -33818,13 +33832,23 @@ const MemorySuiteHealthRecovery = (() => {
         if (exact.key) matchedGroupKeys.add(exact.key);
         continue;
       }
-      // Tag rule change or slot preservation tolerance: if turn index matches an existing group, preserve it as unchanged
-      const slotMatched = pairCandidates.find(group => (
-        group.complete !== false && Math.max(0, Number(group.pairIndex || group.turnIndex || 0)) === pair.pairIndex
-      ));
-      if (slotMatched) {
-        unchanged.push(source);
-        if (slotMatched.key) matchedGroupKeys.add(slotMatched.key);
+      // 원문 태그 필터 원칙 (docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md): the same messages with the
+      // same unprojected bytes are the same turn, whatever the filter now hides or shows (a rule was
+      // removed, so the stored text lacks what the filter now sees). A reroll (other message ids),
+      // a cached reroll (same id, other bytes) or a real edit has another raw digest and stays a
+      // change; legacy records without a raw digest keep the text comparison above.
+      const rawMatched = sameRawSourceTurnGroup(pairCandidates, source);
+      if (rawMatched) {
+        if (options.rechunkRuleChanged === true
+          && !rawMatched.records.some(record => isInheritedScopeMemoryRecord(record, options.scopeKey || ''))) {
+          changed.push(source);
+          rechunked.push(source);
+          ruleChanged.push(source);
+          if (rawMatched.key) { matchedGroupKeys.add(rawMatched.key); rechunkedGroupKeys.push(rawMatched.key); }
+        } else {
+          unchanged.push(source);
+          if (rawMatched.key) matchedGroupKeys.add(rawMatched.key);
+        }
         continue;
       }
       if (pairCandidates.length) changed.push(source);

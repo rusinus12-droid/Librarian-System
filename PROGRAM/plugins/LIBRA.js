@@ -67638,13 +67638,17 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       };
     };
 
-    const verifyLibraHandoffSourceBranchesReadOnly = (manifest, pairs) => {
+    // A source tag filter change moves sourceDigest but not the batch: the same U+A message ids
+    // still bind it (libraCanonicalSlotPreservationKind). A reroll, branch or rollback does not.
+    const verifyLibraHandoffSourceBranchesReadOnly = async (context, manifest, pairs) => {
       const mismatches = [];
       for (const ref of listCurrentMemoryRefs(manifest)) {
         const start = Math.max(1, Number(ref?.turnRange?.start || 0) || 0);
         const batch = start ? batchForStart(pairs, start) : [];
         const currentDigest = batch.length === BATCH_SIZE ? sourceDigest(batch) : '';
-        if (!start || batch.length !== BATCH_SIZE || !ref?.sourceDigest || currentDigest !== string(ref.sourceDigest)) {
+        const sameSlot = !!start && batch.length === BATCH_SIZE && !!ref?.sourceDigest && currentDigest !== string(ref.sourceDigest)
+          && !!(await libraCanonicalSlotPreservationKind(context, ref, batch).catch(() => false));
+        if (!sameSlot && (!start || batch.length !== BATCH_SIZE || !ref?.sourceDigest || currentDigest !== string(ref.sourceDigest))) {
           mismatches.push({ startTurn: start, memoryId: string(ref?.memoryId || ''), reason: batch.length !== BATCH_SIZE ? 'batch_incomplete' : 'source_digest_mismatch' });
         }
       }
@@ -67824,7 +67828,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           const meta=await loadStateWorldlineMeta(context.scope,{strict:true});
           unifiedAssert(meta.worldlines[meta.activeWorldlineId].cutoffTurn==null,'UNIFIED_HANDOFF_ROLLBACK_REQUIRES_NATIVE_PREFIX');
         }
-        const branchValidation = verifyLibraHandoffSourceBranchesReadOnly(manifest, pairs);
+        const branchValidation = await verifyLibraHandoffSourceBranchesReadOnly(context, manifest, pairs);
         if (!branchValidation.ok) {
           const error = new Error(`LIBRA handoff source branch validation failed: ${branchValidation.mismatches.map(item => item.startTurn).join(',')}`);
           error.code = 'LIBRA_HANDOFF_SOURCE_BRANCH_MISMATCH';

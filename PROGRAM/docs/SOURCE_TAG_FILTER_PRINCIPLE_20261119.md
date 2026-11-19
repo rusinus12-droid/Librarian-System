@@ -89,6 +89,29 @@ sameTurnUnderCurrentFilter(stored, current)
 - `unifiedLiveBatchMatchesCanonical`의 무조건 `true`
 - State 재생의 `matched=true` 강제와, 단언을 경고로 바꾼 두 곳
 
+### 기존 체결 유지와 리롤·롤백 지원: 세 플러그인 공통 기준
+
+`fc10f82`의 우회를 지운 뒤 같은 원칙으로 다시 구현했다. 기준은 세 플러그인에서 같다.
+
+| 같은 턴으로 본다 (기존 체결 유지) | 다른 턴으로 본다 (리롤·롤백 지원) |
+| --- | --- |
+| 현재 필터로 본 텍스트가 같다 | 메시지 ID가 다르다 (리롤·분기) |
+| 같은 메시지이고 **필터를 적용하기 전 원문(raw) 다이제스트가 같다** (필터만 바뀜. 추가와 제거 모두) | 같은 ID라도 raw와 패킷이 다르다 (캐시된 리롤) |
+| (HAYAKU) 같은 메시지이고 같은 HAYAKU 패킷을 갖고 있다. 패킷은 필터 대상이 아니고 리롤하면 새로 생긴다 | 턴이 없어졌다 (롤백·삭제) |
+
+**메시지 ID 하나만으로는 같은 턴이라고 보지 않는다.** 캐시된 리롤은 chatId를 유지한 채 본문만 바꾸기 때문이다. 메시지 위치(pair index)만으로도 같은 턴이라고 보지 않는다.
+
+| 플러그인 | 구현 |
+| --- | --- |
+| LIBRA 영수증·Micro | `sameTurnUnderCurrentFilter` (위 설명) |
+| LIBRA 정본·State 재생·**RETRACE 인계** | `libraCanonicalSlotPreservationKind`: 같은 U+A 메시지 ID. `verifyLibraHandoffSourceBranchesReadOnly`도 다이제스트가 다를 때 이 판정을 쓴다. 필터 변경 뒤에도 인계가 막히지 않고, 리롤된 배치는 막힌다. |
+| Flashback 유지보수 | `sameRawSourceTurnGroup`: 같은 턴 위치, 같은 네이티브 메시지 ID, 같은 `metadata.sourceRawDigest`(이미 모든 응답 기록에 저장됨). 필터를 추가하든 제거하든 같은 턴으로 보고, "태그 규칙 반영(선택)"(`ruleChangedTurns`) 대상으로만 표시한다. 본문 수정, 캐시된 리롤, 새 ID 리롤은 변경으로, 롤백은 고아 기록으로 잡힌다. `live:<위치>:<역할>:<해시>` 형태의 보조 ID는 필터 적용 후 텍스트의 해시라서 비교에서 뺀다. |
+| HAYAKU 원장·세계선 노드 | 최상위 함수 `hayakuSameTurnSource`: 보이는 해시가 같거나, 같은 U+A 메시지 ID이면서 raw 다이제스트(`sourceRawDigest`) 또는 HAYAKU 패킷 해시가 같다. 라이브 pair와 새 세계선 노드에 `sourceRawDigest`를 기록한다(`hayakuRawSourceDigest`와 같은 값). `fc10f82`가 ID만으로 묶던 6곳(노드 재사용, 원장 활성 기록, Gradia 읽기 노드 선택, `storageRecordMatchesPairIdentity`, 미바인딩 기록 식별 복구, `storageRecordNodeMatchEvidence`, 패킷 바인딩)을 모두 이 함수로 바꿨다. |
+
+HAYAKU는 원래 설계상, 안정적인 네이티브 ID를 가진 채팅에서 스냅샷을 저장된 승인 해시로 정규화한다(`hayakuCanonicalTopologySnapshot`). 그래서 이 경로에서는 필터 변경이 처음부터 토폴로지 변경이 아니었다. 같은 ID를 유지하는 캐시된 리롤은 토폴로지 대조가 아니라 라이브 패킷 캡처(요청 nonce)로 처리한다. 이 설계는 바꾸지 않았다.
+
+기존 데이터는 그대로 쓰인다. raw 다이제스트가 없는 예전 HAYAKU 노드는 패킷 해시로 판정한다. 둘 다 없으면 예전처럼 보이는 해시로만 판정한다.
+
 리비전 계산식(`completedTurnRevisionId`)은 바꾸지 않았다. 계산식을 바꾸면 이미 저장된 모든 영수증, Micro, 렌즈 기록의 식별값이 한꺼번에 어긋난다. 그러면 이번 수정이 막으려던 일괄 무효화가 그대로 다시 일어난다. 기존 저장 데이터는 마이그레이션이나 재작성 없이 그대로 쓰인다.
 
 ### 지켜지는 것
@@ -115,7 +138,21 @@ sameTurnUnderCurrentFilter(stored, current)
 | 필터가 보는 줄이 덧붙음 (`[상태창: HP 100]`, 규칙 없음) | 원문 변경 → 재캡처 후 줄 단위 등가로 Micro 이어받기 |
 | 실제 본문 수정 | 원문 변경, 새 분석 필요 |
 
-회귀 확인: 관련 LIBRA·공유 규칙·Flashback 테스트 26개 파일을 최신 원격 코드(`fc10f82`)와 이번 수정에 같은 조건으로 실행했다.
+Flashback (`flashback_source_rule_change_maintenance_test`)과 HAYAKU (`hayaku_source_filter_binding_test`):
+
+| 경우 | 기대 |
+| --- | --- |
+| 규칙 추가, 확인 후 유지보수 | 그 턴만 "태그 규칙 반영"으로 표시되고 한 번에 정리됨 |
+| **규칙 제거** (Flashback) | 같은 턴. 태그 규칙 반영 대상으로만 표시, 고아 기록 없음 |
+| **규칙 추가·제거** (HAYAKU) | 같은 노드와 기록이 그대로 바인딩됨, 기록 수 그대로 |
+| 본문 수정 (Flashback) | 변경 |
+| 캐시된 리롤 (같은 chatId, 다른 본문) (Flashback) | 변경 (`fc10f82`에서는 "변경 없음") |
+| 새 ID 리롤 | 변경 / 새 노드, 이전 기록은 새 턴에 묶이지 않음 |
+| 롤백 | 저장된 턴은 고아 / 활성 노드 없음 |
+
+`hayaku_reroll_cascade_rebinding_test`는 `fc10f82`에서 실패했고 이번 수정에서 다시 통과한다.
+
+회귀 확인 (1차, LIBRA 판정 통일): 관련 LIBRA·공유 규칙·Flashback 테스트 26개 파일을 최신 원격 코드(`fc10f82`)와 이번 수정에 같은 조건으로 실행했다.
 
 | 대상 | 통과 / 전체 |
 | --- | --- |
@@ -124,19 +161,18 @@ sameTurnUnderCurrentFilter(stored, current)
 
 이번 수정에서 새로 생긴 실패는 없다. 추가로 통과한 2건은 `changed_native_id` 보존 거부 테스트다(`direct full/background guard`, `preservation ownership classification`). 나머지 26건은 두 쪽에서 같은 목록으로 실패하며, 이번 변경 전부터 실패하던 것이다.
 
-## 5. 아직 이 원칙으로 바꾸지 않은 곳
+## 5. 남은 것
 
-| 위치 | 현재 동작 | 필요한 일 |
-| --- | --- | --- |
-| Flashback 유지보수 diff (`fc10f82`) | 같은 pair index면 본문이 달라도 `unchanged` | `sameMaintenanceTurnText` 비교에 현재 필터를 저장본에도 적용하는 방식으로 바꾸고, slot 무조건 일치는 제거해야 한다. 그러면 필터 변경만 무시하고 실제 수정은 감지한다. |
-| Flashback `ruleChangedTurns` 문구 | 필터 변경 턴을 "변경된 턴(수정/롤백 감지)"에 포함해 표시 | 기록을 무효화하지는 않는다. 다만 "태그 규칙 반영(선택)"으로 분리 표시해야 한다. |
-| HAYAKU 원장 바인딩 (`fc10f82`) | 메시지 ID만 같으면 본문 해시가 달라도 같은 기록 | HAYAKU는 본문 해시(`assistantVisibleHash`)만 저장하므로 저장본에 현재 필터를 다시 적용할 수 없다. 원문 raw 해시를 함께 저장하고 "raw 동일 또는 현재 필터 투영 동일"로 판정해야 한다. 그 전까지 `fc10f82`의 ID 단독 바인딩은 캐시된 리롤을 잘못 묶을 위험이 있다. |
-| LIBRA `verifyLibraHandoffSourceBranchesReadOnly` (RETRACE 인계) | 정본 ref의 `sourceDigest`를 정확히 비교하고, 다르면 `LIBRA_HANDOFF_SOURCE_BRANCH_MISMATCH` | 필터 변경 뒤 인계가 막힐 수 있다. 정본과 같은 ID 기반 슬롯 판정(`libraCanonicalSlotPreservationKind`)으로 바꿔야 한다. |
-| LIBRA 대기 중 재생 트랜잭션 (`fc10f82`) | 커밋 실패 시 트랜잭션을 지우고 재구성 | 필터와 무관한 변경이다. 이번 수정 범위 밖이라 그대로 두었다. |
+| 위치 | 상태 |
+| --- | --- |
+| Flashback `ruleChangedTurns` 문구 | 필터 변경 턴을 유지보수 요약의 "변경" 숫자에 "(태그 규칙 변경 N개 포함)"으로 함께 표시한다. 기록을 무효화하지 않고 사용자가 확인해야만 반영된다. 표시만 분리하면 된다. |
+| LIBRA 대기 중 재생 트랜잭션 (`fc10f82`) | 커밋 실패 시 트랜잭션을 지우고 재구성한다. 필터와 무관한 변경이라 범위 밖으로 두었다. |
+| raw 다이제스트가 없는 아주 오래된 기록 | 판정 근거가 없으므로 보이는 해시나 텍스트로만 판정한다. 이런 기록은 필터를 바꾸면 변경으로 표시될 수 있다(Flashback은 표시만, LIBRA와 HAYAKU는 ID 기반 슬롯과 패킷으로 유지). |
 
 ## 6. 앞으로의 규칙 (개발 지침)
 
-- 저장된 기록과 현재 채팅을 비교하는 새 코드는 `completedTurnRevisionId(pair) !== stored.revisionId`나 `sourceDigest([pair]) !== stored.sourceDigest`를 직접 쓰지 않는다. `sameTurnUnderCurrentFilter`(또는 이를 포함하는 `isTextEquivalentCompletedTurn`)를 쓰고, 정본 배치는 `libraCanonicalSlotPreservationKind`를 쓴다.
+- 저장된 기록과 현재 채팅을 비교하는 새 코드는 `completedTurnRevisionId(pair) !== stored.revisionId`나 `sourceDigest([pair]) !== stored.sourceDigest`를 직접 쓰지 않는다. `sameTurnUnderCurrentFilter`(또는 이를 포함하는 `isTextEquivalentCompletedTurn`)를 쓰고, 정본 배치는 `libraCanonicalSlotPreservationKind`를 쓴다. HAYAKU는 `hayakuSameTurnSource`, Flashback은 `sameRawSourceTurnGroup`을 쓴다.
+- 메시지 ID나 턴 위치 하나만으로 같은 턴이라고 판정하지 않는다. raw 다이제스트, 패킷 또는 현재 필터 투영 중 하나가 함께 맞아야 한다.
 - 증상을 없애려고 검사를 무조건 통과시키지 않는다. 필터 변경만 통과시키고 실제 변경은 잡는 판정을 쓴다.
 - 정확한 식별값 비교는 **같은 작업 안에서** 현재본과 현재본을 비교하는 경우(모델 호출 중에 원문이 바뀌었는지 보는 가드 등)에만 쓴다. 이때 필터는 작업 중 바뀌지 않는다(busy 가드).
 - 필터를 추가해 기존 기록이 무효가 되거나 재분석 대상이 되거나 새 리비전이 생긴다면 그것은 버그다. 경로별 예외를 더하지 말고 위 판정 함수로 통일한다.
