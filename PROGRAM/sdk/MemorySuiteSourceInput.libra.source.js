@@ -11,6 +11,11 @@ function memorySuiteSourceTagPolicy(owner, tags) {
   if (tags !== undefined) policies.set(owner, memorySuiteSourceIgnoredTags(tags));
   return policies.get(owner) || ['lb-xnai'];
 }
+// 공통 기준: presentation markup (images, LightBoard lazy/stage markers) that never carries narrative.
+// The same list is every plugin's default rules and is also removed by every plugin's built-in cleanup
+// (no saved rules), so LIBRA, HAYAKU and Flashback analyze the same text and a rule set copied
+// between them changes nothing beyond what its own rules say.
+const MEMORY_SUITE_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
 function memorySuiteSourceTagKey(owner) { return JSON.stringify([memorySuiteSourceTagPolicy(owner),memorySuiteSourceRules(owner)]); }
 function memorySuiteProjectSourceTags(value, owner) {
   const explicit=memorySuiteCanonicalSource(value,owner);if(explicit!==null)return explicit;
@@ -20,6 +25,11 @@ function memorySuiteProjectSourceTags(value, owner) {
   if (names.delete('lb-xnai')) body = body
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>([\s\S]*?)<\/lb-xnai\s*>/gi, (whole, inner) => inner.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '').trim() === '' ? '' : whole)
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '');
+  // 공통 기준 (built-in side): the shared presentation tags, matched as the rules match them.
+  // Unclosed or mismatched blocks are retained, as with saved rules.
+  const presentation = memorySuiteSourceTagRanges(body, MEMORY_SUITE_PRESENTATION_TAGS);
+  if (!presentation.invalid && presentation.ranges.length) body = memorySuiteEraseSourceRanges(body, presentation.ranges);
+  for (const name of MEMORY_SUITE_PRESENTATION_TAGS) names.delete(name);
   if (!names.size) return body;
   const tokens = /<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;
   const ranges = [], stack = []; let start = -1, match;
@@ -37,27 +47,19 @@ function memorySuiteProjectSourceTags(value, owner) {
   return body;
 }
 // Rules are a projection, never an authorization to rewrite stored evidence.
-// Presentation markup each owner's built-in cleanup (no saved rules) already leaves out of the
-// analyzed text. Saved rules replace that cleanup, so each owner's defaults carry exactly its own:
-// saving one new rule changes nothing else in that plugin's analysis. The cleanups differ
-// (measured on the real GUI preview): LIBRA drops all four, Flashback images and lazy markers,
-// HAYAKU none.
-const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze({
-  libra: Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']),
-  flashback: Object.freeze(['img', 'lb-lazy']),
-  hayaku: Object.freeze([])
-});
-function memorySuiteDefaultPresentationTags(owner) { return [...(MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS[owner] || [])]; }
+// Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
+// saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
+function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
-// This owner's default presentation tags a saved rule set does not handle in any way (any action counts).
-function memorySuiteMissingDefaultSourceTags(rules, owner) {
+// Shared presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules) {
   if(!rules||typeof rules!=='object')return [];
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
-  return memorySuiteDefaultPresentationTags(owner).filter(name=>!handled.has(name));
+  return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
 }
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());

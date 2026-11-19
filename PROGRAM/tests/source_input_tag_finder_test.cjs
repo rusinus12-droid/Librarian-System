@@ -17,7 +17,7 @@ const CONTROLS = fs.readFileSync(path.join(root, 'sdk/MemorySuiteSourceInputCont
 const sdk = () => {
   const context = {};
   vm.createContext(context);
-  vm.runInContext(POLICY + '\n' + CONTROLS + ';globalThis.api={memorySuiteDefaultSourceRules,memorySuiteMissingDefaultSourceTags,memorySuiteSourceTagInventory,memorySuiteNormalizeSourceRules,memorySuiteProjectSourceRules,memorySuiteStripInternalSource};', context);
+  vm.runInContext(POLICY + '\n' + CONTROLS + ';globalThis.api={memorySuiteProjectSourceTags,memorySuiteDefaultSourceRules,memorySuiteMissingDefaultSourceTags,memorySuiteSourceTagInventory,memorySuiteNormalizeSourceRules,memorySuiteProjectSourceRules,memorySuiteStripInternalSource};', context);
   return context.api;
 };
 // A rule set saved before the defaults carried the presentation tags, plus one custom tag.
@@ -38,14 +38,18 @@ test('default rules leave out what the built-in cleanup leaves out, and a saved 
   assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'libra')), ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
   assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags({ ...OLD_SAVED, unwrapTags: ['img'], ignoredTags: [...OLD_SAVED.ignoredTags, 'lb-lazy', 'lb-stage', 'lb-stage-marker'] }, 'libra')), [], 'any action counts as handled');
   assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(null, 'libra')), []);
-  // Each owner's defaults match its own built-in cleanup (measured on the real GUI preview):
-  // Flashback drops images and lazy markers, HAYAKU keeps all four.
-  const flashback = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules('flashback')).ignoredTags;
-  assert.deepEqual(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'].filter(name => flashback.includes(name)), ['img', 'lb-lazy']);
-  const hayaku = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules('hayaku')).ignoredTags;
-  assert.deepEqual(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'].filter(name => hayaku.includes(name)), []);
-  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'flashback')), ['img', 'lb-lazy']);
-  assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, 'hayaku')), [], 'HAYAKU never shows the notice');
+  // 공통 기준: every owner's defaults carry the same presentation tags, and the notice is the same.
+  for (const owner of ['flashback', 'hayaku']) {
+    const tags = api.memorySuiteNormalizeSourceRules(api.memorySuiteDefaultSourceRules(owner)).ignoredTags;
+    assert.deepEqual(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'].filter(name => tags.includes(name)), ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'], owner);
+    assert.deepEqual(Array.from(api.memorySuiteMissingDefaultSourceTags(OLD_SAVED, owner)), ['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker'], owner + ' notice');
+  }
+  // The built-in cleanup (no saved rules) leaves the same tags out for every owner.
+  const raw = '하연이 웃었다.\n<img src="a.png">\n<lb-stage id="1">무대</lb-stage>\n<lb-stage-marker id="2"/>\n<lb-lazy id="x" />\n그녀는 창밖을 보았다.';
+  const builtIn = ['libra', 'hayaku', 'flashback'].map(owner => api.memorySuiteProjectSourceTags(raw, owner));
+  for (const text of builtIn) assert.doesNotMatch(text, /<img|lb-stage|lb-lazy/);
+  assert.equal(new Set(builtIn).size, 1, 'all three built-in cleanups give the same text');
+  assert.equal(api.memorySuiteProjectSourceTags('<lb-stage>열림만', 'hayaku'), '<lb-stage>열림만', 'an unclosed block is kept, as with saved rules');
 });
 
 test('the tag inventory reads treatment from the projection, so nested and excluded items are not offered again', () => {

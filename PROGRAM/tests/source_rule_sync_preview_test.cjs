@@ -40,7 +40,7 @@ const world = ({ saved = {}, present = ['libra', 'hayaku', 'flashback'], busy = 
   return { w, dom, store, sent, api, policies, syncs, async start() { for (const s of Object.values(syncs)) await s.start(); } };
 };
 
-test('compare reports same, different, built-in and absent peers', async () => {
+test('compare reports same, different and absent peers by the rules each one runs', async () => {
   const f = world({ saved: { libra: RULES, hayaku: { ...RULES, ignoredTags: ['lb-xnai'] } }, present: ['libra', 'hayaku'] });
   await f.start();
   const states = await f.syncs.libra.compare();
@@ -50,8 +50,17 @@ test('compare reports same, different, built-in and absent peers', async () => {
   await g.start();
   const fromLibra = await g.syncs.libra.compare();
   assert.equal(fromLibra.hayaku.state, 'same');
-  assert.equal(fromLibra.flashback.state, 'built_in', 'no saved rules there: it still runs its own cleanup');
-  f.dom.window.close(); g.dom.window.close();
+  assert.equal(fromLibra.flashback.state, 'different', 'no saved rules there: it runs the shared defaults, not these rules');
+  assert.equal(fromLibra.flashback.builtIn, true);
+  // 공통 기준: a plugin that saved the shared defaults matches one that never saved rules.
+  const h = world({ saved: {} });
+  const defaults = JSON.parse(JSON.stringify(h.w.memorySuiteDefaultSourceRules('libra')));
+  const k = world({ saved: { libra: defaults } });
+  await k.start();
+  const fromDefaults = await k.syncs.libra.compare();
+  assert.deepEqual([fromDefaults.hayaku.state, fromDefaults.flashback.state], ['same', 'same']);
+  assert.deepEqual([fromDefaults.hayaku.builtIn, fromDefaults.flashback.builtIn], [true, true]);
+  f.dom.window.close(); g.dom.window.close(); h.dom.window.close(); k.dom.window.close();
 });
 
 test('apply copies normalized rules into each peer through its own policy', async () => {
@@ -143,5 +152,59 @@ test('the shared editor applies to the other plugins when asked, and the preview
   await wait(() => /LIBRA 적용됨/.test(find('[data-source-rule-sync-status]').textContent) && /Flashback 적용됨/.test(find('[data-source-rule-sync-status]').textContent));
   for (const owner of ['hayaku', 'libra', 'flashback']) assert.ok(f.store[owner].sourceRules.ignoredTags.includes('choice'), owner);
   await wait(() => ['libra', 'flashback'].every(peer => find(`[data-source-rule-sync-peer="${peer}"]`).dataset.state === 'same'));
+  f.dom.window.close();
+});
+
+test('a peer whose rules changed since compare refuses the copy instead of overwriting them', async () => {
+  const f = world({ saved: { libra: RULES } });
+  await f.start();
+  const states = await f.syncs.libra.compare();
+  // Flashback is edited elsewhere after LIBRA looked.
+  const elsewhere = { ...RULES, ignoredTags: ['flash-only'] };
+  await f.policies.flashback.setSourceRules(elsewhere);
+  const results = await f.syncs.libra.applyToPeers(RULES, ['hayaku', 'flashback'], { hayaku: states.hayaku.fingerprint, flashback: states.flashback.fingerprint });
+  assert.equal(results.hayaku.ok, true);
+  assert.equal(results.flashback.ok, false);
+  assert.match(results.flashback.error, /CONFLICT/);
+  assert.deepEqual(f.store.flashback.sourceRules.ignoredTags, ['flash-only'], 'the newer rules stay');
+  f.dom.window.close();
+});
+
+test('an open editor shows rules applied from another plugin, and an edited draft asks before overwriting them', async () => {
+  const f = world({ saved: { libra: RULES, hayaku: RULES } });
+  await f.start();
+  const host = f.w.document.querySelector('main');
+  f.w.mountMemorySuiteSourceInputControls(host, { owner: 'hayaku', policy: f.policies.hayaku, ruleSync: f.syncs.hayaku });
+  const find = q => host.querySelector(q);
+  const values = () => [...host.querySelectorAll('[data-rule-value]')].map(node => node.value).filter(Boolean);
+  const wait = async fn => { for (let i = 0; i < 400; i++) { const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 5)); } throw Error('WAIT_TIMEOUT'); };
+  await wait(() => !find('[data-source-input-add]').disabled);
+  // Untouched editor: the new rules appear at once.
+  const next = { ...RULES, ignoredTags: [...RULES.ignoredTags, 'from-libra'] };
+  assert.equal((await f.syncs.libra.applyToPeers(next, ['hayaku'])).hayaku.ok, true);
+  await wait(() => values().includes('from-libra'));
+  assert.match(find('[data-source-input-status]').textContent, /바뀐 규칙을 불러왔습니다/);
+  assert.equal(find('[data-source-remote-changed]').hidden, true);
+  // Edited draft: kept, with a notice; the first 적용 only warns, the second overwrites.
+  const last = [...host.querySelectorAll('[data-rule-value]')].at(-1);
+  last.value = 'my-draft'; last.dispatchEvent(new f.w.Event('input', { bubbles: true }));
+  const third = { ...RULES, ignoredTags: [...RULES.ignoredTags, 'second-remote'] };
+  await f.syncs.libra.applyToPeers(third, ['hayaku']);
+  await wait(() => find('[data-source-remote-changed]').hidden === false);
+  assert.ok(values().includes('my-draft') && !values().includes('second-remote'), 'the draft is not replaced');
+  find('[data-source-rule-sync-together]').checked = false;
+  await find('[data-source-input-apply]').onclick();
+  assert.ok(f.store.hayaku.sourceRules.ignoredTags.includes('second-remote'), 'nothing saved on the first 적용');
+  assert.match(find('[data-source-input-status]').textContent, /한 번 더/);
+  await find('[data-source-input-apply]').onclick();
+  await wait(() => f.store.hayaku.sourceRules.ignoredTags.includes('my-draft'));
+  assert.equal(find('[data-source-remote-changed]').hidden, true);
+  // 바뀐 규칙 불러오기 drops the draft for the rules saved elsewhere.
+  last.value = ''; const again = [...host.querySelectorAll('[data-rule-value]')].at(-1);
+  again.value = 'another-draft'; again.dispatchEvent(new f.w.Event('input', { bubbles: true }));
+  await f.syncs.libra.applyToPeers(next, ['hayaku']);
+  await wait(() => find('[data-source-remote-changed]').hidden === false);
+  find('[data-source-remote-load]').click();
+  await wait(() => values().includes('from-libra') && !values().includes('another-draft'));
   f.dom.window.close();
 });

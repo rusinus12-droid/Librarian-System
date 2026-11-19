@@ -17,7 +17,9 @@ async function setup(owner,{fail=false}={}){
  return {root,find,set,add,policy,ctx,get stored(){return JSON.parse(stored);},get writes(){return writes;},get reads(){return reads;},busy:value=>busy=value,allowWrite:()=>fail=false,
   apply:()=>find('[data-source-input-apply]').onclick(),preview:()=>find('[data-source-input-preview]').onclick(),close:()=>{policy.dispose();dom.window.close();}};
 }
-const FACTORY={hayaku:['lb-xnai','thoughts'],flashback:['img','lb-lazy','lb-xnai','thoughts']};
+// 공통 기준: every owner restores the same shared defaults.
+const SHARED_DEFAULTS=['img','lb-lazy','lb-stage','lb-stage-marker','lb-xnai','thoughts'];
+const FACTORY={hayaku:SHARED_DEFAULTS,flashback:SHARED_DEFAULTS};
 for(const owner of ['hayaku','flashback']){
  test(owner+': add, delete and undo preserve edited values and order without saving',async()=>{const f=await setup(owner);try{
   const row=f.add('wrapper','unwrapTags');f.add('original','sourceTags');row.querySelector('[data-rule-delete]').click();

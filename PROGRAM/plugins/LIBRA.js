@@ -51711,6 +51711,11 @@ function memorySuiteSourceTagPolicy(owner, tags) {
   if (tags !== undefined) policies.set(owner, memorySuiteSourceIgnoredTags(tags));
   return policies.get(owner) || ['lb-xnai'];
 }
+// 공통 기준: presentation markup (images, LightBoard lazy/stage markers) that never carries narrative.
+// The same list is every plugin's default rules and is also removed by every plugin's built-in cleanup
+// (no saved rules), so LIBRA, HAYAKU and Flashback analyze the same text and a rule set copied
+// between them changes nothing beyond what its own rules say.
+const MEMORY_SUITE_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
 function memorySuiteSourceTagKey(owner) { return JSON.stringify([memorySuiteSourceTagPolicy(owner),memorySuiteSourceRules(owner)]); }
 function memorySuiteProjectSourceTags(value, owner) {
   const explicit=memorySuiteCanonicalSource(value,owner);if(explicit!==null)return explicit;
@@ -51720,6 +51725,11 @@ function memorySuiteProjectSourceTags(value, owner) {
   if (names.delete('lb-xnai')) body = body
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>([\s\S]*?)<\/lb-xnai\s*>/gi, (whole, inner) => inner.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '').trim() === '' ? '' : whole)
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '');
+  // 공통 기준 (built-in side): the shared presentation tags, matched as the rules match them.
+  // Unclosed or mismatched blocks are retained, as with saved rules.
+  const presentation = memorySuiteSourceTagRanges(body, MEMORY_SUITE_PRESENTATION_TAGS);
+  if (!presentation.invalid && presentation.ranges.length) body = memorySuiteEraseSourceRanges(body, presentation.ranges);
+  for (const name of MEMORY_SUITE_PRESENTATION_TAGS) names.delete(name);
   if (!names.size) return body;
   const tokens = /<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;
   const ranges = [], stack = []; let start = -1, match;
@@ -51737,27 +51747,19 @@ function memorySuiteProjectSourceTags(value, owner) {
   return body;
 }
 // Rules are a projection, never an authorization to rewrite stored evidence.
-// Presentation markup each owner's built-in cleanup (no saved rules) already leaves out of the
-// analyzed text. Saved rules replace that cleanup, so each owner's defaults carry exactly its own:
-// saving one new rule changes nothing else in that plugin's analysis. The cleanups differ
-// (measured on the real GUI preview): LIBRA drops all four, Flashback images and lazy markers,
-// HAYAKU none.
-const MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS = Object.freeze({
-  libra: Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']),
-  flashback: Object.freeze(['img', 'lb-lazy']),
-  hayaku: Object.freeze([])
-});
-function memorySuiteDefaultPresentationTags(owner) { return [...(MEMORY_SUITE_DEFAULT_PRESENTATION_TAGS[owner] || [])]; }
+// Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
+// saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
+function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
 }
-// This owner's default presentation tags a saved rule set does not handle in any way (any action counts).
-function memorySuiteMissingDefaultSourceTags(rules, owner) {
+// Shared presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules) {
   if(!rules||typeof rules!=='object')return [];
   const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
-  return memorySuiteDefaultPresentationTags(owner).filter(name=>!handled.has(name));
+  return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
 }
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
@@ -52188,9 +52190,9 @@ function mountMemorySuiteMissingDefaultsNotice(host, config) {
   const box=make('div'),text=make('p'),add=make('button','빠진 기본 규칙 추가');box.className='ms-input-defaults-notice';box.dataset.sourceMissingDefaults='';box.hidden=true;add.type='button';add.dataset.sourceMissingDefaultsAdd='';
   box.append(text,add);host.append(box);
   const update=rules=>{
-    const missing=memorySuiteMissingDefaultSourceTags(rules,config.owner);box.hidden=!missing.length;
+    const missing=memorySuiteMissingDefaultSourceTags(rules);box.hidden=!missing.length;
     text.textContent=missing.length?'저장된 규칙에 기본 정리 대상이 빠져 있어, 다음 표시용 태그가 분석에 들어갑니다: '+missing.map(name=>'<'+name+'>').join(', ')+'. 추가한 뒤 적용을 누르면 규칙 저장 전과 같게 빠집니다.':'';
-    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules,config.owner))config.addRule(name,'ignoredTags');box.hidden=true;};
+    add.onclick=()=>{if(config.busy?.()===true)return;for(const name of memorySuiteMissingDefaultSourceTags(config.draft?.()||rules))config.addRule(name,'ignoredTags');box.hidden=true;};
   };
   return {update};
 }
@@ -52288,9 +52290,12 @@ function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
   if(!self)throw Error('SOURCE_RULE_SYNC_OWNER_INVALID');
   const peers=Object.keys(MEMORY_SUITE_SOURCE_RULE_PEERS).filter(key=>key!==owner);
-  const pending=new Map();let started=false,starting=null,disposed=false,serial=0;
+  const pending=new Map(),subscribers=new Set();let started=false,starting=null,disposed=false,serial=0;
   const api=()=>{try{return config.api();}catch{return null;}};
   const fingerprint=rules=>rules?JSON.stringify(memorySuiteNormalizeSourceRules(rules)):'';
+  // 공통 기준: a plugin without saved rules runs the shared defaults, so it is compared by them.
+  const effective=()=>memorySuiteSourceRules(owner)||memorySuiteDefaultSourceRules(owner);
+  const notify=rules=>{try{config.onRemoteApply?.(rules);}catch{}for(const fn of [...subscribers]){try{fn(rules);}catch{}}};
   const reply=(target,message,result,error)=>Promise.resolve(api()?.postPluginChannelMessage(target,MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,{schema:MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA,kind:'response',id:message.id,action:message.action,...(error?{error}:{result})})).catch(()=>{});
   const handler=async(message,metadata={})=>{
     if(disposed||!message||typeof message!=='object'||message.schema!==MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA||typeof message.id!=='string'||message.id.length>160)return;
@@ -52300,12 +52305,15 @@ function createMemorySuiteSourceRuleSync(config) {
     if(message.kind!=='request')return;
     try{
       await config.policy.ready();
-      if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null});
+      if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null,effective:fingerprint(effective())});
       if(message.action==='apply'){
         if(config.isDisposed?.()===true)throw Error('SOURCE_RULE_SYNC_DISPOSED');
         const rules=memorySuiteNormalizeSourceRules(message.rules);
+        // Compare-and-set: the sender saw these rules here; if they changed since (another editor
+        // applied first), refuse instead of overwriting rules the sender never saw.
+        if(typeof message.expected==='string'&&message.expected!==fingerprint(effective()))throw Error('SOURCE_RULE_SYNC_CONFLICT');
         await config.policy.setSourceRules(rules);
-        config.onRemoteApply?.(rules);
+        notify(memorySuiteSourceRules(owner)||rules);
         return void reply(sender,message,{owner,applied:true,rules:memorySuiteSourceRules(owner)||null});
       }
       throw Error('SOURCE_RULE_SYNC_ACTION_INVALID');
@@ -52327,23 +52335,30 @@ function createMemorySuiteSourceRuleSync(config) {
         .catch(()=>{if(pending.delete(id)){clearTimeout(record.timer);resolve({ok:false,error:'SOURCE_RULE_SYNC_IPC_UNAVAILABLE'});}});
     });
   };
-  // state per peer: same | different | built_in (no saved rules there) | absent (no answer).
+  // state per peer: same | different (by the rules each one actually runs, saved or shared
+  // defaults) | absent (no answer) | error. builtIn: that plugin has no saved rules. fingerprint is
+  // what was seen there, passed back as `expected` when applying.
   const compare=async()=>{
-    await config.policy.ready();const mine=fingerprint(memorySuiteSourceRules(owner));
+    await config.policy.ready();const mine=fingerprint(effective());
     const answers=await Promise.all(peers.map(async peer=>{const answer=await ask(peer,'describe');
       if(!answer.ok)return [peer,{state:answer.error==='SOURCE_RULE_SYNC_TIMEOUT'||answer.error==='SOURCE_RULE_SYNC_IPC_UNAVAILABLE'?'absent':'error',error:answer.error}];
-      const theirs=answer.result?.rules?fingerprint(answer.result.rules):'';
-      return [peer,{state:!theirs?(mine?'built_in':'same'):theirs===mine?'same':'different'}];}));
+      const builtIn=!answer.result?.rules;
+      // An older peer does not report what it runs without saved rules; it is not the shared standard.
+      const theirs=typeof answer.result?.effective==='string'?answer.result.effective:builtIn?'':fingerprint(answer.result.rules);
+      return [peer,{state:theirs&&theirs===mine?'same':'different',builtIn,...(theirs?{fingerprint:theirs}:{})}];}));
     return Object.fromEntries(answers);
   };
-  const applyToPeers=async(rules,only=peers)=>{
+  // expected: {peer: fingerprint seen by compare}; a peer whose rules moved since then refuses.
+  const applyToPeers=async(rules,only=peers,expected={})=>{
     const normalized=memorySuiteNormalizeSourceRules(rules);
-    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply',{rules:normalized},6000)]));
+    const answers=await Promise.all(only.filter(peer=>peers.includes(peer)).map(async peer=>[peer,await ask(peer,'apply',{rules:normalized,...(typeof expected?.[peer]==='string'?{expected:expected[peer]}:{})},6000)]));
     return Object.fromEntries(answers.map(([peer,answer])=>[peer,answer.ok?{ok:true}:{ok:false,error:answer.error}]));
   };
-  const dispose=async()=>{disposed=true;for(const record of pending.values())clearTimeout(record.timer);pending.clear();
+  // Editors listen here so a rule applied from another plugin shows up in an open editor.
+  const subscribe=fn=>{if(typeof fn!=='function')return()=>{};subscribers.add(fn);return()=>{subscribers.delete(fn);};};
+  const dispose=async()=>{disposed=true;subscribers.clear();for(const record of pending.values())clearTimeout(record.timer);pending.clear();
     if(started){started=false;try{await api()?.removePluginChannelListener?.(MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL,handler);}catch{}}};
-  return Object.freeze({owner,peers,start,compare,applyToPeers,dispose});
+  return Object.freeze({owner,peers,start,compare,applyToPeers,subscribe,dispose});
 }
 // The editor's view of the other two plugins: whether their rules match, and one action to copy
 // this plugin's saved rules to them. Applying here with the box checked does the same.
@@ -52354,28 +52369,35 @@ function mountMemorySuiteSourceRuleSyncPanel(host, config) {
   area.className='ms-input-sync';area.dataset.sourceRuleSync='';list.className='ms-sync-list';list.dataset.sourceRuleSyncList='';actions.className='ms-sync-actions';
   copy.type=recheck.type='button';copy.dataset.sourceRuleSyncCopy='';recheck.dataset.sourceRuleSyncRecheck='';status.dataset.sourceRuleSyncStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
   actions.append(copy,recheck);area.append(title,together,list,actions,status);host.append(area);
-  const stateLabels={same:'같은 규칙',different:'규칙이 다름',built_in:'규칙 저장 안 함 · 자체 정리 사용',absent:'응답 없음 (꺼져 있거나 설치되지 않음)',error:'확인 실패',checking:'확인 중…'};
+  const stateLabels={same:'같은 규칙',different:'규칙이 다름',absent:'응답 없음 (꺼져 있거나 설치되지 않음)',error:'확인 실패',checking:'확인 중…'};
+  const label=entry=>{const base=stateLabels[entry?.state||'checking'];return entry?.builtIn&&['same','different'].includes(entry.state)?base+' · 저장한 규칙 없음(공통 기본 규칙)':base;};
   let states={},busy=false;
   const draw=()=>{
-    list.replaceChildren(...config.sync.peers.map(peer=>{const row=make('div'),name=make('b',MEMORY_SUITE_SOURCE_RULE_LABELS[peer]),state=make('span',stateLabels[states[peer]?.state||'checking']);
-      row.className='ms-sync-row';row.dataset.sourceRuleSyncPeer=peer;row.dataset.state=states[peer]?.state||'checking';row.append(name,state);return row;}));
-    const reachable=config.sync.peers.filter(peer=>['different','built_in'].includes(states[peer]?.state));
+    list.replaceChildren(...config.sync.peers.map(peer=>{const row=make('div'),name=make('b',MEMORY_SUITE_SOURCE_RULE_LABELS[peer]),state=make('span',label(states[peer]));
+      row.className='ms-sync-row';row.dataset.sourceRuleSyncPeer=peer;row.dataset.state=states[peer]?.state||'checking';row.dataset.builtIn=states[peer]?.builtIn?'true':'false';row.append(name,state);return row;}));
+    const reachable=config.sync.peers.filter(peer=>states[peer]?.state==='different');
     copy.disabled=busy||config.busy?.()===true||!config.savedRules()||config.dirty?.()===true||!reachable.length;
     recheck.disabled=busy;
   };
   const check=async()=>{busy=true;states={};draw();try{states=await config.sync.compare();}catch{states={};}finally{busy=false;draw();}};
-  const sendTo=async(rules,peers)=>{
+  const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 규칙이 바뀌어 덮어쓰지 않음 · 다시 확인한 뒤 적용하세요':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':error;
+  // Only peers that run different rules receive them, each guarded by what was seen there.
+  const sendTo=async rules=>{
+    const peers=config.sync.peers.filter(peer=>states[peer]?.state==='different');
+    if(!peers.length){status.textContent='다른 기억 플러그인도 같은 규칙입니다.';return;}
     busy=true;draw();status.textContent='다른 플러그인에 적용 중…';
     try{
-      const results=await config.sync.applyToPeers(rules,peers);
-      const parts=Object.entries(results).map(([peer,result])=>MEMORY_SUITE_SOURCE_RULE_LABELS[peer]+(result.ok?' 적용됨':' 실패('+(/BUSY/.test(result.error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(result.error||'')?'응답 없음':result.error)+')'));
+      const expected=Object.fromEntries(peers.filter(peer=>typeof states[peer]?.fingerprint==='string').map(peer=>[peer,states[peer].fingerprint]));
+      const results=await config.sync.applyToPeers(rules,peers,expected);
+      const parts=Object.entries(results).map(([peer,result])=>MEMORY_SUITE_SOURCE_RULE_LABELS[peer]+(result.ok?' 적용됨':' 실패('+reason(result.error)+')'));
       status.textContent=parts.length?parts.join(' · '):'적용할 플러그인이 없습니다.';
     }finally{busy=false;await check();}
   };
-  copy.onclick=()=>{const rules=config.savedRules();if(!rules||busy)return;void sendTo(rules,config.sync.peers.filter(peer=>['different','built_in'].includes(states[peer]?.state)));};
+  copy.onclick=()=>{const rules=config.savedRules();if(!rules||busy)return;void sendTo(rules);};
   recheck.onclick=()=>{if(!busy)void check();};
-  // Called by the editor after its own 적용 succeeded.
-  const afterApply=async rules=>{if(!box.checked){await check();return;}const targets=config.sync.peers.filter(peer=>states[peer]?.state!=='absent');await sendTo(rules,targets);};
+  // Called by the editor after its own 적용 succeeded: look again (this plugin's rules just
+  // changed), then send to the peers that now differ.
+  const afterApply=async rules=>{await check();if(box.checked)await sendTo(rules);};
   return {check,afterApply,refresh:draw};
 }
 function mountMemorySuiteSourceInputControls(container, config) {
@@ -52412,7 +52434,11 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
     const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
-    box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
+    // Rules saved meanwhile by another memory plugin (동시 적용) while this draft was being edited.
+    const remoteNotice=make('div'),remoteText=make('p'),remoteLoad=make('button','바뀐 규칙 불러오기');
+    remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
+    remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
+    box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
@@ -52423,6 +52449,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
+    // savedAtFill: the saved rules this draft started from; overwriteConfirmed: the user pressed 적용
+    // once after being told those rules changed elsewhere.
+    let savedAtFill='',overwriteConfirmed=false;
+    const savedFingerprint=()=>{const saved=memorySuiteSourceRules(owner);return saved?JSON.stringify(memorySuiteNormalizeSourceRules(saved)):'';};
     const isEmpty=row=>row.custom.checked?!row.open.value.trim()&&!row.close.value.trim():!row.value.value.trim();
     function inferTag(input) {
       const value=input.trim();
@@ -52518,14 +52548,35 @@ function mountMemorySuiteSourceInputControls(container, config) {
       rows=[];removed=[];list.replaceChildren();
       for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
       for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
-      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;missingNotice.update(preferences.sourceRules);}setEnabled();finder?.refresh();
+      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;missingNotice.update(preferences.sourceRules);savedAtFill=savedFingerprint();overwriteConfirmed=false;remoteNotice.hidden=true;}setEnabled();finder?.refresh();
     }
+    const remoteChanged=()=>loaded&&savedFingerprint()!==savedAtFill;
+    // Another plugin applied rules here. An untouched editor shows them at once; an edited draft is
+    // kept, with a notice, and 적용 asks once more before overwriting them.
+    const onRemoteApply=()=>{
+      if(disposed()||!box.isConnected){unsubscribe();return;}
+      if(!loaded||!remoteChanged())return;
+      if(applying){return;}
+      if(draftUnchanged()){fill();status.textContent='다른 기억 플러그인에서 바뀐 규칙을 불러왔습니다.';void showPreview();previewList.refresh();void syncPanel?.check();return;}
+      overwriteConfirmed=false;
+      remoteText.textContent='다른 기억 플러그인에서 이 플러그인의 규칙을 바꿨습니다. 지금 초안을 적용하면 그 규칙을 덮어씁니다.';
+      remoteNotice.hidden=false;void syncPanel?.check();
+    };
+    const unsubscribe=config.ruleSync?.subscribe?.(onRemoteApply)||(()=>{});
+    remoteLoad.onclick=()=>{if(!loaded||applying||disposed())return;fill();changed();status.textContent='바뀐 규칙을 불러왔습니다. 초안은 버렸습니다.';};
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
+    defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
     apply.onclick=async()=>{
       if(!loaded||applying||disposed())return;
       let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
+      // The saved rules moved since this draft began (another plugin applied them): say so and
+      // overwrite only on a second 적용.
+      if(remoteChanged()&&!overwriteConfirmed){
+        overwriteConfirmed=true;remoteNotice.hidden=false;
+        remoteText.textContent='다른 기억 플러그인에서 이 플러그인의 규칙을 바꿨습니다. 지금 초안을 적용하면 그 규칙을 덮어씁니다.';
+        status.textContent='그사이 저장된 규칙이 바뀌었습니다. 초안으로 덮어쓰려면 적용을 한 번 더 누르세요.';return;
+      }
       applying=true;status.textContent='적용 중…';setEnabled();
       try{await setSourceRules(rules);if(disposed())return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));}
       catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);}
