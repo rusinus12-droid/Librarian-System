@@ -48412,6 +48412,25 @@ function createLibraReadonlySourceContext(owner) {
     const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40, { maxItems,
       canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12 });
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
+    const stateAsOfTurn = frame.head?.throughTurn ?? null;
+    // Turns whose raw text is already visible in the current request are omitted from
+    // RECORDED HISTORY (only when the entire canonical span is visible) and SCENE DETAILS,
+    // leaving their candidate slots and character budget to older turns.
+    // CURRENT STATE, RECENT CHANGES (newer than State), and PERSPECTIVE NOTES are always kept.
+    const visibleTurns = new Set((options.visibleTurns ? [...options.visibleTurns] : []).map(Number).filter(n => Number.isInteger(n) && n > 0));
+    const isRecentChangeTurn = turn => stateRows.length > 0 && stateAsOfTurn != null && Number(turn || 0) > Number(stateAsOfTurn);
+    const isSpanFullyVisible = (start, end) => {
+      const s = Number(start || end || 0), e = Number(end || start || 0);
+      if (!Number.isInteger(s) || !Number.isInteger(e) || s <= 0 || e < s) return false;
+      for (let t = s; t <= e; t++) if (!visibleTurns.has(t)) return false;
+      return true;
+    };
+    const eligibleRefs = visibleTurns.size
+      ? frame.refs.filter(ref => !(isSpanFullyVisible(ref.turnRange?.start, ref.turnRange?.end) && !isRecentChangeTurn(ref.turnRange?.end)))
+      : frame.refs;
+    const eligibleMicroTurns = visibleTurns.size
+      ? frame.turns.filter(turn => !(visibleTurns.has(Number(turn)) && !isRecentChangeTurn(turn)))
+      : frame.turns;
     // A State small enough for its anchors to hold most of it needs no dense signal. A larger
     // one sends its row texts with the query, so stored row vectors can rank the anchors.
     const stateTexts = stateRows.length >= STATE_SEMANTIC_MIN_ROWS
@@ -48446,12 +48465,12 @@ function createLibraReadonlySourceContext(owner) {
     const relevantAnchors = queryText
       ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
       : anchors.items;
-    const refs = engine.rankCatalog(frame.refs, queryText, relevantAnchors,
+    const refs = engine.rankCatalog(eligibleRefs, queryText, relevantAnchors,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
     const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
-    const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
+    const ranked = engine.rankMicroTurns({ turns: eligibleMicroTurns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
       limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
       semanticScores: semantic.microScores || null });
     const turns = ranked.turns;
@@ -48488,7 +48507,6 @@ function createLibraReadonlySourceContext(owner) {
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
     const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
-    const stateAsOfTurn = frame.head?.throughTurn ?? null;
     const latestTurn = frame.turns.at(-1) || 0;
     const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
     const toPublic = item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
@@ -48576,8 +48594,8 @@ function createLibraReadonlySourceContext(owner) {
     const release = () => { if (closed) return; closed = true; frame.release(readSet); };
     // Micro is searched in full either by reading every turn, or by screening every turn's
     // stored search text and reading each one that matched.
-    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= frame.turns.length && ranked.matchesRead === ranked.matches;
-    const complete = refs.length === frame.refs.length && (turns.length === frame.turns.length || microScreened) && !failures.length && !payloadLimited;
+    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= eligibleMicroTurns.length && ranked.matchesRead === ranked.matches;
+    const complete = refs.length === eligibleRefs.length && (turns.length === eligibleMicroTurns.length || microScreened) && !failures.length && !payloadLimited;
     const headFreshness = stateAsOfTurn == null ? 'absent' : frame.stateAuthority?.pending ? 'partial' : (turnLag === 0 ? 'current' : 'lagging');
     const pointInTimeNotice = headFreshness === 'partial' || turnLag && turnLag > 0
       ? `State includes verified projections through turn ${stateAsOfTurn}; unresolved or later changes remain unconfirmed.`
@@ -48606,6 +48624,37 @@ function createLibraReadonlySourceContext(owner) {
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
           microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
           microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
+        recentChatExcluded: (() => {
+          const excludedCanonical = visibleTurns.size
+            ? frame.refs.filter(ref => isSpanFullyVisible(ref.turnRange?.start, ref.turnRange?.end) && !isRecentChangeTurn(ref.turnRange?.end))
+            : [];
+          const excludedMicro = visibleTurns.size
+            ? frame.turns.filter(turn => visibleTurns.has(Number(turn)) && !isRecentChangeTurn(turn))
+            : [];
+          const items = [
+            ...excludedCanonical.map(ref => ({
+              family: 'canonical',
+              key: String(ref.key || ''),
+              turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0),
+              turn: Number(ref.turnRange?.end || ref.turnRange?.start || 0),
+              preview: String(ref.title || ref.summary || ref.searchText || '').trim().slice(0, 260)
+            })),
+            ...excludedMicro.map(turn => ({
+              family: 'micro',
+              key: `micro:${turn}`,
+              turnStart: Number(turn),
+              turn: Number(turn),
+              preview: String(microIndex.entries?.get?.(turn) || '').trim().slice(0, 260)
+            }))
+          ];
+          return {
+            visibleTurns: [...visibleTurns].sort((a, b) => a - b),
+            excludedCanonicalRefs: excludedCanonical.length,
+            excludedMicroTurns: excludedMicro.length,
+            excludedCount: items.length,
+            items
+          };
+        })(),
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
         families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, {
@@ -59613,10 +59662,23 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const outputReserve=canonicalProvider(promptPreset.provider)===RISUAI_AUX_PROVIDER?requestedMemoryOutput:Math.min(
         resolveProviderOutputBudget(promptPreset,{maxTokens:requestedMemoryOutput}).providerMaxTokens,
         metadataMatches&&Number(promptPreset.catalog_max_output_tokens)>0?Number(promptPreset.catalog_max_output_tokens):Infinity);
+      const batchStartTurn = Number(batch?.[0]?.turn || 0);
+      const activeContradictionHints = state.activeContradictionHints
+        && (!state.activeContradictionHints.scopeKey || state.activeContradictionHints.scopeKey === string(options.unifiedBasis?.scopeKey || ''))
+        ? asArray(state.activeContradictionHints.byStartTurn?.get(batchStartTurn))
+        : [];
+      const contradictionFeedbackBlock = activeContradictionHints.length
+        ? [
+            '[PRIOR CONTRADICTION AUDIT FEEDBACK — verify directly against [EXACT FIVE U+A]; never invent unsupported facts]',
+            'Previous memory records for this turn range conflicted with the raw source. Avoid repeating these contradictions when extracting facts from [EXACT FIVE U+A]:',
+            ...activeContradictionHints.map((item, idx) => `${idx + 1}. Prior record: ${string(item?.recordText || '(none)')}${item?.sourceQuote ? ` | Contradicting source quote: "${string(item.sourceQuote)}"` : ''}${item?.reason ? ` | Discrepancy: ${string(item.reason)}` : ''}`)
+          ].join('\n')
+        : '';
       const composeUser=()=>[optionalReference,optionalContinuity,optionalPersonCandidates,microInputs.block,
         '[VERIFIED ORIGINAL PACKET REFS]\n'+JSON.stringify(capturedRaw.refs),
         '[READ-ONLY LAST-KNOWN STATE; NOT CURRENT EVENT EVIDENCE]',optionalState,
         '[State applied through turn '+Number(options.unifiedBasis?.head?.throughTurn||0)+'; missing or pending earlier ranges are unknown, not empty facts.]',
+        contradictionFeedbackBlock,
         '[FINAL RECORD CHECK] Audit every observed hair/eye feature, habitual wording (평소처럼), stated protection goal and cafe operator relation; do not omit these because events dominate the scene. For tasks, owner is the person who must perform the task, not the person issuing the demand; target is the requester/beneficiary. A completed meeting task must resolve separately from an ongoing larger threat. Every fact, including each thread, must contain tempFactId, domain, subjectTempRef, claimKind, values, text, temporalRole, certainty and evidenceSpans. Never abbreviate later facts by omitting required fields. For each prior thread candidate, check whether the source fulfills, breaks, cancels, withdraws or reopens it; use the exact candidate alias and the appropriate lifecycle link only when supported. If no exact alias is available, omit link rather than inventing a reaffirm/resolve target. A promise made now is current_sequence; its future fulfillment is not an observed event. One-off action or clothing damage is an event/condition, not a lasting ability/personality/appearance. Do not fill unsupported profile categories just to avoid blanks.',
         '[COMPACT MEMORY OUTPUT] Return compact JSON directly. Preserve each materially distinct fact once; do not restate it across multiple facts. Use the shortest sufficient exact evidence quote for each record, not whole source paragraphs. Use {factTempId} for State bindings. Omit empty optional dependsOn arrays and default effect:set. No analysis, checklist, or repeated explanation. Complete the JSON within the configured output budget.',exactSource].filter(Boolean).join('\n\n');
       const pressure=()=>promptWindow>0&&estimateContextTokensFromText(system+'\n'+composeUser())+outputReserve+256>promptWindow;
@@ -64982,6 +65044,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // The request hook always runs the delivery proof before injecting, so the
         // query's own closing check of the same keys would only repeat it.
         deferFrameProof: suppliedBundle?.deferFrameProof === true,
+        ...(Array.isArray(suppliedBundle?.visibleTurns) && suppliedBundle.visibleTurns.length ? { visibleTurns: suppliedBundle.visibleTurns } : {}),
         queryInput: {
           queryText: string(queryBundle.currentText || ''),
           // The recent scene is searched as a second, weighted query (0 on a topic shift).
@@ -66358,6 +66421,67 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       return attachUnifiedResponseContext(packet,{scope:context.scope,manifest:view.manifest,view,boundary,route:'read_only'});
     };
 
+    // Identify completed turns whose assistant text is already visible in the current
+    // request's raw conversation. Prefers RisuAI message IDs (memo === assistant.chatId),
+    // falling back to canonical raw-text inclusion when memos are absent or unmatched.
+    const canonicalVisibleTurnText = value => stripLegacyResponseArtifacts(stripExternalHostMemoryBlocks(string(value || '')))
+      .replace(/\r\n/g, '\n')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const visibleRequestTurnNumbers = (requestMessages = [], pairs = []) => {
+      const pairList = asArray(pairs).filter(pair => Number(pair?.turn) > 0);
+      if (!pairList.length) return [];
+      const visibleAssistant = asArray(requestMessages)
+        .filter(msg => currentTurnRole(msg) === 'assistant')
+        .map(msg => {
+          const memo = string(msg?.memo || '').trim();
+          if (['supaMemory', 'hypaMemory'].includes(memo)) return null;
+          const body = canonicalVisibleTurnText(contentToText(msg?.content));
+          if (!body) return null;
+          return { memo, body };
+        })
+        .filter(Boolean);
+      if (!visibleAssistant.length) return [];
+      const visibleBodyByMemo = new Map();
+      for (const item of visibleAssistant) {
+        if (!item.memo) continue;
+        const prev = visibleBodyByMemo.get(item.memo) || '';
+        if (item.body.length > prev.length) visibleBodyByMemo.set(item.memo, item.body);
+      }
+      const unmemoizedBodies = visibleAssistant.filter(item => !item.memo).map(item => item.body);
+      const allBodies = visibleAssistant.map(item => item.body);
+      const visible = new Set();
+      let memoMatchedAny = false;
+      if (visibleBodyByMemo.size) {
+        for (const pair of pairList) {
+          const ids = [string(pair?.assistant?.chatId || '').trim(), ...asArray(pair?.assistant?.chatIds).map(id => string(id || '').trim())].filter(Boolean);
+          const matchedId = ids.find(id => visibleBodyByMemo.has(id));
+          if (matchedId) {
+            memoMatchedAny = true;
+            const stored = canonicalVisibleTurnText(pair?.assistant?.text || '');
+            const storedLen = Array.from(stored).length;
+            const reqLen = Array.from(visibleBodyByMemo.get(matchedId) || '').length;
+            // Fail-safe: if an external script/regex heavily truncated the visible body, keep recall.
+            if (storedLen >= 40 && reqLen < storedLen * 0.5) continue;
+            visible.add(Number(pair.turn));
+          }
+        }
+      }
+      const fallbackBodies = memoMatchedAny ? unmemoizedBodies : allBodies;
+      if (allBodies.length) {
+        for (const pair of pairList) {
+          const turn = Number(pair.turn);
+          if (visible.has(turn)) continue;
+          const ids = [string(pair?.assistant?.chatId || '').trim(), ...asArray(pair?.assistant?.chatIds).map(id => string(id || '').trim())].filter(Boolean);
+          const pool = !ids.length ? allBodies : fallbackBodies;
+          if (!pool.length) continue;
+          const stored = canonicalVisibleTurnText(pair?.assistant?.text || '');
+          if (Array.from(stored).length >= 12 && pool.some(body => body.includes(stored))) visible.add(turn);
+        }
+      }
+      return [...visible].sort((a, b) => a - b);
+    };
+
     let latestRecallPublicationOwner = null;
     const beforeRequest = async (messages, type) => {
       invalidateReceiptValidationCharacterId();
@@ -66522,6 +66646,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         queryBundle.receiptReadSet = receiptView.receiptReadSet || null;
         queryBundle.currentCompletedTurn = Math.max(0,...receiptView.receiptSet.requestedTurns.map(Number));
         queryBundle.manifest = requestManifest;
+        queryBundle.visibleTurns = visibleRequestTurnNumbers(messages, responseView.pairs);
         state.lastRecallInputResolution = {
           at: Date.now(),
           scope: clone(context.scope),
@@ -66589,7 +66714,11 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
 
         const execution = result.unifiedExecution, packet = execution.packet;
         const authority = memoryEvidenceAuthority.get(execution);
-        if (!authority || !packet || execution.modelDispatchEligible !== true) {
+        const suppressedAllByRecentChat = Boolean(authority && packet)
+          && execution.modelDispatchEligible !== true
+          && (Number(execution?.diagnostics?.recentChatExcluded?.excludedCanonicalRefs || 0)
+            + Number(execution?.diagnostics?.recentChatExcluded?.excludedMicroTurns || 0)) > 0;
+        if (!authority || !packet || (execution.modelDispatchEligible !== true && !suppressedAllByRecentChat)) {
           // Keep why delivery was refused; the generic code alone hides a stale
           // source proof behind an empty errorCode in the injection diagnostics.
           const error = new Error('LIBRA_MEMORY_CONSUMER_UNAVAILABLE');
@@ -66676,6 +66805,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
             stateAuthority: clone(execution?.diagnostics?.stateAuthority || null),
             allocationPlan: clone(execution?.diagnostics?.allocationPlan || null),
             familyAllocation: clone(execution?.diagnostics?.familyAllocation || null),
+            recentChatExcluded: clone(execution?.diagnostics?.recentChatExcluded || null),
             suppressedEvidenceDuplicates: Number(execution?.diagnostics?.suppressedEvidenceDuplicates || 0) },
           servedEngine: 'state_first', injectedMemories: block ? packet.admittedNodeIds.length : 0,
           dynamicChars: packet.characterLength, blockChars: block.length, finalVerification,
@@ -68581,6 +68711,274 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         }
         return await startSelectedCanonicalBatches({scopeKey:inventory.scopeKey,mode:'source_edit',ranges:batches,...(reviewed?{reviewedSource:{key:reviewed.key,rawDigest:reviewed.rawDigest,rulesKey:reviewed.rulesKey}}:{})});
       }catch(error){return {ok:false,reason:String(error?.message||error)};}
+    };
+
+    const auditCanonicalContradictions = async (options = {}) => {
+      try {
+        const context = await resolveContext();
+        const scopeKey = string(context?.scope?.scopeKey || '');
+        if (options.expectedScopeKey && scopeKey !== string(options.expectedScopeKey)) {
+          return { ok: false, reason: '채팅 범위가 변경되었습니다. 다시 시도하세요.' };
+        }
+        const pairs = buildPairs(context.chat, scopeKey);
+        const manifest = await loadManifest(context.scope, pairs.length);
+        const settings = await loadSettings();
+        const filterStartTurns = Array.isArray(options.startTurns) && options.startTurns.length
+          ? new Set(options.startTurns.map(n => Number(n)).filter(n => Number.isSafeInteger(n) && n > 0))
+          : null;
+        const committedRefs = Object.values(asObject(manifest?.memories))
+          .filter(ref => ref?.key && ref?.status === 'committed')
+          .sort((a, b) => Number(a?.turnRange?.start || 0) - Number(b?.turnRange?.start || 0));
+        let candidateRefs = filterStartTurns
+          ? committedRefs.filter(ref => filterStartTurns.has(Number(ref?.turnRange?.start || 0)))
+          : committedRefs;
+        const recentCount = Number(options.recentCount || 0);
+        if (Number.isSafeInteger(recentCount) && recentCount > 0 && candidateRefs.length > recentCount) {
+          candidateRefs = candidateRefs.slice(-recentCount);
+        }
+        const totalCommitted = candidateRefs.length;
+        if (!totalCommitted) {
+          return {
+            ok: true,
+            scopeKey,
+            auditedCount: 0,
+            totalCommitted: 0,
+            skippedCount: 0,
+            chunkCount: 0,
+            auditedStartTurns: [],
+            contradictions: [],
+            affectedStartTurns: [],
+            message: '점검할 정본 기억이 없습니다.'
+          };
+        }
+        const pairByTurn = new Map(pairs.map(pair => [Number(pair.turn), pair]));
+        const maxChunkChars = Math.max(500, Number(options.maxChunkChars || options.maxChars || 50000));
+        const maxBatchesPerChunk = Math.max(1, Number(options.maxBatchesPerChunk || 8));
+        const entries = [];
+        let skippedCount = 0;
+        for (const ref of candidateRefs) {
+          const memory = await storage.getJson(ref.key, null);
+          if (!memory) { skippedCount += 1; continue; }
+          const startTurn = Number(ref?.turnRange?.start || memory?.turnRange?.start || 0);
+          const endTurn = Number(ref?.turnRange?.end || memory?.turnRange?.end || startTurn);
+          if (!Number.isSafeInteger(startTurn) || startTurn <= 0) { skippedCount += 1; continue; }
+          const factLines = asArray(memory?.canonicalArtifact?.facts)
+            .map(fact => string(fact?.text || '').trim())
+            .filter(Boolean);
+          const fallbackLines = factLines.length
+            ? factLines
+            : asArray(memory?.assertions).map(item => string(item?.text || item || '').trim()).filter(Boolean);
+          const recordedLines = fallbackLines.length
+            ? fallbackLines
+            : [string(memory?.summary || memory?.text || '').trim()].filter(Boolean);
+          if (!recordedLines.length) { skippedCount += 1; continue; }
+          const sourceChunks = [];
+          for (let turn = startTurn; turn <= endTurn; turn += 1) {
+            const pair = pairByTurn.get(turn);
+            if (!pair) continue;
+            const userText = string(pair?.user?.text || '').trim();
+            const assistantText = string(pair?.assistant?.text || '').trim();
+            if (userText) sourceChunks.push(`[t${turn}-u]\n${userText}`);
+            if (assistantText) sourceChunks.push(`[t${turn}-a]\n${assistantText}`);
+          }
+          if (!sourceChunks.length) { skippedCount += 1; continue; }
+          const section = [
+            `=== BATCH startTurn=${startTurn} (T${startTurn}-T${endTurn}) ===`,
+            '[RECORDED]',
+            ...recordedLines.map(line => `- ${line}`),
+            '[SOURCE]',
+            ...sourceChunks
+          ].join('\n');
+          entries.push({
+            startTurn,
+            endTurn,
+            label: `T${startTurn}–T${endTurn}`,
+            memoryKey: string(ref.key),
+            section
+          });
+        }
+        if (!entries.length) {
+          return {
+            ok: true,
+            scopeKey,
+            auditedCount: 0,
+            totalCommitted,
+            skippedCount,
+            chunkCount: 0,
+            auditedStartTurns: [],
+            contradictions: [],
+            affectedStartTurns: [],
+            message: '원문과 대조할 수 있는 정본 기억이 없습니다.'
+          };
+        }
+        const chunks = [];
+        let currentChunk = [];
+        let currentChars = 0;
+        for (const entry of entries) {
+          if (currentChunk.length > 0 && (currentChunk.length >= maxBatchesPerChunk || currentChars + entry.section.length > maxChunkChars)) {
+            chunks.push(currentChunk);
+            currentChunk = [];
+            currentChars = 0;
+          }
+          currentChunk.push(entry);
+          currentChars += entry.section.length;
+        }
+        if (currentChunk.length > 0) chunks.push(currentChunk);
+
+        const system = [
+          '[LIBRA SOURCE CONTRADICTION AUDIT]',
+          'Compare each batch\'s [RECORDED] memory statements against its [SOURCE] raw transcript.',
+          'Report ONLY clear factual contradictions where a recorded statement directly conflicts with the source:',
+          '- Inverted negation or outcome (e.g. refused/failed/did not happen recorded as accepted/succeeded/happened, or vice versa)',
+          '- Attempt, promise, or plan recorded as already completed',
+          '- Wrong actor, speaker, target, holder, quantity, or location directly contradicted by the source',
+          '- Concrete event or item recorded when the source explicitly states the opposite',
+          'Do NOT report minor omissions, summarization, paraphrasing, or wording differences.',
+          'Return one JSON object only:',
+          '{"contradictions":[{"startTurn":1,"recordText":"contradicted recorded statement","sourceQuote":"short exact quote from [SOURCE] that contradicts it","reason":"concise Korean explanation"}]}',
+          'If there are no factual contradictions, return {"contradictions":[]}.'
+        ].join('\n');
+
+        const contradictions = [];
+        const affectedSet = new Set();
+        const auditedStartTurns = [];
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+          const chunk = chunks[chunkIndex];
+          if (typeof options.onProgress === 'function') {
+            try {
+              options.onProgress({
+                chunkIndex: chunkIndex + 1,
+                chunkCount: chunks.length,
+                auditedSoFar: auditedStartTurns.length,
+                totalTarget: entries.length
+              });
+            } catch (_) {}
+          }
+          const chunkByStartTurn = new Map(chunk.map(entry => [entry.startTurn, entry]));
+          const user = chunk.map(entry => entry.section).join('\n\n');
+          const result = await callMemoryProvider(LIBRARIAN_STAGE_ID, system, user, {
+            temp: 0,
+            maxTokens: 4096,
+            forceNonStreaming: true,
+            jsonMode: true,
+            disableCanonicalRecovery: true,
+            taskSettingsSnapshot: settings,
+            signal: options.signal,
+            attemptType: 'contradiction_audit'
+          });
+          if (result?.ok !== true || result?.refusalInfo) {
+            return {
+              ok: false,
+              chunkCount: chunks.length,
+              failedChunkIndex: chunkIndex + 1,
+              reason: string(result?.error || result?.reason || (result?.refusalInfo ? '모델이 응답을 거부했습니다.' : `모순 점검 모델 호출에 실패했습니다 (${chunkIndex + 1}/${chunks.length}).`))
+            };
+          }
+          let parsed = null;
+          try {
+            parsed = asObject(parseCanonicalArtifactJson(result.content));
+          } catch (parseError) {
+            return {
+              ok: false,
+              chunkCount: chunks.length,
+              failedChunkIndex: chunkIndex + 1,
+              reason: `모순 점검 응답을 해석하지 못했습니다 (${chunkIndex + 1}/${chunks.length}): ${String(parseError?.message || parseError)}`
+            };
+          }
+          for (const entry of chunk) auditedStartTurns.push(entry.startTurn);
+          for (const item of asArray(parsed?.contradictions)) {
+            const startTurn = Number(item?.startTurn);
+            const meta = chunkByStartTurn.get(startTurn);
+            if (!meta) continue;
+            const recordText = string(item?.recordText || '').trim();
+            const sourceQuote = string(item?.sourceQuote || '').trim();
+            const reason = string(item?.reason || '').trim();
+            if (!recordText && !reason) continue;
+            affectedSet.add(startTurn);
+            contradictions.push({
+              startTurn,
+              endTurn: meta.endTurn,
+              label: meta.label,
+              memoryKey: meta.memoryKey,
+              recordText,
+              sourceQuote,
+              reason
+            });
+          }
+        }
+        const affectedStartTurns = [...affectedSet].sort((a, b) => a - b);
+        auditedStartTurns.sort((a, b) => a - b);
+        return {
+          ok: true,
+          scopeKey,
+          auditedCount: auditedStartTurns.length,
+          totalCommitted,
+          skippedCount,
+          chunkCount: chunks.length,
+          auditedStartTurns,
+          contradictions,
+          affectedStartTurns
+        };
+      } catch (error) {
+        return { ok: false, reason: String(error?.message || error) };
+      }
+    };
+
+    const fixCanonicalContradictions = async (auditResult = {}) => {
+      try {
+        const rawStarts = Array.isArray(auditResult?.affectedStartTurns) && auditResult.affectedStartTurns.length
+          ? auditResult.affectedStartTurns
+          : asArray(auditResult?.contradictions).map(item => item?.startTurn);
+        const targetStarts = [...new Set(rawStarts.map(n => Number(n)).filter(n => Number.isSafeInteger(n) && n > 0))].sort((a, b) => a - b);
+        if (!targetStarts.length) {
+          return { ok: true, fixedCount: 0, affectedStartTurns: [], message: '바로잡을 모순 구간이 없습니다.' };
+        }
+        const inventory = await listReanalysisRanges();
+        if (auditResult?.scopeKey && string(auditResult.scopeKey) !== string(inventory?.scopeKey || '')) {
+          return { ok: false, reason: '채팅 범위가 변경되었습니다. 모순 점검을 다시 실행하세요.' };
+        }
+        const targetSet = new Set(targetStarts);
+        const matchedRanges = asArray(inventory?.ranges).filter(row => targetSet.has(Number(row?.batchStart)));
+        if (!matchedRanges.length) {
+          return { ok: false, reason: '선택한 모순 구간을 현재 채팅에서 찾을 수 없습니다. 모순 점검을 다시 실행하세요.' };
+        }
+        const byStartTurn = new Map();
+        for (const item of asArray(auditResult?.contradictions)) {
+          const startTurn = Number(item?.startTurn);
+          if (!targetSet.has(startTurn)) continue;
+          if (!byStartTurn.has(startTurn)) byStartTurn.set(startTurn, []);
+          byStartTurn.get(startTurn).push({
+            recordText: string(item?.recordText || '').trim(),
+            sourceQuote: string(item?.sourceQuote || '').trim(),
+            reason: string(item?.reason || '').trim()
+          });
+        }
+        const previousHints = state.activeContradictionHints || null;
+        state.activeContradictionHints = byStartTurn.size
+          ? { scopeKey: string(inventory.scopeKey || ''), byStartTurn }
+          : null;
+        let result;
+        try {
+          result = await reanalyzeSelectedRanges({
+            kind: 'canonical',
+            scopeKey: inventory.scopeKey,
+            topology: inventory.topology,
+            ranges: matchedRanges
+          });
+        } finally {
+          state.activeContradictionHints = previousHints;
+        }
+        const fixedStartTurns = [...new Set(matchedRanges.map(row => Number(row.batchStart)))].sort((a, b) => a - b);
+        return {
+          ...asObject(result),
+          ok: result?.ok !== false,
+          affectedStartTurns: fixedStartTurns,
+          fixedCount: fixedStartTurns.length,
+          matchedRangeCount: matchedRanges.length
+        };
+      } catch (error) {
+        return { ok: false, reason: String(error?.message || error) };
+      }
     };
 
     let auxiliaryReanalysisRunning=false;
@@ -76891,7 +77289,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       resolveContext, buildPairs, pairRevisionProjection, pairRevisionCacheKeyForChat, sourceDigest, transcript, buildAriadneReferenceContext, buildItoLoreReferenceContext, rerankMemoryLoreForStage, executeStage, scan, scheduleScan, scheduleLegacyOutputBoundaryScan, beforeRequest, afterRequest,
       recoverPendingStateTrackingJournal, flushUnifiedDerivedVectors, upgradeCanonicalVectorProjections,
       refreshMicroVectorsForContext, refreshStateVectorsForContext, unifiedStateReadProjection, unifiedWorldReadContext,
-      listReanalysisRanges,readReanalysisTurn,reanalyzeSelectedRanges,retiredManualReanalysis,
+      listReanalysisRanges,readReanalysisTurn,reanalyzeSelectedRanges,auditCanonicalContradictions,fixCanonicalContradictions,retiredManualReanalysis,
       listCanonicalBatchRanges, startSelectedCanonicalBatches, failureDiagnostic: libraMemoryFailureDiagnostic, unwrapTypedResponse: unwrapLibraTypedResponse,
       startManualColdStart, startManualCanonicalScan, startFailedRetry, deleteFailedRun, getCanonicalJobStatus, listCanonicalJobs, cancelCanonicalJob, resumeCanonicalJob, recoverCanonicalJobAtStartup,
       listCanonicalVariants, regenerateCanonicalMemory, createCanonicalEditDraft, saveCanonicalEditDraft,
@@ -82110,11 +82508,31 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ]))) : null
       ])
       : null;
+    const recentChatExcluded = libraGuiObject(delivery.recallDiagnostics?.recentChatExcluded || diagnostics?.recentChatExcluded);
+    const recentExcludedItems = libraGuiArray(recentChatExcluded.items);
+    const recentExcludedCount = Number(recentChatExcluded.excludedCount ?? (Number(recentChatExcluded.excludedCanonicalRefs || 0) + Number(recentChatExcluded.excludedMicroTurns || 0)) ?? recentExcludedItems.length);
+    const recentExcludedPanel = recentExcludedCount > 0
+      ? guiLazyDetails({ class: 'stack' }, guiEl('summary', { class: 'cluster' }, [
+        guiEl('strong', { text: `최근 원문으로 제외된 기록 - ${recentExcludedCount}건(열람)` }),
+        libraGuiArray(recentChatExcluded.visibleTurns).length
+          ? guiEl('span', { class: 'hint', text: `보이는 턴: T${libraGuiArray(recentChatExcluded.visibleTurns).join(', T')}` })
+          : null
+      ].filter(Boolean)), () => recentExcludedItems.length
+        ? recentExcludedItems.map(item => guiEl('div', { class: 'row stack' }, [
+          guiEl('div', { class: 'cluster' }, [
+            guiEl('span', { class: 'badge', text: item.family === 'canonical' ? '정본 요약' : '장면 세부' }),
+            guiEl('strong', { text: Number(item.turnStart || 0) > 0 && Number(item.turnStart) < Number(item.turn || 0) ? `T${item.turnStart}–T${item.turn}` : `T${Number(item.turn || 0)}` })
+          ]),
+          guiEl('div', { class: 'muted', text: libraGuiText(item.preview) || '(요약 미리보기 없음)' })
+        ]))
+        : [guiEl('div', { class: 'hint', text: '상세 미리보기 데이터가 없습니다.' })])
+      : null;
     return guiEl('div', { class: "card stack" }, [
       guiEl('div', { class: "split cluster" }, [
         guiEl('div', {}, [guiEl('h3', { text: '이번 턴에 떠올린 기억' }), guiEl('div', { class: 'hint', text: [at ? libraFormatTime(at) : '', `mode ${routeDef.label}`, `query type ${queryType}`, `input ${inputSource} / ${inputConfidence}`].filter(Boolean).join(' · ') })]),
         libraStatusBadge(statusText, error || routeFailed ? 'danger' : skipped ? 'warn' : usedRows.length ? 'good' : '')
       ]),
+      recentExcludedPanel,
       queryText ? guiEl('div', { class: "search" }, [guiEl('span', { text: '현재 인풋' }), guiEl('p', { text: compact(queryText, compactView ? 420 : 1600) })]) : null,
       error ? guiEl('div', { class: 'note danger', text: error }) : null,
       skipped ? guiEl('div', { class: 'note warn', text: skipReason === 'no_safe_current_user_input' ? '안전하게 식별된 현재 사용자 입력이 없어 이번 리콜을 건너뛰었습니다.' : `리콜 건너뜀: ${skipReason || 'unspecified'}` }) : null,
@@ -82595,6 +83013,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         buildCanonicalTool('버전 · 실행 기록', '정본 후보를 비교하고 실행 이력을 봅니다.', () => { Gui.worldManagerCanonicalMemoryFocus = null; void showCanonicalVariantDialog(Number(Gui.canonicalReaderSelected?.turnRange?.start || 0)); })
       ]),
       guiEl('div', { class: 'mem-tools__group' }, [guiEl('span', { class: 'mem-tools__label', text: '점검 · 복구' }),
+        buildCanonicalTool('원문 모순 점검', '정본 기억과 원문의 모순만 찾아(자동 분할 점검) 해당 구간을 한 번에 바로잡습니다.', () => void openContradictionAuditDialog()),
         buildCanonicalTool('기억·상태 자동 반영 검토', '보류됐다가 자동 반영된 항목을 확인하고 영구 승인하거나 반영 거부합니다.', () => openMemoryReviewDialog()),
         buildCanonicalTool('상태 점검 및 자동 복구', '누락·실패 구간을 찾아 복구합니다.', () => void openLibraMemoryMaintenanceDialog()),
         buildCanonicalTool('복구 · 재구축', '백업 복원과 재구축 설정으로 이동합니다.', () => selectBookSettingsRoomSection('recovery'))
@@ -89291,6 +89710,183 @@ advanced
     };
   };
 
+  const openContradictionAuditDialog = async () => {
+    Gui.app?.querySelector('#dlg-contradiction-audit')?.remove();
+    const binding = canonicalReaderBinding();
+    const overlay = guiEl('div', {
+      class: 'overlay is-open',
+      id: 'dlg-contradiction-audit',
+      dataset: { contradictionAuditScope: binding.scopeKey }
+    });
+    const dialog = guiEl('div', {
+      class: 'dialog dialog--wide',
+      role: 'dialog',
+      'aria-modal': 'true',
+      style: { maxWidth: '720px' }
+    });
+    overlay.appendChild(dialog);
+    let busy = false;
+    let lastResult = null;
+    let selectedRecentCount = 0;
+    let progressText = '';
+    const close = () => {
+      if (busy) return;
+      overlay.remove();
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) close();
+    });
+    bindApprovedOverlayKeyboard(overlay, close);
+    (Gui.app || document.body).appendChild(overlay);
+
+    const render = (stateView = 'idle', extraMessage = '', isError = false) => {
+      const scopeSelect = guiEl('select', {
+        class: 'input',
+        disabled: busy,
+        'aria-label': '점검 범위',
+        onChange: event => { selectedRecentCount = Number(event.target?.value || 0); }
+      }, [
+        guiEl('option', { value: '0', text: '전체 정본 구간', selected: selectedRecentCount === 0 }),
+        guiEl('option', { value: '10', text: '최근 10개 구간', selected: selectedRecentCount === 10 }),
+        guiEl('option', { value: '20', text: '최근 20개 구간', selected: selectedRecentCount === 20 })
+      ]);
+
+      const children = [
+        guiEl('div', { class: 'eyebrow', text: 'Source Contradiction Audit' }),
+        guiEl('h2', { text: '원문 모순 점검' }),
+        guiEl('p', {
+          class: 'hint',
+          text: '확정된 정본 기억과 원문을 대조해 명백한 사실 모순만 찾아냅니다. 짧으면 1회, 기록이 많으면 안전한 크기로 자동 분할 호출하며, 바로잡기 시 발견된 모순 지적을 재분석에 함께 전달합니다.'
+        }),
+        guiEl('div', { class: 'cluster', style: { margin: '8px 0', alignItems: 'center' } }, [
+          guiEl('span', { class: 'hint', text: '점검 범위' }),
+          scopeSelect
+        ])
+      ];
+
+      if (stateView === 'auditing') {
+        children.push(guiEl('p', { class: 'note', text: progressText || '정본 기억과 원문을 대조해 모순을 점검하고 있습니다…' }));
+      } else if (stateView === 'fixing') {
+        const count = guiAsArray(lastResult?.affectedStartTurns).length;
+        children.push(guiEl('p', { class: 'note', text: `모순이 발견된 ${count}개 구간에 모순 피드백을 반영해 재분석하고 있습니다…` }));
+      }
+
+      if (extraMessage) {
+        children.push(guiEl('p', { class: isError ? 'note note--danger' : 'note', text: extraMessage }));
+      }
+
+      if (lastResult?.ok) {
+        const items = guiAsArray(lastResult.contradictions);
+        const affected = guiAsArray(lastResult.affectedStartTurns);
+        const summaryParts = [
+          `점검 구간 ${Number(lastResult.auditedCount || 0)}/${Number(lastResult.totalCommitted || 0)}개`,
+          `호출 ${Number(lastResult.chunkCount || 0)}회`,
+          `발견된 모순 ${items.length}건`,
+          `영향 구간 ${affected.length}개`
+        ];
+        if (Number(lastResult.skippedCount || 0) > 0) {
+          summaryParts.push(`제외 ${Number(lastResult.skippedCount)}개`);
+        }
+        children.push(guiEl('p', { class: 'hint', text: summaryParts.join(' · ') }));
+
+        if (!items.length) {
+          children.push(guiEl('p', {
+            class: 'note',
+            text: lastResult.message || '원문과 상반되는 사실 모순이 발견되지 않았습니다.'
+          }));
+        } else {
+          children.push(guiEl('div', {
+            style: { maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', margin: '8px 0' }
+          }, items.map(item => guiEl('div', { class: 'note' }, [
+            guiEl('strong', { text: `${item.label || `T${item.startTurn}`} · 모순 감지` }),
+            item.recordText ? guiEl('p', { text: `기록: ${item.recordText}` }) : null,
+            item.sourceQuote ? guiEl('p', { text: `원문 근거: "${item.sourceQuote}"` }) : null,
+            item.reason ? guiEl('p', { text: `사유: ${item.reason}` }) : null
+          ]))));
+        }
+      }
+
+      const actions = [];
+      if (lastResult?.ok && guiAsArray(lastResult.affectedStartTurns).length > 0 && stateView !== 'fixed') {
+        actions.push(guiEl('button', {
+          class: 'btn btn--primary',
+          type: 'button',
+          disabled: busy,
+          text: `모순 구간 ${lastResult.affectedStartTurns.length}개 한 번에 바로잡기`,
+          onClick: async () => {
+            if (busy || !lastResult) return;
+            busy = true;
+            render('fixing');
+            try {
+              const fixResult = await LibraMemoryCore.fixCanonicalContradictions(lastResult);
+              busy = false;
+              if (fixResult?.ok) {
+                const count = Number(fixResult.fixedCount || guiAsArray(fixResult.affectedStartTurns).length || 0);
+                guiSetStatus(`모순 구간 ${count}개 재분석을 완료했습니다.`, false, true);
+                render('fixed', `모순 구간 ${count}개(${guiAsArray(fixResult.affectedStartTurns).map(n => `T${n}`).join(', ')})를 모순 피드백과 함께 재분석했습니다.`, false);
+              } else {
+                render('done', String(fixResult?.reason || '모순 구간 재분석에 실패했습니다.'), true);
+              }
+            } catch (error) {
+              busy = false;
+              render('done', String(error?.message || error), true);
+            }
+          }
+        }));
+      }
+
+      actions.push(guiEl('button', {
+        class: (lastResult?.ok && guiAsArray(lastResult.affectedStartTurns).length > 0 && stateView !== 'fixed') ? 'btn' : 'btn btn--primary',
+        type: 'button',
+        disabled: busy,
+        text: lastResult ? '다시 점검' : '모순 점검 시작',
+        onClick: async () => {
+          if (busy) return;
+          busy = true;
+          lastResult = null;
+          progressText = '정본 기억과 원문을 대조해 모순을 점검하고 있습니다…';
+          render('auditing');
+          try {
+            const auditResult = await LibraMemoryCore.auditCanonicalContradictions({
+              expectedScopeKey: binding.scopeKey,
+              recentCount: selectedRecentCount,
+              onProgress: info => {
+                progressText = `정본 기억과 원문을 대조하고 있습니다… (청크 ${info.chunkIndex}/${info.chunkCount})`;
+                render('auditing');
+              }
+            });
+            busy = false;
+            progressText = '';
+            if (auditResult?.ok) {
+              lastResult = auditResult;
+              render('done');
+            } else {
+              render('idle', String(auditResult?.reason || '모순 점검에 실패했습니다.'), true);
+            }
+          } catch (error) {
+            busy = false;
+            progressText = '';
+            render('idle', String(error?.message || error), true);
+          }
+        }
+      }));
+
+      actions.push(guiEl('button', {
+        class: 'btn',
+        type: 'button',
+        disabled: busy,
+        text: '닫기',
+        onClick: close
+      }));
+
+      children.push(guiEl('div', { class: 'dialog__actions' }, actions));
+      dialog.replaceChildren(...children);
+    };
+
+    render('idle');
+    return overlay;
+  };
+
   const maintenanceProgressBindingKey = () => {
     const binding=canonicalReaderBinding();return JSON.stringify([binding.scopeKey,binding.worldlineId]);
   };
@@ -92781,6 +93377,8 @@ advanced
     },
     async listReanalysisRanges(options = {}) { return safeClone(await LibraMemoryCore.listReanalysisRanges(options)); },
     async reanalyzeSelectedRanges(options = {}) { return await LibraMemoryCore.reanalyzeSelectedRanges(options); },
+    async auditCanonicalContradictions(options = {}) { return safeClone(await LibraMemoryCore.auditCanonicalContradictions(options)); },
+    async fixCanonicalContradictions(options = {}) { return safeClone(await LibraMemoryCore.fixCanonicalContradictions(options)); },
     async listCanonicalBatchRanges(options = {}) { return safeClone(await LibraMemoryCore.listCanonicalBatchRanges(options)); },
     async startSelectedCanonicalBatches(options = {}) { return await LibraMemoryCore.startSelectedCanonicalBatches(options); },
     getMemoryFailureDiagnostic(value) { return libraMemoryFailureDiagnostic(value); },

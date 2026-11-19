@@ -28831,8 +28831,10 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const vault=lifecycle.vault,active=activeRecoveryVaultRecords(vault,snapshot,worldline);
     const passages=[];
     const liveSnapshot=scope.chatMessagesAvailable===true?(snapshot||authoritativeChatSnapshot(scope.chatMessages,scope)):null;
+    const visibleRecentTurns = settings?.visibleRecentTurns instanceof Set ? settings.visibleRecentTurns : null;
     for(const record of active.records){
       const inherited=record?.inheritedSessionHistory===true||record?.permanentSessionHistory===true;
+      if(!inherited&&visibleRecentTurns?.size&&visibleRecentTurns.has(Number(record?.pairIndex||record?.worldlineOrdinal||record?.targetPairIndex||0)))continue;
       // Current-session turns are read from the visible chat; a changed turn is skipped.
       const live=!inherited&&liveSnapshot?liveRecoveryEvidenceForRecord(record,scope,liveSnapshot):null;
       if(!inherited&&liveSnapshot&&!live)continue;
@@ -37066,12 +37068,37 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   };
   // Peer blocks seen by this request's hook, per selection object (see 중복 제거 in handleBeforeRequest).
   const hayakuPeerRecallIndexes = new WeakMap();
+  // Completed turns already visible verbatim in the current request, per selection object.
+  const hayakuVisibleRecentTurns = new WeakMap();
+  const HAYAKU_VISIBLE_TURN_PROTECTED_LANES = new Set([
+    CONTINUITY_EVIDENCE_LANES.latestState,
+    CONTINUITY_EVIDENCE_LANES.unresolvedConstraints,
+    CONTINUITY_EVIDENCE_LANES.knowledgeBoundaries,
+    CONTINUITY_EVIDENCE_LANES.prohibitedInferences
+  ]);
+  const isHayakuUnitCoveredByVisibleTurns = (unit, visibleTurns) => {
+    if (!(visibleTurns instanceof Set) || !visibleTurns.size) return false;
+    const lane = effectiveHayakuRenderLane(unit);
+    if (HAYAKU_VISIBLE_TURN_PROTECTED_LANES.has(lane)) return false;
+    const sourceRows = ensureArray(unit?.origins).map(origin => origin?.row).filter(Boolean);
+    if (!sourceRows.length && unit?.entry?.row) sourceRows.push(unit.entry.row);
+    if (!sourceRows.length) return false;
+    return sourceRows.every(row => {
+      const scope = text(row?.locator?.sourceScope || row?.sourceScope || row?.historyScope || '').trim().toLowerCase();
+      if (scope === 'predecessor_session') return false;
+      const turn = Number(row?.locator?.worldlineOrdinal ?? row?.worldlineOrdinal ?? row?.locator?.sourcePairIndex ?? row?.sourcePairIndex ?? 0);
+      return Number.isInteger(turn) && turn > 0 && visibleTurns.has(turn);
+    });
+  };
   const prepareHayakuEvidenceUnits = (selected,query,settings,signatureOwner=null) => {
     const cached=hayakuEvidencePreparations.get(selected);
     const peerRecall=selected&&typeof selected==='object'?hayakuPeerRecallIndexes.get(selected)||null:null;
+    const visibleRecent=selected&&typeof selected==='object'?hayakuVisibleRecentTurns.get(selected)||null:null;
+    const visibleTurns=visibleRecent?.turns instanceof Set&&visibleRecent.turns.size?visibleRecent.turns:null;
+    const visibleDigest=visibleRecent?.digest||'';
     const {injectionCapChars:_ic,recallDataBudgetChars:_rb,allowTailOnly:_at,...prepSettings}=settings||{};
     const policyKey=stableHash64(JSON.stringify(prepSettings));
-    if(cached&&cached.query===query&&cached.policyKey===policyKey&&cached.signatureOwner===signatureOwner&&cached.peerDigest===(peerRecall?.digest||''))return cached;
+    if(cached&&cached.query===query&&cached.policyKey===policyKey&&cached.signatureOwner===signatureOwner&&cached.peerDigest===(peerRecall?.digest||'')&&cached.visibleDigest===visibleDigest)return cached;
     const metadata=hayakuRecallPreparations.get(selected)||{store:{},settings,query};
     const sourceRows=['entity','world','narrative','planner'].flatMap(axis=>ensureArray(selected?.[axis]).filter(Boolean).map(row=>({...row,axis})));
     const policySettings={...metadata.settings,...settings,effectiveMode:metadata.settings?.effectiveMode||settings.effectiveMode};
@@ -37094,27 +37121,49 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const peerKept=peerRecall?entries.filter(entry=>!peerRecall.covered(text(entry?.memory||''))):entries;
     const peerDropped=entries.length-peerKept.length;
     const assessed=assessHayakuEvidence(peerKept,query);
-    const units=assessed.map(entry=>{
+    let recentChatDropped=0;
+    const recentChatDroppedItems=[];
+    const units=[];
+    for(const entry of assessed){
       const origins=ensureArray(entry.sourceRows).map(value=>({axis:value.axis,row:value.row}));
       if(!origins.length&&entry.row)origins.push({axis:entry.axis||entry.row.axis,row:entry.row});
       const candidates=origins.map(o=>byRow.get(hayakuEvidenceRowId(o.row))).filter(Boolean);
       const priority=candidates.length?Math.min(...candidates.map(c=>c.priorityRank)):2;
-      return {id:'entry:'+stableHash64(origins.map(o=>hayakuEvidenceRowId(o.row)).sort().join('|')+'\n'+entry.memory),entry,origins,
+      const unit={id:'entry:'+stableHash64(origins.map(o=>hayakuEvidenceRowId(o.row)).sort().join('|')+'\n'+entry.memory),entry,origins,
         rowIds:origins.map(o=>hayakuEvidenceRowId(o.row)),priority,weight:candidates.length?Math.max(...candidates.filter(c=>c.priorityRank===priority).map(c=>c.weight)):Number(entry.row?.score||0),
         lane:entry.continuityLane,semanticLane:entry.semanticLane||continuityEvidenceLaneFor(entry.axis,entry.row),body:entry.memory};
-    });
+      if(visibleTurns&&isHayakuUnitCoveredByVisibleTurns(unit,visibleTurns)){
+        recentChatDropped+=1;
+        const turns=[...new Set(origins.map(o=>Number(o?.row?.locator?.worldlineOrdinal??o?.row?.worldlineOrdinal??o?.row?.locator?.sourcePairIndex??o?.row?.sourcePairIndex??0)).filter(n=>Number.isInteger(n)&&n>0))].sort((a,b)=>a-b);
+        recentChatDroppedItems.push({kind:'structured',lane:effectiveHayakuRenderLane(unit),turns,preview:text(unit.body||'').trim().slice(0,260)});
+        continue;
+      }
+      units.push(unit);
+    }
     for(const record of ensureArray(selected?.partialMemoryEvidence)){
       if(!text(record?.text||'').trim())continue;
+      const turn=Number(record?.worldlineOrdinal??record?.pairIndex??0);
+      if(visibleTurns&&Number.isInteger(turn)&&turn>0&&visibleTurns.has(turn)){
+        recentChatDropped+=1;
+        recentChatDroppedItems.push({kind:'partial',lane:'partial_memory',turns:[turn],preview:text(record.text||'').trim().slice(0,260)});
+        continue;
+      }
       units.push({id:record.id,partial:record,origins:[],rowIds:[],priority:2,weight:Number(record.score||0),body:text(record.text)});
     }
     for(const record of ensureArray(selected?.rawRecoveryEvidence)){
       if(!text(record?.text||'').trim())continue;
+      const turn=Number(record?.worldlineOrdinal??record?.pairIndex??record?.sourcePairIndex??0);
+      if(visibleTurns&&record?.historyScope!=='predecessor_session'&&Number.isInteger(turn)&&turn>0&&visibleTurns.has(turn)){
+        recentChatDropped+=1;
+        recentChatDroppedItems.push({kind:'raw',lane:'verbatim_excerpt',turns:[turn],preview:text(record.text||'').trim().slice(0,260)});
+        continue;
+      }
       units.push({id:'raw:'+text(record.id||stableHash64(record.text)),raw:record,rowIds:[],priority:2,weight:Number(record.score||0),body:text(record.text)});
     }
     const requirements=buildHayakuEvidenceRequirements(sourceRows,metadata,query,settings);
     const configured=normalizeMemoryLanguage(settings.memoryLanguage||DEFAULT_SETTINGS.memoryLanguage);
     const language=configured==='source'?(assessed[0]?.language||inferMemoryNoteLanguage(units.find(u=>u.raw)?.body||'')||'en'):configured;
-    const value={query,policyKey,signatureOwner,metadata,policy,units,requirements,language,rejected,peerDigest:peerRecall?.digest||'',peerDropped};hayakuEvidencePreparations.set(selected,value);if(peerRecall&&Memory.lastPeerRecallDedup)Memory.lastPeerRecallDedup={...Memory.lastPeerRecallDedup,droppedEntries:peerDropped};return value;
+    const value={query,policyKey,signatureOwner,metadata,policy,units,requirements,language,rejected,peerDigest:peerRecall?.digest||'',peerDropped,visibleDigest,recentChatDropped,recentChatDroppedItems};hayakuEvidencePreparations.set(selected,value);if(peerRecall&&Memory.lastPeerRecallDedup)Memory.lastPeerRecallDedup={...Memory.lastPeerRecallDedup,droppedEntries:peerDropped};if(visibleRecent)Memory.lastRecentChatDedup={visibleTurns:visibleRecent.list||[],droppedUnits:recentChatDropped,items:recentChatDroppedItems};return value;
   };
   const effectiveHayakuRenderLane = unit => {
     const explicit = text(unit?.lane || '').trim();
@@ -38381,6 +38430,84 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     return Memory.captureBackendRegistered;
   };
 
+  // Identify completed turns whose assistant text is already visible in the current
+  // request's raw conversation. Prefers RisuAI message IDs (memo === message chatId),
+  // falling back to canonical raw-text inclusion when memos are absent or unmatched.
+  const canonicalVisibleRecentTurnText = value => stripReservedPacketArtifacts(text(value || ''))
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const resolveVisibleRecentTurnsForRequest = (requestMessages = [], chatMessages = [], snapshot = null) => {
+    const pairs = ensureArray(snapshot?.conversationPairs).filter(pair => Number(pair?.pairIndex) > 0);
+    if (!pairs.length) return { turns: new Set(), list: [], digest: '' };
+    const visibleAssistant = ensureArray(requestMessages)
+      .filter(msg => {
+        if (!msg || typeof msg !== 'object') return false;
+        const role = roleOf(msg);
+        if (!/^(?:assistant|model|bot|char|character|ai)$/i.test(role)) return false;
+        const memo = text(msg?.memo || msg?.metadata?.memo || '').trim();
+        if ([RUNTIME_CONTEXT_MEMO, CACHE_STATIC_CONTEXT_MEMO, 'supaMemory', 'hypaMemory'].includes(memo)) return false;
+        return true;
+      })
+      .map(msg => {
+        const memo = text(msg?.memo || msg?.metadata?.memo || '').trim();
+        const body = canonicalVisibleRecentTurnText(messageContent(msg));
+        if (!body) return null;
+        return { memo, body };
+      })
+      .filter(Boolean);
+    if (!visibleAssistant.length) return { turns: new Set(), list: [], digest: '' };
+    const visibleBodyByMemo = new Map();
+    for (const item of visibleAssistant) {
+      if (!item.memo) continue;
+      const prev = visibleBodyByMemo.get(item.memo) || '';
+      if (item.body.length > prev.length) visibleBodyByMemo.set(item.memo, item.body);
+    }
+    const unmemoizedBodies = visibleAssistant.filter(item => !item.memo).map(item => item.body);
+    const allBodies = visibleAssistant.map(item => item.body);
+    const sourceMessages = ensureArray(chatMessages);
+    const pairMessageIds = pair => {
+      const msg = sourceMessages[Number(pair?.assistantMessageIndex)];
+      if (!msg || typeof msg !== 'object') return [];
+      return [msg.chatId, msg.chat_id, msg.messageId, msg.message_id, msg.memo, msg.id]
+        .map(v => text(v || '').trim())
+        .filter(Boolean);
+    };
+    const visible = new Set();
+    let memoMatchedAny = false;
+    if (visibleBodyByMemo.size) {
+      for (const pair of pairs) {
+        const ids = pairMessageIds(pair);
+        const matchedId = ids.find(id => visibleBodyByMemo.has(id));
+        if (matchedId) {
+          memoMatchedAny = true;
+          const msg = sourceMessages[Number(pair?.assistantMessageIndex)];
+          const stored = canonicalVisibleRecentTurnText(messageContent(msg));
+          const storedLen = Array.from(stored).length;
+          const reqLen = Array.from(visibleBodyByMemo.get(matchedId) || '').length;
+          // Fail-safe: if an external script/regex heavily truncated the visible body, keep recall.
+          if (storedLen >= 40 && reqLen < storedLen * 0.5) continue;
+          visible.add(Number(pair.pairIndex));
+        }
+      }
+    }
+    const fallbackBodies = memoMatchedAny ? unmemoizedBodies : allBodies;
+    if (allBodies.length) {
+      for (const pair of pairs) {
+        const turn = Number(pair.pairIndex);
+        if (visible.has(turn)) continue;
+        const ids = pairMessageIds(pair);
+        const pool = !ids.length ? allBodies : fallbackBodies;
+        if (!pool.length) continue;
+        const msg = sourceMessages[Number(pair?.assistantMessageIndex)];
+        const stored = canonicalVisibleRecentTurnText(messageContent(msg));
+        if (Array.from(stored).length >= 12 && pool.some(body => body.includes(stored))) visible.add(turn);
+      }
+    }
+    const list = [...visible].sort((a, b) => a - b);
+    return { turns: visible, list, digest: list.join(',') };
+  };
+
   // recallOnly runs the same selection without writing storage or arming capture, and returns the
   // recall prompt instead of an outgoing request. Another reader asks for this; nothing is sent.
   const handleBeforeRequest = async (messages = [], requestType = 'model', mode = null) => {
@@ -39190,6 +39317,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       recallToken = beginHayakuRecallRequest(chatScope?.key || requestScope.key || '',recallRequestId);
       if (readsetFrame) recallToken.readsetFrame=readsetFrame;
       settings.retrievalScopeKey=recallToken.scopeKey;
+      const visibleRecentTurns = resolveVisibleRecentTurnsForRequest(
+        messages,
+        authoritativeChatAvailable ? authoritativeChatMessages : [],
+        authoritativeSnapshot
+      );
       const [searched, packetHealth, rawRecoveryRecall, partialMemoryRecall] = await stageAsync('parallelRecallProcessing', () => Promise.all([
         stageAsync('search', () => searchIndexCompositeRecall(
           store,
@@ -39208,7 +39340,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           chatScope,
           retrievalQuery,
           authoritativeChatAvailable ? authoritativeChatMessages : messages,
-          settings,
+          visibleRecentTurns.turns.size ? { ...settings, visibleRecentTurns: visibleRecentTurns.turns } : settings,
           authoritativeSnapshot,
           authoritativeLedger.worldline
         )),
@@ -39312,6 +39444,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const recallCapForEvidence = sharedRecallChars == null ? optionalInjectionBudgetChars : Math.min(optionalInjectionBudgetChars, sharedRecallChars);
       const peerRecall = memorySuitePeerRecallIndex(messages, 'hayaku');
       if (peerRecall.chars && selectedForContext && typeof selectedForContext === 'object') hayakuPeerRecallIndexes.set(selectedForContext, peerRecall);
+      if (visibleRecentTurns.turns.size && selectedForContext && typeof selectedForContext === 'object') hayakuVisibleRecentTurns.set(selectedForContext, visibleRecentTurns);
+      Memory.lastRecentChatDedup = { visibleTurns: visibleRecentTurns.list, droppedUnits: 0 };
       Memory.lastPeerRecallDedup = peerRecall.chars ? { owners: peerRecall.owners, budgetSource: sharedRecallChars == null ? 'own_setting' : 'memory_suite_shared' } : { budgetSource: sharedRecallChars == null ? 'own_setting' : 'memory_suite_shared' };
       const recallBudgetPolicy = stage('planRecallDataBudgetPolicy', () => dynamicRecallDataBudget(
         query,
@@ -39585,6 +39719,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
         graphClosure: clone(Memory.lastGraphClosure || null, null),
         episodeIndex: clone(Memory.lastEpisodeIndex || null, null),
         episodeRouting: clone(Memory.lastEpisodeRouting || null, null),
+        recentChatDedup: clone(Memory.lastRecentChatDedup || null, null),
         rows: viewerRecallRows
       };
       pushOperationLog('recall:completed', {
@@ -61063,10 +61198,24 @@ function mountMemorySuiteReanalysisReview(container,config) {
         : (row.injected === false ? '<span class="badge" style="opacity:0.6">미주입(예산)</span>' : `<span class="badge">${viewerEscapeHtml(row.category||row.axis||'memory')}</span>`);
       return `<div class="rec"><span class="score">${Number(row.score||0).toFixed(3)}</span><div><b>${viewerEscapeHtml(row.ref||row.axis||'기억')}</b>${body}</div>${statusBadge}</div>`;
     };
-    if(recallBody) recallBody.innerHTML=recallRows.length
+    const recentDedup = recall?.recentChatDedup || Memory.lastRecentChatDedup || null;
+    const recentExcludedItems = ensureArray(recentDedup?.items);
+    const recentExcludedCount = Number(recentDedup?.droppedUnits || recentExcludedItems.length || 0);
+    const recentExcludedHtml = recentExcludedCount > 0
+      ? `<details class="rec-all"><summary>최근 원문으로 제외된 기록 - ${recentExcludedCount.toLocaleString()}건(열람)</summary><div class="rec-all__list">${
+          recentExcludedItems.length
+            ? recentExcludedItems.map(item => {
+                const turns = ensureArray(item.turns).map(t => `T${Number(t)}`).join(', ');
+                const label = item.kind === 'raw' ? '원문 발췌' : item.kind === 'partial' ? '부분 기억' : (item.lane || '사건 기록');
+                return `<div class="rec"><span class="score">${viewerEscapeHtml(turns || '-')}</span><div><b>${viewerEscapeHtml(label)}</b><p>${viewerEscapeHtml(text(item.preview || '(미리보기 없음)'))}</p></div><span class="badge">원문 중복 제외</span></div>`;
+              }).join('')
+            : '<div class="empty"><span>상세 미리보기 데이터가 없습니다.</span></div>'
+        }</div></details>`
+      : '';
+    if(recallBody) recallBody.innerHTML = recentExcludedHtml + (recallRows.length
       ? recallRows.slice(0,3).map(recallRowHtml).join('')
         +(recallRows.length>3?`<details class="rec-all"><summary>나머지 ${(recallRows.length-3).toLocaleString()}개 모두 보기</summary><div class="rec-all__list">${recallRows.slice(3).map(recallRowHtml).join('')}</div></details>`:'')
-      : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>';
+      : (recentExcludedHtml ? '' : '<div class="empty"><span>아직 이번 실행에서 실제로 전달된 기억이 없습니다.</span></div>'));
     const activityBody=root.querySelector?.('#hayakuOverviewActivity');
     if(activityBody){
       const entries=operationLogSnapshot().slice(-3).reverse();
@@ -63851,6 +64000,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         localRecallSourceIndex: clone(Memory.lastLocalRecallSourceIndex || null, null),
         localRecallRank: clone(Memory.lastLocalRecallRank || null, null),
         peerRecallDedup: clone(Memory.lastPeerRecallDedup || null, null),
+        recentChatDedup: clone(Memory.lastRecentChatDedup || null, null),
         storagePacketValidation:clone(storagePacketValidationStats,{}),
         sourceInput: { ready: !hayakuSourceInputReadyError, lastError: hayakuSourceInputReadyError },
         compat: RisuCompat.snapshot(),

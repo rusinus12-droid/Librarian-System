@@ -31,6 +31,25 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const plan = engine.allocationPlan(queryText, frame.settings.recallLensSharePercent ?? 40, { maxItems,
       canonicalCap: frame.settings.stateCanonicalCandidates || 16, microCap: frame.settings.stateMicroCandidates || 12 });
     const stateRows = engine.stateRows(frame.head), entities = engine.entityTable(frame.head);
+    const stateAsOfTurn = frame.head?.throughTurn ?? null;
+    // Turns whose raw text is already visible in the current request are omitted from
+    // RECORDED HISTORY (only when the entire canonical span is visible) and SCENE DETAILS,
+    // leaving their candidate slots and character budget to older turns.
+    // CURRENT STATE, RECENT CHANGES (newer than State), and PERSPECTIVE NOTES are always kept.
+    const visibleTurns = new Set((options.visibleTurns ? [...options.visibleTurns] : []).map(Number).filter(n => Number.isInteger(n) && n > 0));
+    const isRecentChangeTurn = turn => stateRows.length > 0 && stateAsOfTurn != null && Number(turn || 0) > Number(stateAsOfTurn);
+    const isSpanFullyVisible = (start, end) => {
+      const s = Number(start || end || 0), e = Number(end || start || 0);
+      if (!Number.isInteger(s) || !Number.isInteger(e) || s <= 0 || e < s) return false;
+      for (let t = s; t <= e; t++) if (!visibleTurns.has(t)) return false;
+      return true;
+    };
+    const eligibleRefs = visibleTurns.size
+      ? frame.refs.filter(ref => !(isSpanFullyVisible(ref.turnRange?.start, ref.turnRange?.end) && !isRecentChangeTurn(ref.turnRange?.end)))
+      : frame.refs;
+    const eligibleMicroTurns = visibleTurns.size
+      ? frame.turns.filter(turn => !(visibleTurns.has(Number(turn)) && !isRecentChangeTurn(turn)))
+      : frame.turns;
     // A State small enough for its anchors to hold most of it needs no dense signal. A larger
     // one sends its row texts with the query, so stored row vectors can rank the anchors.
     const stateTexts = stateRows.length >= STATE_SEMANTIC_MIN_ROWS
@@ -65,12 +84,12 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const relevantAnchors = queryText
       ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
       : anchors.items;
-    const refs = engine.rankCatalog(frame.refs, queryText, relevantAnchors,
+    const refs = engine.rankCatalog(eligibleRefs, queryText, relevantAnchors,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
     const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
-    const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
+    const ranked = engine.rankMicroTurns({ turns: eligibleMicroTurns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
       limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
       semanticScores: semantic.microScores || null });
     const turns = ranked.turns;
@@ -107,7 +126,6 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const rows = [...stateRows, ...loaded.flatMap(item => item.rows)];
     const selected = engine.select({ rows, query: queryText, maxCharacters, maxItems, entities,
       minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2, plan });
-    const stateAsOfTurn = frame.head?.throughTurn ?? null;
     const latestTurn = frame.turns.at(-1) || 0;
     const turnLag = stateAsOfTurn != null ? Math.max(0, latestTurn - Number(stateAsOfTurn)) : null;
     const toPublic = item => ({ id: item.id, nodeId: item.id, axis: item.axis, family: item.family,
@@ -195,8 +213,8 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
     const release = () => { if (closed) return; closed = true; frame.release(readSet); };
     // Micro is searched in full either by reading every turn, or by screening every turn's
     // stored search text and reading each one that matched.
-    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= frame.turns.length && ranked.matchesRead === ranked.matches;
-    const complete = refs.length === frame.refs.length && (turns.length === frame.turns.length || microScreened) && !failures.length && !payloadLimited;
+    const microScreened = !!queryText.trim() && !microIndexError && microIndex.known >= eligibleMicroTurns.length && ranked.matchesRead === ranked.matches;
+    const complete = refs.length === eligibleRefs.length && (turns.length === eligibleMicroTurns.length || microScreened) && !failures.length && !payloadLimited;
     const headFreshness = stateAsOfTurn == null ? 'absent' : frame.stateAuthority?.pending ? 'partial' : (turnLag === 0 ? 'current' : 'lagging');
     const pointInTimeNotice = headFreshness === 'partial' || turnLag && turnLag > 0
       ? `State includes verified projections through turn ${stateAsOfTurn}; unresolved or later changes remain unconfirmed.`
@@ -225,6 +243,37 @@ module.exports = function createLibraStateMemoryRuntime({ engine, capture, finge
         candidates: { canonical: refs.length, canonicalTotal: frame.refs.length, micro: turns.length, microTotal: frame.turns.length,
           microIndexed: ranked.indexed, microIndexKnown: microIndex.known, microMatches: ranked.matches, microMatchesRead: ranked.matchesRead,
           microReasons: ranked.reasons, ...(microIndexError ? { microIndexError } : {}) },
+        recentChatExcluded: (() => {
+          const excludedCanonical = visibleTurns.size
+            ? frame.refs.filter(ref => isSpanFullyVisible(ref.turnRange?.start, ref.turnRange?.end) && !isRecentChangeTurn(ref.turnRange?.end))
+            : [];
+          const excludedMicro = visibleTurns.size
+            ? frame.turns.filter(turn => visibleTurns.has(Number(turn)) && !isRecentChangeTurn(turn))
+            : [];
+          const items = [
+            ...excludedCanonical.map(ref => ({
+              family: 'canonical',
+              key: String(ref.key || ''),
+              turnStart: Number(ref.turnRange?.start || ref.turnRange?.end || 0),
+              turn: Number(ref.turnRange?.end || ref.turnRange?.start || 0),
+              preview: String(ref.title || ref.summary || ref.searchText || '').trim().slice(0, 260)
+            })),
+            ...excludedMicro.map(turn => ({
+              family: 'micro',
+              key: `micro:${turn}`,
+              turnStart: Number(turn),
+              turn: Number(turn),
+              preview: String(microIndex.entries?.get?.(turn) || '').trim().slice(0, 260)
+            }))
+          ];
+          return {
+            visibleTurns: [...visibleTurns].sort((a, b) => a - b),
+            excludedCanonicalRefs: excludedCanonical.length,
+            excludedMicroTurns: excludedMicro.length,
+            excludedCount: items.length,
+            items
+          };
+        })(),
         allocationPlan: plan, familyAllocation: selected.budget.familyAllocation,
         suppressedEvidenceDuplicates: selected.budget.suppressedEvidenceDuplicates,
         families: Object.fromEntries(['lens','state','canonical','micro','lore'].map(family => [family, {
