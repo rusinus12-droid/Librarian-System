@@ -45417,7 +45417,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       ['ALREADY_RESOLVED', /already_resolved/i, '처리 완료', '이미 채택하거나 처리한 기록입니다.', '기존 정본은 그대로 유지됩니다.'],
       ['BUSY', /busy|in_flight/i, '작업 진행 중', '같은 복구 작업이 이미 진행 중입니다.', '진행 표시에서 상태를 확인해 주세요.'],
       ['ADOPTION_FAILED', /adoption_failed/i, '채택 확인 실패', '검사는 끝났지만 원장 반영을 확인하지 못했습니다.', '대상 턴과 저장 상태를 확인한 뒤 다시 시도해 주세요.'],
-      ['CONNECTION_FAILED', /otherax|network|transport|fetch|http|429/i, 'AI 연결 실패', 'AI 응답을 받지 못했습니다.', 'RisuAI 보조 모델 연결을 확인해 주세요.']
+      ['CONNECTION_FAILED', /otherax|network|transport|fetch|http|429|host_failed/i, 'AI 연결 실패', 'AI 응답을 받지 못했습니다.', 'RisuAI 보조 모델 연결을 확인해 주세요.']
     ];
     const found = defs.find(row => row[1].test(signal));
     return { code, message, diagnosisCode: found?.[0] || 'ANALYSIS_FAILED', flow: failedAnalysisFlowLabel(payload?.flow),
@@ -46593,7 +46593,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const code = compact(error?.code || '', 96).toUpperCase();
     const message = compact(error?.message || error || '', 500).toLowerCase();
     if (/OUTCOME_UNKNOWN|TERMINAL_REJECTED|STALE_SOURCE|ABORTED|BUDGET_EXHAUSTED/.test(code)) return true;
-    if (['HAYAKU_NATIVE_LLM_UNAVAILABLE', 'HAYAKU_NATIVE_LLM_TIMEOUT', 'HAYAKU_NATIVE_LLM_EMPTY'].includes(code)) return true;
+    if (['HAYAKU_NATIVE_LLM_UNAVAILABLE', 'HAYAKU_NATIVE_LLM_TIMEOUT', 'HAYAKU_NATIVE_LLM_EMPTY', 'HAYAKU_NATIVE_LLM_HOST_FAILED'].includes(code)) return true;
     return /runllmmodel|other\s*ax|otherax|model.*(?:not configured|unavailable|missing)|api.?key|credential|network|fetch|timeout|rate.?limit|429|503|connection|offline|provider/.test(message);
   };
   const nativeLlmApiResolution = () => {
@@ -46624,6 +46624,17 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     response?.choices?.[0]?.message?.content,
     response?.candidates?.[0]?.content?.parts?.filter?.(part=>part?.thought!==true)?.map?.(part => part?.text).filter(Boolean).join('\n')
   ];
+  const nativeLlmHostFailureDetail = response => {
+    if (!response || typeof response !== 'object' || response.type !== 'fail') return '';
+    const raw = response.result ?? response.error ?? response.message ?? 'unknown';
+    let detail = '';
+    if (typeof raw === 'string') detail = raw;
+    else if (raw && typeof raw === 'object' && typeof raw.message === 'string') detail = raw.message;
+    else {
+      try { detail = JSON.stringify(raw); } catch (_) { detail = String(raw ?? 'unknown'); }
+    }
+    return compact(detail || 'unknown', 300) || 'unknown';
+  };
   const nativeLlmResponseText = response => {
     if (typeof response === 'string') return response;
     if (!response) return '';
@@ -46805,8 +46816,29 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           try{error.hayakuRunLlmSubmitted=true;error.responseMetadata=nativeLlmResponseMetadata(response);}catch(_){}
           throw error;
         }
-        const content = nativeLlmResponseText(response);
         const responseMetadata = nativeLlmResponseMetadata(response);
+        const hostFailureDetail = nativeLlmHostFailureDetail(response);
+        if (hostFailureDetail) {
+          ledger.settle(row, 'outcome_unknown', responseMetadata.usage);
+          Memory.nativeRecovery.lastInvocation = {
+            plan,
+            operation: ledger.snapshot(),
+            completion: { ...MemorySuiteExecutionContract.completion({ content: '', ...responseMetadata }), content: undefined },
+            hostFailureDetail
+          };
+          pushOperationLog('native_llm:host_fail', {
+            code: 'HAYAKU_NATIVE_LLM_HOST_FAILED',
+            detail: hostFailureDetail,
+            elapsedMs: Math.max(0, now() - startedAt)
+          }, 'error');
+          const error = new Error(`hayaku_native_llm_host_failed:${hostFailureDetail}`);
+          error.code = 'HAYAKU_NATIVE_LLM_HOST_FAILED';
+          error.hostFailureDetail = hostFailureDetail;
+          error.responseMetadata = responseMetadata;
+          error.hayakuRunLlmSubmitted = true;
+          throw error;
+        }
+        const content = nativeLlmResponseText(response);
         const completionEnvelope=MemorySuiteExecutionContract.completion({content,...responseMetadata,reasoningOnly:!!response?.reasoning_content});
         ledger.settle(row,completionEnvelope.state,responseMetadata.usage);
         Memory.nativeRecovery.lastInvocation={plan,operation:ledger.snapshot(),completion:{...completionEnvelope,content:undefined}};

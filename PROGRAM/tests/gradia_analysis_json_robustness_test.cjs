@@ -67,4 +67,33 @@ test('GRADIA analysis JSON robustness against truncated outputs, unescaped quote
     const issue = exposed.analysisContractIssue('shadow_act', partialWithoutPlan, {});
     assert.equal(issue, 'domain_missing', 'contract must reject analysis without domain/plan');
   });
+
+  await t.test('inspectStructuredJsonCompletion strips closed <Thoughts> blocks before checking JSON delimiters', () => {
+    const withThoughtsAndBrackets = `<Thoughts>\nDrafting [t1-a "unclosed] and {bad:}\n</Thoughts>\n{"schema":"serial_gradation_agents_for_rp_draft_patch_v1","stage":"aide_world","ok":true,"edits":[]}`;
+    const result = exposed.inspectStructuredJsonCompletion(withThoughtsAndBrackets);
+    assert.equal(result.started, true);
+    assert.equal(result.complete, true);
+    assert.equal(result.reason, '');
+
+    const unclosedThoughts = `<Thoughts>\n{"kind":"none"}\nstill thinking`;
+    const unclosedResult = exposed.inspectStructuredJsonCompletion(unclosedThoughts);
+    assert.equal(unclosedResult.started, false);
+    assert.equal(unclosedResult.reason, 'reasoning_unclosed');
+
+    const validWorldAnalysisJson = JSON.stringify({
+      schema: 'serial_gradation_agents_for_rp_analysis_v4',
+      stage: 'aide_world',
+      ok: true,
+      analysis: { summary: 'Spatial continuity remains intact.', constraints: [], risks: [] },
+      domain: { spatial_state: 'library' }
+    });
+    assert.equal(
+      exposed.analysisContractIssue('aide_world', `<Thoughts>note [t1 "bad] {x:</Thoughts>\n${validWorldAnalysisJson}`, {}),
+      ''
+    );
+    assert.equal(
+      exposed.analysisContractIssue('aide_world', '<Thoughts>\n{"schema":"serial_gradation_agents_for_rp_analysis_v4"}\nstill thinking', {}),
+      'provider_output_truncated_unreported:reasoning_unclosed'
+    );
+  });
 });

@@ -118,6 +118,84 @@ test('Micro caps a 300s librarian stage timeout at 120s, recovers bare micro_mem
     await waitFor(() => api.getCaptureBackendState().lastMicroPublication?.turn === 7, 15000);
     assert.equal(api.getCaptureBackendState().lastMicroPublication?.status, 'verified');
     assert.equal(turn7Calls, 2, 'retries once when first response fails envelope schema');
+
+    // Turn 8: <Thoughts> block containing JSON fragments and mismatched brackets before valid envelope -> verified on Attempt 1.
+    let turn8Calls = 0;
+    f.control.onCall = async () => {
+      turn8Calls += 1;
+      const { receipt } = await api.debugReadActiveCompletedTurnReceipt(8);
+      const envelope = {
+        schema: 'libra.micro_producer_envelope.v1',
+        personCandidates: { spans: [], relations: [] },
+        micro: buildMicro(receipt, 8),
+        timeAdvance: { kind: 'none' }
+      };
+      return {
+        type: 'success',
+        result: `<Thoughts>\nPlanning {"kind":"none"} and [t8-a "quote] and {bad:}\n</Thoughts>\n${JSON.stringify(envelope)}`
+      };
+    };
+    f.chat.message.push(
+      { role: 'user', chatId: 't8-u', data: '계속' },
+      { role: 'assistant', chatId: 't8-a', data: '민아가 창턱의 모래시계를 뒤집었다.' }
+    );
+    listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+    await waitFor(() => api.getCaptureBackendState().lastMicroPublication?.turn === 8, 15000);
+    assert.equal(api.getCaptureBackendState().lastMicroPublication?.status, 'verified');
+    assert.equal(turn8Calls, 1, 'strips <Thoughts> with brackets/fragments before JSON inspection and envelope parsing');
+
+    // Turn 9: <Thoughts>{"kind":"none"}</Thoughts> followed by valid envelope with a trailing comma -> repairs outer envelope, never picks {"kind":"none"}.
+    let turn9Calls = 0;
+    f.control.onCall = async () => {
+      turn9Calls += 1;
+      const { receipt } = await api.debugReadActiveCompletedTurnReceipt(9);
+      const envelopeJson = JSON.stringify({
+        schema: 'libra.micro_producer_envelope.v1',
+        personCandidates: { spans: [], relations: [] },
+        micro: buildMicro(receipt, 9),
+        timeAdvance: { kind: 'none' }
+      });
+      const trailingCommaEnvelope = envelopeJson.replace(/\}$/, ',}');
+      return {
+        type: 'success',
+        result: `<Thoughts>{"kind":"none"}</Thoughts>\n${trailingCommaEnvelope}`
+      };
+    };
+    f.chat.message.push(
+      { role: 'user', chatId: 't9-u', data: '계속' },
+      { role: 'assistant', chatId: 't9-a', data: '민아가 종이 봉투를 열었다.' }
+    );
+    listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+    await waitFor(() => api.getCaptureBackendState().lastMicroPublication?.turn === 9, 15000);
+    assert.equal(api.getCaptureBackendState().lastMicroPublication?.status, 'verified');
+    assert.equal(turn9Calls, 1, 'relaxedJsonParse repairs trailing comma on post-Thoughts body only');
+
+    // Turn 10: unclosed <Thoughts> containing {"kind":"none"} on Attempt 1, valid envelope on Attempt 2 -> does not adopt fragment, retries once.
+    let turn10Calls = 0;
+    f.control.onCall = async () => {
+      turn10Calls += 1;
+      if (turn10Calls === 1) {
+        return { type: 'success', result: '<Thoughts>\n{"kind":"none"}\nstill thinking...' };
+      }
+      const { receipt } = await api.debugReadActiveCompletedTurnReceipt(10);
+      return {
+        type: 'success',
+        result: JSON.stringify({
+          schema: 'libra.micro_producer_envelope.v1',
+          personCandidates: { spans: [], relations: [] },
+          micro: buildMicro(receipt, 10),
+          timeAdvance: { kind: 'none' }
+        })
+      };
+    };
+    f.chat.message.push(
+      { role: 'user', chatId: 't10-u', data: '계속' },
+      { role: 'assistant', chatId: 't10-a', data: '민아가 서랍에서 열쇠를 꺼냈다.' }
+    );
+    listener({ char: f.character, chat: f.chat, characterIndex: 0, chatIndex: 0, messageIndex: f.chat.message.length - 1 });
+    await waitFor(() => api.getCaptureBackendState().lastMicroPublication?.turn === 10, 15000);
+    assert.equal(api.getCaptureBackendState().lastMicroPublication?.status, 'verified');
+    assert.equal(turn10Calls, 2, 'unclosed <Thoughts> triggers retry rather than adopting inner fragment');
   } finally {
     await fixture.cleanup();
   }

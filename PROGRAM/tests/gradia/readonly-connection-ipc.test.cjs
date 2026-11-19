@@ -80,3 +80,21 @@ test('malformed or unknown saved reader grants never establish a connection',asy
     assert.notEqual(f.status().connection.state,'connected',JSON.stringify(readOwners));
   }
 });
+
+test('LIB read connection controls render visibly on the Sources page while #lib-url stays hidden',async t=>{
+  const f=await ipcHost(t);
+  const isVisible=node=>{
+    for(let cur=node;cur&&cur.nodeType===1;cur=cur.parentElement){
+      if(cur.hasAttribute('hidden')||cur.style?.display==='none')return false;
+    }
+    return true;
+  };
+  for(const selector of ['#lib-read-source','#lib-connect','#lib-check','#lib-disconnect','#lib-state']){
+    const el=f.node(selector);
+    assert.equal(isVisible(el),true,`${selector} must be visible in the Sources UI`);
+  }
+  const urlEl=f.node('#lib-url');
+  assert.equal(urlEl.disabled,true,'legacy #lib-url remains disabled');
+  assert.equal(isVisible(urlEl),false,'legacy #lib-url stays hidden');
+  assert.match(f.node('#lib-connect').textContent,/연결/);
+});

@@ -27298,9 +27298,40 @@ function summarizeAgentCbsTag(rawContent) {
     return english||korean?{kind:'explicit_text_refusal',message:content}:null;
   };
 
+  const stripLeadingClosedReasoningWrappers = (value = '') => {
+    let body = String(value ?? '').replace(/^\uFEFF/, '').trim();
+    let unclosedReasoning = false;
+    for (let depth = 0; depth < 8; depth += 1) {
+      const thought = /^<(thoughts?|think|reasoning|analysis)(?:\s[^>]*)?>/i.exec(body);
+      if (thought) {
+        const close = new RegExp(`</${thought[1]}\\s*>`, 'i').exec(body.slice(thought[0].length));
+        if (!close) { unclosedReasoning = true; break; }
+        body = body.slice(thought[0].length + close.index + close[0].length).trim();
+        continue;
+      }
+      const output = /^<(output|final|answer|response)(?:\s[^>]*)?>([\s\S]*)<\/\1\s*>$/i.exec(body);
+      if (output) { body = output[2].trim(); continue; }
+      const fence = /^```(?:json|javascript|js)?\s*\r?\n?([\s\S]*?)\s*```$/i.exec(body);
+      if (fence) { body = fence[1].trim(); continue; }
+      break;
+    }
+    return { body, unclosedReasoning };
+  };
+
   const inspectStructuredJsonCompletion = (value = '') => {
     const raw = text(value || '').trim();
-    const source = raw
+    const unwrapped = stripLeadingClosedReasoningWrappers(raw);
+    if (unwrapped.unclosedReasoning) {
+      return {
+        started: false,
+        complete: false,
+        reason: 'reasoning_unclosed',
+        rootType: '',
+        depth: 0,
+        chars: raw.length
+      };
+    }
+    const source = unwrapped.body
       .replace(/^```(?:json|javascript|js)?\s*/i, '')
       .replace(/\s*```\s*$/i, '')
       .trim();
@@ -28223,7 +28254,8 @@ function summarizeAgentCbsTag(rawContent) {
             Authorization: `token ${key}`,
             Accept: 'application/json',
             'Editor-Version': 'vscode/1.85.0',
-            'Editor-Plugin-Version': 'copilot-chat/0.22.0'
+            'Editor-Plugin-Version': 'copilot-chat/0.22.0',
+            'User-Agent': 'GitHubCopilotChat/0.22.0'
           }
         }, 30000);
         const data = await responseToJsonOrText(response);
@@ -53861,13 +53893,19 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const parseMicroProducerEnvelope = rawContent => {
         const raw = string(rawContent || '').trim();
         if (!raw) return { jsonValid: false, envelope: null };
-        const fenced = raw.match(/^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i);
-        const candidateText = fenced ? fenced[1] : raw;
+        const unwrapped = stripLeadingClosedReasoningWrappers(raw);
+        if (unwrapped.unclosedReasoning) return { jsonValid: false, envelope: null };
+        let candidateText = unwrapped.body;
+        try {
+          candidateText = unwrapLibraTypedResponse(raw).json;
+        } catch (_) {
+          candidateText = unwrapped.body;
+        }
         let parsed = null;
         try {
           parsed = JSON.parse(candidateText);
         } catch (_) {
-          parsed = relaxedJsonParse(candidateText) || relaxedJsonParse(raw);
+          parsed = relaxedJsonParse(candidateText);
         }
         if (!parsed || !isPlainObject(parsed)) return { jsonValid: false, envelope: null };
         if (parsed.schema === 'libra.micro_producer_envelope.v1') return { jsonValid: true, envelope: parsed };

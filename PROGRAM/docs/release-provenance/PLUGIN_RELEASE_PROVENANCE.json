@@ -290,13 +290,13 @@
       },
       "hayaku": {
         "version": "4.0.7",
-        "sha256": "04d584910f6e940595a12162768f55a52c848622d808c46543f5a710c950f43e",
-        "bytes": 4337864
+        "sha256": "4554295c9d33c172af82aeaa779b4efddf2b5d48925ff1eb2451974d0ec634e5",
+        "bytes": 4348943
       },
       "libra": {
         "version": "3.0.8",
-        "sha256": "afc136f8c19b18e5b7baaaac74897e08d333e07ff4bf0d5884fb6bc9895a0362",
-        "bytes": 6765499
+        "sha256": "31f8a3aa63d37716c08ea1237fdcc64baa280c85d8ae6c483737ab5cf17ea9be",
+        "bytes": 6797412
       },
       "lia": {
         "version": "0.30.3",
@@ -310,8 +310,8 @@
       },
       "gradia": {
         "version": "1.1.4",
-        "sha256": "c8c7a5ae1d181bcac580a965a9abac9e56b5bf96ea5e20b17b322c97f247df9e",
-        "bytes": 3471154
+        "sha256": "2b6f9dbec3ffae3da92729364b85df4ece4b3854fa5f88a2c956d8ea777d56c3",
+        "bytes": 3477939
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",
