@@ -49,7 +49,9 @@ test('axis quota counts deduped memory units while preserving every provenance r
   const store={worldlineHeadOrdinal:3};
   const selected=t.prepareHayakuRecallRows(rows,'stable calibration',settings,store,[],[]),plan=t.selectHayakuEvidencePlan(selected,'stable calibration',settings,8000);
   assert.equal(plan.renderedEntries,1,'duplicate proofs of one memory consume one memory slot');assert.equal(plan.deliveredSources.length,6);
-  for(let i=0;i<6;i++)assert.ok(plan.text.includes('proof-'+i));
+  // Every provenance reference is kept in delivery accounting; the model reads the memory once, without them.
+  assert.equal(new Set(plan.deliveredSources.map(source=>source.sourceKey)).size,6,'six distinct origins are accounted for');
+  assert.equal((plan.text.match(/The established signal has a stable calibration\./g)||[]).length,1);assert.doesNotMatch(plan.text,/proof-\d|\[sources /);
   const distinct=rows.slice(0,3).map((row,i)=>({...row,publicText:'Distinct established calibration '+String.fromCharCode(65+i)}));
   const bounded=t.selectHayakuEvidencePlan(t.prepareHayakuRecallRows(distinct,'calibration',settings,store,[],[]),'calibration',settings,8000);
   assert.equal(bounded.renderedEntries,1,'distinct memories still obey the unchanged quota');

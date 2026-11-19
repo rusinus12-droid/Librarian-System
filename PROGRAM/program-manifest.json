@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T08:02:51.435Z",
+  "generatedAt": "2026-11-19T08:04:30.475Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -6527,6 +6527,10 @@
       "sha256": "a922473a5783210c02648766d377aa1a400ca037e5d0272077e02629d752507c",
       "bytes": 1988
     },
+    "tests/flashback_state_line_bookkeeping_free_test.cjs": {
+      "sha256": "d6baae46b8d2e1500fc86e7aee66608020e07f53e40a4d94eeef811c3d63d5e4",
+      "bytes": 1824
+    },
     "tests/flashback_state_property_runtime_test.cjs": {
       "sha256": "0ad77dba14873ec409ab6ba9ba7bcf4c9b0b2a5c3948c553059e142d18872772",
       "bytes": 818
@@ -7592,8 +7596,8 @@
       "bytes": 3163
     },
     "tests/hayaku_recall_progress_and_dedupe_runtime_test.cjs": {
-      "sha256": "1a6455a797ea3b4de3e6495d5ef2dd3245de5b8ccb160ac9917c450e51fa75c1",
-      "bytes": 14176
+      "sha256": "200a1e73781062bdcefe67e9cdcb37bcb41a341d1930c5fb34debce0daa69859",
+      "bytes": 14503
     },
     "tests/hayaku_record_admission_runtime_test.cjs": {
       "sha256": "f9b169b87e9d6a84471639fc93e96bd099093b798787211d19c420c3db17eb44",
