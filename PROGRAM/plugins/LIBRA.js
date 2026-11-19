@@ -38992,8 +38992,13 @@ function createLibraReadonlySourceContext(owner) {
       if (currentHead) {
         const canonicalView = responseStateAuthorityForHead(currentHead, refs,
           { exactBasis: true, sourceMode: 'current_basis' });
-        try { return await withInheritedMicro(await projectActiveMicroStateForResponse(scope, manifest, canonicalView, options)); }
-        catch (_) {
+        // Only a failure of the Micro projection itself falls back to the Canonical view; the
+        // projection already holds individual claims that cannot be applied (pendingClaims).
+        let projected = null;
+        try { projected = await projectActiveMicroStateForResponse(scope, manifest, canonicalView, options); }
+        catch (_) { projected = null; }
+        if (projected) { try { return await withInheritedMicro(projected); } catch (_) { /* fall back below */ } }
+        {
           const authority = canonicalView.authority;
           authority.current = false;
           authority.pending = true;
@@ -56079,110 +56084,120 @@ function mountMemorySuiteReanalysisReview(container,config) {
           catch (_) { active = { status: 'pending_reconciliation', reason: 'overlap_micro_read_failed' }; }
           if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') continue;
           for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
-          if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
-            if (!isPlainObject(claim.stateIntent)) continue;
-            if (!statePipelineDomainOpenForMicro(head, claim.stateIntent.domain)) {
-              pendingClaims.push({turn, claimIndex, reason: 'state_domain_not_ready'});
-              continue;
-            }
-            stateProofs.push(activeMicroConsumptionProof(active));
-            const prefix = key.microStateAdmission(scope, worldlineId, 0, turn,
-              active.record.sourceRevisionId, active.record.analysisRevisionId, claimIndex, '');
-            const prior = [];
-            let readFailed = false;
-            for (const decisionKey of admissionKeys.filter(storageKey => string(storageKey).startsWith(prefix)
-              && !string(storageKey).includes('::chunk:'))) {
-              let decision;
-              try { decision = await storage.getVerifiedJson(decisionKey, scope, null); }
-              catch (_) { readFailed = true; continue; }
-              const body = clone(asObject(decision)); delete body.decisionDigest;
-              if (decision?.schema !== 'libra.micro_state_admission.v1'
-                || decision.scopeKey !== scope.scopeKey || decision.worldlineId !== worldlineId
-                || Number(decision.sessionEpoch) !== 0 || Number(decision.turn) !== turn
-                || Number(decision.claimIndex) !== claimIndex
-                || decision.microRecordKey !== active.recordKey
-                || decision.receiptKey !== active.record.receiptKey
-                || decision.claimDigest !== digest(claim)
-                || decision.decisionDigest !== digest(body)) {
-                readFailed = true;
+            // One overlap claim that cannot be read or resolved holds only itself.
+            const claimMark = { pending: pendingClaims.length, transitions: transitions.length,
+              proofs: stateProofs.length, overlap: overlap.length };
+            try {
+            if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
+              if (!isPlainObject(claim.stateIntent)) continue;
+              if (!statePipelineDomainOpenForMicro(head, claim.stateIntent.domain)) {
+                pendingClaims.push({turn, claimIndex, reason: 'state_domain_not_ready'});
                 continue;
               }
-              if (decision.status === 'admitted') {
-                prior.push({ decision, decisionKey });
-                stateProofs.push(stateDecisionConsumptionProof(decisionKey, decision));
+              stateProofs.push(activeMicroConsumptionProof(active));
+              const prefix = key.microStateAdmission(scope, worldlineId, 0, turn,
+                active.record.sourceRevisionId, active.record.analysisRevisionId, claimIndex, '');
+              const prior = [];
+              let readFailed = false;
+              for (const decisionKey of admissionKeys.filter(storageKey => string(storageKey).startsWith(prefix)
+                && !string(storageKey).includes('::chunk:'))) {
+                let decision;
+                try { decision = await storage.getVerifiedJson(decisionKey, scope, null); }
+                catch (_) { readFailed = true; continue; }
+                const body = clone(asObject(decision)); delete body.decisionDigest;
+                if (decision?.schema !== 'libra.micro_state_admission.v1'
+                  || decision.scopeKey !== scope.scopeKey || decision.worldlineId !== worldlineId
+                  || Number(decision.sessionEpoch) !== 0 || Number(decision.turn) !== turn
+                  || Number(decision.claimIndex) !== claimIndex
+                  || decision.microRecordKey !== active.recordKey
+                  || decision.receiptKey !== active.record.receiptKey
+                  || decision.claimDigest !== digest(claim)
+                  || decision.decisionDigest !== digest(body)) {
+                  readFailed = true;
+                  continue;
+                }
+                if (decision.status === 'admitted') {
+                  prior.push({ decision, decisionKey });
+                  stateProofs.push(stateDecisionConsumptionProof(decisionKey, decision));
+                }
               }
-            }
-            if (!readFailed && !prior.length) {
-              const intent = asObject(claim.stateIntent);
+              if (!readFailed && !prior.length) {
+                const intent = asObject(claim.stateIntent);
+                const domain = string(intent.domain || ''), field = string(intent.field || '');
+                let targetId = domain === 'narrative' ? 'current_narrative' : '';
+                if (domain === 'character' || domain === 'world') {
+                  const type = domain === 'character' ? 'person' : 'world';
+                  const name = statePipelineIdentityKey(intent.target?.entityName);
+                  const matches = asArray(registry?.entities).filter(entity => entity?.validated === true
+                    && entity.type === type && [entity.name, ...asArray(entity.aliases)]
+                      .some(alias => statePipelineIdentityKey(alias) === name));
+                  if (matches.length === 1) targetId = string(matches[0].id || '');
+                }
+                let sourceVerified = false;
+                try {
+                  const source = microBoundSource(active, await readSameTurnReceipt(scope, worldlineId, 0, turn, { context, pairs }));
+                  sourceVerified = source.status === 'verified'
+                    && source.receiptKey === active.record.receiptKey
+                    && validateMicroCandidate({ schema: 'libra.micro_memory.v1',
+                      scopeKey: active.record.scopeKey, worldlineId, sessionEpoch: 0, turn,
+                      sourceRevisionId: active.record.sourceRevisionId,
+                      sourceDigest: active.record.sourceDigest, claims: [claim] }, source.receipt).claims.length === 1;
+                } catch (_) { /* An unverified source cannot establish Canonical absorption. */ }
+                const row = domain === 'narrative' ? head.narrative
+                  : asArray(domain === 'character' ? head.characters : head.world)
+                    .find(value => value?.id === targetId);
+                const state = domain === 'narrative' ? asObject(row) : asObject(row?.state);
+                if (sourceVerified && targetId && field && intent.operation === 'set'
+                  && claim.stateChangeType === 'set' && claim.certainty === 'confirmed'
+                  && claim.epistemicStatus === 'observed' && typeof intent.value === 'string'
+                  && canonicalEntityNameBoundToEvidence(intent.value, claim.evidence.exactQuote)
+                  && Object.prototype.hasOwnProperty.call(state, field)
+                  && statePipelineSemanticEqual(field, state[field], intent.value)) {
+                  transitions.push({ turn, claimIndex, domain, targetId, field,
+                    microRecordKey: active.recordKey,
+                    canonicalKey: string(head.reviewedThroughCanonical?.key || ''),
+                    disposition: 'absorbed' });
+                  continue;
+                }
+              }
+              if (readFailed || !prior.length) {
+                pendingClaims.push({ turn, claimIndex, reason: readFailed
+                  ? 'overlap_admission_read_failed' : 'overlap_not_previously_admitted' });
+                continue;
+              }
+              const first = prior[0], intent = asObject(claim.stateIntent);
               const domain = string(intent.domain || ''), field = string(intent.field || '');
-              let targetId = domain === 'narrative' ? 'current_narrative' : '';
-              if (domain === 'character' || domain === 'world') {
-                const type = domain === 'character' ? 'person' : 'world';
-                const name = statePipelineIdentityKey(intent.target?.entityName);
-                const matches = asArray(registry?.entities).filter(entity => entity?.validated === true
-                  && entity.type === type && [entity.name, ...asArray(entity.aliases)]
-                    .some(alias => statePipelineIdentityKey(alias) === name));
-                if (matches.length === 1) targetId = string(matches[0].id || '');
-              }
-              let sourceVerified = false;
-              try {
-                const source = microBoundSource(active, await readSameTurnReceipt(scope, worldlineId, 0, turn, { context, pairs }));
-                sourceVerified = source.status === 'verified'
-                  && source.receiptKey === active.record.receiptKey
-                  && validateMicroCandidate({ schema: 'libra.micro_memory.v1',
-                    scopeKey: active.record.scopeKey, worldlineId, sessionEpoch: 0, turn,
-                    sourceRevisionId: active.record.sourceRevisionId,
-                    sourceDigest: active.record.sourceDigest, claims: [claim] }, source.receipt).claims.length === 1;
-              } catch (_) { /* An unverified source cannot establish Canonical absorption. */ }
-              const row = domain === 'narrative' ? head.narrative
-                : asArray(domain === 'character' ? head.characters : head.world)
-                  .find(value => value?.id === targetId);
-              const state = domain === 'narrative' ? asObject(row) : asObject(row?.state);
-              if (sourceVerified && targetId && field && intent.operation === 'set'
-                && claim.stateChangeType === 'set' && claim.certainty === 'confirmed'
-                && claim.epistemicStatus === 'observed' && typeof intent.value === 'string'
-                && canonicalEntityNameBoundToEvidence(intent.value, claim.evidence.exactQuote)
-                && Object.prototype.hasOwnProperty.call(state, field)
-                && statePipelineSemanticEqual(field, state[field], intent.value)) {
-                transitions.push({ turn, claimIndex, domain, targetId, field,
-                  microRecordKey: active.recordKey,
-                  canonicalKey: string(head.reviewedThroughCanonical?.key || ''),
-                  disposition: 'absorbed' });
+              const firstPatch = asObject(first.decision.patch), clearing = firstPatch.operation === 'clear_fields';
+              const additiveItems = asArray(microEffectiveEntityId(registry, firstPatch, firstPatch.microAdditive));
+              const effective = (row, id) => microEffectiveEntityId(registry, row.decision.patch, id);
+              const value = clearing ? null : effective(first, asObject(firstPatch.set)[field]);
+              const resolveTarget = row => {
+                const id = string(row.decision.targetIds?.[0] || '');
+                return domain === 'relationship' ? microEffectiveRelationship(registry, row.decision.patch, id).id : effective(row, id);
+              };
+              const targetId = domain === 'narrative' ? 'current_narrative' : resolveTarget(first);
+              if (!['character', 'world', 'narrative', 'relationship'].includes(domain) || !field || value === undefined
+                || prior.some(row => (!additiveItems.length && digest(effective(row, row.decision.patch?.set?.[field]) ?? null) !== digest(value))
+                  || resolveTarget(row) !== targetId && domain !== 'narrative')
+                || domain !== 'narrative' && !targetId) {
+                pendingClaims.push({ turn, claimIndex, reason: 'overlap_admission_conflict' });
                 continue;
               }
+              overlap.push({ turn, claimIndex, domain, targetId, field, value, clearing, additiveItems,
+                patch: domain === 'relationship' ? microEffectiveRelationship(registry, firstPatch, targetId).patch : firstPatch,
+                decisionKey: first.decisionKey, decisionDigest: first.decision.decisionDigest,
+                claimDigest: first.decision.claimDigest, claim,
+                microRecordKey: active.recordKey,
+                receiptKey: active.record.receiptKey,
+                sourceRevisionId: active.record.sourceRevisionId,
+                sourceDigest: active.record.sourceDigest,
+                analysisRevisionId: active.record.analysisRevisionId });
+            } catch (error) {
+              pendingClaims.length = claimMark.pending; transitions.length = claimMark.transitions;
+              stateProofs.length = claimMark.proofs; overlap.length = claimMark.overlap;
+              warn('LIBRA Micro State overlap projection skipped a claim', { turn, claimIndex, error: compact(error?.message || error, 200) });
+              pendingClaims.push({ turn, claimIndex, reason: 'overlap_projection_failed' });
             }
-            if (readFailed || !prior.length) {
-              pendingClaims.push({ turn, claimIndex, reason: readFailed
-                ? 'overlap_admission_read_failed' : 'overlap_not_previously_admitted' });
-              continue;
-            }
-            const first = prior[0], intent = asObject(claim.stateIntent);
-            const domain = string(intent.domain || ''), field = string(intent.field || '');
-            const firstPatch = asObject(first.decision.patch), clearing = firstPatch.operation === 'clear_fields';
-            const additiveItems = asArray(microEffectiveEntityId(registry, firstPatch, firstPatch.microAdditive));
-            const effective = (row, id) => microEffectiveEntityId(registry, row.decision.patch, id);
-            const value = clearing ? null : effective(first, asObject(firstPatch.set)[field]);
-            const resolveTarget = row => {
-              const id = string(row.decision.targetIds?.[0] || '');
-              return domain === 'relationship' ? microEffectiveRelationship(registry, row.decision.patch, id).id : effective(row, id);
-            };
-            const targetId = domain === 'narrative' ? 'current_narrative' : resolveTarget(first);
-            if (!['character', 'world', 'narrative', 'relationship'].includes(domain) || !field || value === undefined
-              || prior.some(row => (!additiveItems.length && digest(effective(row, row.decision.patch?.set?.[field]) ?? null) !== digest(value))
-                || resolveTarget(row) !== targetId && domain !== 'narrative')
-              || domain !== 'narrative' && !targetId) {
-              pendingClaims.push({ turn, claimIndex, reason: 'overlap_admission_conflict' });
-              continue;
-            }
-            overlap.push({ turn, claimIndex, domain, targetId, field, value, clearing, additiveItems,
-              patch: domain === 'relationship' ? microEffectiveRelationship(registry, firstPatch, targetId).patch : firstPatch,
-              decisionKey: first.decisionKey, decisionDigest: first.decision.decisionDigest,
-              claimDigest: first.decision.claimDigest, claim,
-              microRecordKey: active.recordKey,
-              receiptKey: active.record.receiptKey,
-              sourceRevisionId: active.record.sourceRevisionId,
-              sourceDigest: active.record.sourceDigest,
-              analysisRevisionId: active.record.analysisRevisionId });
           }
         }
         const byField = new Map();
@@ -56192,247 +56207,287 @@ function mountMemorySuiteReanalysisReview(container,config) {
           byField.get(identity).push(item);
         }
         for (const group of byField.values()) {
-          group.sort((left, right) => left.turn - right.turn || left.claimIndex - right.claimIndex);
-          const first = group[0];
-          const row = first.domain === 'narrative' ? head.narrative
-            : asArray(first.domain === 'relationship' ? head.relationships : first.domain === 'character' ? head.characters : head.world)
-              .find(value => value?.id === first.targetId);
-          const state = first.domain === 'narrative' ? asObject(row) : asObject(row?.state);
-          const canonicalHasField = Object.prototype.hasOwnProperty.call(state, first.field);
-          const canonicalValue = state[first.field];
-          const canonicalClearedField = Object.keys(asObject(row?.clearedFieldEvidence?.[first.field])).length > 0
-            || Object.keys(asObject(row?.clearedFieldCorrectionProvenance?.[first.field])).length > 0;
-          const userCorrection = asObject(canonicalHasField
-            ? row?.fieldCorrectionProvenance?.[first.field]
-            : row?.clearedFieldCorrectionProvenance?.[first.field]);
-          const explicitlyCorrected = userCorrection.schema === STATE_CORRECTION_EVENT_SCHEMA
-            && string(userCorrection.correctionId || '');
-          const canonicalFieldEvidence = asObject(canonicalHasField
-            ? row?.fieldEvidence?.[first.field] : row?.clearedFieldEvidence?.[first.field]);
-          const canonicalFieldRangeStart = Number(canonicalFieldEvidence.turnRange?.start
-            ?? canonicalFieldEvidence.canonical?.turnRange?.start ?? Number.NEGATIVE_INFINITY);
-          const canonicalFieldEpoch = Number(canonicalFieldEvidence.sessionEpoch
-            ?? canonicalFieldEvidence.canonical?.sessionEpoch ?? Number.NEGATIVE_INFINITY);
-          const sameTurnConflict = group.some((item, index) => !item.additiveItems.length && group.slice(index + 1).some(later =>
-            later.turn === item.turn && !statePipelineSemanticEqual(item.field, item.value, later.value)));
-          const latest = group[group.length - 1];
-          for (const item of group) {
-            // The approved patch names what Micro introduced first. Read it the way
-            // the post-canonical path does, so a reference with no canonical record
-            // yet keeps its verified name instead of reaching the screen as an ID.
-            const itemRegistry = microRegistryViewWithPatch(registry, item.patch);
-            const laterMatch = group.some(later => later.turn > item.turn
-              && canonicalHasField && statePipelineSemanticEqual(item.field, later.value, canonicalValue));
-            const laterCanonicalField = canonicalFieldEpoch === 0
-              && canonicalFieldRangeStart > item.turn;
-            let disposition = explicitlyCorrected
-              ? canonicalHasField && statePipelineSemanticEqual(item.field, item.value, canonicalValue)
-                ? 'absorbed' : 'corrected'
-              : sameTurnConflict ? 'pending'
-              : item.additiveItems.length ? statePipelineSemanticEqual(item.field, canonicalValue,
-                microStateMergeCollection(item.field, item.targetId, canonicalValue, item.additiveItems)) ? 'absorbed' : 'still_current'
-              : item.clearing ? !canonicalHasField ? 'absorbed' : laterCanonicalField ? 'corrected' : 'pending'
-              : !canonicalHasField ? laterCanonicalField ? 'corrected'
-                : canonicalClearedField ? 'pending'
-                : item === latest ? 'still_current' : 'corrected'
-              : statePipelineSemanticEqual(item.field, item.value, canonicalValue) ? 'absorbed'
-              : laterMatch || laterCanonicalField ? 'corrected' : 'pending';
-            if (disposition === 'still_current') {
-              let targetRow = asArray(item.domain === 'relationship' ? head.relationships : []).find(value => value?.id === item.targetId) || row;
-              if (item.domain === 'relationship' && !targetRow) {
-                targetRow = microStateRelationshipRow(itemRegistry, item.targetId, item.patch);
-                if (targetRow) head.relationships = [...asArray(head.relationships), targetRow]; else disposition = 'pending';
-              } else if (item.domain !== 'narrative' && !targetRow) {
-                const entity = asObject(registry?.byId?.[item.targetId]
-                  || asArray(itemRegistry.entities).find(value => value?.id === item.targetId));
-                if (!entity.id || entity.type !== (item.domain === 'character' ? 'person' : 'world')) {
-                  disposition = 'pending';
-                } else {
-                  targetRow = {id: entity.id, name: entity.name,
-                    aliases: clone(asArray(entity.aliases)),
-                    ...(item.domain === 'world' ? {kind: entity.kind || 'other'} : {}),
-                    state: {}, fieldEvidence: {}, certainty: 'confirmed'};
-                  head[item.domain === 'character' ? 'characters' : 'world'].push(targetRow);
+          // A field group that cannot be applied holds only that field; other fields still apply.
+          const groupMark = { pending: pendingClaims.length, transitions: transitions.length, head: clone(head) };
+          try {
+            group.sort((left, right) => left.turn - right.turn || left.claimIndex - right.claimIndex);
+            const first = group[0];
+            const row = first.domain === 'narrative' ? head.narrative
+              : asArray(first.domain === 'relationship' ? head.relationships : first.domain === 'character' ? head.characters : head.world)
+                .find(value => value?.id === first.targetId);
+            const state = first.domain === 'narrative' ? asObject(row) : asObject(row?.state);
+            const canonicalHasField = Object.prototype.hasOwnProperty.call(state, first.field);
+            const canonicalValue = state[first.field];
+            const canonicalClearedField = Object.keys(asObject(row?.clearedFieldEvidence?.[first.field])).length > 0
+              || Object.keys(asObject(row?.clearedFieldCorrectionProvenance?.[first.field])).length > 0;
+            const userCorrection = asObject(canonicalHasField
+              ? row?.fieldCorrectionProvenance?.[first.field]
+              : row?.clearedFieldCorrectionProvenance?.[first.field]);
+            const explicitlyCorrected = userCorrection.schema === STATE_CORRECTION_EVENT_SCHEMA
+              && string(userCorrection.correctionId || '');
+            const canonicalFieldEvidence = asObject(canonicalHasField
+              ? row?.fieldEvidence?.[first.field] : row?.clearedFieldEvidence?.[first.field]);
+            const canonicalFieldRangeStart = Number(canonicalFieldEvidence.turnRange?.start
+              ?? canonicalFieldEvidence.canonical?.turnRange?.start ?? Number.NEGATIVE_INFINITY);
+            const canonicalFieldEpoch = Number(canonicalFieldEvidence.sessionEpoch
+              ?? canonicalFieldEvidence.canonical?.sessionEpoch ?? Number.NEGATIVE_INFINITY);
+            const sameTurnConflict = group.some((item, index) => !item.additiveItems.length && group.slice(index + 1).some(later =>
+              later.turn === item.turn && !statePipelineSemanticEqual(item.field, item.value, later.value)));
+            const latest = group[group.length - 1];
+            for (const item of group) {
+              // The approved patch names what Micro introduced first. Read it the way
+              // the post-canonical path does, so a reference with no canonical record
+              // yet keeps its verified name instead of reaching the screen as an ID.
+              const itemRegistry = microRegistryViewWithPatch(registry, item.patch);
+              const laterMatch = group.some(later => later.turn > item.turn
+                && canonicalHasField && statePipelineSemanticEqual(item.field, later.value, canonicalValue));
+              const laterCanonicalField = canonicalFieldEpoch === 0
+                && canonicalFieldRangeStart > item.turn;
+              let disposition = explicitlyCorrected
+                ? canonicalHasField && statePipelineSemanticEqual(item.field, item.value, canonicalValue)
+                  ? 'absorbed' : 'corrected'
+                : sameTurnConflict ? 'pending'
+                : item.additiveItems.length ? statePipelineSemanticEqual(item.field, canonicalValue,
+                  microStateMergeCollection(item.field, item.targetId, canonicalValue, item.additiveItems)) ? 'absorbed' : 'still_current'
+                : item.clearing ? !canonicalHasField ? 'absorbed' : laterCanonicalField ? 'corrected' : 'pending'
+                : !canonicalHasField ? laterCanonicalField ? 'corrected'
+                  : canonicalClearedField ? 'pending'
+                  : item === latest ? 'still_current' : 'corrected'
+                : statePipelineSemanticEqual(item.field, item.value, canonicalValue) ? 'absorbed'
+                : laterMatch || laterCanonicalField ? 'corrected' : 'pending';
+              if (disposition === 'still_current') {
+                let targetRow = asArray(item.domain === 'relationship' ? head.relationships : []).find(value => value?.id === item.targetId) || row;
+                if (item.domain === 'relationship' && !targetRow) {
+                  targetRow = microStateRelationshipRow(itemRegistry, item.targetId, item.patch);
+                  if (targetRow) head.relationships = [...asArray(head.relationships), targetRow]; else disposition = 'pending';
+                } else if (item.domain !== 'narrative' && !targetRow) {
+                  const entity = asObject(registry?.byId?.[item.targetId]
+                    || asArray(itemRegistry.entities).find(value => value?.id === item.targetId));
+                  if (!entity.id || entity.type !== (item.domain === 'character' ? 'person' : 'world')) {
+                    disposition = 'pending';
+                  } else {
+                    targetRow = {id: entity.id, name: entity.name,
+                      aliases: clone(asArray(entity.aliases)),
+                      ...(item.domain === 'world' ? {kind: entity.kind || 'other'} : {}),
+                      state: {}, fieldEvidence: {}, certainty: 'confirmed'};
+                    head[item.domain === 'character' ? 'characters' : 'world'].push(targetRow);
+                  }
+                }
+                if (disposition === 'still_current') {
+                  const target = item.domain === 'narrative' ? head.narrative = asObject(head.narrative)
+                    : targetRow.state = asObject(targetRow.state);
+                  const fieldEvidence = {schema: 'libra.micro_state_field_evidence.v1',
+                    status: 'state_admitted', receiptKey: item.receiptKey,
+                    sourceRevisionId: item.sourceRevisionId, sourceDigest: item.sourceDigest,
+                    analysisRevisionId: item.analysisRevisionId, claimDigest: item.claimDigest,
+                    decisionKey: item.decisionKey, decisionDigest: item.decisionDigest,
+                    role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
+                    startOffset: item.claim.evidence.startOffset,
+                    endOffset: item.claim.evidence.endOffset,
+                    exactQuote: item.claim.evidence.exactQuote, turn: item.turn,
+                    evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
+                  retainMicroLocationReference(head, itemRegistry, item.domain, item.field, item.value, fieldEvidence);
+                  if (!item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field) && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
+                    retainSupersededStateValue(head,item.domain,item.targetId,item.field,target[item.field],targetRow?.fieldEvidence?.[item.field],fieldEvidence);
+                  const previousCollection = item.additiveItems.length ? clone(asArray(target[item.field])) : [];
+                  target[item.field] = item.additiveItems.length
+                    ? microStateMergeCollection(item.field, item.targetId, target[item.field], item.additiveItems) : clone(item.value);
+                  for (const previous of previousCollection) if (!asArray(target[item.field]).some(value=>digest(value)===digest(previous)))
+                    retainSupersededStateValue(head,item.domain,item.targetId,item.field,previous,targetRow?.fieldEvidence?.[item.field],fieldEvidence);
+                  targetRow.fieldEvidence = asObject(targetRow.fieldEvidence);
+                  targetRow.fieldEvidence[item.field] = fieldEvidence;
                 }
               }
-              if (disposition === 'still_current') {
-                const target = item.domain === 'narrative' ? head.narrative = asObject(head.narrative)
-                  : targetRow.state = asObject(targetRow.state);
-                const fieldEvidence = {schema: 'libra.micro_state_field_evidence.v1',
-                  status: 'state_admitted', receiptKey: item.receiptKey,
-                  sourceRevisionId: item.sourceRevisionId, sourceDigest: item.sourceDigest,
-                  analysisRevisionId: item.analysisRevisionId, claimDigest: item.claimDigest,
-                  decisionKey: item.decisionKey, decisionDigest: item.decisionDigest,
-                  role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
-                  startOffset: item.claim.evidence.startOffset,
-                  endOffset: item.claim.evidence.endOffset,
-                  exactQuote: item.claim.evidence.exactQuote, turn: item.turn,
-                  evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
-                retainMicroLocationReference(head, itemRegistry, item.domain, item.field, item.value, fieldEvidence);
-                if (!item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field) && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
-                  retainSupersededStateValue(head,item.domain,item.targetId,item.field,target[item.field],targetRow?.fieldEvidence?.[item.field],fieldEvidence);
-                const previousCollection = item.additiveItems.length ? clone(asArray(target[item.field])) : [];
-                target[item.field] = item.additiveItems.length
-                  ? microStateMergeCollection(item.field, item.targetId, target[item.field], item.additiveItems) : clone(item.value);
-                for (const previous of previousCollection) if (!asArray(target[item.field]).some(value=>digest(value)===digest(previous)))
-                  retainSupersededStateValue(head,item.domain,item.targetId,item.field,previous,targetRow?.fieldEvidence?.[item.field],fieldEvidence);
-                targetRow.fieldEvidence = asObject(targetRow.fieldEvidence);
-                targetRow.fieldEvidence[item.field] = fieldEvidence;
-              }
+              transitions.push({ turn: item.turn, claimIndex: item.claimIndex,
+                domain: item.domain, targetId: item.targetId, field: item.field,
+                decisionKey: item.decisionKey,
+                canonicalKey: string(head.reviewedThroughCanonical?.key || ''), disposition });
+              if (disposition === 'pending') pendingClaims.push({ turn: item.turn,
+                claimIndex: item.claimIndex, domain: item.domain, targetId: item.targetId,
+                field: item.field, candidateValue: clone(item.value),
+                reason: canonicalHasField || canonicalClearedField
+                  ? 'canonical_overlap_conflict' : 'registry_target_changed' });
             }
-            transitions.push({ turn: item.turn, claimIndex: item.claimIndex,
-              domain: item.domain, targetId: item.targetId, field: item.field,
-              decisionKey: item.decisionKey,
-              canonicalKey: string(head.reviewedThroughCanonical?.key || ''), disposition });
-            if (disposition === 'pending') pendingClaims.push({ turn: item.turn,
-              claimIndex: item.claimIndex, domain: item.domain, targetId: item.targetId,
-              field: item.field, candidateValue: clone(item.value),
-              reason: canonicalHasField || canonicalClearedField
-                ? 'canonical_overlap_conflict' : 'registry_target_changed' });
+          } catch (error) {
+            pendingClaims.length = groupMark.pending; transitions.length = groupMark.transitions;
+            for (const field of Object.keys(head)) delete head[field];
+            Object.assign(head, groupMark.head);
+            warn('LIBRA Micro State overlap projection skipped a field', { field: group[0]?.field, error: compact(error?.message || error, 200) });
+            for (const item of group) pendingClaims.push({ turn: item.turn, claimIndex: item.claimIndex,
+              domain: item.domain, targetId: item.targetId, field: item.field, reason: 'overlap_projection_failed' });
           }
         }
       }
       await prefetchMicroTurnReads(scope, worldlineId,
         Array.from({ length: Math.max(0, pairs.length - canonicalThroughTurn) }, (_, index) => canonicalThroughTurn + 1 + index));
       for (let turn = canonicalThroughTurn + 1; turn <= pairs.length; turn += 1) {
-        let active;
-        try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true }); }
-        catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
-        if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
-          pendingClaims.push({ turn, reason: active.reason || active.status });
-          continue;
-        }
-        const registryView = { ...asObject(registry), entities: [...asArray(registry?.entities)] };
-        const admitted = [];
-        for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
-          if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
-          if (!isPlainObject(claim.stateIntent)) continue;
-          if (!genesis && !statePipelineDomainOpenForMicro(head, claim.stateIntent.domain)) {
-            pendingClaims.push({ turn, claimIndex, reason: 'state_domain_not_ready' });
-            continue;
-          }
-          stateProofs.push(activeMicroConsumptionProof(active));
-          let read;
-          try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active }); }
-          catch (_) { read = { status: 'pending_reconciliation', reason: 'admission_read_failed' }; }
-          if (read.decisionKey && read.decision) stateProofs.push(stateDecisionConsumptionProof(read.decisionKey, read.decision));
-          if (read.status === 'superseded' && read.decision?.reason === 'explicit_user_correction') {
-            const intent = asObject(claim.stateIntent);
-            transitions.push({turn, claimIndex, domain: string(intent.domain || ''),
-              targetId: string(read.decision.targetIds?.[0] || ''),
-              field: string(intent.field || ''), decisionKey: read.decisionKey,
-              disposition: read.decision.disposition, reason: read.decision.reason});
-            continue;
-          }
-          if (read.status !== 'admitted') {
-            pendingClaims.push({ turn, claimIndex, reason: read.reason || read.status });
-            continue;
-          }
-          const decision = asObject(read.decision), intent = asObject(claim.stateIntent);
-          const field = string(intent.field || ''), domain = string(intent.domain || '');
-          const patch = asObject(decision.patch), set = asObject(patch.set), clearing = patch.operation === 'clear_fields';
-          if (!(clearing ? asArray(patch.clear).length === 1 && asArray(patch.clear)[0] === field
-            : patch.operation === 'upsert' && Object.keys(set).length === 1 && Object.prototype.hasOwnProperty.call(set, field))
-            || !['character', 'world', 'narrative', 'relationship'].includes(domain)) {
-            pendingClaims.push({ turn, claimIndex, reason: 'admitted_patch_projection_unsupported' });
-            continue;
-          }
-          const targetId = domain === 'narrative' ? 'current_narrative' : string(decision.targetIds?.[0] || '');
-          if (domain !== 'narrative' && !targetId) {
-            pendingClaims.push({ turn, claimIndex, reason: 'admitted_target_missing' });
-            continue;
-          }
-          const effective = domain === 'relationship' ? microEffectiveRelationship(registryView, patch, targetId)
-            : { id: microEffectiveEntityId(registryView, patch, targetId), patch };
-          if (!effective.id) {
-            pendingClaims.push({ turn, claimIndex, reason: 'registry_target_changed' });
-            continue;
-          }
-          registryView.entities = microRegistryViewWithPatch(registryView, patch).entities;
-          const effectiveValue = clearing ? null : microEffectiveEntityId(registryView, patch, clone(set[field]));
-          admitted.push({ claimIndex, claim, decision, decisionKey: read.decisionKey, patch: effective.patch, clearing,
-            additiveItems: asArray(microEffectiveEntityId(registryView, patch, patch.microAdditive)), domain, targetId: effective.id, field, value: effectiveValue });
-        }
-        const conflicted = new Set();
-        const valuesByField = new Map();
-        for (const item of admitted) {
-          const identity = JSON.stringify([item.domain, item.targetId, item.field]);
-          const prior = valuesByField.get(identity);
-          if (prior && !item.additiveItems.length && !statePipelineSemanticEqual(item.field, prior.value, item.value)) conflicted.add(identity);
-          else if (!prior) valuesByField.set(identity, item);
-        }
-        for (const item of admitted) {
-          const identity = JSON.stringify([item.domain, item.targetId, item.field]);
-          if (conflicted.has(identity)) {
-            pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'micro_same_turn_field_conflict' });
-            continue;
-          }
-          const fieldEvidence = { schema: 'libra.micro_state_field_evidence.v1',
-            status: 'state_admitted', receiptKey: active.record.receiptKey,
-            sourceRevisionId: active.record.sourceRevisionId, sourceDigest: active.record.sourceDigest,
-            analysisRevisionId: active.record.analysisRevisionId, claimDigest: item.decision.claimDigest,
-            decisionKey: item.decisionKey, decisionDigest: item.decision.decisionDigest,
-            role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
-            startOffset: item.claim.evidence.startOffset, endOffset: item.claim.evidence.endOffset,
-            exactQuote: item.claim.evidence.exactQuote, turn,
-            evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
-          let target, previousFieldEvidence;
-          if (item.domain === 'narrative') {target = head.narrative = asObject(head.narrative);previousFieldEvidence=clone(head.narrative.fieldEvidence?.[item.field] || null);}
-          else if (item.domain === 'relationship') {
-            let row = asArray(head.relationships).find(value => value?.id === item.targetId);
-            if (!row) {
-              row = microStateRelationshipRow(registryView, item.targetId, item.patch);
-              if (!row) {
-                pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'registry_target_changed' });
-                continue;
+        // One claim that cannot be applied must not discard the whole projection. Hold only that
+        // claim (pending: micro_projection_apply_failed) and apply the rest of the turn again from
+        // the state before this turn; a failure not tied to one claim holds only this turn.
+        const skipClaims = new Set();
+        for (let attempt = 0; ; attempt += 1) {
+          const mark = { pending: pendingClaims.length, transitions: transitions.length,
+            proofs: stateProofs.length, through: projectedThroughTurn };
+          let currentClaim = null, headSnapshot = null;
+          try {
+              let active;
+              try { active = await readActiveMicroMemory(scope, worldlineId, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true }); }
+              catch (_) { active = { status: 'pending_reconciliation', reason: 'micro_read_failed' }; }
+              if (active.status !== 'verified' || active.record.analysisStatus !== 'verified') {
+                pendingClaims.push({ turn, reason: active.reason || active.status });
+                break;
               }
-              head.relationships = [...asArray(head.relationships), row];
+              const registryView = { ...asObject(registry), entities: [...asArray(registry?.entities)] };
+              const admitted = [];
+              for (const [claimIndex, claim] of asArray(active.record.claims).entries()) {
+                if (skipClaims.has(claimIndex)) continue;
+                currentClaim = claimIndex;
+                if(memoryReviewDecision(reviewPolicy,'micro',active.record,claimIndex)==='rejected')continue;
+                if (!isPlainObject(claim.stateIntent)) continue;
+                if (!genesis && !statePipelineDomainOpenForMicro(head, claim.stateIntent.domain)) {
+                  pendingClaims.push({ turn, claimIndex, reason: 'state_domain_not_ready' });
+                  continue;
+                }
+                stateProofs.push(activeMicroConsumptionProof(active));
+                let read;
+                try { read = await admitMicroStateClaim(scope, worldlineId, 0, turn, claimIndex, { readOnly: true, context, pairs, manifest, stateWorldlineMeta: worldlineMeta, active }); }
+                catch (_) { read = { status: 'pending_reconciliation', reason: 'admission_read_failed' }; }
+                if (read.decisionKey && read.decision) stateProofs.push(stateDecisionConsumptionProof(read.decisionKey, read.decision));
+                if (read.status === 'superseded' && read.decision?.reason === 'explicit_user_correction') {
+                  const intent = asObject(claim.stateIntent);
+                  transitions.push({turn, claimIndex, domain: string(intent.domain || ''),
+                    targetId: string(read.decision.targetIds?.[0] || ''),
+                    field: string(intent.field || ''), decisionKey: read.decisionKey,
+                    disposition: read.decision.disposition, reason: read.decision.reason});
+                  continue;
+                }
+                if (read.status !== 'admitted') {
+                  pendingClaims.push({ turn, claimIndex, reason: read.reason || read.status });
+                  continue;
+                }
+                const decision = asObject(read.decision), intent = asObject(claim.stateIntent);
+                const field = string(intent.field || ''), domain = string(intent.domain || '');
+                const patch = asObject(decision.patch), set = asObject(patch.set), clearing = patch.operation === 'clear_fields';
+                if (!(clearing ? asArray(patch.clear).length === 1 && asArray(patch.clear)[0] === field
+                  : patch.operation === 'upsert' && Object.keys(set).length === 1 && Object.prototype.hasOwnProperty.call(set, field))
+                  || !['character', 'world', 'narrative', 'relationship'].includes(domain)) {
+                  pendingClaims.push({ turn, claimIndex, reason: 'admitted_patch_projection_unsupported' });
+                  continue;
+                }
+                const targetId = domain === 'narrative' ? 'current_narrative' : string(decision.targetIds?.[0] || '');
+                if (domain !== 'narrative' && !targetId) {
+                  pendingClaims.push({ turn, claimIndex, reason: 'admitted_target_missing' });
+                  continue;
+                }
+                const effective = domain === 'relationship' ? microEffectiveRelationship(registryView, patch, targetId)
+                  : { id: microEffectiveEntityId(registryView, patch, targetId), patch };
+                if (!effective.id) {
+                  pendingClaims.push({ turn, claimIndex, reason: 'registry_target_changed' });
+                  continue;
+                }
+                registryView.entities = microRegistryViewWithPatch(registryView, patch).entities;
+                const effectiveValue = clearing ? null : microEffectiveEntityId(registryView, patch, clone(set[field]));
+                admitted.push({ claimIndex, claim, decision, decisionKey: read.decisionKey, patch: effective.patch, clearing,
+                  additiveItems: asArray(microEffectiveEntityId(registryView, patch, patch.microAdditive)), domain, targetId: effective.id, field, value: effectiveValue });
+              }
+              currentClaim = null;
+              if (admitted.length) headSnapshot = clone(head);
+              const conflicted = new Set();
+              const valuesByField = new Map();
+              for (const item of admitted) {
+                const identity = JSON.stringify([item.domain, item.targetId, item.field]);
+                const prior = valuesByField.get(identity);
+                if (prior && !item.additiveItems.length && !statePipelineSemanticEqual(item.field, prior.value, item.value)) conflicted.add(identity);
+                else if (!prior) valuesByField.set(identity, item);
+              }
+              for (const item of admitted) {
+                currentClaim = item.claimIndex;
+                const identity = JSON.stringify([item.domain, item.targetId, item.field]);
+                if (conflicted.has(identity)) {
+                  pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'micro_same_turn_field_conflict' });
+                  continue;
+                }
+                const fieldEvidence = { schema: 'libra.micro_state_field_evidence.v1',
+                  status: 'state_admitted', receiptKey: active.record.receiptKey,
+                  sourceRevisionId: active.record.sourceRevisionId, sourceDigest: active.record.sourceDigest,
+                  analysisRevisionId: active.record.analysisRevisionId, claimDigest: item.decision.claimDigest,
+                  decisionKey: item.decisionKey, decisionDigest: item.decision.decisionDigest,
+                  role: item.claim.evidence.role, messageId: item.claim.evidence.messageId,
+                  startOffset: item.claim.evidence.startOffset, endOffset: item.claim.evidence.endOffset,
+                  exactQuote: item.claim.evidence.exactQuote, turn,
+                  evidenceSpans: [{ ref: item.claim.evidence.messageId, quote: item.claim.evidence.exactQuote }] };
+                let target, previousFieldEvidence;
+                if (item.domain === 'narrative') {target = head.narrative = asObject(head.narrative);previousFieldEvidence=clone(head.narrative.fieldEvidence?.[item.field] || null);}
+                else if (item.domain === 'relationship') {
+                  let row = asArray(head.relationships).find(value => value?.id === item.targetId);
+                  if (!row) {
+                    row = microStateRelationshipRow(registryView, item.targetId, item.patch);
+                    if (!row) {
+                      pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'registry_target_changed' });
+                      continue;
+                    }
+                    head.relationships = [...asArray(head.relationships), row];
+                  }
+                  target = row.state = asObject(row.state);
+                  row.fieldEvidence = asObject(row.fieldEvidence);
+                  if (!item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field) && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
+                    retainSupersededStateValue(head,item.domain,item.targetId,item.field,target[item.field],row.fieldEvidence[item.field],fieldEvidence);
+                  previousFieldEvidence = clone(row.fieldEvidence[item.field] || null);
+                  if (previousFieldEvidence === undefined) previousFieldEvidence=clone(row.fieldEvidence[item.field] || null);
+                  row.fieldEvidence[item.field] = fieldEvidence;
+                } else {
+                  const entity = asObject(registry?.byId?.[item.targetId]
+                    || asArray(registryView.entities).find(row => row?.id === item.targetId));
+                  if (!entity.id || entity.type !== (item.domain === 'character' ? 'person' : 'world')) {
+                    pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'registry_target_changed' });
+                    continue;
+                  }
+                  const collection = item.domain === 'character' ? head.characters : head.world;
+                  let row = asArray(collection).find(value => value?.id === item.targetId);
+                  if (!row) {
+                    row = { id: entity.id, name: entity.name, aliases: clone(asArray(entity.aliases)),
+                      ...(item.domain === 'world' ? { kind: entity.kind || 'other' } : {}),
+                      state: {}, fieldEvidence: {}, certainty: 'confirmed' };
+                    collection.push(row);
+                  }
+                  target = row.state = asObject(row.state);
+                  row.fieldEvidence = asObject(row.fieldEvidence);
+                  row.fieldEvidence[item.field] = fieldEvidence;
+                }
+                retainMicroLocationReference(head, registryView, item.domain, item.field, item.value, fieldEvidence);
+                if (item.domain==='narrative' && !item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field)
+                  && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
+                  retainSupersededStateValue(head,item.domain,'current_narrative',item.field,target[item.field],head.narrative.fieldEvidence?.[item.field],fieldEvidence);
+                const previousCollection = item.additiveItems.length ? clone(asArray(target[item.field])) : [];
+                if (item.clearing) delete target[item.field];
+                else target[item.field] = item.additiveItems.length
+                  ? microStateMergeCollection(item.field, item.targetId, target[item.field], item.additiveItems) : clone(item.value);
+                for (const previous of previousCollection) if (!asArray(target[item.field]).some(value=>digest(value)===digest(previous)))
+                  retainSupersededStateValue(head,item.domain,item.targetId,item.field,previous,previousFieldEvidence,fieldEvidence);
+                if (item.domain === 'narrative') {
+                  head.narrative.fieldEvidence = asObject(head.narrative.fieldEvidence);
+                  head.narrative.fieldEvidence[item.field] = fieldEvidence;
+                }
+                transitions.push({ turn, claimIndex: item.claimIndex, domain: item.domain,
+                  targetId: item.targetId, field: item.field, decisionKey: item.decisionKey,
+                  disposition: 'still_current' });
+                projectedThroughTurn = Math.max(projectedThroughTurn, turn);
+              }
+            currentClaim = null;
+            break;
+          } catch (error) {
+            pendingClaims.length = mark.pending; transitions.length = mark.transitions;
+            stateProofs.length = mark.proofs; projectedThroughTurn = mark.through;
+            if (headSnapshot) { for (const field of Object.keys(head)) delete head[field]; Object.assign(head, headSnapshot); }
+            warn('LIBRA Micro State projection skipped a ' + (currentClaim == null ? 'turn' : 'claim'), { turn, claimIndex: currentClaim, error: compact(error?.message || error, 200) });
+            if (currentClaim == null || skipClaims.has(currentClaim) || attempt > 64) {
+              pendingClaims.push({ turn, reason: 'micro_projection_turn_failed' });
+              break;
             }
-            target = row.state = asObject(row.state);
-            row.fieldEvidence = asObject(row.fieldEvidence);
-            if (!item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field) && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
-              retainSupersededStateValue(head,item.domain,item.targetId,item.field,target[item.field],row.fieldEvidence[item.field],fieldEvidence);
-            previousFieldEvidence = clone(row.fieldEvidence[item.field] || null);
-            if (previousFieldEvidence === undefined) previousFieldEvidence=clone(row.fieldEvidence[item.field] || null);
-            row.fieldEvidence[item.field] = fieldEvidence;
-          } else {
-            const entity = asObject(registry?.byId?.[item.targetId]
-              || asArray(registryView.entities).find(row => row?.id === item.targetId));
-            if (!entity.id || entity.type !== (item.domain === 'character' ? 'person' : 'world')) {
-              pendingClaims.push({ turn, claimIndex: item.claimIndex, reason: 'registry_target_changed' });
-              continue;
-            }
-            const collection = item.domain === 'character' ? head.characters : head.world;
-            let row = asArray(collection).find(value => value?.id === item.targetId);
-            if (!row) {
-              row = { id: entity.id, name: entity.name, aliases: clone(asArray(entity.aliases)),
-                ...(item.domain === 'world' ? { kind: entity.kind || 'other' } : {}),
-                state: {}, fieldEvidence: {}, certainty: 'confirmed' };
-              collection.push(row);
-            }
-            target = row.state = asObject(row.state);
-            row.fieldEvidence = asObject(row.fieldEvidence);
-            row.fieldEvidence[item.field] = fieldEvidence;
+            skipClaims.add(currentClaim);
           }
-          retainMicroLocationReference(head, registryView, item.domain, item.field, item.value, fieldEvidence);
-          if (item.domain==='narrative' && !item.additiveItems.length && Object.prototype.hasOwnProperty.call(target,item.field)
-            && !statePipelineSemanticEqual(item.field,target[item.field],item.value))
-            retainSupersededStateValue(head,item.domain,'current_narrative',item.field,target[item.field],head.narrative.fieldEvidence?.[item.field],fieldEvidence);
-          const previousCollection = item.additiveItems.length ? clone(asArray(target[item.field])) : [];
-          if (item.clearing) delete target[item.field];
-          else target[item.field] = item.additiveItems.length
-            ? microStateMergeCollection(item.field, item.targetId, target[item.field], item.additiveItems) : clone(item.value);
-          for (const previous of previousCollection) if (!asArray(target[item.field]).some(value=>digest(value)===digest(previous)))
-            retainSupersededStateValue(head,item.domain,item.targetId,item.field,previous,previousFieldEvidence,fieldEvidence);
-          if (item.domain === 'narrative') {
-            head.narrative.fieldEvidence = asObject(head.narrative.fieldEvidence);
-            head.narrative.fieldEvidence[item.field] = fieldEvidence;
-          }
-          transitions.push({ turn, claimIndex: item.claimIndex, domain: item.domain,
-            targetId: item.targetId, field: item.field, decisionKey: item.decisionKey,
-            disposition: 'still_current' });
-          projectedThroughTurn = Math.max(projectedThroughTurn, turn);
         }
+        for (const claimIndex of skipClaims) pendingClaims.push({ turn, claimIndex, reason: 'micro_projection_apply_failed' });
       }
       if (!transitions.length && !pendingClaims.length) return canonicalView;
       const microProjection = { schema: 'libra.micro_state_projection.v1',

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T23:14:21.153Z",
+  "generatedAt": "2026-11-19T23:43:10.595Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -4304,8 +4304,8 @@
       "bytes": 801200
     },
     "plugins/LIBRA.js": {
-      "sha256": "70cf2081f1759075ab0b109bf22d102ab7e15aaaa021109e1f1442b587cff172",
-      "bytes": 6813280
+      "sha256": "60ce0d08bd5f854912cf3cd0035ccced6b0cbbc17bf84574fc2d6e543a035c04",
+      "bytes": 6818272
     },
     "plugins/RETRACE.js": {
       "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
@@ -7754,6 +7754,10 @@
     "tests/hayaku_source_context_runtime_test.cjs": {
       "sha256": "440830c43818d538517b812e1e33977480ae4ae2bdd4d7fc4049baae3914e65d",
       "bytes": 7191
+    },
+    "tests/hayaku_source_filter_binding_test.cjs": {
+      "sha256": "26d83a810e27dfb9163cc03038422ea8c2fb118aea61da9c77d7d58419db2c76",
+      "bytes": 4810
     },
     "tests/hayaku_source_identity_contract_runtime_test.cjs": {
       "sha256": "02938c3ffb8e728c8f3709c7ee9e4b1b1bb239c5a68b28c30f4307512cea35c6",
