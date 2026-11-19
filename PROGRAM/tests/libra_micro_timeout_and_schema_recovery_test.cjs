@@ -35,7 +35,7 @@ const buildMicro = (receipt, turn) => {
   };
 };
 
-test('Micro honors librarian stage timeout up to 300s, recovers bare micro_memory.v1, and retries on producer_schema_invalid', async () => {
+test('Micro caps a 300s librarian stage timeout at 120s, recovers bare micro_memory.v1, and retries on producer_schema_invalid', async () => {
   let listener;
   const fixture = await serverFixture({
     mode: 'plugin_only',
@@ -49,7 +49,7 @@ test('Micro honors librarian stage timeout up to 300s, recovers bare micro_memor
   try {
     const { f } = fixture;
     const api = f.r.api;
-    // Configure librarian stage timeout to 300s (300000 ms) in libra:v1:agent-slots before first settings load.
+    // A librarian stage timeout saved as 300s (300000 ms) before the 120s cap; it must read back as 120s.
     const existingSlots = fixture.local.has('libra:v1:agent-slots')
       ? JSON.parse(fixture.local.get('libra:v1:agent-slots'))
       : { version: 2, slots: {} };
@@ -89,7 +89,8 @@ test('Micro honors librarian stage timeout up to 300s, recovers bare micro_memor
       .filter(entry => entry.turn === 6 && Number(entry.leaseExpiresAt) > 0 && Number(entry.invocationStartedAt) > 0);
     assert.ok(workEntries.length >= 1, 'micro-work record persisted for turn 6');
     const leaseDurationMs = Number(workEntries[0].leaseExpiresAt) - Number(workEntries[0].invocationStartedAt);
-    assert.ok(leaseDurationMs >= 300000, `expected Micro lease window >= 300000ms, got ${leaseDurationMs}`);
+    // 120s provider window + 15s lease margin; a saved 300s setting no longer stretches it.
+    assert.ok(leaseDurationMs >= 120000 && leaseDurationMs <= 136000, `expected Micro lease window of about 135000ms, got ${leaseDurationMs}`);
 
     // Turn 7: first attempt returns a truncated inner fragment (invalid schema), second attempt returns a valid envelope.
     let turn7Calls = 0;

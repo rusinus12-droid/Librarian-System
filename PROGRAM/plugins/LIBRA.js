@@ -1377,6 +1377,8 @@ function __libraNarrativeStripPatch(value) {
     custom: REFERENCE_BUDGET_CUSTOM_MAX_CHARS
   });
   const DEFAULT_STAGE_TIMEOUT_MS = 120000;
+  // 기억 분석(Librarian) 응답 대기 시간은 최대 120초. 더 큰 값(이전에 저장한 300초 포함)은 읽을 때 120초로 맞춘다.
+  const LIBRARIAN_STAGE_MAX_TIMEOUT_MS = 120000;
   const DEFAULT_STAGE_CONTEXT_CHARS = REFERENCE_PROFILE_CAPS.balanced;
   const DEFAULT_MAX_STAGE_TOKENS = 16384;
   const MAX_ANALYSIS_OUTPUT_TOKENS = 4096;
@@ -1542,6 +1544,7 @@ function __libraNarrativeStripPatch(value) {
 
   // Librarian production policy. Historical identifiers remain readable, never executable.
   const LIBRARIAN_STAGE_ID = 'librarian';
+  const stageMaxTimeoutMs = stageId => stageId === LIBRARIAN_STAGE_ID ? LIBRARIAN_STAGE_MAX_TIMEOUT_MS : 300000;
   // Per-feature model bindings. Empty means "use the global default connection".
   const MICRO_PRESET_STAGE_ID = 'micro_memory';
   const LENS_PRESET_STAGE_ID = 'lens_analysis';
@@ -16760,7 +16763,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     preset: compact(fallback.preset ?? fallback.presetName ?? '', 120),
     max_chars: clampInt(fallback.max_chars ?? fallback.maxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, defaultContextCharsForStage(stageId)),
     turn_window: clampInt(fallback.turn_window ?? fallback.turnWindow, 1, 64, defaultTurnWindowForStage(stageId)),
-    timeout_ms: clampInt(fallback.timeout_ms ?? fallback.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS),
+    timeout_ms: clampInt(fallback.timeout_ms ?? fallback.timeoutMs, 5000, stageMaxTimeoutMs(stageId), DEFAULT_STAGE_TIMEOUT_MS),
     execution_mode: normalizeChoice(fallback.execution_mode ?? fallback.executionMode ?? defaultExecutionModeForStage(stageId), ['analysis_draft', 'draft_only'], defaultExecutionModeForStage(stageId)),
     risu_refs: normalizeRisuReferences(fallback.risu_refs ?? fallback.risuRefs, defaultRisuReferencesForStage(stageId))
   });
@@ -16772,7 +16775,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       preset: compact(value?.preset ?? value?.presetName ?? defaults.preset ?? '', 120),
       max_chars: clampInt(value?.max_chars ?? value?.maxChars, 1000, REFERENCE_BUDGET_CUSTOM_MAX_CHARS, defaults.max_chars),
       turn_window: clampInt(value?.turn_window ?? value?.turnWindow, 1, 64, defaults.turn_window),
-      timeout_ms: clampInt(value?.timeout_ms ?? value?.timeoutMs, 5000, 300000, defaults.timeout_ms),
+      timeout_ms: clampInt(value?.timeout_ms ?? value?.timeoutMs, 5000, stageMaxTimeoutMs(stageId), defaults.timeout_ms),
       execution_mode: stageId === LIBRARIAN_STAGE_ID ? 'draft_only' : requiresMandatoryStageAnalysis(stageId)
         ? 'analysis_draft'
         : normalizeChoice(value?.execution_mode ?? value?.executionMode ?? defaults.execution_mode, ['analysis_draft', 'draft_only'], defaults.execution_mode),
@@ -16789,7 +16792,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (['turn_window', 'turnWindow'].some(key => Object.prototype.hasOwnProperty.call(value, key))) {
       out.turn_window = clampInt(value.turn_window ?? value.turnWindow, 1, 64, defaultTurnWindowForStage(stageId));
     }
-    if (['timeout_ms', 'timeoutMs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.timeout_ms = clampInt(value.timeout_ms ?? value.timeoutMs, 5000, 300000, DEFAULT_STAGE_TIMEOUT_MS);
+    if (['timeout_ms', 'timeoutMs'].some(key => Object.prototype.hasOwnProperty.call(value, key))) out.timeout_ms = clampInt(value.timeout_ms ?? value.timeoutMs, 5000, stageMaxTimeoutMs(stageId), DEFAULT_STAGE_TIMEOUT_MS);
     if (['execution_mode', 'executionMode'].some(key => Object.prototype.hasOwnProperty.call(value, key))) {
       out.execution_mode = requiresMandatoryStageAnalysis(stageId)
         ? 'analysis_draft'
@@ -53635,8 +53638,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       };
       const startedAt = Date.now();
       const microTimeoutMs = microProviderTimeoutMsForSettings(settings);
-      // Honor the user's librarian stage timeout (up to 300s) with a 120s floor so slow cloud
-      // reasoning routes are not cut short before the configured deadline.
+      // Fixed 120s window for both attempts (the librarian stage timeout is capped at 120s).
       const deadlineAt = startedAt + microTimeoutMs;
       const maxPhysicalAttempts = options.maxPhysicalAttempts === 1 ? 1 : 2;
       const executionState = {};
@@ -53994,10 +53996,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return 'unknown';
     };
     const MICRO_PROVIDER_TIMEOUT_MS = 120000, MICRO_LEASE_MARGIN_MS = 15000;
-    const microProviderTimeoutMsForSettings = (settings = {}) => clampInt(
-      Math.max(MICRO_PROVIDER_TIMEOUT_MS, Number(settings?.stageOptions?.[LIBRARIAN_STAGE_ID]?.timeout_ms || 0) || 0),
-      MICRO_PROVIDER_TIMEOUT_MS, 300000, MICRO_PROVIDER_TIMEOUT_MS
-    );
+    // Micro always waits 120s: the librarian stage timeout is capped at 120s, and a shorter setting
+    // is not applied to Micro (slow cloud reasoning routes need the full 120s).
+    const microProviderTimeoutMsForSettings = () => MICRO_PROVIDER_TIMEOUT_MS;
     const microInvocationsInFlight = new Set();
     // hostSource ({context, pairs}) lets a caller that already read the host share that read with
     // the Micro reader's own source checks instead of having each of them read the host again.
@@ -54647,7 +54648,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(permit.status!=='current')return {status:permit.status,reason:permit.reason};
         // The lease starts with the call: a job that waited in the Micro queue behind a
         // canonical analysis would otherwise start with an already expired lease.
-        const leaseTimeoutMs = microProviderTimeoutMsForSettings(await loadSettings().catch(() => ({})));
+        const leaseTimeoutMs = microProviderTimeoutMsForSettings();
         work = { ...work, phase: 'invoking',invocationStartedAt:Date.now(),
           leaseExpiresAt: Date.now() + leaseTimeoutMs + MICRO_LEASE_MARGIN_MS,
           attemptHistory:[...asArray(work.attemptHistory),{
@@ -80763,7 +80764,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ]),
         guiEl('div',{class:'stack'},[
           buildGenerationPolicyPanel([
-            analyzerField('timeoutMs','응답 대기 시간(초)',inputNode(Math.round(slot.timeoutMs/1000),change(value=>{slot.timeoutMs=Math.max(5,Number(value)||5)*1000;}),{type:'number',min:5,max:300}),'한 번의 분석 요청이 이 시간 안에 끝나지 않으면 실패로 처리합니다. 느린 모델이면 늘리세요.')
+            analyzerField('timeoutMs','응답 대기 시간(초, 최대 120)',(()=>{const input=inputNode(Math.round(Math.min(slot.timeoutMs,LIBRARIAN_STAGE_MAX_TIMEOUT_MS)/1000),change(value=>{slot.timeoutMs=Math.min(120,Math.max(5,Math.round(Number(value))||5))*1000;}),{type:'number',min:5,max:120});
+              // Typing stays free; once the value is committed the field shows what will be applied.
+              input.addEventListener('change',()=>{input.value=String(Math.round(slot.timeoutMs/1000));});return input;})(),'한 번의 분석 요청이 이 시간 안에 끝나지 않으면 실패로 처리합니다. 최대 120초이며, 120초보다 큰 값을 넣어도 120초로 적용됩니다.')
           ]),
           buildApprovedInstructionFields(),
           buildLibrarianConfigurationReviewPanel()
