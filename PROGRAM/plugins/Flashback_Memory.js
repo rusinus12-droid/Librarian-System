@@ -1,9 +1,11 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v2.0.5
+//@display-name ⚡ FLASHBACK Memory v2.0.6
 //@api 3.0
-//@version 2.0.5
+//@version 2.0.6
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
+//@allowed-ipc libra
+//@allowed-ipc hayaku_locator_continuity
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/Flashback_Memory.js
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -1338,7 +1340,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '2.0.5';
+const PLUGIN_VERSION = '2.0.6';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -32084,7 +32086,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -32094,7 +32096,7 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -32142,9 +32144,9 @@ function createMemorySuiteSourceInputPolicy(config) {
       const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
       valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
       customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      const openLabel=make('label','시작 표식'),closeLabel=make('label','끝 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -32506,10 +32508,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
 .ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
 .ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
 .ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
-.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 118px 62px;gap:8px;align-items:center}
 .ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
 .ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
-.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-row.is-new{border-style:dashed;background:transparent}.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
 .ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
 .ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
@@ -32521,7 +32523,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
-    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
     const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
     box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
@@ -32531,7 +32533,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -32541,7 +32543,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -32559,7 +32561,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
       apply.disabled=!loaded||applying||!dirty;
       add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
@@ -32606,10 +32608,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
-      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='새 태그 이름 (예: decoration)';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='시작 표식 예: [START]';close.placeholder='끝 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('시작 표식'),open);closeLabel.append(hidden('끝 표식'),close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -35369,7 +35371,7 @@ const MemorySuiteHealthRecovery = (() => {
   // fully, a BM25 hit decays with its rank. Used as a bounded boost, never alone
   // as a semantic score.
   const flashbackHybridLexicalSignal = (channels = {}) => {
-    const exact = channels.exact ? 1 : 0;
+    const exact = channels.exact ? clampNumber(Number(channels.exact.score ?? channels.exact.exactScore ?? 1), 0, 1, 1) : 0;
     const rank = Number(channels.sparse?.rank || 0);
     const sparse = rank > 0 && rank <= 8 ? 1 / Math.sqrt(rank) : 0;
     return Math.max(exact, sparse);
@@ -37049,9 +37051,25 @@ const MemorySuiteHealthRecovery = (() => {
     if(semantic.contextualSemantic){
       const lexicalSignal=flashbackHybridLexicalSignal(candidateMeta?.channels||{});
       const lexicalBoost=lexicalSignal*Math.max(0,Number(settings.lexicalWeight??DEFAULTS.lexicalWeight)||0);
-      const score=clampNumber(semantic.fusedSemantic+lexicalBoost,0,1,semantic.fusedSemantic);
+      let score=clampNumber(semantic.fusedSemantic+lexicalBoost,0,1,semantic.fusedSemantic);
+      let entityMismatch=false;
+      let entityMismatchPenalty=0;
+      const personEntries=Array.isArray(context.knownPersonCatalog)
+        ? context.knownPersonCatalog
+        : (context.knownPersonCatalog?.entities instanceof Map ? [...context.knownPersonCatalog.entities.values()] : []);
+      const queryPersonIds=context.queryTargetPersonIds instanceof Set && context.queryTargetPersonIds.size>0
+        ? context.queryTargetPersonIds
+        : new Set((queryAnchors?.queryPlan?.entities||[]).filter(e=>e&&e.kind==='person').map(e=>RecallKeywordFeatures.entityKey(e)));
+      if(queryPersonIds.size>0 && personEntries.length>0){
+        const recordPeople=RecallKeywordFeatures.resolveMentions(`${record.title||''}\n${record.text||''}`,personEntries).filter(e=>e&&e.kind==='person');
+        if(recordPeople.length>0 && !recordPeople.some(e=>queryPersonIds.has(RecallKeywordFeatures.entityKey(e)))){
+          entityMismatch=true;
+          entityMismatchPenalty=score*0.55;
+          score=clampNumber(score*0.45,0,1,0);
+        }
+      }
       return {record,score,cosine,lexical:lexicalSignal,rrfScore:Number(candidateMeta?.rrfScore||0),channels:candidateMeta?.channels||{},mmrScore:score,gate:null,
-        components:{contextualSemantic:true,semanticCosine:semantic.fusedSemantic,hybridLexicalSignal:lexicalSignal,hybridLexicalBoost:lexicalBoost,vectorComparable:true,cosine,
+        components:{contextualSemantic:true,semanticCosine:semantic.fusedSemantic,hybridLexicalSignal:lexicalSignal,hybridLexicalBoost:lexicalBoost,entityMismatch,entityMismatchPenalty,vectorComparable:true,cosine,
           currentSemantic:semantic.currentSemantic,sceneContextCosine:semantic.sceneContextCosine,
           sceneContextComparable:semantic.sceneContextComparable,sceneContextQueryWeight:semantic.sceneContextWeight,
           sceneContextContribution:semantic.sceneContextContribution,semanticSupportSource:semantic.supportSource,
@@ -37221,6 +37239,10 @@ const MemorySuiteHealthRecovery = (() => {
     const c = item.components || {};
     if(c.lexicalFallback)return {passed:Number(c.hybridLexicalSignal||0)>=0.3,reasons:['keyword_fallback']};
     if(c.contextualSemantic){
+      if(c.entityMismatch){
+        const mismatchFloor=Math.max(Number(settings.gateHighCosine||DEFAULTS.gateHighCosine||0.42),Number(settings.minScore||0)+0.25);
+        return {passed:Number(c.semanticCosine)>=mismatchFloor,reasons:['contextual_embedding_entity_mismatch']};
+      }
       if(Number(c.semanticCosine)>=Number(settings.minScore||0))return {passed:true,reasons:['contextual_embedding']};
       return {passed:Number(c.hybridLexicalSignal||0)>=0.5,reasons:['hybrid_lexical']};
     }
@@ -37832,6 +37854,107 @@ const MemorySuiteHealthRecovery = (() => {
     bundles:settings.contradictionBundleEnabled===false?[]:flashbackStateConflictBundles(eligible,context)
   });
 
+  const FLASHBACK_PERSON_STOPLIST = new Set([
+    '그녀', '그들', '그것', '이것', '저것', '여기', '거기', '저기', '누구', '모두', '우리', '자신', '본인', '상대', '주인', '사람', '인간',
+    '선생', '선생님', '학생', '아이', '어른', '여자', '남자', '소년', '소녀', '청년', '노인', '친구', '가족', '엄마', '어머니', '아빠', '아버지',
+    '형님', '누님', '언니', '누나', '오빠', '동생', '선배', '후배', '동료', '손님', '직원', '점원', '의사', '간호', '경찰', '기사', '교수',
+    '사장', '부장', '과장', '팀장', '대표', '회장', '왕자', '공주', '마법', '용사', '악당', '범인', '탐정', '기자', '작가', '배우', '가수', '감독', '코치', '대장', '반장',
+    '동아리', '학교', '교실', '세계', '마을', '도시', '장소', '시간', '오늘', '어제', '내일', '지금', '방금', '아까', '나중',
+    '마음', '생각', '표정', '목소리', '시선', '고개', '기억', '이야기', '대답', '질문', '약속', '비밀', '사건', '상황', '이유', '문제', '결과',
+    '기분', '느낌', '분위기', '장면', '주제', '화제', '대화', '행동', '반응', '태도', '상태', '위치', '정보', '내용', '사실', '거짓', '진실', '이름',
+    '사용자', '유저', '어시스턴트', '인공지능', '시스템', '플러그인', '요약', '기록',
+    '아니', '진짜', '정말', '설마', '제발', '잠깐', '혹시', '그래', '그렇', '괜찮', '미안', '고맙', '감사', '물론', '당연', '어쩌', '어떻', '무엇', '얼마', '하나',
+    '이제', '이미', '아직', '다시', '계속', '항상', '절대', '전혀', '매우', '너무', '조금', '많이', '빨리', '천천',
+    'user', 'assistant', 'system', 'narrator', 'speaker', 'character', 'person', 'people', 'someone', 'anyone', 'everyone', 'nobody',
+    'they', 'them', 'their', 'there', 'here', 'this', 'that', 'these', 'those', 'what', 'when', 'where', 'which', 'while',
+    'after', 'before', 'then', 'just', 'only', 'still', 'never', 'always', 'today', 'yesterday', 'tomorrow',
+    'mother', 'father', 'friend', 'teacher', 'student', 'doctor', 'boss', 'sir', 'madam', 'miss', 'mister',
+    'chapter', 'scene', 'turn', 'note', 'summary', 'memory', 'flashback'
+  ]);
+  const FLASHBACK_VOCATIVE_VERB_END_RE = /[하되있없같보먹가오살죽알좋싫많적크작맞]$/u;
+  const isValidAutoPersonName = raw => {
+    const clean = text(raw || '').trim();
+    if (!clean) return false;
+    if (/^[가-힣]{2,4}$/u.test(clean)) return !FLASHBACK_PERSON_STOPLIST.has(clean);
+    if (/^[A-Z][a-z]{2,15}$/.test(clean)) return !FLASHBACK_PERSON_STOPLIST.has(clean.toLowerCase());
+    return false;
+  };
+  const extractFlashbackPersonCues = (rawText, scoreMap) => {
+    const body = text(rawText || '');
+    if (!body) return;
+    const addScore = (name, weight) => {
+      if (!isValidAutoPersonName(name)) return;
+      const key = RecallKeywordFeatures.normalize(name);
+      if (!key) return;
+      const prev = scoreMap.get(key) || { name, score: 0 };
+      prev.score += weight;
+      scoreMap.set(key, prev);
+    };
+    for (const m of body.matchAll(/(?:^|\n)\s*([가-힣]{2,4}|[A-Z][a-z]{2,15})\s*[:：]\s*["“「『]/gu)) addScore(m[1], 3);
+    for (const m of body.matchAll(/(?:^|[^\p{L}\p{N}_])([가-힣]{2,4})\s*(?:씨|님|선배|군|양|언니|누나|형|오빠)(?=$|[^가-힣]|(?:은|는|이|가|을|를|의|에게|한테|께|도|만|와|과|랑|이랑|하고|부터|까지|처럼|보다)(?=$|[^가-힣]))/gu)) addScore(m[1], 2);
+    for (const m of body.matchAll(/(?:^|[^\p{L}\p{N}_])([가-힣]{2,4})(?:아|야)(?=[,\s!?."”」』]|$)/gu)) {
+      if (!FLASHBACK_VOCATIVE_VERB_END_RE.test(m[1])) addScore(m[1], 2);
+    }
+    for (const m of body.matchAll(/(?:^|[^\p{L}\p{N}_])([가-힣]{2,4}?)(?:이가|이는|이에게|이한테|이|가|은|는|에게|한테)\s+(?:말했|말하|물었|물어보|대답했|웃었|미소|고개를|눈을|바라보|중얼거|속삭|다가가|다가왔|소리쳤|한숨|불렀|부르|건넸|건네|끄덕|손을)/gu)) addScore(m[1], 1.5);
+    for (const m of body.matchAll(/\b([A-Z][a-z]{2,15})\s+(?:said|asked|replied|whispered|smiled|nodded|laughed|sighed|called|looked|told|answered)\b/g)) addScore(m[1], 2);
+  };
+  const flashbackSessionPersonCache = new Map();
+  const discoverFlashbackSessionPeople = (scopeKey, records = [], primaryQueryText = '', baseEntries = []) => {
+    const basePersonEntries = (Array.isArray(baseEntries) ? baseEntries : []).filter(entry => entry && entry.kind === 'person');
+    const lastRecord = records.length ? records[records.length - 1] : null;
+    const cacheKey = `${text(scopeKey || '')}|${records.length}|${text(lastRecord?.id || '')}|${text(lastRecord?.updatedAt || lastRecord?.createdAt || '')}`;
+    let recordDiscovered = flashbackSessionPersonCache.get(cacheKey);
+    if (!recordDiscovered) {
+      const scoreMap = new Map();
+      for (const rec of records) {
+        if (!rec) continue;
+        extractFlashbackPersonCues(rec.text || '', scoreMap);
+      }
+      recordDiscovered = [...scoreMap.values()]
+        .filter(item => item.score >= 3)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 48)
+        .map(item => ({
+          kind: 'person',
+          canonical: item.name,
+          normalized: RecallKeywordFeatures.normalize(item.name),
+          aliases: [],
+          source: 'auto_raw_records',
+          confidenceScore: item.score
+        }));
+      if (flashbackSessionPersonCache.size >= 16) {
+        flashbackSessionPersonCache.delete(flashbackSessionPersonCache.keys().next().value);
+      }
+      flashbackSessionPersonCache.set(cacheKey, recordDiscovered);
+    }
+    const queryCueMap = new Map();
+    extractFlashbackPersonCues(primaryQueryText, queryCueMap);
+    const queryDiscovered = [...queryCueMap.values()]
+      .filter(item => item.score >= 2)
+      .map(item => ({
+        kind: 'person',
+        canonical: item.name,
+        normalized: RecallKeywordFeatures.normalize(item.name),
+        aliases: [],
+        source: 'auto_user_query',
+        confidenceScore: item.score
+      }));
+    const mergedByNorm = new Map();
+    for (const entry of [...basePersonEntries, ...recordDiscovered, ...queryDiscovered]) {
+      const norm = RecallKeywordFeatures.normalize(entry.normalized || entry.canonical || '');
+      if (!norm || mergedByNorm.has(norm)) continue;
+      mergedByNorm.set(norm, entry);
+    }
+    const entries = [...mergedByNorm.values()];
+    const matchedInQuery = entries.length
+      ? RecallKeywordFeatures.resolveMentions(primaryQueryText, entries).filter(e => e && e.kind === 'person')
+      : [];
+    const queryTargetPersonIds = new Set(matchedInQuery.map(e => RecallKeywordFeatures.entityKey(e)));
+    const queryTargets = [...new Set(matchedInQuery.map(e => text(e.canonical || e.matchedName || e.normalized || '').trim()).filter(Boolean))];
+    const dictionary = entries.map(e => text(e.canonical || e.normalized || '').trim()).filter(Boolean);
+    return { entries, queryTargetPersonIds, queryTargets, dictionary };
+  };
+
   const prepareFlashbackRecall = async (query, settings = null, scopeOverride = null, options = {}) => {
     const recallStartedAt = Date.now();
     const projectionBinding = bindFlashbackProjectionCache();
@@ -38199,6 +38322,9 @@ const MemorySuiteHealthRecovery = (() => {
     const hardGateDiagnostics = eligibleFused.diagnostics || {};
     const candidateMeta = new Map(candidateHardGate.map(item => [text(item.record?.id || item.record?.hash || item.record?.sourceId || ''), item]));
     recallContext.candidateMeta = candidateMeta;
+    const discoveredPeople = discoverFlashbackSessionPeople(scope.scopeKey, records, primaryQueryText, queryCatalog.entries);
+    recallContext.knownPersonCatalog = discoveredPeople.entries;
+    recallContext.queryTargetPersonIds = discoveredPeople.queryTargetPersonIds;
     stageElapsed.sparseCandidates += Date.now() - sparseStageStartedAt;
     opLog('temporal_intent_classified', { scopeKey: scope.scopeKey, temporalIntent, truthIntent, queryType }, 'debug');
     opLog('sparse_candidates_generated', {
@@ -38422,6 +38548,11 @@ const MemorySuiteHealthRecovery = (() => {
       },
       adaptiveRecall,
       previousTurnRecall,
+      personIsolation: {
+        dictionary: discoveredPeople.dictionary.slice(0, 48),
+        queryTargets: discoveredPeople.queryTargets.slice(0, 12),
+        mismatchedCount: scoredRaw.filter(item => item?.components?.entityMismatch === true).length
+      },
       queryEmbeddingCost,
       sceneContextEmbeddingCost,
       episodeTraversal,
@@ -40042,7 +40173,11 @@ const MemorySuiteHealthRecovery = (() => {
   const adaptiveRecallContextCount = (latestUser = '', settings = Runtime.settings || DEFAULTS) => {
     const configured = clampInt(settings?.recallContextMessages, 0, 20, DEFAULTS.recallContextMessages);
     const source = RecallKeywordFeatures.compile(latestUser || '').controlText.trim();
-    if(settings?.contextualRecall!==false)return {configured,used:text(latestUser).trim()?configured:0,reason:configured?'conversation_window':'disabled',supportWeight:1};
+    if(settings?.contextualRecall!==false){
+      if(!configured || !text(latestUser).trim())return {configured,used:0,reason:!configured?'disabled':'empty_query',supportWeight:0};
+      if(FLASHBACK_CONTEXT_TOPIC_SHIFT_RE.test(source))return {configured,used:Math.min(configured,1),reason:'explicit_topic_shift',supportWeight:0.35};
+      return {configured,used:configured,reason:'conversation_window',supportWeight:1};
+    }
     if (!configured || !source || FLASHBACK_CONTEXT_TOPIC_SHIFT_RE.test(source)) {
       return { configured, used: 0, reason: !configured ? 'disabled' : (!source ? 'empty_query' : 'explicit_topic_shift'), supportWeight: 0 };
     }
@@ -43765,6 +43900,7 @@ const MemorySuiteHealthRecovery = (() => {
         adaptiveRecall: recall.adaptiveRecall || null,
         mmrDiagnostics: recall.mmrDiagnostics || null,
         previousTurnRecall: recall.previousTurnRecall || null,
+        personIsolation: recall.personIsolation || null,
         sceneContext: recall.sceneContext || null,
         queryTopics: Array.isArray(recall.queryTopics) ? recall.queryTopics.slice() : [],
         preferenceDiagnostics: recall.preferenceDiagnostics || null,
@@ -50106,7 +50242,14 @@ ${cleanedText}`, 80),
     }).join('');
     const actualChars = Math.max(0, Number(recall.evidenceBudgetPlan?.actualChars || 0) || 0);
     const deliveredText = returned ? `후크 반환 ${delivered == null ? '확인 불가' : `${formatNumber(delivered)}개`} 프래그먼트${returnedMessages == null ? '' : ` · ${formatNumber(returnedMessages)}개 메시지`}` : '주입 여부 미확인';
-    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div></div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || '이번 세션에서 주입된 프롬프트가 없습니다.')}</pre></div></details>`;
+    const personIso = recall.personIsolation && typeof recall.personIsolation === 'object' ? recall.personIsolation : null;
+    const personDict = Array.isArray(personIso?.dictionary) ? personIso.dictionary : [];
+    const personTargets = Array.isArray(personIso?.queryTargets) ? personIso.queryTargets : [];
+    const personMismatched = Math.max(0, Number(personIso?.mismatchedCount || 0) || 0);
+    const personIsoHtml = personDict.length
+      ? `<div class="lab__meta" style="margin-top:6px">자동 인물 사전(${formatNumber(personDict.length)}명): ${escapeHtml(personDict.slice(0, 12).join(', '))}${personDict.length > 12 ? ` 외 ${formatNumber(personDict.length - 12)}명` : ''} · 이번 쿼리 타깃: ${escapeHtml(personTargets.length ? personTargets.join(', ') : '없음(일반 회상)')}${personMismatched > 0 ? ` · 타 인물 감점 ${formatNumber(personMismatched)}건` : ''}</div>`
+      : '';
+    return queryFailure + keywordFallback + `<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">${escapeHtml(compact(recall.retrievalQuery || recall.latestUser || '', 180) || '검색 문맥을 확인할 수 없습니다.')}</p><div class="lab__meta">${escapeHtml(recallAgeText(recall.at))} · 후보 ${formatNumber(recall.candidates || 0)}개 → 선택 ${formatNumber(selectedCount)}개 · ${deliveredText}${actualChars ? ` · ${formatNumber(actualChars)}자` : ''}</div><div class="lab__chips"><span class="badge">저장 ${formatNumber(recall.storedRecords ?? recall.totalRecords ?? 0)}</span><span class="badge">후보 ${formatNumber(recall.candidates || 0)}</span><span class="badge">선택 ${formatNumber(selectedCount)}</span><span class="badge ${returned ? 'badge--ok' : 'badge--warn'}">${returned ? `주입 ${delivered == null ? '확인 불가' : formatNumber(delivered)}` : '주입 상태 미확인'}</span><span class="badge">제외(예산) ${formatNumber((delivery.discarded || []).filter(item => item.reason === 'not_delivered_budget').length)}</span></div>${personIsoHtml}</div><div class="frames">${rows || '<div class="empty"><b>이 검색에서 선택된 기억이 없습니다.</b></div>'}</div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono" style="margin:0;white-space:pre-wrap;max-height:400px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;font-size:12px;line-height:1.5">${escapeHtml(Runtime.lastInjectedPrompt || recall.injectedPrompt || delivery.dynamicBlock || '이번 세션에서 주입된 프롬프트가 없습니다.')}</pre></div></details>`;
   };
 
   const renderActivityLogHtml = () => {
@@ -50641,7 +50784,7 @@ ${cleanedText}`, 80),
       onOpened:cleanup=>{cancel=()=>{getFlashbackRecoveryActions().clear();cleanup(false);};flashbackSourceReanalysisCancel=cancel;}
     });}finally{if(flashbackSourceReanalysisCancel===cancel)flashbackSourceReanalysisCancel=null;}
   };
-  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 class="card__title">원문 수정 동기화</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><details class="fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details></section>`;
+  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 class="card__title">원문 수정 동기화</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><details class="fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold" id="fbTagFilterFold"><summary>원문 태그 필터</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details></section>`;
   const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
     if(!['import','source-edits'].includes(Runtime.guiTab))return false;
@@ -51274,7 +51417,7 @@ ${cleanedText}`, 80),
     const healthDescription = `${health.title} · ${health.meta}`;
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
-    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
+    const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div class="cluster" style="justify-content:space-between;margin-bottom:10px"><span class="hint">저장되는 원문에서 뺄 태그와 표식은 원문 태그 필터에서 정합니다.</span><button class="btn btn--sm" type="button" data-fb-open-tag-filter>원문 태그 필터</button></div><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
     const careBody = buildImportTab() + buildFlashbackSourceEditCard() + `<section id="panel-restore" data-panel="restore" class="card"><div class="card__head"><div><h2 class="card__title">백업 · 복원 · 이사</h2><p class="card__desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다. 대화 원문과 비공개 기억이 포함될 수 있으니 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></section>`;
     const providerBody = buildProviderTab(settings, current.stats);
     const serverBody = buildServerConnectionTab();
@@ -53924,6 +54067,18 @@ ${cleanedText}`, 80),
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus?.(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
     });
+    // 원문 태그 필터 lives in 기억 관리 → 원문 수정 동기화; this opens it from 필름 보관함 → 응답 원문.
+    for (const button of Array.from(root.querySelectorAll?.('[data-fb-open-tag-filter]') || [])) {
+      button.addEventListener('click', () => {
+        root.querySelector?.('[data-go="care"]')?.click();
+        const fold = getGuiNode('fbTagFilterFold');
+        if (!fold) return;
+        for (let node = fold; node; node = node.parentElement?.closest?.('details')) node.open = true;
+        mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
+        fold.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+        fold.querySelector?.('summary')?.focus?.();
+      });
+    }
     for (const button of Array.from(root.querySelectorAll?.('[data-go]') || [])) {
       button.addEventListener('click', () => {
         const route = text(button.getAttribute?.('data-go') || 'lab');

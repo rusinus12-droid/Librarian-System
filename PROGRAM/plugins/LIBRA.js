@@ -1,10 +1,12 @@
 //@name libra
-//@display-name LIBRA v3.0.7
+//@display-name LIBRA v3.0.8
 //@api 3.0
-//@version 3.0.7
+//@version 3.0.8
 //@allowed-ipc serial_gradation_agents_for_rp
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIBRA.js
 //@allowed-ipc flashback_hayaku_bridge
+//@allowed-ipc hayaku_locator_continuity
+//@allowed-ipc flashback_memory
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
  * verified/current are assertions supplied AFTER the owner's existing final
@@ -1305,7 +1307,7 @@ function __libraNarrativeStripPatch(value) {
   };
 
   const PLUGIN_NAME = 'libra';
-  const PLUGIN_VERSION = '3.0.7';
+  const PLUGIN_VERSION = '3.0.8';
   const RISUAI_AUX_PRESET_NAME = 'risuai_aux';
   const RISUAI_AUX_PROVIDER = 'risuai_aux';
   const RISUAI_AUX_MODE = 'risuai_otherax';
@@ -41424,7 +41426,38 @@ function createLibraReadonlySourceContext(owner) {
     // HAYAKU's packet replacement trims line endings before appending its packet.
     // Apply that equivalence only to completion proof, where the stored revision
     // still comes from the exact settled chat source.
-    const completionAssistantDigest = body => digest(string(body).replace(/[ \t]+(?=\r?$)/gm, '').replace(/\r\n/g, '\n'));
+    const normalizeCompletionCompareText = body => string(body).replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    const completionAssistantDigest = body => digest(normalizeCompletionCompareText(body));
+    const containsLineBoundedBlock = (longer, shorter) => {
+      if (!longer || !shorter || shorter.length < 12 || longer.length <= shorter.length) return false;
+      for (let from = 0; from <= longer.length - shorter.length; ) {
+        const idx = longer.indexOf(shorter, from);
+        if (idx < 0) return false;
+        const end = idx + shorter.length;
+        if ((idx === 0 || longer[idx - 1] === '\n') && (end === longer.length || longer[end] === '\n')) return true;
+        from = idx + 1;
+      }
+      return false;
+    };
+    const sameCompletedTurnNormalizedText = (left, right) => ['user', 'assistant'].every(role =>
+      completionAssistantDigest(left?.[role]?.text) === completionAssistantDigest(right?.[role]?.text)
+      && JSON.stringify(asArray(left?.[role]?.chatIds)) === JSON.stringify(asArray(right?.[role]?.chatIds))
+    );
+    const sameCompletedTurnLineBoundedAugmentation = (earlier, later) =>
+      completionAssistantDigest(earlier?.user?.text) === completionAssistantDigest(later?.user?.text)
+      && JSON.stringify(asArray(earlier?.user?.chatIds)) === JSON.stringify(asArray(later?.user?.chatIds))
+      && JSON.stringify(asArray(earlier?.assistant?.chatIds)) === JSON.stringify(asArray(later?.assistant?.chatIds))
+      && (containsLineBoundedBlock(
+        normalizeCompletionCompareText(later?.assistant?.text),
+        normalizeCompletionCompareText(earlier?.assistant?.text)
+      ) || containsLineBoundedBlock(
+        normalizeCompletionCompareText(earlier?.assistant?.text),
+        normalizeCompletionCompareText(later?.assistant?.text)
+      ));
+    const isTextEquivalentCompletedTurn = (earlier, later) =>
+      sameCompletedTurnRaw(earlier, later)
+      || sameCompletedTurnNormalizedText(earlier, later)
+      || sameCompletedTurnLineBoundedAugmentation(earlier, later);
     // A current HAYAKU packet carries the generation nonce through output
     // postprocessing. Compare the whole packet as well as its lineage.
     const completionPacketProof = body => {
@@ -41462,16 +41495,45 @@ function createLibraReadonlySourceContext(owner) {
       if(sourceDigest(prefix)!==proof.prefixDigest) return {ok:false,reason:'prefix_changed'};
       const assistantHash=completionAssistantDigest(pair.assistant.text);
       if (assistantHash === proof.assistantHash || assistantHash === proof.legacyAssistantHash) return {ok:true,reason:''};
-      if (proof.committedRevisionId && proof.committedRevisionId !== completedTurnRevisionId(pair))
-        return {ok:false,reason:'assistant_source_changed'};
-      if (state.lastRequestScope?.pendingMicro === health.pendingMicro
-        && proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
+      const revisionId = completedTurnRevisionId(pair);
+      const sameRequestUser = state.lastRequestScope?.pendingMicro === health.pendingMicro
+        && !!proof.userMessageIdsHash && pair.user.identityStable && pair.user.identityCanonical
         && stateMemoryFingerprint(JSON.stringify(pair.user.chatIds)) === proof.userMessageIdsHash
-        && (proof.packet || proof.legacyPacket) && pair.assistant.sourceMessageCount === 1) {
+        && pair.assistant.sourceMessageCount === 1;
+      if (sameRequestUser && (proof.packet || proof.legacyPacket)) {
         const row = rawChatMessages(context.chat)[pair.assistant.index];
         const packet = completionPacketProof(contentToText(pairRevisionRawPayload(row)));
         if (packet && (packet === proof.packet || packet === proof.legacyPacket)) return {ok:true,reason:''};
       }
+      if (sameRequestUser) {
+        const norm = value => String(value ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+(?=\n|$)/g, '').replace(/\n{3,}/g, '\n\n').trim();
+        const lineBounded = (longer, shorter) => {
+          if (!longer || !shorter || shorter.length < 12 || longer.length <= shorter.length) return false;
+          for (let from = 0; from <= longer.length - shorter.length; ) {
+            const idx = longer.indexOf(shorter, from);
+            if (idx < 0) return false;
+            const end = idx + shorter.length;
+            if ((idx === 0 || longer[idx - 1] === '\n') && (end === longer.length || longer[end] === '\n')) return true;
+            from = idx + 1;
+          }
+          return false;
+        };
+        const settledText = norm(pair.assistant.text);
+        const candidates = [norm(proof.assistantText), norm(proof.legacyAssistantText)].filter(Boolean);
+        if ((!proof.postprocessedRevisionId || proof.postprocessedRevisionId === revisionId)
+          && candidates.some(base => lineBounded(settledText, base) || lineBounded(base, settledText))) {
+          proof.postprocessedRevisionId = revisionId;
+          return {ok:true,reason:''};
+        }
+        const otherAxAfterMain = state.lastAfterRequest?.mainNarrativeType === false
+          && Number(state.lastAfterRequest?.at || 0) >= Number(health.at || 0);
+        if (otherAxAfterMain && (!proof.otherAxRevisionId || proof.otherAxRevisionId === revisionId)) {
+          proof.otherAxRevisionId = revisionId;
+          return {ok:true,reason:''};
+        }
+      }
+      if (proof.committedRevisionId && proof.committedRevisionId !== revisionId)
+        return {ok:false,reason:'assistant_source_changed'};
       return {ok:false,reason:'assistant_source_changed'};
     };
     const freshMainAfterRequestPair = (context,pair,health=state.mainAfterRequestHealth) =>
@@ -41581,11 +41643,15 @@ function createLibraReadonlySourceContext(owner) {
             const [priorWork,priorCapture,priorMicroHead]=await Promise.all([
               storage.getVerifiedJson(workKey,scope,null),storage.getVerifiedJson(captureKey,scope,null),
               storage.getVerifiedJson(key.microMemoryHead(scope,worldlineId,sessionEpoch,turn),scope,null)]);
+            const carriedEquivalent = priorMicroHead?.analysisStatus === 'verified'
+              && priorMicroHead?.sourceRevisionId && priorMicroHead.sourceRevisionId !== revisionId
+              ? await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, receipt)
+              : null;
             const existingPlan = priorWork || priorCapture ? 'plan_work_already_present'
-              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId
+              : storedHead?.revisionId === revisionId || priorMicroHead?.sourceRevisionId === revisionId || carriedEquivalent
                 ? 'plan_revision_already_published' : '';
             const finalPermit = existingPlan ? null : await validateReceiptRecoveryClaim(claim);
-            if (existingPlan) noteMicroPlanRefusal(existingPlan);
+            if (existingPlan) { if (!carriedEquivalent) noteMicroPlanRefusal(existingPlan); }
             else if (finalPermit.status !== 'current') noteMicroPlanRefusal('plan_final_' + finalPermit.reason);
             else if (mainCompletion && !freshMainAfterRequestPair(finalPermit.context,finalPermit.pair,options.mainAfterRequestBoundary)) {
               noteMicroPlanRefusal('plan_main_completion_changed');
@@ -41705,13 +41771,13 @@ function createLibraReadonlySourceContext(owner) {
         || receipt.sourceDigest !== head.sourceDigest || completedTurnRevisionId(receipt) !== revisionId) {
         return empty('pending_reconciliation', 'receipt_binding_invalid');
       }
-      if (rulesOnly && !sameCompletedTurnRaw(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
+      if (rulesOnly && !isTextEquivalentCompletedTurn(receipt, pair)) return empty('stale_source', 'current_pair_revision_changed');
       const finalContext = options.skipFinalContextCheck ? context : (options.finalContext || options.context || await resolveReceiptValidationContext());
       const finalPairs = options.skipFinalContextCheck ? pairs : (string(finalContext?.scope?.scopeKey || '') === scopeKey
         ? (options.pairs || buildPairs(finalContext.chat, scopeKey)) : null);
       const finalPair = finalPairs ? finalPairs[turn - 1] : null;
       if (!finalPair || hostWorldlineIdForScope(scope) !== worldlineId
-        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&sameCompletedTurnRaw(receipt, finalPair)))
+        || (sourceDigest([finalPair])!==head.sourceDigest && !(options.allowProjectedEquivalent===true&&isTextEquivalentCompletedTurn(receipt, finalPair)))
         || (options.allowProjectedEquivalent!==true&&completedTurnRevisionId(finalPair) !== revisionId)) {
         return empty('stale_source', 'source_changed_during_read');
       }
@@ -47754,9 +47820,17 @@ function createLibraReadonlySourceContext(owner) {
     }
     return table;
   };
+  const entityMentionedIn = (body, name) => {
+    if (!body || !name) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (/^[a-z0-9 _-]+$/i.test(name)) {
+      return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(body);
+    }
+    return new RegExp(`(?:^|[^가-힣a-z0-9])${escaped}(?:$|[^가-힣a-z0-9]|(?:은|는|이|가|을|를|의|에|에게|에서|와|과|도|만|로|으로|께서|한테|랑|이랑|야|아|씨|님|군|양)(?:$|[^가-힣a-z0-9]))`, 'u').test(body);
+  };
   const mentionedEntities = (text, table) => {
     const body = normalize(text), found = new Set();
-    if (body) for (const entity of array(table)) if (entity.names.some(name => body.includes(name))) found.add(entity.id);
+    if (body) for (const entity of array(table)) if (entity.names.some(name => entityMentionedIn(body, name))) found.add(entity.id);
     return found;
   };
   const identitySignal = (queryEntities, text, table) => {
@@ -48096,6 +48170,8 @@ function createLibraReadonlySourceContext(owner) {
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
     const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+    const characterEntityIds = new Set(array(entities).filter(entity => entity.axis === 'characters').map(entity => entity.id));
+    const queryCharacterEntities = new Set([...queryEntities].filter(id => characterEntityIds.has(id)));
     // Source statements behind a State field that answers the question travel with it
     // when the question asks how or what exactly, not what is true now.
     const linkedKeys = new Set();
@@ -48115,20 +48191,29 @@ function createLibraReadonlySourceContext(owner) {
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
-      const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
+      const rowCharacterEntities = queryCharacterEntities.size
+        ? [...mentionedEntities(row.text, entities)].filter(id => characterEntityIds.has(id))
+        : [];
+      const entityMismatch = queryCharacterEntities.size > 0
+        && rowCharacterEntities.length > 0
+        && !rowCharacterEntities.some(id => queryCharacterEntities.has(id))
+        && (row.axis === 'characters' || row.axis === 'relationships' || row.family === 'lens');
+      const linkedVal = row.family !== 'state' && !entityMismatch && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
-      const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
+      const strongLexical = exactVal > 0 || ngramVal >= 0.22 || bm25Val >= 0.6;
+      const relevant = !q || (!entityMismatch && (identityVal > 0 || linkedVal > 0 || semanticVal > 0 || strongLexical));
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const baseScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = entityMismatch ? baseScore * 0.15 : baseScore;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal, relevant, entityMismatch }
       };
     });
 
     const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
-    candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
+    candidates.sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch) || b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map(), contextLensGroups = new Set();
     const suppressedEvidenceDuplicates = new Set();
@@ -48169,14 +48254,16 @@ function createLibraReadonlySourceContext(owner) {
     // question still keeps room for those records: State then leads with a third of the evidence share.
     const evidenceItems = groups.find(group => group.key === 'evidence')?.items || maxItems;
     const stateLeadLimit = ['history','detail'].includes(plan?.intent) ? Math.max(1, Math.ceil(evidenceItems / 3)) : evidenceItems;
-    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0)
+    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0 && !row.signals.entityMismatch)
       .sort((a, b) => b.score - a.score).slice(0, stateLeadLimit).map(row => row.id));
     const tier = row => row.family !== 'state' ? 1 : leadingState.has(row.id) ? 0 : 2;
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
       if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
+        || Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
         || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
-      return tier(a) - tier(b)
+      return Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
+        || tier(a) - tier(b)
         || (plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score);
     }) : candidates;
     for (const group of groups) {
@@ -48184,6 +48271,8 @@ function createLibraReadonlySourceContext(owner) {
         let used = 0, count = 0;
         for (const row of ordered.filter(row => (row.family === 'lens') === (group.key === 'lens'))) {
           if (count >= group.items) break;
+          if (q && row.signals.entityMismatch) continue;
+          if (q && !row.signals.relevant && !(row.family === 'lens' && row.lensItem?.floorPassed !== false)) continue;
           const cost = costOf(row);
           if (used + cost <= targetCharacters && add(row)) { used += cost; count++; }
         }
@@ -48196,10 +48285,15 @@ function createLibraReadonlySourceContext(owner) {
     for (let n = 0; n < minimumPerAxis; n++) for (const axis of axes) {
       if (selected.filter(row => row.axis === axis).length > n) continue;
       const ranked = candidates.filter(row => row.axis === axis && !seen.has(row.id))
-        .sort((a, b) => Number(b.family === 'state') - Number(a.family === 'state') || b.score - a.score);
+        .sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch)
+          || Number(b.signals.relevant) - Number(a.signals.relevant)
+          || Number(b.family === 'state') - Number(a.family === 'state')
+          || b.score - a.score);
       for (const row of ranked) if (floorUsed[axis] + costOf(row) <= floorBudget && add(row)) { floorUsed[axis] += costOf(row); break; }
     }
-    for (const row of ordered) if (row.family === 'state' || row.family === 'lens' || row.score > 0) add(row);
+    for (const row of ordered) {
+      if (!q ? (row.family === 'state' || row.family === 'lens' || row.score > 0) : (row.signals.relevant && !row.signals.entityMismatch)) add(row);
+    }
     for (const [family, allocation] of Object.entries(familyAllocation)) {
       const chosen = selected.filter(row => family === 'evidence' ? row.family !== 'lens' : row.family === family);
       allocation.selected = chosen.length;
@@ -48329,10 +48423,13 @@ function createLibraReadonlySourceContext(owner) {
     }
     const anchors = engine.select({ rows: stateRows, query: queryText, maxCharacters, entities,
       maxItems: Math.min(maxItems, 12), minimumPerAxis: frame.settings.stateMinimumPerAxis ?? 2 });
-    const refs = engine.rankCatalog(frame.refs, queryText, anchors.items,
+    const relevantAnchors = queryText
+      ? anchors.items.filter(row => row.signals?.relevant !== false && row.signals?.entityMismatch !== true)
+      : anchors.items;
+    const refs = engine.rankCatalog(frame.refs, queryText, relevantAnchors,
       plan.canonicalCandidates, { entities, semanticScores: semantic.scores,
         scene: scene ? { query: scene.text, weight: scene.weight, semanticScores: semantic.sceneScores || new Map() } : null });
-    const evidenceTurns = anchors.items.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
+    const evidenceTurns = relevantAnchors.map(row => Number(row.evidence?.turn || row.evidence?.turnRange?.end || 0)).filter(Boolean);
     const loaded = [], failures = []; let payloadBytes = 0, payloadLimited = false;
     const ranked = engine.rankMicroTurns({ turns: frame.turns, index: microIndex.entries, query: queryText, evidenceTurns, entities,
       limit: plan.microCandidates, scene: scene ? { query: scene.text, weight: scene.weight } : null,
@@ -51875,7 +51972,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -51885,7 +51982,7 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -51933,9 +52030,9 @@ function createMemorySuiteSourceInputPolicy(config) {
       const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
       valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
       customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      const openLabel=make('label','시작 표식'),closeLabel=make('label','끝 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -52297,10 +52394,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
 .ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
 .ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
 .ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
-.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 118px 62px;gap:8px;align-items:center}
 .ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
 .ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
-.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-row.is-new{border-style:dashed;background:transparent}.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
 .ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
 .ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
@@ -52312,7 +52409,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
-    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
     const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
     box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
@@ -52322,7 +52419,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -52332,7 +52429,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -52350,7 +52447,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
       apply.disabled=!loaded||applying||!dirty;
       add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
@@ -52397,10 +52494,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
-      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='새 태그 이름 (예: decoration)';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='시작 표식 예: [START]';close.placeholder='끝 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('시작 표식'),open);closeLabel.append(hidden('끝 표식'),close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -52643,160 +52740,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
     const libraSourceRuleSync = createMemorySuiteSourceRuleSync({ owner: 'libra', policy: libraSourceInput, isDisposed: () => state.disposed,
       api: () => getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']) });
     libraSourceInputConfig.ruleSync = libraSourceRuleSync;
-    // LIBRA-only editor projection; persistence/normalization still belong to the shared policy.
+  // LIBRA uses the shared editor, the same one HAYAKU and Flashback mount.
   function mountLibraSourceInputControls(container) {
-    const owner='libra',config=libraSourceInputConfig,loadPreferences=()=>libraSourceInput.ready(),sourceRules=()=>libraSourceInput.sourceRules(),setSourceRules=rules=>libraSourceInput.setSourceRules(rules);
-    const preferences={get sourceRules(){return memorySuiteSourceRules(owner);}};
-    if(!container?.ownerDocument||container.querySelector('[data-source-input-controls]'))return;
-    const doc=container.ownerDocument,box=doc.createElement('section');
-    box.dataset.sourceInputControls=owner;box.className='ms-source-settings';container.prepend(box);
-    const make=(tag,text)=>{const node=doc.createElement(tag);if(text!==undefined)node.textContent=text;return node;};
-    const style=make('style');style.textContent=`
-.ms-source-settings{font:14px/1.6 system-ui,-apple-system,'Malgun Gothic',sans-serif;display:grid;gap:14px;width:100%;max-width:960px;margin:0 auto 24px;color:inherit}
-.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings h3{font-size:18px}.ms-source-settings label{display:grid;gap:5px;font-size:13px}.ms-source-settings small{opacity:.8}
-.ms-source-settings button,.ms-source-settings input,.ms-source-settings textarea,.ms-source-settings select{font:inherit;color:inherit;border:1px solid #8887;border-radius:9px;background:transparent;min-width:0;padding:8px 10px}.ms-source-settings textarea{width:100%;resize:vertical;min-height:42px}.ms-source-settings button{cursor:pointer;min-height:40px}.ms-source-settings button:disabled{opacity:.5;cursor:default}.ms-source-settings :is(button,input,textarea,select):focus-visible{outline:2px solid currentColor;outline-offset:2px}
-.ms-source-settings .ms-input-list{display:grid;gap:10px}.ms-source-settings .ms-input-row{border:1px solid #8885;border-radius:12px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,230px) auto;gap:10px;align-items:start}.ms-source-settings .ms-input-fields{display:grid;gap:8px}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:8px}.ms-source-settings .ms-custom-toggle input{margin:0}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ms-source-settings [hidden]{display:none!important}
-.ms-source-settings .ms-input-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ms-source-settings .ms-input-apply{background:#79522d;color:white;border-color:#79522d;font-weight:700}.ms-source-settings .ms-input-status{min-height:24px}.ms-source-settings .ms-input-preview{border-top:1px solid #8885;padding-top:14px;display:grid;gap:10px}.ms-source-settings pre{font:13px/1.6 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #8885;border-radius:10px;padding:14px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid #b9802e;padding-left:10px}.ms-source-settings details{font-size:13px}.ms-source-settings summary{cursor:pointer}
-@media(max-width:600px){.ms-source-settings .ms-input-row{grid-template-columns:minmax(0,1fr) auto}.ms-source-settings .ms-input-fields{grid-column:1/-1}.ms-source-settings .ms-custom-fields{grid-template-columns:1fr}.ms-source-settings .ms-input-actions button{flex:1}}
-`;
-    box.append(style,make('h3','분석할 내용'),make('p','설정 없이 바로 사용할 수 있습니다. 알 수 없는 외부 태그와 내용은 그대로 둡니다. 필요한 경우에만 아래 규칙을 바꾸세요.'));
-    const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';box.append(list);
-    const actions=make('div'),apply=make('button','적용'),status=make('p');actions.className='ms-input-actions';apply.type='button';apply.className='ms-input-apply';apply.dataset.sourceInputApply='';apply.disabled=true;
-    status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-    const toolbar=make('div'),add=make('button','태그 추가'),undo=make('button','삭제 되돌리기'),defaults=make('button','기본 규칙 복원');toolbar.className='ms-input-actions';
-    for(const button of [add,undo,defaults]){button.type='button';button.disabled=true;}
-    add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(add,undo,defaults);box.insertBefore(toolbar,list);
-    actions.append(apply);const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');box.append(actions,status,noticeHost,syncHost,make('p','규칙은 적용을 눌러야 저장됩니다. 기본 규칙 복원도 초안만 바꿉니다. 기존 기억은 그대로 유지되며, 바꾸려면 원하는 구간을 직접 재분석하세요.'));
-    const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
-    previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
-    previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
-    warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
-    output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
-    previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
-    const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
-    const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
-    let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
-    const isEmpty=row=>row.custom.checked?!row.open.value.trim()&&!row.close.value.trim():!row.value.value.trim();
-    function inferTag(input) {
-      const value=input.trim();
-      if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
-      const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
-      if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
-    }
-    function readDraft() {
-      const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
-      for(const row of rows){
-        if(isEmpty(row))continue;
-        const key=row.action.value;
-        if(row.custom.checked){
-          const entry={open:row.open.value,close:row.close.value};
-          const form=row.control&&memorySuiteSourceRuleForm('@'+row.control);
-          if(form&&key==='ignoredTags'&&entry.open===form.open&&entry.close===form.close)draft.controls.push(row.control);
-          else draft[key].push(entry);
-        }else draft[key].push(inferTag(row.value.value));
-      }
-      return memorySuiteNormalizeSourceRules(draft);
-    }
-    const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
-    function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
-      let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
-      apply.disabled=!loaded||applying||!dirty;
-      add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
-      previewButton.disabled=!loaded||applying||readingSample||typeof config.readSample!=='function';
-    }
-    async function showPreview() {
-      if(!sample)return;
-      const version=++previewVersion;
-      warning.hidden=true;warning.textContent='';output.textContent='';output.hidden=true;
-      try{
-        const rules=readDraft();let projected;
-        if(legacy&&fingerprint(rules)===initial){
-          if(typeof config.projectLegacySample!=='function'){previewStatus.textContent='기본 분석 입력을 미리 볼 수 없습니다.';return;}
-          projected={text:await config.projectLegacySample(sample),warnings:[]};
-        }else projected=memorySuiteProjectSourceRules(memorySuiteStripInternalSource(sample.text),rules);
-        if(state.disposed||version!==previewVersion)return;
-        output.textContent=String(projected.text??'').replace(/\r\n/g,'\n').trim();output.hidden=false;
-        warning.textContent=projected.warnings.join(' ');warning.hidden=!projected.warnings.length;
-        previewStatus.textContent=(sample.label?sample.label+' · ':'')+(output.textContent?'불러온 메시지의 분석 입력':'분석할 내용이 없습니다.')+(fingerprint(rules)!==initial?' · 아직 적용하지 않은 규칙':'');
-      }catch(e){if(state.disposed||version!==previewVersion)return;warning.textContent=String(e.message||e);warning.hidden=false;previewStatus.textContent='규칙을 확인한 뒤 다시 미리 보세요.';}
-    }
-    function changed() {
-      if(!loaded||applying)return;
-      if(!rows.some(isEmpty))addRow();
-      status.textContent='변경한 규칙을 적용해 주세요.';setEnabled();void showPreview();finder?.refresh();previewList.refresh();syncPanel?.refresh();
-    }
-    // A rule chosen in the finder or the defaults notice lands in the draft; 적용 still saves it.
-    function addFoundRule(name,key) {
-      if(!loaded||applying)return;
-      for(const row of rows.filter(isEmpty))row.element.remove();rows=rows.filter(row=>!isEmpty(row));
-      if(name.startsWith('@'))addRow(memorySuiteSourceRuleForm(name),'ignoredTags',name.slice(1));else addRow(name,key);
-      changed();
-    }
-    const draftOrNull=()=>{try{return readDraft();}catch{return null;}};
-    const finder=mountMemorySuiteSourceTagFinder(finderHost,{draft:readDraft,addRule:addFoundRule,busy:()=>!loaded||applying,
-      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[(await config.readSample?.())?.text].filter(value=>typeof value==='string')});
-    const missingNotice=mountMemorySuiteMissingDefaultsNotice(noticeHost,{owner,draft:draftOrNull,addRule:addFoundRule,busy:()=>!loaded||applying});
-    const draftUnchanged=()=>{try{return fingerprint(readDraft())===initial;}catch{return false;}};
-    // Recent messages with removed parts struck through; before any saved rule, the plugin's own cleanup.
-    const previewList=mountMemorySuiteSourcePreviewList(previewListHost,{draft:readDraft,legacy:()=>legacy&&draftUnchanged(),projectLegacy:item=>config.projectLegacySample?.(item),
-      readSamples:async()=>typeof config.readSamples==='function'?await config.readSamples():[]});
-    const syncPanel=config.ruleSync?mountMemorySuiteSourceRuleSyncPanel(syncHost,{sync:config.ruleSync,savedRules:()=>memorySuiteSourceRules(owner),dirty:()=>!draftUnchanged(),busy:()=>!loaded||applying}):null;
-    function addRow(value=null,key='ignoredTags',control=null) {
-      const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
-      element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
-      for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
-      remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
-      if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
-      const row={element,value:valueInput,custom,open,close,action,remove,control};rows.push(row);
-      const syncMode=()=>{tagLabel.hidden=custom.checked;customFields.hidden=!custom.checked;};syncMode();
-      custom.onchange=()=>{
-        if(custom.checked&&!open.value&&!close.value&&valueInput.value.trim()){
-          try{const name=inferTag(valueInput.value);open.value='<'+name+'>';close.value='</'+name+'>';}catch{open.value=valueInput.value;}
-        }
-        if(!custom.checked&&(open.value||close.value))valueInput.value=open.value||close.value;
-        syncMode();changed();
-      };valueInput.oninput=open.oninput=close.oninput=changed;action.onchange=changed;
-      remove.onclick=()=>{if(!loaded||applying||isEmpty(row))return;removed.push({row,index:rows.indexOf(row)});if(removed.length>128)removed.shift();rows=rows.filter(item=>item!==row);element.remove();changed();};
-      fields.append(tagLabel,customLabel,customFields);if(control)fields.append(make('small',controlLabels[control]||'저장된 기본 규칙'));
-      element.append(fields,actionLabel,remove);list.append(element);return row;
-    }
-    function fill(rules=sourceRules(),resetInitial=true) {
-      rows=[];removed=[];list.replaceChildren();
-      for(const key of Object.keys(actionNames))for(const entry of rules[key])addRow(entry,key);
-      for(const control of rules.controls)addRow(memorySuiteSourceRuleForm('@'+control),'ignoredTags',control);
-      addRow();if(resetInitial){initial=fingerprint(rules);legacy=!preferences.sourceRules;missingNotice.update(preferences.sourceRules);}setEnabled();finder?.refresh();
-    }
-    add.onclick=()=>{if(!loaded||applying||state.disposed)return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
-    undo.onclick=()=>{if(!loaded||applying||state.disposed)return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
-    defaults.onclick=()=>{if(!loaded||applying||state.disposed)return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags(owner)])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
-    apply.onclick=async()=>{
-      if(!loaded||applying||state.disposed)return;
-      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
-      applying=true;status.textContent='적용 중…';setEnabled();
-      try{await setSourceRules(rules);if(state.disposed)return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));}
-      catch(e){if(!state.disposed)status.textContent='적용 실패: '+String(e.message||e);}
-      finally{applying=false;if(!state.disposed)setEnabled();}
-    };
-    previewButton.onclick=async()=>{
-      if(!loaded||readingSample||state.disposed||typeof config.readSample!=='function')return;
-      readingSample=true;sample=null;void previewList.load();const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
-      try{
-        const result=await config.readSample();if(state.disposed||version!==previewVersion)return;
-        if(result==null){previewStatus.textContent='현재 채팅에 미리 볼 메시지가 없습니다.';return;}
-        if(typeof result!=='string'&&typeof result.text!=='string')throw Error('SOURCE_SAMPLE_INVALID');
-        sample=typeof result==='string'?{text:result}:result;await showPreview();
-      }catch{if(!state.disposed&&version===previewVersion)previewStatus.textContent='현재 채팅을 읽지 못했습니다. 잠시 뒤 다시 미리 보세요.';}
-      finally{readingSample=false;if(!state.disposed)setEnabled();}
-    };
-    status.textContent='저장된 규칙을 읽는 중…';
-    loadPreferences().then(()=>{if(state.disposed)return;loaded=true;fill();status.textContent='';void syncPanel?.check();if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!state.disposed)status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
+    return mountMemorySuiteSourceInputControls(container,{...libraSourceInputConfig,owner:'libra',policy:libraSourceInput,ruleSync:libraSourceRuleSync,isDisposed:()=>state.disposed});
   }
 
 
@@ -53810,7 +53756,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         || Number(receipt.turn) !== Number(turn) || receipt.revisionId !== revisionId
         || completedTurnRevisionId(receipt) !== revisionId
         || !sameMessages('user') || !sameMessages('assistant')
-        || (receipt.sourceDigest !== current.sourceDigest && !sameCompletedTurnRaw(receipt, current))) return null;
+        || (receipt.sourceDigest !== current.sourceDigest && !isTextEquivalentCompletedTurn(receipt, current))) return null;
       return { status: 'verified', reason: '', receipt, receiptKey };
     };
     const readActiveMicroMemory = async (scope, worldlineId, sessionEpoch, turn, options = {}) => {
@@ -62612,9 +62558,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
               }
             }, 250);
           }
-          if (!state.disposed && result?.status === 'stale_source'
-            && result?.reason === 'micro_publish_claim_changed'
-            && request.retryClaimChanged !== true) {
+          const claimChangedStale = (result?.status === 'stale_source' || result?.status === 'stale')
+            && ['micro_publish_claim_changed', 'micro_claim_changed', 'revision_changed',
+              'source_changed_during_validation', 'source_changed_after_provider',
+              'micro_publication_basis_changed', 'receipt_revision_mismatch', ''].includes(string(result?.reason || ''));
+          if (!state.disposed && claimChangedStale && request.retryClaimChanged !== true) {
             setTimeout(async () => {
               if (state.disposed) return;
               try {
@@ -63262,7 +63210,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // chat comparison if a later output processor changes the prose.
       if(expectedScope && health?.microBoundary?.scopeKey===expectedScope.scopeKey
         && health===state.mainAfterRequestHealth && typeof options.completedResponse==='string'){
-        health.microBoundary.legacyAssistantHash=completionAssistantDigest(cleanMessageText('assistant',{content:options.completedResponse}));
+        const legacyCleaned = cleanMessageText('assistant',{content:options.completedResponse});
+        health.microBoundary.legacyAssistantText = legacyCleaned;
+        health.microBoundary.legacyAssistantHash=completionAssistantDigest(legacyCleaned);
         if (health.pendingMicro === state.lastRequestScope?.pendingMicro)
           health.microBoundary.legacyPacket ??= completionPacketProof(options.completedResponse);
       }
@@ -63511,12 +63461,12 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const sceneReferenceCue = /(?:그래서|그다음|계속|이어|아까|방금|그녀|그 사람|그것|그곳|then|continue|after that|what next|それで|続)/i.test(currentText);
       let sceneWeight = 0;
       if (!explicitShift && sceneText) {
-        if (currentText.length <= 36 || sceneReferenceCue) sceneWeight = 0.55;
-        else if (currentText.length <= 120) sceneWeight = 0.35;
-        else sceneWeight = 0.15;
+        if (currentText.length <= 36 || sceneReferenceCue) sceneWeight = 0.50;
+        else if (currentText.length <= 120) sceneWeight = 0.22;
+        else sceneWeight = 0.10;
       }
       const queryType = classifyQueryType(currentText);
-      if (queryType === QUERY_TYPES.CONTINUATION && !explicitShift) sceneWeight = Math.max(sceneWeight, 0.45);
+      if (queryType === QUERY_TYPES.CONTINUATION && !explicitShift) sceneWeight = Math.max(sceneWeight, 0.40);
       const sparseText = sceneWeight >= 0.35 && sceneText ? `${currentText}\n${sceneText}` : currentText;
       return {
         currentText,
@@ -66587,12 +66537,13 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       };
       if(mainNarrativeType){
         const pendingMicro = expectedScope ? state.lastRequestScope?.pendingMicro : null;
+        const cleanedResponse = pendingMicro ? cleanMessageText('assistant',{content:response}) : '';
         state.mainAfterRequestHealth={schema:'libra.capture_backend_health.v1',at:Date.now(),requestType,
           observedRunsAtAfter:Number(state.captureBackendObservedRuns||0),
           expectedScope:expectedScope?clone(expectedScope):null,
           pendingMicro,
           microBoundary:pendingMicro
-            ? {...pendingMicro,assistantHash:completionAssistantDigest(cleanMessageText('assistant',{content:response})),
+            ? {...pendingMicro,assistantText:cleanedResponse,assistantHash:completionAssistantDigest(cleanedResponse),
               packet:completionPacketProof(response)}:null};
       }
       // Only an exact main model request may trigger automatic memory analysis.
@@ -76368,7 +76319,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       // Korean text is matched by character bigrams, so one shared bigram is too weak a signal for
       // a longer input.
       const minOverlap = queryTokens.size >= 6 ? 2 : 1;
-      const scenePairs = pairs.filter(pair => cutoff == null || pair.turn <= Number(cutoff)).slice(-2).reverse();
+      const lensSceneLimit = queryBundle?.explicitShift === true ? 0
+        : (Number.isFinite(Number(queryBundle?.sceneWeight)) && Number(queryBundle?.sceneWeight) < 0.35 ? 1 : 2);
+      const scenePairs = lensSceneLimit > 0
+        ? pairs.filter(pair => cutoff == null || pair.turn <= Number(cutoff)).slice(-lensSceneLimit).reverse()
+        : [];
       const sceneText = [queryText, ...scenePairs.flatMap(pair => [pair.user?.text, pair.assistant?.text])].map(value => string(value || '')).join('\n');
       const scenePositions = new Map();
       const scenePosition = person => {
@@ -82019,7 +81974,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const overlay=guiEl('div',{class:'overlay is-open',id:'dlg-libra-source-reanalysis','aria-hidden':'false',dataset:{canonicalRangeDrawer:'true',canonicalRangeScope:binding.scopeKey}},[
       guiEl('section',{class:'dialog dialog--wide',role:'dialog','aria-modal':'true','aria-labelledby':'libraSourceReanalysisTitle'},[
         guiEl('h2',{id:'libraSourceReanalysisTitle',text:'원문 재분석'}),tabs,page,
-        guiEl('details',{class:'fold'},[guiEl('summary',{text:'분석 태그 규칙 설정',tabindex:'0'}),advanced]),
+        guiEl('details',{class:'fold'},[guiEl('summary',{text:'원문 태그 필터',tabindex:'0'}),advanced]),
         guiEl('div',{class:'dialog__actions'},[cancel])
       ])
     ]);
@@ -87743,6 +87698,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       lanes,
       guiEl('div',{class:"cluster"},[
         guiEl('button',{class:'btn btn--sm',type:'button',disabled:state.loading,text:state.loading?'상태 읽는 중…':'상태 새로고침',onClick:()=>void loadBookReceiptRecoveryStatus(true,{lens:true})}),
+        guiEl('button',{class:'btn btn--sm',type:'button',text:'원문 태그 필터',title:'분석에서 뺄 태그와 표식을 정합니다',dataset:{libraOpenTagFilter:'true'},onClick:()=>selectBookSettingsRoomSection('source_edits')}),
         missingCount>0?guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:`누락된 ${missingCount}개 턴 재분석`,onClick:()=>{
           if(typeof showLibraSourceReanalysisDrawer==='function'){
             void showLibraSourceReanalysisDrawer({kind:'micro',scopeKey:state.scopeKey,startTurns:missingTurnList.map(item=>item.turn)});
@@ -87756,7 +87712,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   };
   const BOOK_NATIVE_SETTINGS_SECTIONS = Object.freeze([
     Object.freeze({id:'scopes',group:'settings',no:'10',label:'스코프 데이터 관리',note:'저장 자료 · 고아 데이터 · 빈 목록',eyebrow:'SCOPE DATA'}),
-    Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'분석할 내용',note:'선택 사항 · 분석 입력 규칙',eyebrow:'ANALYSIS INPUT' }),
+    Object.freeze({ id:'source_edits',group:'settings',no:'09',label:'원문 태그 필터',note:'분석에서 뺄 태그 · 표식',eyebrow:'ANALYSIS INPUT' }),
     Object.freeze({ id: 'references', group: 'settings', no: '02', label: '참고 자료', note: '분석 자료 · 모듈 · 캐릭터 로어', eyebrow: 'REFERENCES' }),
     Object.freeze({ id: 'memory', group: 'settings', no: '03', label: '성능 프리셋', note: '성능 · 검색 · 최근 대화', eyebrow: 'MEMORY & RECALL' }),
     Object.freeze({ id: 'state', group: 'settings', no: '04', label: '현재 상태 적용', note: '로컬 적용 · 추가 호출 0회', eyebrow: 'STATE TRACKING' }),
@@ -88166,7 +88122,7 @@ advanced
     }
     if(groupId==='ref')return guiEl('div',{class:'stack',dataset:{settingsCategory:'ref'}},[
       card('참고 자료','모듈 로어북 선택과 캐릭터 로어북 제외를 한 화면에서 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('참고 자료 설정…','references')])]),
-      card('분석 입력 규칙','현행 분석 입력 필터를 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('분석할 내용 설정…','source_edits')])])
+      card('분석 입력 규칙','현행 분석 입력 필터를 관리합니다.',[guiEl('div',{class:'cluster'},[routeButton('원문 태그 필터…','source_edits')])])
     ]);
     if(groupId==='store')return guiEl('div',{class:'stack',dataset:{settingsCategory:'store'}},[
       card('스코프 데이터 관리','저장 자료 · 고아 데이터 · 빈 목록을 관리합니다.',[routeButton('스코프 데이터 관리…','scopes')]),
@@ -88194,7 +88150,7 @@ advanced
     {id:'ai',group:'AI 연결',label:'모델 프리셋',section:'ai'},
     {id:'embedding',group:'AI 연결',label:'임베딩 모델',section:'embedding'},
     {id:'memory_analysis',group:'기억과 검색',label:'기억 분석 · 생성 한도',section:'pipeline'},
-    {id:'source_edits',group:'기억과 검색',label:'분석할 내용',section:'source_edits'},
+    {id:'source_edits',group:'기억과 검색',label:'원문 태그 필터',section:'source_edits'},
     {id:'performance',group:'기억과 검색',label:'기억 · 검색 · 최근 대화',section:'memory'},
     {id:'modules',group:'참고 자료',label:'모듈 로어',section:'references',reference:'modules'},
     {id:'character_lore_exclusions',group:'참고 자료',label:'캐릭터 로어',section:'references',reference:'character_lore_exclusions'},

@@ -1,11 +1,13 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.0.6
+//@display-name HAYAKU · Locator Continuity v4.0.7
 //@api 3.0
-//@version 4.0.6
+//@version 4.0.7
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc flashback_hayaku_bridge
+//@allowed-ipc libra
+//@allowed-ipc flashback_memory
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/HAYAKU_Locator_Continuity.js
 /* MEMORY SUITE SOURCE TURN ACCOUNTING v1 — BEGIN
  * Pure accounting over owner-verified final emitted evidence. UTF-16 offsets.
@@ -812,7 +814,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.0.6';
+  const PLUGIN_VERSION = '4.0.7';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';
@@ -23882,15 +23884,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       candidateVisits+=scoreMap.size;
       const ranked=[];
+      let maxScore=0,maxWordScore=0;
       for(const [index,score]of scoreMap){
         if(!(score>0))continue;
         const {row,key}=docs[index];
         const wordScore=wordScoreMap.get(index)||0;
-        ranked.push({row,key,score,lexical:wordScore*(1+broadness*compiled.information[index])});
+        if(score>maxScore)maxScore=score;
+        if(wordScore>maxWordScore)maxWordScore=wordScore;
+        ranked.push({row,key,score,wordScore,lexical:wordScore*(1+broadness*compiled.information[index])});
       }
-      ranked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
-      scoredRows+=ranked.length;
-      ranked.forEach((hit,index)=>{const rank=index+1;
+      const filteredRanked=maxWordScore>0
+        ? ranked.filter(hit=>hit.wordScore>0||hit.score>=Math.max(0.55,maxScore*0.22))
+        : ranked;
+      filteredRanked.sort((a,b)=>b.lexical-a.lexical||b.score-a.score||a.key.localeCompare(b.key));
+      scoredRows+=filteredRanked.length;
+      filteredRanked.forEach((hit,index)=>{const rank=index+1;
         if(!best.has(hit.key)||best.get(hit.key).rank>rank)best.set(hit.key,{...hit,rank});});
     }
     Memory.lastLocalRecallRank={invocation,startedAt,completedAt:now(),requestId:request?.id??null,scopeKey:request?.scopeKey||'',
@@ -23912,26 +23920,36 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const localRecallRefs = row => [row.id,row.publicRef,row.locator?.uri,...ensureArray(row._recallIdentityRefs),...ensureArray(row._recordRefs)].filter(value=>typeof value==='string'&&value);
   const localRecallDeclaredTargets = row => Object.entries(row.links||{})
     .filter(([key])=>key.endsWith('Refs')).flatMap(([,values])=>ensureArray(values)).filter(value=>typeof value==='string');
-  const localRecallExpand = (allRows, seeds, settings) => {
+  const hayakuRowEntityNames = row => uniq([
+    ...ensureArray(row._recallEntityRefs),
+    ...ensureArray(row.entityNames),
+    row.axis==='entity'||row.domain==='entity' ? (row.name||row.label||row.entityName||'') : ''
+  ].map(value=>String(value||'').trim().toLowerCase()).filter(Boolean), 24);
+  const localRecallExpand = (allRows, seeds, settings, queryEntitySet = null) => {
     if(settings.graphClosureRecallEnabled===false || settings.typedMemoryGraphEnabled===false)return [];
-    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map(),rowIndexMap=new Map();
+    const refs=new Map(),reverseRefs=new Map(),source=new Map(),scenes=new Map(),entities=new Map();
     const add=(map,key,row)=>{if(!key)return;const list=map.get(key)||[];list.push(row);map.set(key,list);};
     for(let idx=0;idx<allRows.length;idx++){
       const row=allRows[idx];
-      rowIndexMap.set(row,idx);
       localRecallRefs(row).forEach(ref=>add(refs,ref,row));
       localRecallDeclaredTargets(row).forEach(ref=>add(reverseRefs,ref,row));
       add(source,row.packetHash,row);add(scenes,row.scene_id||row.sceneId,row);
       ensureArray(row._recallEntityRefs).forEach(ref=>add(entities,ref,row));
     }
+    const entityFilter=row=>{
+      if(!queryEntitySet||!queryEntitySet.size)return true;
+      const axis=String(row.axis||row.domain||'');
+      if(axis!=='entity')return true;
+      const names=hayakuRowEntityNames(row);
+      return !names.length||names.some(name=>queryEntitySet.has(name));
+    };
     const queues=seeds.map(seed=>{
       const related=[];
       localRecallDeclaredTargets(seed).forEach(ref=>related.push(...(refs.get(ref)||[])));
       localRecallRefs(seed).forEach(ref=>related.push(...(reverseRefs.get(ref)||[])));
       if(settings.hierarchicalEpisodeMemoryEnabled!==false){
-        related.push(...(source.get(seed.packetHash)||[]),...(scenes.get(seed.scene_id||seed.sceneId)||[]));
-        ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[])));
-        const at=rowIndexMap.get(seed)??-1;if(at>0)related.push(allRows[at-1]);if(at>=0&&at+1<allRows.length)related.push(allRows[at+1]);
+        related.push(...(source.get(seed.packetHash)||[]).filter(entityFilter),...(scenes.get(seed.scene_id||seed.sceneId)||[]).filter(entityFilter));
+        ensureArray(seed._recallEntityRefs).forEach(ref=>related.push(...(entities.get(ref)||[]).filter(entityFilter)));
       }
       const seedKey=localRecallSourceKey(seed);
       return related.filter(row=>localRecallSourceKey(row)!==seedKey);
@@ -23945,6 +23963,7 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       && !requestKnowledgeUnavailableForRow(row,queryText,context,settings)
       && ensureArray(row.projectionVisibilityBoundaries).every(visibility=>!isKnowledgeUnavailableForQuery({...row,visibility},queryText,context))).map(row=>[localRecallSourceKey(row),row])).values()];
     const byKey=new Map(rows.map(row=>[localRecallSourceKey(row),row]));
+    const queryEntities=new Set(queryMentionedEntities(store,queryText).map(name=>String(name||'').trim().toLowerCase()).filter(Boolean));
     const direct=computedRanks?computedRanks[0].map(key=>byKey.get(key)).filter(Boolean):localRecallRank(rows,[queryText]);
     const directRanks=new Map(direct.map((row,index)=>[localRecallSourceKey(row),index+1]));
     const recent=computedRanks?computedRanks[1].map(key=>byKey.get(key)).filter(Boolean):localRecallRank(rows,ensureArray(settings.retrievalRecentContext?.topics));
@@ -23956,15 +23975,26 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           -Number(a.locator?.worldlineOrdinal||a.worldlineOrdinal||a.locator?.sourcePairIndex||a.sourcePairIndex||0)
         ||localRecallSourceKey(a).localeCompare(localRecallSourceKey(b)));
     const seeds=localRecallFairMerge([direct,recent,current],PACKET_CORE_RECALL_CANDIDATE_LIMIT);
-    const linked=localRecallExpand(rows,seeds,settings);
+    const linked=localRecallExpand(rows,seeds,settings,queryEntities);
     const queues=[direct,recent,current,linked];
-    const scores=new Map();queues.forEach(queue=>queue.forEach((row,index)=>{
-      const key=localRecallSourceKey(row);scores.set(key,(scores.get(key)||0)+1/(60+index+1));}));
-    const candidates=localRecallFairMerge(queues,PACKET_CORE_RECALL_CANDIDATE_LIMIT).map(row=>({...row,
-      score:scores.get(localRecallSourceKey(row))||0,_localRecall:true,
-      _recallDirectRank:directRanks.get(localRecallSourceKey(row))||0,
-      scoreBreakdown:{localRecall:true,relevanceEvidence:scores.get(localRecallSourceKey(row))||0},
-      _recallSupply:queues.map((queue,i)=>queue.includes(row)?i:null).filter(i=>i!==null)}));
+    const recentWeight=Math.max(0.15,Math.min(1,Number(settings.retrievalRecentContext?.supportWeight??1)||1));
+    const queueWeights=[1,recentWeight,direct.length?0.5:1,0.75];
+    const scores=new Map();queues.forEach((queue,qi)=>queue.forEach((row,index)=>{
+      const key=localRecallSourceKey(row);scores.set(key,(scores.get(key)||0)+queueWeights[qi]/(60+index+1));}));
+    const candidates=localRecallFairMerge(queues,PACKET_CORE_RECALL_CANDIDATE_LIMIT).map(row=>{
+      const key=localRecallSourceKey(row);
+      const axis=String(row.axis||row.domain||'');
+      const names=queryEntities.size&&axis==='entity'?hayakuRowEntityNames(row):[];
+      const entityMismatch=queryEntities.size>0&&axis==='entity'&&names.length>0&&!names.some(name=>queryEntities.has(name));
+      const baseScore=scores.get(key)||0;
+      const finalScore=entityMismatch?baseScore*0.15:baseScore;
+      return {...row,
+        score:finalScore,_localRecall:true,
+        _recallDirectRank:entityMismatch?0:(directRanks.get(key)||0),
+        _recallEntityMismatch:entityMismatch,
+        scoreBreakdown:{localRecall:true,relevanceEvidence:finalScore,entityMismatch},
+        _recallSupply:queues.map((queue,i)=>queue.includes(row)?i:null).filter(i=>i!==null)};
+    });
     const sourceContext=localRecallSourceContexts.get(store);
     if(sourceContext){
       const keys=[...new Set(candidates.map(row=>row[localRecallProjectionReference]).filter(key=>typeof key==='string'))].slice(0,PACKET_CORE_RECALL_CANDIDATE_LIMIT);
@@ -24744,7 +24774,16 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
 
   const adaptiveRecentContextCount = (query = '', settings = Memory.settings || DEFAULT_SETTINGS) => {
     const configured=Math.max(0,Math.min(20,Math.floor(Number(settings.recallContextMessages??DEFAULT_SETTINGS.recallContextMessages)||0)));
-    return {count:configured,configured,reason:configured?'fixed_source_window':'disabled',ambiguous:false,supportWeight:configured?1:0};
+    if(!configured)return {count:0,configured:0,reason:'disabled',ambiguous:false,supportWeight:0};
+    const q=localRecallQueryText(query).trim();
+    if(!q)return {count:configured,configured,reason:'empty_query',ambiguous:true,supportWeight:1};
+    const isTopicShift=/(?:한편|다른 이야기|주제를 바꿔|시간을 돌려|몇 년 전|완전히 다른|meanwhile|different topic|change the subject|years? ago|flashback|一方|別の話)/i.test(q);
+    if(isTopicShift)return {count:Math.min(configured,1),configured,reason:'topic_shift',ambiguous:false,supportWeight:0.25};
+    const isReferential=Boolean(RecallKeywordFeatures?.referential?.(q));
+    const isContinuation=Boolean(RecallKeywordFeatures?.continuation?.(q));
+    if(isReferential||isContinuation||q.length<=36)return {count:configured,configured,reason:'continuation_or_referential',ambiguous:true,supportWeight:1};
+    if(settings.adaptiveContextWindow!==false&&q.length>80)return {count:Math.min(configured,2),configured,reason:'self_contained_query',ambiguous:false,supportWeight:0.45};
+    return {count:configured,configured,reason:'balanced_context_window',ambiguous:false,supportWeight:0.65};
   };
   const hayakuRecentContextMessageText = message => {
     if (!message || typeof message !== 'object') return '';
@@ -24772,8 +24811,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const take=body.slice(0,Math.max(0,remaining-12));if(!take)break;
       rows.push({role:roleOf(source[index])==='model'?'assistant':roleOf(source[index]),index,text:take,truncated:take.length<body.length});remaining-=take.length+12;}
     rows.reverse();const body=rows.map(row=>row.role.toUpperCase()+': '+row.text).join('\n');
-    return {version:LOCAL_RECALL_VERSION,active:!!body,configuredMessages:profile.count,requestedMessages:profile.count,
-      messagesUsed:rows.length,reason:profile.reason,ambiguous:false,supportWeight:body?1:0,text:body,hash:body?stableHash64(body):'',
+    return {version:LOCAL_RECALL_VERSION,active:!!body,configuredMessages:profile.configured,requestedMessages:profile.count,
+      messagesUsed:rows.length,reason:profile.reason,ambiguous:profile.ambiguous,supportWeight:body?profile.supportWeight:0,text:body,hash:body?stableHash64(body):'',
       windowIndices:positions.slice().reverse(),topics:rows.map(row=>row.text),queryTopics:[queryText],primaryTokens:localRecallWords(queryText),
       supportTokens:localRecallWords(body),canonicalTokens:[],conceptTokens:[],semanticFrameTokens:[],entityTokens:[],
       rows:rows.map(row=>({role:row.role,index:row.index,preview:row.text.slice(0,180),truncated:row.truncated}))};
@@ -37233,13 +37272,14 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       return m.cost;
     };
     const tie=(a,b)=>weightedScoreOf(b)-weightedScoreOf(a)||fulfilledOf(b)-fulfilledOf(a)||duplicateOf(a)-duplicateOf(b)||costOf(a)-costOf(b)||a.id.localeCompare(b.id);
+    const groupEntityMismatch=group=>group.units.some(unit=>ensureArray(unit.origins).some(origin=>origin?.row?._recallEntityMismatch===true));
     const reservedLanes=new Set();
     for(const lane of CONTINUITY_EVIDENCE_LANE_ORDER){
-      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane));
+      const candidates=groups.filter(group=>group.units.some(unit=>unit.lane===lane)&&!groupEntityMismatch(group));
       candidates.sort((a,b)=>a.priority-b.priority||tie(a,b));
       if(candidates.length)reservedLanes.add(candidates[0].id);
     }
-    const groupPriority=group=>reservedLanes.has(group.id)?Math.min(1.5,group.priority):group.priority;
+    const groupPriority=group=>groupEntityMismatch(group)?Math.max(3,group.priority):reservedLanes.has(group.id)?Math.min(1.5,group.priority):group.priority;
     // These identities already certify the synchronous preparation's rows.
     // Reuse them during bounded feasibility checks rather than rehashing each
     // public body for every pair in every trial.
@@ -55778,7 +55818,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -55788,7 +55828,7 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -55836,9 +55876,9 @@ function createMemorySuiteSourceInputPolicy(config) {
       const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
       valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
       customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      const openLabel=make('label','시작 표식'),closeLabel=make('label','끝 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -56200,10 +56240,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
 .ms-source-settings .ms-input-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface2,transparent)}.ms-source-settings .ms-input-toolbar .ms-input-apply{margin-right:auto;min-width:88px}
 .ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
 .ms-source-settings .ms-input-status:empty{display:none}.ms-source-settings .ms-input-status{font-weight:650}.ms-source-settings .ms-input-hint{font-size:12px;color:var(--text2,inherit)}
-.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 110px 62px;gap:8px;align-items:center}
+.ms-source-settings .ms-input-head,.ms-source-settings .ms-input-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(128px,160px) 118px 62px;gap:8px;align-items:center}
 .ms-source-settings .ms-input-head{padding:0 11px;font-size:11.5px;font-weight:700;color:var(--text3,inherit)}
 .ms-source-settings .ms-input-list{display:grid;gap:6px}.ms-source-settings .ms-input-row{padding:8px 10px;border:1px solid var(--border,#8884);border-radius:var(--r-md,11px);background:var(--surface,transparent)}
-.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
+.ms-source-settings .ms-input-row.is-new{border-style:dashed;background:transparent}.ms-source-settings .ms-input-row textarea{min-height:38px;height:38px;white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;resize:none}.ms-source-settings .ms-input-row select{width:100%}.ms-source-settings .ms-input-row [data-rule-delete]{padding:7px 8px}
 .ms-source-settings .ms-input-fields{display:grid;gap:4px;min-width:0}.ms-source-settings .ms-custom-toggle{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer}.ms-source-settings .ms-custom-toggle input{margin:0;min-height:0;width:16px;height:16px;accent-color:var(--accent,currentColor)}.ms-source-settings .ms-custom-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .ms-source-settings .ms-input-chip{justify-self:start;padding:0 8px;border:1px solid var(--border2,#8886);border-radius:99px;font-size:11px;opacity:1;color:var(--text2,inherit)}
 .ms-source-settings .ms-input-preview{border-top:1px solid var(--border,#8885);padding-top:12px;display:grid;gap:8px}.ms-source-settings .ms-input-preview>button{justify-self:start}.ms-source-settings pre{font:12.5px/1.6 var(--font-mono,ui-monospace,monospace);white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border,#8885);border-radius:var(--r-sm,8px);background:var(--surface2,transparent);padding:12px;max-height:360px;overflow:auto;margin:0}.ms-source-settings .ms-input-warning{border-left:3px solid var(--warn,#b9802e);padding-left:10px}.ms-source-settings details{font-size:12.5px}.ms-source-settings summary{cursor:pointer}
@@ -56215,7 +56255,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     add.dataset.sourceInputAdd='';undo.dataset.sourceInputUndo='';defaults.dataset.sourceInputDefaults='';toolbar.append(apply,add,undo,defaults);
     status.dataset.sourceInputStatus='';status.className='ms-input-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     const hint=make('p','저장된 태그 규칙을 확인·편집합니다. 적용을 눌러야 저장되며 기본 규칙 복원도 초안만 바꿉니다. 알 수 없는 외부 태그는 그대로 두고, 기존 기억은 유지됩니다. 바꾸려면 원하는 구간을 직접 재분석하세요.');hint.className='ms-input-hint';
-    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','직접 구분자'),make('span'));
+    const head=make('div');head.className='ms-input-head';head.setAttribute('aria-hidden','true');head.append(make('span','태그 이름 · XML 예시 · 표식'),make('span','처리 방법'),make('span','태그 대신 표식'),make('span'));
     const list=make('div');list.dataset.sourceInputList='';list.className='ms-input-list';
     const noticeHost=make('div'),finderHost=make('div'),syncHost=make('div'),previewListHost=make('div');
     box.append(style,toolbar,status,noticeHost,syncHost,hint,head,list);
@@ -56225,7 +56265,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -56235,7 +56275,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -56253,7 +56293,7 @@ function mountMemorySuiteSourceInputControls(container, config) {
     }
     const fingerprint=rules=>JSON.stringify(memorySuiteNormalizeSourceRules(rules));
     function setEnabled() {
-      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);}
+      for(const row of rows){for(const node of row.element.querySelectorAll('input,textarea,select,button'))node.disabled=!loaded||applying;row.remove.disabled=!loaded||applying||isEmpty(row);const blank=isEmpty(row);row.element.classList.toggle('is-new',blank);row.element.dataset.ruleNew=blank?'true':'false';row.remove.style.visibility=blank?'hidden':'';row.remove.setAttribute('aria-hidden',blank?'true':'false');}
       let dirty=true;try{dirty=fingerprint(readDraft())!==initial;}catch{}
       apply.disabled=!loaded||applying||!dirty;
       add.disabled=defaults.disabled=!loaded||applying;undo.disabled=!loaded||applying||!removed.length;
@@ -56300,10 +56340,10 @@ function mountMemorySuiteSourceInputControls(container, config) {
       const hidden=text=>{const span=make('span',text);span.className='ms-sr-only';return span;};
       const element=make('div'),fields=make('div'),tagLabel=make('label'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
-      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
-      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='여는 표식 예: [START]';close.placeholder='닫는 표식 예: [END]';
-      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('여는 표식'),open);closeLabel.append(hidden('닫는 표식'),close);customFields.append(openLabel,closeLabel);
+      valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='새 태그 이름 (예: decoration)';tagLabel.append(hidden('태그 이름 또는 XML 예시'),valueInput);
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
+      customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;open.placeholder='시작 표식 예: [START]';close.placeholder='끝 표식 예: [END]';
+      const openLabel=make('label'),closeLabel=make('label');openLabel.append(hidden('시작 표식'),open);closeLabel.append(hidden('끝 표식'),close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(hidden('처리 방법'),action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -62326,6 +62366,17 @@ function mountMemorySuiteReanalysisReview(container,config) {
     for (const spec of VIEWER_LIST_FILTERS) {
       root.querySelector?.('#' + spec.input)?.addEventListener('input', () => viewerApplyListFilter(spec));
     }
+    // 원문 태그 필터 lives under 점검 · 복구 → 재분석; this opens it from the 노선도.
+    root.querySelectorAll?.('[data-hayaku-open-tag-filter]')?.forEach(node => node.addEventListener('click', () => {
+      viewerSetTab('recovery');
+      root.querySelector?.('[data-recovery-view="reanalysis"]')?.click();
+      const fold = root.querySelector?.('#hayakuTagFilterFold');
+      if (!fold) return;
+      fold.open = true;
+      mountHayakuSourceInput(root.querySelector('#hayakuSourceTrackingSettings'));
+      fold.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+      fold.querySelector('summary')?.focus?.();
+    }));
     root.querySelectorAll?.('[data-hayaku-viewer-goto]')?.forEach(node => {
       node.addEventListener('click', () => {
         const destination = node.getAttribute('data-hayaku-viewer-goto');
@@ -62458,7 +62509,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
             <dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>누락 복구</dd><dt>대상 턴</dt><dd id="hayakuNativeRepairTargets">선택한 항목을 확인합니다.</dd><dt>선택 묶음</dt><dd id="hayakuNativeRepairBatch">-</dd><dt>예상 기본 호출</dt><dd id="hayakuNativeRepairCalls">-</dd><dt>추가 복구 허용량</dt><dd><span class="x-extra">설정에서 정의한 작업별 제한</span> — <button class="linkbtn" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경</button></dd><dt>실제 호출 수</dt><dd>완료 후 결과에 표시됩니다.</dd></dl>
             <div class="cluster" style="margin-top:14px"><button id="runHayakuNativeRepair" class="btn btn--primary" type="button">선택한 턴 복구…</button></div><div id="hayakuNativeRepairOutcome" class="stack"></div>
           </div></div></section>
-        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div class="card" id="hayakuRebuildCard"><h2 class="card__title">전체 턴 재구성</h2><p class="card__desc">이 채팅의 모든 턴을 현재 원문으로 다시 분석합니다. 기존 기억을 먼저 지우지 않고, 턴마다 분석에 성공한 경우에만 교체합니다. 실패한 턴은 기존 기억이 남고, 이유는 상단 상태 버튼에서 볼 수 있습니다.</p><div class="cluster" style="margin-top:12px"><button id="runHayakuRebuild" class="btn btn--primary" type="button">전체 턴 재구성…</button><button id="cancelHayakuRebuild" class="btn" type="button" hidden>중단</button></div><p id="hayakuRebuildStatus" class="hint" role="status" aria-live="polite" style="margin-top:8px"></p></div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold"><summary>분석 태그 규칙 설정</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details></div></section>
+        <section data-recovery-panel="reanalysis" data-subpanel="reana" data-group="rc" hidden><div class="stack"><div class="note"><b>이미 저장된 턴의 직접 재분석입니다.</b> 누락 복구와 다른 작업이며, 시작 전에 범위·토폴로지·메시지 identity·원문 digest를 확인합니다.</div><div class="card" id="hayakuRebuildCard"><h2 class="card__title">전체 턴 재구성</h2><p class="card__desc">이 채팅의 모든 턴을 현재 원문으로 다시 분석합니다. 기존 기억을 먼저 지우지 않고, 턴마다 분석에 성공한 경우에만 교체합니다. 실패한 턴은 기존 기억이 남고, 이유는 상단 상태 버튼에서 볼 수 있습니다.</p><div class="cluster" style="margin-top:12px"><button id="runHayakuRebuild" class="btn btn--primary" type="button">전체 턴 재구성…</button><button id="cancelHayakuRebuild" class="btn" type="button" hidden>중단</button></div><p id="hayakuRebuildStatus" class="hint" role="status" aria-live="polite" style="margin-top:8px"></p></div><div id="hayakuSourceEditConsent" class="stack"></div><details class="fold" id="hayakuTagFilterFold"><summary>원문 태그 필터</summary><div class="fold__body"><div id="hayakuSourceTrackingSettings" class="stack"></div></div></details></div></section>
         <section data-recovery-panel="cold" data-subpanel="cold" data-group="rc" hidden><div class="stack"><div class="card fail-box" hidden><div class="empty"><b>원장을 읽지 못해 복구 대상을 계산하지 않습니다.</b><span>AI 작업은 시작할 수 없습니다. 현재 채팅 범위를 다시 확인하세요.</span></div></div><div class="card"><h2 class="card__title">Cold Start</h2><p class="card__desc">기록이 없는 채팅의 완료 턴을 묶음 단위로 분석합니다.</p><div class="cluster"><span class="badge" id="hayakuNativeColdStartState">대기</span><span id="hayakuNativeColdStartProgress">-</span><span>Cold Start 대상 <b id="hayakuNativeColdStartTurns">-</b></span></div><div class="field" style="margin-top:12px"><label for="hayakuColdStartBatchTurns">호출당 U+A</label><select id="hayakuColdStartBatchTurns" class="select" data-no-track aria-label="Cold Start 호출당 U+A"><option value="1">1턴</option><option value="5">5턴</option><option value="10">10턴</option></select><span class="hint">이번 실행에만 적용됩니다. 기본값은 설정 › 복구·안전의 Cold Start 묶음입니다 (저장된 값 <b id="hayakuColdStartSavedValue">-</b>).</span></div><dl class="cost-table" style="margin-top:12px"><dt>작업 종류</dt><dd>Cold Start</dd><dt>대상 턴</dt><dd id="hayakuColdStartTargetRows">완료된 턴 수는 현재 원장에서 계산합니다.</dd><dt>선택 묶음</dt><dd id="hayakuColdStartBundleCount">-</dd><dt>예상 기본 호출</dt><dd id="hayakuColdStartCallCount">-</dd><dt>추가 복구 허용량</dt><dd>설정에 따른 묶음별 제한 · 실패한 턴은 1회 자동 재시도</dd></dl><div class="cluster" style="margin-top:12px"><button id="runHayakuNativeColdStart" class="btn btn--primary" type="button">Cold Start 실행…</button><button id="cancelHayakuNativeColdStart" class="btn" type="button">중단 요청</button></div></div></div></section>
         <div class="grid g2"><div class="card"><h2 class="card__title">자동 복구</h2><p class="card__desc">설정 탭과 같은 값입니다 (한 곳에서만 편집).</p><div class="setting"><div><div class="setting__name">afterRequest 자동 복구</div><div class="setting__desc">정상 응답 처리 안에서 현재 누락/불가 패킷을 1회 복구합니다. 유일한 자동 복구 단계이며, 실패하거나 건너뛴 턴은 Recovery Journal에 남아 아래 수동 복구를 기다립니다.</div></div><span class="badge" id="auto-after" aria-live="polite">설정 확인 중</span></div><button class="linkbtn" id="hayakuRecoverySettingsLink" type="button" data-hayaku-viewer-goto="settings" data-go-sub="safe">설정에서 변경 →</button></div><div class="card"><h2 class="card__title">기억 복원 · Portable JSON</h2><p class="card__desc">같은 채팅은 교체 복원, 다른 채팅은 이사/복사 모드만 허용됩니다. 작업 전 대상 기억을 자동 백업합니다.</p><div data-portable-backup-host="hayaku_locator_continuity"></div></div></div>
         <section class="card" aria-labelledby="hayakuMaintenanceHeading"><h2 id="hayakuMaintenanceHeading" class="card__title">상태 점검 및 자동 복구</h2><p class="card__desc">로컬·서버 모드에서 완료된 턴의 패킷과 원장 결속을 검사합니다. 기존 패킷으로 결속을 복구하고, 기록이 없는 채팅은 콜드스타트, 사용 중 빠진 턴은 누락 복구로 연결합니다.</p><div class="cluster"><button id="hayakuMaintenanceRun" class="btn btn--primary" type="button">상태 점검 및 자동 복구</button><button id="hayakuSafeHealthInspect" class="btn" type="button">읽기 전용 검사</button></div><p id="hayakuSafeHealthStatus" role="status">점검과 결속 복구는 모델 호출 없이 진행됩니다. 기억 생성이 필요하면 대상 턴과 호출 한도를 보여준 뒤 Other Ax 분석을 시작합니다. 사용자 제외 턴과 기존 기억은 보존합니다.</p><details class="fold"><summary>고급 도구 · 메시지 캐시</summary><div class="fold__body"><div class="cluster"><button id="hayakuSafeHealthPreview" class="btn" type="button">캐시 복구 미리보기</button><button id="hayakuSafeHealthApply" class="btn" type="button" disabled>캐시 복구</button></div><p id="hayakuDerivedCacheStatus" role="status">로컬 메시지 리비전 캐시 전용입니다. 원문·패킷·원장은 변경하지 않습니다.</p></div></details></section>
@@ -62561,7 +62612,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               <div id="hayakuOverviewHealth" class="banner banner--danger"><div class="banner__icon">${hayakuMockupIcon('alert')}</div><div><b id="hayakuOverviewHealthTitle">현재 채팅 원장을 확인하고 있습니다.</b><span id="hayakuOverviewHealthCopy">데이터를 변경하지 않고 현재 채팅의 원장 상태를 읽습니다.</span><small id="hayakuOverviewAuxiliaryStatus" role="status" aria-live="polite">Other Ax는 비용 동의 후 테스트합니다.</small></div><div class="cluster"><span id="hayakuOverviewCoverageBadge" class="badge">패킷 연결률 미확인</span><button type="button" class="btn btn--sm" data-hayaku-auxiliary-test>Other Ax 연결 테스트</button></div></div>
               <div id="hayakuOverviewFailBox" class="card fail-box"><div class="empty"><b>원장을 읽지 못해 수치와 노선도를 표시하지 않습니다.</b><span>정상 수치를 그대로 보여주지 않습니다. 다시 대조해 현재 채팅 범위를 확인하세요.</span></div></div>
               <div class="metric-row" id="hayakuOverviewMetrics"><div class="card card--tight"><div class="label">패킷 원장</div><div class="stat__value"><span id="hayakuOverviewPackets">-</span><small style="font-size:16px"> / <span id="hayakuOverviewPacketsDenominator">-</span></small></div><div class="stat__meta">활성·영구 / 전체 레코드</div></div><div class="card card--tight"><div class="label">기억이 연결된 턴</div><div class="stat__value"><span id="hayakuOverviewCoverage">-</span><small style="font-size:16px"> / <span id="hayakuOverviewCoverageDenominator">-</span></small></div><div class="stat__meta">패킷 보유 / 완료 U+A</div></div><div class="card card--tight"><div class="label">복구 대기</div><div class="stat__value" id="hayakuOverviewJournal">-</div><div class="stat__meta" id="hayakuOverviewJournalMeta">Recovery Journal 확인 중</div></div><div class="card card--tight"><div class="label">이번 회상</div><div class="stat__value" id="hayakuOverviewRecallCount">0</div><div class="stat__meta" id="hayakuOverviewRecallMeta">이번 실행 기록 없음</div></div></div>
-              <div class="card" id="hayakuOverviewRouteCard"><div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="packets" type="button">전체 기록 →</button></div><div id="hayakuContinuityLine" class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div><div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div></div>
+              <div class="card" id="hayakuOverviewRouteCard"><div class="card__head"><div><h2 class="card__title">연속성 노선도</h2><p class="card__desc">최근 24턴. 점을 누르면 해당 패킷(또는 점검 화면)으로 이동합니다.</p></div><div class="cluster"><button class="btn btn--sm" data-hayaku-open-tag-filter type="button" title="분석에서 뺄 태그와 표식을 정합니다">원문 태그 필터</button><button class="btn btn--sm" data-hayaku-viewer-goto="packets" type="button">전체 기록 →</button></div></div><div id="hayakuContinuityLine" class="route" tabindex="0" aria-label="최근 24턴 연속성 노선도"><div class="route__track" id="route"></div></div><div class="legend"><span><i></i>패킷 연결됨</span><span><i class="m"></i>누락</span><span><i class="w"></i>검토 대기</span><span><i class="f"></i>복구 실패</span><span><i class="s"></i>사용자 제외</span></div></div>
               <div class="dash" id="hayakuOverviewCards"><div class="card"><div class="card__head"><div><h2 class="card__title">이번에 떠올린 기억</h2><p class="card__desc">현재 입력에 실제로 전달된 기억</p></div><span class="badge badge--ok" id="hayakuOverviewRecallBadge">0개 · -</span></div><div id="hayakuOverviewRecallRows"><div class="empty"><span>이번 실행 회상을 확인하는 중입니다.</span></div></div></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 작동</h2><p class="card__desc">현재 실행의 주요 이벤트</p></div><button class="btn btn--sm" data-hayaku-viewer-goto="logs" type="button">전체 로그</button></div><div id="hayakuOverviewActivity"><div class="empty"><span>작업 로그를 확인하는 중입니다.</span></div></div></div></div>
             </div>
           </section>${packetPage}${scopePage}${recoveryPage}${serverPage}${settingsPage}${logsPage}

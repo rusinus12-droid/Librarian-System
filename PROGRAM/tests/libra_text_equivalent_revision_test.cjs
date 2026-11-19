@@ -128,6 +128,8 @@ const withStatus = hp => `${BODY}\n\n<status-window>HP ${hp} · 위치: 침실</
 
 (async () => {
   await microCase();
+  await microCase({rules: STATUS_RULES, label: 'illustration-with-saved-rules'});
+  await microCase({first: BODY, rawOnly: `${BODY}\n\n[상태창: HP 100]`, label: 'line-bounded module block'});
   await microCase({rules: STATUS_RULES, first: withStatus(10), rawOnly: withStatus(9), label: 'user-ignored tag'});
   // The tag existed before any rule for it; adding the rule keeps the turn's analysis.
   await microCase({first: withStatus(10), rulesAfter: STATUS_RULES, label: 'tag-rule-added'});

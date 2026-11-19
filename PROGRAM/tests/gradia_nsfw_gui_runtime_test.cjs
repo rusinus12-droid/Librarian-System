@@ -4,7 +4,7 @@ const {gradia,wait}=require('./fixtures/companion_gui_fixture.cjs');
 const KEY='serial_gradation_agents_for_rp:runtime_settings:v2';
 test('visible NSFW selector saves, reopens, cancels and stays synchronized with existing response controls',async()=>{
  const f=await gradia();
- const select=()=>f.doc.querySelector('[data-detail="main"] select[data-existing-response-field="nsfwMode"]');
+ const select=()=>f.doc.querySelector('section[data-page="writing"] select[data-existing-response-field="nsfwMode"]');
  const saved=()=>JSON.parse(f.store.get(KEY)).settings;
  const change=async mode=>{
   select().value=mode;select().dispatchEvent(new f.w.Event('change',{bubbles:true}));
@@ -25,7 +25,7 @@ test('visible NSFW selector saves, reopens, cancels and stays synchronized with 
   const enabled=f.doc.querySelector('[data-existing-response-field="nsfwGuidanceEnabled"]');enabled.click();await wait(()=>!f.doc.querySelector('#savebar [data-revert]').disabled,'NSFW toggle dirty state');await save();
   assert.equal(saved().nsfw_guidance_enabled,'false');
   await change('soft');await save();assert.equal(saved().nsfw_mode,'soft');assert.equal(saved().nsfw_guidance_enabled,'true');
-  const injectFinal=()=>f.doc.querySelector('[data-detail="main"] input[data-existing-response-field="nsfwInjectFinalRequest"]');
+  const injectFinal=()=>f.doc.querySelector('section[data-page="writing"] input[data-existing-response-field="nsfwInjectFinalRequest"]');
   assert.equal(injectFinal().checked,false);assert.equal(injectFinal().disabled,false);
   injectFinal().click();await wait(()=>[...f.doc.querySelectorAll('[data-existing-response-field="nsfwInjectFinalRequest"]')].every(c=>c.checked)&&!f.doc.querySelector('#savebar [data-revert]').disabled,'NSFW inject final synchronize');
   await save();assert.equal(saved().nsfw_inject_final_request,'true');assert.equal(injectFinal().checked,true);

@@ -191,7 +191,7 @@ async function syntheticPortableEnvelope(){
     for(const [group,section] of settingsRoutes){
       await settingsPage.locator('.setnav button').filter({hasText:group}).click();
       await page.waitForTimeout(30);
-      if(!['ai','memory','references','server','state'].includes(section)) await settingsPage.locator('.tabs button').filter({hasText:({ai:'AI 연결',embedding:'임베딩 연결',memory:'성능 프리셋',pipeline:'기억 분석',logs:'기록 보관소',references:'참고 자료',source_edits:'분석할 내용',server:'서버 · 저장',recovery:'백업 · 복구',transfer:'데이터 이동',state:'현재 상태 적용',general:'일반 · 진단'})[section]}).click();
+      if(!['ai','memory','references','server','state'].includes(section)) await settingsPage.locator('.tabs button').filter({hasText:({ai:'AI 연결',embedding:'임베딩 연결',memory:'성능 프리셋',pipeline:'기억 분석',logs:'기록 보관소',references:'참고 자료',source_edits:'원문 태그 필터',server:'서버 · 저장',recovery:'백업 · 복구',transfer:'데이터 이동',state:'현재 상태 적용',general:'일반 · 진단'})[section]}).click();
       await page.waitForFunction(value=>document.querySelector('.page[data-page="settings"] [data-product-settings-section]')?.getAttribute('data-product-settings-section')===value,section);
       assert.equal(await settingsPage.locator('[data-product-settings-section]').getAttribute('data-product-settings-section'),section,`settings section ${section} remains reachable`);
       const host=settingsPage.locator(`[data-product-settings-section="${section}"]`);

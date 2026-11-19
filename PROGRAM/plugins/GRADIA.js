@@ -1,7 +1,7 @@
 //@name serial_gradation_agents_for_rp
-//@display-name GRADIA v1.1.3
+//@display-name GRADIA v1.1.4
 //@api 3.0
-//@version 1.1.3
+//@version 1.1.4
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
@@ -851,7 +851,7 @@
   };
 
   
-  const PLUGIN_VERSION = '1.1.3';
+  const PLUGIN_VERSION = '1.1.4';
   
   
   
@@ -896,6 +896,8 @@
   
   
   const STORAGE_DRAFT_CHECKPOINTS_KEY = 'serial_gradation_agents_for_rp:draft_checkpoints:v1';
+  // 정사 AIDE preference cards, per chat. A key of its own: a GUI settings save never overwrites it.
+  const STORAGE_INTIMACY_CARDS_KEY = 'serial_gradation_agents_for_rp:intimacy_cards:v1';
   const LOCAL_PROVIDER_SECRETS_KEY = 'serial_gradation_agents_for_rp:provider_secrets:v1';
   
   const LOCAL_BACKEND_HOSTING_TOKEN_KEY = 'serial_gradation_agents_for_rp:backend_hosting_token:v1';
@@ -1216,6 +1218,15 @@
       domainQuery: 'health injury wound illness sick fever cold flu pain medicine treatment recovery period cycle menstruation pregnancy contraception body condition fatigue 건강 부상 상처 질병 감기 독감 열 통증 약 치료 회복 생리 월경 주기 임신 피임 몸 상태 피로',
       weights: Object.freeze({ current: 0.34, terminal: 0.16, identity: 0.24, domain: 0.14, existing: 0.05, route: 0.04, source: 0.02, priority: 0.01 })
     }),
+    aide_intimacy: Object.freeze({
+      label: 'Intimacy AIDE',
+      topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
+      absoluteFloor: 0.08,
+      relativeFloor: 0.25,
+      identityBypass: 0.80,
+      domainQuery: 'sex intimacy lover desire taste preference position foreplay afterplay kiss caress body sensitive experience virgin shy dominant submissive 성교 정사 연인 욕망 취향 선호 체위 전희 후희 키스 애무 몸 성감대 경험 처녀 수줍음 주도 순종',
+      weights: Object.freeze({ current: 0.34, terminal: 0.16, identity: 0.24, domain: 0.14, existing: 0.05, route: 0.04, source: 0.02, priority: 0.01 })
+    }),
     aide_forced_bond: Object.freeze({
       label: 'Forced Bond AIDE',
       topK: DEFAULT_STAGE_LORE_RERANK_TOP_K,
@@ -1233,7 +1244,7 @@
   const SKILL_PRIORITY_MIN = 0;
   const SKILL_PRIORITY_MAX = 200;
   const DEFAULT_CUSTOM_SKILL_PRIORITY = 45;
-  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_body_state', 'aide_forced_bond', 'aide_world_dynamics']);
+  const SKILL_STAGE_IDS = Object.freeze(['shadow_act', 'aide_character', 'aide_world', 'aide_plot', 'aide_body_state', 'aide_forced_bond', 'aide_world_dynamics', 'aide_intimacy']);
   const MANUAL_SKILL_MAX_CHARS = 24000;
   const MANUAL_SKILL_INPUT_SHARE = 0.20;
   const MANUAL_SKILL_MAX_PER_STAGE = 3;
@@ -1769,7 +1780,8 @@
     Object.freeze({ id: 'aide_plot', label: '플롯 AIDE', description: '현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검하고 직전 초안을 수정합니다.' }),
     Object.freeze({ id: 'aide_body_state', label: '상태 AIDE', description: '인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 인물 AIDE의 하위 AIDE로, 별도 호출 없이 인물 AIDE와 함께 실행됩니다.' }),
     Object.freeze({ id: 'aide_forced_bond', label: '억결 AIDE', description: '페르소나 중심의 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 최근 감정 신호를 따라 장면에 엮고, 다른 AIDE의 관계 검증을 모아 이번 턴의 관계 판독을 정합니다. 플롯 AIDE의 하위 AIDE로, 별도 호출 없이 플롯 AIDE와 함께 실행됩니다.' }),
-    Object.freeze({ id: 'aide_world_dynamics', label: '세계 동역학 AIDE', description: '이미 움직이기 시작한 장면 밖의 일(명령·추격·기한·소문·기관의 절차)이 장면이 다른 곳을 보는 동안에도 계속 진행되게 합니다. 근거가 있는 움직임만 간접 경로로 드러내며, 세계관 AIDE의 하위 AIDE로, 별도 호출 없이 세계관 AIDE와 함께 실행됩니다.' })
+    Object.freeze({ id: 'aide_world_dynamics', label: '세계 동역학 AIDE', description: '이미 움직이기 시작한 장면 밖의 일(명령·추격·기한·소문·기관의 절차)이 장면이 다른 곳을 보는 동안에도 계속 진행되게 합니다. 근거가 있는 움직임만 간접 경로로 드러내며, 세계관 AIDE의 하위 AIDE로, 별도 호출 없이 세계관 AIDE와 함께 실행됩니다.' }),
+    Object.freeze({ id: 'aide_intimacy', label: '정사 AIDE', description: '성교 장면에 들어서면 전희·성교·절정·후희를 단계별로 구체적이고 정확하게 묘사하게 합니다. 인물마다 로어로 추정한 선호(좋아하는·싫어하는 체위, 단계별 선호와 진행 방식)를 채팅별 카드로 남겨 따릅니다. NSFW 지침이 켜져 있을 때만 실행되며, 인물 AIDE의 하위 AIDE로 별도 호출 없이 인물 AIDE와 함께 실행됩니다.' })
   ]);
   
   const INPUT_ASSIST_STAGE_DEF = Object.freeze({
@@ -2053,6 +2065,8 @@
     const entry = npcDispositionInPlay(settings);
     return !!entry.default || entry.npcs.length > 0;
   };
+  // Who needs the run's alias index of people: every extension AIDE and NPC disposition.
+  const sceneEntityIndexNeeded = (settings = {}) => activeExtensionAideStages(settings).length > 0 || npcDispositionActive(settings);
   // Extension AIDEs: optional stages beyond the core character/world/plot ladder. Each
   // one declares where it runs, when it is active (including writing-mode gates), the
   // guidance it adds to every draft stage, the structured output fields it asks for, and
@@ -2065,7 +2079,7 @@
       placement: 'before_plot',
       rank: 5,
       isActive: settings => worldDynamicsStageActive(settings),
-      stageBlock: (stageName, recent, settings, ledger) => worldDynamicsStageBlock(stageName, recent, settings, ledger),
+      stageBlock: (stageName, recent, settings, ledger, phase) => worldDynamicsStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => worldDynamicsJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordWorldDynamicsOutput(ledger, stageName, parsed, settings)
     }),
@@ -2074,9 +2088,18 @@
       placement: 'before_plot',
       rank: 10,
       isActive: settings => bodyStateStageActive(settings),
-      stageBlock: (stageName, recent, settings, ledger) => bodyStateStageBlock(stageName, recent, settings, ledger),
+      stageBlock: (stageName, recent, settings, ledger, phase) => bodyStateStageBlock(stageName, recent, settings, ledger, phase),
       jsonProperties: (stageName, settings) => bodyStateJsonProperties(stageName, settings),
       recordOutput: (ledger, stageName, parsed, settings) => recordBodyStateOutput(ledger, stageName, parsed, settings)
+    }),
+    // The act comes after body state (a hurt or pregnant body still applies inside it).
+    aide_intimacy: Object.freeze({
+      placement: 'before_plot',
+      rank: 15,
+      isActive: settings => intimacyStageActive(settings),
+      stageBlock: (stageName, recent, settings, ledger, phase) => intimacyStageBlock(stageName, recent, settings, ledger, phase),
+      jsonProperties: (stageName, settings) => intimacyJsonProperties(stageName, settings),
+      recordOutput: (ledger, stageName, parsed, settings) => recordIntimacyOutput(ledger, stageName, parsed, settings)
     }),
     aide_forced_bond: Object.freeze({
       placement: 'before_plot',
@@ -2111,6 +2134,7 @@
   const EXTENSION_AIDE_PARENT = Object.freeze({
     aide_world_dynamics: 'aide_world',
     aide_body_state: 'aide_character',
+    aide_intimacy: 'aide_character',
     aide_forced_bond: 'aide_plot'
   });
   const coreAideRuns = (stageId, settings = {}) => {
@@ -4003,6 +4027,9 @@ ${BIANCA_PERSONA_TEXT}`;
     bodyStateReadings: {},
     bodyStateVerdicts: {},
     worldDynamicsReadings: {},
+    intimacyReadings: {},
+    // 정사 AIDE preference cards: loaded from storage once, then written through on change.
+    intimacyCards: null,
     last: null,
     lastAuxiliarySkip: null,
     lastBeforeContext: null,
@@ -4125,6 +4152,7 @@ ${BIANCA_PERSONA_TEXT}`;
     aide_plot: 'Plot AIDE: check unresolved threads, foreshadowing, and causal consequences against it. Do not resolve or advance a remembered thread beyond this scene.',
     aide_body_state: 'Body State AIDE: read dated health, injury, illness, cycle, and pregnancy records as evidence for each character’s current body state. Missing records stay missing.',
     aide_world_dynamics: 'World Dynamics AIDE: read remembered orders, pursuits, deadlines, promises, and faction or institution moves as evidence of what is already in motion off-scene. A movement with no remembered cause does not exist.',
+    aide_intimacy: 'Intimacy AIDE: read remembered intimate history, stated tastes, and limits of each participant as evidence for their preferences and for continuity inside the encounter. It never licenses inventing a past encounter.',
     aide_forced_bond: 'Forced Bond AIDE: read remembered history between the bond parties as evidence for this turn’s bond reading. It never licenses inventing a shared past.'
   });
   const libEvidenceStageGuidance = (stageName, settings = {}) => {
@@ -5474,7 +5502,7 @@ ${BIANCA_PERSONA_TEXT}`;
     'max_previous_stage_chars', 'max_injection_chars', 'gradation_mode', 'output_mode',
     'internal_draft_language', 'built_in_style_preset', 'injection_position', 'failure_mode',
     'stage_timeout_ms', 'provider_presets_risuai_enabled', 'default_preset',
-    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset', 'body_state_aide_preset', 'world_dynamics_aide_preset',
+    'shadow_act_preset', 'character_aide_preset', 'world_aide_preset', 'plot_aide_preset', 'forced_bond_aide_preset', 'body_state_aide_preset', 'world_dynamics_aide_preset', 'intimacy_aide_preset',
     'arc_director_enabled', 'arc_director_preset', 'arc_horizon_turns', 'arc_auto_replan', 'arc_novelty_level',
     'input_assist_preset', 'user_intent_ooc_preset', 'input_assist_mode', 'input_assist_scope',
     'input_assist_target_chars', 'input_assist_confirmation_mode', 'input_assist_lore_activation_mode',
@@ -5482,10 +5510,10 @@ ${BIANCA_PERSONA_TEXT}`;
     'lore_reranker_top_k', 'skill_router_enabled', 'skill_router_top_k',
     'skill_router_references', 'selected_module_lore_ids', 'excluded_module_lore_ids', 'excluded_character_lore_ids',
     'aide_stage_order', 'enable_shadow_act',
-    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'enable_body_state_aide', 'enable_world_dynamics_aide', 'shadow_prompt_extra',
-    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'body_state_prompt_extra', 'world_dynamics_prompt_extra', 'shadow_prompt_mode',
-    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'body_state_prompt_mode', 'world_dynamics_prompt_mode', 'shadow_prompt_custom',
-    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'body_state_prompt_custom', 'world_dynamics_prompt_custom', 'debug_log',
+    'enable_character_aide', 'enable_world_aide', 'enable_plot_aide', 'enable_forced_bond_aide', 'enable_body_state_aide', 'enable_world_dynamics_aide', 'enable_intimacy_aide', 'shadow_prompt_extra',
+    'character_prompt_extra', 'world_prompt_extra', 'plot_prompt_extra', 'forced_bond_prompt_extra', 'body_state_prompt_extra', 'world_dynamics_prompt_extra', 'intimacy_prompt_extra', 'shadow_prompt_mode',
+    'character_prompt_mode', 'world_prompt_mode', 'plot_prompt_mode', 'forced_bond_prompt_mode', 'body_state_prompt_mode', 'world_dynamics_prompt_mode', 'intimacy_prompt_mode', 'shadow_prompt_custom',
+    'character_prompt_custom', 'world_prompt_custom', 'plot_prompt_custom', 'forced_bond_prompt_custom', 'body_state_prompt_custom', 'world_dynamics_prompt_custom', 'intimacy_prompt_custom', 'debug_log',
     'shadow_include_risu_context', 'shadow_risu_context_max_chars',
     'enable_gui', 'quick_profile',
     'target_draft_min_chars', 'target_draft_max_chars', 'writer_enabled',
@@ -6514,7 +6542,8 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_plot: stageBase('aide_plot', flat.enable_plot_aide ?? flat.enablePlotAide, flat.plot_aide_preset ?? flat.plotAidePreset),
         aide_forced_bond: stageBase('aide_forced_bond', flat.enable_forced_bond_aide ?? flat.enableForcedBondAide ?? false, flat.forced_bond_aide_preset ?? flat.forcedBondAidePreset),
         aide_body_state: stageBase('aide_body_state', flat.enable_body_state_aide ?? flat.enableBodyStateAide ?? false, flat.body_state_aide_preset ?? flat.bodyStateAidePreset),
-        aide_world_dynamics: stageBase('aide_world_dynamics', flat.enable_world_dynamics_aide ?? flat.enableWorldDynamicsAide ?? false, flat.world_dynamics_aide_preset ?? flat.worldDynamicsAidePreset)
+        aide_world_dynamics: stageBase('aide_world_dynamics', flat.enable_world_dynamics_aide ?? flat.enableWorldDynamicsAide ?? false, flat.world_dynamics_aide_preset ?? flat.worldDynamicsAidePreset),
+        aide_intimacy: stageBase('aide_intimacy', flat.enable_intimacy_aide ?? flat.enableIntimacyAide ?? false, flat.intimacy_aide_preset ?? flat.intimacyAidePreset)
       },
       prompts: {
         before: {
@@ -6524,7 +6553,8 @@ ${BIANCA_PERSONA_TEXT}`;
           aide_plot: { mode: flat.plot_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.plot_prompt_custom || '', extraPrompt: flat.plot_prompt_extra || '' },
           aide_forced_bond: { mode: flat.forced_bond_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.forced_bond_prompt_custom || '', extraPrompt: flat.forced_bond_prompt_extra || '' },
           aide_body_state: { mode: flat.body_state_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.body_state_prompt_custom || '', extraPrompt: flat.body_state_prompt_extra || '' },
-          aide_world_dynamics: { mode: flat.world_dynamics_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.world_dynamics_prompt_custom || '', extraPrompt: flat.world_dynamics_prompt_extra || '' }
+          aide_world_dynamics: { mode: flat.world_dynamics_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.world_dynamics_prompt_custom || '', extraPrompt: flat.world_dynamics_prompt_extra || '' },
+          aide_intimacy: { mode: flat.intimacy_prompt_custom ? 'replace' : 'builtin', customPrompt: flat.intimacy_prompt_custom || '', extraPrompt: flat.intimacy_prompt_extra || '' }
         }
       }
     };
@@ -6551,7 +6581,8 @@ ${BIANCA_PERSONA_TEXT}`;
       aide_plot: { enabled: 'enable_plot_aide', preset: 'plot_aide_preset', defaultEnabled: 'true' },
       aide_forced_bond: { enabled: 'enable_forced_bond_aide', preset: 'forced_bond_aide_preset', defaultEnabled: 'false' },
       aide_body_state: { enabled: 'enable_body_state_aide', preset: 'body_state_aide_preset', defaultEnabled: 'false' },
-      aide_world_dynamics: { enabled: 'enable_world_dynamics_aide', preset: 'world_dynamics_aide_preset', defaultEnabled: 'false' }
+      aide_world_dynamics: { enabled: 'enable_world_dynamics_aide', preset: 'world_dynamics_aide_preset', defaultEnabled: 'false' },
+      aide_intimacy: { enabled: 'enable_intimacy_aide', preset: 'intimacy_aide_preset', defaultEnabled: 'false' }
     };
     const refs = legacy.risuEnabled
       ? defaultRisuReferencesForStage('shadow_act')
@@ -7065,7 +7096,8 @@ ${BIANCA_PERSONA_TEXT}`;
       ['aide_plot', 'plot_prompt_custom', 'plot_prompt_extra'],
       ['aide_forced_bond', 'forced_bond_prompt_custom', 'forced_bond_prompt_extra'],
       ['aide_body_state', 'body_state_prompt_custom', 'body_state_prompt_extra'],
-      ['aide_world_dynamics', 'world_dynamics_prompt_custom', 'world_dynamics_prompt_extra']
+      ['aide_world_dynamics', 'world_dynamics_prompt_custom', 'world_dynamics_prompt_extra'],
+      ['aide_intimacy', 'intimacy_prompt_custom', 'intimacy_prompt_extra']
     ];
     for (const [stage, customArg, extraArg] of beforePromptSpec) {
       const custom = mergeCreativeDirectionText(
@@ -7132,6 +7164,7 @@ ${BIANCA_PERSONA_TEXT}`;
         aide_forced_bond: compact(await slotCfg('aide_forced_bond', 'preset', 'forced_bond_aide_preset', ''), 120),
         aide_body_state: compact(await slotCfg('aide_body_state', 'preset', 'body_state_aide_preset', ''), 120),
         aide_world_dynamics: compact(await slotCfg('aide_world_dynamics', 'preset', 'world_dynamics_aide_preset', ''), 120),
+        aide_intimacy: compact(await slotCfg('aide_intimacy', 'preset', 'intimacy_aide_preset', ''), 120),
         [WRITER_STAGE_ID]: compact(await slotCfg(WRITER_STAGE_ID, 'preset', 'writer_preset', ''), 120),
         [USER_INTENT_AIDE_STAGE_ID]: compact(
           await slotCfg(
@@ -7161,6 +7194,7 @@ ${BIANCA_PERSONA_TEXT}`;
       enableForcedBondAide: asBool(await slotCfg('aide_forced_bond', 'enabled', 'enable_forced_bond_aide', 'false'), false),
       enableBodyStateAide: asBool(await slotCfg('aide_body_state', 'enabled', 'enable_body_state_aide', 'false'), false),
       enableWorldDynamicsAide: asBool(await slotCfg('aide_world_dynamics', 'enabled', 'enable_world_dynamics_aide', 'false'), false),
+      enableIntimacyAide: asBool(await slotCfg('aide_intimacy', 'enabled', 'enable_intimacy_aide', 'false'), false),
       bodyStateReproduction: asBool(await runtimeCfg('body_state_reproduction', 'false'), false),
       bodyStateCards: normalizeBodyStateCardMap(await runtimeCfg('body_state_cards', {})),
       forcedBondForceAppearance: asBool(await runtimeCfg('forced_bond_force_appearance', 'true'), true),
@@ -7175,6 +7209,7 @@ ${BIANCA_PERSONA_TEXT}`;
       forcedBondExtra: beforeExtraPrompts.aide_forced_bond,
       bodyStateExtra: beforeExtraPrompts.aide_body_state,
       worldDynamicsExtra: beforeExtraPrompts.aide_world_dynamics,
+      intimacyExtra: beforeExtraPrompts.aide_intimacy,
       beforeCustomPrompts,
       beforePromptModes,
       beforeExtraPrompts,
@@ -7186,6 +7221,8 @@ ${BIANCA_PERSONA_TEXT}`;
       agentSlots,
       promptOverrides
     };
+    // Preference cards live in their own store; read once so every stage this run sees them.
+    try { await loadIntimacyCards(); } catch (error) { warn('[intimacy cards load failed]', error); }
     settings.stageOptions = {};
     for (const def of CONFIGURABLE_STAGE_DEFS) {
       settings.stageOptions[def.id] = normalizeAgentSlotRecord(agentSlots?.[def.id] || {}, {
@@ -7198,6 +7235,7 @@ ${BIANCA_PERSONA_TEXT}`;
                 : def.id === 'aide_forced_bond' ? settings.enableForcedBondAide
                 : def.id === 'aide_body_state' ? settings.enableBodyStateAide
                 : def.id === 'aide_world_dynamics' ? settings.enableWorldDynamicsAide
+                : def.id === 'aide_intimacy' ? settings.enableIntimacyAide
                 : def.id === WRITER_STAGE_ID ? settings.writerEnabled
                   : true,
         preset: settings.stagePresetNames?.[def.id] || '',
@@ -7275,6 +7313,17 @@ ${BIANCA_PERSONA_TEXT}`;
       timeoutMs: resolveStageTimeoutMs(settings, stageName),
       risuRefs: normalized.risu_refs
     };
+  };
+
+  // The current chat Author's Note is one pipeline-wide directive. SHADOW ACT's
+  // reference switch is the master switch; every draft stage and Input Assist read it.
+  const authorNoteMasterEnabled = (settings = {}) =>
+    stageExecutionOptions(settings, 'shadow_act').risuRefs.authorNote !== false;
+  const authorNoteStageIds = () => new Set([...BEFORE_STAGE_DEFS.map(def => def.id), INPUT_ASSIST_STAGE_ID]);
+  const authorNoteRoutedToStage = (stageName = 'shadow_act', refs = {}, settings = {}) => {
+    if (!authorNoteStageIds().has(stageName)) return false;
+    if (stageName === 'shadow_act') return refs?.authorNote !== false;
+    return authorNoteMasterEnabled(settings);
   };
 
   const scopedSettingsForStage = (settings, stageName) => {
@@ -14344,7 +14393,7 @@ ${passage.text || ''}`, 420));
     if (stageName === 'aide_character') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.42 : 0.25;
     if (stageName === 'aide_world' || stageName === 'aide_world_dynamics') return lore.sourceType === 'module' ? 1 : lore.sourceType === 'character' ? 0.34 : 0.25;
     if (stageName === 'aide_plot') return lore.sourceType === 'module' ? 0.72 : lore.sourceType === 'character' ? 0.48 : 0.30;
-    if (stageName === 'aide_body_state' || stageName === 'aide_forced_bond') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.45 : 0.25;
+    if (stageName === 'aide_body_state' || stageName === 'aide_forced_bond' || stageName === 'aide_intimacy') return lore.sourceType === 'character' ? 1 : lore.sourceType === 'module' ? 0.45 : 0.25;
     return 0.55;
   };
 
@@ -15797,19 +15846,24 @@ ${passage.text || ''}`, 420));
     const source = snapshot || await loadRisuContextSnapshot(settings, messages, retrievalRecent);
     let requestContinuityEntityIndex = null;
     const getRequestContinuityEntityIndex = () => requestContinuityEntityIndex || (requestContinuityEntityIndex = buildContinuityEntityIndex(source));
-    if (activeExtensionAideStages(settings).length) Runtime.activeEntityIndex = getRequestContinuityEntityIndex();
+    // Scene people come from this index. NPC disposition is not an extension AIDE (it rides along
+    // with them and is on whenever the user set one), so it needs the index on its own account:
+    // without it a group card's name was the only "person" in the scene and the NPCs actually
+    // present got no default stance.
+    if (sceneEntityIndexNeeded(settings)) Runtime.activeEntityIndex = getRequestContinuityEntityIndex();
     if (bodyStateStageActive(settings)) Runtime.activeProfileGenders = buildExtensionProfileGenders(source);
     const authorNote = source.authorNote || resolveCurrentChatAuthorNote(source?.chatInfo?.chat, source?.cbsContext);
-    const authorNoteEnabled = refs.authorNote !== false;
-    const authorNoteAppliesHere = authorNoteEnabled && (settings?.activeStageName || 'shadow_act') === 'shadow_act';
+    const authorNoteStage = settings?.activeStageName || 'shadow_act';
+    const authorNoteAppliesHere = authorNoteRoutedToStage(authorNoteStage, refs, settings);
+    const authorNoteEnabled = authorNoteStage === 'shadow_act' ? refs.authorNote !== false : authorNoteMasterEnabled(settings);
     recent.authorNote = authorNoteAppliesHere ? authorNote.content : '';
     recent.authorNoteMeta = {
       ...authorNote,
       content: undefined,
-      routedToStage: authorNoteAppliesHere ? 'shadow_act' : 'none',
+      routedToStage: authorNoteAppliesHere ? authorNoteStage : 'none',
       enabled: authorNoteEnabled,
-      directAideRouting: false,
-      inheritedByAidesThroughDraft: true
+      directAideRouting: authorNoteAppliesHere && authorNoteStage !== 'shadow_act',
+      inheritedByAidesThroughDraft: false
     };
     applyActualChatContextToRecent(recent, source.actualChatContext, settings);
     recent.terminalVisibleScene = extractInputAssistTerminalTail(
@@ -15955,7 +16009,7 @@ ${passage.text || ''}`, 420));
       truncated: authorNote.truncated === true,
       authorityRank: 'after_current_input',
       appliedBy: 'shadow_act',
-      routedToStage: authorNoteAppliesHere ? 'shadow_act' : 'none',
+      routedToStage: authorNoteAppliesHere ? authorNoteStage : 'none',
       enabled: authorNoteEnabled,
       directAideRouting: false,
       inheritedByAidesThroughDraft: true
@@ -16455,16 +16509,16 @@ ${passage.text || ''}`, 420));
 
     const rerankerStage = loreRerankerStageName(stageName);
     const sharedAuthorNote = shared.authorNote || source.authorNote || resolveCurrentChatAuthorNote(source?.chatInfo?.chat, source?.cbsContext);
-    const authorNoteEnabled = refs.authorNote !== false;
-    const authorNoteAppliesHere = authorNoteEnabled && stageName === 'shadow_act';
+    const authorNoteAppliesHere = authorNoteRoutedToStage(stageName, refs, settings);
+    const authorNoteEnabled = stageName === 'shadow_act' ? refs.authorNote !== false : authorNoteMasterEnabled(settings);
     recent.authorNote = authorNoteAppliesHere ? sharedAuthorNote.content : '';
     recent.authorNoteMeta = {
       ...sharedAuthorNote,
       content: undefined,
-      routedToStage: authorNoteAppliesHere ? 'shadow_act' : 'none',
+      routedToStage: authorNoteAppliesHere ? stageName : 'none',
       enabled: authorNoteEnabled,
-      directAideRouting: false,
-      inheritedByAidesThroughDraft: true
+      directAideRouting: authorNoteAppliesHere && stageName !== 'shadow_act',
+      inheritedByAidesThroughDraft: false
     };
 
     const sharedLorePool = Array.isArray(shared.loreRerankPool)
@@ -16686,7 +16740,7 @@ ${passage.text || ''}`, 420));
         truncated: sharedAuthorNote.truncated === true,
         authorityRank: 'after_current_input',
         appliedBy: 'shadow_act',
-        routedToStage: authorNoteAppliesHere ? 'shadow_act' : 'none',
+        routedToStage: authorNoteAppliesHere ? stageName : 'none',
         enabled: authorNoteEnabled,
         directAideRouting: false,
         inheritedByAidesThroughDraft: true
@@ -17990,8 +18044,22 @@ ${passage.text || ''}`, 420));
         'Keep conditions consistent over time: no instant recovery, no forgotten injury.',
         'Do not use a body-state change as the ending of the turn.'
       ]),
-      example: '세라의 감기는 대사보다 몸짓으로 드러나게 해줘. 기침은 가끔만, 대신 오래 서 있지 못하고 자꾸 기대게. 하준은 그걸 눈치채도 바로 말하지 않게.',
+      example: '아픈 인물의 상태는 대사보다 몸짓으로 드러나게 해줘. 증상은 가끔만 보이고, 대신 오래 서 있지 못하거나 자꾸 기대는 식으로. 주변 인물은 눈치채도 바로 말하지 않게.',
       placeholder: '예: 부상은 행동 제약으로 보여주고, 아픈 티를 대사로 설명하지 마.'
+    }),
+    aide_intimacy: Object.freeze({
+      focus: '성교 장면이 진행 중일 때 전희·성교·절정·후희를 어떤 속도와 밀도로 묘사할지, 인물별 선호(체위·단계별 취향·진행 방식)를 어떻게 드러낼지 정합니다.',
+      adaptation: '넓은 요청을 단계별 묘사 밀도, 단계 이동 속도, 체위 전환 방식, 인물 선호를 드러내는 방식으로 변환합니다.',
+      keyQuestion: '이 인물은 지금 이 단계를 어떻게 원하고, 그 몸은 지금 어떻게 반응할까?',
+      compilationRules: Object.freeze([
+        'Translate the user’s goal into depiction rules for an encounter already under way: how densely each phase is shown, how fast phases advance, and how positions change.',
+        'Keep each character’s preference card in force: liked and disliked positions, whether they enjoy foreplay and afterplay, and how they lead or receive each phase.',
+        'Never start an encounter, supply consent, or erase a refusal or hesitation; every participant is an adult.',
+        'Respect the active writing mode: in RP the persona’s acts, sensations, and climax stay the user’s.',
+        'Do not summarize or fade out the act, and do not end the encounter faster than the input asks.'
+      ]),
+      example: '전희를 길게 묘사하고 삽입은 서두르지 마. 체위를 바꿀 때는 몸을 움직이는 과정을 보여주고, 인물이 싫어하는 체위는 피하거나 망설이게 해줘.',
+      placeholder: '예: 단계마다 감각을 구체적으로, 절정은 서두르지 말고 후희까지 이어지게 해줘.'
     }),
     aide_forced_bond: Object.freeze({
       focus: '페르소나를 중심으로 한 관계가 어떤 계기로, 어떤 속도로 형성되고 움직일지(신뢰·경계·호기심·경쟁·호감·증오 등) 정합니다. 연애는 근거가 있을 때만입니다.',
@@ -18004,8 +18072,8 @@ ${passage.text || ''}`, 420));
         'Respect the active writing mode: in RP the persona’s side stays the user’s, and in scene-staging mode nobody is brought in or given a new act.',
         'Do not resolve or settle a bond in one turn, and do not use an arrival as the ending.'
       ]),
-      example: '이 채팅에서는 페르소나와 세라의 애증을 중심으로 다뤄줘. 서로 필요한 상황에서 원망이 걸리게 하고, 세라가 먼저 다정해지지는 않게 해. 리안은 그걸 보고 질투하는 정도로만.',
-      placeholder: '예: 세라와는 애증, 리안과는 경쟁. 한 턴에 한 관계만 깊게 다뤄줘.'
+      example: '관계는 한 가지 감정으로 정리하지 말고 섞인 채로 다뤄줘. 서로 필요한 상황에서 원망이 걸리게 하고, 상대가 먼저 다정해지지는 않게 해. 주변 인물은 그걸 보고 반응하는 정도로만.',
+      placeholder: '예: 관계는 섞인 감정으로 다루고, 한 턴에 한 관계만 깊게 다뤄줘.'
     })
   });
 
@@ -18030,6 +18098,7 @@ ${passage.text || ''}`, 420));
       `이 영역의 핵심 질문은 “${guide.keyQuestion}”입니다.`,
       `변환 기준: ${guide.adaptation}`,
       '합의된 내용은 이 단계가 무엇을 분석해야 하는지와, 그 분석을 실제 초안에 어떻게 적용해야 하는지를 한 지침으로 묶어 저장합니다.',
+      '이 지침은 모든 채팅에 공통으로 적용됩니다. 특정 채팅에서만 지킬 필수·금지 요소는 RisuAI 작가의 노트에 적어 주세요. 작가의 노트는 모든 초안 단계와 인풋 관리자에 유저 입력 다음 권위로 적용됩니다.',
       '',
       `[${targetDef.label} 창작 지침 예시]`,
       `“${guide.example}”`,
@@ -18111,6 +18180,8 @@ ${passage.text || ''}`, 420));
     'This is a discussion phase, not the compilation phase. Do not output JSON or prematurely present a finalized creative-instruction block.',
     'Reflect the user’s request, surface one meaningful ambiguity or tradeoff when useful, and ask a focused follow-up question if it would materially improve the instruction.',
     'When the direction is sufficiently clear, briefly summarize the agreement and tell the user they can press the creative-instruction generation button. Do not claim that anything has been saved yet.',
+    'SCOPE: a saved creative instruction applies to every chat and character, not only the current one. The RisuAI Author’s Note of the current chat is the chat-scoped place for this story’s required and forbidden elements, and GRADIA applies it to every draft stage and Input Assist with authority right after the user’s input.',
+    'When the user asks for something tied to this chat only (named characters, a specific relationship, a plot point, or a must/forbid rule for this story), say so briefly and suggest putting it in the RisuAI Author’s Note. Offer a general form of the same idea for this stage’s instruction when one exists. If the user still wants it saved here, accept that.',
     'Do not redesign the pipeline, create a new agent, or write RP prose in this conversational reply.',
     'Reflect what you understood. If a material choice is unclear, ask one focused question.',
     'Never treat your own suggestion as an accepted preference until the user confirms it.',
@@ -18151,6 +18222,7 @@ ${passage.text || ''}`, 420));
     'Separate observable immediate responses from hidden long-term feelings: allow clear dialogue and action now, while avoiding forced permanent emotions or relationship outcomes unless explicitly requested.',
     'Do not turn optional stimulus examples into a repetitive checklist that must appear in every reply.',
     'Preserve confirmed parts of the existing instruction unless the user revises or removes them.',
+    'The instruction is global across chats. Phrase confirmed preferences as general rules; keep chat-specific names, relationships, or plot facts only when the user explicitly chose to save them here instead of in the RisuAI Author’s Note.',
     'Write actionable creative guidance, not pipeline architecture, JSON output schemas, model settings, lore database entries, private chain-of-thought, or RP prose.',
     'The instruction augments the built-in stage prompt; it never replaces safety, canon, agency, continuity, or structured-output contracts.',
     'Return one JSON object only with keys: enabled, summary, creative_instruction.',
@@ -18192,9 +18264,20 @@ ${passage.text || ''}`, 420));
     };
   };
 
+  // The legacy User Intent import runs once. Without this marker a SHADOW instruction
+  // the user cleared would be re-imported from the untouched legacy record on every open.
+  const LEGACY_OOC_MIGRATION_MARKER_KEY = 'serial_gradation_agents_for_rp:legacy_ooc_migration:v1';
+  const markLegacyOocMigrationDone = async outcome => {
+    try { await writeObject(LEGACY_OOC_MIGRATION_MARKER_KEY, { done: true, outcome, at: new Date().toISOString() }); } catch (_) {}
+  };
   const migrateLegacyOocToCreativePrompt = async prompts => {
+    const marker = await readObject(LEGACY_OOC_MIGRATION_MARKER_KEY, {});
+    if (marker?.done === true) return { prompts, migrated: false };
     const shadow = normalizePromptRecordEntry(prompts?.before?.shadow_act || {});
-    if (shadow.customPrompt.trim()) return { prompts, migrated: false };
+    if (shadow.customPrompt.trim()) {
+      await markLegacyOocMigrationDone('superseded_by_existing_instruction');
+      return { prompts, migrated: false };
+    }
     const stored = await readObject('serial_gradation_agents_for_rp:writer_designs:v1', {});
     const records = unwrapVersionedStore(stored, 'designs');
     const legacy = Object.values(records || {}).map(value => {
@@ -18205,12 +18288,16 @@ ${passage.text || ''}`, 420));
     const rawInstructions = legacy?.instructions || legacy?.directives || legacy?.rules || [];
     const instructions = (Array.isArray(rawInstructions) ? rawInstructions : [rawInstructions])
       .filter(value => typeof value === 'string').map(value => compact(value, 900)).filter(Boolean).slice(0, 24);
-    if (!instructions.length) return { prompts, migrated: false };
+    if (!instructions.length) {
+      await markLegacyOocMigrationDone('no_legacy_instruction');
+      return { prompts, migrated: false };
+    }
     const purpose = compact(legacy.purpose || legacy.role || legacy.goal || '', 800);
     const instruction = [purpose ? '목표: ' + purpose : '', ...instructions.map(item => '- ' + item)].filter(Boolean).join('\n');
     prompts.before ||= {};
     prompts.before.shadow_act = { ...shadow, mode: 'replace', customPrompt: compact(instruction, 20000) };
     if (!await writePromptOverrides(prompts)) throw new Error('이전 사용자 창작 지침을 보존하지 못했습니다. 원본 자료는 유지됩니다.');
+    await markLegacyOocMigrationDone('migrated');
     syncCreativePromptIntoGui('shadow_act', prompts.before.shadow_act.customPrompt);
     return { prompts, migrated: true };
   };
@@ -18526,13 +18613,21 @@ ${passage.text || ''}`, 420));
       customPrompt: '',
       extraPrompt: ''
     };
-    await writePromptOverrides(context.prompts);
+    if (!await writePromptOverrides(context.prompts)) {
+      const state = ensureCreativeOocState();
+      const reason = `${context.targetDef.label} 창작 지침을 비우지 못했습니다. 저장된 지침은 그대로입니다.`;
+      state.lastError = reason;
+      state.statusText = reason;
+      state.statusState = 'error';
+      throw new Error(reason);
+    }
     syncCreativePromptIntoGui(context.targetStage, '');
     Runtime.settings = null;
     Runtime.settingsLoadedAt = 0;
     const state = ensureCreativeOocState();
     state.summariesByStage[context.targetStage] = '';
     state.revisionsByStage[context.targetStage] = 0;
+    state.lastError = '';
     state.statusText = `${context.targetDef.label} 창작 지침을 비웠습니다.`;
     state.statusState = 'idle';
     clearRequestReuseCache();
@@ -21645,7 +21740,22 @@ ${passage.text || ''}`, 420));
       risuContextMeta = context.meta || risuContextMeta;
       inputAssistContextSnapshot = context.snapshot || null;
     }
-    ;
+    if (authorNoteMasterEnabled(settings) && !text(recent.authorNote || '').trim()) {
+      // References may be off for Input Assist; the Author's Note still applies.
+      const noteSource = inputAssistContextSnapshot || inputAssistStaticSnapshot || null;
+      let noteCbs = noteSource?.cbsContext || scoped.ragCbsContext || null;
+      if (!noteCbs && noteSource?.chatInfo) {
+        try {
+          noteCbs = buildAgentCbsContext({ character: noteSource.character, db: noteSource.db, persona: noteSource.persona, currentChatContext: noteSource.chatInfo });
+        } catch (_) { noteCbs = null; }
+      }
+      const note = noteSource?.authorNote || resolveCurrentChatAuthorNote(noteSource?.chatInfo?.chat, noteCbs);
+      recent.authorNote = text(note?.content || '').trim();
+      recent.authorNoteMeta = { ...(note || {}), content: undefined, routedToStage: recent.authorNote ? INPUT_ASSIST_STAGE_ID : 'none', enabled: true };
+    } else if (!authorNoteMasterEnabled(settings)) {
+      recent.authorNote = '';
+    }
+    const inputAssistAuthorNoteBlock = buildInputAssistAuthorNoteBlock(recent.authorNote, scoped);
     Runtime.lastInputAssistMaterialUsage = buildStageMaterialUsageSnapshot(
       INPUT_ASSIST_STAGE_ID, recent, scoped, null, null
     );
@@ -21673,6 +21783,8 @@ ${passage.text || ''}`, 420));
         original
           ? `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS IN EVERY OPTION]\n${original}`
           : '[CURRENT USER INPUT]\n(no new user action; propose plausible player-controlled actions or an observe/wait option)',
+        '',
+        inputAssistAuthorNoteBlock,
         '',
         recent.risuContext ? `[CONSISTENCY REFERENCES — OPTIONAL IDEA SUPPORT, NOT AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
@@ -21784,6 +21896,7 @@ ${passage.text || ''}`, 420));
           ? `[CONTINUATION REQUEST]\nType: ${continuationCue.kind}\n${continuationCue.preserveSilence ? 'The source input is silence. In Novel mode this is not a player-agency lock; propose authorial continuations that respect the silence as the starting condition.' : 'Continue from the nearest unresolved motion already present.'}`
           : `[CURRENT USER INPUT — RECONSTRUCT AND EXPAND THIS, PRESERVING CORE AUTHOR INTENT ACROSS ALL THREE OPTIONS]\n${original}`,
         '',
+        inputAssistAuthorNoteBlock,
         recent.risuContext ? `[CONSISTENCY REFERENCES — IDENTITY/KNOWLEDGE/SETTING GUARD, NOT USER-CHOICE AUTHORITY]\n${inputAssistLoreBlock(recent.risuContext, scoped)}` : '',
         '',
         '[THREE-PERSPECTIVE CONTRACT]',
@@ -24252,6 +24365,9 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
+      intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
+      intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
+      intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
       fixation: normalizeStringArray(parsed.fixation, 2, 160),
@@ -24689,7 +24805,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       list.forEach((item, order) => pushReference(group, item, order));
     });
 
-    if (stageName === 'shadow_act' && text(recent?.authorNote || '').trim()) {
+    if (text(recent?.authorNote || '').trim()) {
       referenceMaterials.unshift({
         id: `author-note:${text(recent?.authorNoteMeta?.hash || stableDraftHash(recent.authorNote)).trim()}`,
         kind: 'author_note',
@@ -24698,8 +24814,8 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
         sourceType: 'author_note',
         moduleName: '',
         chars: text(recent.authorNote).length,
-        activationRoute: 'direct_shadow_authority',
-        selectionReason: 'direct_shadow_author_note',
+        activationRoute: stageName === 'shadow_act' ? 'direct_shadow_authority' : 'direct_stage_authority',
+        selectionReason: stageName === 'shadow_act' ? 'direct_shadow_author_note' : 'direct_stage_author_note',
         authorityClass: 'author_note',
         protected: true,
         rank: 0,
@@ -25159,6 +25275,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
       reach_check: { type: 'string' },
       agency_check: { type: 'string' }
     });
+    if (stageName === 'aide_intimacy') return closedJsonObject({
+      phase_flow: { type: 'string' },
+      position_continuity: { type: 'string' },
+      preference_fit: { type: 'string' },
+      agency_check: { type: 'string' }
+    });
     if (stageName === 'aide_body_state') return closedJsonObject({
       condition_changes: { type: 'string' },
       reaction_fit: { type: 'string' },
@@ -25278,8 +25400,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const buildLivingCanonAuthorityContract = (settings = {}) => [
     'LIVING CANON AUTHORITY CONTRACT:',
     '- Use prior-agent notes as scoped continuity aids, never as an exhaustive script, canon replacement, or proof by repetition.',
-    '- Authority order: explicit current user decisions/corrections; current user input and declared action; for SHADOW ACT only, the supplied Current Chat Author Note; latest direct narrative facts; exact active setting/lore/system constraints; current same-turn draft as rewrite target; selected stage creative direction; then prior-stage notes as fallible aids.',
-    '- The Current Chat Author Note is a dedicated user directive only when explicitly supplied to SHADOW ACT. Later AIDEs inherit its realized intent through SHADOW ACT’s same-turn draft and must not independently reinterpret, redistribute, or override it.',
+    '- Authority order: explicit current user decisions/corrections; current user input and declared action; the supplied Current Chat Author Note; latest direct narrative facts; exact active setting/lore/system constraints; current same-turn draft as rewrite target; selected stage creative direction; then prior-stage notes as fallible aids.',
+    '- The Current Chat Author Note is a dedicated user directive supplied to every draft stage. SHADOW ACT realizes it first; each AIDE must keep its realization intact and repair any violation of it, without redistributing or overriding it.',
     '- STAGE CREATIVE DIRECTION: custom creative guidance applies only to its selected stage. It may shape tone, focus, pacing, and revision priorities, but it cannot erase an explicit current-turn correction, refusal, boundary, concrete choice, canon fact, or continuity constraint.',
     '- CONVERSATION CONTEXT: the immediately preceding exchanges govern location, staging, wardrobe, mood, and commitments. When they conflict with an older summary, archive entry, or agent plan, the recent conversation wins and the older material is stale.',
     '- CURRENT USER INPUT IS SUPREME. It outranks every note, archive, plan, and prior draft. Never let a lower-ranked source override, soften, or contradict what the current input states or performs.',
@@ -25358,24 +25480,46 @@ Begin directly with the in-world response and finish the complete same-turn draf
     '</ANALYSIS_SOURCE>'
   ].join('\n');
 
-  const buildShadowAuthorNoteAuthorityBlock = (recent = {}, settings = {}) => {
+  const buildAuthorNoteAuthorityBlock = (recent = {}, settings = {}, stageName = 'shadow_act') => {
     const note = text(recent?.authorNote || '').trim();
     if (!note) return '';
     const safeNote = note.replace(/<\/?CURRENT_CHAT_AUTHOR_NOTE\b[^>]*>/gi, '').trim();
     if (!safeNote) return '';
+    const isShadow = stageName === 'shadow_act';
     return [
-      'CURRENT CHAT AUTHOR NOTE — SHADOW ACT SECOND AUTHORITY:',
+      'CURRENT CHAT AUTHOR NOTE — SECOND AUTHORITY FOR EVERY DRAFT STAGE:',
       '- This is the current chat Author’s Note written by the user in RisuAI. It is a trusted user directive, not ordinary lore, historical memory, or a fallible prior-agent note.',
-      '- Authority order for SHADOW ACT is: (1) Current Submitted User Input, (2) this Current Chat Author Note, then (3) the latest visible scene facts, active canon/lore/system constraints, and older continuity evidence.',
-      '- Apply the note to scene purpose, focus, tone, pacing, characterization, constraints, and handling wherever it does not conflict with the current submitted input.',
-      '- If the note redirects a lower-ranked live fact such as location, time, focus, or staging, realize a coherent in-story transition. Do not pretend the prior visible state never existed.',
+      '- Authority order for every GRADIA draft stage is: (1) Current Submitted User Input, (2) this Current Chat Author Note, then (3) the latest visible scene facts, active canon/lore/system constraints, stage creative instructions, and older continuity evidence.',
+      '- Treat elements the note requires as content that must be present, and elements it forbids as content that must be absent. Apply its direction on focus, tone, pacing, characterization, and handling wherever it does not conflict with the current submitted input.',
+      ...(isShadow
+        ? ['- If the note redirects a lower-ranked live fact such as location, time, focus, or staging, realize a coherent in-story transition. Do not pretend the prior visible state never existed.']
+        : [
+            '- This AIDE obeys the note directly, not only through the inherited draft. Never remove, weaken, or contradict a passage of CURRENT_SAME_TURN_DRAFT that realizes the note.',
+            '- If the inherited draft violates an explicit requirement or prohibition in the note, repair that violation with a local patch even when it lies outside this AIDE’s usual domain. Otherwise keep revising inside this AIDE’s domain; the note is not license to rewrite unaffected prose.'
+          ]),
       '- Never use the note to negate an explicit current-input action, correction, refusal, boundary, actor, target, or completion state.',
       isPlayerControlledDraftMode(settings) ? '- PLAYER-CONTROLLED LIMIT: Author Note may shape NPC/world focus, tone, pacing, staging, and continuity, but it cannot authorize the user character to act, speak, decide, consent/refuse, feel, move, or reveal an interior state beyond the current submitted input.' : '',
       '- Keep this note private. Do not quote it, label it, mention an Author’s Note, or expose its wording or existence in the RP response.',
-      '<CURRENT_CHAT_AUTHOR_NOTE authority="second_after_current_input" applies_to="shadow_act">',
+      `<CURRENT_CHAT_AUTHOR_NOTE authority="second_after_current_input" applies_to="${isShadow ? 'shadow_act' : stageName}">`,
       safeNote,
       '</CURRENT_CHAT_AUTHOR_NOTE>'
-    ].join('\n');
+    ].filter(Boolean).join('\n');
+  };
+  const buildShadowAuthorNoteAuthorityBlock = (recent = {}, settings = {}) => buildAuthorNoteAuthorityBlock(recent, settings, 'shadow_act');
+
+  const buildInputAssistAuthorNoteBlock = (note = '', settings = {}) => {
+    const safeNote = text(note || '').replace(/<\/?CURRENT_CHAT_AUTHOR_NOTE\b[^>]*>/gi, '').trim();
+    if (!safeNote) return '';
+    return [
+      '[CURRENT CHAT AUTHOR NOTE — SECOND AUTHORITY AFTER CURRENT USER INPUT]',
+      '- Trusted user directive from the current RisuAI chat. Every candidate must obey it: never include anything it forbids, and never contradict anything it requires.',
+      '- When CURRENT USER INPUT leaves room, steer candidates toward what the note asks for. Where the input and the note conflict, keep the input.',
+      isPlayerControlledDraftMode(settings) ? '- The note cannot add NPC/world outcomes to a player choice; it only constrains what the player-side input may contain.' : '',
+      '- Do not quote, label, or mention the note in the candidate inputs.',
+      '<CURRENT_CHAT_AUTHOR_NOTE authority="second_after_current_input" applies_to="input_assist">',
+      safeNote,
+      '</CURRENT_CHAT_AUTHOR_NOTE>'
+    ].filter(Boolean).join('\n');
   };
 
   const buildCurrentRunHardAnchor = (recent, draft = '', options = {}, settings = {}) => [
@@ -25384,7 +25528,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     `current_input_hash: ${recent?.runLineage?.currentInputHash || stableDraftHash(submittedCurrentInput(recent))}`,
     draft ? `current_draft_hash: ${stableDraftHash(draft)}` : '',
     '- The current submitted user input is the primary user instruction for this run. If Input Assist ran, this is its accepted reconstructed text, not the superseded pre-assist text.',
-    '- For SHADOW ACT only, a supplied CURRENT CHAT AUTHOR NOTE is the second user-authored directive immediately below the current input. It does not compete with or replace the submitted input.',
+    '- For every draft stage, a supplied CURRENT CHAT AUTHOR NOTE is the second user-authored directive immediately below the current input. It does not compete with or replace the submitted input.',
     '- Explicit commitment is immutable: completed remains completed, ongoing remains ongoing, attempted remains attempted, intended remains intended, and hypothetical remains hypothetical.',
     '- Never downgrade an explicitly completed action into a thought, draft, intention, attempt, hesitation, cancellation, withholding, or non-action.',
     '- Any pre-assist original retained for diagnostics is superseded and must not be recovered, compared, blended, or treated as a competing instruction downstream.',
@@ -25524,8 +25668,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     "reach_check": "why it can or cannot reach this place by now, using only stated time and distance",
     "agency_check": "${playerControlled ? 'the persona’s reaction, knowledge, and next act are left to the user' : 'explicit author direction and reserved choices are respected'}"
   }`;
+    if (stageName === 'aide_intimacy') return `"domain": {
+    "phase_flow": "the encounter's phase at the start and end of this response, and whether it advances at the scene's pace",
+    "position_continuity": "the position and how bodies, clothing, and contact carry over or change on the page",
+    "preference_fit": "where each participant's acts fit or go against their preference card",
+    "agency_check": "${playerControlled ? 'the persona’s acts, sensations, and climax are only what the input states' : 'explicit author direction is respected'}"
+  }`;
     if (stageName === 'aide_body_state') return `"domain": {
-    "condition_changes": "body-state changes this response shows, each tied to packet evidence",
+    "condition_changes": ""body-state changes this response shows, each tied to packet evidence",
     "reaction_fit": "where reactions do or do not fit the computed body states",
     "agency_check": "${playerControlled ? 'the persona’s body state is only what the input states' : 'explicit author direction is respected'}"
   }`;
@@ -25982,6 +26132,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'Make each character’s body state in CURRENT_SAME_TURN_DRAFT match the BODY STATE block: its packet, mode rules, and accuracy rules.',
       'Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
     ],
+    aide_intimacy: [
+      'ROLE: Intimacy AIDE (정사 AIDE) — sexual encounter depiction patch editor, running before the Forced Bond and Plot AIDEs.',
+      'Make the encounter in CURRENT_SAME_TURN_DRAFT follow the INTIMACY block: the act shown, not summarized; true anatomy; continuous positions; each participant true to their preference card.',
+      'Preserve unaffected blocks exactly and expose only the required compact patch JSON.'
+    ],
     aide_forced_bond: [
       'ROLE: Forced Bond AIDE (억결 AIDE) — relationship tension patch editor, running right before Plot AIDE.',
       'Strengthen the tension of this turn’s main bond (and at most one ripple bond) inside CURRENT_SAME_TURN_DRAFT, following the FORCED BOND block, its mode rules, and its accuracy rules.',
@@ -26025,6 +26180,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const sceneText = [...messages.map(message => message?.content || ''), recent.latestUser || ''].join('\n');
     return continuityEntitiesInText(sceneText, index).filter(name => EXTENSION_PERSON_NAME_RE.test(name));
   };
+  // The character card's name, when it names a person. A group or world card ("클로젬 여행동아리")
+  // is a cast, not a character: treating it as one gave NPC disposition, 억결's automatic bonds,
+  // and 상태's cast a person who does not exist (2026-11-18 log). The card counts when the scene
+  // names it, or when it reads as a person's name and the alias index knows it or nobody else is
+  // in the scene.
+  const extensionCardPerson = (recent = {}, scenePeople = extensionScenePeople(recent)) => {
+    const cardName = compact(Runtime.activeCharacterName || '', 80);
+    if (!cardName) return '';
+    const sceneText = [...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : []).map(message => message?.content || ''), recent.latestUser || ''].join('\n');
+    if (extensionLineNames(sceneText, cardName)) return cardName;
+    return EXTENSION_PERSON_NAME_RE.test(cardName) && (!!extensionEntityEntry(cardName) || !scenePeople.length) ? cardName : '';
+  };
   // Evidence is matched by name, deterministically and without a model call. A
   // persona bond matches lines naming the other party; an NPC bond needs both names.
   const forcedBondMatches = (line, card) => {
@@ -26049,14 +26216,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
     [/놀라|깜짝|surpris|startl/i, 'surprise'],
     [/의심|수상|suspic|doubt/i, 'suspicion']
   ]);
-  const forcedBondEmotionSignals = (recentLines = [], card = {}) => recentLines
-    .filter(line => forcedBondMatches(line, card))
-    .flatMap(line => FORCED_BOND_EMOTION_SIGNALS.filter(([pattern]) => pattern.test(line)).map(([, label]) => ({ label, line })))
-    .slice(-3);
+  const forcedBondEmotionSignals = (recentLines = [], card = {}, otherNames = []) => {
+    const out = [];
+    let lastMatchIdx = -1;
+    let lastPrefix = '';
+    recentLines.forEach((line, index) => {
+      const prefix = (line.match(/^(input|scene):/) || [])[1] || '';
+      const direct = forcedBondMatches(line, card);
+      if (direct) {
+        lastMatchIdx = index;
+        lastPrefix = prefix;
+      }
+      // In Korean prose, the subject is often named in the preceding sentence and omitted in the next.
+      const carriesSubject = !direct && lastMatchIdx >= 0 && index - lastMatchIdx <= 1 && prefix === lastPrefix
+        && !otherNames.some(other => extensionLineNames(line, other));
+      if (!direct && !carriesSubject) return;
+      for (const [pattern, label] of FORCED_BOND_EMOTION_SIGNALS) {
+        if (pattern.test(line)) out.push({ label, line });
+      }
+    });
+    return out.slice(-3);
+  };
   const forcedBondEvidencePacket = (recent = {}, settings = {}, cards = []) => {
     const libLines = forcedBondSentences(libEvidencePrompt(settings));
     const recentLines = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .flatMap(message => forcedBondSentences(message?.content).map(line => `${message?.role === 'user' ? 'input' : 'scene'}: ${line}`));
+    const scenePeople = extensionScenePeople(recent);
     const canon = Array.isArray(recent.relationshipCanonLock?.facts) ? recent.relationshipCanonLock.facts : [];
     let libHits = 0;
     const lines = [];
@@ -26065,7 +26250,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const canonLines = canon.map(fact => fact?.text || '').filter(line => forcedBondMatches(line, card)).slice(0, 3).map(line => compact(line, 260));
       const lib = pick(libLines, 4);
       const scene = pick(recentLines, 4);
-      const signals = forcedBondEmotionSignals(recentLines, card);
+      const cardNames = [card.from, card.to].filter(name => name && name !== FORCED_BOND_PERSONA);
+      const otherNames = scenePeople.filter(person => !bodyStateIsPersona(person) && !extensionSamePerson(person, Runtime.activePersonaName)
+        && !cardNames.some(known => extensionSamePerson(known, person)));
+      const signals = forcedBondEmotionSignals(recentLines, card, otherNames);
       libHits += lib.length;
       lines.push(`- ${card.id}: ${forcedBondDisplayName(card.from)} → ${forcedBondDisplayName(card.to)} (${card.direction === 'mutual' ? 'mutual' : 'one-way'}) · tones: ${card.tones.length ? card.tones.join(', ') : `read from canon, lore and the scene (${card.origin === 'auto' ? 'auto bond, no user card' : 'no tone chosen'})`} · card stage: ${card.stage || 'read from evidence'} · ${card.visibility} · pace: ${card.pressure}${card.limits.length ? ` · limits: ${card.limits.join('; ')}` : ''}`);
       for (const line of canonLines) lines.push(`  canon: ${line}`);
@@ -26097,7 +26285,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
   // bond's tone from canon, lore and the scene. These auto bonds act like cards this turn.
   const forcedBondAutoCards = (recent = {}) => {
     const people = [];
-    for (const name of [compact(Runtime.activeCharacterName || '', 80), ...extensionScenePeople(recent)]) {
+    const scenePeople = extensionScenePeople(recent);
+    const inputText = String(recent?.latestUser || '');
+    const inputPeople = inputText ? scenePeople.filter(name => extensionLineNames(inputText, name)) : [];
+    for (const name of [extensionCardPerson(recent, scenePeople), ...inputPeople, ...scenePeople]) {
       if (!name || bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName)) continue;
       if (people.some(known => extensionSamePerson(known, name))) continue;
       people.push(name);
@@ -26141,13 +26332,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const duty = forcedBondStageActive(settings) ? extensionAideDuty('aide_forced_bond', stageName, FORCED_BOND_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const cards = forcedBondCardsInPlay(settings, recent);
-    if (!cards.length && forcedBondOutputKind(stageName, settings) !== 'readings') return '';
+    const kind = forcedBondOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : kind;
+    if (!cards.length && kind !== 'readings') {
+      if (outputKind !== 'check') return '';
+      return [
+        '[FORCED BOND (억결) — RELATIONSHIP TENSION]',
+        'No bond cards or scene partners are in play this turn.',
+        'OUTPUT: add a top-level "bond_check" array; leave it empty.'
+      ].join('\n');
+    }
     const hasAuto = cards.some(card => card.origin === 'auto');
     const gate = forcedBondModeGate(settings);
     const appearanceAllowed = gate !== 'staging' && settings.forcedBondForceAppearance !== false;
     const tones = hasAuto || cards.some(card => !card.tones.length) ? Object.keys(FORCED_BOND_TONES) : Array.from(new Set(cards.flatMap(card => card.tones)));
     const priorChecks = forcedBondPriorChecks(ledger);
-    const kind = forcedBondOutputKind(stageName, settings);
     return [
       '[FORCED BOND (억결) — RELATIONSHIP TENSION]',
       'The user wants the scene to keep forming and moving the relationships below: how these people relate, read, trust, test, owe, or resent each other. A bond’s tone can be trust, wariness, curiosity, rivalry, debt, affection, hatred, or a mix. Romance is one possibility among many: do not steer a bond toward romance unless the user or what has developed already points there.',
@@ -26174,9 +26373,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       cards.length ? `BONDS AND EVIDENCE:\n${forcedBondEvidencePacket(recent, settings, cards)}` : 'BONDS: no user card and no other person in the scene this turn. Notice a bond the scene shows and propose it; do not invent a person.',
       priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "bond_check" array with one item per bond this draft touches, judged only from your own duty. Item fields: card (card id); verdict (confirm, adjust, or uncertain); claim (the reading you checked); reason (your evidence-based reason); evidence (canon, LIB, recent, or draft). Use an empty array when no bond is touched.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "bond_readings" array, one item per bond in play this turn, with fields card (card id), tones (tone ids), stage (stranger, aware, tension, expressed, or settled), and evidence (canon, LIB, recent, or card). Add a top-level "bond_proposals" array for at most two new bonds the scene clearly shows, with fields from, to, tones (tone ids), and why (a short reason). Tone ids: ' + Object.keys(FORCED_BOND_TONES).join(', ') + '. Use empty arrays when there is nothing to report.'
           : ''
     ].filter(Boolean).join('\n');
@@ -26210,10 +26409,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const npcDispositionStageBlock = (stageName, recent = {}, settings = {}) => {
     if (!npcDispositionActive(settings)) return '';
     const entry = npcDispositionInPlay(settings);
-    const present = [compact(Runtime.activeCharacterName || '', 80), ...extensionScenePeople(recent)]
-      .filter(name => name && !bodyStateIsPersona(name) && !extensionSamePerson(name, Runtime.activePersonaName));
     // A name the alias index does not know still counts when the recent scene or the input names it.
     const sceneText = [...(Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-4) : []).map(message => message?.content || ''), recent.latestUser || ''].join('\n');
+    const scenePeople = extensionScenePeople(recent);
+    const present = [extensionCardPerson(recent, scenePeople), ...scenePeople]
+      .filter(name => name && !bodyStateIsPersona(name) && !extensionSamePerson(name, Runtime.activePersonaName))
+      .filter((name, index, list) => list.findIndex(other => other === name || extensionSamePerson(other, name)) === index);
     const inScene = name => present.some(known => extensionSamePerson(known, name) || known === name) || extensionLineNames(sceneText, name);
     const levels = Array.from(new Set([entry.default, ...entry.npcs.map(row => row.level)].filter(Boolean)))
       .sort((left, right) => Object.keys(NPC_DISPOSITION_LEVELS).indexOf(left) - Object.keys(NPC_DISPOSITION_LEVELS).indexOf(right));
@@ -26224,7 +26425,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const persona = npcDispositionDisplayName();
     const gate = forcedBondModeGate(settings);
     const condensed = [
-      `Fixed by the user toward the persona (${persona}); it never drifts, and lore decides only how it shows.`,
+      `Fixed by the user toward the persona (${persona}); it never drifts, and lore decides only how it shows. It biases how an NPC reads and receives the persona; it never undoes what the scene has established.`,
       gate === 'staging'
         ? 'Only color the expression and tone of NPC acts the input states; invent none.'
         : 'Build each engaged NPC’s response from their lore (means, values, speech habits, social position) without stock gestures.',
@@ -26235,10 +26436,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       npcDispositionDetailOpen(condensed),
       `The user has fixed how the NPCs below are disposed toward the user persona (${persona}). This is a deliberate user directive that bends the cast away from their default lore attitude toward the persona. It is not flavor and not a reading to adjust.`,
       '- WHAT IS FIXED: the direction and strength of each NPC’s stance toward the persona. It does not drift: a kind act, a gift, an apology, flattery, good looks, or a calm scene never softens a hostile or disliking NPC, and a slight never sours an affectionate one. Only the user changes it. Do not bias toward warmth or toward conflict beyond what the disposition says.',
+      '- WHAT IT IS, AND WHAT IT IS NOT: the disposition is a bias in how the NPC reads and receives the persona: trust or suspicion, warmth or coldness, the distance they keep, what they concede and what they hold back, and how they name or refuse to name what is between them. It is separate from the affection, attraction, or relationship stage the story has built, and it does not override the scene: acts already under way, consent already given, where people are, and what the current input does all stand. Inside that situation the disposition sets the attitude. A hostile NPC already close to the persona stays where the scene put them and shows the stance by refusing the persona’s goodwill its meaning (suspicion of motives, conditions, cold terms, withheld warmth, refusing to call it anything), not by reversing, cancelling, or attacking out of nowhere; an affectionate NPC in a quarrel keeps quarrelling but reads the persona charitably.',
       '- HOW TO BUILD EACH NPC’S RESPONSE FROM LORE: keep each NPC’s lore personality, voice, speech habits, values, social position, abilities, and means intact, and build their reaction in this order: (1) find in the lore how this character deals with someone toward whom they hold this stance — their available means, the values or pride they protect, their speech habits, and their social position; (2) judge what the persona’s just-made move means to this specific character in this situation; (3) craft a concrete response that only this character would make, at the disposition’s direction and strength.',
       '- NO STOCK REACTIONS: do not use generic or cliché gestures (such as snatching, throwing away, grinding underfoot, sneering, blushing, or stammering) unless the character’s lore specifically points to them. Two NPCs with the same disposition must not react in the same way; their lore, status, habits, and means must produce distinct reactions.',
       '- LORE CONFLICT: when lore or memory describes a different attitude toward the persona, the disposition wins for the attitude. Do not invent a specific past event to explain the stance; let it show in present behavior and leave the reason unspoken unless the user note gives one. Canon relationship facts (family, spouse, rank, shared history) and their forms of address stay as canon; only the attitude inside them changes.',
-      '- ACTIVE, VISIBLE BEHAVIOR: when the persona addresses, approaches, touches, gives, asks, or otherwise engages an NPC with a disposition, that NPC answers with at least one concrete, visible act or line that makes the disposition unmistakable, scaled to its strength. hostile and affection are strong poles and call for decisive acts; dislike and like are clear but restrained; acquaintance is deliberate neutrality. Never hide the stance in inner thought only.',
+      '- ACTIVE, VISIBLE BEHAVIOR: when the persona addresses, approaches, touches, gives, asks, or otherwise engages an NPC with a disposition, that NPC answers with at least one concrete, visible act or line that makes the disposition unmistakable, scaled to its strength. hostile and affection are strong poles and call for decisive acts of attitude; dislike and like are clear but restrained; acquaintance is deliberate neutrality. Strength shows in how unmistakable the attitude is, not in how far the NPC breaks from the situation. Never hide the stance in inner thought only.',
       '- A character reacts only to what they could know or witness. The disposition is a stance toward the persona only: relations between NPCs follow lore and the story. An NPC without a disposition (and with no default) follows lore.',
       '- PRECEDENCE: an explicit user instruction in the current input or the Current Chat Author Note about a named NPC’s reaction this turn wins for this turn only.',
       forcedBondStageActive(settings) ? '- With Forced Bond (억결) active: the disposition sets the direction of an NPC’s reaction to the persona; a bond only adds occasions and tension on top of it and never softens or reverses it.' : '',
@@ -26264,7 +26466,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const label = level => `${level} (${NPC_DISPOSITION_LEVELS[level].label})`;
     return [
       '[NPC DISPOSITION GUARD]',
-      `The user fixed these NPC stances toward the persona (${npcDispositionDisplayName()}). Keep the candidate’s NPC reactions on them: do not soften, warm, sour, or neutralize a reaction toward the NPC’s default lore attitude while polishing. Lore decides only the form.`,
+      `The user fixed these NPC stances toward the persona (${npcDispositionDisplayName()}). Keep the candidate’s NPC reactions on them: do not soften, warm, sour, or neutralize a reaction toward the NPC’s default lore attitude while polishing. Lore decides only the form. The stance is an attitude inside the scene; do not change what happens in the candidate to express it.`,
       ...entry.npcs.map(row => `- ${row.name}: ${label(row.level)}`),
       entry.default ? `- Every other NPC: ${label(entry.default)}` : ''
     ].filter(Boolean).join('\n');
@@ -26323,7 +26525,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const BODY_STATE_RECOVERY_RE = /나았|회복|완치|열이\s*내렸|괜찮아졌|아물|recovered|healed/i;
   const BODY_STATE_MEDICATION_RE = /약을|복용|진통제|해열제|처방|병원|치료|붕대|깁스|medicine|pill\b|bandage|cast\b/i;
   const BODY_STATE_PERIOD_START_RE = /생리(?:를|가)?\s*(?:시작|터졌)|월경\s*시작|period\s+(?:started|began)/i;
-  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|slept together|had sex|intercourse/i;
+  const BODY_STATE_SEX_RE = /성관계|관계를\s*(?:가졌|맺)|잠자리|동침|사정|안에\s*쌌|속에\s*쌌|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|가득)|slept together|had sex|intercourse/i;
   const BODY_STATE_CONTRACEPTION = Object.freeze({
     // Multiplier on the per-act conception chance under typical use.
     none: Object.freeze({ label: '피임 안 함', factor: 1, pattern: /피임\s*(?:안|없이|하지)|콘돔\s*없이|without (?:a )?condom|no protection/i }),
@@ -26429,11 +26631,12 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   const bodyStateDaysBetween = (from, to) => {
     if (!from || !to) return null;
-    const year = from.y && to.y ? null : 2001;
+    const hasFeb29 = (from.m === 2 && from.d === 29) || (to.m === 2 && to.d === 29);
+    const year = from.y && to.y ? null : (hasFeb29 ? 2004 : 2001);
     const start = Date.UTC(year || from.y, from.m - 1, from.d);
     const end = Date.UTC(year || to.y, to.m - 1, to.d);
     let days = Math.round((end - start) / 86400000);
-    if (year && days < 0) days += 365;
+    if (year && days < 0) days += hasFeb29 ? 366 : 365;
     return days >= 0 && days < 3660 ? days : null;
   };
   const bodyStateRelativeDays = value => {
@@ -26498,7 +26701,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       ...extensionScenePeople(recent),
       ...bodyStateCardsForScope(settings, scopeKey).map(card => card.name).filter(Boolean),
       ...forcedBondCardsForScope(settings, scopeKey).flatMap(card => [card.from, card.to]),
-      compact(Runtime.activeCharacterName || '', 80),
+      extensionCardPerson(recent),
       compact(Runtime.activePersonaName || '', 80)
     ].filter(Boolean).map(name => (bodyStateIsPersona(name) || extensionSamePerson(name, Runtime.activePersonaName) ? FORCED_BOND_PERSONA : name));
     const unique = [];
@@ -26659,7 +26862,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const bodyStateCharacterReport = (name, entries, settings, now, gate, scopeKey, context = {}) => {
     const { clock = null, present = false } = context;
-    const card = bodyStateCardsForScope(settings, scopeKey).find(item => item.name && item.name === name) || null;
+    const card = bodyStateCardsForScope(settings, scopeKey)
+      .find(item => item.name && (item.name === name || extensionSamePerson(item.name, name))) || null;
     const mine = entries.filter(entry => bodyStateLineMentions(entry.line, name));
     const lines = [];
     const evidence = mine.slice(-6).map(entry => `  ${entry.source}: ${compact(entry.line, 220)}`);
@@ -26669,10 +26873,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const latest = pattern => [...mine].reverse().find(entry => pattern.test(entry.line)) || null;
     // An onset is the latest mention that is not itself a recovery line.
     const latestOnset = pattern => [...mine].reverse().find(entry => pattern.test(entry.line) && !BODY_STATE_RECOVERY_RE.test(entry.line)) || null;
-    const recovered = latest(BODY_STATE_RECOVERY_RE);
-    const describe = (entry, label, range) => {
+    const allConditionPatterns = [...Object.values(BODY_STATE_ILLNESS).map(def => def.pattern), BODY_STATE_INJURY_RE];
+    // A recovery line clears a condition only if it mentions that condition or is generic
+    // (names no other specific illness/injury), so "감기가 나았다" never clears a fracture.
+    const recoveryAfter = (entry, ownPattern = null) => {
+      const onsetIndex = mine.indexOf(entry);
+      if (onsetIndex < 0) return null;
+      const others = allConditionPatterns.filter(pat => pat !== ownPattern);
+      for (let idx = mine.length - 1; idx > onsetIndex; idx -= 1) {
+        const cand = mine[idx];
+        if (!BODY_STATE_RECOVERY_RE.test(cand.line)) continue;
+        if (ownPattern && ownPattern.test(cand.line)) return cand;
+        if (ownPattern === BODY_STATE_INJURY_RE && /아물|상처|부상|다친|깁스|붕대|healed/i.test(cand.line)) return cand;
+        if (ownPattern !== BODY_STATE_INJURY_RE && /아물/.test(cand.line)) continue;
+        if (others.every(pat => !pat.test(cand.line))) return cand;
+      }
+      return null;
+    };
+    const describe = (entry, label, range, ownPattern = null) => {
       const elapsed = bodyStateElapsed(entry, now, clock);
-      if (recovered && mine.indexOf(recovered) > mine.indexOf(entry)) return `${label}: recovery recorded after onset (${recovered.source})`;
+      const recovered = recoveryAfter(entry, ownPattern);
+      if (recovered) return `${label}: recovery recorded after onset (${recovered.source})`;
       if (elapsed.days === null) return `${label}: onset recorded, day unknown — do not state how long it has lasted`;
       const stage = range
         ? (elapsed.days < range[0] ? 'ongoing' : elapsed.days <= range[1] ? 'likely easing' : 'expected to be over unless the story says otherwise')
@@ -26681,15 +26902,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
     };
     for (const [id, def] of Object.entries(BODY_STATE_ILLNESS)) {
       const entry = latestOnset(def.pattern);
-      if (entry) lines.push(`  ${describe(entry, def.label, def.days)}; signs: ${def.signs} [${id}]`);
+      if (entry) lines.push(`  ${describe(entry, def.label, def.days, def.pattern)}; signs: ${def.signs} [${id}]`);
     }
-    const injury = latestOnset(BODY_STATE_INJURY_RE);
-    if (injury) {
-      const severity = /심한|깊은|크게|severe|deep|badly/i.test(injury.line) ? 'severe' : /살짝|가볍|경미|약간|slight|minor/i.test(injury.line) ? 'mild' : 'moderate';
-      lines.push(`  ${describe(injury, `injury (${severity})`, BODY_STATE_INJURY_HEAL_DAYS[severity])}`);
+    const injuryOnsets = mine.filter(entry => BODY_STATE_INJURY_RE.test(entry.line) && !BODY_STATE_RECOVERY_RE.test(entry.line));
+    if (injuryOnsets.length) {
+      const bySeverity = {};
+      for (const entry of injuryOnsets) {
+        const severity = /심한|깊은|크게|severe|deep|badly/i.test(entry.line) ? 'severe' : /살짝|가볍|경미|약간|slight|minor/i.test(entry.line) ? 'mild' : 'moderate';
+        bySeverity[severity] = entry;
+      }
+      for (const severity of ['severe', 'moderate', 'mild']) {
+        if (bySeverity[severity]) lines.push(`  ${describe(bySeverity[severity], `injury (${severity})`, BODY_STATE_INJURY_HEAL_DAYS[severity], BODY_STATE_INJURY_RE)}`);
+      }
     }
     const symptom = latestOnset(BODY_STATE_SYMPTOM_RE);
-    if (symptom && !lines.length) lines.push(`  ${describe(symptom, 'symptom', null)}`);
+    if (symptom && !lines.length) lines.push(`  ${describe(symptom, 'symptom', null, BODY_STATE_SYMPTOM_RE)}`);
     const medication = latest(BODY_STATE_MEDICATION_RE);
     if (medication) lines.push(`  treatment recorded (${medication.source})`);
 
@@ -26698,15 +26925,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const today = bodyStateDayNumber(clock, now);
     // Without a card length, a seeded length (26–32 days) keeps each person's cycle stable.
     const length = card?.cycleLength || (fertility.value ? 26 + Math.floor(bodyStateSeedRoll(`${scopeKey}|${name}|cycle-length`) * 7) : BODY_STATE_DEFAULT_CYCLE);
-    const periodDate = card?.lastPeriodStart ? bodyStateParseDate(card.lastPeriodStart) : null;
+    const cardPeriodDays = card?.lastPeriodStart ? bodyStateCardDays(card.lastPeriodStart, now, today) : null;
     let cycleDay = null;
     let cycleConfidence = 'unknown';
     if (periodEntry) {
       const elapsed = bodyStateElapsed(periodEntry, now, clock);
       if (elapsed.days !== null) { cycleDay = (elapsed.days % length) + 1; cycleConfidence = elapsed.confidence; }
-    } else if (periodDate && now) {
-      const days = bodyStateDaysBetween(periodDate, now);
-      if (days !== null) { cycleDay = (days % length) + 1; cycleConfidence = 'confirmed (card)'; }
+    } else if (cardPeriodDays !== null) {
+      cycleDay = (cardPeriodDays % length) + 1;
+      cycleConfidence = 'confirmed (card)';
     } else if (fertility.value && today) {
       // No date from the story or the card: a fixed-seed cycle start, counted on the story day.
       const offset = Math.floor(bodyStateSeedRoll(`${scopeKey}|${name}|cycle-offset`) * length);
@@ -26784,13 +27011,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate && newestRecord?.kind !== 'pregnant') {
       const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
         .filter(entry => closedAt === null || (() => { const days = recordAge(entry).days; return days === null || days < closedAt; })());
+      const seenContactKeys = new Set();
       for (const exposure of exposures.slice(-3)) {
         if (fertility.value === null) {
           lines.push(`  sexual contact recorded (${exposure.source}); whether this person can conceive is unknown (no card setting, no profile gender) — do not decide a pregnancy`);
           continue;
         }
         const method = Object.entries(BODY_STATE_CONTRACEPTION).find(([, def]) => def.pattern.test(exposure.line))?.[0] || card?.contraception || '';
-        let elapsed = bodyStateElapsed(exposure, now, clock);
+        let elapsed = bodyStateElapsed(exposure.full ? { ...exposure, line: exposure.full } : exposure, now, clock);
         // Contact shown in the recent scene with no time phrase happened today.
         if (elapsed.days === null && exposure.source === 'recent') elapsed = { days: 0, confidence: 'estimated (recent scene)' };
         if (cycleDay === null || elapsed.days === null) {
@@ -26805,6 +27033,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         // Keyed to the day of contact, so the verdict stays the same when the event later
         // reaches GRADIA as a LIBRA note instead of a recent-scene line.
         const seedKey = today ? `${scopeKey}|${name}|contact-day:${today.day - elapsed.days}` : `${scopeKey}|${name}|${normalizeForLoreMatch(exposure.line)}`;
+        if (seenContactKeys.has(seedKey)) continue;
+        seenContactKeys.add(seedKey);
         const pregnant = chance > 0 && bodyStateSeedRoll(seedKey) < chance;
         if (pregnant && !pregnancyLine) {
           pregnancyLine = bodyStatePregnancyLine(elapsed.days, 'fixed verdict', card);
@@ -26839,10 +27069,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const entries = bodyStateEvidenceLines(recent, settings);
     const timeOfDay = bodyStateTimeOfDay(recent, clock);
     const scenePeople = extensionScenePeople(recent);
+    const cardPerson = extensionCardPerson(recent, scenePeople);
     const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
       clock,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
-        || (name !== FORCED_BOND_PERSONA && extensionSamePerson(name, Runtime.activeCharacterName))
+        || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
     const libHits = entries.some(entry => entry.source === 'LIB');
     return compact([
@@ -26867,14 +27098,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!bodyStateStageActive(settings)) return '';
     return extensionAideOutputKind('aide_body_state', stageName, settings);
   };
-  const bodyStateStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+  const bodyStateStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = bodyStateStageActive(settings) ? extensionAideDuty('aide_body_state', stageName, BODY_STATE_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const gate = bodyStateModeGate(settings);
     const priorChecks = (Array.isArray(ledger?.bodyStateChecks) ? ledger.bodyStateChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.character}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
       .slice(-16);
-    const kind = bodyStateOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : bodyStateOutputKind(stageName, settings);
     return [
       '[BODY STATE (상태) — CHARACTER CONDITION]',
       'Keep each character’s body state alive in the scene: health signals, injuries, illness, cycle, and (when enabled) pregnancy, as the packet computes them.',
@@ -26893,9 +27124,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       `STAGE DUTY: ${duty}`,
       `BODY STATE PACKET:\n${bodyStatePacket(recent, settings)}`,
       priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "state_check" array with one item per character whose body state this draft touches, judged only from your own duty. Item fields: character; verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when none is touched.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "state_readings" array, one item per character in play, with fields character and summary (one short line of the current body state).'
           : ''
     ].filter(Boolean).join('\n');
@@ -26925,7 +27156,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const readings = (Array.isArray(parsed?.stateReadings) ? parsed.stateReadings : [])
       .map(item => ({ character: compact(item?.character || '', 80), summary: compact(item?.summary || '', 240) }))
       .filter(item => item.character && item.summary).slice(0, FORCED_BOND_MAX_CARDS);
-    if (scopeKey && readings.length) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) Runtime.bodyStateReadings[scopeKey] = { at: Date.now(), readings };
   };
 
   // ===================== 세계 동역학 AIDE (aide_world_dynamics) =====================
@@ -26966,6 +27197,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const after = value.slice(match.index + match[0].length, match.index + match[0].length + 6);
       const before = value.slice(Math.max(0, match.index - 14), match.index);
       if (/^\s*지\s*(?:않|못|도\s*않)/.test(after)) continue;
+      if (/(?:^|[\s,(])(?:안|못|미처)\s*$/.test(before)) continue;
       if (/(?:\bnot|\bnever|n['’]t|\byet to)\s+(?:been\s+|be\s+)?$/i.test(before)) continue;
       return true;
     }
@@ -27021,7 +27253,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const kind = WORLD_DYNAMICS_KINDS.find(([, pattern]) => pattern.test(entry.line));
     if (!kind) return null;
     const deadline = worldDynamicsDeadline(entry.line, now);
-    const elapsed = bodyStateElapsed(deadline ? { ...entry, line: deadline.rest } : entry, now, clock);
+    // Preserve a LIBRA lens note's leading story-day stamp on entry.full when a note spans multiple sentences.
+    const timingLine = entry.full
+      ? String(entry.full).replace(new RegExp(WORLD_DYNAMICS_DEADLINE_DATE_RE.source, 'gi'), ' ')
+      : (deadline ? deadline.rest : entry.line);
+    const elapsed = bodyStateElapsed({ ...entry, line: timingLine }, now, clock);
     const span = worldDynamicsSpanDays(entry.line);
     const about = elapsed.confidence.startsWith('estimated') ? 'about ' : '';
     const days = count => `${count} day${count === 1 ? '' : 's'}`;
@@ -27077,20 +27313,21 @@ Begin directly with the in-world response and finish the complete same-turn draf
       seen.add(key);
       return true;
     });
-    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line),
+    const endings = unique.map((entry, index) => ({ entry, index, day: worldDynamicsNoteDay(entry.full || entry.line), subjects: worldDynamicsSubjectWords(entry.line),
       ended: worldDynamicsEndedLine(entry.line),
       kinds: WORLD_DYNAMICS_KINDS.filter(([, pattern]) => pattern.test(entry.line)).map(([kind]) => kind) }))
       .filter(item => item.ended && (item.kinds.length || item.subjects.size));
     const read = unique.map((entry, index) => {
       const row = worldDynamicsReadLine(entry, now, clock);
-      return row ? { ...row, index, day: worldDynamicsNoteDay(entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
+      return row ? { ...row, index, day: worldDynamicsNoteDay(entry.full || entry.line), subjects: worldDynamicsSubjectWords(entry.line) } : null;
     }).filter(Boolean);
     const later = (end, item) => (item.day !== null && end.day !== null && end.day !== item.day ? end.day > item.day : end.index > item.index);
     // An ending closes a movement only when it is the same matter: same kind, recorded later
     // (by story day, else by order), and naming the same party. The kind alone is not enough:
     // calling off the southern guard's pursuit does not end the northern order's. An ending
     // that names nobody closes a movement only when it is the one such movement before it.
-    const sharesSubject = (end, item) => [...end.subjects].some(word => item.subjects.has(word));
+    const sharesSubject = (end, item) => [...end.subjects].some(word => item.subjects.has(word)
+      || [...item.subjects].some(other => extensionSamePerson(word, other)));
     const endedBy = item => endings.some(end => later(end, item) && (end.kinds.length
       ? end.kinds.includes(item.kind) && (end.subjects.size
         ? sharesSubject(end, item)
@@ -27119,14 +27356,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : ''
     ].filter(Boolean).join('\n'), 3600);
   };
-  const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}) => {
+  const worldDynamicsStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
     const duty = worldDynamicsStageActive(settings) ? extensionAideDuty('aide_world_dynamics', stageName, WORLD_DYNAMICS_STAGE_DUTY, settings) : '';
     if (!duty) return '';
     const gate = worldDynamicsModeGate(settings);
     const priorChecks = (Array.isArray(ledger?.worldDynamicsChecks) ? ledger.worldDynamicsChecks : [])
       .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.movement}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
       .slice(-16);
-    const kind = worldDynamicsOutputKind(stageName, settings);
+    const outputKind = phase === 'writing' ? '' : worldDynamicsOutputKind(stageName, settings);
     return [
       '[WORLD DYNAMICS (세계 동역학) — OFF-SCENE MOVEMENT]',
       'The world outside the scene is not frozen. What was already set in motion (an order, a pursuit, a deadline, a rumor, an institution’s process) keeps moving on its own terms while the scene looks elsewhere.',
@@ -27148,9 +27385,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       priorChecks.length
         ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note lowers the movement to a fainter trace or holds it back; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
         : '',
-      kind === 'check'
+      outputKind === 'check'
         ? 'OUTPUT: add a top-level "world_check" array with one item per off-scene movement this draft surfaces or the packet offers as the candidate, judged only from your own duty. Item fields: movement (a short name for it); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is none.'
-        : kind === 'readings'
+        : outputKind === 'readings'
           ? 'OUTPUT: add a top-level "world_readings" array, one item per movement you considered this turn, with fields movement (a short name), status (surfaced, held, not_due, ended, or unsupported), and summary (one short line). Use an empty array when nothing is on record.'
           : ''
     ].filter(Boolean).join('\n');
@@ -27188,9 +27425,375 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const readings = (Array.isArray(parsed?.worldReadings) ? parsed.worldReadings : [])
       .map(item => ({ movement: compact(item?.movement || '', 120), status: WORLD_DYNAMICS_STATUSES.includes(item?.status) ? item.status : 'held', summary: compact(item?.summary || '', 240) }))
       .filter(item => item.movement && item.summary).slice(0, WORLD_DYNAMICS_MAX_MOVEMENTS);
-    if (scopeKey && readings.length) Runtime.worldDynamicsReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) Runtime.worldDynamicsReadings[scopeKey] = { at: Date.now(), readings };
   };
 
+  // ===================== 정사 AIDE (aide_intimacy) =====================
+  // Sexual encounter depiction: once a scene is inside a sexual encounter, keep the act on the
+  // page in detail, phase by phase (foreplay, intercourse, climax, afterplay), with correct
+  // anatomy and physiology and continuous positions. Like every extension AIDE this stage stores
+  // nothing. Each turn code reads the current input and the recent scene for the phase and the
+  // position (no model call) and attaches only the reference notes that phase needs. The stage
+  // never starts an encounter: with nothing under way it adds one line and asks for nothing.
+  // It runs only while NSFW guidance is on, and the vocabulary register is the NSFW mode's.
+  const intimacyModeGate = settings => forcedBondModeGate(settings);
+  const intimacyNsfwOn = settings => settings?.nsfwGuidanceEnabled !== false && normalizeNsfwMode(settings?.nsfwMode) !== 'off';
+  const intimacyStageActive = settings => settings?.enableIntimacyAide === true
+    && settings?.mode !== 'off'
+    && intimacyNsfwOn(settings)
+    && intimacyModeGate(settings) !== 'skip';
+  const INTIMACY_PHASES = Object.freeze(['none', 'foreplay', 'intercourse', 'climax', 'afterplay']);
+  const INTIMACY_PHASE_RANK = Object.freeze({ none: 0, foreplay: 1, intercourse: 2, climax: 3, afterplay: 4 });
+  // A kiss or undressing alone is not an encounter; these are acts that only happen inside one.
+  const INTIMACY_PHASE_SIGNALS = Object.freeze([
+    ['foreplay', /애무|유두|젖꼭지|(?:가슴|젖가슴|유방|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨)|커닐링구스|펠라(?:티오|치오)?|오럴|사까시|쿤닐|클리토리스|음핵|애액|(?:보지|자지|음경|성기|귀두)(?:을|를|에)?\s*(?:만지|만졌|쥐|쥐었|훑|핥|빨|문지)|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|caress(?:ed|ing)? (?:her|his) (?:breast|thigh|nipple)|fondl|foreplay|cunnilingus|fellatio|blowjob|nipple|clit|fingering|fingered/i],
+    ['intercourse', /삽입|(?:안(?:에|으로)|속(?:에|으로)|깊(?:이|숙이)|허리(?:를|로)|거칠게|세게|힘껏|질\s*안(?:에|으로)|보지(?:에|를)?|엉덩이(?:에|를)?|자지(?:를|가)?|성기(?:를|가)?|페니스(?:를|가)?)\s*박(?:아|혀|히|았|는|을|고|으며)|박아\s*(?:넣|대|주|댔|줬)|쑤셔|쑤시|피스톤|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|놀리|박|튕|돌리)|정상위|기승위|여성\s*상위|후배위|측위|굴곡위|신장위|교차위|대면\s*좌위|후면\s*좌위|대면\s*입위|후면\s*입위|(?:자지|음경|성기|귀두|그것)(?:이|가)?\s*(?:안으로|속으로|질\s*안|보지\s*안|안에|속에|깊숙이)|(?:안|속)으로\s*(?:들어와|들어왔|들어가|들어갔|밀고\s*들어)|penetrat|thrust(?:s|ed|ing)? (?:into|inside|deep)|inside (?:her|him) (?:again|deep|fully)|riding (?:him|her)|missionary|doggy|cowgirl|spooning sex/i],
+    ['climax', /절정|사정(?:했|하|을|이|해|한|할)|가버|가\s*버렸|가\s*버려|오르가[즘슴]|싸버|싼다|쌌|분출|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|정액(?:이|을|가)?\s*(?:쏟|뿜|흘러|넘쳐|가득)|climax(?:ed|ing)?|orgasm|came (?:inside|hard|undone)|ejaculat|squirt/i],
+    ['afterplay', /여운(?:에|이|을|속)|후희|베개\s*(?:대화|이야기)|팔베개|숨(?:을|이)?\s*(?:고르|골랐|돌리|가라앉)|뒷정리|(?:닦아\s*주|닦아주|닦아\s*냈)|afterglow|pillow talk|catching (?:his|her|their) breath/i]
+  ]);
+  const INTIMACY_POSITIONS = Object.freeze([
+    ['정상위 (missionary)', /정상위|missionary/i],
+    ['기승위 (woman on top)', /기승위|여성\s*상위|카우걸|올라타(?:서|고|ㄴ)?.{0,10}(?:허리|엉덩이)|cowgirl|riding (?:him|her)|on top of (?:him|her) .{0,12}(?:hips|grind)/i],
+    ['후배위 (from behind)', /후배위|뒤치기|엎드(?:린|려|렸).{0,12}(?:뒤에서|뒤로)|doggy|from behind/i],
+    ['측위 (side-lying)', /측위|옆으로\s*누운\s*채.{0,12}(?:뒤에서|안으로)|spooning/i],
+    ['굴곡위 (folded)', /굴곡위|무릎(?:을|이)?\s*가슴(?:까지|에)|다리(?:를|가)?\s*(?:어깨|가슴)(?:에|까지|\s*위로)\s*(?:걸|접|올)|legs (?:over|on) (?:his|her) shoulders/i],
+    ['신장위 (legs together)', /신장위|다리(?:를)?\s*(?:모은|붙인|오므린)\s*채/i],
+    ['교차위 (crossed)', /교차위|scissor/i],
+    ['대면좌위 (seated, facing)', /대면\s*좌위|마주\s*앉(?:은|아)\s*(?:채|상태)|무릎\s*위에\s*마주|lap,? facing/i],
+    ['후면좌위 (seated, from behind)', /후면\s*좌위|등(?:을)?\s*(?:돌린|진)\s*채\s*(?:무릎|허벅지)\s*위/i],
+    ['대면입위 (standing, facing)', /대면\s*입위|선\s*채(?:로)?\s*(?:안아|들어)\s*올|벽에\s*(?:밀어|기대).{0,10}마주|standing,? facing/i],
+    ['후면입위 (standing, from behind)', /후면\s*입위|선\s*채(?:로)?\s*뒤에서|벽(?:을|에)\s*짚|bent over|standing from behind/i],
+    ['69', /식스나인|(?:^|[^\d])69(?:[^\d]|$)|sixty-nine/i]
+  ]);
+  const intimacyPhaseOf = (value, allowStandaloneAfterplay = false) => {
+    const body = String(value || '');
+    if (!body) return { phase: 'none', signals: [] };
+    const hits = INTIMACY_PHASE_SIGNALS.map(([phase, pattern]) => {
+      const match = body.match(pattern);
+      return match ? { phase, at: match.index, word: match[0] } : null;
+    }).filter(Boolean);
+    // Afterplay words alone ("여운", "숨을 고르다") are ordinary prose; they mark afterplay only
+    // inside a text that also shows the act, or in a user input immediately following an active encounter.
+    const acts = hits.filter(hit => hit.phase !== 'afterplay');
+    if (!acts.length) {
+      if (allowStandaloneAfterplay && hits.some(hit => hit.phase === 'afterplay')) {
+        return { phase: 'afterplay', signals: hits.map(hit => compact(hit.word, 24)) };
+      }
+      return { phase: 'none', signals: [] };
+    }
+    const top = hits.reduce((best, hit) => (INTIMACY_PHASE_RANK[hit.phase] > INTIMACY_PHASE_RANK[best.phase] ? hit : best), acts[0]);
+    return { phase: top.phase, signals: hits.map(hit => compact(hit.word, 24)) };
+  };
+  // The latest position named wins: a text that moves from one position to another ends in the second.
+  const intimacyPositionOf = value => {
+    const body = String(value || '');
+    let found = null;
+    for (const [label, pattern] of INTIMACY_POSITIONS) {
+      const all = [...body.matchAll(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`))];
+      const last = all[all.length - 1];
+      if (last && (!found || last.index > found.at)) found = { label, at: last.index };
+    }
+    return found ? found.label : '';
+  };
+  const INTIMACY_RECENT_WINDOW = 4;
+  // Where the encounter stands: the current input leads when it shows the act (it may start a
+  // second round after a climax); otherwise the latest response that shows it.
+  const intimacyScene = (recent = {}) => {
+    const input = text(recent.latestUser || '');
+    const messages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
+      .map(message => text(message?.content || ''))
+      .filter(Boolean);
+    if (messages.length && input && messages[messages.length - 1].trim() === input.trim()) messages.pop();
+    const window = messages.slice(-INTIMACY_RECENT_WINDOW);
+    const readings = window.map(message => intimacyPhaseOf(message));
+    const latestIndex = readings.map(item => item.phase !== 'none').lastIndexOf(true);
+    const latest = latestIndex >= 0 ? readings[latestIndex] : null;
+    const recentActive = !!latest && latestIndex >= window.length - 2;
+    const fromInput = intimacyPhaseOf(input, recentActive);
+    const phase = fromInput.phase !== 'none' ? fromInput.phase : latest?.phase || 'none';
+    const previousPhase = latest?.phase || 'none';
+    const position = intimacyPositionOf(input) || (latestIndex >= 0 ? intimacyPositionOf(window[latestIndex]) : '')
+      || [...window].reverse().map(intimacyPositionOf).find(Boolean) || '';
+    // An encounter that ended (afterplay) several messages ago and is not picked up again is over.
+    const stale = fromInput.phase === 'none' && latestIndex >= 0 && latestIndex < window.length - 2;
+    return {
+      engaged: phase !== 'none' && !stale,
+      phase: stale ? 'none' : phase,
+      previousPhase,
+      position,
+      source: fromInput.phase !== 'none' ? 'current input' : latestIndex >= 0 ? 'recent scene' : 'none',
+      signals: [...new Set([...(fromInput.signals || []), ...(latest?.signals || [])])].slice(0, 6)
+    };
+  };
+  // Reference notes (user decision 2026-11-18): rewritten from encyclopedic sources down to what a
+  // scene needs to be written right. Each line is a fact the prose can show, not trivia.
+  const INTIMACY_REFERENCE = Object.freeze({
+    flow: 'Usual flow, not a rule: foreplay → intercourse → climax → afterplay. Lovers may linger, skip, go back, change position, or start again; she can go again at once, he only after recovering.',
+    foreplay: [
+      'Foreplay builds arousal in steps (mouth, hands, breasts and nipples, inner thighs, fingers, oral). Show it working: her clitoris swells, she grows wet gradually and wetter as arousal climbs, the opening softens; his erection firms.',
+      'Penetration before she is ready hurts. Wetness is earned by arousal, never instant.',
+      'Her most sensitive point is the clitoris, a small hooded bud at the top of the vulva where the inner lips meet; most women need it touched to climax. His are the glans and the frenulum on its underside.'
+    ],
+    intercourse: [
+      'Aroused, the vagina deepens and widens, the walls grip and ridge around what enters; depth has a limit, and striking the cervix hurts. Penetration alone often is not enough for her; a hand on the clitoris, grinding, or the angle that presses the front wall carries her further.',
+      'Positions and what each gives: missionary (정상위) full contact face to face; woman on top (기승위) she sets depth and pace; from behind (후배위) deep, raw, his hands free, her arms and legs bear her weight; side-lying (측위) slow, shallow, gentle; folded (굴곡위) knees to chest or legs on his shoulders, very deep; legs together (신장위) shallow, tight; seated (좌위) and standing (입위), facing or from behind.',
+      'A position change is a movement on the page (pulling out or rolling, shifting weight, a guiding hand). Bodies stay where the prose last put them.',
+      'A first time may hurt or bleed, or neither; tension makes it worse.'
+    ],
+    climax: [
+      'Climax builds to rhythmic involuntary contractions with breath held then broken, arched back, curled toes, gripping hands, sounds that slip out, flushed skin.',
+      'He ejaculates in pulses, then softens and needs time before another erection. She can climax again with continued touch, though right after she may be too sensitive to bear it.',
+      'They seldom peak together. Some women release a little fluid or a gush at climax and may be embarrassed by it.',
+      'Afterward comes heavy languor and sleepiness.'
+    ],
+    afterplay: [
+      'Afterplay is holding, slow caresses, kisses, and quiet talk; she often lingers in the afterglow, slow to move.',
+      'Rolling away to sleep right after one’s own climax hurts a partner; if she did not finish, afterplay may still bring her there.',
+      'The aftermath shows: sweat, damp sheets, fluids, slowing breath, trembling legs, tangled hair.'
+    ]
+  });
+  const intimacyReferenceFor = scene => {
+    const phases = scene.phase === 'foreplay' ? ['foreplay']
+      : scene.phase === 'intercourse' ? ['intercourse', 'foreplay']
+        : scene.phase === 'climax' ? ['climax', 'intercourse']
+          : scene.phase === 'afterplay' ? ['afterplay', 'climax']
+            : [];
+    return [INTIMACY_REFERENCE.flow, ...phases.flatMap(phase => INTIMACY_REFERENCE[phase].map(line => `[${phase}] ${line}`))]
+      .map(line => `- ${line}`).join('\n');
+  };
+  const INTIMACY_PHASE_LABELS = Object.freeze({ none: '없음', foreplay: '전희', intercourse: '성교', climax: '절정', afterplay: '후희' });
+  // Preference cards (user decision 2026-11-18): each character's sexual preferences, estimated
+  // once from lore and kept per chat as a card. Unlike the readings these are stored, in a key of
+  // their own so a settings save from an open GUI never overwrites a card made during a run. A
+  // card is never rewritten automatically; the user edits or deletes it in the 정사 AIDE panel.
+  const INTIMACY_STANCES = Object.freeze(['likes', 'neutral', 'dislikes', 'unknown']);
+  const INTIMACY_STANCE_LABELS = Object.freeze({ likes: '좋아함', neutral: '보통', dislikes: '싫어함', unknown: '모름' });
+  const INTIMACY_CARD_PHASES = Object.freeze(['foreplay', 'intercourse', 'afterplay']);
+  const INTIMACY_MAX_CARDS = 12;
+  const normalizeIntimacyCard = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const name = compact(value.name || '', 80);
+    const card = {
+      id: compact(value.id || '', 64),
+      name,
+      likedPositions: compact(value.likedPositions || '', 240),
+      dislikedPositions: compact(value.dislikedPositions || '', 240),
+      basis: compact(value.basis || '', 360),
+      origin: value.origin === 'user' ? 'user' : 'lore',
+      createdAt: compact(value.createdAt || '', 40)
+    };
+    for (const phase of INTIMACY_CARD_PHASES) {
+      card[`${phase}Stance`] = INTIMACY_STANCES.includes(value[`${phase}Stance`]) ? value[`${phase}Stance`] : 'unknown';
+      card[`${phase}Style`] = compact(value[`${phase}Style`] || '', 360);
+    }
+    return card;
+  };
+  const normalizeIntimacyCardMap = value => {
+    const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [rawKey, entry] of Object.entries(parsed)) {
+      const scopeKey = compact(rawKey, 512);
+      const cards = (Array.isArray(entry) ? entry : []).map(normalizeIntimacyCard).filter(Boolean).slice(0, INTIMACY_MAX_CARDS)
+        .map((card, index) => ({ ...card, id: card.id || `intimacy-${index + 1}` }));
+      if (scopeKey && cards.length) out[scopeKey] = cards;
+    }
+    return out;
+  };
+  // Loaded once per session; from then on memory leads and every change is written through.
+  const loadIntimacyCards = async () => {
+    if (Runtime.intimacyCards) return Runtime.intimacyCards;
+    const stored = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+    Runtime.intimacyCards = normalizeIntimacyCardMap(stored.cards || {});
+    return Runtime.intimacyCards;
+  };
+  const saveIntimacyCards = async () => writeObject(STORAGE_INTIMACY_CARDS_KEY, {
+    version: 1, savedAt: new Date().toISOString(), cards: normalizeIntimacyCardMap(Runtime.intimacyCards || {})
+  });
+  const intimacyCardsForScope = (scopeKey = '') => (scopeKey ? (Runtime.intimacyCards?.[scopeKey] || []) : []);
+  const intimacyCardLine = card => [
+    `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
+    `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
+    ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
+  ].join(' ');
+  const intimacyPacket = (recent = {}) => {
+    const scene = intimacyScene(recent);
+    const cards = intimacyCardsForScope(compact(Runtime.activeScopeKey || '', 512));
+    if (!scene.engaged) return { scene, cards, text: '' };
+    return {
+      scene,
+      cards,
+      text: compact([
+        `Phase now: ${scene.phase} (${INTIMACY_PHASE_LABELS[scene.phase]}), read from the ${scene.source}.`,
+        scene.source === 'current input' && scene.previousPhase !== 'none' && scene.previousPhase !== scene.phase
+          ? `Previous response ended in: ${scene.previousPhase} (${INTIMACY_PHASE_LABELS[scene.previousPhase]}).` : '',
+        scene.position ? `Position on record: ${scene.position}. Keep it until the prose moves the bodies.` : 'Position: not named. Read it from the scene; do not jump to a new one without a transition.',
+        scene.signals.length ? `Signals: ${scene.signals.join(', ')}.` : '',
+        'These readings come from keywords. When the scene says otherwise, the scene wins.',
+        cards.length
+          ? `PREFERENCE CARDS (saved for this chat; treat as established character facts):\n${cards.map(card => `- ${intimacyCardLine(card)}`).join('\n')}`
+          : 'PREFERENCE CARDS: none saved for this chat yet.'
+      ].filter(Boolean).join('\n'), 4200)
+    };
+  };
+  const INTIMACY_STAGE_DUTY = Object.freeze({
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, and voice stay their own and fit the relationship, the limits on record, and their preference card, and that nobody turns into a generic body.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, and that clothing, posture, points of contact, and fluids carry over from the previous turn.',
+    aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open.',
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks; a participant acts against their preference card without a reason in the scene; or a participant loses their own voice. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+  });
+  const intimacyOutputKind = (stageName, settings = {}) => {
+    if (!intimacyStageActive(settings)) return '';
+    return extensionAideOutputKind('aide_intimacy', stageName, settings);
+  };
+  const intimacyStageBlock = (stageName, recent = {}, settings = {}, ledger = {}, phase = 'writing') => {
+    const duty = intimacyStageActive(settings) ? extensionAideDuty('aide_intimacy', stageName, INTIMACY_STAGE_DUTY, settings) : '';
+    if (!duty) return '';
+    const outputKind = phase === 'writing' ? '' : intimacyOutputKind(stageName, settings);
+    const packet = intimacyPacket(recent);
+    if (!packet.scene.engaged) {
+      return [
+        '[INTIMACY (정사) — SEXUAL ENCOUNTER DEPICTION]',
+        'No sexual encounter is under way in the current input or the recent scene. This block does not apply, and it never starts one.',
+        outputKind === 'check'
+          ? 'OUTPUT: add a top-level "intimacy_check" array; leave it empty.'
+          : outputKind === 'readings'
+            ? 'OUTPUT: add a top-level "intimacy_readings" array and a top-level "intimacy_profiles" array; leave both empty.'
+            : ''
+      ].filter(Boolean).join('\n');
+    }
+    const gate = intimacyModeGate(settings);
+    const priorChecks = (Array.isArray(ledger?.intimacyChecks) ? ledger.intimacyChecks : [])
+      .flatMap(entry => (entry.items || []).map(item => `- [${entry.stage}] ${item.aspect}: ${item.verdict} — ${item.claim}${item.reason ? ` (because ${item.reason})` : ''}`))
+      .slice(-16);
+    return [
+      '[INTIMACY (정사) — SEXUAL ENCOUNTER DEPICTION]',
+      'A sexual encounter is under way. Keep it on the page in concrete detail, phase by phase, with true anatomy and physiology, continuous bodies, and each participant still themselves.',
+      `The vocabulary register is the NSFW GUIDANCE mode (${normalizeNsfwMode(settings?.nsfwMode).toUpperCase()}). This block sets what happens and how precisely; the register sets the words.`,
+      gate === 'novel'
+        ? '- Novel mode: every participant’s acts and sensations may be written within the author’s direction. Choices the author reserved stay open.'
+        : gate === 'staging'
+          ? '- Scene-staging RP mode: every act is the user’s. Add no new act, position, or climax; render the stated acts in physical detail only.'
+          : '- RP mode: the persona’s acts, sensations, arousal, and climax are only what the input states. Write NPC bodies and responses in full, and stop where the persona’s next move is due.',
+      'DEPICTION:',
+      '- Show, do not summarize: the beat on the page is the act itself (who touches what, how, with what pressure and rhythm, and what it does to each body), not a sentence that reports it happened.',
+      '- Move through phases at the scene’s pace. Foreplay builds arousal before penetration; climax comes when built to, not as a shortcut to end the turn; afterplay follows only an actual finish.',
+      '- Track each body continuously: position, who is above or behind, where hands and mouths are, clothing, depth, rhythm, fluids, breath, sweat, sound. A position holds until the prose moves it, and a change of position is shown.',
+      '- Body and voice share the beat: what a participant feels, says, and does stays in one paragraph, in their own diction.',
+      'PREFERENCES:',
+      '- Each character has their own tastes: positions they like or dislike, whether they enjoy or dislike foreplay and afterplay, and how they like to lead or receive each phase. A preference card is how this character is; let it shape who initiates, what they ask for, what they steer away from, and how they react.',
+      '- A character may still do what they dislike when the scene gives a reason (a partner’s wish, the moment); show the reluctance or the exception instead of erasing it.',
+      gate === 'novel' ? '' : '- RP mode: the persona has no card and no preference here; what the persona likes is only what the input states.',
+      'ACCURACY:',
+      '- Use the reference notes below for anatomy and physiology. Do not write an impossible body: no instant lubrication without arousal, no endless male erection after ejaculation without a refractory period, no position the bodies or the place cannot hold.',
+      '- Every participant is an adult. Consent, hesitation, refusal, and limits in the scene stay hard facts; this block never supplies them.',
+      '- Body state on record (injury, illness, pregnancy, fatigue) still applies inside the act.',
+      `STAGE DUTY: ${duty}`,
+      `INTIMACY PACKET:\n${packet.text}`,
+      `REFERENCE NOTES:\n${intimacyReferenceFor(packet.scene)}`,
+      priorChecks.length
+        ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names something to repair; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
+        : '',
+      outputKind === 'check'
+        ? 'OUTPUT: add a top-level "intimacy_check" array with one item per problem or confirmation about the encounter in this draft, judged only from your own duty. Item fields: aspect (phase, position, anatomy, continuity, voice, pacing, or preference); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
+        : outputKind === 'readings'
+          ? [
+            'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+          ].join('\n')
+          : ''
+    ].filter(Boolean).join('\n');
+  };
+  const INTIMACY_VERDICTS = Object.freeze(['confirm', 'adjust', 'uncertain']);
+  const INTIMACY_ASPECTS = Object.freeze(['phase', 'position', 'anatomy', 'continuity', 'voice', 'pacing', 'preference']);
+  const INTIMACY_MAX_READINGS = 6;
+  const intimacyJsonProperties = (stageName, settings = {}) => {
+    const kind = intimacyOutputKind(stageName, settings);
+    const str = { type: 'string' };
+    if (kind === 'check') return { intimacy_check: { type: 'array', items: closedJsonObject({ aspect: { type: 'string', enum: [...INTIMACY_ASPECTS] }, verdict: { type: 'string', enum: [...INTIMACY_VERDICTS] }, claim: str, reason: str }) } };
+    if (kind === 'readings') {
+      const stance = { type: 'string', enum: [...INTIMACY_STANCES] };
+      return {
+        intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+      };
+    }
+    return {};
+  };
+  const normalizeIntimacyChecks = value => (Array.isArray(value) ? value : []).map(item => ({
+    aspect: INTIMACY_ASPECTS.includes(item?.aspect) ? item.aspect : 'continuity',
+    verdict: INTIMACY_VERDICTS.includes(item?.verdict) ? item.verdict : 'uncertain',
+    claim: compact(item?.claim || '', 240),
+    reason: compact(item?.reason || '', 240)
+  })).filter(item => item.claim).slice(0, 8);
+  const normalizeIntimacyReadings = value => (Array.isArray(value) ? value : []).map(item => ({
+    participant: compact(item?.participant || '', 80),
+    phase: INTIMACY_PHASES.includes(item?.phase) ? item.phase : 'none',
+    position: compact(item?.position || '', 60),
+    summary: compact(item?.summary || '', 240)
+  })).filter(item => item.participant && item.summary).slice(0, INTIMACY_MAX_READINGS);
+  // Notes go to this run's ledger; readings stay in memory for display. Nothing is stored.
+  const recordIntimacyOutput = (ledger, stageName, parsed = {}, settings = {}) => {
+    if (!ledger || !intimacyStageActive(settings)) return;
+    const checks = normalizeIntimacyChecks(parsed?.intimacyCheck);
+    if (checks.length) {
+      if (!Array.isArray(ledger.intimacyChecks)) ledger.intimacyChecks = [];
+      ledger.intimacyChecks.push({ stage: stageName, items: checks });
+    }
+    if (intimacyOutputKind(stageName, settings) !== 'readings') return;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const readings = normalizeIntimacyReadings(parsed?.intimacyReadings);
+    if (scopeKey) Runtime.intimacyReadings[scopeKey] = { at: Date.now(), readings };
+    if (scopeKey) recordIntimacyProfiles(scopeKey, parsed?.intimacyProfiles, settings);
+  };
+  // A new profile becomes a card only for a name with no card yet: a card is never overwritten.
+  const recordIntimacyProfiles = (scopeKey, profiles, settings = {}) => {
+    if (!Runtime.intimacyCards || !Array.isArray(profiles) || !profiles.length) return [];
+    const cards = [...intimacyCardsForScope(scopeKey)];
+    const added = [];
+    for (const raw of profiles) {
+      const card = normalizeIntimacyCard({
+        name: raw?.name,
+        likedPositions: raw?.liked_positions,
+        dislikedPositions: raw?.disliked_positions,
+        foreplayStance: raw?.foreplay_stance,
+        foreplayStyle: raw?.foreplay_style,
+        intercourseStance: raw?.intercourse_stance,
+        intercourseStyle: raw?.intercourse_style,
+        afterplayStance: raw?.afterplay_stance,
+        afterplayStyle: raw?.afterplay_style,
+        basis: raw?.basis,
+        origin: 'lore',
+        createdAt: new Date().toISOString()
+      });
+      const key = normalizeContinuityAlias(card?.name || '');
+      if (!card?.name || !key) continue;
+      if (cards.some(existing => normalizeContinuityAlias(existing.name) === key || extensionSamePerson(existing.name, card.name))) continue;
+      // The persona's tastes are the user's in RP; the stage is told so, and this holds it.
+      if (intimacyModeGate(settings) !== 'novel' && (bodyStateIsPersona(card.name) || extensionSamePerson(card.name, Runtime.activePersonaName))) continue;
+      if (cards.length >= INTIMACY_MAX_CARDS) break;
+      card.id = `intimacy-${Date.now().toString(36)}-${cards.length}`;
+      cards.push(card);
+      added.push(card);
+    }
+    if (!added.length) return [];
+    Runtime.intimacyCards = { ...Runtime.intimacyCards, [scopeKey]: cards };
+    saveIntimacyCards().catch(error => warn('[intimacy cards save failed]', error));
+    return added;
+  };
+
+  const forcedBondSameParty = (left, right) => {
+    if (!left || !right) return false;
+    const leftPersona = bodyStateIsPersona(left) || extensionSamePerson(left, Runtime.activePersonaName);
+    const rightPersona = bodyStateIsPersona(right) || extensionSamePerson(right, Runtime.activePersonaName);
+    if (leftPersona || rightPersona) return leftPersona && rightPersona;
+    return extensionSamePerson(left, right);
+  };
+  const forcedBondSamePair = (left, right, mutual = false) => (
+    (forcedBondSameParty(left.from, right.from) && forcedBondSameParty(left.to, right.to))
+    || (mutual && forcedBondSameParty(left.from, right.to) && forcedBondSameParty(left.to, right.from))
+  );
   const recordForcedBondOutput = (ledger, stageName, parsed = {}, settings = {}) => {
     if (!ledger || !forcedBondStageActive(settings)) return;
     const checks = normalizeForcedBondCheck(parsed?.bondCheck);
@@ -27202,14 +27805,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     if (!scopeKey) return;
     const readings = normalizeForcedBondReadings(parsed?.bondReadings);
-    if (readings.length) Runtime.forcedBondReadings[scopeKey] = { at: Date.now(), readings };
+    Runtime.forcedBondReadings[scopeKey] = { at: Date.now(), readings };
     const cards = forcedBondCardsForScope(settings, scopeKey);
-    const known = new Set(cards.map(card => `${card.from}>${card.to}`));
+    const matchesCard = item => cards.some(card => forcedBondSamePair(card, item, card.direction === 'mutual'));
     // A proposal whose pair has since become a card is no longer a proposal.
-    const existing = (Runtime.forcedBondProposals[scopeKey] || []).filter(item => !known.has(`${item.from}>${item.to}`));
+    const existing = (Runtime.forcedBondProposals[scopeKey] || []).filter(item => !matchesCard(item));
     for (const proposal of normalizeForcedBondProposals(parsed?.bondProposals)) {
-      const key = `${proposal.from}>${proposal.to}`;
-      if (known.has(key) || existing.some(item => `${item.from}>${item.to}` === key)) continue;
+      if (matchesCard(proposal) || existing.some(item => forcedBondSamePair(item, proposal, true))) continue;
       existing.push({ ...proposal, id: `proposal-${Date.now().toString(36)}-${existing.length}` });
     }
     Runtime.forcedBondProposals[scopeKey] = existing.slice(-FORCED_BOND_MAX_PROPOSALS);
@@ -27287,9 +27889,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     stage: stageName,
     authority: [
       'Current Submitted User Input is the primary user instruction. An accepted Input Assist reconstruction has replaced its diagnostic original.',
+      'Current Chat Author Note is the second user-authored authority. Stage creative guidance follows it and remains subordinate to established canon.',
       stageName === 'shadow_act'
-        ? 'Current Chat Author Note is the second user-authored authority. Stage creative guidance follows it and remains subordinate to established canon.'
-        : 'The inherited SHADOW draft is the same-turn primary composition. Revise only inside this AIDE domain.'
+        ? ''
+        : 'The inherited SHADOW draft is the same-turn primary composition. Revise only inside this AIDE domain, except to repair a violation of the Current Chat Author Note.'
     ],
     task: stageName === 'shadow_act'
       ? (isPlayerControlledDraftMode(settings) ? (rpScopeLocksCast(settings) ? 'Write the first complete response draft for this turn within the RP detail mode.' : 'Write the first complete NPC/world response draft for this player-controlled turn.') : 'Write the first complete author-directed Novel-mode scene draft, including the user persona as part of the cast.')
@@ -27374,7 +27977,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const defaultFullDraftCreativeInstructions = (stageName, recent, previous, settings, ledger, extraBlock = '') => {
     const stylePack = builtInStylePresetPrompt(settings);
     const shadowDraftBridge = stageName === 'shadow_act' ? shadowActDraftStyleBridgePrompt(settings) : '';
-    const authorNoteAuthority = stageName === 'shadow_act' ? buildShadowAuthorNoteAuthorityBlock(recent, settings) : '';
+    const authorNoteAuthority = buildAuthorNoteAuthorityBlock(recent, settings, stageName);
     const sameTurnLock = aideSameTurnRevisionLock(stageName);
     const playerAgencyLedger = isPlayerControlledDraftMode(settings) ? buildPlayerControlledAgencyLedgerBlock(recent, undefined, { settings }) : '';
     const shadowModeInheritance = stageName === 'shadow_act' ? '' : shadowDraftModeAideInheritanceContract(settings, stageName, 'patch');
@@ -27427,7 +28030,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       lengthGuide,
       nsfwGuidance,
       biancaInjection,
-      'Use the structured input sections under the authority contract. Current input ranks first; the dedicated Current Chat Author Note ranks second for SHADOW ACT; direct narrative then outranks ordinary notes. Omissions from ordinary notes are not prohibitions, and unsupported notes cannot validate each other.',
+      'Use the structured input sections under the authority contract. Current input ranks first; the dedicated Current Chat Author Note ranks second for every draft stage; direct narrative then outranks ordinary notes. Omissions from ordinary notes are not prohibitions, and unsupported notes cannot validate each other.',
       'If the latest user input does not explicitly move the scene, preserve the latest visible location and social situation. An older offscreen or secondary scene is not current without a concrete present bridge.',
       'The visible output must contain the actual RP draft text, not analysis or a plan.',
       fullDraftStageRoleInstructions(stageName, settings),
@@ -27744,9 +28347,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const lengthBeatAnalysisContract = stageName === 'shadow_act'
       ? shadowDraftLengthBeatContract(settings, 'analysis')
       : '';
-    const authorNoteAuthority = stageName === 'shadow_act'
-      ? buildShadowAuthorNoteAuthorityBlock(recent, settings)
-      : '';
+    const authorNoteAuthority = buildAuthorNoteAuthorityBlock(recent, settings, stageName);
     const arcControl = recent?.arcDirector || Runtime.arcDirector;
     const arcAudience = arcContinuityAudienceForStage(stageName);
     const arcDirectorAnalysisBrief = isAuthorDirectedDraftMode(settings)
@@ -27873,6 +28474,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'Read the WORLD DYNAMICS block and the evidence already in this prompt. Decide whether one established off-scene movement is due to reach this scene, and where the draft freezes the outside world or surfaces something unestablished.',
         'Do not write or revise the response draft. Return concise off-scene movement analysis and direct rewrite directives.'
       ],
+      aide_intimacy: [
+        'ROLE: Intimacy AIDE (정사 AIDE) — sexual encounter depiction analysis, before the Forced Bond and Plot AIDEs.',
+        'Read the INTIMACY block and its packet. Decide this turn’s phase, position, and readings, the preference profile of each participant without a card, and where the draft summarizes, fades out, breaks anatomy or position continuity, or goes against a preference card.',
+        'Do not write or revise the response draft. Return concise encounter analysis and direct rewrite directives.'
+      ],
       aide_body_state: [
         'ROLE: Body State AIDE (상태 AIDE) — body-state analysis, before the Forced Bond and Plot AIDEs.',
         'Read the BODY STATE packet and the verification notes. Decide this turn’s body-state readings and where the draft’s body-state portrayal is missing or wrong.',
@@ -27955,7 +28561,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'Current Submitted User Input ranks first for this run.',
         stageName === 'shadow_act'
           ? 'Current Chat Author Note ranks second; terminal scene and exact canon follow.'
-          : 'The current same-turn draft is the only edit target; terminal scene and exact canon are read-only evidence.'
+          : 'Current Chat Author Note ranks second. The current same-turn draft is the only edit target; terminal scene and exact canon are read-only evidence.'
       ],
       task: roleLines.join('\n'),
       evidenceSections: common,
@@ -28211,6 +28817,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       stateReadings: Array.isArray(parsed.state_readings) ? parsed.state_readings : [],
       worldCheck: Array.isArray(parsed.world_check) ? parsed.world_check : [],
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
+      intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
+      intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
+      intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
       scenePurpose: compact(parsed.scene_purpose || '', 400),
       storyArc: compact(parsed.story_arc || '', 400),
       fixation: normalizeStringArray(parsed.fixation, 2, 160),
@@ -28322,7 +28931,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ).trim();
     const inherited = extractNamedAnalysisSource(prompts.user, ['inherited prior stage analysis']);
     const currentDraft = stageName === 'shadow_act' ? '' : stageDraft(previous);
-    const authorNote = stageName === 'shadow_act' ? text(recent?.authorNote || '').trim() : '';
+    const authorNote = text(recent?.authorNote || '').trim();
     const creativeInstruction = stageCustomPrompt(settings, stageName);
     const compiled = compilePromptSpec({
       phase: 'analysis',
@@ -28331,7 +28940,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         'Current submitted input ranks first.',
         stageName === 'shadow_act'
           ? 'Current Chat Author Note ranks second; terminal scene and this stage-specific canonical reference view follow.'
-          : 'Current same-turn draft is the only edit target; terminal scene and this stage-specific canonical reference view are read-only evidence.'
+          : 'Current Chat Author Note ranks second. Current same-turn draft is the only edit target; terminal scene and this stage-specific canonical reference view are read-only evidence.'
       ],
       task: 'Repair a failed mandatory private RP analysis response from the compact evidence only.',
       hardConstraints: [
@@ -29021,6 +29630,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       'ROLE: World Dynamics AIDE (세계 동역학 AIDE) — off-scene movement patch editor, before the Body State, Forced Bond, and Plot AIDEs.',
       'Inspect the latest draft against the WORLD DYNAMICS block. Patch only where an established off-scene movement is due and missing, or where the draft surfaces a movement with no established cause, and preserve unaffected blocks exactly.'
     ],
+    aide_intimacy: [
+      'ROLE: Intimacy AIDE (정사 AIDE) — sexual encounter depiction patch editor, before the Forced Bond and Plot AIDEs.',
+      'Inspect the latest draft against the INTIMACY block. Patch only where the act is summarized or faded out, anatomy or position continuity breaks, or a participant goes against their preference card without a reason, and preserve unaffected blocks exactly.'
+    ],
     aide_body_state: [
       'ROLE: Body State AIDE (상태 AIDE) — body-state patch editor, before the Forced Bond and Plot AIDEs.',
       'Inspect the latest draft against the BODY STATE block. Patch only body-state portrayal that is missing or contradicts the packet, and preserve unaffected blocks exactly.'
@@ -29534,12 +30147,15 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
         stateReadings: patch.stateReadings,
         worldCheck: patch.worldCheck,
         worldReadings: patch.worldReadings,
+        intimacyCheck: patch.intimacyCheck,
+        intimacyReadings: patch.intimacyReadings,
+        intimacyProfiles: patch.intimacyProfiles,
         scenePurpose: patch.scenePurpose,
         storyArc: patch.storyArc,
         fixation: patch.fixation
       };
       const analysis = precomputedAnalysis
-        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings }
+        ? { ...precomputedAnalysis, scenePurpose: precomputedAnalysis.scenePurpose || patch.scenePurpose, storyArc: precomputedAnalysis.storyArc || patch.storyArc, fixation: (precomputedAnalysis.fixation || []).length ? precomputedAnalysis.fixation : patch.fixation, bondCheck: precomputedAnalysis.bondCheck?.length ? precomputedAnalysis.bondCheck : patch.bondCheck, bondReadings: precomputedAnalysis.bondReadings?.length ? precomputedAnalysis.bondReadings : patch.bondReadings, bondProposals: precomputedAnalysis.bondProposals?.length ? precomputedAnalysis.bondProposals : patch.bondProposals, stateCheck: precomputedAnalysis.stateCheck?.length ? precomputedAnalysis.stateCheck : patch.stateCheck, stateReadings: precomputedAnalysis.stateReadings?.length ? precomputedAnalysis.stateReadings : patch.stateReadings, worldCheck: precomputedAnalysis.worldCheck?.length ? precomputedAnalysis.worldCheck : patch.worldCheck, worldReadings: precomputedAnalysis.worldReadings?.length ? precomputedAnalysis.worldReadings : patch.worldReadings, intimacyCheck: precomputedAnalysis.intimacyCheck?.length ? precomputedAnalysis.intimacyCheck : patch.intimacyCheck, intimacyReadings: precomputedAnalysis.intimacyReadings?.length ? precomputedAnalysis.intimacyReadings : patch.intimacyReadings, intimacyProfiles: precomputedAnalysis.intimacyProfiles?.length ? precomputedAnalysis.intimacyProfiles : patch.intimacyProfiles }
         : patchAnalysis;
       const safeNoop = isSafeAidePatchNoop(patch, applied);
       const normalized = {
@@ -29800,6 +30416,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
     aide_plot: 'Causality and open plot movement',
     aide_body_state: 'Character body state and readings',
     aide_world_dynamics: 'Off-scene movement reaching the scene',
+    aide_intimacy: 'Sexual encounter depiction and preferences',
     aide_forced_bond: 'Relationship tension and bond readings'
   }[stageName] || 'Scene continuity');
 
@@ -41960,6 +42577,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     Object.freeze({ id: 'results', group: 'start', label: '실행 결과', icon: '▤', description: '단계별 분석과 초안 기록', dense: true }),
     Object.freeze({ id: 'input', group: 'production', label: '인풋 관리자', icon: '◇', description: '입력 재구성과 전송 방식' }),
     Object.freeze({ id: 'pipeline', group: 'production', label: '초안 파이프라인', icon: '◆', description: 'SHADOW ACT와 세 AIDE' }),
+    Object.freeze({ id: 'writing', group: 'production', label: '작성 방식', icon: '✎', description: '모든 채팅과 모든 단계에 적용되는 작성 설정' }),
+    Object.freeze({ id: 'chat', group: 'production', label: '이 채팅', icon: '◎', description: '이 채팅에만 저장되는 설정과 기록' }),
     Object.freeze({ id: 'ooc', group: 'production', label: '창작 지침 OOC', icon: '✦', description: '단계별 창작 지침 작성' }),
     Object.freeze({ id: 'improve', group: 'production', label: '응답 옵션', icon: '✧', description: 'NSFW와 Assistant Prefill' }),
     Object.freeze({ id: 'references', group: 'references', label: '자료', icon: '▦', description: 'GRADIA가 읽을 자료를 한곳에서 관리' }),
@@ -42303,6 +42922,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     aide_forced_bond: guiSlotFromSettings(settings, 'aide_forced_bond', settings.enableForcedBondAide),
     aide_body_state: guiSlotFromSettings(settings, 'aide_body_state', settings.enableBodyStateAide),
     aide_world_dynamics: guiSlotFromSettings(settings, 'aide_world_dynamics', settings.enableWorldDynamicsAide),
+    aide_intimacy: guiSlotFromSettings(settings, 'aide_intimacy', settings.enableIntimacyAide),
     [USER_INTENT_OOC_STAGE_ID]: guiSlotFromSettings(settings, USER_INTENT_OOC_STAGE_ID, true)
   });
 
@@ -42523,6 +43143,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       enableForcedBondAide: Gui.state?.agents?.aide_forced_bond?.enabled === true,
       enableBodyStateAide: Gui.state?.agents?.aide_body_state?.enabled === true,
       enableWorldDynamicsAide: Gui.state?.agents?.aide_world_dynamics?.enabled === true,
+      enableIntimacyAide: Gui.state?.agents?.aide_intimacy?.enabled === true,
       bodyStateReproduction: runtime.bodyStateReproduction === true,
       bodyStateCards: normalizeBodyStateCardMap(runtime.bodyStateCards),
       forcedBondForceAppearance: runtime.forcedBondForceAppearance !== false,
@@ -42800,9 +43421,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     scheduleGuiChangeSummaryRefresh();
   };
 
-  const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.tab.tab--sub::before{content:\"+ \";color:var(--text3)}\n.node--sub{padding-top:6px;padding-bottom:6px}\n.node--sub .node__dot{width:22px;height:22px;margin-left:10px;font-size:11px}\n.node--sub b{font-size:12.5px}\n.node--sub .node__parent{display:block;font-size:11px;color:var(--text3)}\n.mini__sub{margin-left:4px;font-weight:600;color:var(--text3)}\n.ladder--aside{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}\n.ladder__label{display:block;padding:0 0 6px 8px}\n.mini__step.is-off{opacity:.5;border-style:dashed}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}";
-  const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>"};
-  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\" data-go-stage=\"shadow\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\" data-go-stage=\"char\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\" data-go-stage=\"world\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\" data-go-stage=\"plot\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4w\" data-go=\"pipeline\" data-go-stage=\"world_dynamics\">세계 동역학 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4a\" data-go=\"pipeline\" data-go-stage=\"body_state\">상태 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4b\" data-go=\"pipeline\" data-go-stage=\"forced_bond\">억결 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" id=\"mini-s5\" data-go=\"pipeline\" data-go-stage=\"main\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다.</p></div></div>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          \n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node s4\" data-select-row=\"world_dynamics\"><span class=\"node__dot\">5</span><span><b>세계 동역학 AIDE</b><small>장면 밖 흐름·기한 계산</small></span><span id=\"lb-world_dynamics\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"body_state\"><span class=\"node__dot\">5</span><span><b>상태 AIDE</b><small>몸 상태·건강 계산</small></span><span id=\"lb-body_state\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"forced_bond\"><span class=\"node__dot\">5</span><span><b>억결 AIDE</b><small>관계 형성·관계 판독</small></span><span id=\"lb-forced_bond\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n        <div class=\"ladder ladder--aside\" id=\"ladder-aside\"><span class=\"hint ladder__label\">파이프라인 밖</span><button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">직접 실행 · 초안 파이프라인과 별개</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT</h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"s\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <div class=\"field\"><label>장면 변수</label><select class=\"select\" data-scene-variance><option value=\"off\">끔</option><option value=\"low\">약하게 (가끔)</option><option value=\"medium\">보통</option><option value=\"high\">강하게 (거의 매 턴)</option></select><span class=\"hint\">매 턴 무작위로 작은 변수(인물의 기분·충동·딴생각, 스스로 하는 행동, 주변의 작은 사건)를 하나 넣어 장면을 덜 뻔하게 만듭니다. RP에서는 페르소나에게 걸지 않습니다.</span></div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 읽습니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\">유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 전송 전에 직접 하나를 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            \n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE</h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\" data-npc-disposition-panel><label>NPC 반응 경향성 <span class=\"hint\">이 채팅에만 적용 · 인물 AIDE를 꺼도 모든 단계에 적용</span></label><p class=\"hint\" style=\"margin:0 0 6px\">NPC가 페르소나에게 어떻게 반응할지 고정합니다. 반응의 방향은 경향성이, 표현 방식은 로어가 정합니다. 직접 바꾸기 전까지 장면 때문에 바뀌지 않습니다.</p><div class=\"opt-grid\"><div class=\"field\"><label>모든 NPC 기본값</label><select class=\"select\" data-npc-disposition-field=\"default\"></select></div></div><div class=\"stack stack--sm\" data-npc-disposition-list></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-npc-disposition-action=\"add\">NPC 추가</button></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE</h2><p class=\"muted\">장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE</h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world_dynamics\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>세계관 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계 동역학 AIDE</h2><p class=\"muted\">이미 움직이기 시작한 장면 밖의 일(추격·명령·기한·소문·절차)이 며칠째 진행 중인지, 기한이 닥쳤는지를 LIBRA 이야기 시계와 기록으로 매 턴 계산해, 근거가 있는 움직임만 간접 경로로 장면에 닿게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s7\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 전개를 드러내지 않습니다. RP에서 페르소나의 반응과 다음 행동은 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 세계관 AIDE가 이 판정까지 함께 처리합니다. 세계관 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_world_dynamics\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"field\"><label>이번 턴 판독</label><div class=\"stack stack--sm\" data-world-dynamics-readings></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계 동역학 AIDE\" placeholder=\"비워 두면 내장 세계 동역학 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"d\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계 동역학 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"body_state\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">상태 AIDE</h2><p class=\"muted\">인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 매 턴 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s6\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 판정 없이 연출만 맡습니다. RP에서 페르소나의 몸 상태는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_body_state\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" data-body-state-field=\"reproduction\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>생식 판정 (임신·피임)</b><small>기본 꺼짐. 켜면 관계 기록과 주기·피임으로 NPC의 임신 여부를 고정 판정합니다. 같은 기록이면 언제나 같은 결과입니다.</small></span></label>\n            <div class=\"field\"><label>이 채팅의 상태 카드</label><div class=\"stack stack--sm\" data-body-state-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-body-state-action=\"add\">상태 카드 추가</button></div></div>\n            <div class=\"field\"><label>이번 턴 판독</label><div class=\"stack stack--sm\" data-body-state-readings></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"상태 AIDE\" placeholder=\"비워 두면 내장 상태 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"b\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"상태 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"forced_bond\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>플롯 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">억결 AIDE</h2><p class=\"muted\">페르소나를 중심으로 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 장면에 엮습니다. 최근 감정 신호를 따라 관계를 한 걸음씩 움직이고, 연애로 몰아가지 않습니다. 다른 AIDE가 각자 역할에서 관계를 검증하고, 플롯 AIDE가 마지막으로 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s5\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 등장 없이 연출 색깔만 맡습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 플롯 AIDE가 이 판정까지 함께 처리합니다. 플롯 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_forced_bond\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"auto\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>카드가 없을 때 자동으로 엮기</b><small>관계 카드가 없으면 캐릭터 카드의 인물과 장면에 있는 인물(최대 2명)을 페르소나와 엮고, 관계의 결은 설정·로어·장면에서 읽습니다.</small></span></label>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"forceAppearance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>장면에 없으면 등장 계기 만들기</b><small>관계 상대가 장면에 없으면 장면 초중반에 결에 맞는 계기로 등장시킵니다. 결말을 만드는 등장은 쓰지 않습니다.</small></span></label>\n            <div class=\"field\"><label>이 채팅의 관계 카드</label><div class=\"stack stack--sm\" data-forced-bond-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-forced-bond-action=\"add\">관계 카드 추가</button></div></div>\n            <div class=\"field\"><label>AI가 제안한 관계</label><div class=\"stack stack--sm\" data-forced-bond-proposals></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"억결 AIDE\" placeholder=\"비워 두면 내장 억결 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"f\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"억결 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2>\n          <div class=\"stack\">\n            <div class=\"field\"><label>전달 방식</label><span class=\"hint\">초안에 기본 지시를 붙여 메인 응답으로 넘기고, 메인 응답이 그 초안을 바탕으로 마무리합니다. 단계 분석은 전달하지 않습니다.</span></div>\n            <details class=\"fold\"><summary>응답 옵션 · NSFW · Assistant Prefill</summary><div class=\"fold__body\">\n              <div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">비앙카 투입</div><div class=\"setting__desc\">BIANCA 워크스페이스 페르소나(§0~§11)를 창작 단계 프롬프트에 넣습니다. 인물·말투·장면 판단·성인 소재 규칙이 함께 들어갑니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"biancaInject\" aria-label=\"비앙카 투입\"><span class=\"switch__track\"></span></label></div>\n              <div class=\"setting\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n            </div></details>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback 플러그인의 현재 채팅 기억을 플러그인 IPC로 직접 읽습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>플러그인 IPC 활성</span></span></div>\n        <div id=\"lib-read-owners-container\" class=\"field\" style=\"margin-top:14px\"><div class=\"field\" id=\"lib-draft-read-owners\"><span class=\"label\" style=\"font-weight:600\">초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)</span><div class=\"cluster\" style=\"margin-top:8px;display:flex;flex-wrap:wrap;gap:18px\"><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"libra\">LIBRA (미크로·통합 기억)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"hayaku\">HAYAKU (로케이터·연속성)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"flashback\">Flashback (벡터 메모리)</label></div></div></div>\n        <div class=\"state-grid\" style=\"margin-top:16px\">\n          <div><b>통신 방식</b><span>플러그인 IPC (별도 로컬 서버 불필요)</span></div>\n          <div><b>활성 읽기 대상</b><span id=\"lib-active-summary\">LIBRA · HAYAKU · Flashback</span></div>\n          <div><b>현재 채팅 scope</b><span id=\"lib-scope-summary\">현재 채팅 scope 미확인</span></div>\n          <div><b>기억 전달 방식</b><span>초안 프롬프트 직접 주입 (검증 퇴짜 없음)</span></div></div>\n        <div hidden style=\"display:none\"><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:47630\"><button id=\"lib-connect\"></button><button id=\"lib-disconnect\"></button><button id=\"lib-check\"></button><span id=\"lib-state\"></span></div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"s\">SHADOW ACT <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"d\">세계 동역학 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"b\">상태 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"f\">억결 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"i\">입력 도우미</button></div>\n      <div data-subpanel=\"s\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"d\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"b\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"f\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"i\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
+  const GRADIA_MOCKUP_STYLE = "/* =====================================================================\n   Librarian Suite GUI — 공용 디자인 시스템 (시안 v1)\n   규칙 (Librarian-Mobile-GPU-UI-IMPLEMENTATION-GUIDE 준수)\n   - backdrop-filter / filter:blur 금지, 큰 반투명 면 금지\n   - Surface 단계 + 1px border 로 깊이를 만들고, 그림자는 떠 있는 요소(메뉴·모달)에만\n   - 선택 상태는 색 대비 + 텍스트/아이콘 병기 (색만으로 구분하지 않음)\n   - 모바일: 컨테이너 쿼리로 하단 탭바 전환, 외곽 그림자 제거, reduced-motion 대응\n   ===================================================================== */\n\n*{box-sizing:border-box}\nhtml,body{margin:0;min-height:100%}\n:root{\n  --font-sans:Pretendard,\"Pretendard Variable\",\"Noto Sans KR\",\"Apple SD Gothic Neo\",\"Malgun Gothic\",system-ui,-apple-system,\"Segoe UI\",sans-serif;\n  --font-mono:ui-monospace,SFMono-Regular,\"D2Coding\",Menlo,Consolas,monospace;\n  --font-display:var(--font-sans);\n  /* 타입 스케일: 최소 12px (현행 9~10px 제거) */\n  --fs-eyebrow:11.5px; --fs-note:12px; --fs-body:13px; --fs-sub:15px; --fs-title:19px; --fs-page:27px;\n  --r-sm:7px; --r-md:11px; --r-lg:15px;\n  --motion:.16s;\n  --top-h:58px; --side-w:224px;\n  --scrim:rgba(8,12,20,.64);\n}\n@media (prefers-reduced-motion:reduce){:root{--motion:0s}*{animation:none!important;scroll-behavior:auto!important}}\n\nbody{font:var(--fs-body)/1.65 var(--font-sans);color:var(--text);background:var(--page-bg,#d9dbe0);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}\nbutton,input,select,textarea{font:inherit;color:inherit}\nbutton{cursor:pointer}\ncode,pre,kbd,textarea{font-family:var(--font-mono);word-break:break-all}\n.ic{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:-3px}\n.ic--sm{width:15px;height:15px}.ic--lg{width:22px;height:22px}\n:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}\n[hidden]{display:none!important}\n.muted{color:var(--text2)}.faint{color:var(--text3)}.mono{font-family:var(--font-mono)}.num{font-variant-numeric:tabular-nums}\n\n/* ---------- 시안 도구줄 (제품 UI 아님) ---------- */\n.proto-bar{position:sticky;top:0;z-index:100;display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:8px 14px;background:#14161b;color:#e9ecf2;font:12px/1.4 var(--font-sans)}\n.proto-bar a{color:#9fc1ff;text-decoration:none}.proto-bar a:hover{text-decoration:underline}\n.proto-bar b{font-weight:700}\n.proto-bar .proto-note{margin-left:auto;padding:2px 10px;border:1px dashed #6b7488;border-radius:99px;color:#c9d0e0;font-size:11.5px}\n.proto-bar .grp{display:inline-flex;align-items:center;gap:4px}\n.proto-bar .grp>span{color:#9aa3b5;margin-right:2px}\n.proto-bar button{border:1px solid #3a4152;background:#1d212a;color:#e9ecf2;padding:4px 10px;border-radius:6px;font-size:12px}\n.proto-bar button[aria-pressed=true]{background:#e9ecf2;color:#14161b;border-color:#e9ecf2;font-weight:700}\n.stage{display:flex;justify-content:center;padding:14px}\n.frame{container:app/inline-size;width:min(1200px,100%);height:min(830px,calc(100dvh - 78px));min-height:560px;position:relative}\n.frame[data-device=tablet]{width:820px}\n.frame[data-device=mobile]{width:390px}\n\n/* ---------- 앱 셸 ---------- */\n.app{position:relative;width:100%;height:100%;display:grid;grid-template-columns:var(--side-w) minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr);grid-template-areas:\"top top\" \"side main\";background:var(--app-bg);border:1px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;color:var(--text);box-shadow:0 14px 40px rgba(10,14,24,.22)}\n.topbar{grid-area:top;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--top-bg,var(--surface));color:var(--top-text,var(--text));border-bottom:1px solid var(--top-line,var(--border))}\n.brand{display:flex;align-items:center;gap:10px;min-width:0}\n.brand__mark{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--brand-bg,var(--accent));color:var(--brand-ink,var(--on-accent));flex:none}\n.brand__name{font:800 17px/1.15 var(--font-display);letter-spacing:-.01em;overflow-wrap:normal}\n.brand>div:last-child{min-width:0}\n.brand__ver{font:11.5px/1.2 var(--font-mono);opacity:.72;margin-top:2px}\n.scope{display:flex;align-items:center;gap:7px;min-width:0;margin-left:6px;padding-left:14px;border-left:1px solid var(--top-line,var(--border));font-size:12.5px;color:var(--top-text2,var(--text2))}\n.scope b{color:var(--top-text,var(--text));font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.scope span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.grow{flex:1;min-width:0}\n.health{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border-radius:99px;font:650 12px/1.3 var(--font-sans);border:1px solid transparent;white-space:nowrap}\n.health i{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}\n.health--ok{background:var(--ok-soft);color:var(--ok-ink);border-color:var(--ok-line)}\n.health--warn{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn-line)}\n.health--danger{background:var(--danger-soft);color:var(--danger-ink);border-color:var(--danger-line)}\n.menu{position:relative}\n.menu__panel{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-md);box-shadow:0 14px 36px rgba(0,0,0,.28);z-index:30;display:none}\n.menu.is-open .menu__panel{display:grid}\n.menu__panel button{display:flex;align-items:center;gap:9px;min-height:40px;padding:8px 12px;border:0;background:transparent;text-align:left;border-radius:var(--r-sm);color:var(--text);font-size:13px}\n.menu__panel button:hover{background:var(--surface2)}\n\n.sidebar{grid-area:side;display:flex;flex-direction:column;min-height:0;background:var(--side-bg);color:var(--side-text);border-right:1px solid var(--side-line,var(--border));padding:14px 12px;overflow:auto}\n.nav-label{margin:14px 10px 6px;font:700 11.5px/1.3 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--side-label,var(--side-text));opacity:.75}\n.nav-label:first-child{margin-top:2px}\n.nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:8px 11px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--side-text);text-align:left;font:600 13.5px/1.3 var(--font-sans);transition:background-color var(--motion)}\n.nav-item:hover{background:var(--side-hover)}\n.nav-item[aria-current=page]{background:var(--side-active-bg);color:var(--side-active-text);border-color:var(--side-active-line,transparent)}\n.nav-item .count{margin-left:auto;min-width:22px;padding:0 7px;text-align:center;border-radius:99px;font:700 11.5px/1.7 var(--font-sans);background:var(--side-count-bg);color:var(--side-count-text)}\n.nav-item .count--alert{background:var(--danger);color:#fff}\n.side-foot{margin-top:auto;padding:12px;border:1px solid var(--side-line,var(--border));border-radius:var(--r-md);font-size:12px;color:var(--side-text);background:var(--side-foot-bg,transparent)}\n.side-foot b{display:block;font-size:12.5px}\n.side-foot span{opacity:.8}\n\n.main{grid-area:main;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--main-bg,var(--app-bg))}\n.page-body{flex:1;min-height:0;overflow:auto;padding:26px 30px 34px;scrollbar-gutter:stable}\n.page{display:none}.page.is-active{display:block}\n.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px 20px;margin-bottom:20px}\n.page-head__copy{flex:1;min-width:240px}\n.eyebrow{font:700 var(--fs-eyebrow)/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}\n.page-title{margin:3px 0 0;font:800 var(--fs-page)/1.25 var(--font-display);letter-spacing:-.02em}\n.page-desc{margin:6px 0 0;max-width:68ch;color:var(--text2);font-size:13.5px}\n.page-actions{display:flex;flex-wrap:wrap;gap:8px}\n.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.stack--lg{gap:22px}.stack--sm{gap:10px}\n.cluster{display:flex;flex-wrap:wrap;gap:8px;align-items:center}\n.split{display:flex;align-items:center;justify-content:space-between;gap:12px}\n.grid{display:grid;gap:14px}.grid>.field{align-self:start}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}\n.g-side{grid-template-columns:minmax(260px,.9fr) minmax(0,1.5fr)}\n.g-side--a{grid-template-columns:minmax(250px,.8fr) minmax(0,1.6fr)}\n.g-side--b{grid-template-columns:minmax(230px,.7fr) minmax(0,1.6fr)}\n.g-side--r{grid-template-columns:minmax(0,1.5fr) minmax(260px,.9fr)}\n\n/* ---------- 카드 / 상태 ---------- */\n.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:20px}\n.card--flat{background:var(--surface2)}\n.card--tight{padding:14px 16px}\n.card--accent{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}\n.card__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}\n.card__title{margin:0;font:700 var(--fs-sub)/1.4 var(--font-display);letter-spacing:-.01em}\n.card__desc{margin:3px 0 0;color:var(--text2);font-size:var(--fs-note)}\n.section-title{margin:0 0 10px;font:700 14px/1.4 var(--font-display);color:var(--text)}\n.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:99px;font:650 12px/1.6 var(--font-sans);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap}\n.badge--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}\n.badge--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.badge--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.badge--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent));color:var(--accent-ink)}\n.badge--solid{background:var(--text);border-color:var(--text);color:var(--surface)}\n.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface);color:var(--text2)}\n.banner{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;padding:15px 18px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface2)}\n.banner__icon{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--border2)}\n.banner b{display:block;font-size:14px}.banner strong{font-weight:750;color:var(--text)}.banner span{color:var(--text2);font-size:var(--fs-note)}\n.banner--ok{background:var(--ok-soft);border-color:var(--ok-line)}.banner--ok .banner__icon{background:var(--ok);color:#fff;border-color:var(--ok)}.banner--ok b{color:var(--ok-ink)}\n.banner--warn{background:var(--warn-soft);border-color:var(--warn-line)}.banner--warn .banner__icon{background:var(--warn);color:#fff;border-color:var(--warn)}.banner--warn b{color:var(--warn-ink)}\n.banner--danger{background:var(--danger-soft);border-color:var(--danger-line)}.banner--danger .banner__icon{background:var(--danger);color:#fff;border-color:var(--danger)}.banner--danger b{color:var(--danger-ink)}\n.banner--info{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}.banner--info .banner__icon{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}\n.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}\n.stat{background:var(--surface);padding:15px 18px}\n.stat__label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--text2)}\n.stat__value{margin-top:5px;font:800 28px/1.15 var(--font-display);letter-spacing:-.02em;font-variant-numeric:tabular-nums}\n.stat__meta{margin-top:2px;font-size:12px;color:var(--text3)}\n.empty{display:grid;justify-items:center;gap:6px;padding:34px 20px;border:1px dashed var(--border2);border-radius:var(--r-md);background:var(--surface2);text-align:center;color:var(--text2)}\n.empty b{color:var(--text);font-size:14px}\n\n/* ---------- 버튼 / 폼 ---------- */\n.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 14px;border:1px solid var(--border2);background:var(--surface);color:var(--text);border-radius:var(--r-sm);font:650 12.5px/1.25 var(--font-sans);transition:background-color var(--motion),border-color var(--motion);white-space:nowrap}\n.btn:hover{background:var(--surface3)}\n.btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}.btn--primary:hover{background:var(--accent-hover)}\n.btn--danger{color:var(--danger-ink);border-color:var(--danger-line);background:var(--danger-soft)}.btn--danger:hover{background:var(--danger-soft2,var(--danger-soft))}\n.btn--danger-solid{background:var(--danger);border-color:var(--danger);color:#fff}.btn--danger-solid:hover{background:var(--danger-ink)}\n.btn--ghost{background:transparent;border-color:transparent;color:var(--text2)}.btn--ghost:hover{background:var(--surface3)}\n.btn--sm{min-height:32px;padding:4px 11px;font-size:12px}\n.btn--icon{width:38px;padding:0}\n.btn:disabled,.btn[aria-disabled=true]{opacity:.5;cursor:not-allowed}\n.topbar .btn{--surface:transparent;background:transparent;border-color:var(--top-line,var(--border2));color:var(--top-text,var(--text))}\n.topbar .btn:hover{background:var(--top-hover,var(--surface3))}\n.topbar .btn--primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.field{display:grid;gap:5px}\n.field>label,.label{font-weight:650;font-size:12.5px}\n.hint{font-size:var(--fs-note);color:var(--text3)}\n.input,.select,.textarea{width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--input-bg,var(--surface));color:var(--text);font-size:13px}\n.textarea{min-height:104px;font-family:var(--font-mono);font-size:12.5px;line-height:1.65;resize:vertical}\n.input:focus,.select:focus,.textarea:focus{border-color:var(--accent);outline:2px solid var(--accent-soft);outline-offset:0}\n.search{position:relative}.search .ic{position:absolute;left:11px;top:11px;color:var(--text3)}.search .input{padding-left:36px}\n.switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;cursor:pointer}\n.switch input{position:absolute;opacity:0;width:1px;height:1px}\n.switch__track{width:42px;height:24px;border-radius:99px;background:var(--border2);position:relative;transition:background-color var(--motion);border:1px solid var(--border2)}\n.switch__track::after{content:\"\";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--motion);box-shadow:0 1px 2px rgba(0,0,0,.3)}\n.switch input:checked+.switch__track{background:var(--accent);border-color:var(--accent)}\n.switch input:checked+.switch__track::after{transform:translateX(18px)}\n.switch input:focus-visible+.switch__track{outline:2px solid var(--focus,var(--accent));outline-offset:2px}\n.switch__text b{display:block;font-size:13px}.switch__text small{display:block;color:var(--text3);font-size:12px;line-height:1.5}\n.check{display:flex;gap:9px;align-items:flex-start}.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}\n.seg{display:inline-flex;gap:2px;padding:3px;background:var(--surface3);border:1px solid var(--border);border-radius:var(--r-sm)}\n.seg button{min-height:32px;padding:4px 13px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--text2);font:650 12.5px/1.2 var(--font-sans)}\n.seg button[aria-pressed=true]{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:800}\n.range{display:grid;gap:4px}.range input{width:100%;accent-color:var(--accent)}\n.range__row{display:flex;justify-content:space-between;font-size:12px;color:var(--text2)}\n\n.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}\n.choice{position:relative;display:grid;gap:4px;align-content:start;padding:14px 15px;border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);text-align:left;color:var(--text);transition:border-color var(--motion),background-color var(--motion)}\n.choice:hover{border-color:var(--accent)}\n.choice b{font-size:13.5px;padding-right:56px}.choice span{font-size:12.5px;color:var(--text2)}.choice small{font-size:12px;color:var(--text3)}\n.choice.is-on{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}\n.choice.is-on::after{content:\"선택됨\";position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;background:var(--accent);color:var(--on-accent);font:700 11px/1.7 var(--font-sans)}\n.choice .tag-rec{position:absolute;right:12px;top:12px;padding:0 8px;border-radius:99px;border:1px solid var(--ok-line);background:var(--ok-soft);color:var(--ok-ink);font:700 11px/1.7 var(--font-sans)}\n.choice.is-on .tag-rec{display:none}\n\n.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border2);overflow-x:auto;margin-bottom:18px;scrollbar-width:none}\n.tab{min-height:42px;padding:9px 15px;border:0;border-bottom:3px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text2);font:650 13px/1.2 var(--font-sans);white-space:nowrap}\n.tab[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent);font-weight:800}\n.tab .count{margin-left:6px;padding:0 7px;border-radius:99px;background:var(--surface3);font-size:11.5px}\n[data-subpanel]{display:none}[data-subpanel].is-active{display:block}\n\n.list{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}\n.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 16px;border-top:1px solid var(--border);background:var(--surface);width:100%;text-align:left;border-left:0;border-right:0;border-bottom:0;color:var(--text)}\n.list>.row:first-child{border-top:0}\nbutton.row:hover{background:var(--surface2)}\n.row[aria-current=true],.row.is-on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}\n.row__title{font-weight:650;font-size:13.5px}.row__meta{font-size:12px;color:var(--text3)}\n.row__icon{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;background:var(--surface3);color:var(--text2)}\n.kv{display:grid;grid-template-columns:minmax(96px,150px) minmax(0,1fr);gap:9px 16px;margin:0;font-size:12.5px}\n.kv dt{color:var(--text3)}.kv dd{margin:0}\n.table{width:100%;border-collapse:collapse;font-size:12.5px}\n.table th{padding:9px 12px;text-align:left;font-size:12px;color:var(--text2);background:var(--surface2);border-bottom:1px solid var(--border2);white-space:nowrap}\n.table td{padding:10px 12px;border-bottom:1px solid var(--border)}\n.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:var(--r-md)}\n.setting{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 22px;align-items:center;padding:15px 0;border-top:1px solid var(--border)}\n.setting:first-of-type{border-top:0}\n.setting__name{font-weight:700;font-size:13.5px}.setting__desc{font-size:12.5px;color:var(--text2)}\n.argtag{display:inline-block;margin-top:3px;padding:0 7px;border:1px solid var(--border);border-radius:5px;font:11.5px/1.7 var(--font-mono);color:var(--text3);background:var(--surface2)}\n.divider{height:1px;background:var(--border);margin:6px 0}\ndetails.fold{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}\ndetails.fold>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:46px;padding:10px 16px;font-weight:650;cursor:pointer;list-style:none}\ndetails.fold>summary::-webkit-details-marker{display:none}\ndetails.fold>summary::after{content:\"\";width:8px;height:8px;border-right:2px solid var(--text3);border-bottom:2px solid var(--text3);transform:rotate(45deg);margin-right:3px;transition:transform var(--motion)}\ndetails.fold[open]>summary::after{transform:rotate(-135deg)}\ndetails.fold[open]>summary{border-bottom:1px solid var(--border)}\ndetails.fold>.fold__body{padding:16px}\n\n/* 단계 표시 */\n.steps{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;counter-reset:s}\n.step{position:relative;display:grid;gap:3px;padding:0 12px 0 0;align-content:start}\n.step::before{content:\"\";position:absolute;left:34px;right:6px;top:15px;height:2px;background:var(--border2)}\n.step:last-child::before{display:none}\n.step__no{position:relative;z-index:1;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font:800 13px/1 var(--font-sans);background:var(--surface);border:2px solid var(--border2);color:var(--text2);margin-bottom:6px}\n.step b{font-size:13px}.step span{font-size:12px;color:var(--text3);line-height:1.5}\n.step.is-done .step__no{background:var(--ok);border-color:var(--ok);color:#fff}\n.step.is-done::before{background:var(--ok)}\n.step.is-active .step__no{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}\n.step.is-fail .step__no{background:var(--danger);border-color:var(--danger);color:#fff}\n.progress{height:9px;border-radius:99px;background:var(--surface3);overflow:hidden;border:1px solid var(--border)}\n.progress>i{display:block;height:100%;width:var(--v,0%);background:var(--accent);transition:width .3s}\n\n/* ---------- 오버레이 (blur 없음: 명도 낮춤 + 불투명 대화상자) ---------- */\n.overlay{position:absolute;inset:0;z-index:50;display:none;align-items:center;justify-content:center;padding:20px;background:var(--scrim)}\n.overlay.is-open{display:flex}\n.overlay--right{justify-content:flex-end;align-items:stretch;padding:0}\n.overlay--bottom{align-items:flex-end;padding:0}\n.dialog{width:min(540px,100%);max-height:100%;overflow:auto;padding:24px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-lg);box-shadow:0 20px 50px rgba(0,0,0,.36)}\n.dialog--wide{width:min(860px,100%)}\n.dialog--danger{border-top:4px solid var(--danger)}\n.dialog h2{margin:4px 0 8px;font:800 20px/1.35 var(--font-display);letter-spacing:-.01em}\n.dialog p{margin:0 0 10px;color:var(--text2)}\n.dialog__actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:20px}\n.note{padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:var(--fs-note);color:var(--text2)}\n.note--warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}\n.note--danger{background:var(--danger-soft);border-color:var(--danger-line);color:var(--danger-ink)}\n.drawer{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border2);box-shadow:-14px 0 36px rgba(0,0,0,.3)}\n.drawer__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}\n.drawer__head h2{margin:2px 0 0;font:800 19px/1.3 var(--font-display)}\n.drawer__body{flex:1;overflow:auto;padding:18px 20px}\n.drawer__foot{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--border);background:var(--surface2)}\n.sheet{width:min(560px,100%);max-height:88%;overflow:auto;background:var(--surface);border:1px solid var(--border2);border-bottom:0;border-radius:20px 20px 0 0;padding:8px 18px 20px;box-shadow:0 -12px 32px rgba(0,0,0,.28)}\n.sheet::before{content:\"\";display:block;width:42px;height:4px;border-radius:9px;background:var(--border2);margin:6px auto 14px}\n\n.savebar{display:flex;align-items:center;gap:14px;padding:12px 24px;border-top:1px solid var(--border2);background:var(--surface)}\n.savebar__copy{flex:1;min-width:0}.savebar__copy b{display:block;font-size:13px}.savebar__copy span{font-size:12px;color:var(--text3)}\n.savebar.is-dirty{background:var(--warn-soft);border-top-color:var(--warn-line)}\n.savebar.is-dirty b{color:var(--warn-ink)}\n.toasts{position:absolute;right:16px;bottom:16px;z-index:70;display:grid;gap:8px;pointer-events:none}\n.toast{padding:10px 15px;background:#1c212c;color:#fff;border-radius:var(--r-md);font-size:12.5px;box-shadow:0 10px 26px rgba(0,0,0,.32);display:flex;gap:8px;align-items:center}\n\n.tabbar{grid-area:tab;display:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);background:var(--surface);border-top:1px solid var(--border2)}\n.tabbar button{display:grid;justify-items:center;align-content:center;gap:2px;min-height:58px;padding:6px 2px;border:0;border-top:3px solid transparent;background:transparent;color:var(--text2);font:650 11.5px/1.2 var(--font-sans)}\n.tabbar button[aria-current=page]{color:var(--accent-ink);background:var(--accent-soft);border-top-color:var(--accent);font-weight:800}\n\n/* ---------- 컨테이너 반응형: 좁으면 하단 탭바 ---------- */\n@container app (max-width:900px){\n  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:var(--top-h) minmax(0,1fr) auto;grid-template-areas:\"top\" \"main\" \"tab\";border-radius:0}\n  .sidebar{display:none}.tabbar{display:grid}\n  .page-body{padding:20px 18px 26px}\n  .scope{display:none}\n  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(2,minmax(0,1fr))}\n  .g-side,.g-side--a,.g-side--b,.g-side--r{grid-template-columns:minmax(0,1fr)}\n  .toasts{bottom:72px}\n}\n@container app (max-width:640px){\n  .app{box-shadow:none}\n  .g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}\n  .page-title{font-size:23px}\n  .page-body{padding:16px 14px 22px}\n  .topbar{padding:0 12px;gap:8px}\n  .topbar .hide-narrow{display:none}\n  .btn{min-height:44px}.btn--sm{min-height:38px}\n  .banner{grid-template-columns:auto minmax(0,1fr)}.banner>.btn,.banner>.cluster{grid-column:1/-1}\n  .steps{grid-auto-flow:row;gap:12px}\n  .step{grid-template-columns:34px minmax(0,1fr);column-gap:10px;padding:0}.step .step__no{grid-row:span 2;margin:0}\n  .step::before{left:15px;top:34px;bottom:-12px;right:auto;width:2px;height:auto}\n  .setting{grid-template-columns:minmax(0,1fr)}\n  .savebar{padding:12px 14px;flex-wrap:wrap}.savebar .cluster{width:100%}.savebar .btn{flex:1}\n  .overlay{padding:0;align-items:flex-end}.dialog{border-radius:20px 20px 0 0;width:100%;max-height:92%}\n  .kv{grid-template-columns:minmax(0,1fr)}.kv dt{margin-top:6px}\n}\n\n/* 저장하지 않은 변경이 있는 화면 표시 (색에만 의존하지 않도록 ● 기호) */\n.nav-item.is-unsaved .nav-text::after{content:\" ●\";color:var(--warn,#c9822a);font-size:11px}\n.btn.is-unsaved::after{content:\"●\";margin-left:4px;color:var(--warn,#c9822a);font-size:10px}\n.tabbar [data-go].is-unsaved::after{content:\"●\";position:absolute;top:6px;right:calc(50% - 20px);color:var(--warn,#c9822a);font-size:11px}\n.tabbar [data-go]{position:relative}\n\n/* 작업 트레이 · 읽기 전용 선택지 */\n.job-tray{margin-left:8px}.job-tray[hidden]{display:none}\n[data-job-tray].is-busy{border-color:var(--accent);color:var(--accent-ink)}\n[data-job-tray].is-done{border-color:var(--ok,#2f7d4f);color:var(--ok-ink,#1f5c39)}\n.choices[data-readonly] .choice:not(.is-on){opacity:.6;cursor:not-allowed}\n/* =====================================================================\n   플러그인별 테마 — 같은 컴포넌트, 다른 정체성\n   \"복제해야 하는 것은 색이 아니라 구조\" (모바일 GPU 가이드 §7)\n   본문 텍스트 대비 4.5:1 이상을 목표로 값 선정\n   ===================================================================== */\n\n/* ---- LIBRA · 서고: 상아색 페이지 + 서재 녹색 + 황동 ---- */\n.t-libra{\n  --page-bg:#cfd3cb;\n  --app-bg:#ebe6d8; --main-bg:#ebe6d8; --surface:#fbf8f0; --surface2:#f3eee1; --surface3:#e7e0cd;\n  --border:#d9d0ba; --border2:#bdb298;\n  --text:#27261f; --text2:#55523f; --text3:#6b6752;\n  --accent:#7d5416; --accent-hover:#6a4510; --on-accent:#fff; --accent-soft:#f1e5c9; --accent-ink:#5e3d0b; --accent-line:#c9a766;\n  --ok:#2f6a4a; --ok-soft:#e1efe5; --ok-line:#a9cdb6; --ok-ink:#1f5136;\n  --warn:#946212; --warn-soft:#f7ebcc; --warn-line:#dcc07e; --warn-ink:#6f4a07;\n  --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;\n  --top-bg:#fbf8f0; --brand-bg:#1f3a33; --brand-ink:#f1ead6;\n  --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;\n  --font-display:\"Noto Serif KR\",\"Nanum Myeongjo\",Georgia,serif;\n  --scrim:rgba(14,18,16,.66);\n}\n.t-libra .eyebrow{color:var(--accent)}\n.t-libra .page-title{font-weight:700}\n\n/* ---- HAYAKU · 관제실: 슬레이트 + 청록 + 노선도 ---- */\n.t-hayaku{\n  --page-bg:#cdd5d8;\n  --app-bg:#e9eff1; --main-bg:#e9eff1; --surface:#f8fbfc; --surface2:#eef3f5; --surface3:#dde7ea;\n  --border:#cfdbe0; --border2:#a9bcc4;\n  --text:#14303c; --text2:#43606c; --text3:#5a7480;\n  --accent:#126457; --accent-hover:#0d4f45; --on-accent:#fff; --accent-soft:#d9ece8; --accent-ink:#0d4f45; --accent-line:#8cc3b9;\n  --ok:#17795f; --ok-soft:#dcefe9; --ok-line:#9ccdbf; --ok-ink:#0f5a45;\n  --warn:#9a6a10; --warn-soft:#f6ebc9; --warn-line:#dcc27d; --warn-ink:#6b4905;\n  --danger:#b13a35; --danger-soft:#f8e3e0; --danger-line:#e0aaa5; --danger-ink:#852621;\n  --top-bg:#10212b; --top-text:#eaf1f2; --top-text2:#b7ccd2; --top-line:#2f4651; --top-hover:#1c3340; --brand-bg:#1b3a46; --brand-ink:#c9efe7;\n  --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;\n  --scrim:rgba(7,16,22,.68);\n}\n.t-hayaku .brand__name{letter-spacing:.04em}\n\n/* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */\n.t-flashback{\n  --page-bg:#cfc9bd;\n  --app-bg:#e9e5dd; --main-bg:#e9e5dd; --surface:#faf8f2; --surface2:#f0ece3; --surface3:#e6e0d4;\n  --border:#d6d0c4; --border2:#b6ad9d;\n  --text:#302b28; --text2:#62594f; --text3:#71685d;\n  --accent:#8f4a3e; --accent-hover:#763a30; --on-accent:#fff9f2; --accent-soft:#f1dfd8; --accent-ink:#763a30; --accent-line:#d3a79c;\n  --ok:#287052; --ok-soft:#e0eee4; --ok-line:#a6cdb5; --ok-ink:#1c553e;\n  --warn:#8b601b; --warn-soft:#f4e9d0; --warn-line:#dcc487; --warn-ink:#654410;\n  --danger:#ad3331; --danger-soft:#f9e2df; --danger-line:#e1aaa5; --danger-ink:#82241f;\n  --top-bg:#faf8f2;\n  --brand-bg:#2c2d2b; --brand-ink:#efe7d9;\n  --side-bg:#e9e5dd; --side-text:#554d44; --side-label:#71685d; --side-hover:#ded8cb; --side-active-bg:#332e2a; --side-active-text:#fff9ee; --side-line:#d6d0c4; --side-count-bg:#d6d0c4; --side-count-text:#4a423a; --side-foot-bg:#f0ece3;\n  --font-display:var(--font-sans);\n  --scrim:rgba(10,8,6,.64);\n}\n.t-flashback .eyebrow{letter-spacing:.17em}\n\n/* ---- GRADIA · 계조: 흑연 + 단계별 색 사다리 ---- */\n.t-gradia{\n  --page-bg:#0a0c11;\n  --app-bg:#0f1219; --main-bg:#0f1219; --surface:#161b26; --surface2:#1c2331; --surface3:#252e41;\n  --border:#2a3446; --border2:#3b475e;\n  --text:#edf0f7; --text2:#b0bace; --text3:#8995ad;\n  --accent:#5568e8; --accent-hover:#6b7cf0; --on-accent:#fff; --accent-soft:#222a52; --accent-ink:#c9d1ff; --accent-line:#4a5bd0;\n  --ok:#3fb27f; --ok-soft:#14352a; --ok-line:#256b4f; --ok-ink:#8fe0bb;\n  --warn:#d9a441; --warn-soft:#3a2d12; --warn-line:#7a5d1f; --warn-ink:#f2cd80;\n  --danger:#e0566b; --danger-soft:#3b1a22; --danger-line:#7d3342; --danger-ink:#f6a3b0;\n  --top-bg:#0b0d13; --top-line:#232c3c; --brand-bg:#222a52; --brand-ink:#cdd5ff;\n  --side-bg:#0b0d13; --side-text:#aab5cb; --side-label:#7f8ba3; --side-hover:#171d2a; --side-active-bg:#252e41; --side-active-text:#ffffff; --side-line:#1d2432; --side-count-bg:#252e41; --side-count-text:#c8d0e4; --side-foot-bg:#121722;\n  --stage1:#6aa6ff; --stage2:#8f8cff; --stage3:#c48cff; --stage4:#ff8db4; --stage5:#ffc063;\n  --scrim:rgba(2,4,8,.76);\n  color-scheme:dark;\n}\n.t-gradia .input,.t-gradia .select,.t-gradia .textarea{--input-bg:#0c0f16}\n.t-gradia .banner--ok .banner__icon,.t-gradia .banner--warn .banner__icon,.t-gradia .banner--danger .banner__icon{color:#0b0d13}\n\n/* ---- LIA · 포켓: 연보라 + 화이트 (모바일 우선) ---- */\n.t-lia{\n  --page-bg:#e6e3ec;\n  --app-bg:#f8f7fa; --main-bg:#f8f7fa; --surface:#ffffff; --surface2:#f3eef8; --surface3:#ece5f4;\n  --border:#ebe6f0; --border2:#cfc4dc;\n  --text:#292731; --text2:#554b62; --text3:#6f6580;\n  --accent:#7352a3; --accent-hover:#5f4189; --on-accent:#fff; --accent-soft:#eee5f7; --accent-ink:#5a3d85; --accent-line:#c2a9dc;\n  --ok:#3d7258; --ok-soft:#e2f0e8; --ok-line:#a9cfba; --ok-ink:#2b5640;\n  --warn:#8a5f17; --warn-soft:#f8ecd3; --warn-line:#dfc588; --warn-ink:#654309;\n  --danger:#ab3453; --danger-soft:#fbe4ea; --danger-line:#e6aebe; --danger-ink:#802039;\n  --top-bg:#f8f7fa; --top-line:transparent; --brand-bg:#eee5f7; --brand-ink:#5a3d85;\n  --side-bg:#fff; --side-text:#554b62; --side-hover:#f3eef8; --side-active-bg:#eee5f7; --side-active-text:#5a3d85; --side-line:#ebe6f0; --side-count-bg:#ece5f4; --side-count-text:#5a3d85;\n  --scrim:rgba(38,26,56,.56);\n  --r-sm:12px; --r-md:18px; --r-lg:26px;\n}\n.t-lia .page-title{font-size:25px;letter-spacing:-.04em}\n\n/* ---- RE:TRACE · 인계소: 네이비 + 신호 앰버 ---- */\n.t-retrace{\n  --page-bg:#c9d0dc;\n  --app-bg:#e8ecf3; --main-bg:#e8ecf3; --surface:#fbfcfe; --surface2:#f0f3f8; --surface3:#dfe5ef;\n  --border:#d3dae6; --border2:#a9b5c9;\n  --text:#18202f; --text2:#46526a; --text3:#5c6881;\n  --accent:#2a55c4; --accent-hover:#1f43a3; --on-accent:#fff; --accent-soft:#dfe8fb; --accent-ink:#1c3f9a; --accent-line:#9cb4ee;\n  --ok:#1f7a55; --ok-soft:#dff0e8; --ok-line:#9fceb7; --ok-ink:#145a3e;\n  --warn:#96600a; --warn-soft:#fbeccb; --warn-line:#e1c27a; --warn-ink:#6a4204;\n  --danger:#b3342f; --danger-soft:#f9e1de; --danger-line:#e3a9a4; --danger-ink:#85221e;\n  --top-bg:#18253f; --top-text:#eaf0fb; --top-text2:#b5c3df; --top-line:#32456b; --top-hover:#233559; --brand-bg:#2a55c4; --brand-ink:#fff;\n  --side-bg:#1d2b48; --side-text:#c1cde4; --side-label:#97a8c9; --side-hover:#283a5e; --side-active-bg:#e8ecf3; --side-active-text:#18253f; --side-line:#18253f; --side-count-bg:#33476d; --side-count-text:#e3eaf7; --side-foot-bg:#172339;\n  --scrim:rgba(8,12,22,.7);\n}\n/* GRADIA 전용: 계조(gradation) — 단계마다 한 단계씩 변하는 색 사다리. 글로우/블러 없이 단색 면과 선으로 표현 */\n.mode-switch{display:inline-flex;padding:3px;border:1px solid var(--border2);border-radius:99px;background:var(--surface)}\n.mode-switch button{min-height:32px;padding:3px 14px;border:0;border-radius:99px;background:transparent;color:var(--text2);font:700 12.5px var(--font-sans)}\n.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff}\n.mode-switch button[data-mode=rp][aria-pressed=true]{background:var(--stage5);color:#1b1304}\n.ribbon{display:none;padding:9px 30px;background:#3a2d12;border-bottom:1px solid #7a5d1f;color:#f2cd80;font-size:12.5px}\nhtml[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}\n.choices--4{grid-template-columns:repeat(4,minmax(0,1fr))}\n@container app (max-width:900px){.choices--4{grid-template-columns:repeat(2,minmax(0,1fr))}}\n@container app (max-width:640px){.choices--4{grid-template-columns:minmax(0,1fr)}.choice b{overflow-wrap:anywhere}}\n.only-rp{display:none}html[data-writing=rp] .only-rp{display:block}html[data-writing=rp] .only-novel{display:none}\n.stage-detail[hidden]{display:none}\n.opt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}\n.skill-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);background:var(--surface)}\n.skill-row:first-child{border-top:0}.skill-row b{font-size:13.5px}.skill-row small{display:block;color:var(--text3);font-size:12.5px}\n.prio{width:84px}\n.state-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}\n.state-grid>div{padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px}\n.state-grid b{display:block;font-size:12px;color:var(--text3);margin-bottom:2px}\n.ooc-log{min-height:130px;max-height:240px;overflow:auto;display:grid;gap:8px;align-content:start}\n.ooc-log p{margin:0;padding:8px 10px;border-radius:10px;font-size:13px}\n.ooc-log .ai{background:var(--surface3)}.ooc-log .me{background:var(--accent-soft);justify-self:end;max-width:85%}\n@container app (max-width:640px){.opt-grid,.state-grid{grid-template-columns:1fr}}\n.ladder{display:grid;gap:0}\n.node{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px 12px 8px;border:1px solid transparent;border-radius:var(--r-md);background:transparent;text-align:left;color:var(--text);width:100%}\n.node:hover{background:var(--surface2)}\n.node.is-on{background:var(--surface2);border-color:var(--border2)}\n.node__dot{position:relative;z-index:1;width:30px;height:30px;margin-left:6px;border-radius:50%;display:grid;place-items:center;font:800 12.5px var(--font-sans);color:#0b0d13;background:var(--c)}\n.node:not(:last-child)::after{content:\"\";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}\n.node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}\n.node.is-off{opacity:.55}\n.tab.tab--sub::before{content:\"+ \";color:var(--text3)}\n.node--sub{padding-top:6px;padding-bottom:6px}\n.node--sub .node__dot{width:22px;height:22px;margin-left:10px;font-size:11px}\n.node--sub b{font-size:12.5px}\n.node--sub .node__parent{display:block;font-size:11px;color:var(--text3)}\n.mini__sub{margin-left:4px;font-weight:600;color:var(--text3)}\n.ladder--aside{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}\n.ladder__label{display:block;padding:0 0 6px 8px}\n.mini__step.is-off{opacity:.5;border-style:dashed}\n.node--io .node__dot{border-radius:9px}\n.s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}\n.mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}\n.mini__step{padding:6px 11px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans);color:var(--text);background:var(--surface)}\n.mini__arrow{color:var(--text3)}\n.q-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:4px 14px;padding:18px 0;border-top:1px solid var(--border)}\n.q-step:first-child{border-top:0;padding-top:4px}\n.q-step__no{width:28px;height:28px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font:800 13px var(--font-sans)}\n.q-step h3{margin:0;font-size:14px}.q-step p{margin:2px 0 10px;font-size:12.5px;color:var(--text3)}\n.q-step .choices{grid-column:2}\n.stage-detail{display:none}.stage-detail.is-on{display:block}\n.prompt{min-height:170px}\n.badge-stage{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:99px;border:1px solid var(--c);font:650 12px var(--font-sans)}\n.badge-stage i{width:8px;height:8px;border-radius:50%;background:var(--c)}\n.lib{display:grid;gap:10px}\n.diff{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:6px 12px;font-size:12.5px}\n.diff .h{color:var(--text3);font-weight:700}.diff .to{color:var(--ok-ink);font-weight:700}\n.t-gradia .dialog,.t-gradia .drawer{box-shadow:0 20px 50px rgba(0,0,0,.6)}\n@container app (max-width:900px){.diff{grid-template-columns:1fr 1fr}.ribbon{padding:8px 14px}}\n/* Scope chips: where a setting applies (2026-11-18). 모든 채팅 = global, 이 채팅 = per chat, 이 단계 = one stage. */\n.scope-chip{display:inline-flex;align-items:center;margin-left:8px;padding:1px 8px;border-radius:99px;border:1px solid var(--border);font:650 11px var(--font-sans);vertical-align:middle;white-space:nowrap}\n.scope-chip--global{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent-line)}\n.scope-chip--chat{color:var(--ok-ink);background:var(--ok-soft);border-color:var(--ok-line)}\n.scope-chip--stage{color:var(--text2);background:var(--surface2)}\n.scope-link{display:flex;flex-wrap:wrap;align-items:center;gap:8px}\n.card[data-chat-section].is-flash,.card[data-writing-section].is-flash{outline:2px solid var(--accent-line);outline-offset:2px}\n/* Settings access, phase 2 (2026-11-18): search results, changed-settings rows, highlight. */\n.is-flash{outline:2px solid var(--accent-line);outline-offset:3px;border-radius:var(--r-sm)}\n.search-hit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);text-align:left;cursor:pointer;font:inherit}\n.search-hit:hover,.search-hit:focus-visible{border-color:var(--accent-line);background:var(--accent-soft);outline:none}\n.search-hit small{font-size:12px}\n.changed-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)}\n.changed-row b{font-size:14px}\n/* Stage table (phase 3, 2026-11-18). A table on wide screens, one card per stage on narrow ones. */\n.matrix-scroll{overflow-x:auto;max-width:100%}\n.stage-matrix{width:100%;border-collapse:collapse;font-size:13px}\n.stage-matrix th,.stage-matrix td{padding:6px 6px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}\n.stage-matrix thead th{color:var(--text2);font-weight:650;font-size:12px}\n.stage-matrix tbody th{font-weight:650}\n.stage-matrix .input{width:76px;min-width:0;padding-left:8px;padding-right:4px}.stage-matrix .select{width:140px;min-width:0}\n.stage-matrix .matrix-sub th{padding-left:20px}.stage-matrix tbody th small{display:block;font-weight:400;font-size:11.5px}\n.stage-matrix .matrix-stage{border:0;background:none;padding:0;color:var(--text);font:inherit;cursor:pointer;text-align:left}\n.stage-matrix .matrix-stage:hover{color:var(--accent-ink);text-decoration:underline}\n.stage-matrix td.is-changed .input,.stage-matrix td.is-changed .select{border-color:var(--accent-line)}\n.stage-matrix [data-matrix-status]{min-width:90px}.stage-matrix [data-matrix-status].is-warn{color:var(--warn-ink)}\n.stage-matrix .matrix-reason{display:block;font-size:11.5px;line-height:1.35}\n.stage-matrix .matrix-label{display:block}\n.stage-matrix .matrix-bulk-row th,.stage-matrix .matrix-bulk-row td{background:var(--surface2);border-bottom:0}\n.matrix-bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center}\n@container app (max-width:900px){\n  .stage-matrix,.stage-matrix tbody,.stage-matrix tr,.stage-matrix th,.stage-matrix td{display:block;width:auto}\n  .stage-matrix thead{display:none}\n  .stage-matrix tr{border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:10px;padding:8px 12px;background:var(--surface2)}\n  .stage-matrix th,.stage-matrix td{border:0;padding:4px 0}\n  .stage-matrix .matrix-sub th{padding-left:0}.stage-matrix .matrix-sub{margin-left:14px}\n  .stage-matrix td[data-label]{display:flex;justify-content:space-between;align-items:center;gap:10px}\n  .stage-matrix td[data-label]::before{content:attr(data-label);color:var(--text2);font-size:12px;flex:none}\n  .stage-matrix td[data-matrix-status]{flex-wrap:wrap;text-align:right}\n  .stage-matrix .matrix-label{white-space:nowrap;margin-left:auto}\n  .stage-matrix .matrix-reason{flex-basis:100%}\n  .stage-matrix .matrix-bulk{justify-content:flex-end}\n}";
+  const GRADIA_MOCKUP_ICONS = {"alert": "<path d=\"M12 8v5M12 16.6v.1\"/><path d=\"M10.3 4.3 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z\"/>", "book": "<path d=\"M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5z\"/><path d=\"M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3\"/><path d=\"M9 8h6M9 11.5h6\"/>", "check": "<path d=\"m5 12.5 4.5 4.5L19 7.5\"/>", "cpu": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9.5 3.5v2.5M14.5 3.5v2.5M9.5 18v2.5M14.5 18v2.5M3.5 9.5H6M3.5 14.5H6M18 9.5h2.5M18 14.5h2.5\"/>", "download": "<path d=\"M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14\"/>", "home": "<path d=\"M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5H9v5H5a1 1 0 0 1-1-1z\"/>", "layers": "<path d=\"m12 4 8.5 4.5L12 13 3.5 8.5z\"/><path d=\"m3.5 12.5 8.5 4.5 8.5-4.5M3.5 16.5 12 21l8.5-4.5\"/>", "lock": "<rect x=\"5\" y=\"10.5\" width=\"14\" height=\"9.5\" rx=\"2\"/><path d=\"M8 10.5V8a4 4 0 0 1 8 0v2.5\"/>", "log": "<path d=\"M6 4h12v16H6z\"/><path d=\"M9 8.5h6M9 12h6M9 15.5h3.5\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "search": "<circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"m16 16 4 4\"/>", "spark": "<path d=\"m12 3 2 6 6 2-6 2-2 6-2-6-6-2 6-2z\"/>", "upload": "<path d=\"M12 16V5M7.5 9.5 12 5l4.5 4.5M5 20h14\"/>", "wrench": "<path d=\"M14.5 6.5a4 4 0 0 0 4.9 5L21 9.8 18 7l1.5-1.5a4 4 0 0 0-5 1z\"/><path d=\"m13.5 12.5-8 8-2-2 8-8\"/>", "chat": "<path d=\"M20 12a7 7 0 0 1-10.2 6.2L5 19.5l1.3-4.4A7 7 0 1 1 20 12Z\"/>"};
+  const GRADIA_MOCKUP_MARKUP = "<div class=\"app\">\n\n  <header class=\"topbar\">\n    <div class=\"brand\"><div class=\"brand__mark\"><i data-i=\"layers\" data-size=\"lg\"></i></div><div><div class=\"brand__name\">GRADIA</div><div class=\"brand__ver\">v0.25.84 · <span id=\"modeLabel\">소설 모드</span></div></div></div>\n    <div class=\"mode-switch\" role=\"group\" aria-label=\"작성 모드\" data-dirty data-scope=\"gradia\"><button data-mode=\"novel\" aria-pressed=\"true\">소설</button><button data-mode=\"rp\" aria-pressed=\"false\">RP</button></div>\n    <div class=\"grow\"></div>\n    <span class=\"health health--ok hide-narrow\"><i></i>훅 활성 · 대기 중</span>\n    <button class=\"btn\" type=\"button\" data-settings-search-open aria-label=\"설정 검색 (Ctrl+K)\" title=\"설정 검색 (Ctrl+K 또는 /)\"><i data-i=\"search\"></i><span class=\"hide-narrow\">설정 검색</span></button>\n    <button class=\"btn\" data-open=\"dlg-close\">닫기</button>\n  </header>\n\n  <nav class=\"sidebar\" aria-label=\"GRADIA 메뉴\">\n    <div class=\"nav-label\">시작</div>\n    <button class=\"nav-item\" data-go=\"home\" data-short=\"홈\"><i data-i=\"home\"></i><span class=\"nav-text\">개요 · 빠른 설정</span></button>\n    <button class=\"nav-item\" data-go=\"results\" data-short=\"결과\"><i data-i=\"log\"></i><span class=\"nav-text\">실행 결과</span></button>\n    <div class=\"nav-label\">제작</div>\n    <button class=\"nav-item\" data-go=\"pipeline\" data-short=\"파이프라인\"><i data-i=\"layers\"></i><span class=\"nav-text\" id=\"navPipe\">초안 파이프라인</span></button>\n    <button class=\"nav-item\" data-go=\"writing\" data-short=\"작성\"><i data-i=\"spark\"></i><span class=\"nav-text\">작성 방식</span></button>\n    <button class=\"nav-item\" data-go=\"chat\" data-short=\"이 채팅\"><i data-i=\"chat\"></i><span class=\"nav-text\">이 채팅</span></button>\n    <button class=\"nav-item\" data-go=\"sources\" data-short=\"자료\"><i data-i=\"book\"></i><span class=\"nav-text\">자료 · Skill</span></button>\n    <div class=\"nav-label\">시스템</div>\n    <button class=\"nav-item\" data-go=\"providers\" data-short=\"AI 연결\"><i data-i=\"cpu\"></i><span class=\"nav-text\">AI 연결과 모델</span><span class=\"count\" id=\"nav-prov-n\">3/4</span></button>\n    <button class=\"nav-item\" data-go=\"manage\" data-short=\"관리\"><i data-i=\"wrench\"></i><span class=\"nav-text\">관리 · 진단</span></button>\n    <div class=\"side-foot\"><b>다음 요청 예상</b><span id=\"foot-calls\">내부 4회 + 메인 1회</span></div>\n  </nav>\n\n  <main class=\"main\">\n    <div class=\"ribbon\"><i data-i=\"lock\" data-size=\"sm\"></i><b>RP 모드</b> — 유저 행동·대사·선택·감정은 AI가 만들 수 없습니다. Skill·로어·작가노트도 이를 해제할 수 없습니다.</div>\n    <div class=\"page-body\">\n\n  <!-- ===== 홈 ===== -->\n  <section class=\"page is-active\" data-page=\"home\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Overview</div><h1 class=\"page-title\">핵심 다섯 가지만 먼저</h1><p class=\"page-desc\">처리 흐름을 보고, 자주 바꾸는 다섯 가지를 여기서 정합니다. 나머지는 단계별 화면에 있습니다.</p></div><div class=\"page-actions\"><button class=\"btn\" data-open=\"dlg-reco\">추천값 보기…</button></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">현재 처리 흐름</h2><p class=\"card__desc\">단계를 누르면 해당 설정으로 이동합니다.</p></div><span class=\"badge badge--ok\">대기 중</span></div>\n        <div class=\"mini\"><button class=\"mini__step s1\" id=\"mini-s1\" data-go=\"pipeline\" data-go-stage=\"shadow\">SHADOW ACT</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s2\" id=\"mini-s2\" data-go=\"pipeline\" data-go-stage=\"char\">인물 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s3\" id=\"mini-s3\" data-go=\"pipeline\" data-go-stage=\"world\">세계관 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4\" data-go=\"pipeline\" data-go-stage=\"plot\">플롯 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4w\" data-go=\"pipeline\" data-go-stage=\"world_dynamics\">세계 동역학 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4a\" data-go=\"pipeline\" data-go-stage=\"body_state\">상태 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4x\" data-go=\"pipeline\" data-go-stage=\"intimacy\">정사 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s4\" id=\"mini-s4b\" data-go=\"pipeline\" data-go-stage=\"forced_bond\">억결 AIDE</button><span class=\"mini__arrow\">→</span><button class=\"mini__step s5\" id=\"mini-s5\" data-go=\"pipeline\" data-go-stage=\"main\">메인 응답</button></div>\n        <div class=\"grid g4\" style=\"margin-top:16px\"><div class=\"note\"><b id=\"n-run\">일반 · 경량</b><br>작동 · 파이프라인</div><div class=\"note\"><b id=\"n-quality\">직접 조정</b><br>작업 규모</div><div class=\"note\"><b id=\"n-length\">1,000~2,000자</b><br>목표 분량</div><div class=\"note\"><b id=\"n-prov\">3 / 4</b><br>AI 연결 완료</div></div>\n        <div class=\"field\" style=\"margin-top:16px\"><label>작동 방식</label>\n          <div class=\"choices\" id=\"q-runmode\" data-dirty><button class=\"choice\"><b>꺼짐</b><span>응답 전 파이프라인을 실행하지 않습니다.</span></button><button class=\"choice\"><b>라이트</b><span>인물 AIDE · 세계관 AIDE를 건너뜁니다.</span></button><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>일반</b><span>SHADOW + 사용 중인 AIDE 전체</span></button></div>\n          <span class=\"hint\">작업 규모를 바꿔도 이 작동 방식은 유지됩니다.</span></div></div>\n\n      <div class=\"card\">\n        <div class=\"q-step\"><span class=\"q-step__no\">1</span><div><h3>파이프라인 무게</h3><p>분석과 작성을 한 호출로 묶을지 분리할지 정합니다.</p></div>\n          <div class=\"choices\" id=\"q-weight\" data-dirty><button class=\"choice is-on\"><span class=\"tag-rec\">추천</span><b>경량</b><span>단계당 1회 · 분석+작성 통합</span></button><button class=\"choice\"><b>중량</b><span>단계당 2회 · 분석 후 부분 수정</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">2</span><div><h3>작업 규모 <span class=\"badge badge--warn\" id=\"q-badge\">현재: 직접 조정</span></h3><p>얼마나 많이 읽고 생각할지 한 번에 정합니다. 최근 턴 수, 분석 깊이, 참조 자료, 기억 상한이 함께 바뀝니다.</p></div>\n          <div class=\"choices\" id=\"q-quality\" data-dirty data-dirty-key=\"quality\"><button class=\"choice\"><b>적게</b><span>최근 4턴 · 핵심 분석</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>균형</b><span>최근 8턴 · 표준 분석</span></button><button class=\"choice\"><b>많이</b><span>최근 12턴 · 심층 분석</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">3</span><div><h3>목표 초안 분량</h3><p data-novel=\"SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.\" data-rp=\"RP에서는 이 분량이 상한입니다. 그 안에서 필요한 만큼 쓰고, 플레이어의 행동이 필요해지는 지점에서 멈춥니다.\">SHADOW ACT가 작성할 분량입니다. 길수록 참고 자료 범위(supportChars)도 함께 넓어집니다.</p></div>\n          <div class=\"choices choices--4\" id=\"q-length\" data-dirty data-dirty-key=\"length\"><button class=\"choice is-on\"><b>1,000~2,000자</b><span>짧은 장면</span></button><button class=\"choice\"><span class=\"tag-rec\">추천</span><b>3,000~5,000자</b><span>표준 장면</span></button><button class=\"choice\"><b>5,000~7,000자</b><span>긴 장면</span></button><button class=\"choice\"><b>8,000자 이상</b><span>최대 20,000자까지</span></button></div></div>\n        <div class=\"q-step\"><span class=\"q-step__no\">4</span><div><h3>내부 초안 언어</h3><p>SHADOW ACT와 AIDE가 작성할 자연어 초안 언어입니다.</p></div>\n          <div class=\"choices\" id=\"q-language\" role=\"group\" aria-label=\"내부 초안 언어\" data-dirty><button class=\"choice is-on\"><b>한국어</b><span>Korean</span></button><button class=\"choice\"><b>English</b><span>English</span></button><button class=\"choice\"><b>日本語</b><span>Japanese</span></button></div></div>\n      </div>\n      <div class=\"card\"><div class=\"card__head\"><div><h2 class=\"card__title\">최근 실행</h2></div><button class=\"btn btn--sm\" data-go=\"results\">전체 보기</button></div><div class=\"list\"><div class=\"row\"><i data-i=\"check\" style=\"color:var(--ok)\"></i><div><div class=\"row__title\">SHADOW ACT</div><div class=\"row__meta\">성공 · 6.2초</div></div><span class=\"hint\">방금</span></div><div class=\"row\"><i data-i=\"alert\" style=\"color:var(--warn)\"></i><div><div class=\"row__title\">세계관 AIDE</div><div class=\"row__meta\">폴백 사용 · 응답 시간 초과</div></div><span class=\"hint\">방금</span></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 파이프라인 ===== -->\n  <section class=\"page\" data-page=\"pipeline\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Serial pipeline</div><h1 class=\"page-title\" data-novel=\"초안 파이프라인\" data-rp=\"RP 반응 파이프라인\">초안 파이프라인</h1><p class=\"page-desc\" data-novel=\"SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다. 지침(OOC), 참고 자료, 출력 방식도 각 단계 안에 있습니다.\" data-rp=\"NPC·세계의 반응을 작성합니다. 어느 단계도 새 유저 행동을 만들 수 없습니다.\">SHADOW ACT부터 메인 응답까지 한 줄로 이어진 단계를 순서대로 설정합니다. 인풋 관리자는 초안 파이프라인과 별개로 직접 실행합니다.</p></div></div>\n    <details class=\"fold card\" data-stage-matrix-fold style=\"margin-bottom:16px\"><summary>단계 비교표 <span class=\"hint\">모든 단계의 사용 여부·AI 프리셋·한도를 한 표에서 보고 바꿉니다</span></summary><div class=\"fold__body\" data-stage-matrix></div></details>\n    <div class=\"grid g-side g-side--a\">\n      <div class=\"card card--tight\">\n        <div class=\"ladder\" id=\"ladder\">\n          \n          <button class=\"node s1 is-on\" data-select-row=\"shadow\"><span class=\"node__dot\">1</span><span><b>SHADOW ACT</b><small>첫 전체 초안 · 순서 고정</small></span><span id=\"lb-shadow\" data-orig=\"성공 6.2s\" class=\"badge badge--ok\">성공 6.2s</span></button>\n          <button class=\"node s2\" data-select-row=\"char\"><span class=\"node__dot\">2</span><span><b>인물 AIDE</b><small>인물·관계·지식 점검</small></span><span id=\"lb-char\" data-orig=\"성공\" class=\"badge badge--ok\">성공</span></button>\n          <button class=\"node s3\" data-select-row=\"world\"><span class=\"node__dot\">3</span><span><b>세계관 AIDE</b><small>장소·규칙·연속성</small></span><span id=\"lb-world\" data-orig=\"폴백\" class=\"badge badge--warn\">폴백</span></button>\n          <button class=\"node s4\" data-select-row=\"plot\"><span class=\"node__dot\">4</span><span><b>플롯 AIDE</b><small>긴장·복선·다음 턴</small></span><span id=\"lb-plot\" data-orig=\"사용\" class=\"badge\">사용</span></button>\n          <button class=\"node s4\" data-select-row=\"world_dynamics\"><span class=\"node__dot\">5</span><span><b>세계 동역학 AIDE</b><small>장면 밖 흐름·기한 계산</small></span><span id=\"lb-world_dynamics\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"body_state\"><span class=\"node__dot\">5</span><span><b>상태 AIDE</b><small>몸 상태·건강 계산</small></span><span id=\"lb-body_state\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"intimacy\"><span class=\"node__dot\">5</span><span><b>정사 AIDE</b><small>성교 묘사·인물 선호</small></span><span id=\"lb-intimacy\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node s4\" data-select-row=\"forced_bond\"><span class=\"node__dot\">5</span><span><b>억결 AIDE</b><small>관계 형성·관계 판독</small></span><span id=\"lb-forced_bond\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button>\n          <button class=\"node node--io s5\" data-select-row=\"main\"><span class=\"node__dot\">M</span><span><b data-novel=\"메인 응답\" data-rp=\"RP 최종 응답\">메인 응답</b><small>초안 전달 · 마무리</small></span><span class=\"badge badge--info\">출력</span></button>\n        </div>\n        <div class=\"cluster\" style=\"margin-top:10px;padding-top:12px;border-top:1px solid var(--border)\"><span class=\"hint\">AIDE 순서</span><button class=\"btn btn--sm\">↑ 위로</button><button class=\"btn btn--sm\">↓ 아래로</button></div>\n        <div class=\"ladder ladder--aside\" id=\"ladder-aside\"><span class=\"hint ladder__label\">파이프라인 밖</span><button class=\"node node--io s0\" data-select-row=\"inp\"><span class=\"node__dot\">I</span><span><b data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</b><small id=\"lb-inp-sub\">직접 실행 · 초안 파이프라인과 별개</small></span><span id=\"lb-inp\" data-orig=\"꺼짐\" class=\"badge\">꺼짐</span></button></div>\n      </div>\n\n      <div>\n        <div class=\"stage-detail is-on\" data-detail=\"shadow\"><div class=\"card\">\n          <div class=\"card__head\"><div><span class=\"badge-stage s1\"><i></i>1단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin-top:6px\">SHADOW ACT <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"card__desc\">최근 대화와 최신 입력으로 현재 턴의 첫 RP 초안을 만듭니다.</p></div><div class=\"cluster\"><span class=\"badge badge--ok\">성공 · 6.2초</span><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"s\">실행 결과</button></div></div>\n          <div class=\"tabs\" role=\"tablist\" data-subtabs=\"sh\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"run\">실행</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ref\">참고 자료</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"ins\">창작 지침</button></div>\n          <div data-subpanel=\"run\" data-group=\"sh\" class=\"is-active\"><div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s1\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>SHADOW ACT는 첫 순서로 고정됩니다. 끄면 응답 전 파이프라인 전체(AIDE 포함)가 실행되지 않습니다.</small></span></label>\n            <div class=\"grid g2\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>claude-sonnet · 작성용</option><option>gpt-4.1 · 범용</option></select><span class=\"hint\">연결이 없으면 “프리셋 확인” 표시</span></div><div class=\"field only-novel\"><label>첫 초안 방식 (소설)</label><select class=\"select\"><option>Classic</option><option>Input-inclusive</option></select><span class=\"hint\">소설 모드에는 이 두 방식만 있습니다.</span></div><div class=\"field only-rp\"><label>작성 모드 (RP)</label><div class=\"note\"><b>RP 모드 전용 파이프라인</b><br>초안 방식은 player-controlled 유저 행동 불가침 계약으로 고정됩니다. 이 단계만 따로 바꿀 수 없고, 화면 상단에서 소설/RP 모드를 전환하세요.</div></div></div>\n            <div class=\"note\"><b>검토 방식 · 통합 분석 + 전체 초안 (1회)</b><br>분석과 첫 전체 초안 작성을 한 호출에서 수행합니다.</div>\n            <div class=\"note scope-link\">장면 변수는 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <details class=\"fold\"><summary>세부 한도 <span class=\"hint\">최근 <b class=\"turns-now\">6</b>턴 · 최대 대기 60초</span></summary><div class=\"fold__body grid g3\"><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"6\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div></details></div></div>\n          <div data-subpanel=\"ref\" data-group=\"sh\"><div class=\"stack\"><p class=\"muted\" style=\"margin:0\">이 단계가 한 번 확정한 자료 후보를 AIDE가 재사용합니다. (로어만 단계별로 다시 순위를 매깁니다.)</p><div class=\"grid g2\"><label class=\"check\"><input type=\"checkbox\" checked><span><b>작가의 노트</b><br><small class=\"hint\">현재 입력 다음 권위로 모든 초안 단계와 인풋 관리자에 적용합니다.</small></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>페르소나</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 설명</b></span></label><label class=\"check\"><input type=\"checkbox\" checked><span><b>캐릭터 로어북</b></span></label><label class=\"check\"><input type=\"checkbox\"><span><b>선택한 모듈 로어북</b></span></label></div></div></div>\n          <div data-subpanel=\"ins\" data-group=\"sh\"><div class=\"stack\"><div class=\"split\"><div><b>사용자 창작 지침</b><div class=\"hint\">저장된 지침 적용 중 · 내장 역할과 출력 계약은 유지됩니다.</div></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"SHADOW ACT\"}'><i data-i=\"spark\" data-size=\"sm\"></i>OOC 대화로 작성</button></div><textarea class=\"textarea prompt\" aria-label=\"창작 지침\" data-stage-ins=\"SHADOW ACT\">정원 장면에서는 대사보다 동작과 침묵을 먼저 보여 준다. 로웬은 직접 설명하지 않고 암시한다.</textarea><div class=\"hint\">변수: {{recent_chat}} {{latest_user}} {{previous_draft}} {{risu_context}} … <button class=\"btn btn--ghost btn--sm\">전체 보기</button></div><details class=\"fold\"><summary>내장 프롬프트 미리보기</summary><div class=\"fold__body\"><pre class=\"json mono hint\" style=\"margin:0;white-space:pre-wrap;max-height:140px;overflow:auto\">You are SHADOW ACT, the first stage…</pre></div></details></div></div>\n        </div></div>\n        <div class=\"stage-detail\" data-detail=\"inp\"><div class=\"card\"><span class=\"badge-stage s0\"><i></i>입력 단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"인풋 관리자\" data-rp=\"행동 선택지\">인풋 관리자</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"only-novel\"><p class=\"muted\" style=\"margin:0\">직전 AI 응답 종결부와 현재 입력을 기준으로 <b>세 관점의 후보</b>를 만들고, 전송 전에 직접 하나를 고릅니다. 취소하거나 다시 생성할 수 있습니다.</p></div>\n            <div class=\"only-rp\"><p class=\"muted\" style=\"margin:0\">유저가 취할 수 있는 <b>행동 후보 3개</b>를 제안받아 전송 전에 직접 하나를 고릅니다.</p><div class=\"note\" style=\"margin-top:8px\"><b>PLAYER-CONTROLLED 규칙</b> · Skill·로어·Author Note는 행동 후보의 배경과 연속성을 보조할 수 있지만 유저의 새 행동·대사·선택·감정·의도를 확정할 권한이 없습니다. 후보는 고르기 전까지 확정 행동이 아닙니다.</div></div>\n            \n            <div class=\"note note--warn\"><b>리롤·롤백 예외</b> 현재 입력과 같은 U가 이미 마지막 사용자 메시지로 저장되어 있으면 LLM을 호출하지 않고 이 단계만 자동으로 건너뜁니다.</div>\n            <div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-cand\">후보 선택 화면 미리보기</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"char\"><div class=\"card\"><span class=\"badge-stage s2\"><i></i>2단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">인물 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물 정의·심리·관계·비밀·시점·지식 경계를 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s2\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"note scope-link\">NPC 반응 경향성(모든 NPC 기본값 포함)은 이 채팅 전체에 적용되는 설정이라 <b>이 채팅</b> 화면에서 정합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"disposition\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"인물 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"c\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"인물 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world\"><div class=\"card\"><span class=\"badge-stage s3\"><i></i>3단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계관 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장소·시간·사회적 맥락·물리 제약·세계 규칙과 연속성을 점검하고 직전 초안의 필요한 문단만 수정합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s3\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계관 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"w\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계관 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"plot\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>4단계</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">플롯 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">현재 플롯·긴장·속도·복선·다음 턴 개방성을 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과(60초) — 직전 초안이 그대로 전달되었습니다. (표본)</span></div></div>\n          <div class=\"note\" style=\"margin:10px 0\">SHADOW ACT와 같은 로어 후보를 <b>이 AIDE 담당 영역 기준으로 로컬에서 다시 순위</b>를 매겨 사용합니다. 별도 호출은 아닙니다. 라이트 모드에서는 이 단계를 건너뜁니다.</div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" checked id=\"on-s4\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 단계 사용</b><small>끄면 이 AIDE만 건너뜁니다.</small></span></label>\n            <div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\"><option>gpt-4.1 · 범용</option><option>claude-sonnet · 작성용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\"></div></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"플롯 AIDE\" placeholder=\"비워 두면 내장 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"p\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"플롯 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"world_dynamics\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>세계관 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">세계 동역학 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">이미 움직이기 시작한 장면 밖의 일(추격·명령·기한·소문·절차)이 며칠째 진행 중인지, 기한이 닥쳤는지를 LIBRA 이야기 시계와 기록으로 매 턴 계산해, 근거가 있는 움직임만 간접 경로로 장면에 닿게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s7\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 전개를 드러내지 않습니다. RP에서 페르소나의 반응과 다음 행동은 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 세계관 AIDE가 이 판정까지 함께 처리합니다. 세계관 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_world_dynamics\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"note scope-link\">이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"readings\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"세계 동역학 AIDE\" placeholder=\"비워 두면 내장 세계 동역학 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"d\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"세계 동역학 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"body_state\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">상태 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">인물의 몸 상태(건강 신호·부상·질병·생체 주기·임신)를 LIBRA 기록으로 매 턴 계산해, 인물이 지금 몸 상태에 맞게 반응하게 합니다. 계산 결과는 저장하지 않습니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s6\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 새 판정 없이 연출만 맡습니다. RP에서 페르소나의 몸 상태는 판정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_body_state\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" data-body-state-field=\"reproduction\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>생식 판정 (임신·피임)</b><small>기본 꺼짐. 켜면 관계 기록과 주기·피임으로 NPC의 임신 여부를 고정 판정합니다. 같은 기록이면 언제나 같은 결과입니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 상태 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 봅니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"state\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"상태 AIDE\" placeholder=\"비워 두면 내장 상태 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"b\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"상태 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"intimacy\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>인물 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">정사 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">장면이 성교에 들어서면 전희·성교·절정·후희를 단계별로 구체적이고 정확하게 묘사하게 합니다. 단계와 체위는 매 턴 입력과 최근 장면에서 계산하고, 인물마다 로어로 추정한 선호를 이 채팅의 카드로 남겨 계속 따릅니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s8\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>NSFW 지침이 켜져 있을 때만 실행되며 어휘 수위는 NSFW 모드를 따릅니다. 성교를 시작시키지 않습니다. RP 문장화 모드에서는 실행되지 않고, RP에서 페르소나의 행동·감각·선호는 정하지 않습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 인물 AIDE가 이 판정까지 함께 처리합니다. 인물 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_intimacy\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <div class=\"note scope-link\">이 채팅의 선호 카드와 이번 턴 판독은 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"intimacy\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"정사 AIDE\" placeholder=\"비워 두면 내장 정사 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"x\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"정사 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div><div class=\"stage-detail\" data-detail=\"forced_bond\"><div class=\"card\"><span class=\"badge-stage s4\"><i></i>플롯 AIDE 하위 · 같은 호출에서 실행</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\">억결 AIDE <span class=\"scope-chip scope-chip--stage\">이 단계</span></h2><p class=\"muted\">페르소나를 중심으로 관계가 형성되고 움직이는 계기(신뢰·경계·호기심·경쟁·호감·증오 등)를 장면에 엮습니다. 최근 감정 신호를 따라 관계를 한 걸음씩 움직이고, 연애로 몰아가지 않습니다. 다른 AIDE가 각자 역할에서 관계를 검증하고, 플롯 AIDE가 마지막으로 점검합니다.</p><div class=\"banner banner--warn\" style=\"margin:10px 0\" hidden><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>최근 실행에서 폴백이 사용되었습니다.</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div>\n          <div class=\"stack\">\n            <label class=\"switch\"><input type=\"checkbox\" id=\"on-s5\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>이 하위 AIDE 사용</b><small>RP 문장화 모드에서는 실행되지 않고, 장면 연출 모드에서는 등장 없이 연출 색깔만 맡습니다.</small></span></label>\n            <p class=\"hint\" style=\"margin:0\">별도 AI 호출 없이 플롯 AIDE가 이 판정까지 함께 처리합니다. 플롯 AIDE가 꺼져 있으면 실행되는 마지막 핵심 AIDE가 대신 맡습니다.</p><details class=\"fold\"><summary>단독 실행 설정 <span class=\"hint\">핵심 AIDE가 모두 꺼졌을 때만 사용</span></summary><div class=\"fold__body\"><div class=\"opt-grid\"><div class=\"field\"><label>AI 프리셋</label><select class=\"select\" data-stage-provider=\"aide_forced_bond\"><option value=\"\">기본 연결 사용</option></select></div><div class=\"field\"><label>최근 대화 수</label><input class=\"input\" type=\"number\" value=\"8\" data-turns data-dirty-key=\"quality\"></div><div class=\"field\"><label>참고 상한(자)</label><input class=\"input\" type=\"number\" value=\"12000\" data-stage-field=\"maxChars\"></div><div class=\"field\"><label>대기 시간(초)</label><input class=\"input\" type=\"number\" value=\"60\" data-stage-field=\"timeoutSeconds\"></div></div></div></details>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"auto\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>카드가 없을 때 자동으로 엮기</b><small>관계 카드가 없으면 캐릭터 카드의 인물과 장면에 있는 인물(최대 2명)을 페르소나와 엮고, 관계의 결은 설정·로어·장면에서 읽습니다.</small></span></label>\n            <label class=\"switch\"><input type=\"checkbox\" checked data-forced-bond-field=\"forceAppearance\"><span class=\"switch__track\"></span><span class=\"switch__text\"><b>장면에 없으면 등장 계기 만들기</b><small>관계 상대가 장면에 없으면 장면 초중반에 결에 맞는 계기로 등장시킵니다. 결말을 만드는 등장은 쓰지 않습니다.</small></span></label>\n            <div class=\"note scope-link\">이 채팅의 관계 카드와 AI가 제안한 관계는 <b>이 채팅</b> 화면에서 관리합니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"chat\" data-go-sub=\"bond\">이 채팅 열기</button></div>\n            <div class=\"field\"><label>창작 지침</label><textarea class=\"textarea prompt\" rows=\"2\" data-stage-ins=\"억결 AIDE\" placeholder=\"비워 두면 내장 억결 역할만 사용합니다.\"></textarea></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-action=\"prompt-preview\">프롬프트 미리보기</button><button class=\"btn btn--sm\" data-go=\"results\" data-go-sub=\"f\">실행 결과</button><button class=\"btn btn--sm\" data-open=\"dlg-ooc\" data-ctx='{\"stage\": \"억결 AIDE\"}'>OOC 대화로 지침 작성</button></div>\n          </div></div></div>\n        <div class=\"stage-detail\" data-detail=\"main\"><div class=\"card\"><span class=\"badge-stage s5\"><i></i>출력</span><h2 class=\"card__title\" style=\"font-size:19px;margin:6px 0\" data-novel=\"초안을 어떻게 넘길까요?\" data-rp=\"RP 최종 응답으로 넘기기\">초안을 어떻게 넘길까요?</h2><span class=\"scope-chip scope-chip--stage\">이 단계</span>\n          <div class=\"stack\">\n            <div class=\"field\"><label>전달 방식</label><span class=\"hint\">초안에 기본 지시를 붙여 메인 응답으로 넘기고, 메인 응답이 그 초안을 바탕으로 마무리합니다. 단계 분석은 전달하지 않습니다.</span></div>\n            <div class=\"note\">성인 장면 표현·NSFW 지침·비앙카 투입은 모든 단계에 적용되는 설정이라 <b>작성 방식</b> 화면으로 옮겼습니다. <button class=\"btn btn--sm\" type=\"button\" data-go=\"writing\">작성 방식 열기</button></div>\n            <div class=\"setting\" style=\"margin-top:8px\"><div><div class=\"setting__name\">Assistant Prefill</div><div class=\"setting__desc\">프리필은 RisuAI에서 설정합니다.</div></div><span class=\"badge\">RisuAI 설정</span></div>\n          </div></div></div>\n      </div>\n    </div>\n  </section>\n\n  <!-- ===== 작성 방식 (모든 채팅) ===== -->\n  <section class=\"page\" data-page=\"writing\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Writing</div><h1 class=\"page-title\">작성 방식 <span class=\"scope-chip scope-chip--global\">모든 채팅</span></h1><p class=\"page-desc\">모든 채팅과 모든 초안 단계에 함께 적용되는 설정입니다. 특정 단계에 속하지 않습니다.</p></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\" data-writing-section=\"mode\"><div class=\"card__head\"><div><h2 class=\"card__title\">작성 모드</h2><p class=\"card__desc\">소설/RP 전환은 화면 상단 스위치로도 할 수 있습니다. RP 세부 모드는 RP에서만 쓰입니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>RP 세부 모드</label><select class=\"select\" data-existing-response-field=\"rpImpersonationScope\" aria-label=\"RP 세부 모드 (작성 방식)\"></select><span class=\"hint\" data-writing-rp-scope-hint>소설 모드에서는 쓰이지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"variance\"><div class=\"card__head\"><div><h2 class=\"card__title\">장면 변수</h2><p class=\"card__desc\">매 턴 작은 변수를 넣어 장면을 덜 뻔하게 만듭니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>장면 변수</label><select class=\"select\" data-scene-variance><option value=\"off\">끔</option><option value=\"low\">약하게 (가끔)</option><option value=\"medium\">보통</option><option value=\"high\">강하게 (거의 매 턴)</option></select><span class=\"hint\">매 턴 무작위로 작은 변수(인물의 기분·충동·딴생각, 스스로 하는 행동, 주변의 작은 사건)를 하나 넣어 장면을 덜 뻔하게 만듭니다. RP에서는 페르소나에게 걸지 않습니다.</span></div></div></div>\n      <div class=\"card\" data-writing-section=\"nsfw\"><div class=\"card__head\"><div><h2 class=\"card__title\">성인 장면</h2><p class=\"card__desc\">표현 수준과 지침 전달을 정합니다. 정사 AIDE는 NSFW 지침이 켜져 있을 때만 실행됩니다.</p></div></div><div class=\"stack\"><div class=\"setting\"><div><div class=\"setting__name\">성인 장면 표현</div><div class=\"setting__desc\">입력 후보와 내부 초안에 적용합니다. 아래 전달 옵션을 켜지 않으면 RisuAI 최종 요청에는 추가하지 않습니다.</div></div><select class=\"select\" data-existing-response-field=\"nsfwMode\" aria-label=\"성인 장면 표현\" style=\"width:150px\"><option value=\"off\">OFF</option><option value=\"soft\">SOFT</option><option value=\"direct\">DIRECT</option><option value=\"explicit\">EXPLICIT</option></select></div><div class=\"setting\"><div><div class=\"setting__name\">NSFW 지침 주입</div><div class=\"setting__desc\">입력 후보와 내부 초안 요청에 성인 장면 지침을 넣습니다. 끄면 위 표현 수준이 있어도 지침을 보내지 않습니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwGuidanceEnabled\" aria-label=\"NSFW 지침 주입\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">최종 요청에도 지침 전달</div><div class=\"setting__desc\">RisuAI 최종 응답 생성 시 초안의 성인 장면 훼손·검열을 막는 지침을 추가합니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"nsfwInjectFinalRequest\" aria-label=\"최종 요청에도 지침 전달\"><span class=\"switch__track\"></span></label></div><div class=\"setting\"><div><div class=\"setting__name\">비앙카 투입</div><div class=\"setting__desc\">BIANCA 워크스페이스 페르소나(§0~§11)를 창작 단계 프롬프트에 넣습니다. 인물·말투·장면 판단·성인 소재 규칙이 함께 들어갑니다.</div></div><label class=\"switch\"><input type=\"checkbox\" data-existing-response-field=\"biancaInject\" aria-label=\"비앙카 투입\"><span class=\"switch__track\"></span></label></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 이 채팅 ===== -->\n  <section class=\"page\" data-page=\"chat\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">This chat</div><h1 class=\"page-title\">이 채팅 <span class=\"scope-chip scope-chip--chat\">이 채팅</span></h1><p class=\"page-desc\">지금 열린 채팅에만 저장되는 설정과 기록입니다. 다른 채팅에는 영향을 주지 않습니다. <span data-chat-scope-label></span></p></div></div>\n    <div class=\"stack stack--lg\">\n      <div class=\"card\" data-chat-section=\"disposition\"><div class=\"card__head\"><div><h2 class=\"card__title\">NPC 반응 경향성</h2><p class=\"card__desc\">인물 AIDE를 꺼도 모든 초안 단계와 마무리 단계에 적용됩니다.</p></div></div><div class=\"stack\"><div class=\"field\" data-npc-disposition-panel><p class=\"hint\" style=\"margin:0 0 6px\">NPC가 페르소나의 접근을 어떤 태도로 받아들이고 해석할지(신뢰·의심, 온도, 거리, 양보와 보류)를 고정합니다. 호감도나 관계 진행과는 별개이며, 장면에서 이미 일어난 일을 뒤집지 않고 그 안의 태도만 정합니다. 반응의 방향은 경향성이, 표현 방식은 로어가 정합니다. 직접 바꾸기 전까지 장면 때문에 바뀌지 않습니다.</p><div class=\"opt-grid\"><div class=\"field\"><label>모든 NPC 기본값</label><select class=\"select\" data-npc-disposition-field=\"default\"></select></div></div><div class=\"stack stack--sm\" data-npc-disposition-list></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-npc-disposition-action=\"add\">NPC 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"bond\"><div class=\"card__head\"><div><h2 class=\"card__title\">관계 카드</h2><p class=\"card__desc\">억결 AIDE가 사용합니다. 억결 AIDE의 실행 설정은 초안 파이프라인에 있습니다.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-forced-bond-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-forced-bond-action=\"add\">관계 카드 추가</button></div></div><div class=\"field\"><label>AI가 제안한 관계</label><div class=\"stack stack--sm\" data-forced-bond-proposals></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"state\"><div class=\"card__head\"><div><h2 class=\"card__title\">상태 카드</h2><p class=\"card__desc\">상태 AIDE가 사용합니다. 이야기가 말하지 않는 기본값(주기 길이, 체질 등)이 필요할 때만 추가하세요.</p></div></div><div class=\"stack\"><div class=\"field\"><div class=\"stack stack--sm\" data-body-state-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-body-state-action=\"add\">상태 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"intimacy\"><div class=\"card__head\"><div><h2 class=\"card__title\">정사 선호 카드</h2><p class=\"card__desc\">정사 AIDE가 사용합니다. 카드는 성교 장면에 처음 등장한 인물에 대해 로어로 자동 추정되며, 여기서 고치거나 지울 수 있습니다.</p></div></div><div class=\"stack\"><div class=\"field\"><p class=\"hint\" style=\"margin:0 0 6px\">성교 장면에 처음 등장한 인물의 선호를 로어로 추정해 자동으로 만듭니다. 만들어진 카드는 자동으로 바뀌지 않으며, 여기서 고치거나 지울 수 있습니다. 바로 저장됩니다.</p><div class=\"stack stack--sm\" data-intimacy-cards></div><div class=\"cluster\" style=\"margin-top:8px\"><button class=\"btn btn--sm\" type=\"button\" data-intimacy-action=\"add\">선호 카드 추가</button></div></div></div></div>\n      <div class=\"card\" data-chat-section=\"readings\"><div class=\"card__head\"><div><h2 class=\"card__title\">이번 턴 판독</h2><p class=\"card__desc\">가장 최근 실행에서 하위 AIDE가 정한 판독입니다. 저장되지 않습니다.</p></div></div><div class=\"stack\"><div class=\"field\"><label>상태 AIDE</label><div class=\"stack stack--sm\" data-body-state-readings></div></div><div class=\"field\"><label>세계 동역학 AIDE</label><div class=\"stack stack--sm\" data-world-dynamics-readings></div></div><div class=\"field\"><label>정사 AIDE</label><div class=\"stack stack--sm\" data-intimacy-readings></div></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 자료 · Skill ===== -->\n  <section class=\"page\" data-page=\"sources\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">References</div><h1 class=\"page-title\">자료 · Skill</h1><p class=\"page-desc\">GRADIA가 읽을 자료만 켜두면, 실제로 어떤 로어가 필요한지는 현재 장면에 맞춰 자동으로 고릅니다.</p></div></div>\n    <div class=\"stack\">\n      <div class=\"card card--accent\"><div class=\"card__head\"><div><h2 class=\"card__title\">LIB 기억 읽기</h2><p class=\"card__desc\">LIBRA · HAYAKU · Flashback 플러그인의 현재 채팅 기억을 플러그인 IPC로 직접 읽습니다.</p></div><span class=\"health health--ok\" id=\"lib-chip\"><i></i><span>플러그인 IPC 활성</span></span></div>\n        <div id=\"lib-read-owners-container\" class=\"field\" style=\"margin-top:14px\"><div class=\"field\" id=\"lib-draft-read-owners\"><span class=\"label\" style=\"font-weight:600\">초안 작성 시 기억 읽기 대상 (각각 켜기/끄기)</span><div class=\"cluster\" style=\"margin-top:8px;display:flex;flex-wrap:wrap;gap:18px\"><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"libra\">LIBRA (미크로·통합 기억)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"hayaku\">HAYAKU (로케이터·연속성)</label><label class=\"cluster\" style=\"cursor:pointer;display:inline-flex;align-items:center;gap:6px\"><input type=\"checkbox\" data-lib-draft-owner=\"flashback\">Flashback (벡터 메모리)</label></div></div></div>\n        <div class=\"state-grid\" style=\"margin-top:16px\">\n          <div><b>통신 방식</b><span>플러그인 IPC (별도 로컬 서버 불필요)</span></div>\n          <div><b>활성 읽기 대상</b><span id=\"lib-active-summary\">LIBRA · HAYAKU · Flashback</span></div>\n          <div><b>현재 채팅 scope</b><span id=\"lib-scope-summary\">현재 채팅 scope 미확인</span></div>\n          <div><b>기억 전달 방식</b><span>초안 프롬프트 직접 주입 (검증 퇴짜 없음)</span></div></div>\n        <div hidden style=\"display:none\"><input class=\"input mono\" id=\"lib-url\" value=\"http://127.0.0.1:47630\"><button id=\"lib-connect\"></button><button id=\"lib-disconnect\"></button><button id=\"lib-check\"></button><span id=\"lib-state\"></span></div></div>\n      <div class=\"tabs\" role=\"tablist\" data-subtabs=\"src\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"sum\">요약</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"char\">캐릭터 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"mod\">모듈 로어</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"skill\">Skill</button></div>\n      <div data-subpanel=\"sum\" data-group=\"src\" class=\"is-active\"><div class=\"choices\" data-multi data-readonly=\"요약 표시입니다. 각 탭에서 켜고 끕니다.\"><button class=\"choice is-on\"><b>캐릭터</b><span id=\"sum-char\">12 / 14 사용</span><small>캐릭터 로어북</small></button><button class=\"choice is-on\"><b>모듈</b><span id=\"sum-mod\">2개 모듈 · 33 / 41 로어 사용</span></button><button class=\"choice is-on\"><b>로어 검색</b><span>자동 · 시작 8개 · 필요 시 확장</span></button></div></div>\n      <div data-subpanel=\"char\" data-group=\"src\"><div class=\"lib\" id=\"lib-char\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">로웬 — 정원사</div><div class=\"row__meta\">키: 로웬, 정원사</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\"><div><div class=\"row__title\">왕실 기록실의 규칙</div><div class=\"row__meta\">제외됨</div></div><span class=\"badge badge--danger\">제외</span></label></div></div>\n      <div data-subpanel=\"mod\" data-group=\"src\"><div class=\"lib\" id=\"lib-mod\"><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">왕국 연대기 (모듈)</div><div class=\"row__meta\">로어 21 / 24 사용</div></div><span class=\"badge badge--ok\">사용</span></label><label class=\"row\"><input type=\"checkbox\" checked><div><div class=\"row__title\">정원 규칙집 (모듈)</div><div class=\"row__meta\">로어 12 / 17 사용</div></div><span class=\"badge badge--ok\">사용</span></label></div></div>\n      <div data-subpanel=\"skill\" data-group=\"src\"><div class=\"stack\">\n        <div class=\"card\" data-base-quality><h3>기본 품질 규칙</h3><p class=\"hint\">추가 스킬 선택과 무관하게 항상 적용합니다.</p><h3>단계별 추가 스킬</h3><p class=\"hint\">적용할 단계와 스킬을 직접 선택합니다.</p></div>\n        <div class=\"split\"><div class=\"search\" style=\"flex:1\"><i class=\"ic\" data-i=\"search\"></i><input class=\"input\" id=\"skill-search\" placeholder=\"Skill 검색\" aria-label=\"Skill 검색\"></div><button class=\"btn btn--primary btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"\", \"variant\": \"new\", \"name\": \"\", \"prio\": \"45\", \"body\": \"\", \"kind\": \"새 사용자\"}'><i data-i=\"plus\" data-size=\"sm\"></i>사용자 Skill 추가</button></div>\n        <p class=\"hint\" style=\"margin:0\">추가·편집·단계별 선택·삭제는 이 화면 초안에 바로 반영됩니다. 저장 전 변경은 아래 저장 바의 ‘변경 취소’로 되돌릴 수 있습니다.</p><input type=\"hidden\" id=\"skill-library-state\" data-dirty-key=\"skill-library\" value=\"saved\">\n        <div class=\"list\">\n          <div class=\"skill-row\" data-skill-id=\"sk-tension\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>긴장 쌓기 <span class=\"badge\">내장</span></b><small>우선도 120 · SHADOW · 플롯 AIDE에 컴파일</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-tension\", \"variant\": \"builtin\", \"name\": \"긴장 쌓기\", \"prio\": \"120\", \"body\": \"장면 끝에 해결되지 않은 질문을 하나 남긴다. (내장 원본)\", \"kind\": \"내장\"}'>원본 보기</button><button class=\"btn btn--sm\" data-skill-restore=\"sk-tension\">복원</button></div></div>\n          <div class=\"skill-row\" data-skill-id=\"sk-garden\"><label class=\"switch\"><input type=\"checkbox\" checked data-dirty-key=\"skill-library\"><span class=\"switch__track\"></span><span class=\"sr-only\">사용</span></label><div><b>정원 장면 묘사 <span class=\"badge badge--info\">사용자</span></b><small>우선도 80 · reference 2개</small></div><div class=\"cluster\"><button class=\"btn btn--sm\" data-open=\"dlg-skill\" data-ctx='{\"id\": \"sk-garden\", \"variant\": \"custom\", \"name\": \"정원 장면 묘사\", \"prio\": \"80\", \"body\": \"정원 장면에서는 후각·촉각 묘사를 먼저 쓴다.\", \"kind\": \"사용자\"}'>편집</button><button class=\"btn btn--sm btn--danger\" data-skill-del=\"sk-garden\">삭제</button></div></div>\n          <div class=\"empty\" id=\"skill-no-results\" hidden><b>검색 결과가 없습니다.</b><span>다른 이름이나 지침으로 검색하세요.</span></div>\n        </div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 실행 결과 ===== -->\n  <section class=\"page\" data-page=\"results\" data-track-group=\"gradia\">\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Run results</div><h1 class=\"page-title\">단계별 실행 결과</h1><p class=\"page-desc\">상태, 실제 참고 자료, 분석과 초안을 실행별로 확인합니다.</p></div></div>\n    <div class=\"stack\"><div class=\"tabs\" role=\"tablist\" data-subtabs=\"rs\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"s\">SHADOW ACT <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"c\">인물 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"w\">세계관 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"d\">세계 동역학 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"b\">상태 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"x\">정사 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"f\">억결 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"p\">플롯 <span class=\"count\" hidden>폴백</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"i\">입력 도우미</button></div>\n      <div data-subpanel=\"s\" data-group=\"rs\" class=\"is-active\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">초안</h3><p style=\"margin:0;line-height:1.9\">아스텔은 열쇠를 쥔 손을 펴지 않은 채 문양을 바라보았다. 로웬의 침묵이 길어질수록 정원의 이끼 냄새가 짙어졌다.</p></div><div class=\"card\"><h3 class=\"section-title\">참고한 자료</h3><dl class=\"kv\"><dt>로어</dt><dd>8개 (강제 2) · <button class=\"btn btn--sm\" data-open=\"dlg-used\">사용 자료 전체 목록</button></dd><dt>최근 대화</dt><dd>8턴</dd><dt>Skill</dt><dd>2개</dd><dt>소요</dt><dd>6.2초</dd></dl></div></div></div>\n      <div data-subpanel=\"c\" data-group=\"rs\"><div class=\"empty\"><b>성공 · 3.1초</b><span>부분 수정 2문단</span></div></div>\n      <div data-subpanel=\"w\" data-group=\"rs\"><div class=\"banner banner--warn\"><div class=\"banner__icon\"><i data-i=\"alert\"></i></div><div><b>폴백 사용</b><span>응답 시간 초과 — 직전 초안이 그대로 전달되었습니다.</span></div></div></div>\n      <div data-subpanel=\"p\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"d\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"b\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"x\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"f\" data-group=\"rs\"><div class=\"empty\"><b>실행 전</b><span>아직 기록이 없습니다.</span></div></div>\n      <div data-subpanel=\"i\" data-group=\"rs\"><div class=\"grid g2\"><div class=\"card\"><h3 class=\"section-title\">원래 입력</h3><p style=\"margin:0;line-height:1.8\">문을 열어 본다.</p></div><div class=\"card\"><h3 class=\"section-title\">재구성된 입력</h3><p style=\"margin:0;line-height:1.8\">아스텔은 조심스럽게 문손잡이를 잡고 천천히 밀어 연다. <span class=\"hint\">(선택한 후보)</span></p></div></div></div></div>\n  </section>\n\n  <!-- ===== AI 연결 ===== -->\n  <section class=\"page\" data-page=\"providers\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Providers</div><h1 class=\"page-title\">AI 연결과 모델</h1><p class=\"page-desc\">연결 프리셋을 만들고, 파이프라인 단계에서 골라 씁니다. 처음 쓰는 경우 여기부터 시작하세요.</p></div><div class=\"page-actions\"><button class=\"btn\" data-prov-add><i data-i=\"plus\" data-size=\"sm\"></i>추가</button><button class=\"btn\" data-prov-clone>복제</button></div></div>\n    <div class=\"grid g-side g-side--b\" data-detail-root>\n      <div class=\"list\"><button class=\"row is-on\" data-select-row=\"p1\"><span class=\"row__icon\">C</span><div><div class=\"row__title\">claude-sonnet · 작성용</div><div class=\"row__meta\">SHADOW · 인물</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p2\"><span class=\"row__icon\">G</span><div><div class=\"row__title\">gpt-4.1 · 범용</div><div class=\"row__meta\">세계관 · 플롯</div></div><span class=\"badge badge--ok\">완료</span></button><button class=\"row\" data-select-row=\"p3\"><span class=\"row__icon\">O</span><div><div class=\"row__title\">ollama · 로컬</div><div class=\"row__meta\">미사용</div></div><span class=\"badge badge--warn\">키 필요</span></button></div>\n      <div class=\"stack\"><div class=\"card\" data-detail=\"p1\"><div class=\"card__head\"><div><h2 class=\"card__title\">claude-sonnet · 작성용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p1\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"claude-sonnet · 작성용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Claude / Anthropic</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"claude-sonnet-4\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p1\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"claude-sonnet · 작성용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p2\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">gpt-4.1 · 범용</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p2\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"gpt-4.1 · 범용\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>OpenAI</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"gpt-4.1\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p2\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"gpt-4.1 · 범용\"}'>프리셋 삭제…</button></div></div>\n      <div class=\"card\" data-detail=\"p3\" hidden><div class=\"card__head\"><div><h2 class=\"card__title\">ollama · 로컬</h2><p class=\"card__desc\">API 키는 백업·내보내기에 포함되지 않습니다.</p></div><button class=\"btn btn--sm\" data-prov-test=\"p3\">연결 테스트</button></div>\n        <div class=\"grid g2\"><div class=\"field\"><label>이름</label><input class=\"input\" value=\"ollama · 로컬\"></div><div class=\"field\"><label>Provider</label><select class=\"select\"><option>Ollama</option></select></div><div class=\"field\"><label>모델</label><div class=\"cluster\" style=\"flex-wrap:nowrap\"><input class=\"input\" value=\"llama3\"><button class=\"btn btn--sm\">목록</button></div></div><div class=\"field\"><label>Endpoint URL</label><input class=\"input\" placeholder=\"기본값\"></div><div class=\"field\"><label>API Key</label><input class=\"input\" type=\"password\" placeholder=\"저장됨 (표시하지 않음)\"></div></div>\n        <details class=\"fold\" style=\"margin-top:14px\"><summary>제공자별 상세 <span class=\"hint\">추론 · 서비스 등급 · 인증</span></summary><div class=\"fold__body hint\">선택한 Provider에 따라 Reasoning preset, service tier, Vertex credential 같은 항목이 나타납니다.</div></details>\n        <div class=\"cluster\" style=\"margin-top:14px\"><button class=\"btn btn--sm\" data-prov-clone>복제</button><button class=\"btn btn--sm btn--danger\" data-prov-keydel=\"p3\">키 삭제</button><button class=\"btn btn--sm btn--danger\" data-open=\"dlg-del-prov\" data-ctx='{\"name\": \"ollama · 로컬\"}'>프리셋 삭제…</button></div></div></div>\n    </div>\n  </section>\n\n  <!-- ===== 관리 ===== -->\n  <section class=\"page\" data-page=\"manage\" data-track-group=\"gradia\" data-track>\n    <div class=\"page-head\"><div class=\"page-head__copy\"><div class=\"eyebrow\">Management</div><h1 class=\"page-title\">관리 · 진단</h1><p class=\"page-desc\">일상 설정과 분리된 도구입니다. 가져오기는 먼저 변경 내용을 보여 주고, 저장해야 적용됩니다.</p></div></div>\n    <div class=\"tabs\" role=\"tablist\" data-subtabs=\"mg\"><button class=\"tab\" role=\"tab\" aria-selected=\"true\" data-subtab=\"io\">가져오기 · 내보내기</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"chg\">바꾼 설정 <span class=\"count\" data-changed-count hidden>0</span></button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"adv\">전문가 설정</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"dbg\">디버그</button><button class=\"tab\" role=\"tab\" aria-selected=\"false\" data-subtab=\"rst\">초기화</button></div>\n    <div data-subpanel=\"chg\" data-group=\"mg\"><div class=\"card\"><h2 class=\"card__title\">기본값과 다른 설정</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">저장 여부와 관계없이 지금 화면의 값을 기본값과 비교합니다. <b>기본값으로</b>를 누른 뒤 저장해야 적용됩니다. 이 채팅의 카드와 경향성은 되돌릴 기본값이 없어 목록으로만 보여 줍니다.</p><div class=\"stack stack--sm\" data-changed-settings></div></div></div>\n    <div data-subpanel=\"io\" data-group=\"mg\" class=\"is-active\"><div class=\"grid g2\">\n      <div class=\"card\"><h2 class=\"card__title\">내보내기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">API 키와 인증 토큰은 항상 제외됩니다.</p><div class=\"seg\" data-dirty-no><button aria-pressed=\"true\">실행 흐름만</button><button aria-pressed=\"false\">전체 설정</button></div><p class=\"hint\" style=\"margin:10px 0\">실행 흐름: 에이전트·프롬프트·런타임 (프로바이더 정의 제외)</p><div class=\"cluster\"><button class=\"btn btn--primary\"><i data-i=\"download\" data-size=\"sm\"></i>JSON 파일로 저장</button><button class=\"btn\">클립보드로 복사</button></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">가져오기</h2><p class=\"card__desc\" style=\"margin-bottom:10px\">파일을 읽으면 아래에 변경 내용이 먼저 표시됩니다.</p><div class=\"cluster\"><button class=\"btn\"><i data-i=\"upload\" data-size=\"sm\"></i>파일 열기</button><button class=\"btn\">붙여넣기 검사</button></div>\n        <div class=\"note\" style=\"margin-top:12px\"><div class=\"diff\" id=\"imp-diff\"></div><p class=\"hint\" id=\"imp-none\" hidden style=\"margin:6px 0 0\">가져올 값이 현재 값과 모두 같습니다.</p></div>\n        <div class=\"cluster\" style=\"margin-top:12px\"><button class=\"btn\" id=\"imp-replace\">교체해서 가져오기</button><button class=\"btn\" id=\"imp-merge\">병합해서 가져오기</button></div><p class=\"hint\" style=\"margin:8px 0 0\">적용 후 아래 저장 바에서 저장해야 확정됩니다. (현행 문구의 “상단 저장”은 “하단 저장 바”로 정정)</p></div></div></div>\n    <div data-subpanel=\"adv\" data-group=\"mg\"><div class=\"stack\">\n      <div class=\"note note--warn\">빠른 설정이 자동으로 맞춘 내부 한도입니다. 직접 바꾸면 ‘속도와 품질’이 “직접 조정”으로 표시됩니다.</div>\n      <div class=\"card\"><h2 class=\"card__title\">실행 정책</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">실패 처리 (failure)</div><div class=\"setting__desc\">단계가 실패했을 때 어떻게 진행할지 정합니다.</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"실패 처리\"><option>soft — 폴백 후 계속</option><option>degraded — 축소 실행</option><option>hard — 중단</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">기본 연결 · OOC 연결</div><div class=\"setting__desc\">단계 AI 프리셋이 없을 때 쓰는 기본 연결과, OOC 대화에 쓰는 연결입니다.</div></div><div class=\"cluster\"><select class=\"select\" style=\"width:170px\" aria-label=\"기본 연결\"><option>claude-sonnet</option></select><select class=\"select\" style=\"width:170px\" aria-label=\"OOC 연결\"><option>gpt-4.1</option></select></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">진단 기록</div><div class=\"setting__desc\">실행 진단 상세 수준</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"진단 기록\"><option>기본</option><option>상세</option></select></div></div>\n      <div class=\"card\"><h2 class=\"card__title\">자료와 분량</h2>\n        <div class=\"setting\"><div><div class=\"setting__name\">로어 시작값</div><div class=\"setting__desc\">처음 가져올 로어 개수. 필요 시 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"8\" style=\"width:90px\" aria-label=\"로어 시작값\"></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">이전 단계 분석량</div><div class=\"setting__desc\">다음 AIDE에 넘길 이전 단계 분석의 양</div></div><select class=\"select\" style=\"width:150px\" aria-label=\"이전 단계 분석량\"><option>요약</option><option>전체</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">주입 위치</div><div class=\"setting__desc\">최종 전달 내용을 넣는 위치</div></div><select class=\"select\" style=\"width:170px\" aria-label=\"주입 위치\"><option>메인 지시 뒤</option><option>메인 지시 앞</option></select></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최소 · 최대 분량</div><div class=\"setting__desc\">목표 분량 프리셋보다 우선하는 직접 값</div></div><div class=\"cluster\"><input class=\"input\" type=\"number\" value=\"1000\" style=\"width:100px\" aria-label=\"최소 분량\" data-len=\"min\" data-dirty-key=\"length\"><input class=\"input\" type=\"number\" value=\"2000\" style=\"width:100px\" aria-label=\"최대 분량\" data-len=\"max\" data-dirty-key=\"length\"></div></div>\n        <div class=\"setting\"><div><div class=\"setting__name\">최종 전달 최대 글자</div><div class=\"setting__desc\">필요 시 초안 보존을 위해 자동 확장됩니다.</div></div><input class=\"input\" type=\"number\" value=\"9000\" style=\"width:120px\" aria-label=\"최종 전달 최대 글자\"></div></div>\n    </div></div>\n    <div data-subpanel=\"dbg\" data-group=\"mg\"><div class=\"card\"><div class=\"cluster\"><button class=\"btn\">디버그 JSON 복사</button><button class=\"btn\">파일로 저장</button></div></div></div>\n    <div data-subpanel=\"rst\" data-group=\"mg\"><div class=\"card\" style=\"border-color:var(--danger-line)\"><h2 class=\"card__title\" style=\"color:var(--danger-ink)\">위험 구역</h2><p class=\"card__desc\" style=\"margin-bottom:12px\">두 동작 모두 확인을 거칩니다. 실행 전에 ‘전체 설정’ 내보내기를 권장합니다.</p><div class=\"cluster\"><button class=\"btn btn--danger\" data-open=\"dlg-reset\">GUI 설정 초기화 (키 유지)…</button><button class=\"btn btn--danger\" data-open=\"dlg-reset-all\">모든 설정과 키 초기화…</button></div></div></div>\n  </section>\n\n  </div>\n  <!-- 저장 바: 모든 화면 공통 하단 고정 -->\n  <footer class=\"savebar\" id=\"savebar\"><div class=\"savebar__copy\"><b data-save-title></b><span data-save-desc></span></div><div class=\"cluster\"><button class=\"btn\" data-revert disabled>변경 취소</button><button class=\"btn btn--primary\" data-save disabled>저장</button></div></footer>\n  </main>\n\n\n  <nav class=\"tabbar\" aria-label=\"GRADIA 하단 메뉴\"></nav>\n\n  <div class=\"toasts\" aria-live=\"polite\"></div>\n</div>";
 
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -44281,6 +44902,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     let rows = [];
     if (stageId === 'aide_body_state') rows = (scopeKey ? Runtime.bodyStateReadings?.[scopeKey]?.readings || [] : [])
       .map(item => note(forcedBondPersonLabel(item.character), item.summary));
+    else if (stageId === 'aide_intimacy') rows = (scopeKey ? Runtime.intimacyReadings?.[scopeKey]?.readings || [] : [])
+      .map(item => note(`${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}`, item.summary));
     else if (stageId === 'aide_world_dynamics') rows = (scopeKey ? Runtime.worldDynamicsReadings?.[scopeKey]?.readings || [] : [])
       .map(item => note(`${item.movement} · ${WORLD_DYNAMICS_STATUS_LABELS[item.status] || item.status}`, item.summary));
     else if (stageId === 'aide_forced_bond') rows = (scopeKey ? Runtime.forcedBondReadings?.[scopeKey]?.readings || [] : [])
@@ -44299,7 +44922,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const resultsOrderTabs = results => {
     const bar = results?.querySelector('[data-subtabs="rs"]');
     if (!bar) return;
-    const keyOf = { shadow_act: 's', aide_character: 'c', aide_world: 'w', aide_plot: 'p', aide_forced_bond: 'f', aide_body_state: 'b', aide_world_dynamics: 'd' };
+    const keyOf = { shadow_act: 's', aide_character: 'c', aide_world: 'w', aide_plot: 'p', aide_forced_bond: 'f', aide_body_state: 'b', aide_world_dynamics: 'd', aide_intimacy: 'x' };
     const order = ['shadow_act', ...normalizeAideStageOrder(mockupRuntime().aideStageOrder).flatMap(id => [id, ...subAidesOfParent(id)])];
     for (const id of order) {
       const tab = bar.querySelector(`[data-subtab="${keyOf[id]}"]`);
@@ -45507,7 +46130,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mockupPageForGuiRoute = pageId => ({
     overview: 'home', quick: 'home', results: 'results', pipeline: 'pipeline', input: 'pipeline',
     ooc: 'pipeline', improve: 'pipeline', output: 'pipeline', references: 'sources', skills: 'sources',
-    providers: 'providers', advanced: 'manage', management: 'manage'
+    providers: 'providers', advanced: 'manage', management: 'manage', writing: 'writing', chat: 'chat'
   })[pageId] || 'home';
   const mockupSetChoice = (group, index) => {
     if (!group) return;
@@ -45526,7 +46149,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     enablePlotAide: agents?.aide_plot?.enabled === true,
     enableForcedBondAide: agents?.aide_forced_bond?.enabled === true,
     enableBodyStateAide: agents?.aide_body_state?.enabled === true,
-    enableWorldDynamicsAide: agents?.aide_world_dynamics?.enabled === true });
+    enableWorldDynamicsAide: agents?.aide_world_dynamics?.enabled === true,
+    enableIntimacyAide: agents?.aide_intimacy?.enabled === true });
   const mockupFlowSettings = () => guiFlowSettings(mockupRuntime(), Gui.state?.agents || {});
   const mockupCallPlan = () => expectedTotalCallPlan(mockupFlowSettings());
   // Colors follow each stage's position in the run, not its type, so the chain reads as one
@@ -45537,8 +46161,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (share <= 0) return `var(--stage${segment + 2})`;
     return share >= 100 ? `var(--stage${segment + 1})` : `color-mix(in oklab,var(--stage${segment + 1}) ${share}%,var(--stage${segment + 2}))`;
   };
-  const FLOW_STAGE_ALIASES = Object.freeze({ shadow_act: 'shadow', aide_character: 'char', aide_world: 'world', aide_plot: 'plot', aide_forced_bond: 'forced_bond', aide_body_state: 'body_state', aide_world_dynamics: 'world_dynamics', main: 'main' });
-  const FLOW_STAGE_CHIPS = Object.freeze({ shadow_act: '#mini-s1', aide_character: '#mini-s2', aide_world: '#mini-s3', aide_plot: '#mini-s4', aide_forced_bond: '#mini-s4b', aide_body_state: '#mini-s4a', aide_world_dynamics: '#mini-s4w', main: '#mini-s5' });
+  const FLOW_STAGE_ALIASES = Object.freeze({ shadow_act: 'shadow', aide_character: 'char', aide_world: 'world', aide_plot: 'plot', aide_forced_bond: 'forced_bond', aide_body_state: 'body_state', aide_world_dynamics: 'world_dynamics', aide_intimacy: 'intimacy', main: 'main' });
+  const FLOW_STAGE_CHIPS = Object.freeze({ shadow_act: '#mini-s1', aide_character: '#mini-s2', aide_world: '#mini-s3', aide_plot: '#mini-s4', aide_forced_bond: '#mini-s4b', aide_body_state: '#mini-s4a', aide_world_dynamics: '#mini-s4w', aide_intimacy: '#mini-s4x', main: '#mini-s5' });
   const subAidesOfParent = parent => EXTENSION_AIDE_STAGE_IDS.filter(id => EXTENSION_AIDE_PARENT[id] === parent);
   const mockupPaintFlow = () => {
     const app = Gui.app; if (!app || !Gui.state) return;
@@ -45819,7 +46443,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(key==='nsfwInjectFinalRequest'){control.checked=runtime.nsfwInjectFinalRequest===true;control.disabled=!nsfwEffective;}
       else if(key==='biancaInject')control.checked=runtime.biancaInject===true;
       else if(key==='shadowDraftMode'){control.value=normalizeNovelShadowDraftMode(runtime.novelShadowDraftMode||runtime.shadowDraftMode);control.disabled=mode==='rp';}
-      else if(key==='rpImpersonationScope'){control.value=normalizeRpImpersonationScope(runtime.rpImpersonationScope);control.title=RP_IMPERSONATION_SCOPE_DEFS[control.value].description;control.hidden=mode!=='rp';const scopeHint=control.closest('.app')?.querySelector('[data-rp-scope-description]');if(scopeHint){scopeHint.textContent=control.title;scopeHint.hidden=mode!=='rp';}}
+      else if(key==='rpImpersonationScope'){if(!control.options.length)RP_IMPERSONATION_SCOPES.forEach(value=>mockupOption(control,value,RP_IMPERSONATION_SCOPE_DEFS[value].label));control.value=normalizeRpImpersonationScope(runtime.rpImpersonationScope);control.title=RP_IMPERSONATION_SCOPE_DEFS[control.value].description;const onWritingPage=!!control.closest('section[data-page="writing"]');control.hidden=!onWritingPage&&mode!=='rp';control.disabled=onWritingPage&&mode!=='rp';if(onWritingPage){const hint=control.closest('.field')?.querySelector('[data-writing-rp-scope-hint]');if(hint)hint.textContent=mode==='rp'?control.title:'소설 모드에서는 쓰이지 않습니다. 화면 상단에서 RP로 바꾸면 적용됩니다.';}const scopeHint=control.closest('.app')?.querySelector('[data-rp-scope-description]');if(scopeHint){scopeHint.textContent=control.title;scopeHint.hidden=mode!=='rp';}}
     });
     const draftHint=app.querySelector('[data-existing-draft-mode-hint]');if(draftHint)draftHint.textContent=mode==='rp'?'RP 모드에서는 유저 행동 불가침 계약으로 고정됩니다. 소설 모드로 돌아오면 이전 초안 방식을 복원합니다.':SHADOW_DRAFT_MODE_DEFS[normalizeNovelShadowDraftMode(runtime.shadowDraftMode)]?.description||'';
     const nsfwPreview=app.querySelector('[data-existing-nsfw-preview]');if(nsfwPreview){const writingPreview=buildNsfwGuidanceBlock(runtime,'writing'),finalPreview=buildNsfwGuidanceBlock(runtime,'final');nsfwPreview.value=writingPreview?(finalPreview?`${writingPreview}\n\n[FINAL REQUEST]\n${finalPreview}`:writingPreview):'(현재 지침 주입이 꺼져 있습니다.)';}
@@ -45842,7 +46466,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (quality) quality.textContent = QUICK_PROFILE_DEFS[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')]?.label || '직접 조정';
     const qualityBadge = app.querySelector('#q-badge');
     if (qualityBadge) qualityBadge.textContent = '현재: ' + (quality?.textContent || '직접 조정');
-    for (const [alias,id] of [['shadow','shadow_act'],['char','aide_character'],['world','aide_world'],['plot','aide_plot'],['forced_bond','aide_forced_bond'],['body_state','aide_body_state'],['world_dynamics','aide_world_dynamics']]) {
+    for (const [alias,id] of [['shadow','shadow_act'],['char','aide_character'],['world','aide_world'],['plot','aide_plot'],['forced_bond','aide_forced_bond'],['body_state','aide_body_state'],['world_dynamics','aide_world_dynamics'],['intimacy','aide_intimacy']]) {
       const detail=app.querySelector('.stage-detail[data-detail="'+alias+'"]'),slot=Gui.state.agents?.[id]||{};
       const turns=detail?.querySelector('.turns-now'),hint=turns?.parentElement;
       if(turns&&hint){turns.textContent=String(slot.turnWindow??defaultTurnWindowForStage(id));hint.replaceChildren(document.createTextNode('최근 '),turns,document.createTextNode('턴 · 최대 대기 '+Math.round((slot.timeoutMs??DEFAULT_STAGE_TIMEOUT_MS)/1000)+'초'));}
@@ -45888,6 +46512,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (saveDesc) saveDesc.textContent = Gui.dirty ? summary.labels.slice(0, 3).join(' · ') : '설정을 바꾸면 이곳에서 한 번에 저장합니다.';
     app.querySelector('[data-save]')?.toggleAttribute('disabled', Gui.saving || !Gui.dirty);
     app.querySelector('[data-revert]')?.toggleAttribute('disabled', Gui.saving || !Gui.dirty);
+    // Why-not-running notes and the changed-settings list follow every unsaved change.
+    renderStageBlockers(app);
+    renderChangedSettings(app);
+    renderStageMatrix(app);
   };
   const runtimeModePick = index => {
     mockupRuntime().mode = ['off','lite','normal'][index] || 'normal';
@@ -45896,6 +46524,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const bindMockupEvents = app => {
     if (app.dataset.productEvents === 'true') return;
     app.dataset.productEvents = 'true';
+    // Ctrl/⌘+K anywhere in the settings window, or "/" outside a text field, opens settings search.
+    const doc = app.ownerDocument;
+    if (doc && !doc.__sgaGradiaSearchKeybound) {
+      doc.__sgaGradiaSearchKeybound = true;
+      doc.addEventListener('keydown', event => {
+        if (!Gui.app?.isConnected || Gui.closeDialogOpen) return;
+        const typing = event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]');
+        if (((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 'k') || (event.key === '/' && !typing)) {
+          event.preventDefault();
+          openSettingsSearch();
+        }
+      });
+    }
     app.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
@@ -45907,6 +46548,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         sheet?.querySelector('button')?.focus();return;
       }
       if (target.id === 'sheet-more') { mockupCloseMoreSheet(); return; }
+      if (target.closest('[data-settings-search-open]')) { event.preventDefault(); openSettingsSearch(); return; }
+      { const bulk = target.closest('[data-matrix-bulk-apply]'); if (bulk) { event.preventDefault(); applyStageMatrixBulk(bulk.dataset.matrixBulkApply); void renderSettingsGui(); return; } }
       const mode = target.closest('.mode-switch [data-mode]');
       if (mode) { event.preventDefault(); requestWritingModeChangeFromGui(mode.dataset.mode); return; }
       const go = target.closest('[data-go]');
@@ -45929,7 +46572,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         Gui.mockupPage = mockupPageForGuiRoute(Gui.pageId);
         Gui.activeTab = Gui.pageId === 'providers' ? 'providers' : 'flow';
         const goStage = go.dataset.goStage;
-        void Promise.resolve(renderSettingsGui()).then(() => { if (goStage) Gui.app?.querySelector(`.node[data-select-row="${goStage}"]`)?.click(); });
+        void Promise.resolve(renderSettingsGui()).then(() => {
+          if (goStage) Gui.app?.querySelector(`.node[data-select-row="${goStage}"]`)?.click();
+          // A pointer from a stage panel opens the chat or writing page at the section it names.
+          const section = (page === 'chat' || page === 'writing') && go.dataset.goSub
+            ? Gui.app?.querySelector(`section[data-page="${page}"] [data-${page}-section="${go.dataset.goSub}"]`) : null;
+          if (section) { section.scrollIntoView?.({ block: 'start' }); section.classList.add('is-flash'); setTimeout(() => section.classList.remove('is-flash'), 1600); }
+        });
         return;
       }
       const close = target.closest('[data-close]');
@@ -45950,7 +46599,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const node = target.closest('.node[data-select-row]');
       if (node) {
         const id = node.dataset.selectRow;
-        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', body_state:'body_state', world_dynamics:'world_dynamics', forced_bond:'forced_bond', main:'main' })[id] || 'shadow';
+        const detail = ({ shadow:'shadow', inp:'inp', char:'char', world:'world', plot:'plot', body_state:'body_state', world_dynamics:'world_dynamics', intimacy:'intimacy', forced_bond:'forced_bond', main:'main' })[id] || 'shadow';
         app.querySelectorAll('.node[data-select-row]').forEach(item => item.classList.toggle('is-on', item === node));
         app.querySelectorAll('.stage-detail[data-detail]').forEach(item => item.classList.toggle('is-on', item.dataset.detail === detail));
         const selectedAide=({char:'aide_character',world:'aide_world',plot:'aide_plot'})[id];
@@ -46012,16 +46661,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       {const bondAction=target.closest('[data-forced-bond-action]');if(bondAction){handleForcedBondAction(bondAction.dataset.forcedBondAction,bondAction.dataset.itemId||'');return;}}
       {const dispositionAction=target.closest('[data-npc-disposition-action]');if(dispositionAction){handleNpcDispositionAction(dispositionAction.dataset.npcDispositionAction,dispositionAction.dataset.itemId||'');return;}}
       {const stateAction=target.closest('[data-body-state-action]');if(stateAction){handleBodyStateAction(stateAction.dataset.bodyStateAction,stateAction.dataset.itemId||'');return;}}
+      {const intimacyAction=target.closest('[data-intimacy-action]');if(intimacyAction){void handleIntimacyAction(intimacyAction.dataset.intimacyAction,intimacyAction.dataset.itemId||'');return;}}
       if(target.closest('[data-open="dlg-reset"]')){mockupOpenResetConfirm(false);return;}
       if(target.closest('[data-open="dlg-reset-all"]')){mockupOpenResetConfirm(true);return;}
-      if(target.closest('[data-open="dlg-ooc"]')){const stage=target.closest('.stage-detail')?.dataset.detail;void mockupOpenOoc(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[stage]||'shadow_act');return;}
+      if(target.closest('[data-open="dlg-ooc"]')){const stage=target.closest('.stage-detail')?.dataset.detail;void mockupOpenOoc(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[stage]||'shadow_act');return;}
       if(target.closest('[data-open="dlg-cand"]')){mockupOpenCandidate();return;}
-      if(target.closest('[data-open="dlg-used"]')){const stage=target.closest('.stage-detail')?.dataset.detail;mockupOpenUsedMaterials(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[stage]||'shadow_act');return;}
-      if(target.matches('[data-action="prompt-preview"]')||target.closest('[data-action="prompt-preview"]')){const detail=target.closest('.stage-detail')?.dataset.detail;mockupOpenPromptPreview(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[detail]||'shadow_act');return;}
+      if(target.closest('[data-open="dlg-used"]')){const stage=target.closest('.stage-detail')?.dataset.detail;mockupOpenUsedMaterials(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[stage]||'shadow_act');return;}
+      if(target.matches('[data-action="prompt-preview"]')||target.closest('[data-action="prompt-preview"]')){const detail=target.closest('.stage-detail')?.dataset.detail;mockupOpenPromptPreview(({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[detail]||'shadow_act');return;}
       const providerRow = target.closest('[data-provider-name]');
       if (providerRow && providerRow.matches('button.row')) { Gui.selectedPreset = providerRow.dataset.providerName; void renderSettingsGui(); return; }
       const stage = target.closest('.stage-detail[data-detail]');
-      const stageId = ({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[stage?.dataset.detail];
+      const stageId = ({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[stage?.dataset.detail];
       if (target.closest('[data-provider-test]')) {
         const name=target.closest('[data-provider-test]').dataset.providerTest;
         const preset=Gui.state.providers?.[name];
@@ -46124,13 +46774,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if(control.matches?.('[data-input-assist-field]')){const key=control.dataset.inputAssistField;if(key==='scope')applyInputAssistScopeToGui(control.value);else if(key==='confirmation')applyInputAssistConfirmationModeToGui(control.value);else if(key==='targetChars')applyInputAssistTargetCharsToGui(control.value);else if(key==='loreActivation')applyInputAssistLoreActivationModeToGui(control.value);return;}
     if(control.matches?.('[data-input-assist-stage-field]')){const key=control.dataset.inputAssistStageField,slot=Gui.state.agents[INPUT_ASSIST_STAGE_ID]||(Gui.state.agents[INPUT_ASSIST_STAGE_ID]={});if(key==='presetName')slot.presetName=control.value;else if(key==='maxChars')slot.maxChars=clampInt(control.value,500,60000,defaultContextCharsForStage(INPUT_ASSIST_STAGE_ID));markGuiDirty();mockupRefreshStatus();return;}
     if (control.matches?.('[data-stage-ins]')) {
-      const id = ({ 'SHADOW ACT':'shadow_act', '인물 AIDE':'aide_character', '세계관 AIDE':'aide_world', '플롯 AIDE':'aide_plot', '억결 AIDE':'aide_forced_bond','상태 AIDE':'aide_body_state','세계 동역학 AIDE':'aide_world_dynamics' })[control.dataset.stageIns];
+      const id = ({ 'SHADOW ACT':'shadow_act', '인물 AIDE':'aide_character', '세계관 AIDE':'aide_world', '플롯 AIDE':'aide_plot', '억결 AIDE':'aide_forced_bond','상태 AIDE':'aide_body_state','세계 동역학 AIDE':'aide_world_dynamics','정사 AIDE':'aide_intimacy' })[control.dataset.stageIns];
       if (id) { Gui.state.prompts[id] ||= {}; Gui.state.prompts[id].customPrompt = control.value; markGuiDirty(); mockupRefreshStatus(); }
       return;
     }
     if (control.matches?.('[data-body-state-field="reproduction"]')) {
       runtime.bodyStateReproduction = control.checked === true;
       markGuiDirty(); if (!inputEvent) mockupRefreshStatus();
+      return;
+    }
+    if (control.matches?.('[data-intimacy-card-field]')) {
+      // Text fields commit on change so typing never re-renders the card mid-word.
+      if (inputEvent && control.tagName !== 'SELECT') return;
+      void updateIntimacyCardField(control.dataset.cardId, control.dataset.intimacyCardField, control.value);
       return;
     }
     if (control.matches?.('[data-body-state-card-field]')) {
@@ -46210,15 +46866,22 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       runtime[control.dataset.len === 'min' ? 'targetDraftMinChars' : 'targetDraftMaxChars'] = clampInt(control.value, control.dataset.len === 'min' ? 100 : 500, 60000, control.dataset.len === 'min' ? DEFAULT_TARGET_DRAFT_MIN_CHARS : DEFAULT_TARGET_DRAFT_MAX_CHARS);
       markGuiDirty(); if (!inputEvent) mockupRefreshStatus(); return;
     }
+    if (control.matches?.('[data-matrix-field]')) {
+      // Numbers commit on change so typing never re-renders mid-number.
+      if (inputEvent && control.type === 'number') return;
+      if (handleStageMatrixChange(control)) void renderSettingsGui();
+      return;
+    }
+    if (control.matches?.('[data-matrix-bulk]')) return;
     if (control.matches?.('[data-turns]')) {
       const detail = control.closest('.stage-detail')?.dataset.detail;
-      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot', forced_bond:'aide_forced_bond', body_state:'aide_body_state',world_dynamics:'aide_world_dynamics' })[detail];
+      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot', forced_bond:'aide_forced_bond', body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy' })[detail];
       if (id && Gui.state.agents[id]) { Gui.state.agents[id].turnWindow = clampInt(control.value,1,64,defaultTurnWindowForStage(id)); markGuiDirty(); mockupRefreshStatus(); }
       return;
     }
     if (control.matches?.('[data-stage-field]')) {
       const section=control.closest('.stage-detail')?.dataset.detail;
-      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[section];
+      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[section];
       if(!id||!Gui.state.agents[id])return;
       if(control.dataset.stageField==='maxChars')Gui.state.agents[id].maxChars=clampInt(control.value,500,60000,defaultContextCharsForStage(id));
       else if(control.dataset.stageField==='timeoutSeconds')Gui.state.agents[id].timeoutMs=clampInt(Number(control.value)*1000,1000,600000,DEFAULT_STAGE_TIMEOUT_MS);
@@ -46253,8 +46916,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (control.matches?.('[data-lib-action]')) return;
     if (page === 'pipeline') {
       const section = control.closest('.stage-detail')?.dataset.detail;
-      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot', forced_bond:'aide_forced_bond', body_state:'aide_body_state',world_dynamics:'aide_world_dynamics' })[section];
-      if (control.matches?.('#on-s1,#on-s2,#on-s3,#on-s4,#on-s5,#on-s6,#on-s7') && id && Gui.state.agents[id]) { Gui.state.agents[id].enabled = control.checked; markGuiDirty(); mockupRefreshStatus(); }
+      const id = ({ shadow:'shadow_act', char:'aide_character', world:'aide_world', plot:'aide_plot', forced_bond:'aide_forced_bond', body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy' })[section];
+      if (control.matches?.('#on-s1,#on-s2,#on-s3,#on-s4,#on-s5,#on-s6,#on-s7,#on-s8') && id && Gui.state.agents[id]) { Gui.state.agents[id].enabled = control.checked; markGuiDirty(); mockupRefreshStatus(); }
       if (id && control.tagName === 'SELECT' && control.closest('.stage-detail') && control.closest('.stage-detail')?.querySelectorAll('select')[0] === control) { Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus(); }
       if (id && control.tagName === 'INPUT' && control.type === 'number') {
         const label=control.closest('.field')?.querySelector('label')?.textContent||control.getAttribute('aria-label')||'';
@@ -46289,7 +46952,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       return;
     }
     const providerStage=control.closest('.stage-detail[data-detail]');
-    if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot','forced_bond':'aide_forced_bond','body_state':'aide_body_state','world_dynamics':'aide_world_dynamics'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
+    if(providerStage&&control.tagName==='SELECT'&&control.closest('.stage-detail')?.querySelectorAll('select')[0]===control){const id=({'shadow':'shadow_act','char':'aide_character','world':'aide_world','plot':'aide_plot','forced_bond':'aide_forced_bond','body_state':'aide_body_state','world_dynamics':'aide_world_dynamics','intimacy':'aide_intimacy'})[providerStage.dataset.detail];if(id&&Gui.state.agents[id]){Gui.state.agents[id].presetName=control.value;markGuiDirty();mockupRefreshStatus();}}
   };
 
   const forcedBondPersonLabel = name => (name === FORCED_BOND_PERSONA ? '페르소나' : name);
@@ -46485,7 +47148,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const readingBox = app.querySelector('[data-body-state-readings]');
     if (readingBox) {
       let verdictBox = app.querySelector('[data-body-state-verdicts]');
-      if (!verdictBox) { verdictBox = guiEl('div', { class: 'stack stack--sm', style: 'margin-top:8px', dataset: { bodyStateVerdicts: '' } }); readingBox.after(verdictBox); }
+      if (!verdictBox) { verdictBox = guiEl('div', { class: 'stack stack--sm', style: 'margin-top:8px', dataset: { bodyStateVerdicts: '' } }); (app.querySelector('[data-body-state-cards]')?.closest('.field') || readingBox).after(verdictBox); }
       const cardsNow = scopeKey ? (normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || []) : [];
       const open = (scopeKey ? Runtime.bodyStateVerdicts?.[scopeKey]?.items || [] : [])
         .filter(item => !cardsNow.some(card => card.name === item.name && card.conceptionDate === item.conception));
@@ -46511,6 +47174,506 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ? readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${item.movement} · ${WORLD_DYNAMICS_STATUS_LABELS[item.status] || item.status}` }), guiEl('p', { text: item.summary })]))
       : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 세계 동역학 AIDE가 실행되면 이번 턴에 살핀 장면 밖 흐름과 판정이 여기에 표시됩니다. 저장되지 않습니다.' })])]));
   };
+  // 정사 AIDE: preference cards (stored at once, outside the GUI save) and this turn's readings.
+  const intimacyCardEditor = card => {
+    const field = (label, control) => guiEl('div', { class: 'field' }, [guiEl('label', { text: label }), control]);
+    const input = (key, value, placeholder = '') => guiEl('input', { class: 'input', type: 'text', value, placeholder, dataset: { intimacyCardField: key, cardId: card.id } });
+    const area = (key, value, placeholder = '') => { const node = guiEl('textarea', { class: 'textarea', rows: '2', placeholder, dataset: { intimacyCardField: key, cardId: card.id } }); node.value = value || ''; return node; };
+    const stance = key => { const node = guiEl('select', { class: 'select', dataset: { intimacyCardField: key, cardId: card.id } }); for (const id of INTIMACY_STANCES) mockupOption(node, id, INTIMACY_STANCE_LABELS[id]); node.value = card[key] || 'unknown'; return node; };
+    const phase = (key, label) => guiEl('div', { class: 'opt-grid' }, [field(`${label} 선호`, stance(`${key}Stance`)), field(`${label} 방식·좋고 싫은 것`, area(`${key}Style`, card[`${key}Style`], '어떻게 이끌거나 따르는지, 어떤 방식을 좋아하고 싫어하는지'))]);
+    return guiEl('div', { class: 'note', dataset: { intimacyCard: card.id } }, [
+      guiEl('div', { class: 'opt-grid' }, [
+        field('인물', input('name', forcedBondPersonLabel(card.name), '인물 이름')),
+        field('출처', guiEl('p', { class: 'hint', style: 'margin:6px 0 0', text: card.origin === 'user' ? '직접 작성·수정' : `로어로 추정${card.createdAt ? ` · ${card.createdAt.slice(0, 10)}` : ''}` }))
+      ]),
+      guiEl('div', { class: 'opt-grid' }, [
+        field('좋아하는 체위', input('likedPositions', card.likedPositions, '예: 기승위, 대면좌위')),
+        field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위'))
+      ]),
+      phase('foreplay', '전희'),
+      phase('intercourse', '성교'),
+      phase('afterplay', '후희'),
+      field('근거(로어)', area('basis', card.basis, '추정의 근거')),
+      guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '카드 삭제', dataset: { intimacyAction: 'remove', itemId: card.id } })])
+    ]);
+  };
+  const renderIntimacyPanel = app => {
+    if (!app) return;
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const addButton = app.querySelector('[data-intimacy-action="add"]');
+    if (addButton) addButton.disabled = !scopeKey || !Runtime.intimacyCards;
+    const box = app.querySelector('[data-intimacy-cards]');
+    if (box) {
+      if (!Runtime.intimacyCards) void loadIntimacyCards().then(() => renderIntimacyPanel(Gui.app)).catch(() => {});
+      const cards = intimacyCardsForScope(scopeKey);
+      box.replaceChildren(...(cards.length ? cards.map(intimacyCardEditor) : [guiEl('div', { class: 'empty' }, [
+        guiEl('b', { text: scopeKey ? '이 채팅에는 선호 카드가 없습니다.' : '현재 채팅을 아직 확인하지 못했습니다.' }),
+        guiEl('span', { text: scopeKey ? '성교 장면이 시작되면 등장 인물의 카드가 로어를 바탕으로 자동으로 만들어집니다. 직접 추가할 수도 있습니다.' : '채팅을 연 상태에서 설정 창을 다시 열면 카드를 볼 수 있습니다.' })
+      ])]));
+    }
+    const readingBox = app.querySelector('[data-intimacy-readings]');
+    if (readingBox) {
+      const readings = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [];
+      readingBox.replaceChildren(...(readings.length
+        ? readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}` }), guiEl('p', { text: item.summary })]))
+        : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 성교 장면에서 정사 AIDE가 실행되면 이번 턴의 단계·체위·인물별 상태가 여기에 표시됩니다. 판독은 저장되지 않습니다.' })])]));
+    }
+  };
+  const writeIntimacyCardsForScope = async (scopeKey, cards) => {
+    const next = { ...(Runtime.intimacyCards || {}) };
+    if (cards.length) next[scopeKey] = cards; else delete next[scopeKey];
+    Runtime.intimacyCards = normalizeIntimacyCardMap(next);
+    await saveIntimacyCards();
+  };
+  const handleIntimacyAction = async (action, itemId = '') => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (!scopeKey) return;
+    await loadIntimacyCards();
+    const cards = [...intimacyCardsForScope(scopeKey)];
+    if (action === 'add') {
+      if (cards.length >= INTIMACY_MAX_CARDS) { guiSetStatus(`선호 카드는 채팅마다 ${INTIMACY_MAX_CARDS}장까지입니다.`); return; }
+      cards.push(normalizeIntimacyCard({ id: `intimacy-${Date.now().toString(36)}`, name: '', origin: 'user', createdAt: new Date().toISOString() }));
+    } else if (action === 'remove') {
+      const index = cards.findIndex(card => card.id === itemId);
+      if (index < 0) return;
+      cards.splice(index, 1);
+    } else return;
+    try { await writeIntimacyCardsForScope(scopeKey, cards); guiSetStatus('선호 카드를 저장했습니다.'); }
+    catch (error) { guiSetStatus(`선호 카드 저장 실패: ${error?.message || error}`); }
+    renderIntimacyPanel(Gui.app);
+  };
+  const updateIntimacyCardField = async (cardId, key, value) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (!scopeKey || !cardId || !key) return;
+    await loadIntimacyCards();
+    const cards = intimacyCardsForScope(scopeKey).map(card => (card.id === cardId
+      ? { ...card, [key]: key === 'name' && value === '페르소나' ? FORCED_BOND_PERSONA : value, origin: 'user' }
+      : card));
+    try { await writeIntimacyCardsForScope(scopeKey, cards); guiSetStatus('선호 카드를 저장했습니다.'); }
+    catch (error) { guiSetStatus(`선호 카드 저장 실패: ${error?.message || error}`); }
+    renderIntimacyPanel(Gui.app);
+  };
+  // ===================== Settings access, phase 2 (2026-11-18) =====================
+  // Search every setting by name, description and stage; say on each stage panel why it will
+  // not run (or runs inside another stage) with a link to the setting that causes it; and list
+  // the settings that differ from their defaults. Everything reads the unsaved GUI state.
+  // Design: docs/gradia/GUI-SETTINGS-SCOPE-20261118.md
+  const GUI_DETAIL_KEY_OF_STAGE = Object.freeze({
+    shadow_act: 'shadow', aide_character: 'char', aide_world: 'world', aide_plot: 'plot',
+    aide_forced_bond: 'forced_bond', aide_body_state: 'body_state', aide_world_dynamics: 'world_dynamics', aide_intimacy: 'intimacy'
+  });
+  const guiStageLabel = stageId => STAGE_DEF_MAP[stageId]?.label || stageId;
+  // Korean subject particle after a label: 받침 → 이, otherwise 가. "AIDE" reads as 에이드 (가).
+  const guiSubject = label => {
+    const last = String(label || '').trim().slice(-1);
+    const code = last.charCodeAt(0) - 0xAC00;
+    return label + (code >= 0 && code <= 11171 && code % 28 !== 0 ? '이' : '가');
+  };
+  // Why a stage will not run with the current (unsaved) settings, each with where to change it.
+  const guiStageBlockers = stageId => {
+    const settings = mockupFlowSettings();
+    const agents = Gui.state?.agents || {};
+    if (settings.mode === 'off') return [{ text: '작동 방식이 꺼짐이라 초안 파이프라인 전체가 실행되지 않습니다.', go: 'home', label: '작동 방식 바꾸기' }];
+    const out = [];
+    if (stageId !== 'shadow_act' && agents.shadow_act?.enabled === false) {
+      out.push({ text: 'SHADOW ACT가 꺼져 있어 응답 전 파이프라인 전체가 실행되지 않습니다.', go: 'pipeline', stage: 'shadow', label: 'SHADOW ACT 열기' });
+    }
+    if ((stageId === 'aide_character' || stageId === 'aide_world') && settings.mode === 'lite' && agents[stageId]?.enabled !== false) {
+      out.push({ text: '라이트 모드에서는 이 단계를 건너뜁니다.', go: 'home', label: '작동 방식 바꾸기' });
+    }
+    if (isExtensionAideStage(stageId) && agents[stageId]?.enabled === true) {
+      if (forcedBondModeGate(settings) === 'skip') {
+        out.push({ text: 'RP 문장화 모드에서는 하위 AIDE가 실행되지 않습니다.', go: 'writing', sub: 'mode', label: 'RP 세부 모드 열기' });
+      }
+      if (stageId === 'aide_intimacy' && !intimacyNsfwOn(settings)) {
+        out.push({
+          text: normalizeNsfwMode(settings.nsfwMode) === 'off' ? '성인 장면 표현이 OFF라 정사 AIDE가 실행되지 않습니다.' : 'NSFW 지침 주입이 꺼져 있어 정사 AIDE가 실행되지 않습니다.',
+          go: 'writing', sub: 'nsfw', label: '성인 장면 설정 열기'
+        });
+      }
+      if (!out.length) {
+        const parent = EXTENSION_AIDE_PARENT[stageId];
+        const host = extensionAideHostStage(stageId, settings);
+        if (!host) out.push({ tone: 'info', text: '핵심 AIDE가 모두 꺼져 있어 이 하위 AIDE가 단독 단계로 실행됩니다. 호출이 1회 늘어납니다.' });
+        else if (host !== parent) {
+          const why = settings.mode === 'lite' && parent !== 'aide_plot' ? '라이트 모드에서 건너뛰어져' : '꺼져 있어';
+          out.push({ tone: 'info', text: `${guiSubject(guiStageLabel(parent))} ${why} ${guiSubject(guiStageLabel(host))} 대신 처리합니다.`, go: 'pipeline', stage: GUI_DETAIL_KEY_OF_STAGE[parent], label: `${guiStageLabel(parent)} 열기` });
+        }
+      }
+    }
+    return out;
+  };
+  const guiBlockerNote = item => guiEl('div', { class: `note scope-link${item.tone === 'info' ? '' : ' note--warn'}` }, [
+    guiEl('span', { text: item.text }),
+    item.go ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: item.label || '열기', dataset: { go: item.go, ...(item.stage ? { goStage: item.stage } : {}), ...(item.sub ? { goSub: item.sub } : {}) } }) : null
+  ]);
+  const guiFillBox = (holder, attr, items) => {
+    if (!holder) return;
+    let box = holder.querySelector(`:scope > [${attr}]`);
+    if (!box) { box = document.createElement('div'); box.className = 'stack stack--sm'; box.setAttribute(attr, ''); holder.prepend(box); }
+    box.replaceChildren(...items.map(guiBlockerNote));
+    box.hidden = !items.length;
+  };
+  const GUI_CHAT_SECTION_STAGE = Object.freeze({ bond: 'aide_forced_bond', state: 'aide_body_state', intimacy: 'aide_intimacy' });
+  const renderStageBlockers = app => {
+    if (!app || !Gui.state) return;
+    for (const [stageId, key] of Object.entries(GUI_DETAIL_KEY_OF_STAGE)) {
+      const detail = app.querySelector(`.stage-detail[data-detail="${key}"]`);
+      const holder = key === 'shadow' ? detail?.querySelector('[data-subpanel="run"] > .stack') : detail?.querySelector('.card > .stack');
+      guiFillBox(holder, 'data-stage-blockers', guiStageBlockers(stageId));
+    }
+    // A chat's cards do nothing while their AIDE is off: say so where the cards are edited.
+    for (const [section, stageId] of Object.entries(GUI_CHAT_SECTION_STAGE)) {
+      const holder = app.querySelector(`section[data-page="chat"] [data-chat-section="${section}"] > .stack`);
+      const enabled = Gui.state.agents?.[stageId]?.enabled === true;
+      const items = enabled ? guiStageBlockers(stageId).filter(item => item.tone !== 'info')
+        : [{ text: `${guiStageLabel(stageId)}가 꺼져 있어 이 카드들은 지금 쓰이지 않습니다.`, go: 'pipeline', stage: GUI_DETAIL_KEY_OF_STAGE[stageId], label: `${guiStageLabel(stageId)} 켜러 가기` }];
+      guiFillBox(holder, 'data-chat-blockers', items);
+    }
+  };
+
+  // ---- Settings search ----
+  // Dynamic lists (cards, readings, notes this module writes) are not settings to find.
+  const SETTINGS_SEARCH_SKIP = '[data-stage-matrix],[data-forced-bond-cards],[data-forced-bond-proposals],[data-body-state-cards],[data-body-state-verdicts],[data-intimacy-cards],[data-npc-disposition-list],[data-body-state-readings],[data-world-dynamics-readings],[data-intimacy-readings],[data-stage-blockers],[data-chat-blockers],[data-changed-settings],.ladder,.mini,.dialog';
+  // Words people search with that the labels do not use.
+  const SETTINGS_SEARCH_ALIASES = Object.freeze([
+    [/성인 장면|NSFW/i, 'nsfw 성인 수위 야한'],
+    [/대기 시간/, 'timeout 타임아웃 시간 초과'],
+    [/AI 프리셋/, '모델 프로바이더 provider preset'],
+    [/참고 상한/, '토큰 글자수 한도 context'],
+    [/최근 대화 수/, '턴 히스토리 history'],
+    [/창작 지침/, '프롬프트 prompt 지시'],
+    [/NPC 반응 경향성/, '적대 호감 애정 비호감 태도 성향'],
+    [/관계 카드/, '억결 인연 bond'],
+    [/선호 카드/, '체위 취향 정사'],
+    [/RP 세부 모드|작성 모드/, '사칭 롤플 roleplay 소설 novel']
+  ]);
+  const settingsSearchText = node => String(node?.textContent || '').replace(/\s+/g, ' ').trim();
+  const settingsTitleText = node => {
+    if (!node) return '';
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll('.scope-chip,.hint,.badge').forEach(item => item.remove());
+    return settingsSearchText(copy);
+  };
+  const buildSettingsSearchIndex = app => {
+    const rows = [];
+    const seen = new Set();
+    app.querySelectorAll('section.page[data-page]').forEach(section => {
+      const page = section.dataset.page;
+      if (page === 'results') return;
+      const pageTitle = settingsTitleText(section.querySelector('.page-title'));
+      section.querySelectorAll('.field > label, .setting__name, .switch__text > b, .card__title, summary').forEach(node => {
+        if (node.closest(SETTINGS_SEARCH_SKIP)) return;
+        const label = settingsTitleText(node).slice(0, 60);
+        if (label.length < 2) return;
+        const detail = node.closest('.stage-detail');
+        const stage = detail ? settingsTitleText(detail.querySelector('h2')) : '';
+        const holder = node.closest('.field, .setting, .switch, details, .card') || node;
+        const desc = settingsSearchText(holder.querySelector('.setting__desc, .switch__text small, .card__desc, :scope > .hint, :scope > p.hint, summary .hint')).slice(0, 160);
+        const key = [page, detail?.dataset.detail || '', label].join('|');
+        if (seen.has(key)) return;
+        seen.add(key);
+        const base = [label, desc, stage, pageTitle].join(' ');
+        const aliases = SETTINGS_SEARCH_ALIASES.filter(([pattern]) => pattern.test(base)).map(([, words]) => words);
+        rows.push({ page, pageTitle, detail: detail?.dataset.detail || '', stage, label, desc, node,
+          hay: [base, ...aliases].join(' ').toLowerCase() });
+      });
+    });
+    return rows;
+  };
+  const searchSettingsIndex = (index, query) => {
+    const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    return index.filter(row => terms.every(term => row.hay.includes(term)))
+      .map(row => ({ row, score: terms.reduce((sum, term) => sum + (row.label.toLowerCase().includes(term) ? 2 : 0) + (row.desc.toLowerCase().includes(term) ? 1 : 0), 0) }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 30)
+      .map(item => item.row);
+  };
+  const guiAfterRender = async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    try { await Gui.renderPromise; } catch (_) {}
+  };
+  // Go to a setting: its page, its stage panel, its tab and fold, then scroll and highlight it.
+  const revealSettingRow = async row => {
+    const app = Gui.app;
+    if (!app) return false;
+    closeGuiDialog();
+    app.querySelector(`.sidebar .nav-item[data-go="${row.page}"]`)?.click();
+    await guiAfterRender();
+    if (row.detail) app.querySelector(`.node[data-select-row="${row.detail}"]`)?.click();
+    let node = row.node?.isConnected ? row.node : null;
+    if (!node) {
+      const scope = row.detail ? app.querySelector(`.stage-detail[data-detail="${row.detail}"]`) : app.querySelector(`section[data-page="${row.page}"]`);
+      node = [...(scope?.querySelectorAll('.field > label, .setting__name, .switch__text > b, .card__title, summary') || [])].find(item => settingsTitleText(item).slice(0, 60) === row.label) || null;
+    }
+    if (!node) return false;
+    for (let panel = node.closest('[data-subpanel][data-group]'); panel; panel = panel.parentElement?.closest('[data-subpanel][data-group]')) {
+      app.querySelector(`[data-subtabs="${panel.dataset.group}"] [data-subtab="${panel.dataset.subpanel}"]`)?.click();
+    }
+    for (let fold = node.closest('details'); fold; fold = fold.parentElement?.closest('details')) fold.open = true;
+    const target = node.closest('.field, .setting, .switch, .card') || node;
+    target.scrollIntoView?.({ block: 'center' });
+    target.classList.add('is-flash');
+    setTimeout(() => target.classList.remove('is-flash'), 1800);
+    return true;
+  };
+  const openSettingsSearch = () => {
+    const app = Gui.app;
+    if (!app) return;
+    const index = buildSettingsSearchIndex(app);
+    const input = guiEl('input', { class: 'input', type: 'search', placeholder: '예: NSFW, 기본값, 대기 시간, 관계 카드', 'aria-label': '설정 검색', dataset: { settingsSearchInput: '' } });
+    const list = guiEl('div', { class: 'stack stack--sm', dataset: { settingsSearchResults: '' } });
+    const render = () => {
+      const hits = searchSettingsIndex(index, input.value);
+      list.replaceChildren(...(hits.length
+        ? hits.map(row => guiEl('button', { class: 'search-hit', type: 'button', onClick: () => { void revealSettingRow(row); } }, [
+          guiEl('b', { text: row.label }),
+          guiEl('span', { class: 'hint', text: [row.pageTitle, row.stage].filter(Boolean).join(' › ') }),
+          row.desc ? guiEl('small', { class: 'hint', text: row.desc }) : null
+        ]))
+        : [guiEl('p', { class: 'hint', text: input.value.trim() ? '맞는 설정이 없습니다.' : `설정 ${index.length}개에서 이름·설명·단계 이름으로 찾습니다.` })]));
+    };
+    input.addEventListener('input', render);
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); list.querySelector('.search-hit')?.click(); } });
+    openGuiDialog({
+      title: '설정 검색',
+      description: '고르면 그 설정이 있는 화면으로 이동해 강조합니다. 단축키: Ctrl+K 또는 /',
+      body: [input, list],
+      actions: [guiEl('button', { class: 'btn btn--ghost', type: 'button', text: '닫기', onClick: closeGuiDialog })],
+      wide: true
+    });
+    render();
+    setTimeout(() => { try { input.focus(); } catch (_) {} }, 10);
+  };
+
+  // ---- Settings that differ from their defaults ----
+  const GUI_LANGUAGE_LABELS = Object.freeze({ korean: '한국어', english: 'English', japanese: '日本語' });
+  const GUI_SCENE_VARIANCE_LABELS = Object.freeze({ off: '끔', low: '약하게', medium: '보통', high: '강하게' });
+  const GUI_ON_OFF = value => (value ? '켜짐' : '꺼짐');
+  const guiChangedSettings = () => {
+    if (!Gui.state) return [];
+    const runtime = mockupRuntime();
+    const agents = Gui.state.agents || {};
+    const prompts = Gui.state.prompts || {};
+    const rows = [];
+    const add = (scope, label, current, def, show, go, reset) => {
+      if (JSON.stringify(current) === JSON.stringify(def)) return;
+      rows.push({ scope, label, current: show(current), def: show(def), go, reset });
+    };
+    const set = (key, value) => () => { runtime[key] = value; };
+    const plain = value => String(value);
+    const mode = normalizeChoice(runtime.mode === 'full' ? 'normal' : runtime.mode, ['off', 'lite', 'normal'], 'normal');
+    add('global', '작동 방식', mode, 'normal', value => ({ off: '꺼짐', lite: '라이트', normal: '일반' })[value], { go: 'home' });
+    add('global', '작성 모드', currentWritingModeFromGui(), DEFAULT_WRITING_MODE, value => (value === 'rp' ? 'RP' : '소설'), { go: 'writing', sub: 'mode' });
+    add('global', 'RP 세부 모드', normalizeRpImpersonationScope(runtime.rpImpersonationScope), DEFAULT_RP_IMPERSONATION_SCOPE, value => RP_IMPERSONATION_SCOPE_DEFS[value]?.label || value, { go: 'writing', sub: 'mode' }, set('rpImpersonationScope', DEFAULT_RP_IMPERSONATION_SCOPE));
+    add('global', '장면 변수', normalizeSceneVariance(runtime.sceneVariance), 'medium', value => GUI_SCENE_VARIANCE_LABELS[value] || value, { go: 'writing', sub: 'variance' }, set('sceneVariance', 'medium'));
+    add('global', '성인 장면 표현', normalizeNsfwMode(runtime.nsfwMode), DEFAULT_NSFW_MODE, value => NSFW_MODE_DEFS[value]?.label || value, { go: 'writing', sub: 'nsfw' }, set('nsfwMode', DEFAULT_NSFW_MODE));
+    add('global', 'NSFW 지침 주입', runtime.nsfwGuidanceEnabled !== false, true, GUI_ON_OFF, { go: 'writing', sub: 'nsfw' }, set('nsfwGuidanceEnabled', true));
+    add('global', '최종 요청에도 지침 전달', runtime.nsfwInjectFinalRequest === true, DEFAULT_NSFW_INJECT_FINAL_REQUEST, GUI_ON_OFF, { go: 'writing', sub: 'nsfw' }, set('nsfwInjectFinalRequest', DEFAULT_NSFW_INJECT_FINAL_REQUEST));
+    add('global', '비앙카 투입', runtime.biancaInject === true, false, GUI_ON_OFF, { go: 'writing', sub: 'nsfw' }, set('biancaInject', false));
+    add('global', '내부 초안 언어', normalizeInternalDraftLanguage(runtime.internalDraftLanguage), DEFAULT_INTERNAL_DRAFT_LANGUAGE, value => GUI_LANGUAGE_LABELS[value] || value, { go: 'home' }, set('internalDraftLanguage', DEFAULT_INTERNAL_DRAFT_LANGUAGE));
+    add('global', '목표 초안 분량', [Number(runtime.targetDraftMinChars) || DEFAULT_TARGET_DRAFT_MIN_CHARS, Number(runtime.targetDraftMaxChars) || DEFAULT_TARGET_DRAFT_MAX_CHARS], [DEFAULT_TARGET_DRAFT_MIN_CHARS, DEFAULT_TARGET_DRAFT_MAX_CHARS], value => `${value[0].toLocaleString()}~${value[1].toLocaleString()}자`, { go: 'home' });
+    add('global', '참고 자료 양 (빠른 설정)', normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom'), 'balanced', value => QUICK_PROFILE_DEFS[value]?.label || '직접 조정', { go: 'home' });
+    add('global', '인풋 관리자', normalizeChoice(runtime.inputAssistMode || 'off', INPUT_ASSIST_MODES, 'off'), 'off', value => (value === 'off' ? '꺼짐' : '켜짐'), { go: 'pipeline', stage: 'inp' });
+    add('global', 'AIDE 순서', normalizeAideStageOrder(runtime.aideStageOrder), [...DEFAULT_AIDE_STAGE_ORDER], value => value.map(guiStageLabel).join(' → '), { go: 'pipeline' }, set('aideStageOrder', [...DEFAULT_AIDE_STAGE_ORDER]));
+    add('global', '억결 · 카드가 없을 때 자동으로 엮기', runtime.forcedBondAuto !== false, true, GUI_ON_OFF, { go: 'pipeline', stage: 'forced_bond' }, set('forcedBondAuto', true));
+    add('global', '억결 · 장면에 없으면 등장 계기 만들기', runtime.forcedBondForceAppearance !== false, true, GUI_ON_OFF, { go: 'pipeline', stage: 'forced_bond' }, set('forcedBondForceAppearance', true));
+    add('global', '상태 · 생식 판정', runtime.bodyStateReproduction === true, false, GUI_ON_OFF, { go: 'pipeline', stage: 'body_state' }, set('bodyStateReproduction', false));
+    // Each stage, against its own defaults. A quick profile sets every draft stage's reference cap.
+    const profile = normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
+    for (const [stageId, key] of Object.entries(GUI_DETAIL_KEY_OF_STAGE)) {
+      const slot = agents[stageId] || {};
+      const label = guiStageLabel(stageId);
+      const go = { go: 'pipeline', stage: key };
+      const field = (name, value) => () => { if (Gui.state.agents?.[stageId]) Gui.state.agents[stageId][name] = value; };
+      const enabledDefault = !isExtensionAideStage(stageId);
+      add('stage', `${label} · 사용`, isExtensionAideStage(stageId) ? slot.enabled === true : slot.enabled !== false, enabledDefault, GUI_ON_OFF, go, field('enabled', enabledDefault));
+      add('stage', `${label} · AI 프리셋`, compact(slot.presetName || '', 120), '', value => value || '기본 연결 사용', go, field('presetName', ''));
+      add('stage', `${label} · 최근 대화 수`, Number(slot.turnWindow ?? defaultTurnWindowForStage(stageId)), defaultTurnWindowForStage(stageId), value => `${value}턴`, go, field('turnWindow', defaultTurnWindowForStage(stageId)));
+      const capDefault = profile !== 'custom' && REFERENCE_PROFILE_CAPS[profile] ? REFERENCE_PROFILE_CAPS[profile] : defaultContextCharsForStage(stageId);
+      add('stage', `${label} · 참고 상한`, Number(slot.maxChars ?? capDefault), capDefault, value => `${Number(value).toLocaleString()}자`, go, field('maxChars', capDefault));
+      add('stage', `${label} · 대기 시간`, Number(slot.timeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS), DEFAULT_STAGE_TIMEOUT_MS, value => `${Math.round(value / 1000)}초`, go, field('timeoutMs', DEFAULT_STAGE_TIMEOUT_MS));
+      add('stage', `${label} · 창작 지침`, !!text(prompts[stageId]?.customPrompt || '').trim(), false, value => (value ? '작성됨' : '없음'), go);
+    }
+    // This chat's own data: not defaults to restore, but worth seeing in one list.
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (scopeKey) {
+      const disposition = normalizeNpcDispositionMap(runtime.npcDisposition)[scopeKey];
+      if (disposition) add('chat', 'NPC 반응 경향성', [disposition.default, disposition.npcs.length], ['', 0],
+        value => [value[0] ? `기본값 ${NPC_DISPOSITION_LEVELS[value[0]]?.label || value[0]}` : '기본값 없음', `개별 ${value[1]}명`].join(' · '), { go: 'chat', sub: 'disposition' });
+      const count = (label, cards, sub) => add('chat', label, cards.length, 0, value => `${value}장`, { go: 'chat', sub });
+      count('관계 카드', normalizeForcedBondCardMap(runtime.forcedBondCards)[scopeKey] || [], 'bond');
+      count('상태 카드', normalizeBodyStateCardMap(runtime.bodyStateCards)[scopeKey] || [], 'state');
+      count('정사 선호 카드', intimacyCardsForScope(scopeKey), 'intimacy');
+    }
+    return rows;
+  };
+  const GUI_SCOPE_CHIP = Object.freeze({ global: ['scope-chip--global', '모든 채팅'], chat: ['scope-chip--chat', '이 채팅'], stage: ['scope-chip--stage', '이 단계'] });
+  const renderChangedSettings = app => {
+    const box = app?.querySelector('[data-changed-settings]');
+    if (!box) return;
+    const rows = guiChangedSettings();
+    const counter = app.querySelector('[data-changed-count]');
+    if (counter) { counter.textContent = String(rows.length); counter.hidden = !rows.length; }
+    box.replaceChildren(...(rows.length ? rows.map(row => guiEl('div', { class: 'changed-row' }, [
+      guiEl('div', {}, [
+        guiEl('b', { text: row.label }),
+        guiEl('span', { class: `scope-chip ${GUI_SCOPE_CHIP[row.scope][0]}`, text: GUI_SCOPE_CHIP[row.scope][1] }),
+        guiEl('div', { class: 'hint', text: row.scope === 'chat' ? `현재 ${row.current}` : `현재 ${row.current} · 기본 ${row.def}` })
+      ]),
+      guiEl('div', { class: 'cluster' }, [
+        guiEl('button', { class: 'btn btn--sm', type: 'button', text: '이동', dataset: { go: row.go.go, ...(row.go.stage ? { goStage: row.go.stage } : {}), ...(row.go.sub ? { goSub: row.go.sub } : {}) } }),
+        row.reset ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '기본값으로', onClick: () => { row.reset(); markGuiDirty(); void renderSettingsGui(); guiSetStatus(`${row.label}: 기본값으로 바꿨습니다. 저장해야 적용됩니다.`); } }) : null
+      ])
+    ])) : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '모든 설정이 기본값입니다.' })])]));
+  };
+
+  // ---- Stage table (phase 3, 2026-11-18): every stage's use, preset and limits in one table ----
+  // Rows follow the run: SHADOW ACT, then each core AIDE in the user's order with its sub-AIDEs.
+  // Values are the same Gui.state.agents fields the stage panels edit, with the same bounds.
+  const STAGE_MATRIX_FIELDS = Object.freeze({
+    turnWindow: { label: '최근 대화 수', unit: '턴', min: 1, max: 64, read: (slot, id) => slot.turnWindow ?? defaultTurnWindowForStage(id), write: (value, id) => clampInt(value, 1, 64, defaultTurnWindowForStage(id)) },
+    maxChars: { label: '참고 상한', unit: '자', min: 500, max: 60000, step: 500, read: (slot, id) => slot.maxChars ?? defaultContextCharsForStage(id), write: (value, id) => clampInt(value, 500, 60000, defaultContextCharsForStage(id)) },
+    timeoutSeconds: { label: '대기 시간', unit: '초', min: 1, max: 600, read: slot => Math.round((slot.timeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS) / 1000), write: value => clampInt(Number(value) * 1000, 1000, 600000, DEFAULT_STAGE_TIMEOUT_MS) }
+  });
+  const stageMatrixRows = () => {
+    const order = normalizeAideStageOrder(mockupRuntime().aideStageOrder);
+    return ['shadow_act', ...order.flatMap(id => [id, ...subAidesOfParent(id)])];
+  };
+  const stageMatrixSlotKey = field => (field === 'timeoutSeconds' ? 'timeoutMs' : field);
+  const applyStageMatrixValue = (stageId, field, value) => {
+    const slot = Gui.state?.agents?.[stageId];
+    if (!slot) return false;
+    if (field === 'enabled') slot.enabled = value === true;
+    else if (field === 'presetName') slot.presetName = compact(value || '', 120);
+    else if (STAGE_MATRIX_FIELDS[field]) slot[stageMatrixSlotKey(field)] = STAGE_MATRIX_FIELDS[field].write(value, stageId);
+    else return false;
+    return true;
+  };
+  const stageMatrixDefault = (stageId, field) => {
+    const profile = normalizeChoice(mockupRuntime().quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom');
+    if (field === 'enabled') return !isExtensionAideStage(stageId);
+    if (field === 'presetName') return '';
+    if (field === 'turnWindow') return defaultTurnWindowForStage(stageId);
+    if (field === 'maxChars') return profile !== 'custom' && REFERENCE_PROFILE_CAPS[profile] ? REFERENCE_PROFILE_CAPS[profile] : defaultContextCharsForStage(stageId);
+    if (field === 'timeoutSeconds') return Math.round(DEFAULT_STAGE_TIMEOUT_MS / 1000);
+    return null;
+  };
+  const stageMatrixValue = (stageId, field) => {
+    const slot = Gui.state?.agents?.[stageId] || {};
+    if (field === 'enabled') return isExtensionAideStage(stageId) ? slot.enabled === true : slot.enabled !== false;
+    if (field === 'presetName') return slot.presetName || '';
+    return Number(STAGE_MATRIX_FIELDS[field].read(slot, stageId));
+  };
+  const stageMatrixControl = (stageId, field) => {
+    const data = { matrixStage: stageId, matrixField: field };
+    if (field === 'enabled') return guiEl('input', { type: 'checkbox', 'aria-label': `${guiStageLabel(stageId)} 사용`, dataset: data });
+    if (field === 'presetName') return guiEl('select', { class: 'select', 'aria-label': `${guiStageLabel(stageId)} AI 프리셋`, dataset: data });
+    const def = STAGE_MATRIX_FIELDS[field];
+    return guiEl('input', { class: 'input', type: 'number', min: def.min, max: def.max, step: def.step || 1, 'aria-label': `${guiStageLabel(stageId)} ${def.label}(${def.unit})`, dataset: data });
+  };
+  const STAGE_MATRIX_COLUMNS = Object.freeze(['enabled', 'presetName', 'turnWindow', 'maxChars', 'timeoutSeconds']);
+  const STAGE_MATRIX_LABELS = Object.freeze({ enabled: '사용', presetName: 'AI 프리셋', turnWindow: '최근 대화 수(턴)', maxChars: '참고 상한(자)', timeoutSeconds: '대기 시간(초)' });
+  const buildStageMatrix = (box, rows) => {
+    const head = guiEl('tr', {}, [
+      guiEl('th', { text: '단계' }), guiEl('th', { text: '사용' }), guiEl('th', { text: 'AI 프리셋' }),
+      ...['turnWindow', 'maxChars', 'timeoutSeconds'].map(field => guiEl('th', { text: `${STAGE_MATRIX_FIELDS[field].label}(${STAGE_MATRIX_FIELDS[field].unit})` })),
+      guiEl('th', { text: '상태' })
+    ]);
+    const body = rows.map(stageId => {
+      const sub = isExtensionAideStage(stageId);
+      return guiEl('tr', { class: sub ? 'matrix-sub' : '', dataset: { matrixRow: stageId } }, [
+        guiEl('th', { scope: 'row' }, [
+          guiEl('button', { class: 'matrix-stage', type: 'button', text: guiStageLabel(stageId), title: '이 단계 패널 열기', dataset: { go: 'pipeline', goStage: GUI_DETAIL_KEY_OF_STAGE[stageId] } }),
+          sub ? guiEl('small', { class: 'hint', text: `${guiStageLabel(EXTENSION_AIDE_PARENT[stageId])} 하위 · 프리셋과 한도는 단독 실행 때만 씀` }) : null
+        ]),
+        ...STAGE_MATRIX_COLUMNS.map(field => guiEl('td', { 'data-label': STAGE_MATRIX_LABELS[field], dataset: { matrixCell: field } }, [stageMatrixControl(stageId, field)])),
+        guiEl('td', { class: 'hint', 'data-label': '상태', dataset: { matrixStatus: '' } })
+      ]);
+    });
+    // One value for every stage at once; each stage keeps its own bounds.
+    const bulkInput = field => guiEl('input', { class: 'input', type: 'number', min: STAGE_MATRIX_FIELDS[field].min, max: STAGE_MATRIX_FIELDS[field].max, step: STAGE_MATRIX_FIELDS[field].step || 1, placeholder: '값', 'aria-label': `모든 단계 ${STAGE_MATRIX_FIELDS[field].label}`, dataset: { matrixBulk: field } });
+    const bulkPreset = guiEl('select', { class: 'select', 'aria-label': '모든 단계 AI 프리셋', dataset: { matrixBulk: 'presetName' } });
+    const bulkCell = control => guiEl('td', { 'data-label': STAGE_MATRIX_LABELS[control.dataset.matrixBulk] }, [guiEl('div', { class: 'matrix-bulk' }, [control, guiEl('button', { class: 'btn btn--sm', type: 'button', text: '적용', dataset: { matrixBulkApply: control.dataset.matrixBulk } })])]);
+    const bulk = guiEl('tr', { class: 'matrix-bulk-row' }, [
+      guiEl('th', { scope: 'row', text: '모든 단계에 적용' }), guiEl('td', {}),
+      bulkCell(bulkPreset), ...['turnWindow', 'maxChars', 'timeoutSeconds'].map(field => bulkCell(bulkInput(field))), guiEl('td', {})
+    ]);
+    box.replaceChildren(guiEl('div', { class: 'matrix-scroll' }, [guiEl('table', { class: 'stage-matrix' }, [guiEl('thead', {}, [head]), guiEl('tbody', {}, [...body, bulk])])]));
+    box.dataset.matrixRows = rows.join(',');
+  };
+  // Re-filling values never rebuilds the table, so a field being typed in keeps its focus.
+  const renderStageMatrix = app => {
+    const box = app?.querySelector('[data-stage-matrix]');
+    if (!box || !Gui.state) return;
+    const rows = stageMatrixRows();
+    if (box.dataset.matrixRows !== rows.join(',')) buildStageMatrix(box, rows);
+    const names = presetNamesFromState();
+    const active = box.ownerDocument?.activeElement;
+    box.querySelectorAll('select[data-matrix-field="presetName"], select[data-matrix-bulk="presetName"]').forEach(select => {
+      const wanted = ['', ...names].join('\n');
+      if (select.dataset.options !== wanted) {
+        const keep = select.value;
+        select.replaceChildren();
+        mockupOption(select, '', select.dataset.matrixBulk ? '선택…' : '기본 연결 사용');
+        if (select.dataset.matrixBulk) mockupOption(select, '__default__', '기본 연결 사용');
+        names.forEach(name => mockupOption(select, name, name));
+        select.dataset.options = wanted;
+        select.value = keep;
+      }
+    });
+    for (const stageId of rows) {
+      const row = box.querySelector(`[data-matrix-row="${stageId}"]`);
+      if (!row) continue;
+      for (const field of STAGE_MATRIX_COLUMNS) {
+        const control = row.querySelector(`[data-matrix-field="${field}"]`);
+        const value = stageMatrixValue(stageId, field);
+        if (control && control !== active) {
+          if (field === 'enabled') control.checked = value;
+          else control.value = field === 'presetName' ? (names.includes(value) ? value : '') : String(value);
+        }
+        control?.closest('td')?.classList.toggle('is-changed', JSON.stringify(value) !== JSON.stringify(stageMatrixDefault(stageId, field)));
+      }
+      const blockers = guiStageBlockers(stageId);
+      const status = row.querySelector('[data-matrix-status]');
+      const enabled = stageMatrixValue(stageId, 'enabled');
+      if (status) {
+        const warn = blockers.find(item => item.tone !== 'info');
+        const host = isExtensionAideStage(stageId) ? extensionAideHostStage(stageId, mockupFlowSettings()) : '';
+        const label = !enabled ? '꺼짐' : warn ? '실행 안 됨' : isExtensionAideStage(stageId) ? (host ? `${guiStageLabel(host)} 안에서` : '단독 실행') : '실행';
+        // No hover on phones: the reason sits under the label as well as in the tooltip.
+        status.replaceChildren(guiEl('span', { class: 'matrix-label', text: label }), ...(enabled && warn ? [guiEl('small', { class: 'matrix-reason', text: warn.text })] : []));
+        status.title = blockers.map(item => item.text).join('\n');
+        status.classList.toggle('is-warn', enabled && !!warn);
+      }
+    }
+  };
+  const handleStageMatrixChange = control => {
+    if (control.matches?.('[data-matrix-field]')) {
+      const { matrixStage: stageId, matrixField: field } = control.dataset;
+      if (!applyStageMatrixValue(stageId, field, field === 'enabled' ? control.checked : control.value)) return true;
+      markGuiDirty(); mockupRefreshStatus();
+      return true;
+    }
+    return false;
+  };
+  const applyStageMatrixBulk = field => {
+    const box = Gui.app?.querySelector('[data-stage-matrix]');
+    const control = box?.querySelector(`[data-matrix-bulk="${field}"]`);
+    if (!control || String(control.value).trim() === '') { guiSetStatus('모든 단계에 넣을 값을 먼저 입력하세요.'); return; }
+    const value = field === 'presetName' && control.value === '__default__' ? '' : control.value;
+    if (STAGE_MATRIX_FIELDS[field] && !Number.isFinite(Number(value))) {
+      guiSetStatus('유효한 숫자를 입력하세요.');
+      return;
+    }
+    let changed = 0;
+    for (const stageId of stageMatrixRows()) if (applyStageMatrixValue(stageId, field, value)) changed += 1;
+    control.value = '';
+    markGuiDirty(); mockupRefreshStatus();
+    guiSetStatus(`${changed}개 단계에 적용했습니다. 저장해야 반영됩니다.`);
+  };
+
   const handleBodyStateAction = (action, itemId = '') => {
     const runtime = mockupRuntime();
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
@@ -46554,7 +47717,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const mockupInstallManageControls = app => {
     const stageRefKeys=['authorNote','persona','characterDescription','characterLorebook','moduleLorebook'];
     app.querySelectorAll('.stage-detail[data-detail]').forEach(detail=>{
-      const stageId=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[detail.dataset.detail];
+      const stageId=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[detail.dataset.detail];
       if(!stageId)return;
       const refInputs=detail.querySelectorAll('[data-subpanel="ref"] input[type="checkbox"]');
       refInputs.forEach((control,index)=>{if(stageRefKeys[index]){control.dataset.stageRef=stageRefKeys[index];control.dataset.stageRefOwner=stageId;}});
@@ -47270,19 +48433,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           guiEl('div',{class:'gx-col'},[guiEl('div',{class:'gx-status'},[guiEl('strong',{text:'사용한 자료'})]),resultsContextDegradationSection(),resultsMemorySection(),...resultsMaterialsSections(usage)].filter(Boolean))
         ]));
       }
-      for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');if(!panel)continue;const sub=isExtensionAideStage(id);panel.replaceChildren(guiEl('div',{class:'gx-status'+(info.className==='warn'||info.className==='danger'?' gx-status--warn':'')},[guiEl('strong',{text:info.label}),guiEl('span',{class:'gx-meta',text:[info.elapsed,trace?.hostedBy?'':trace?.model].filter(Boolean).join(' · ')||info.title})]),...(sub?[resultsSubAideReadings(id)]:[]),...(sub&&trace?.hostedBy?[guiEl('p',{class:'hint',text:`초안과 분석 전체는 ${STAGE_DEF_MAP[trace.hostedBy]?.label||trace.hostedBy} 탭에서 볼 수 있습니다.`})]:[resultsAideView(trace)]));}
+      for(const [key,id] of [['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics'],['x','aide_intimacy']]){const trace=latestTraceForStage(id),info=traceStateInfo(trace),panel=results.querySelector('[data-subpanel="'+key+'"]');if(!panel)continue;const sub=isExtensionAideStage(id);panel.replaceChildren(guiEl('div',{class:'gx-status'+(info.className==='warn'||info.className==='danger'?' gx-status--warn':'')},[guiEl('strong',{text:info.label}),guiEl('span',{class:'gx-meta',text:[info.elapsed,trace?.hostedBy?'':trace?.model].filter(Boolean).join(' · ')||info.title})]),...(sub?[resultsSubAideReadings(id)]:[]),...(sub&&trace?.hostedBy?[guiEl('p',{class:'hint',text:`초안과 분석 전체는 ${STAGE_DEF_MAP[trace.hostedBy]?.label||trace.hostedBy} 탭에서 볼 수 있습니다.`})]:[resultsAideView(trace)]));}
       resultsOrderTabs(results);
       renderSceneRunCard(results);
-      for(const [key,id] of [['s','shadow_act'],['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics']]){const tabBtn=results.querySelector('[data-subtab="'+key+'"]');if(tabBtn){let badge=tabBtn.querySelector('.count');const info=traceStateInfo(latestTraceForStage(id));const isFallback=info.label==='폴백'||info.className==='warn';if(isFallback){if(!badge){badge=document.createElement('span');badge.className='count';tabBtn.appendChild(badge);}badge.textContent='폴백';badge.hidden=false;}else if(badge){badge.hidden=true;}}}
+      for(const [key,id] of [['s','shadow_act'],['c','aide_character'],['w','aide_world'],['p','aide_plot'],['f','aide_forced_bond'],['b','aide_body_state'],['d','aide_world_dynamics'],['x','aide_intimacy']]){const tabBtn=results.querySelector('[data-subtab="'+key+'"]');if(tabBtn){let badge=tabBtn.querySelector('.count');const info=traceStateInfo(latestTraceForStage(id));const isFallback=info.label==='폴백'||info.className==='warn';if(isFallback){if(!badge){badge=document.createElement('span');badge.className='count';tabBtn.appendChild(badge);}badge.textContent='폴백';badge.hidden=false;}else if(badge){badge.hidden=true;}}}
     }
     const mode=normalizeChoice(runtime.mode==='full'?'normal':runtime.mode,['off','lite','normal'],'normal');
-    const ids=['shadow_act','aide_character','aide_world','aide_plot','aide_forced_bond','aide_body_state','aide_world_dynamics'];
-    const detailKeys=['shadow','char','world','plot','forced_bond','body_state','world_dynamics'];
+    const ids=['shadow_act','aide_character','aide_world','aide_plot','aide_forced_bond','aide_body_state','aide_world_dynamics','aide_intimacy'];
+    const detailKeys=['shadow','char','world','plot','forced_bond','body_state','world_dynamics','intimacy'];
     ids.forEach((id,index)=>{const detailKey=detailKeys[index];const node=app.querySelector('[data-detail="'+detailKey+'"]');if(!node)return;const slot=Gui.state.agents?.[id]||{};const toggle=node.querySelector('#on-s'+(index+1));if(toggle)toggle.checked=isExtensionAideStage(id)?slot.enabled===true:slot.enabled!==false;const prompt=node.querySelector('[data-stage-ins]');if(prompt)prompt.value=Gui.state.prompts?.[id]?.customPrompt||'';const trace=latestTraceForStage(id);const info=traceStateInfo(trace,{enabled:isExtensionAideStage(id)?slot.enabled===true:slot.enabled!==false,isLiteSkip:mode==='lite'&&(id==='aide_character'||id==='aide_world')});const badge=app.querySelector('#lb-'+detailKey);if(badge){badge.textContent=info.label+(info.elapsed?' · '+info.elapsed:'');badge.className='badge '+(info.className==='good'?'badge--ok':info.className==='warn'?'badge--warn':info.className==='danger'?'badge--danger':'');}});
     renderForcedBondPanel(app, runtime);
     renderNpcDispositionPanel(app, runtime);
     renderBodyStatePanel(app, runtime);
     renderWorldDynamicsPanel(app);
+    renderIntimacyPanel(app);
+    renderStageBlockers(app);
+    renderChangedSettings(app);
+    { const label = app.querySelector('[data-chat-scope-label]'); if (label) { const name = compact(Runtime.activeCharacterName || '', 80); label.textContent = Runtime.activeScopeKey ? `현재 채팅: ${name || '이름 없는 캐릭터'}.` : '현재 채팅을 아직 확인하지 못했습니다. 채팅을 연 상태에서 설정 창을 다시 열어 주세요.'; } }
     { const variance = app.querySelector('[data-scene-variance]'); if (variance) variance.value = normalizeSceneVariance(runtime.sceneVariance); }
     const shadowPreview=app.querySelector('[data-detail="shadow"] details.fold .fold__body pre');
     if(shadowPreview){const button=mockupNode('button','btn btn--sm','현재 프롬프트 미리보기');button.type='button';button.dataset.action='prompt-preview';shadowPreview.replaceWith(button);}
@@ -47292,11 +48459,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const toggles=app.querySelectorAll('[data-detail-root] input[type=checkbox]');
     toggles.forEach(toggle=>{if(toggle.dataset.characterLoreKey||toggle.dataset.moduleLoreKey) return;});
     const inputs=app.querySelectorAll('[data-len]');inputs.forEach(input=>{input.value=String(input.dataset.len==='min'?runtime.targetDraftMinChars:runtime.targetDraftMaxChars);});
-    app.querySelectorAll('[data-stage-ins]').forEach(node=>{const id=({'SHADOW ACT':'shadow_act','인물 AIDE':'aide_character','세계관 AIDE':'aide_world','플롯 AIDE':'aide_plot','억결 AIDE':'aide_forced_bond','상태 AIDE':'aide_body_state','세계 동역학 AIDE':'aide_world_dynamics'})[node.dataset.stageIns];node.value=Gui.state.prompts?.[id]?.customPrompt||'';});
+    app.querySelectorAll('[data-stage-ins]').forEach(node=>{const id=({'SHADOW ACT':'shadow_act','인물 AIDE':'aide_character','세계관 AIDE':'aide_world','플롯 AIDE':'aide_plot','억결 AIDE':'aide_forced_bond','상태 AIDE':'aide_body_state','세계 동역학 AIDE':'aide_world_dynamics','정사 AIDE':'aide_intimacy'})[node.dataset.stageIns];node.value=Gui.state.prompts?.[id]?.customPrompt||'';});
     mockupRenderProviders();mockupRenderSources();
     const providerNames=presetNamesFromState();
     app.querySelectorAll('.stage-detail[data-detail]').forEach(detail=>{
-      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics'})[detail.dataset.detail];
+      const id=({shadow:'shadow_act',char:'aide_character',world:'aide_world',plot:'aide_plot',forced_bond:'aide_forced_bond',body_state:'aide_body_state',world_dynamics:'aide_world_dynamics',intimacy:'aide_intimacy'})[detail.dataset.detail];
       const providerSelect=detail.querySelector('[data-subpanel="run"] .field select, .opt-grid .field select');
       if(id&&providerSelect)providerSelect.dataset.stageProvider=id;
       if(id){const slot=Gui.state.agents?.[id]||{};detail.querySelectorAll('[data-stage-field]').forEach(input=>{if(input.dataset.stageField==='maxChars')input.value=String(slot.maxChars??defaultContextCharsForStage(id));else if(input.dataset.stageField==='timeoutSeconds')input.value=String(Math.round((slot.timeoutMs??DEFAULT_STAGE_TIMEOUT_MS)/1000));});detail.querySelectorAll('[data-turns]').forEach(input=>{input.value=String(slot.turnWindow??defaultTurnWindowForStage(id));});}
@@ -49045,22 +50212,25 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugAuthorNoteStageRouting(note = '', stageName = 'shadow_act', enabled = true) {
       const authorNoteEnabled = enabled !== false;
+      const authorNoteStages = authorNoteStageIds();
       const recent = {
-        authorNote: authorNoteEnabled && stageName === 'shadow_act' ? text(note || '').trim() : '',
+        authorNote: authorNoteEnabled && authorNoteStages.has(stageName) ? text(note || '').trim() : '',
         authorNoteMeta: {
           schema: AUTHOR_NOTE_AUTHORITY_SCHEMA,
           available: !!text(note || '').trim(),
           enabled: authorNoteEnabled,
           authorityRank: 'after_current_input',
           appliedBy: 'shadow_act',
-          routedToStage: authorNoteEnabled && stageName === 'shadow_act' ? 'shadow_act' : 'none',
+          routedToStage: authorNoteEnabled && authorNoteStages.has(stageName) ? stageName : 'none',
           directAideRouting: false,
           inheritedByAidesThroughDraft: true
         }
       };
       return JSON.parse(JSON.stringify({
         stageName,
-        block: authorNoteEnabled && stageName === 'shadow_act' ? buildShadowAuthorNoteAuthorityBlock(recent) : '',
+        block: authorNoteEnabled && authorNoteStages.has(stageName)
+          ? (stageName === INPUT_ASSIST_STAGE_ID ? buildInputAssistAuthorNoteBlock(recent.authorNote) : buildAuthorNoteAuthorityBlock(recent, {}, stageName))
+          : '',
         meta: recent.authorNoteMeta
       }));
     },
@@ -49796,6 +50966,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       } finally {
         Object.assign(Runtime, { activePersonaName: saved.persona, activeCharacterName: saved.character, activeScopeKey: saved.scope, activeProfileGenders: saved.genders });
       }
+    },
+    debugIntimacyPacket({ recent = {} } = {}) {
+      return intimacyPacket(recent);
+    },
+    debugIntimacyStageBlock({ stageName = 'aide_character', recent = {}, settings = {} } = {}) {
+      return intimacyStageBlock(stageName, recent, settings, {});
+    },
+    debugIntimacyRecord({ stageName = 'aide_character', parsed = {}, settings = {} } = {}) {
+      const ledger = {};
+      recordIntimacyOutput(ledger, stageName, parsed, settings);
+      const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+      return cloneJson({ ledger, readings: Runtime.intimacyReadings?.[scopeKey] || null, cards: intimacyCardsForScope(scopeKey) });
+    },
+    async debugIntimacyLoadCards() {
+      Runtime.intimacyCards = null;
+      return cloneJson(await loadIntimacyCards());
     },
     debugWorldDynamicsPacket({ recent = {}, libText = '', settings = {} } = {}) {
       return worldDynamicsPacket(recent, { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libText } });

@@ -213,7 +213,7 @@ test('readings and proposals stay in memory for the GUI and are never written to
   assert.deepEqual(newKeys.filter(key => /bond|reading|proposal/i.test(key)), [], 'no bond state is persisted');
 });
 
-test('the 억결 panel edits per-chat cards and accepts proposals as cards', async t => {
+test('the 이 채팅 page edits 억결 cards and accepts proposals as cards', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.', {
     aide_plot: { bond_readings: [], bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호' }] }
@@ -222,7 +222,9 @@ test('the 억결 panel edits per-chat cards and accepts proposals as cards', asy
   await runTurn(f, '준호를 지나쳐 간다.');
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
-  const panel = f.document.querySelector('.stage-detail[data-detail="forced_bond"]');
+  assert.ok(f.document.querySelector('.stage-detail[data-detail="forced_bond"] [data-go="chat"][data-go-sub="bond"]'), 'the 억결 panel points to the 이 채팅 page');
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"] [data-chat-section="bond"]');
   assert.ok(panel.querySelector('[data-forced-bond-cards] .empty'), 'empty state before any card');
   panel.querySelector('[data-forced-bond-action="add"]').click();
   const to = panel.querySelector('[data-forced-bond-card-field="to"]');

@@ -26,7 +26,7 @@ const out=process.env.SOURCE_INPUT_BROWSER_OUTPUT||path.join(os.tmpdir(),'source
   await page.setViewportSize({width:390,height:844});
   if(owner==='hayaku'){await page.locator('.tabbar [data-go="recovery"]').click();await page.locator('[data-recovery-view="reanalysis"]').click();}
   else{await page.locator('.tabbar [data-go="care"]').click();await page.locator('#fbSourceEditTitle').click();}
-  await page.getByText('분석 태그 규칙 설정',{exact:true}).click();
+  await page.locator('summary:visible',{hasText:'원문 태그 필터'}).first().click();
   const controls=page.locator('[data-source-input-controls]:visible');await controls.locator('[data-source-input-add]').waitFor();await controls.locator('[data-source-input-add]').isEnabled();
   const before=await page.evaluate(()=>({...__hostCalls,raw:JSON.stringify(__chat)}));
   async function add(value,action){await controls.locator('[data-source-input-add]').click();const input=page.locator('[data-rule-value]:focus');await input.fill(value);const row=input.locator('xpath=ancestor::*[@data-source-input-row]');await row.locator('select').selectOption(action);return row;}
