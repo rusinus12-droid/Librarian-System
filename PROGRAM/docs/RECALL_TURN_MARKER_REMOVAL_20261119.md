@@ -27,19 +27,22 @@ LIBRA·HAYAKU·Flashback이 요청에 넣는 기억에서 **채팅 턴 번호(`T
 
 ## Flashback
 
-- **상태 줄:** `[T12 마지막 확인 · 속성]`은 `[마지막 확인 · 속성]`이 된다. 확인 턴이 없는 상태는 기존처럼 `[과거 확인]`이다.
-- **고정 규칙:** `[PAST EVIDENCE RULES]`에서 "historical confirmation turn (`T#`)" 문구를 뺐다. 고정 규칙 캐시 버전을 9에서 10으로 올렸다.
+- **상태 줄:** `[T12 마지막 확인 · current_location]` 같은 표시를 통째로 뺐다. 상태 줄은 대상 머리글(`[Alice]`, `[WORLD]`) 아래의 확인 원문 문장만 남는다. "마지막 확인"은 절 제목 `LATEST CONFIRMED STATE`와 겹치고, 속성(`current_location`, `holder` 등)은 내부 키 이름이며, 관계 대상(`→ Bob`)은 원문 문장에 이미 들어 있다.
+- **고정 규칙:** `[PAST EVIDENCE RULES]`에서 "directional target (`→`), and historical confirmation turn (`T#`)" 문구를 뺐다. 고정 규칙 캐시 버전을 9에서 11로 올렸다.
 - **사건 순서:** 지난 사건은 원래부터 턴 번호 없이 이른 순서(`[E01]`, `[E02]`)로만 표시했다.
 
 ## HAYAKU
 
 - **원문 발췌 표시:** `[T12 · ASSISTANT]`는 `[ASSISTANT]`가 되고, 이전 대화는 `[PREDECESSOR · ASSISTANT]`가 된다. 두 경로를 모두 고쳤다.
-- **출처 줄:** 합친 기록의 출처 줄(`[sources …]`)에서 턴(`at`)과 메시지 위치(`messageIndex`)를 뺐다. 기록 ID와 패킷 해시는 남긴다. 위치 정보는 `sourceRows`의 locator로 계속 보관되어 전달 집계에 쓰인다.
+- **출처 줄:** 같은 내용의 기록을 합칠 때 붙던 출처 줄(`[sources [{"id":…,"source":…,"at":…,"messageIndex":…}]]`)을 통째로 뺐다. 모델은 합친 기록 문장을 한 번만 읽는다. 출처(ID, 패킷 해시, 턴, 메시지 위치)는 `sourceRows`에 계속 보관되어 전달 집계에 쓰인다.
+- **역할 표시:** 원문 발췌의 `[ASSISTANT]`·`[USER]`는 남긴다. 그 문장이 사용자 페르소나의 말·행동인지 서술인지 구분하는 이야기 정보다.
 
 ## 검증
 
 - **`libra_state_memory_runtime_test`:** 새 사례를 추가했다. 상태가 턴 2까지 반영된 동안 턴 3의 기록이 `RECENT CHANGES`로 상태 바로 다음에 오고, 턴 1의 기록은 지난 일로 남는다. 모델에게 가는 텍스트에 턴 번호와 `resolvedTurn`이 없고, 진단에는 턴이 남는다. 상태가 따라잡으면 `RECENT CHANGES`가 사라진다.
 - **형식 테스트:** `libra_recall_budget_prompt_test`(턴 번호와 읽기 규칙의 턴 비교 문장이 없음), 스토리 시계·렌즈 노트 형식 테스트 5개, `memory_suite_recall_share_test`를 새 형식에 맞췄다.
+- **`flashback_state_line_bookkeeping_free_test`(신규, 두 릴리스 workflow에 등록):** 상태 줄이 대상 머리글 아래 원문만 남는지, 고정 규칙에 확인 턴·방향 표시 문구가 없는지 확인한다.
+- **`hayaku_source_routing_scale_runtime_test`:** 합친 기록 6개가 모델 텍스트에는 한 번만 나오고 출처 표시는 없으며, 전달 집계에는 6개 출처가 모두 남는지 확인하도록 바꿨다.
 - **릴리스 workflow 테스트:** 366개가 모두 통과한다.
 
 모델 응답 품질이 실제로 좋아졌는지는 측정하지 않았다.

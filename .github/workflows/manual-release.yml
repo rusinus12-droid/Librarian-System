@@ -270,6 +270,7 @@ jobs:
             PROGRAM/tests/source_rule_sync_preview_test.cjs \
             PROGRAM/tests/source_rule_sync_real_ipc_test.cjs \
             PROGRAM/tests/memory_suite_recall_share_test.cjs \
+            PROGRAM/tests/flashback_state_line_bookkeeping_free_test.cjs \
             PROGRAM/tests/flashback_source_rule_change_maintenance_test.cjs \
             PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \

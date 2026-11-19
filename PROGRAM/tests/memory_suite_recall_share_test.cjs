@@ -181,7 +181,7 @@ test('LIBRA leaves out lines a peer block already carries, and uses its share wh
   };
   const plain = await ask([]);
   assert.match(plain, /- 은빛 열쇠 — 소지자: 민아/);
-  const withPeer = await ask([{ role: 'system', content: '[ACTIVE CONTINUITY EVIDENCE]\n- [마지막 확인] 은빛 열쇠 — 소지자: 민아\n[/ACTIVE CONTINUITY EVIDENCE]' }]);
+  const withPeer = await ask([{ role: 'system', content: '[ACTIVE CONTINUITY EVIDENCE]\n- 은빛 열쇠 — 소지자: 민아\n[/ACTIVE CONTINUITY EVIDENCE]' }]);
   assert.doesNotMatch(withPeer, /- 은빛 열쇠 — 소지자: 민아/, 'the repeated line is left out');
   assert.match(withPeer, /- 은빛 열쇠 — 소유자: 민아/, 'a similar but different line stays');
   assert.match(withPeer, /\[CURRENT STATE — how things stand now\]/);

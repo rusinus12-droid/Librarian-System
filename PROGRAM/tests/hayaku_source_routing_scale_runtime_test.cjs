@@ -30,8 +30,9 @@ const {createHayakuRuntime,createValidPacket}=require('./fixtures/hayaku_runtime
  const fresh={index:[],context:{}};await t.localRecallPrepareSources([packets[210]],fresh,s,'scale-scope',Date.now()+1000);assert.ok(fresh._recallSourceRows.every(r=>r.packetHash===packets[210].hash),'Old routed packets cannot survive a new accepted list');
  const duplicateRows=Array.from({length:6},(_,i)=>({id:'duplicate-'+i,publicRef:'duplicate-'+i,packetHash:'copy-'+i,axis:'world',category:'world_rule',publicText:'The identical archive rule.',score:1,visibility:{privacy:'public'},locator:{sourcePairIndex:3,messageIndex:5}}));
  const plan=t.selectHayakuEvidencePlan(t.prepareHayakuRecallRows(duplicateRows,'archive',s,{},[],[]),'archive',s,8000);
- assert.equal(plan.renderedEntries,1);assert.equal(plan.deliveredSources.length,6);assert.equal((plan.text.match(/\[sources /g)||[]).length,1);
- for(let i=0;i<6;i++)assert.ok(plan.text.includes('copy-'+i));
+ assert.equal(plan.renderedEntries,1);assert.equal(plan.deliveredSources.length,6,'all six merged sources are still accounted for');
+ // The model reads the merged rule once, without source ids, packet hashes or chat positions.
+ assert.equal((plan.text.match(/The identical archive rule\./g)||[]).length,1);assert.doesNotMatch(plan.text,/\[sources |copy-\d|"messageIndex"/);
  assert.equal(JSON.stringify(packets),original);assert.equal(h.llmCalls.length,0);
  console.log(JSON.stringify({test:'hayaku_source_routing_scale_runtime',packets:600,coldParsed:cold.processedThisRequest,routed:cold.routing.scanned,linkedReads:cold.linkedReads,warmParsed:warm.processedThisRequest,elapsedMs:Date.now()-began,mergedChars:plan.text.length,modelCalls:0}));
  }finally{h.dispose();}})().catch(e=>{console.error(e.stack||e);process.exitCode=1});

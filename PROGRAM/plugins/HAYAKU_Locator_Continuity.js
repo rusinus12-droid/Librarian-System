@@ -36509,11 +36509,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if(left.localSourceEntry && right.localSourceEntry){
       const origins=new Map();
       for(const origin of [...ensureArray(left.sourceRows),...ensureArray(right.sourceRows)])origins.set(localRecallSourceKey(origin.row),origin);
-      const sourceRows=[...origins.values()],sources=sourceRows.map(({row})=>({id:row.id||row.publicRef||'',source:row.packetHash||row.locator?.sourceHash||'',at:packetSourcePairIndex(row.locator||{}),messageIndex:row.locator?.messageIndex??null}));
+      const sourceRows=[...origins.values()];
       const base=left.localSourceBaseMemory||left.memory;
-      // The model sees which records were merged, not where they sit in the chat: turn and message
-      // position stay in sourceRows (locators) for delivery accounting.
-      const memory=base+'\n  [sources '+JSON.stringify(sources.map(({id,source})=>({id,source})))+']';
+      // The merged sources (ids, packet hashes, turn and message position) are bookkeeping for delivery
+      // accounting (sourceRows); the model reads the recalled text once, without them.
+      const memory=base;
       return {...left,memory,localSourceBaseMemory:base,lineKey:memory,sourceRows,sourceKeys:[...new Set([...ensureArray(left.sourceKeys),...ensureArray(right.sourceKeys)])],mergedDuplicates:sourceRows.length-1};
     }
     const leftPriority = packetCoreRecallEntryPriority(left);
