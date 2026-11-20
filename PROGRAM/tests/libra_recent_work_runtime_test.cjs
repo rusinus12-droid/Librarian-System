@@ -64,6 +64,32 @@ const partOf = (overview, id) => jobOf(overview, 'embedding').parts.find(part =>
     } finally { await f.r.cleanup(); }
   }
   {
+    // "확인 필요" for user-settled conflicts names where to settle them, right under the badge.
+    // Only the condition is forced here; the hint text and the renderer are the shipped ones.
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'libra-recent-work-hint-'));
+    const pluginPath = path.join(temporary, 'LIBRA.js');
+    const condition = '        statusHint: !stateRead.error && !replayError.value && !pendingApplications && authority.pending === true && stateProjectionAwaitsUser(authority) ?';
+    const source = fs.readFileSync(path.join(__dirname, '../plugins/LIBRA.js'), 'utf8');
+    assert.equal(source.split(condition).length, 2, 'the State card hint condition is present once');
+    fs.writeFileSync(pluginPath, source.replace(condition, () => '        statusHint: true ?'));
+    let host;
+    try {
+      host = await create('LIBRA', 'Full', { pluginPath, initialChat: input.sourceRows.map(row => ({ role: row.role, chatId: row.ref, data: row.text })) });
+      await host.open();
+      const { doc } = host;
+      await pause(800);
+      doc.querySelector('.topbar .health').click();
+      await pause(500);
+      const card = doc.querySelector('#dialog-state [data-recent-work-job="state"]');
+      assert.ok(card, 'the State projection card renders');
+      const hint = card.querySelector('[data-recent-work-status-hint="state"]');
+      assert.ok(hint, 'the review hint renders on the State card');
+      assert.equal(hint.textContent, '자동 반영 검토에서 검토 가능');
+      assert.ok(card.querySelector('.card__head').contains(hint), 'the hint sits with the status badge');
+      assert.equal(doc.querySelectorAll('[data-recent-work-status-hint]').length, 1, 'other cards carry no hint');
+    } finally { await host?.close?.(); fs.rmSync(temporary, { recursive: true, force: true }); }
+  }
+  {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'libra-recent-work-gui-'));
     const pluginPath = path.join(temporary, 'LIBRA.js');
     fs.copyFileSync(path.join(__dirname, '../plugins/LIBRA.js'), pluginPath);
@@ -84,6 +110,7 @@ const partOf = (overview, id) => jobOf(overview, 'embedding').parts.find(part =>
       const tabs = () => [...dialog.querySelectorAll('[data-execution-logs] [role="tab"]')];
       assert.deepEqual(tabs().map(tab => tab.textContent), ['최근 작업', '작업 로그', '오류']);
       assert.deepEqual([...dialog.querySelectorAll('[data-recent-work-job]')].map(node => node.dataset.recentWorkJob), ['canonical', 'micro', 'lens', 'state', 'embedding']);
+      assert.equal(dialog.querySelector('[data-recent-work-status-hint]'), null, 'no review hint while nothing waits on the user');
       tabs()[1].click();
       await pause(300);
       assert.ok(dialog.querySelector('[data-execution-work-log="all"]'), 'the log merges every receipt kind by default');

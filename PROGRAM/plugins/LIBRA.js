@@ -76959,7 +76959,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (pendingApplications) notes.push(`상태 적용 ${pendingApplications}건 보류`);
       const review = microPending.filter(row => microAdmissionNeedsReview(row?.reason));
       const waiting = microPending.filter(row => !microAdmissionNeedsReview(row?.reason));
-      if (review.length) notes.push(`확인 필요 ${review.length}건${spanOf(review)} · 정본과 다른 값 · 자동 반영 검토에서 선택`);
+      if (review.length) notes.push(`확인 필요 ${review.length}건${spanOf(review)} · 정본과 다른 값`);
       if (waiting.length) notes.push(`미크로 보류 ${waiting.length}건${spanOf(waiting)}${causeOf(waiting)}`);
       else if (value.pending === true && !notes.length) notes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
       if (!microPending.length && !settled.length && Number(through) > Number(basis)) notes.push(`미크로 T${through}까지 반영`);
@@ -77051,6 +77051,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const stateJob = { id: 'state', label: 'State projection', detail: '정본과 미크로에서 현재 상태를 만듭니다.', at: '',
         headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${basis}까지` : basis ? `마지막 반영 · T${basis}` : '반영 대기 중',
         status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length) && !stateProjectionAwaitsUser(authority)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
+        statusHint: !stateRead.error && !replayError.value && !pendingApplications && authority.pending === true && stateProjectionAwaitsUser(authority) ? '자동 반영 검토에서 검토 가능' : '',
         note: stateNotes.join(' · '), error: replayError.value ? string(replayError.value.message || replayError.value.code) : stateRead.error || journalRead.error || '' };
 
       const work = asArray(state.embeddingWork).filter(row => !row.scopeKey || row.scopeKey === scopeKey), lastOf = id => work.find(row => row.work === id) || null;
@@ -87249,7 +87250,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     return guiEl('div', { class: 'card', dataset: { recentWorkJob: text(job.id) } }, [
       guiEl('div', { class: 'card__head' }, [
         guiEl('div', {}, [guiEl('h3', { class: 'card__title', text: text(job.label) }), guiEl('p', { class: 'card__desc', text: text(job.detail) })]),
-        libraStatusBadge(tone[0], tone[1])
+        job.statusHint ? guiEl('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' } }, [
+          libraStatusBadge(tone[0], tone[1]),
+          guiEl('small', { class: 'hint', dataset: { recentWorkStatusHint: text(job.id) }, text: text(job.statusHint) })
+        ]) : libraStatusBadge(tone[0], tone[1])
       ]),
       guiEl('div', { class: 'res-row' }, [
         guiEl('span', { text: text(job.headline) }),

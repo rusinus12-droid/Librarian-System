@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T17:41:16.908Z",
+  "generatedAt": "2026-11-20T17:53:20.510Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -4348,8 +4348,8 @@
       "bytes": 860375
     },
     "plugins/LIBRA.js": {
-      "sha256": "aa7dc4cb85705e9b0849cfa82d664b49a7aff1e34dc95728ec20abe9289cc861",
-      "bytes": 6925872
+      "sha256": "047d4f10e7f2ce848a47e3d3067dbdb7476b83cd37745dc567c8b7edeceab6f4",
+      "bytes": 6926344
     },
     "plugins/RETRACE.js": {
       "sha256": "8cfa401442fa1ee5c236c23dcab4d89d4e2c106b443a5c9280fb826a9b9b408d",
@@ -9199,6 +9199,10 @@
       "sha256": "9a098a73135f21090836833ddb24ca42a3f84021b916db800d2415249ac1f563",
       "bytes": 4974
     },
+    "tests/libra_micro_overlap_settled_state_projection_test.cjs": {
+      "sha256": "6023ce85eb5bb897a73f15b1fb76d758e0cd06b31007ff0266a2c1edb6d23f12",
+      "bytes": 6810
+    },
     "tests/libra_micro_portable_graph_3mode_test.cjs": {
       "sha256": "9a66bd28ac111c4c9c3aef4fe094cff9cf98fe028172e2f6a64d19d7a5cb45c8",
       "bytes": 13284
@@ -9844,8 +9848,8 @@
       "bytes": 7514
     },
     "tests/libra_recent_work_runtime_test.cjs": {
-      "sha256": "f8eef30db94f4ca9f58d2bc7140bf135830b1d485bc2bca5fb43935f1ac5a2dd",
-      "bytes": 7200
+      "sha256": "30878a8553f2e7a423fee5f4d70e1d98bfd2b25709e3812a4ca50c5453385c30",
+      "bytes": 9179
     },
     "tests/libra_record_normalization_runtime_test.cjs": {
       "sha256": "73f5e02f5d421a25bf1cc34b972ac7cff21b8710f2fb932cbd173c366ab0cf5e",
@@ -10164,8 +10168,8 @@
       "bytes": 3056
     },
     "tests/libra_state_projection_currentness_test.cjs": {
-      "sha256": "f6c22c444fdfd4acb28a587a8be2e9ec4b80bb3aa0fed8e27df1990266615ef6",
-      "bytes": 12145
+      "sha256": "d9e06234434a0ab5335ef0bab6fe8ab4c236da66031c5ac6721e0ab73ef47ea7",
+      "bytes": 12071
     },
     "tests/libra_state_projection_partial_failure_test.cjs": {
       "sha256": "c9c740d16d51e394dff1ae125b961b27b13fb5b9901024a0aa66f3bfb6c7ff46",

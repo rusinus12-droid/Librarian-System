@@ -92,11 +92,11 @@ const headWith = (pending, extra = {}) => ({ status: 'ready', throughTurn: 30, d
     const conflict = (turn, claimIndex) => ({ turn, claimIndex, reason: 'canonical_overlap_conflict' });
     const conflicts = { pendingDomains: [], pending: true, microProjection: { pendingClaims: [conflict(2, 6), conflict(30, 1)], settledClaims: [{ turn: 6, claimIndex: 6, reason: 'state_value_not_source_bound' }] } };
     assert.equal(notes({ authority: conflicts, basis: 30, through: 33 }).join(' | '),
-      '확인 필요 2건 · T2–T30 · 정본과 다른 값 · 자동 반영 검토에서 선택 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
+      '확인 필요 2건 · T2–T30 · 정본과 다른 값 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
     assert.equal(awaitsUser(conflicts), true, 'only user-settled conflicts remain');
     const mixed = cloneJson(conflicts); mixed.microProjection.pendingClaims.push({ turn: 31, reason: 'micro_read_failed' });
     assert.equal(notes({ authority: mixed, basis: 30, through: 33 }).join(' | '),
-      '확인 필요 2건 · T2–T30 · 정본과 다른 값 · 자동 반영 검토에서 선택 | 미크로 보류 1건 · T31 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
+      '확인 필요 2건 · T2–T30 · 정본과 다른 값 | 미크로 보류 1건 · T31 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
     assert.equal(awaitsUser(mixed), false, 'a hold that may still resolve keeps the card waiting');
     assert.equal(awaitsUser({ ...conflicts, pendingDomains: ['narrative'] }), false, 'a held domain keeps the card waiting');
   } finally { await f.r.cleanup?.(); }
