@@ -37530,7 +37530,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           #${instanceId} .mscx-actions{display:flex;flex-wrap:wrap;gap:8px} #${instanceId} button{min-height:38px;padding:8px 12px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);color:var(--mscx-text);font:750 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer} #${instanceId} button:hover{border-color:rgba(122,162,255,.65);background:rgba(70,94,150,.22)} #${instanceId} button.primary{background:rgba(55,97,181,.72);border-color:rgba(122,162,255,.75)} #${instanceId} button.danger{color:#ffe4e8;background:rgba(126,34,52,.55);border-color:rgba(251,113,133,.55)} #${instanceId} button:disabled{opacity:.45;cursor:not-allowed}
           #${instanceId} .mscx-info{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px} #${instanceId} .mscx-info div{padding:9px 10px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);min-width:0} #${instanceId} .mscx-info span{display:block;color:var(--mscx-muted);font-size:9px;font-weight:800} #${instanceId} .mscx-info strong{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--mscx-text)}
           #${instanceId} .mscx-job{display:grid;gap:10px;border-color:rgba(122,162,255,.34);background:linear-gradient(180deg,rgba(35,55,97,.45),rgba(15,23,42,.58))} #${instanceId} .mscx-job[hidden]{display:none} #${instanceId} .mscx-job-head{display:flex;justify-content:space-between;gap:10px;align-items:center} #${instanceId} .mscx-job-head strong{font-size:13px} #${instanceId} .mscx-job-badge{font-size:10px;font-weight:850;color:var(--mscx-muted)}
-          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transition:width .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
+          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transform-origin:left center;transform:scaleX(0);transition:transform .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;transform:none;transition:none;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
           #${instanceId} .mscx-job-phase{font-size:12px;font-weight:800;color:var(--mscx-text)} #${instanceId} .mscx-job-message{font-size:10px;color:var(--mscx-muted)} #${instanceId} .mscx-job-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px} #${instanceId} .mscx-job-stat{padding:8px;border-radius:9px;background:rgba(2,6,23,.38);border:1px solid rgba(148,163,184,.16);min-width:0} #${instanceId} .mscx-job-stat span{display:block;font-size:8px;color:var(--mscx-muted);font-weight:800} #${instanceId} .mscx-job-stat b{display:block;margin-top:2px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #${instanceId} .mscx-job-current{padding:8px 9px;border-radius:9px;background:rgba(2,6,23,.35);font:500 9px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mscx-muted);overflow-wrap:anywhere}
           #${instanceId} .mscx-message{min-height:56px;padding:11px 12px;border:1px solid var(--mscx-line);border-radius:11px;background:var(--mscx-soft);color:var(--mscx-muted);white-space:pre-wrap;font-size:11px} #${instanceId} .mscx-message.good{border-color:rgba(86,212,155,.35);color:#c9f8e4} #${instanceId} .mscx-message.error{border-color:rgba(251,113,133,.38);color:#ffd0d8} #${instanceId} .mscx-note{color:var(--mscx-muted);font-size:10px;line-height:1.5}
           @media(max-width:760px){#${instanceId} .mscx-modes{grid-template-columns:1fr}#${instanceId} .mscx-info{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-job-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-url-row{grid-template-columns:1fr}#${instanceId} .mscx-head{display:grid}#${instanceId} .mscx-state{justify-self:start}}
@@ -37589,8 +37589,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const percent = total > 0 ? Math.max(0, Math.min(100, processed / total * 100)) : 0;
       const progressNode = q('[data-mscx-progress]');
       if (progressNode) {
-        progressNode.classList.toggle('indeterminate', !terminal && total <= 0);
-        const bar = progressNode.querySelector('i'); if (bar && total > 0) bar.style.width = `${percent.toFixed(2)}%`; else if (bar && terminal) bar.style.width = job.status === 'completed' ? '100%' : '0%';
+        const indeterminate = !terminal && total <= 0;
+        progressNode.classList.toggle('indeterminate', indeterminate);
+        const bar = progressNode.querySelector('i'); if (bar) { if (indeterminate) bar.style.transform = ''; else if (total > 0) bar.style.transform = `scaleX(${(percent / 100).toFixed(4)})`; else if (terminal) bar.style.transform = job.status === 'completed' ? 'scaleX(1)' : 'scaleX(0)'; }
       }
       q('[data-mscx-job-title]').textContent = jobTitle(job);
       q('[data-mscx-job-badge]').textContent = job.status === 'completed' ? '완료' : (job.status === 'failed' ? '실패' : (job.status === 'paused' ? '일시 중지 · 자동 재시도' : (total > 0 ? `${percent.toFixed(1)}%` : '작업 중')));
@@ -44873,6 +44874,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 #sga-rp-gui-root .gx-empty{margin:0;color:var(--text2);font-size:12.5px}
 #sga-rp-gui-root .gx-text{margin:0;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 #sga-rp-gui-root .gx-draft{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;line-height:1.75;font-size:13.5px;max-height:560px;overflow:auto;padding:12px;border-radius:10px;background:rgba(5,9,17,.45)}
+#sga-rp-gui-root .list>.row,#sga-rp-gui-root .gx-sec{content-visibility:auto;contain-intrinsic-size:auto 64px}
 #sga-rp-gui-root .gx-draft--snippet{max-height:220px;font-size:13px}
 #sga-rp-gui-root .gx-list{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px;line-height:1.55}
 #sga-rp-gui-root .gx-list li{overflow-wrap:anywhere}
@@ -44903,8 +44905,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
 #sga-rp-gui-root [data-subpanel="skill"] .split{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:end}
 #sga-rp-gui-root [data-subpanel="skill"] .split .search{min-width:0;width:100%}
 #sga-rp-gui-root [data-subpanel="skill"] .split .search input{min-width:0;width:100%}
-#sga-rp-gui-root [data-page="sources"]:has([data-subpanel="skill"].is-active) > .page-head,
-#sga-rp-gui-root [data-page="sources"]:has([data-subpanel="skill"].is-active) > .stack > .card--accent{display:none}
+#sga-rp-gui-root [data-page="sources"].is-skill-subpanel > .page-head,
+#sga-rp-gui-root [data-page="sources"].is-skill-subpanel > .stack > .card--accent{display:none}
 #sga-rp-gui-root .skill-style-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px}
 #sga-rp-gui-root .skill-style-heading h1{font:750 24px/1.4 var(--font-display);letter-spacing:-.025em;margin:0;color:var(--text)}
 #sga-rp-gui-root .skill-style-heading p{margin:6px 0 0;color:var(--text2);font-size:13px}
@@ -48038,6 +48040,8 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         const tabs = tab.closest('[data-subtabs]'), group = tabs?.dataset.subtabs;
         tabs?.querySelectorAll('[data-subtab]').forEach(item => item.setAttribute('aria-selected', String(item === tab)));
         app.querySelectorAll('[data-group="' + group + '"]').forEach(panel => panel.classList.toggle('is-active', panel.dataset.subpanel === tab.dataset.subtab));
+        const sourcesPage = app.querySelector('[data-page="sources"]');
+        if (sourcesPage) sourcesPage.classList.toggle('is-skill-subpanel', !!sourcesPage.querySelector('[data-subpanel="skill"].is-active'));
         if (group === 'rs') Gui.pageSubview = tab.dataset.subtab;
         if (tab.dataset.subtab === 'char') void refreshCharacterLoreCatalog(false);
         if (tab.dataset.subtab === 'mod') void refreshModuleLoreCatalog(false);

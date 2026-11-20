@@ -6822,7 +6822,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           #${instanceId} .mscx-actions{display:flex;flex-wrap:wrap;gap:8px} #${instanceId} button{min-height:38px;padding:8px 12px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);color:var(--mscx-text);font:750 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer} #${instanceId} button:hover{border-color:rgba(122,162,255,.65);background:rgba(70,94,150,.22)} #${instanceId} button.primary{background:rgba(55,97,181,.72);border-color:rgba(122,162,255,.75)} #${instanceId} button.danger{color:#ffe4e8;background:rgba(126,34,52,.55);border-color:rgba(251,113,133,.55)} #${instanceId} button:disabled{opacity:.45;cursor:not-allowed}
           #${instanceId} .mscx-info{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px} #${instanceId} .mscx-info div{padding:9px 10px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);min-width:0} #${instanceId} .mscx-info span{display:block;color:var(--mscx-muted);font-size:9px;font-weight:800} #${instanceId} .mscx-info strong{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--mscx-text)}
           #${instanceId} .mscx-job{display:grid;gap:10px;border-color:rgba(122,162,255,.34);background:linear-gradient(180deg,rgba(35,55,97,.45),rgba(15,23,42,.58))} #${instanceId} .mscx-job[hidden]{display:none} #${instanceId} .mscx-job-head{display:flex;justify-content:space-between;gap:10px;align-items:center} #${instanceId} .mscx-job-head strong{font-size:13px} #${instanceId} .mscx-job-badge{font-size:10px;font-weight:850;color:var(--mscx-muted)}
-          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transition:width .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
+          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transform-origin:left center;transform:scaleX(0);transition:transform .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;transform:none;transition:none;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
           #${instanceId} .mscx-job-phase{font-size:12px;font-weight:800;color:var(--mscx-text)} #${instanceId} .mscx-job-message{font-size:10px;color:var(--mscx-muted)} #${instanceId} .mscx-job-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px} #${instanceId} .mscx-job-stat{padding:8px;border-radius:9px;background:rgba(2,6,23,.38);border:1px solid rgba(148,163,184,.16);min-width:0} #${instanceId} .mscx-job-stat span{display:block;font-size:8px;color:var(--mscx-muted);font-weight:800} #${instanceId} .mscx-job-stat b{display:block;margin-top:2px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #${instanceId} .mscx-job-current{padding:8px 9px;border-radius:9px;background:rgba(2,6,23,.35);font:500 9px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mscx-muted);overflow-wrap:anywhere}
           #${instanceId} .mscx-message{min-height:56px;padding:11px 12px;border:1px solid var(--mscx-line);border-radius:11px;background:var(--mscx-soft);color:var(--mscx-muted);white-space:pre-wrap;font-size:11px} #${instanceId} .mscx-message.good{border-color:rgba(86,212,155,.35);color:#c9f8e4} #${instanceId} .mscx-message.error{border-color:rgba(251,113,133,.38);color:#ffd0d8} #${instanceId} .mscx-note{color:var(--mscx-muted);font-size:10px;line-height:1.5}
           @media(max-width:760px){#${instanceId} .mscx-modes{grid-template-columns:1fr}#${instanceId} .mscx-info{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-job-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-url-row{grid-template-columns:1fr}#${instanceId} .mscx-head{display:grid}#${instanceId} .mscx-state{justify-self:start}}
@@ -6893,8 +6893,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const percent = total > 0 ? Math.max(0, Math.min(100, processed / total * 100)) : 0;
       const progressNode = q('[data-mscx-progress]');
       if (progressNode) {
-        progressNode.classList.toggle('indeterminate', !terminal && total <= 0);
-        const bar = progressNode.querySelector('i'); if (bar && total > 0) bar.style.width = `${percent.toFixed(2)}%`; else if (bar && terminal) bar.style.width = job.status === 'completed' ? '100%' : '0%';
+        const indeterminate = !terminal && total <= 0;
+        progressNode.classList.toggle('indeterminate', indeterminate);
+        const bar = progressNode.querySelector('i'); if (bar) { if (indeterminate) bar.style.transform = ''; else if (total > 0) bar.style.transform = `scaleX(${(percent / 100).toFixed(4)})`; else if (terminal) bar.style.transform = job.status === 'completed' ? 'scaleX(1)' : 'scaleX(0)'; }
       }
       q('[data-mscx-job-title]').textContent = jobTitle(job);
       q('[data-mscx-job-badge]').textContent = job.status === 'completed' ? '완료' : (job.status === 'failed' ? '실패' : (job.status === 'paused' ? '일시 중지 · 대기' : (total > 0 ? `${percent.toFixed(1)}%` : '작업 중')));
@@ -79533,7 +79534,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .card>*+*:not(.setting){margin-top:12px}',
     '.t-libra :is(.list,details,.note,.table-wrap,.libra-field-group,pre,.grid,.empty)+.cluster{margin-top:12px}',
     // AI presets: list on the left, the selected connection on the right; one column when narrow.
-    '.t-libra .card:has(>.libra-preset-workbench){container-type:inline-size}',
+    '.t-libra .card.card--preset-workbench{container-type:inline-size}',
     '.libra-preset-workbench{display:grid;grid-template-columns:minmax(190px,250px) minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px}',
     '.libra-preset-rail{display:grid;gap:10px;align-content:start}',
     '@container (min-width:561px){.libra-preset-rail{position:sticky;top:12px}}',
@@ -79728,7 +79729,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.job-dock{position:absolute;right:18px;bottom:18px;z-index:40;display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:min(320px,calc(100% - 36px));pointer-events:none}.job-dock:empty{display:none}',
     '.job-pill{pointer-events:auto;position:relative;display:grid;grid-template-columns:22px minmax(0,1fr);align-items:center;gap:10px;width:236px;max-width:100%;min-height:46px;padding:8px 14px 10px 11px;border:1px solid var(--border2);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:0 8px 22px rgba(0,0,0,.16);text-align:left;overflow:hidden;cursor:pointer;font:inherit}.job-pill:hover{background:var(--surface2)}',
     '.job-pill__icon{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:800 12px/1 var(--font-sans);background:var(--ok-soft);color:var(--ok-ink)}.job-pill[data-tone=running] .job-pill__icon{box-sizing:border-box;border:2.5px solid var(--accent-soft);border-top-color:var(--accent);background:transparent;animation:job-pill-spin .9s linear infinite}.job-pill[data-tone=warn] .job-pill__icon{background:var(--warn-soft);color:var(--warn-ink)}.job-pill[data-tone=failed] .job-pill__icon{background:var(--danger-soft);color:var(--danger-ink)}@keyframes job-pill-spin{to{transform:rotate(360deg)}}',
-    '.job-pill__text{display:grid;min-width:0;line-height:1.3}.job-pill__title{font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__meta{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--surface3)}.job-pill__bar[hidden]{display:none}.job-pill__bar i{display:block;height:100%;background:var(--accent);transition:width var(--motion)}',
+    '.job-pill__text{display:grid;min-width:0;line-height:1.3}.job-pill__title{font-size:12.5px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__meta{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.job-pill__bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--surface3)}.job-pill__bar[hidden]{display:none}.job-pill__bar i{display:block;width:100%;height:100%;background:var(--accent);transform-origin:left center;transform:scaleX(0);transition:transform var(--motion)}',
     '@container app (max-width:900px){.job-dock{right:12px;bottom:72px}}@container app (max-width:640px){.job-dock{left:12px;right:12px;max-width:none;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:stretch}.job-pill{width:auto;flex:1 1 150px;max-width:240px}}',
     '.memory-progress{display:grid;gap:6px}.memory-progress>.hint,.memory-progress>p{margin:0}',
     '.maintenance-targets{display:grid;gap:0;font-size:12.5px}',
@@ -79967,7 +79968,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // Narrative almanac: the structure summary sits above the table of contents.
     '.t-libra .story-structure .story-structure__lead{margin:6px 0 0;font:15px/1.85 var(--font-display);color:var(--text)}.t-libra .story-structure .story-structure__lead.muted{color:var(--text2)}',
     '.t-libra .story-structure .facts{margin:16px 0 0}',
-    '@media(max-width:560px){.t-libra .story-structure .facts{grid-template-columns:repeat(2,minmax(0,1fr))}}'
+    '@media(max-width:560px){.t-libra .story-structure .facts{grid-template-columns:repeat(2,minmax(0,1fr))}}',
+    '.t-libra .wl-list>.wl-row,.t-libra .list>.row{content-visibility:auto;contain-intrinsic-size:auto 56px}'
   ].join('\n');
   const injectGuiStyle = () => {
     if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
@@ -85329,7 +85331,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     pill.querySelector('.job-pill__meta').textContent = meta;
     pill.querySelector('.job-pill__icon').textContent = tone === 'done' ? '✓' : tone === 'running' ? '' : '!';
     pill.querySelector('.job-pill__bar').hidden = percent == null;
-    pill.querySelector('.job-pill__bar i').style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
+    pill.querySelector('.job-pill__bar i').style.transform = `scaleX(${(Math.max(0, Math.min(100, Number(percent) || 0)) / 100).toFixed(4)})`;
     pill.setAttribute('aria-label', label || `${title} · ${meta} · 다시 열기`);
     pill.title = label || `${title} · ${meta}`;
   };
@@ -89056,13 +89058,15 @@ advanced
           ])
         ])
       ])):guiEl('div',{class:'empty',text:'편집할 연결 프리셋이 없습니다.'});
-      return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
-        card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
+      const presetCard = card('생성 AI 프리셋','현재 저장된 프리셋 이름과 모델만 표시합니다. 비밀 키는 노출하지 않습니다.',[
           guiEl('div',{class:'libra-preset-workbench'},[guiEl('div',{class:'libra-preset-rail'},[
           guiEl('div',{class:'list',id:'ai-presets'},names.length?names.map(name=>guiEl('button',{class:'row',type:'button',dataset:{providerPreset:name},'aria-pressed':String(name===Gui.selectedPreset),onClick:()=>{Gui.selectedPreset=name;void renderSettingsGui();}},[guiEl('span',{class:'row__title',text:name}),guiEl('span',{class:'row__meta',text:`${providerDisplayLabel(providers[name]?.provider)} · ${presetModelDisplay(providers[name]||{})}`}),name===defaultName?guiEl('span',{class:'badge',text:'기본'}):null])):[guiEl('div',{class:'empty',text:'저장된 생성 AI 프리셋이 없습니다.'})]),
           guiEl('div',{class:'cluster'},[guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 추가',onClick:()=>addGuiPreset()}),guiEl('button',{class:'btn btn--sm',type:'button',text:'프리셋 관리…',onClick:()=>{Gui.selectedPreset=Gui.selectedPreset||names[0]||'';void renderSettingsGui();}})])]),
           guiEl('div',{class:'libra-preset-detail'},[editPanel])]),defaultPanel
-        ])
+        ]);
+      presetCard?.classList?.add('card--preset-workbench');
+      return guiEl('div',{class:'stack',dataset:{settingsCategory:'ai',settingsReadback:'provider-settings'}},[
+        presetCard
       ]);
     }
     if(groupId==='ref')return guiEl('div',{class:'stack',dataset:{settingsCategory:'ref'}},[

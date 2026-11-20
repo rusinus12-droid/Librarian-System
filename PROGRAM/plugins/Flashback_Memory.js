@@ -7446,7 +7446,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           #${instanceId} .mscx-actions{display:flex;flex-wrap:wrap;gap:8px} #${instanceId} button{min-height:38px;padding:8px 12px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);color:var(--mscx-text);font:750 11px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer} #${instanceId} button:hover{border-color:rgba(122,162,255,.65);background:rgba(70,94,150,.22)} #${instanceId} button.primary{background:rgba(55,97,181,.72);border-color:rgba(122,162,255,.75)} #${instanceId} button.danger{color:#ffe4e8;background:rgba(126,34,52,.55);border-color:rgba(251,113,133,.55)} #${instanceId} button:disabled{opacity:.45;cursor:not-allowed}
           #${instanceId} .mscx-info{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px} #${instanceId} .mscx-info div{padding:9px 10px;border:1px solid var(--mscx-line);border-radius:10px;background:var(--mscx-soft);min-width:0} #${instanceId} .mscx-info span{display:block;color:var(--mscx-muted);font-size:9px;font-weight:800} #${instanceId} .mscx-info strong{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--mscx-text)}
           #${instanceId} .mscx-job{display:grid;gap:10px;border-color:rgba(122,162,255,.34);background:linear-gradient(180deg,rgba(35,55,97,.45),rgba(15,23,42,.58))} #${instanceId} .mscx-job[hidden]{display:none} #${instanceId} .mscx-job-head{display:flex;justify-content:space-between;gap:10px;align-items:center} #${instanceId} .mscx-job-head strong{font-size:13px} #${instanceId} .mscx-job-badge{font-size:10px;font-weight:850;color:var(--mscx-muted)}
-          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transition:width .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
+          #${instanceId} .mscx-progress{height:9px;border-radius:999px;overflow:hidden;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.18)} #${instanceId} .mscx-progress>i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--mscx-accent),var(--mscx-good));transform-origin:left center;transform:scaleX(0);transition:transform .25s ease} #${instanceId} .mscx-progress.indeterminate>i{width:38%;transform:none;transition:none;animation:mscx-slide 1.2s ease-in-out infinite}@keyframes mscx-slide{0%{transform:translateX(-110%)}100%{transform:translateX(290%)}}
           #${instanceId} .mscx-job-phase{font-size:12px;font-weight:800;color:var(--mscx-text)} #${instanceId} .mscx-job-message{font-size:10px;color:var(--mscx-muted)} #${instanceId} .mscx-job-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px} #${instanceId} .mscx-job-stat{padding:8px;border-radius:9px;background:rgba(2,6,23,.38);border:1px solid rgba(148,163,184,.16);min-width:0} #${instanceId} .mscx-job-stat span{display:block;font-size:8px;color:var(--mscx-muted);font-weight:800} #${instanceId} .mscx-job-stat b{display:block;margin-top:2px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #${instanceId} .mscx-job-current{padding:8px 9px;border-radius:9px;background:rgba(2,6,23,.35);font:500 9px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--mscx-muted);overflow-wrap:anywhere}
           #${instanceId} .mscx-message{min-height:56px;padding:11px 12px;border:1px solid var(--mscx-line);border-radius:11px;background:var(--mscx-soft);color:var(--mscx-muted);white-space:pre-wrap;font-size:11px} #${instanceId} .mscx-message.good{border-color:rgba(86,212,155,.35);color:#c9f8e4} #${instanceId} .mscx-message.error{border-color:rgba(251,113,133,.38);color:#ffd0d8} #${instanceId} .mscx-note{color:var(--mscx-muted);font-size:10px;line-height:1.5}
           @media(max-width:760px){#${instanceId} .mscx-modes{grid-template-columns:1fr}#${instanceId} .mscx-info{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-job-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#${instanceId} .mscx-url-row{grid-template-columns:1fr}#${instanceId} .mscx-head{display:grid}#${instanceId} .mscx-state{justify-self:start}}
@@ -7507,8 +7507,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       const percent = total > 0 ? Math.max(0, Math.min(100, processed / total * 100)) : 0;
       const progressNode = q('[data-mscx-progress]');
       if (progressNode) {
-        progressNode.classList.toggle('indeterminate', !terminal && total <= 0);
-        const bar = progressNode.querySelector('i'); if (bar && total > 0) bar.style.width = `${percent.toFixed(2)}%`; else if (bar && terminal) bar.style.width = job.status === 'completed' ? '100%' : '0%';
+        const indeterminate = !terminal && total <= 0;
+        progressNode.classList.toggle('indeterminate', indeterminate);
+        const bar = progressNode.querySelector('i'); if (bar) { if (indeterminate) bar.style.transform = ''; else if (total > 0) bar.style.transform = `scaleX(${(percent / 100).toFixed(4)})`; else if (terminal) bar.style.transform = job.status === 'completed' ? 'scaleX(1)' : 'scaleX(0)'; }
       }
       q('[data-mscx-job-title]').textContent = jobTitle(job);
       q('[data-mscx-job-badge]').textContent = job.status === 'completed' ? '완료' : (job.status === 'failed' ? '실패' : (job.status === 'paused' ? '일시 중지 · 대기' : (total > 0 ? `${percent.toFixed(1)}%` : '작업 중')));
@@ -51592,7 +51593,8 @@ ${cleanedText}`, 80),
     const side = [['lab','eye','기억 현상실','현상실'],['vault','film','필름 보관함','보관함'],['care','wrench','기억 관리','관리'],['connect','link','임베딩 · 서버','연결'],['log','log','현상 기록','기록'],['settings','sliders','리콜 설정','설정']];
     const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="currentColor" stroke-width="1.4"/></svg></div><div><div class="brand__name">FLASHBACK</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
-    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}</style></head><body>${root}</body></html>`;
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}
+.frames>.frame-card,.list>.row{content-visibility:auto;contain-intrinsic-size:auto 72px}</style></head><body>${root}</body></html>`;
   };
 
 
@@ -51742,7 +51744,7 @@ ${cleanedText}`, 80),
   const removeMaintenanceJobSurface = () => {
     if (maintenanceJobTicker) { clearInterval(maintenanceJobTicker); maintenanceJobTicker = null; }
     if (maintenanceJobKeyHandler) { document.removeEventListener?.('keydown', maintenanceJobKeyHandler); maintenanceJobKeyHandler = null; }
-    getGuiNode('flashbackMaintenanceJob')?.remove();getGuiNode('maintenanceJobChip')?.remove();
+    getGuiNode('flashbackMaintenanceJob')?.remove();getGuiNode('maintenanceJobChip')?.remove();guiRoot?.querySelector?.('.topbar')?.classList?.remove('has-maintenance-job');
   };
   const maintenanceJobCanCancel = job => job?.kind === 'recovery' && job.state === 'running' && !!job.operationId
     && job.operationId === Runtime.maintenanceActiveOperationId && !!Runtime.maintenanceController
@@ -51859,7 +51861,7 @@ ${cleanedText}`, 80),
 #flashbackMaintenanceJob .dialog__actions{flex-wrap:wrap}
 #maintenanceJobChip{position:static;flex:0 1 auto;min-width:64px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @container app (max-width:640px){#maintenanceJobChip{max-width:110px;font-size:11px;padding:5px 7px}#flashbackMaintenanceJob .fbjob__stats{grid-template-columns:repeat(2,minmax(0,1fr))}#flashbackMaintenanceJob .fbjob__log li{grid-template-columns:44px minmax(0,1fr)}#flashbackMaintenanceJob .fbjob__tag{display:none}#flashbackMaintenanceJob .fbjob__rows{grid-template-columns:minmax(0,1fr)}#flashbackMaintenanceJob .fbjob__rows dd{border-top:0;padding-top:0}}
-@container app (max-width:400px){.topbar:has(#maintenanceJobChip:not([hidden])){gap:6px;padding-inline:10px}.topbar:has(#maintenanceJobChip:not([hidden])) #sidebarHealth{display:none}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar:has(#maintenanceJobChip:not([hidden])) .brand__mark{width:28px;height:28px}}
+@container app (max-width:400px){.topbar.has-maintenance-job{gap:6px;padding-inline:10px}.topbar.has-maintenance-job #sidebarHealth{display:none}.topbar.has-maintenance-job .brand__name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar.has-maintenance-job .brand__mark{width:28px;height:28px}}
 </style>
         <div class="dialog dialog--wide" role="dialog" aria-modal="true" aria-labelledby="fb-maintenance-job-title" aria-describedby="fb-maintenance-job-message">
           <header class="fbjob__head"><div><div class="eyebrow">FLASHBACK JOB</div><h2 id="fb-maintenance-job-title"></h2></div><span class="badge" data-job-state></span></header>
@@ -51933,7 +51935,7 @@ ${cleanedText}`, 80),
     if(!running)renderMaintenanceJobResult(portal.querySelector('[data-job-result-body]'),job.summary||job.message);
     let chip=getGuiNode('maintenanceJobChip');
     if(!chip){const header=guiRoot.querySelector('.topbar');if(!header)return;chip=document.createElement('button');chip.id='maintenanceJobChip';chip.type='button';chip.className='btn btn--sm';chip.addEventListener('click',()=>{if(maintenanceJobInScope(job)&&!job.dismissed){job.minimized=false;renderMaintenanceJob();getGuiNode('maintenanceJobMinimizeBtn')?.focus();}});header.insertBefore(chip,header.querySelector('.topbar-actions'));}
-    chip.hidden=!job.minimized;chip.textContent=`${job.kind==='inspection'?'상태 점검':'자동 복구'} · ${label} · ${elapsed}초`;
+    chip.hidden=!job.minimized;chip.closest?.('.topbar')?.classList?.toggle('has-maintenance-job',!chip.hidden);chip.textContent=`${job.kind==='inspection'?'상태 점검':'자동 복구'} · ${label} · ${elapsed}초`;
     chip.title=`작업창 다시 열기 · ${chip.textContent}`;chip.setAttribute('aria-label',chip.title);
     if(running&&!maintenanceJobTicker)maintenanceJobTicker=setInterval(renderMaintenanceJob,500);
     if(!running&&maintenanceJobTicker){clearInterval(maintenanceJobTicker);maintenanceJobTicker=null;}
@@ -52884,7 +52886,21 @@ ${cleanedText}`, 80),
     root.removeAttribute?.('data-vrm-skeleton');
     root.removeAttribute?.('data-vrm-mounted');
     guiMounted = false;
-    root.innerHTML = `<style>${FLASHBACK_GUI_MOCKUP_STYLES}</style><div class="stage" style="width:100%"><div class="frame"><div class="app" style="display:flex;flex-direction:column;height:100%">
+    if (typeof document !== 'undefined') {
+      const styleHost = document.head || document.body || document.documentElement;
+      if (styleHost) {
+        let style = document.getElementById?.('vector-rag-memory-style') || null;
+        if (!style) {
+          style = document.createElement('style');
+          style.id = 'vector-rag-memory-style';
+          style.textContent = FLASHBACK_GUI_MOCKUP_STYLES;
+          styleHost.appendChild(style);
+        } else if (!style.textContent) {
+          style.textContent = FLASHBACK_GUI_MOCKUP_STYLES;
+        }
+      }
+    }
+    root.innerHTML = `<div class="stage" style="width:100%"><div class="frame"><div class="app" style="display:flex;flex-direction:column;height:100%">
       <header class="topbar" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px"><div class="brand"><div><b>Flashback Memory</b><div class="brand__ver">기억 관리</div></div></div><button type="button" class="btn" data-opening-close>닫기</button></header>
       <main style="flex:1;min-height:0;overflow:auto;padding:clamp(16px,4vw,40px)"><section class="card stack" style="gap:24px" data-opening-error>
         <div><div class="eyebrow">${unavailable ? 'SERVER CONNECTION' : 'MEMORY WORKSPACE'}</div><h1 class="page-title" style="margin:8px 0 12px">${unavailable ? '서버에 연결하지 못했습니다' : '기억 관리 화면을 열지 못했습니다'}</h1><p class="muted">${unavailable ? '설정을 읽는 중 서버 응답을 확인하지 못했습니다. 서버 실행 상태와 연결 주소를 확인한 뒤 다시 시도하세요.' : '설정 또는 저장소 자료를 읽지 못했습니다. 잠시 후 다시 시도해 주세요.'}</p></div>
@@ -53728,7 +53744,7 @@ ${cleanedText}`, 80),
           style.id = 'vector-rag-memory-style';
           styleHost.appendChild(style);
         }
-        style.textContent = styleText;
+        if (style.textContent !== styleText) style.textContent = styleText;
       }
     }
     cancelFlashbackSourceReanalysis();

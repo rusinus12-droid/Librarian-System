@@ -10579,9 +10579,25 @@ ${revisionText}`);
     if (liaUiVisible && document.querySelector(".frame .app #dpg-status") && !document.querySelector("[data-lia-preview-state]")) return;
     liaUiVisible = true;
     document.body.className = "t-lia";
-    document.body.innerHTML = `<style>${LIA_MOCKUP_CSS}</style><div class="stage"><div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div></div>`;
-    const root = document.getElementById("dpg-preview-root");
+    const styleHost = document.head || document.documentElement || document.body;
+    if (styleHost && !document.getElementById("lia-mockup-style")) {
+      const style = document.createElement("style");
+      style.id = "lia-mockup-style";
+      style.textContent = `${LIA_MOCKUP_CSS}\n.list>.row{content-visibility:auto;contain-intrinsic-size:auto 64px}`;
+      styleHost.appendChild(style);
+    }
+    const existingStage = document.querySelector(".stage");
+    let root = document.getElementById("dpg-preview-root");
+    if (existingStage && root && root.dataset?.liaUiBound === "1") {
+      existingStage.hidden = false;
+      existingStage.style.display = "";
+      await refreshPreview();
+      return;
+    }
+    document.body.innerHTML = `<div class="stage"><div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div></div>`;
+    root = document.getElementById("dpg-preview-root");
     if (root) {
+      if (root.dataset) root.dataset.liaUiBound = "1";
       root.addEventListener("click", handleLiaMockupClick);
       root.addEventListener("change", handleLiaMockupChange);
       root.addEventListener("input", handleLiaMockupInput);
