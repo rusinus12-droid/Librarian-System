@@ -82,6 +82,9 @@ const headWith = (pending, extra = {}) => ({ status: 'ready', throughTurn: 30, d
     assert.equal(held.join(' | '), '미크로 보류 3건 · T32–T33 · 값 이름이 인용문에 없음', 'an uncited value is named as the cause, not as a re-analysis request');
     const other = notes({ authority: { pendingDomains: [], pending: true, microProjection: { pendingClaims: [{ turn: 35, claimIndex: 1, reason: 'read_failed' }] } }, basis: 30, through: 35 });
     assert.equal(other.join(' | '), '미크로 보류 1건 · T35', 'an unreported cause stays a bare count');
+    // A settled (never-retryable) rejection is not a wait: the card stays current and only reports it.
+    const settled = notes({ authority: { pendingDomains: [], pending: false, microProjection: { settledClaims: [{ turn: 32, claimIndex: 6, reason: 'state_value_not_source_bound' }, { turn: 33, claimIndex: 19, reason: 'state_value_not_source_bound' }] } }, basis: 30, through: 33 });
+    assert.equal(settled.join(' | '), '기록 2건 반영 안 함 · T32–T33 · 값 이름이 인용문에 없음', 'settled claims are reported without the frontier note');
   } finally { await f.r.cleanup?.(); }
 
   // 7. End to end: one rejected fact, every domain ready -> the card reports the State as current.

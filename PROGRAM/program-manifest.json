@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T17:12:56.553Z",
+  "generatedAt": "2026-11-20T17:16:00.368Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -4348,8 +4348,8 @@
       "bytes": 860375
     },
     "plugins/LIBRA.js": {
-      "sha256": "0eae786274025e5147dd993b76e48793ed1cd4249f27c537dcf50470a179a12e",
-      "bytes": 6921675
+      "sha256": "bb29bb05cf3695c43161547ae292ac2345e2eb550be14c186fee5b5ed4a679a2",
+      "bytes": 6922845
     },
     "plugins/RETRACE.js": {
       "sha256": "8cfa401442fa1ee5c236c23dcab4d89d4e2c106b443a5c9280fb826a9b9b408d",
@@ -9239,6 +9239,10 @@
       "sha256": "54e50ba2a62ffe87e1b387ec863d379177ecc4a15436767274d00ef5dbf3929a",
       "bytes": 5854
     },
+    "tests/libra_micro_settled_state_projection_test.cjs": {
+      "sha256": "6cc27a799fca8694ce03eb9dbfceebb03c1ea594795b3059cd9656a0afac9967",
+      "bytes": 5198
+    },
     "tests/libra_micro_source_change_reanalysis_test.cjs": {
       "sha256": "c578d9a744f0a19bb3310a5edafd24efe6f429ee346c5f2419e9894eec4b95c3",
       "bytes": 4603
@@ -10160,8 +10164,8 @@
       "bytes": 3056
     },
     "tests/libra_state_projection_currentness_test.cjs": {
-      "sha256": "17893b351eda90d6e861b9b698fae9b363e1083b2359363722a947cb117c018e",
-      "bytes": 9861
+      "sha256": "702cc2c66318f801f319dcab899c6987b704853f05148f351ab02b58bb18c157",
+      "bytes": 10424
     },
     "tests/libra_state_projection_partial_failure_test.cjs": {
       "sha256": "c9c740d16d51e394dff1ae125b961b27b13fb5b9901024a0aa66f3bfb6c7ff46",

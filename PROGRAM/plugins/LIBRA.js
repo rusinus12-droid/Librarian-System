@@ -36147,6 +36147,12 @@ function createLibraReadonlySourceContext(owner) {
       if (!(domain === 'narrative' && field === 'locks') && MICRO_STATE_RECORD_FIELDS.has(statePipelineRiskFieldKey(field))) return 'state_field_names_record';
       return '';
     };
+    // Reasons that cannot change by waiting: the stored claim's own value, quote or field is what
+    // failed, so re-reading it decides the same way. They are reported (settledClaims) instead of
+    // holding the whole projection; a failed read, an unready domain or an unresolved target may
+    // still resolve, so those keep their claim pending.
+    const MICRO_SETTLED_ADMISSION = /^(state_value_not_source_bound|state_value_shape_invalid|state_field_names_record|narrative_thread_canonical_only|narrative_field_canonical_only|relationship_field_invalid|relationship_quantitative_state_forbidden|state_goal_is_observed_action|appearance_attribute_not_bound_to_subject_quote)$/;
+    const microAdmissionSettled = reason => MICRO_SETTLED_ADMISSION.test(String(reason || ''));
     const microNarrativeCandidateField = (domain, field) => domain === 'narrative'
       && ['threads', 'arcs', 'resolvedArcs', 'turningPoints', 'motifs', 'closedThreads', 'events'].includes(field);
     const microCollectionIntent = intent => MICRO_STRING_COLLECTION_FIELDS.has(intent?.field)
@@ -56150,7 +56156,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       try { registry = await storage.getVerifiedJson(key.entityRegistry(scope), scope, null); }
       catch (_) { /* A missing verified Registry leaves entity changes pending. */ }
       const worldlineId = hostWorldlineIdForScope(scope);
-      const pendingClaims = [], transitions = [];
+      const pendingClaims = [], transitions = [], settledClaims = [];
       let projectedThroughTurn = canonicalThroughTurn;
       if (!genesis && canonicalThroughTurn > 0) {
         let admissionKeys = null;
@@ -56448,7 +56454,9 @@ function mountMemorySuiteReanalysisReview(container,config) {
                   continue;
                 }
                 if (read.status !== 'admitted') {
-                  pendingClaims.push({ turn, claimIndex, reason: read.reason || read.status });
+                  const reason = read.reason || read.status;
+                  if (microAdmissionSettled(reason)) { settledClaims.push({ turn, claimIndex, reason }); continue; }
+                  pendingClaims.push({ turn, claimIndex, reason });
                   continue;
                 }
                 const decision = asObject(read.decision), intent = asObject(claim.stateIntent);
@@ -56579,7 +56587,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const microProjection = { schema: 'libra.micro_state_projection.v1',
         canonicalThroughTurn, throughTurn: projectedThroughTurn, observedThroughTurn: pairs.length,
         status: pendingClaims.length ? 'partial' : 'current',
-        transitions, pendingClaims: pendingClaims.slice(0, 64) };
+        transitions, pendingClaims: pendingClaims.slice(0, 64), settledClaims: settledClaims.slice(0, 64) };
       head.microProjection = clone(microProjection);
       head.throughTurn = projectedThroughTurn;
       if (pendingClaims.length || genesis) head.status = 'partial';
@@ -76906,23 +76914,27 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return turns.length ? Math.min(...turns) : Number(value.throughTurn || 0);
     };
 
-    // The card must name the reason it waits: a held domain, queued applications, or Micro claims
-    // that could not be bound to their quote. Approving such a claim in the review screen cannot
-    // help — the same value/quote check runs again — so the note asks for a re-analysis instead of
-    // leaving a generic "확인 중" line.
+    // The card must name what happened to the projection: a held domain, queued applications, Micro
+    // claims that may still resolve, and Micro claims whose own value/quote was rejected. The last
+    // group is a decision, not a wait — it is reported here but no longer keeps the State waiting,
+    // and no note asks for a re-analysis (a claim whose quote omits the value fails the same way).
     const stateProjectionNotes = ({ authority, basis, through, pendingApplications = 0 }) => {
-      const value = asObject(authority), notes = [];
-      const microPending = asArray(asObject(value.microProjection).pendingClaims);
-      const turns = [...new Set(microPending.map(claim => Number(claim?.turn)).filter(turn => Number.isFinite(turn) && turn > 0))].sort((a, b) => a - b);
-      // Say what actually blocks the claim when the reason is the user-visible kind; never tell the
-      // reader to re-analyze, because a claim whose quote omits the value fails the same way again.
-      const causes = [...new Set(microPending.map(claim => string(claim?.reason)).filter(Boolean))];
-      const cause = causes.length === 1 && causes[0] === 'state_value_not_source_bound' ? ' · 값 이름이 인용문에 없음' : '';
+      const value = asObject(authority), projection = asObject(value.microProjection), notes = [];
+      const microPending = asArray(projection.pendingClaims), settled = asArray(projection.settledClaims);
+      const spanOf = rows => {
+        const turns = [...new Set(rows.map(row => Number(row?.turn)).filter(turn => Number.isFinite(turn) && turn > 0))].sort((a, b) => a - b);
+        return turns.length ? ` · T${turns[0]}${turns.at(-1) !== turns[0] ? `–T${turns.at(-1)}` : ''}` : '';
+      };
+      const causeOf = rows => {
+        const causes = [...new Set(rows.map(row => string(row?.reason)).filter(Boolean))];
+        return causes.length === 1 && causes[0] === 'state_value_not_source_bound' ? ' · 값 이름이 인용문에 없음' : '';
+      };
       if (asArray(value.pendingDomains).length) notes.push(`대기 영역: ${asArray(value.pendingDomains).join(', ')}`);
       if (pendingApplications) notes.push(`상태 적용 ${pendingApplications}건 보류`);
-      if (microPending.length) notes.push(`미크로 보류 ${microPending.length}건${turns.length ? ` · T${turns[0]}${turns.at(-1) !== turns[0] ? `–T${turns.at(-1)}` : ''}` : ''}${cause}`);
+      if (microPending.length) notes.push(`미크로 보류 ${microPending.length}건${spanOf(microPending)}${causeOf(microPending)}`);
       else if (value.pending === true && !notes.length) notes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
-      if (!microPending.length && Number(through) > Number(basis)) notes.push(`미크로 T${through}까지 반영`);
+      if (!microPending.length && !settled.length && Number(through) > Number(basis)) notes.push(`미크로 T${through}까지 반영`);
+      if (settled.length) notes.push(`기록 ${settled.length}건 반영 안 함${spanOf(settled)}${causeOf(settled)}`);
       return notes;
     };
 
