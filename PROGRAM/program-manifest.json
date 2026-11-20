@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T03:30:00.433Z",
+  "generatedAt": "2026-11-20T03:37:47.099Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -1942,6 +1942,14 @@
     "docs/GUI_WORKSPACE_5_20.md": {
       "sha256": "a95d8f9a8ec9399904076807ce2f16839daecd1c021bf1e41acb081fb85178aa",
       "bytes": 5702
+    },
+    "docs/gui-redesign/assets/fonts/IBMPlexMono-OFL.txt": {
+      "sha256": "23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f",
+      "bytes": 5299
+    },
+    "docs/gui-redesign/assets/fonts/SpaceGrotesk-OFL.txt": {
+      "sha256": "18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3",
+      "bytes": 4314
     },
     "docs/gui-redesign/assets/suite.css": {
       "sha256": "520a9d62cc8aaf76faa36209b0b7779efed41b77622d218f29083784b04ec87b",

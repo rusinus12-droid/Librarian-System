@@ -1,291 +1,261 @@
-<p align="center"><img src="PROGRAM/docs/brand/librarian-system.svg" width="96" alt="Librarian System"></p>
-
-# Librarian System
-
-<p>
-<img src="PROGRAM/docs/brand/libra.svg" width="28" alt="LIBRA"> <img src="PROGRAM/docs/brand/flashback.svg" width="28" alt="FLASHBACK"> <img src="PROGRAM/docs/brand/hayaku.svg" width="28" alt="HAYAKU"> <img src="PROGRAM/docs/brand/lia.svg" width="28" alt="LIA"> <img src="PROGRAM/docs/brand/retrace.svg" width="28" alt="RE:TRACE"> <img src="PROGRAM/docs/brand/gradia.svg" width="28" alt="GRADIA">
+<p align="center">
+  <img src="PROGRAM/docs/brand/librarian-system.svg" width="112" alt="Librarian System 심볼: 선반 위 여섯 권의 책">
 </p>
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/rusinus12-droid/Librarian-System)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![RisuAI](https://img.shields.io/badge/Host-RisuAI_Plugin_Suite-purple.svg)](https://github.com/kwaroran/RisuAI)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-red.svg)](./LICENSE)
+<h1 align="center">Librarian System</h1>
 
-**Librarian System**은 **RisuAI**에서 장기 기억과 서사 연속성을 안정적으로 관리하기 위한 **로컬 서버 + 플러그인 스위트**입니다.
-핵심 목표는 "기억을 많이 저장"하는 것이 아니라, **근거가 검증된 기억만 안전하게 보존하고 현재 대화에 정확히 연결**하는 것입니다.
+<p align="center"><b>근거가 있는 기억만, 지금의 이야기에.</b></p>
 
-## 🧭 프로젝트 한눈에 보기 (TL;DR)
+<p align="center">
+  <img src="PROGRAM/docs/brand/libra.svg" width="36" alt="LIBRA">&nbsp;
+  <img src="PROGRAM/docs/brand/flashback.svg" width="36" alt="FLASHBACK">&nbsp;
+  <img src="PROGRAM/docs/brand/hayaku.svg" width="36" alt="HAYAKU">&nbsp;
+  <img src="PROGRAM/docs/brand/lia.svg" width="36" alt="LIA">&nbsp;
+  <img src="PROGRAM/docs/brand/retrace.svg" width="36" alt="RE:TRACE">&nbsp;
+  <img src="PROGRAM/docs/brand/gradia.svg" width="36" alt="GRADIA">
+</p>
 
-| 항목 | 내용 |
-| :--- | :--- |
-| **무엇인가요?** | RisuAI용 로컬 메모리 인프라입니다. 서버(`Librarian System Server`)와 6개 플러그인(`LIBRA`, `Flashback`, `HAYAKU`, `LIA`, `RE:TRACE`, `GRADIA`)으로 구성됩니다. |
-| **왜 필요한가요?** | 긴 대화/분기형 대화에서 기억 혼합, 근거 없는 요약, 상태 불일치 문제를 줄이기 위해서입니다. |
-| **무엇이 다른가요?** | `Source-Bound Proof`(원문 근거 검증), `Worldline`(분기 격리), `State Projection`(현재 상태 투영), `CAS + SQLite WAL`(무결성 중심 저장)을 제공합니다. |
-| **어떻게 시작하나요?** | ① Node.js 설치 → ② 서버 실행 → ③ RisuAI에 플러그인 등록 및 서버 주소(`http://127.0.0.1:47630`) 연결 |
+<p align="center">
+  <a href="https://github.com/rusinus12-droid/Librarian-System"><img src="https://img.shields.io/badge/version-1.3.0-2f3f8f.svg" alt="Version"></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node.js-%3E%3D22.13.0-126457.svg?logo=node.js&logoColor=white" alt="Node.js"></a>
+  <a href="https://github.com/kwaroran/Risuai"><img src="https://img.shields.io/badge/Host-RisuAI_Plugin_Suite-6b3fa0.svg" alt="RisuAI"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-a3365a.svg" alt="License: AGPL v3"></a>
+</p>
 
-## 🔄 기본 동작 흐름
+Librarian System은 **RisuAI**를 위한 로컬 기억 인프라입니다. 로컬 서버 하나와 플러그인 여섯 개로 이루어져 있습니다.
 
-1. 플러그인이 대화에서 기억 후보를 추출합니다.
-2. 로컬 서버가 스코프/리비전/CAS 규칙으로 저장 무결성을 검증합니다.
-3. 필요 시 검증된 기억만 다시 조회되어 프롬프트에 반영됩니다.
-
----
-
-## ✨ 핵심 특징
-
-- **🔗 6종 플러그인 생태계**: 장기 서사 기억(`LIBRA`), 에피소드 회상(`Flashback`), 시공간/위치 연속성(`HAYAKU`), 페르소나·로어 링킹(`LIA`), 스코프·백업 관리(`RE:TRACE`), 다중 기억 기반 서사 보조(`GRADIA`)로 구성된 통합 아키텍처.
-- **🛡️ 무결성 중심의 로컬 서버 (`node:sqlite`)**: 외부 데이터베이스 설치 없이 Node.js 내장 SQLite(WAL 모드)를 사용하여 CAS(Compare-And-Swap) 리비전 관리, 암호화 해시 검증, 자동 백업 및 복구를 수행합니다.
-- **🌿 네이티브 분기(Worldline) 완벽 대응**: 채팅 분기, 재생성(Reroll), 이어하기 발생 시 이전 세계선의 기억이 섞이지 않도록 스코프와 리비전 경계를 엄격하게 분리·추적합니다.
-- **📦 코드(`PROGRAM`)와 데이터(`DATA`)의 완전한 분리**: 업데이트 중 오류가 발생해도 기존 `DATA`를 보호하며, 저널 기반 자동 롤백(`UPDATER`)을 지원합니다.
-- **💻 크로스 플랫폼 지원**: Windows(`.bat`), macOS(`.command`), Linux 및 Android Termux(`.sh`) 원클릭 런처를 기본 제공합니다.
+목표는 기억을 많이 쌓는 것이 아닙니다. **원문 근거가 확인된 기억만 남기고, 그 기억을 지금의 대화에 정확히 잇는 것**입니다. 긴 채팅, 분기와 재생성이 잦은 채팅에서도 기억이 섞이거나 근거 없는 요약이 끼어들지 않게 합니다.
 
 ---
 
-## 🧩 시스템 아키텍처
+## 한 서고, 여섯 개의 역할
+
+| | 플러그인 | 맡은 일 |
+| :---: | :--- | :--- |
+| <img src="PROGRAM/docs/brand/libra.svg" width="40" alt=""> | **LIBRA** · 장기 서사 기억 | 원문 근거로 검증한 것만 정본으로 남기고, 지금의 인물·세계·관계 상태로 투영합니다. |
+| <img src="PROGRAM/docs/brand/flashback.svg" width="40" alt=""> | **FLASHBACK** · 에피소드 회상 | 지나간 장면을 원문째 다시 꺼내 지금의 대화에 비춥니다. |
+| <img src="PROGRAM/docs/brand/hayaku.svg" width="40" alt=""> | **HAYAKU** · 시공간 연속성 | 누가, 어디에, 언제 있는지를 턴마다 이어 붙입니다. |
+| <img src="PROGRAM/docs/brand/lia.svg" width="40" alt=""> | **LIA** · 페르소나 링커 | 이 기기 안에서 페르소나를 만들고 다듬어 채팅에 연결합니다. |
+| <img src="PROGRAM/docs/brand/retrace.svg" width="40" alt=""> | **RE:TRACE** · 인계와 보관 | 다음 세션 인계, 백업과 복원, 스코프 관리를 맡습니다. |
+| <img src="PROGRAM/docs/brand/gradia.svg" width="40" alt=""> | **GRADIA** · 서사 보조 | 세 기억을 읽기만 하고, AIDE 단계를 거치며 응답 초안을 다듬습니다. |
+
+기억을 **소유**하는 것은 LIBRA·FLASHBACK·HAYAKU 셋입니다. LIA는 이 기기에만 페르소나를 보관하고, RE:TRACE는 세 소유자 사이의 인계와 관리를 조정합니다. GRADIA는 어떤 기억도 쓰지 않는 읽기 전용 소비자입니다.
+
+---
+
+## 설계 원칙
+
+**근거가 먼저입니다.** 모든 기억은 그 기억이 나온 원문 메시지와 묶여 있습니다. 원문이 바뀌면 그 기억은 다시 확인되기 전까지 지금의 근거로 쓰이지 않습니다.
+
+**세계선은 섞이지 않습니다.** 채팅 분기, 재생성, 롤백이 일어나면 스코프와 리비전 경계로 각 세계선의 기억을 따로 추적합니다. 다른 세계선의 기억이 지금의 대화에 들어오지 않습니다.
+
+**필터는 "보지 마"이지 "바뀌었다"가 아닙니다.** 원문 태그 필터를 추가하거나 고쳐도 기존 기억은 무효가 되지 않습니다. 저장본과 현재본을 모두 지금의 필터로 읽어 비교하고, 필터가 보는 부분이 실제로 바뀐 경우에만 원문 변경으로 판단합니다. ([원문 태그 필터 원칙](./PROGRAM/docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md))
+
+**실패는 그 부분만 막습니다.** 상태 투영에서 한 항목을 적용하지 못하면 그 항목만 보류하고 나머지는 반영합니다. 모델 문맥이 부족하면 출력 예약, 공유 참조, 부가 지시 순으로 덜어 내며 턴을 끝까지 진행합니다.
+
+**로컬에 남습니다.** 데이터는 이 기기의 `DATA/` 폴더나 RisuAI 브라우저 저장소에만 있습니다. 서버는 기본적으로 loopback(`127.0.0.1`)에서만 열리고, 외부 데이터베이스나 클라우드 서비스가 필요하지 않습니다.
+
+---
+
+## 구조
 
 ```mermaid
 flowchart TB
-    subgraph Host["RisuAI 클라이언트 (Browser / WebView)"]
+    subgraph Host["RisuAI (브라우저 · WebView)"]
         direction TB
-        subgraph Owners["기억 소유자 플러그인 (Storage Owners)"]
-            LIBRA["LIBRA<br/>(정본/Micro 기억 · 상태 투영 · 그래프 회상)"]
-            FB["Flashback<br/>(에피소드 기억 · 채팅 어텐션)"]
-            HAYAKU["HAYAKU<br/>(장소/인물 연속성 · 위치 추적)"]
+        subgraph Owners["기억 소유자"]
+            LIBRA["LIBRA<br/>정본 · Micro · 상태 · 렌즈"]
+            FB["FLASHBACK<br/>에피소드 · 인물 사전"]
+            HAYAKU["HAYAKU<br/>패킷 · 세계선 노드"]
         end
-        LIA["LIA<br/>(local_only · 페르소나 수동 갱신)"]
-        Persona[("RisuAI Persona · 기기 저장소")]
+        LIA["LIA<br/>local_only 페르소나"]
+        Persona[("RisuAI Persona<br/>기기 저장소")]
         LIA <--> Persona
-        RETRACE["RE:TRACE<br/>(manager_only · 인계/서버 관리)"]
+        RETRACE["RE:TRACE<br/>manager_only · 인계 · 백업"]
         RETRACE -->|인계 조정| LIBRA & FB & HAYAKU
-        GRADIA["GRADIA<br/>(읽기 전용 다중 기억 소비자 · 서사 보조)"]
+        GRADIA["GRADIA<br/>읽기 전용 · SHADOW와 AIDE"]
         GRADIA -->|검증된 근거 읽기| LIBRA & FB & HAYAKU
     end
 
-    subgraph Server["Librarian System Data Server v1.3.0 (127.0.0.1:47630)"]
-        Router["Authenticated HTTP Router<br/>(Scoped Capability Auth / CAS)"]
-        Coord["Authority Coordinator & Writer Fence"]
-        SQLite[("DATA/stores/*.sqlite<br/>(WAL Mode / Tombstone / Revision)")]
-        Backup["Auto Backup & Portable Transfer"]
+    subgraph Server["Librarian System Data Server v1.3.0 · 127.0.0.1:47630"]
+        Router["인증된 HTTP 라우터<br/>스코프 권한 · CAS"]
+        Coord["권한 조정 · 쓰기 펜스"]
+        SQLite[("DATA/stores/*.sqlite<br/>WAL · 리비전 · 삭제 표식")]
+        Backup["자동 백업 · 이동용 내보내기"]
         Router --> Coord --> SQLite
         SQLite --> Backup
     end
 
-    Owners <-->|"Storage SDK<br/>(server_only / plugin_only)"| Router
+    Owners <-->|"Storage SDK<br/>server_only · plugin_only"| Router
     RETRACE -->|관리 권한| Router
+    GRADIA -.->|읽기 세션| Router
 ```
+
+한 턴은 이렇게 흐릅니다.
+
+1. 응답이 끝나면 소유자 플러그인이 그 턴의 원문(U+A)을 영수증으로 남기고 기억 후보를 만듭니다.
+2. 저장소(서버의 SQLite 또는 플러그인 저장소)가 스코프·리비전·CAS 규칙으로 쓰기를 검증합니다.
+3. 다음 요청 직전, 원문과 아직 맞는 기억만 골라 공통 예산 안에서 프롬프트에 넣습니다.
 
 ---
 
-## 📦 구성 컴포넌트 (v1.3.0 기준)
+## 구성 컴포넌트 (v1.3.0 기준)
 
 | 컴포넌트 | 버전 | 구분 | 주요 역할 |
 | :--- | :---: | :---: | :--- |
-| **Librarian System Server** | `1.3.0` | 로컬 서버 | SQLite 기반 KV/그래프 저장소, 스코프 카탈로그, 자동 백업 및 무결성 검증 서버 |
-| **LIBRA** | `3.0.8` | 플러그인 (Owner) | 5턴 정본(Canonical) + 매 턴 Micro 기억 추출, 현재 상태(State Head) 투영, 시맨틱/어휘 하이브리드 회상 |
-| **Flashback Memory** | `2.0.6` | 플러그인 (Owner) | 대화 맥락 장기 에피소드 기억, 벡터/키워드 검색, 제로터치 채팅 어텐션 버튼 |
-| **HAYAKU Locator Continuity** | `4.0.7` | 플러그인 (Owner) | 장면 전환·장소 이동·인물 배치 연속성 추적 및 빠른 위치 컨텍스트 복원 |
-| **LIA Persona Linker** | `0.30.3` | 플러그인 (Local owner) | 기기 전용 페르소나 관리·수동 갱신 및 월드 로어북(Lorebook) BM25F 재순위화 |
-| **RE:TRACE** | `2.0.2` | 플러그인 (Manager) | 서버/로컬 스코프 통합 조회, 고정(Pin), 삭제 보호, ZIP 백업 내보내기/복원 관리 GUI |
-| **GRADIA** | `1.1.4` | 플러그인 (Consumer) | `LIBRA`·`Flashback`·`HAYAKU`의 검증된 기억 근거를 읽기 전용으로 통합 소비하는 소설/서사 생성 보조기 |
+| **Librarian System Server** | `1.3.0` | 로컬 서버 | Node.js 내장 SQLite(WAL) 저장소, 스코프 카탈로그, 읽기 세션, 자동 백업과 무결성 검증 |
+| **LIBRA** | `3.0.8` | 기억 소유자 | 5턴 정본과 매 턴 Micro, 상태 투영, 사용자 렌즈, 이야기 시계, 하이브리드 회상 |
+| **Flashback Memory** | `2.0.6` | 기억 소유자 | 턴 단위 에피소드 저장, 벡터·키워드 회상, 인물 사전, 확인 후 실행하는 유지보수 |
+| **HAYAKU Locator Continuity** | `4.0.7` | 기억 소유자 | 응답에 담긴 상태 패킷, 세계선 노드, 위치·인물 배치 연속성, 누락 복구 |
+| **LIA Persona Linker** | `0.30.3` | 기기 전용 | 페르소나 생성(4가지 방식)·편집·번역, 이미지 에셋, 라이브러리 저장, 채팅 연결 |
+| **RE:TRACE** | `2.0.2` | 관리자 | 다음 세션 인계, 소유자별 결과 확인, 백업·복원·초기화, 서버 스코프 관리 |
+| **GRADIA** | `1.1.4` | 읽기 전용 소비자 | SHADOW 초안과 인물·세계관·플롯 AIDE, 확장 AIDE, 소설·RP 모드 |
 
-> **호환 SDK**: Storage SDK `1.8.35` · Compute SDK `0.3.8`
-
----
-
-## 🔍 플러그인 상세 구현 (코드 기준)
-
-아래 내용은 `PROGRAM/plugins/*.js`, `PROGRAM/server/server.cjs`, `PROGRAM/server/core/gradia-*-read-session.cjs`의 현재 구현을 기준으로 정리했습니다.
-
-### 1) 리브라 (Libra, `libra`)
-
-- **역할/문제**
-  - 장기 서사 메모리의 정본(canonical)·마이크로 메모리·상태 정보를 유지하고, 회상/인계 시 소스 불변(immutable-source) 규약을 지키는 핵심 Owner입니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/LIBRA.js`
-  - 서버 API: `POST /v1/libra/graph-lifecycle`, `POST /v1/kv/batch`, `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`
-  - RE:TRACE IPC 채널/액션: `libra_memory_bridge_request_v1` / `...response_v1`, `prepare_session_handoff`, `adopt_session_handoff`, `verify_session_handoff`, `rollback_lens_session_handoff`
-  - 출력 이벤트 캡처: `addRisuChatListener('output')` 우선, 레거시 경로 보조
-- **핵심 메커니즘/흐름**
-  1. 대화 출력 이벤트에서 U+A 증거를 수집하고 메모리/상태 후보를 구성
-  2. 스코프/리비전/다이제스트 기반 검증 후 저장 (`plugin_only` 또는 서버 라우팅)
-  3. 핸드오프 시 소스 스냅샷 무결성(fingerprint) 확인 후 대상 채팅에 채택(adopt) 및 검증(verify)
-- **사용자 기능**
-  - 정본 메모리 관리, 상태 추적, 회상 보조, RE:TRACE 연계 핸드오프
-- **설정/제약**
-  - RE:TRACE 호환 스키마: `retrace.peer_compatibility.v1`
-  - 핸드오프 계약: `libra.handoff_immutable_source_lenses.v2`
-  - 대용량 저장/검증은 Storage SDK 규약과 서버 무결성 상태에 의존
-
-### 2) 하야쿠 (Hayaku, `hayaku_locator_continuity`)
-
-- **역할/문제**
-  - 장면/위치/인물 연속성(Locator continuity)과 패킷 기반 기억을 유지하고, 회복(recovery) 및 핸드오프 시 내구성 검증을 수행합니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/HAYAKU_Locator_Continuity.js`
-  - 서버 API: `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`, `POST /v1/hayaku/read-session/capture`, `POST /v1/hayaku/read-session/current`
-  - RE:TRACE IPC: `hayaku_memory_bridge_request_v1` / `...response_v1`, `inspect`, `adopt_session_handoff`, `memory_suite_storage_status`
-- **핵심 메커니즘/흐름**
-  1. 출력 캡처 이벤트를 기준으로 ledger/packet 상태를 갱신
-  2. 핸드오프 시 `expectedRecords`·스코프 식별자 검증 후 채택 실행
-  3. 채택 전/후 `MemorySuiteStorageBridge.ensureHandoffReady(...)`로 저장 경로 일관성 확인
-- **사용자 기능**
-  - 위치/상황 연속성 유지, 복구/점검, RE:TRACE를 통한 안전한 세션 인계
-- **설정/제약**
-  - 핸드오프 계약: `hayaku.handoff_immutable_source.v1`
-  - 읽기 세션에서 archive/packet을 예산(`maxCorpusBytes`, raw/metadata budget) 내 검증적으로 로드
-
-### 3) 플래시백 (Flashback, `flashback_memory`)
-
-- **역할/문제**
-  - 에피소드형 대화 기억을 장기 보관하고, 현재 채팅 맥락에서 필요한 기억을 재구성하는 Owner입니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/Flashback_Memory.js`
-  - 서버 API: `POST /v1/flashback/writer`, `POST /v1/manager/scopes/index`, `POST /v1/flashback/read-session/capture`, `POST /v1/flashback/read-session/current`
-  - RE:TRACE IPC: `flashback_memory_bridge_request_v1` / `...response_v1`, `adopt_session_handoff`, `memory_suite_prepare_server_scope_delete`
-- **핵심 메커니즘/흐름**
-  1. 출력 이벤트 기반으로 회상 후보/세션 상태를 기록
-  2. 서버 모드에서는 writer fence 및 scope pin capability를 활용해 안전 저장
-  3. 핸드오프 채택 시 LIA 연속성 정보(있을 경우)를 함께 검증하여 반영
-- **사용자 기능**
-  - 에피소드 기억 저장/회상, 세션 인계 시 보존 검증, 서버 스코프 정리 가드
-- **설정/제약**
-  - 핸드오프 계약: `flashback_memory.handoff_immutable_source.v2`
-  - scope 삭제/복구 작업은 RE:TRACE 요청 + 서버 capability 조건을 충족해야 수행
-
-### 4) 리아 (Ria, `lia_persona_linker`)
-
-- **역할/문제**
-  - 채팅별로 Persona를 연결·관리하고, Persona와 세계관 초안을 만들며, 로어 재순위화(BM25F 스타일)를 담당합니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/LIA_Persona_Linker.js`
-  - 주요 IPC: `lia_persona_handoff_request_v1` (저장 상태 조회)
-  - 저장 정책: `local_only` · Persona와 작업 자료를 이 기기에 보관
-- **사용자 기능**
-  - 채팅별 Persona 연결, 전체 대화 변화 검토, 세계관 로어 정렬 보조
-- **설정/제약**
-  - RE:TRACE가 다음 세션을 만들 때 새 채팅은 원본 채팅의 Persona 연결을 그대로 이어받습니다.
-  - 대화 출력을 감시하지 않으며, 검토는 사용자가 실행할 때만 동작합니다.
-  - 일부 연산은 현재 캐릭터/채팅 인덱스 API 가용성에 의존하며 불일치 시 fail-closed
-
-### 5) 그라디아 (Gradia, `serial_gradation_agents_for_rp`)
-
-- **역할/문제**
-  - 자체적으로 Owner 데이터를 쓰지 않고, LIBRA/HAYAKU/Flashback의 **검증된 읽기 세션**을 통합해 서사 작성 파이프라인(Shadow/AIDE 단계)을 보조하는 Consumer입니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/GRADIA.js`
-  - 서버 읽기 전용 API:
-    - `POST /v1/libra/read-session/capture|current`
-    - `POST /v1/hayaku/read-session/capture|current`
-    - `POST /v1/flashback/read-session/capture|current`
-  - 서버 권한 모델: `/bootstrap` 시 `x-memory-suite-read-owners`로 허용 owner 집합 선언
-- **핵심 메커니즘/흐름**
-  1. 선택한 플러그인 IPC 또는 서버 연결로 owner의 증거를 획득하며, 서버 경로에서는 read-session `capture`로 스냅샷을 획득
-  2. `current` 호출로 reset epoch/의존성 digest가 여전히 유효한지 확인
-  3. 유효한 증거만 프롬프트 주입(읽기 전용, owner 쓰기 금지)
-- **사용자 기능**
-  - 다중 기억 근거를 결합한 장면/서사 작성 보조, 단계별 모델 프리셋/입력 보조
-- **설정/제약**
-  - `mode`, `multi_pipeline_mode`, `writing_mode`, 다수 LLM/프리셋/로어 관련 `@arg` 제공
-  - 서버는 GRADIA를 read-only principal로 제한하며 일반 쓰기/compute 경로를 차단
-
-### 6) 리트레이스 (Retrace, `flashback_hayaku_bridge`)
-
-- **역할/문제**
-  - 플러그인 간 호환성/핸드오프/서버 관리의 허브입니다. 직접 Owner 데이터를 생성하기보다, 각 Owner의 증거/상태를 검증해 안전한 세션 인계를 조정합니다.
-- **연결 이벤트·API·파일**
-  - 플러그인 파일: `PROGRAM/plugins/RETRACE.js`
-  - 허용 액션 집합(Owner별): `inspect`, `adopt_session_handoff`, `prepare_session_handoff`, `verify_session_handoff`, `memory_suite_storage_status` 등
-  - 서버 관리 API: `/v1/manager/scopes`, `/v1/manager/scope-pin`, `/v1/manager/scope-delete/*`, `/v1/manager/portable/*`
-- **핵심 메커니즘/흐름**
-  1. Owner별 compatibility contract(`retrace.peer_compatibility.v1`) 수집
-  2. 인계 전 source-immutable/durable-readback 조건 확인
-  3. 인계 후 owner receipt를 교차 검증하고, 서버 스코프 관리 작업(핀/삭제/복원)을 가드된 경로로 실행
-- **사용자 기능**
-  - 다음 세션 인계, 호환성 매트릭스, 백업/복원/스코프 관리 GUI
-- **설정/제약**
-  - 기본 서버 URL 설정 키: `memory_suite_server_url`
-  - manager 권한이 필요한 작업은 서버 capability 미충족 시 차단
-
-### 플러그인 상호작용과 시스템 내 위치
-
-1. **Owner 계층**: `LIBRA`/`Flashback`/`HAYAKU`가 플러그인·서버 저장을 선택하고, `LIA`는 기기 전용으로 Persona를 관리
-2. **Orchestrator 계층**: `RE:TRACE`가 owner IPC를 통해 호환성·인계·관리 작업을 조정
-3. **Consumer 계층**: `GRADIA`가 owner 데이터를 쓰지 않고 read-session API로 근거만 소비
-4. **Server 계층**: `PROGRAM/server/server.cjs`가 플러그인 식별(`x-memory-suite-plugin`)과 capability 토큰으로 권한을 분리하고, KV/manager/admin/read-session 라우트를 제공
+> 호환 SDK: Storage SDK `1.8.35` · Compute SDK `0.3.8`
 
 ---
 
-## 🚀 시작하기 (Quick Start)
+## 플러그인
 
-### 1. 사전 요구사항 (필수)
+### <img src="PROGRAM/docs/brand/libra.svg" width="28" alt=""> LIBRA · 장기 서사 기억
+
+정본의 사서입니다. 대화를 원문 근거와 함께 기록하고, 그 근거가 유지되는 동안만 기억으로 씁니다.
+
+- **완료 턴 영수증:** 응답이 끝날 때마다 그 턴의 사용자 입력과 응답 원문을 변경할 수 없는 영수증으로 남깁니다. 이후의 모든 기억은 이 영수증에 묶입니다.
+- **Micro와 정본:** 매 턴 Micro 기억(사건·변화·인물 후보)을 만들고, 5턴마다 그 구간을 종합해 정본(Canonical) 기억으로 확정합니다.
+- **상태 투영:** 정본과 그 뒤의 Micro를 합쳐 지금의 인물·세계·관계·서사 상태(State)를 만듭니다. 적용하지 못한 항목만 보류하고, 사용자가 기억 검토에서 승인하거나 거절할 수 있습니다.
+- **렌즈와 이야기 시계:** 몸 상태, 약속처럼 사용자가 정한 관점의 렌즈 노트를 따로 기록하고, 이야기 속 시간을 이어서 셉니다.
+- **회상:** 의미 검색과 어휘 검색을 함께 써서 지금의 입력에 맞는 기억을 고르고, 다른 두 소유자와 공통 예산을 나눠 씁니다. 이미 화면에 보이는 최근 턴은 회상에서 뺍니다.
+- **원문 재분석:** 원문을 고쳤거나 다시 분석하고 싶은 구간을 직접 골라 정본·Micro·렌즈를 다시 만듭니다.
+
+### <img src="PROGRAM/docs/brand/flashback.svg" width="28" alt=""> FLASHBACK · 에피소드 회상
+
+그 장면을 다시 꺼냅니다. 요약하지 않고 턴의 원문을 그대로 보관했다가, 지금의 대화와 닿는 장면을 돌려줍니다.
+
+- **턴 단위 보관:** 사용자 입력과 응답을 한 턴으로 묶어 원문째 저장하고, 응답 원문 보관함(필름 보관함)에서 확인할 수 있습니다.
+- **회상:** 임베딩 벡터와 키워드를 함께 써서 관련 장면을 찾습니다.
+- **인물 사전:** 대화에 등장한 인물을 모아 회상 패널과 상단 메뉴에서 찾아볼 수 있습니다.
+- **유지보수:** 누락, 변경, 원문 태그 규칙 반영처럼 다시 정리할 턴과 예상 비용을 먼저 보여 주고, 확인한 뒤에만 실행합니다.
+
+### <img src="PROGRAM/docs/brand/hayaku.svg" width="28" alt=""> HAYAKU · 시공간 연속성
+
+누가, 어디에, 언제 있는지를 놓치지 않습니다.
+
+- **상태 패킷:** 응답 안에 숨겨진 상태 패킷으로 장소, 시간, 인물 배치를 기록합니다. 패킷은 원문 태그 필터의 대상이 아니라서, 필터를 바꿔도 기록이 끊기지 않습니다.
+- **세계선 노드:** 턴마다 노드를 두고 분기, 재생성, 롤백을 구분합니다. 다른 노드의 기록은 지금의 턴에 묶이지 않습니다.
+- **복구:** 놓친 턴을 찾아 Cold Start, 누락 복구, 실패 기록 정리로 채웁니다. 실행 전에 대상 턴과 예상 호출 수를 보여 줍니다.
+
+### <img src="PROGRAM/docs/brand/lia.svg" width="28" alt=""> LIA · 페르소나 링커
+
+나를 이야기에 잇습니다. 모든 자료는 이 기기에만 저장하고(`local_only`), 서버를 쓰지 않습니다.
+
+- **생성:** 기본, 무작위, 캐릭터에서 추출, 사용자가 쓴 대화에서 추출의 네 가지 방식으로 페르소나 후보를 만듭니다.
+- **편집:** 23개 항목을 원문과 번역으로 따로 다루고, 고정한 항목은 다시 생성해도 바뀌지 않습니다.
+- **에셋과 라이브러리:** 기본 표정과 감정별 이미지를 만들고, 결과를 기기 라이브러리에 저장하거나 RisuAI 페르소나로 채택합니다.
+- **채팅 연결:** 채팅마다 페르소나를 연결하고, 사용자가 실행할 때만 최근 다섯 턴이나 전체 대화를 검토해 변화를 제안합니다.
+- **로어 정렬:** 월드 로어북 항목을 지금의 대화에 맞게 BM25F 방식으로 다시 정렬합니다.
+
+### <img src="PROGRAM/docs/brand/retrace.svg" width="28" alt=""> RE:TRACE · 인계와 보관
+
+길을 거슬러 잇습니다. 기억을 직접 만들지 않고, 세 소유자의 기억이 안전하게 옮겨지도록 조정합니다.
+
+- **다음 세션 인계:** 긴 채팅을 새 채팅으로 이어 갈 때 LIBRA·FLASHBACK·HAYAKU의 기억을 원본 그대로 옮기고, 소유자마다 결과를 교차 확인합니다. LIA의 페르소나 연결도 함께 이어집니다.
+- **백업과 복원:** 서버와 플러그인 스코프를 ZIP으로 내보내고 되돌립니다. 결과를 알 수 없는 작업은 보호된 상태로 남깁니다.
+- **스코프 관리:** 서버와 기기의 스코프를 한 화면에서 보고, 고정(Pin)과 삭제 보호를 관리합니다.
+
+### <img src="PROGRAM/docs/brand/gradia.svg" width="28" alt=""> GRADIA · 서사 보조
+
+한 단계씩 다듬는 초안입니다. 세 소유자의 검증된 근거를 읽기만 하고, 어떤 기억도 쓰지 않습니다.
+
+- **파이프라인:** SHADOW가 첫 초안을 쓰고, 인물·세계관·플롯 AIDE가 차례로 점검하고 고칩니다. 소설 모드와 RP 모드는 서로 다른 규칙을 따르며, RP에서는 페르소나의 행동을 대신 정하지 않습니다.
+- **확장 AIDE:** 상태(몸 상태), 억결(관계 형성), 세계 동역학(장면 밖의 움직임), 관계 시뮬레이터, 정사 AIDE를 필요에 따라 켭니다. 확장 AIDE는 상위 AIDE의 하위 단계로 실행됩니다.
+- **장면 연속성:** 의상, 물건, 인물의 자세와 위치를 상태로 다루어, 보이는 행동 없이 바뀌지 않게 합니다. NPC 반응 경향성과 이번 턴의 변수도 장면 안에서만 작동합니다.
+- **근거 읽기:** 플러그인 IPC 또는 서버 읽기 세션으로 근거를 가져오고, 쓰기 직전에 그 근거가 아직 유효한지 다시 확인합니다.
+- **문맥 예산:** 모델 문맥이 부족하면 출력 예약, 공유 참조, NPC 경향성 설명, 이번 턴 변수 순으로 덜어 내고, 무엇을 덜었는지 결과에 남깁니다.
+
+---
+
+## 시작하기
+
+### 1. 준비
 
 > [!IMPORTANT]
-> 일반 배포 ZIP에는 Node.js 실행 파일이 포함되어 있지 않습니다.
-> 서버 실행 전 반드시 **Node.js `22.13.0` 이상** (현재 LTS 버전 권장)을 설치해야 합니다 (`node:sqlite` 내장 모듈 사용).
-> - 공식 다운로드: [https://nodejs.org/](https://nodejs.org/)
-> - Android Termux 환경: 먼저 `sh "PROGRAM/안드로이드_Termux_준비.sh"`를 실행하여 환경을 구성하세요.
+> 배포 ZIP에는 Node.js가 들어 있지 않습니다. 서버를 실행하기 전에 **Node.js `22.13.0` 이상**(LTS 권장)을 설치하세요. 서버는 Node.js 내장 `node:sqlite`를 씁니다.
+> - 공식 다운로드: [nodejs.org](https://nodejs.org/)
+> - Android Termux: 먼저 `sh "PROGRAM/안드로이드_Termux_준비.sh"`로 환경을 준비하세요.
 
 ### 2. 서버 실행
 
-원하는 폴더에 패키지를 압축 해제한 뒤, 운영체제에 맞는 실행 스크립트를 더블클릭하거나 터미널에서 실행합니다.
+패키지를 원하는 폴더에 풀고, 운영체제에 맞는 스크립트를 실행합니다.
 
-| 운영체제 | 포그라운드 실행 | 백그라운드 실행 | 서버 종료 | 상태 확인 |
+| 운영체제 | 실행 | 백그라운드 실행 | 종료 | 상태 확인 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Windows** | `PROGRAM\1_서버_실행.bat` | `PROGRAM\서버_백그라운드_실행.bat` | `PROGRAM\2_서버_종료.bat` | `PROGRAM\서버_상태_확인.bat` |
 | **macOS** | `PROGRAM/macOS_서버_실행.command` | `PROGRAM/서버_백그라운드_실행.sh` | `PROGRAM/2_서버_종료.sh` | `PROGRAM/서버_상태_확인.sh` |
-| **Linux / Termux** | `PROGRAM/1_서버_실행.sh` | `PROGRAM/서버_백그라운드_실행.sh` | `PROGRAM/2_서버_종료.sh` | `PROGRAM/서버_상태_확인.sh` |
+| **Linux · Termux** | `PROGRAM/1_서버_실행.sh` | `PROGRAM/서버_백그라운드_실행.sh` | `PROGRAM/2_서버_종료.sh` | `PROGRAM/서버_상태_확인.sh` |
 
-- 기본 바인딩 주소는 `http://127.0.0.1:47630` (Loopback 전용)입니다.
-- 47630 포트를 다른 프로그램이 쓰고 있다면 서버를 끈 상태에서 `PROGRAM\서버_포트_변경.bat`(Windows) 또는 `sh PROGRAM/서버_포트_변경.sh`(macOS · Linux · Termux)로 포트를 바꿉니다. 도구가 서버가 꺼졌는지와 새 포트가 비어 있는지 확인한 뒤 `DATA/config/server-config.json`에 저장합니다. 그다음 플러그인마다 서버 주소를 새 주소로 바꿔야 합니다. 플러그인은 주소를 각자 저장하므로 한 곳만 바꾸면 나머지는 예전 포트에 남습니다(LIBRA · HAYAKU · Flashback: 서버 연결 설정, GRADIA: 소스 탭, RE:TRACE: 서버 관리 → 연결 진단. LIA는 서버를 쓰지 않습니다). 서버 단독으로 쓰는 스코프가 있어도, 새 포트로 서버를 실행한 뒤 바꾸면 플러그인이 같은 DATA임을 확인하고 주소만 옮깁니다(자세한 내용: [사용설명서](./PROGRAM/docs/사용설명서.md)의 '서버 포트 바꾸기').
-- **Docker**로 서버를 실행할 수 있습니다: 패키지 폴더에서 `docker compose -f PROGRAM/docker/compose.yaml up -d --build`. 플러그인 주소는 그대로(`http://127.0.0.1:47630`)이고, 컨테이너는 별도 기기로 취급하므로 처음 실행 로그에 나온 **접근 키**를 넣습니다. 다른 기기에서 쓰려면 `PROGRAM\서버_외부접속_설정.bat` · `sh PROGRAM/서버_외부접속_설정.sh`로 **원격 접속 모드**를 켜고 Tailscale이나 Cloudflare Tunnel의 `https://` 주소로 연결합니다(Tailscale은 `서버_원격접속_열기` 도구가 열고 닫습니다). 원격 접속 모드에서는 이 PC의 플러그인도 접근 키가 필요합니다(자세한 내용: [서버 사용과 접속 관련 상세 안내](./PROGRAM/서버_사용과_접속_관련_상세_안내.txt)).
+- 기본 주소는 `http://127.0.0.1:47630`이며 이 기기에서만 접속할 수 있습니다.
+- **포트 바꾸기:** 47630 포트를 다른 프로그램이 쓰고 있다면, 서버를 끈 상태에서 `PROGRAM\서버_포트_변경.bat` 또는 `sh PROGRAM/서버_포트_변경.sh`로 바꿉니다.
+  - 도구가 서버가 꺼졌는지와 새 포트가 비어 있는지 확인한 뒤 `DATA/config/server-config.json`에 저장합니다.
+  - 플러그인은 서버 주소를 각자 저장하므로, 플러그인마다 새 주소로 바꿔 주세요. 위치는 LIBRA·HAYAKU·FLASHBACK은 서버 연결 설정, GRADIA는 소스 탭, RE:TRACE는 서버 관리 → 연결 진단입니다. LIA는 서버를 쓰지 않습니다.
+  - 자세한 내용: [사용설명서](./PROGRAM/docs/사용설명서.md)의 '서버 포트 바꾸기'
+- **Docker:** 패키지 폴더에서 `docker compose -f PROGRAM/docker/compose.yaml up -d --build`로 실행합니다. 플러그인 주소는 그대로 두고, 첫 실행 로그에 나온 **접근 키**를 넣습니다.
+- **다른 기기에서 쓰기:** `PROGRAM\서버_외부접속_설정.bat` 또는 `sh PROGRAM/서버_외부접속_설정.sh`로 원격 접속 모드를 켜고, Tailscale이나 Cloudflare Tunnel의 `https://` 주소로 연결합니다. Tailscale은 `서버_원격접속_열기` 도구가 열고 닫습니다. 원격 접속 모드에서는 이 PC의 플러그인도 접근 키가 필요합니다. 자세한 내용: [서버 사용과 접속 관련 상세 안내](./PROGRAM/서버_사용과_접속_관련_상세_안내.txt)
 
-### 3. RisuAI 플러그인 설치 및 연결
+### 3. 플러그인 설치
 
-1. RisuAI 실행 후 **설정(Settings) → 플러그인(Plugins)** 메뉴로 이동합니다.
-2. [`PROGRAM/plugins/`](./PROGRAM/plugins) 폴더 내에 있는 필요한 플러그인(`.js`) 파일들을 등록합니다:
-   - `LIBRA.js`
-   - `Flashback_Memory.js`
-   - `HAYAKU_Locator_Continuity.js`
-   - `LIA_Persona_Linker.js`
-   - `RETRACE.js`
-   - `GRADIA.js`
-3. 각 플러그인의 **서버 연결 설정**에서 Librarian System Server(`http://127.0.0.1:47630`)에 연결하고 저장 모드를 선택합니다.
+1. RisuAI에서 **설정 → 플러그인**으로 이동합니다.
+2. [`PROGRAM/plugins/`](./PROGRAM/plugins)의 플러그인 파일을 등록합니다.
+   - `LIBRA.js` · `Flashback_Memory.js` · `HAYAKU_Locator_Continuity.js`
+   - `LIA_Persona_Linker.js` · `RETRACE.js` · `GRADIA.js`
+3. LIBRA·HAYAKU·FLASHBACK의 서버 연결 설정에서 `http://127.0.0.1:47630`에 연결하고 저장 모드를 고릅니다.
 
-### 4. RisuAI HypaV3 끄기 (기억 사용 기준)
+### 4. RisuAI HypaV3 끄기
 
-리브라·하야쿠·플래시백을 쓰는 채팅에서는 **RisuAI의 HypaV3(장기 기억 요약)를 끄는 것을 기준으로 합니다.** 지난 대화의 기억은 세 플러그인이 맡습니다.
+LIBRA·HAYAKU·FLASHBACK을 쓰는 채팅에서는 **RisuAI의 HypaV3(장기 기억 요약)를 끄는 것을 기준으로 합니다.** 지난 대화의 기억은 세 플러그인이 맡습니다.
 
-- **끄는 이유:** HypaV3 요약은 원문 근거 없이 다시 쓴 문장입니다. 원문을 고쳐도 요약이 갱신되지 않고, 관련 없는 요약 일부를 무작위로 넣습니다. 요약이 실패하면 메시지 전송이 멈춥니다. 플러그인 기억과 함께 쓰면 같은 과거가 두 번 들어가고 문맥 자리도 서로 나눠 씁니다.
-- **끄는 순서:** 이미 긴 채팅이라면 먼저 각 플러그인에서 과거 기억이 준비됐는지(리브라 분석, 플래시백 현재 채팅 가져오기 등) 확인한 뒤 HypaV3를 끕니다. 끄더라도 채팅에 저장된 HypaV3 요약은 지워지지 않습니다.
-- **기억 분량 조절:** 원문 태그 필터 화면의 **기억 주입 공통 예산**에서 세 플러그인이 넣을 기억의 총량과 비율을 정할 수 있습니다.
-- **임시로 켜도 되는 경우:** 플러그인 기억이 아직 준비되지 않은 긴 채팅이나, 리브라 분석을 쓰지 않는 환경입니다. 이때는 HypaV3의 메모리 비율(`memoryTokensRatio`)을 낮게 잡으세요.
+- **끄는 이유:**
+  - HypaV3 요약은 원문 근거 없이 다시 쓴 문장이라, 원문을 고쳐도 갱신되지 않습니다.
+  - 요약이 실패하면 메시지 전송이 멈춥니다.
+  - 플러그인 기억과 함께 쓰면 같은 과거가 두 번 들어갑니다.
+- **끄는 순서:** 이미 긴 채팅이라면 먼저 각 플러그인의 과거 기억이 준비됐는지 확인한 뒤 끄세요. 확인할 것은 LIBRA 분석, FLASHBACK 현재 채팅 가져오기 등입니다. 채팅에 저장된 HypaV3 요약은 지워지지 않습니다.
+- **임시로 켜도 되는 경우:** 플러그인 기억이 아직 준비되지 않은 긴 채팅이라면 HypaV3의 메모리 비율(`memoryTokensRatio`)을 낮게 잡고 켜 두세요.
 
-자세한 근거: [HypaV3를 끄고 LIB로 기억을 맡기는 기준](./PROGRAM/docs/HYPAV3_RETIREMENT_POLICY_20261119.md) · [기억 주입 공통 예산과 중복 제거](./PROGRAM/docs/MEMORY_SUITE_RECALL_SHARE_20261119.md)
-
----
-
-## 💾 저장 모드 안내 (Storage Modes)
-
-Librarian System은 두 가지 정식 저장 모드와 한 가지 이관용 전환 모드를 제공합니다.
-
-1. **`server_only` (서버 단독 - 권장)**
-   - 모든 기억과 인덱스를 로컬 서버(`DATA/`)의 SQLite DB에 안전하게 저장합니다.
-   - 브라우저 용량 제한이 없으며, 자동 백업·스냅샷 복원·정합성 검증을 완벽히 지원합니다.
-2. **`plugin_only` (플러그인 단독)**
-   - 서버 없이 RisuAI 브라우저 내부 저장소(`pluginStorage` / IndexedDB)와 로컬 JS 연산만 사용합니다.
-3. **`mirror` (레거시 전환 단계)**
-   - 현재 서버 부트스트랩 계약(`memory-suite.storage-mode-contract.v2`) 기준 운영 모드는 `plugin_only`/`server_only`이며, `mirror`는 전환 호환(legacy transition) 용도로만 유지됩니다.
-   - 신규 설정에서는 단독 모드(`plugin_only` 또는 `server_only`)를 기준으로 사용하세요.
+자세한 근거: [HypaV3를 끄고 LIB로 기억을 맡기는 기준](./PROGRAM/docs/HYPAV3_RETIREMENT_POLICY_20261119.md)
 
 ---
 
-## 🔄 업데이트 및 데이터 안전 가이드
+## 기억을 다루는 설정
 
-### 기존 사용자 업데이트 방법
-명령어를 직접 입력할 필요 없이 최상위 폴더의 업데이트 실행 파일을 실행하세요.
+### 저장 모드
+
+| 모드 | 저장 위치 | 쓰임 |
+| :--- | :--- | :--- |
+| **`server_only`** (권장) | 로컬 서버의 `DATA/` SQLite | 브라우저 용량 제한이 없고, 자동 백업·스냅샷 복원·정합성 검증을 모두 지원합니다. |
+| **`plugin_only`** | RisuAI 브라우저 저장소 | 서버 없이 플러그인 안의 저장소와 연산만 씁니다. |
+| `mirror` | 두 저장 위치 | 예전 설정을 옮기는 전환 단계로만 남아 있습니다. 새 설정에서는 두 단독 모드 중 하나를 쓰세요. |
+
+### 기억 주입 공통 예산
+
+세 소유자가 프롬프트에 넣을 기억의 총량과 비율을 한곳에서 정합니다. 같은 내용을 여러 플러그인이 넣으면 한 번만 남깁니다. ([기억 주입 공통 예산과 중복 제거](./PROGRAM/docs/MEMORY_SUITE_RECALL_SHARE_20261119.md))
+
+### 원문 태그 필터
+
+상태창, 삽화, 번역 표식처럼 분석에서 뺄 태그와 표식을 정합니다.
+
+- 각 플러그인의 메인 화면에서 열고, 세 소유자에게 같은 규칙을 함께 적용할 수 있습니다.
+- 필터를 바꿔도 기존 기억은 그대로 유효합니다.
+- 필터를 바꾼 뒤 지금의 규칙으로 다시 분석할지는 사용자가 원문 재분석이나 유지보수에서 직접 고릅니다.
+
+---
+
+## 업데이트와 데이터 안전
+
+명령어를 입력할 필요 없이 최상위 폴더의 업데이트 실행 파일을 실행하세요.
+
 - **Windows**: `업데이트.bat`
 - **macOS**: `업데이트.command`
-- **Linux / Termux**: `업데이트.sh`
+- **Linux · Termux**: `업데이트.sh`
 
 ```text
 [업데이트 메뉴]
@@ -295,60 +265,65 @@ Librarian System은 두 가지 정식 저장 모드와 한 가지 이관용 전�
 ```
 
 > [!WARNING]
-> **데이터 보호 주의사항**
-> - **절대 새 배포판의 빈 `DATA` 폴더를 기존 `DATA` 폴더 위에 수동으로 덮어쓰지 마세요.**
-> - 업데이터(`UPDATER`)가 기존 `DATA`를 자동으로 보존하고, 필요한 경우 안전하게 마이그레이션합니다.
-> - 업데이트 도중 예기치 않게 중단된 경우, 업데이트 메뉴의 **`3. 미완료 업데이트 복구`**를 실행하면 이전 `PROGRAM`/`DATA` 쌍으로 안전하게 롤백됩니다.
-> - 서버 업데이터는 RisuAI 앱 내부에 로드된 플러그인을 자동 교체할 수 없으므로, 플러그인 버전이 변경된 경우 `PROGRAM/plugins/`의 최신 `.js` 파일을 RisuAI에 다시 적용해 주세요.
+> - **새 배포판의 빈 `DATA` 폴더를 기존 `DATA` 위에 덮어쓰지 마세요.** 업데이터(`UPDATER`)가 기존 `DATA`를 보존하고 필요하면 마이그레이션합니다.
+> - 업데이트가 중간에 멈췄다면 메뉴의 **`3. 미완료 업데이트 복구`**로 이전 `PROGRAM`·`DATA` 쌍으로 되돌립니다.
+> - 업데이터는 RisuAI 안에 이미 로드된 플러그인을 바꾸지 못합니다. 플러그인 버전이 바뀌었다면 `PROGRAM/plugins/`의 최신 파일을 RisuAI에 다시 등록하세요.
 
 ---
 
-## 📂 디렉토리 구조
+## 폴더 구조
 
 ```text
 Librarian-System/
-├── 0_설치_안내.txt               # 빠른 설치 및 업데이트 안내문
-├── 업데이트.bat / .command / .sh # 크로스 플랫폼 대화형 업데이터 런처
-├── update-manifest.json          # 릴리스 버전 및 에셋 무결성 매니페스트
-├── SHA256SUMS.txt                # 전체 배포 파일 SHA-256 체크섬 목록
-├── DATA/                         # [사용자 데이터 영역] DB, 설정, 백업, 로그 (수동 덮어쓰기 금지)
-├── UPDATER/                      # 트랜잭션 기반 자동 업데이트 및 롤백 엔진
-└── PROGRAM/                      # [실행 프로그램 영역]
-    ├── 1_서버_실행.*             # OS별 서버 구동 스크립트
-    ├── 2_서버_종료.*             # OS별 서버 안전 종료 스크립트
-    ├── program-manifest.json     # 플러그인/SDK 버전 및 파일 해시 명세
-    ├── server/                   # Node.js 로컬 서버 코어 (server.cjs, authority, portable 등)
-    ├── plugins/                  # RisuAI 설치용 6종 플러그인 번들 (.js)
-    ├── sdk/                      # Storage SDK 및 Compute SDK 소스
-    ├── tools/                    # 런처, 데이터 준비, RAG 평가, 배포 빌드 도구
-    ├── tests/                    # 단위·통합·브라우저·회귀 테스트 스위트
-    └── docs/                     # 아키텍처 설계 계약서 및 릴리스 검증 보고서
+├── 0_설치_안내.txt               # 설치와 업데이트 안내
+├── 업데이트.bat / .command / .sh # 대화형 업데이터
+├── update-manifest.json          # 릴리스 버전과 에셋 무결성 매니페스트
+├── SHA256SUMS.txt                # 배포 파일 SHA-256 목록
+├── DATA/                         # 사용자 데이터: DB, 설정, 백업, 로그 (덮어쓰기 금지)
+├── UPDATER/                      # 트랜잭션 기반 업데이트와 롤백
+└── PROGRAM/                      # 실행 프로그램
+    ├── 1_서버_실행.* · 2_서버_종료.*
+    ├── program-manifest.json     # 플러그인·SDK 버전과 파일 해시
+    ├── server/                   # 로컬 서버 (server.cjs, 권한, 이동용 내보내기)
+    ├── plugins/                  # RisuAI에 등록할 플러그인 6종
+    ├── sdk/                      # Storage SDK · Compute SDK 원본
+    ├── tools/                    # 런처, 데이터 준비, 배포 빌드 도구
+    ├── tests/                    # 단위·통합·브라우저·회귀 테스트
+    └── docs/                     # 설계 문서, 검증 보고서, 브랜드(docs/brand)
 ```
 
 ---
 
-## 🛠️ 개발 및 테스트 (Development)
+## 개발과 테스트
 
 ```bash
-# Node.js 런타임 및 SQLite 지원 여부 확인
+# Node.js 런타임과 SQLite 지원 확인
 node PROGRAM/tools/check_node.cjs
 
-# 데이터 폴더 초기화 및 레이아웃 검증
+# 데이터 폴더 준비와 레이아웃 검증
 node PROGRAM/tools/platform_launcher.cjs prepare
 
-# 전체 회귀 테스트 런처 (Linux/macOS)
+# 전체 회귀 테스트 (Linux · macOS)
 sh PROGRAM/관리도구/전체_자동시험.sh
 
-# 메타데이터 및 패키지 레이아웃 일관성 테스트
+# 메타데이터와 패키지 레이아웃 일관성
 node PROGRAM/tests/program_data_layout_test.cjs
 node PROGRAM/tests/distribution_metadata_coherence_test.cjs
 
-# 전체 회귀 배치 테스트 실행
+# 회귀 배치
 python3 PROGRAM/run_regression_batch.py
 ```
 
+릴리스 전에는 GitHub Actions의 **Release Builder Gate**(배포 빌드, 스모크 테스트, 플러그인 회귀)와 **RisuAI Compatibility Gate**(고정된 RisuAI 원본 기준 플러그인 계약 검사)를 통과해야 합니다.
+
 ---
 
-## 📄 라이선스 (License)
+## 브랜드
 
-이 프로젝트는 **[GNU Affero General Public License v3.0 (AGPL-3.0)](./LICENSE)** 라이선스 하에 배포됩니다.
+심볼, 색, 글꼴의 기준은 [Librarian Suite CI](./PROGRAM/docs/brand/README.md)에 있습니다.
+
+모든 심볼은 같은 골격(48 그리드, 둥근 선, 타일 모서리 25%) 위에 색 하나와 기호 하나를 얹습니다. 플러그인 GUI는 각자의 테마를 유지하고, 로고 타일과 글꼴로 한 가족임을 나타냅니다.
+
+## 라이선스
+
+이 프로젝트는 **[GNU Affero General Public License v3.0](./LICENSE)**으로 배포됩니다. GUI에 내장한 Space Grotesk와 IBM Plex Mono는 SIL Open Font License 1.1을 따릅니다.
