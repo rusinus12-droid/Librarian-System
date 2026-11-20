@@ -43458,12 +43458,1050 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     }
   };
 
+  // ===========================================================================
+  // GRADIA Per-Chat Continuity (Native Branch / Chat Copy) & JSON Backup Engine
+  // ===========================================================================
+  const MemorySuiteHostLineage = (() => {
+    const schema = 'librarian.host_lineage.v1';
+    const str = value => value == null ? '' : String(value);
+    const object = value => value && typeof value === 'object' ? value : {};
+    const unwrap = value => object(value?.msg || value);
+    const messages = chat => Array.isArray(chat?.message) ? chat.message : Array.isArray(chat?.messages) ? chat.messages : [];
+    const chatId = chat => str(chat?.id || chat?.chatId || '');
+    const characterId = character => str(character?.chaId || character?.id || character?.characterId || '');
+    const role = value => {
+      const item = unwrap(value), r = str(item.role || item.type || '').toLowerCase();
+      return ['user', 'human', 'player'].includes(r) ? 'user'
+        : ['char', 'assistant', 'character', 'bot', 'ai', 'model'].includes(r) ? 'assistant' : r;
+    };
+    const body = value => {
+      const item = unwrap(value), data = item.data ?? item.content ?? item.text ?? '';
+      return typeof data === 'string' ? data : JSON.stringify(data);
+    };
+    const descriptor = value => {
+      const item = unwrap(value);
+      return [role(item), str(item.chatId || item.id || ''), body(item), item.disabled === true, item.isComment === true, str(item.saying || '')];
+    };
+    const same = (a, b) => { const x = descriptor(a), y = descriptor(b); return x.every((v, i) => v === y[i]); };
+    const countPairs = list => {
+      let pending = false, complete = false, total = 0;
+      for (const raw of list) {
+        const item = unwrap(raw);
+        if (item.disabled === true || item.isComment === true || !body(item).trim()) continue;
+        const r = role(item);
+        if (r === 'user') { if (complete) total += 1; pending = true; complete = false; }
+        else if (r === 'assistant' && pending) complete = true;
+      }
+      return total + (complete ? 1 : 0);
+    };
+    const fingerprint = list => {
+      let a = 0x811c9dc5, b = 0x9e3779b9;
+      for (const item of list) {
+        const t = JSON.stringify(descriptor(item)) + '\u0000';
+        for (let i = 0; i < t.length; i += 1) {
+          a = Math.imul(a ^ t.charCodeAt(i), 0x01000193) >>> 0;
+          b = Math.imul(b ^ t.charCodeAt(i), 0x85ebca6b) >>> 0;
+        }
+      }
+      return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0');
+    };
+    const marker = chat => {
+      const rows = messages(chat);
+      let found = null;
+      for (let i = 0; i < rows.length; i += 1) {
+        const item = unwrap(rows[i]), t = body(item);
+        if (item.isComment !== true || item.disabled !== true || role(item) !== 'assistant' || !t.startsWith('{{specialcomment::branchedfrom::')) continue;
+        found = { present: true, valid: false, markerIndex: i, parentChatId: '', parentName: '', forkMessageId: '' };
+        if (!t.endsWith('::}}')) continue;
+        const fields = t.slice('{{specialcomment::branchedfrom::'.length, -'::}}'.length).split('::');
+        if (fields.length < 3) continue;
+        const parentChatId = fields.shift(), forkMessageId = fields.pop();
+        const parentName = fields.join('::');
+        found = { ...found, parentChatId, parentName, forkMessageId, valid: !!parentChatId && !!forkMessageId && !['undefined', 'null'].includes(forkMessageId) };
+      }
+      return found || { present: false, valid: false, markerIndex: -1, parentChatId: '', parentName: '', forkMessageId: '' };
+    };
+    const prefix = (parent, child, limit = messages(child).length) => {
+      const left = messages(parent), right = messages(child);
+      const end = Math.min(left.length, right.length, Math.max(0, limit));
+      let common = 0;
+      while (common < end && same(left[common], right[common])) common += 1;
+      const rows = right.slice(0, common);
+      return { commonPrefixMessages: common, commonPrefixPairs: countPairs(rows), prefixDigest: fingerprint(rows) };
+    };
+    const inspect = (characterValue, chatValue) => {
+      const character = object(characterValue), chat = object(chatValue), id = chatId(chat), mark = marker(chat);
+      const base = {
+        schema, hostVersion: '2026.8.250', characterId: characterId(character), hostChatId: id,
+        kind: mark.present ? 'native_branch' : 'independent_chat', status: 'independent', reason: 'no_native_branch_marker',
+        parentChatId: mark.parentChatId, parentName: mark.parentName, forkMessageId: mark.forkMessageId,
+        markerIndex: mark.markerIndex, forkMessageIndex: mark.markerIndex - 1, commonPrefixMessages: 0,
+        commonPrefixPairs: 0, prefixDigest: '', path: id ? [id] : [], pathVerified: !mark.present, inheritanceEligible: false
+      };
+      if (!id || !base.characterId) return { ...base, status: 'unverified', reason: 'host_identity_missing', pathVerified: false };
+      if (!mark.present) return base;
+      if (!mark.valid || mark.parentChatId === id) return { ...base, status: 'unverified', reason: 'invalid_branch_marker', pathVerified: false };
+      const chats = Array.isArray(character.chats) ? character.chats : [];
+      const parents = chats.filter(item => chatId(item) === mark.parentChatId);
+      if (parents.length !== 1) return { ...base, status: 'unverified', reason: parents.length ? 'duplicate_parent_identity' : 'parent_unavailable', pathVerified: false };
+      if (chats.filter(item => chatId(item) === id).length > 1) return { ...base, status: 'unverified', reason: 'duplicate_target_identity', pathVerified: false };
+      const parent = parents[0], childRows = messages(chat), parentRows = messages(parent);
+      const common = prefix(parent, chat, mark.markerIndex);
+      const result = { ...base, ...common, status: 'unverified', pathVerified: false, path: [mark.parentChatId, id] };
+      const forkIndexes = parentRows.map((item, i) => str(unwrap(item).chatId) === mark.forkMessageId ? i : -1).filter(i => i >= 0);
+      const childForkIndexes = childRows.slice(0, mark.markerIndex).map((item, i) => str(unwrap(item).chatId) === mark.forkMessageId ? i : -1).filter(i => i >= 0);
+      if (forkIndexes.length !== 1 || childForkIndexes.length !== 1) return { ...result, reason: 'fork_identity_not_unique' };
+      if (forkIndexes[0] !== mark.markerIndex - 1 || childForkIndexes[0] !== mark.markerIndex - 1) return { ...result, reason: 'fork_position_mismatch' };
+      if (common.commonPrefixMessages !== mark.markerIndex) return { ...result, status: 'diverged', reason: 'branch_prefix_changed' };
+      if (Number(parent.fmIndex ?? -1) !== Number(chat.fmIndex ?? -1)) return { ...result, status: 'diverged', reason: 'greeting_selection_changed' };
+      return { ...result, status: 'verified', reason: 'exact_host_branch_prefix', inheritanceEligible: true, pathVerified: true, pathReason: '' };
+    };
+    return Object.freeze({ schema, marker, prefix, inspect, countPairs, fingerprint, same });
+  })();
+  const STORAGE_GRADIA_HANDOFF_LEDGER_KEY = 'serial_gradation_agents_for_rp:handoff_ledger:v1';
+  const GRADIA_HANDOFF_LEDGER_MAX = 64;
+  const GRADIA_PORTABLE_BACKUP_SCHEMA = 'gradia.portable_chat_backup.v1';
+  const GRADIA_PORTABLE_BACKUP_FORMAT_VERSION = 1;
+  const GRADIA_PORTABLE_RESTORE_MODES = Object.freeze({
+    SAME_CHAT_REPLACE: 'same_chat_replace',
+    OTHER_CHAT_REPLACE: 'other_chat_replace',
+    OTHER_CHAT_MERGE: 'other_chat_merge',
+    UPDATED_BOT_REPLACE: 'updated_bot_replace'
+  });
+  const GradiaContinuityRuntime = {
+    checkedByScope: new Map(),
+    inFlightByScope: new Map(),
+    lastResult: null,
+    lastBackupExport: null,
+    lastBackupRestore: null
+  };
+
+  const gradiaChatIdOf = chat => text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
+  const gradiaCharacterIdOf = character => text(character?.chaId || character?.id || character?.characterId || '').trim();
+  const gradiaChatTitleOf = (chat, fallbackIndex = -1) => text(
+    chat?.name || chat?.title || chat?.chatName || chat?.filename || (fallbackIndex >= 0 ? `채팅 #${fallbackIndex + 1}` : gradiaChatIdOf(chat))
+  ).trim();
+  const gradiaChatMessagesOf = chat => Array.isArray(chat?.message)
+    ? chat.message
+    : Array.isArray(chat?.messages) ? chat.messages : [];
+
+  const resolveGradiaChatFromHost = async (chatId = '') => {
+    const liveApi = getLiveApi(['getCharacter']);
+    const character = typeof liveApi?.getCharacter === 'function' ? await liveApi.getCharacter() : null;
+    if (!character || typeof character !== 'object') return { character: null, chat: null, chatId: '', chatIndex: -1 };
+    const chats = Array.isArray(character.chats) ? character.chats : [];
+    const wanted = text(chatId || '').trim();
+    let chat = null;
+    let chatIndex = -1;
+    if (wanted) {
+      chatIndex = chats.findIndex(item => gradiaChatIdOf(item) === wanted);
+      chat = chatIndex >= 0 ? chats[chatIndex] : null;
+    } else {
+      let idx = Number.isInteger(character.chatPage) ? character.chatPage : 0;
+      if (typeof liveApi?.getCurrentChatIndex === 'function') {
+        try {
+          const liveIdx = Number(await liveApi.getCurrentChatIndex());
+          if (Number.isInteger(liveIdx) && liveIdx >= 0) idx = liveIdx;
+        } catch (_) {}
+      }
+      chatIndex = idx >= 0 && idx < chats.length ? idx : (chats.length ? 0 : -1);
+      chat = chatIndex >= 0 ? chats[chatIndex] : null;
+    }
+    return { character, chat, chatId: gradiaChatIdOf(chat), chatIndex };
+  };
+
+  const isGradiaRelsimChatPopulated = chat => {
+    if (!chat || typeof chat !== 'object') return false;
+    if (Object.keys(chat.pairs || {}).length > 0) return true;
+    if (Array.isArray(chat.pending) && chat.pending.length > 0) return true;
+    if (Array.isArray(chat.notes) && chat.notes.length > 0) return true;
+    if (Number(chat.turn || 0) > 0) return true;
+    return false;
+  };
+
+  const emptyGradiaChatStatePayload = () => ({
+    npcDisposition: null,
+    forcedBondCards: [],
+    bodyStateCards: [],
+    loreCards: {
+      bodyState: [],
+      forcedBond: [],
+      npcDisposition: [],
+      romancePrefs: null,
+      dismissed: { bodyState: [], forcedBond: [], npcDisposition: [], romancePrefs: [] }
+    },
+    intimacyCards: [],
+    relationshipState: null
+  });
+
+  const normalizeGradiaChatStatePayload = (raw = {}) => {
+    const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const tmpKey = '__gradia_norm__';
+    const npcMap = src.npcDisposition ? normalizeNpcDispositionMap({ [tmpKey]: src.npcDisposition }) : {};
+    const npcDisposition = npcMap[tmpKey] && !npcDispositionEntryIsEmpty(npcMap[tmpKey]) ? cloneJson(npcMap[tmpKey]) : null;
+    const bondMap = Array.isArray(src.forcedBondCards) && src.forcedBondCards.length
+      ? normalizeForcedBondCardMap({ [tmpKey]: src.forcedBondCards }) : {};
+    const forcedBondCards = Array.isArray(bondMap[tmpKey]) ? cloneJson(bondMap[tmpKey]) : [];
+    const bodyMap = Array.isArray(src.bodyStateCards) && src.bodyStateCards.length
+      ? normalizeBodyStateCardMap({ [tmpKey]: src.bodyStateCards }) : {};
+    const bodyStateCards = Array.isArray(bodyMap[tmpKey]) ? cloneJson(bodyMap[tmpKey]) : [];
+
+    const rawLc = src.loreCards && typeof src.loreCards === 'object' ? src.loreCards : {};
+    const rawDismissed = rawLc.dismissed && typeof rawLc.dismissed === 'object' ? rawLc.dismissed : {};
+    const normLore = normalizeLoreCardsStore({
+      bodyState: Array.isArray(rawLc.bodyState) && rawLc.bodyState.length ? { [tmpKey]: rawLc.bodyState } : {},
+      forcedBond: Array.isArray(rawLc.forcedBond) && rawLc.forcedBond.length ? { [tmpKey]: rawLc.forcedBond } : {},
+      npcDisposition: Array.isArray(rawLc.npcDisposition) && rawLc.npcDisposition.length ? { [tmpKey]: rawLc.npcDisposition } : {},
+      romancePrefs: rawLc.romancePrefs && typeof rawLc.romancePrefs === 'object' ? { [tmpKey]: rawLc.romancePrefs } : {},
+      dismissed: {
+        bodyState: Array.isArray(rawDismissed.bodyState) && rawDismissed.bodyState.length ? { [tmpKey]: rawDismissed.bodyState } : {},
+        forcedBond: Array.isArray(rawDismissed.forcedBond) && rawDismissed.forcedBond.length ? { [tmpKey]: rawDismissed.forcedBond } : {},
+        npcDisposition: Array.isArray(rawDismissed.npcDisposition) && rawDismissed.npcDisposition.length ? { [tmpKey]: rawDismissed.npcDisposition } : {},
+        romancePrefs: Array.isArray(rawDismissed.romancePrefs) && rawDismissed.romancePrefs.length ? { [tmpKey]: rawDismissed.romancePrefs } : {}
+      }
+    });
+    const loreCards = {
+      bodyState: Array.isArray(normLore.bodyState[tmpKey]) ? cloneJson(normLore.bodyState[tmpKey]) : [],
+      forcedBond: Array.isArray(normLore.forcedBond[tmpKey]) ? cloneJson(normLore.forcedBond[tmpKey]) : [],
+      npcDisposition: Array.isArray(normLore.npcDisposition[tmpKey]) ? cloneJson(normLore.npcDisposition[tmpKey]) : [],
+      romancePrefs: normLore.romancePrefs[tmpKey] ? cloneJson(normLore.romancePrefs[tmpKey]) : null,
+      dismissed: {
+        bodyState: Array.isArray(normLore.dismissed.bodyState[tmpKey]) ? cloneJson(normLore.dismissed.bodyState[tmpKey]) : [],
+        forcedBond: Array.isArray(normLore.dismissed.forcedBond[tmpKey]) ? cloneJson(normLore.dismissed.forcedBond[tmpKey]) : [],
+        npcDisposition: Array.isArray(normLore.dismissed.npcDisposition[tmpKey]) ? cloneJson(normLore.dismissed.npcDisposition[tmpKey]) : [],
+        romancePrefs: Array.isArray(normLore.dismissed.romancePrefs[tmpKey]) ? cloneJson(normLore.dismissed.romancePrefs[tmpKey]) : []
+      }
+    };
+
+    const intimacyMap = Array.isArray(src.intimacyCards) && src.intimacyCards.length
+      ? normalizeIntimacyCardMap({ [tmpKey]: src.intimacyCards }) : {};
+    const intimacyCards = Array.isArray(intimacyMap[tmpKey]) ? cloneJson(intimacyMap[tmpKey]) : [];
+
+    const relsimStore = src.relationshipState && typeof src.relationshipState === 'object'
+      ? normalizeRelsimStore({ chats: { [tmpKey]: src.relationshipState } })
+      : { chats: {} };
+    const relationshipState = relsimStore.chats[tmpKey] && isGradiaRelsimChatPopulated(relsimStore.chats[tmpKey])
+      ? cloneJson(relsimStore.chats[tmpKey]) : null;
+
+    return { npcDisposition, forcedBondCards, bodyStateCards, loreCards, intimacyCards, relationshipState };
+  };
+
+  const computeGradiaChatStateMetrics = payloadInput => {
+    const payload = normalizeGradiaChatStatePayload(payloadInput);
+    const lc = payload.loreCards;
+    const npcDispCount = payload.npcDisposition
+      ? ((payload.npcDisposition.default ? 1 : 0) + (Array.isArray(payload.npcDisposition.npcs) ? payload.npcDisposition.npcs.length : 0))
+      : 0;
+    const loreCardCount = lc.bodyState.length + lc.forcedBond.length + lc.npcDisposition.length + (lc.romancePrefs ? Object.keys(lc.romancePrefs).length : 0);
+    const dismissedCount = lc.dismissed.bodyState.length + lc.dismissed.forcedBond.length + lc.dismissed.npcDisposition.length + lc.dismissed.romancePrefs.length;
+    const relsimCount = payload.relationshipState ? 1 : 0;
+    const counts = {
+      npcDisposition: npcDispCount,
+      forcedBondCards: payload.forcedBondCards.length,
+      bodyStateCards: payload.bodyStateCards.length,
+      loreCards: loreCardCount,
+      dismissedLoreCards: dismissedCount,
+      intimacyCards: payload.intimacyCards.length,
+      relationshipState: relsimCount
+    };
+    const totalItems = counts.npcDisposition + counts.forcedBondCards + counts.bodyStateCards + counts.loreCards + counts.dismissedLoreCards + counts.intimacyCards + counts.relationshipState;
+    const digest = stableDraftHash(JSON.stringify(payload));
+    return { payload, counts, totalItems, digest };
+  };
+
+  const readGradiaChatStateSnapshot = async (scopeKey = '') => {
+    const key = compact(scopeKey, 512);
+    if (!key) {
+      const empty = computeGradiaChatStateMetrics(emptyGradiaChatStatePayload());
+      return { scopeKey: '', ...empty };
+    }
+    const runtimeSettings = await readRuntimeSettings();
+    const npcDispositionMap = normalizeNpcDispositionMap(runtimeSettings?.npcDisposition);
+    const forcedBondMap = normalizeForcedBondCardMap(runtimeSettings?.forcedBondCards);
+    const bodyStateMap = normalizeBodyStateCardMap(runtimeSettings?.bodyStateCards);
+    const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+    const loreStore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
+    const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+    const intimacyMap = normalizeIntimacyCardMap(rawIntimacy.cards || {});
+    const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+    const relsimStore = normalizeRelsimStore(rawRelsim);
+
+    const metrics = computeGradiaChatStateMetrics({
+      npcDisposition: npcDispositionMap[key] || null,
+      forcedBondCards: forcedBondMap[key] || [],
+      bodyStateCards: bodyStateMap[key] || [],
+      loreCards: {
+        bodyState: loreStore.bodyState[key] || [],
+        forcedBond: loreStore.forcedBond[key] || [],
+        npcDisposition: loreStore.npcDisposition[key] || [],
+        romancePrefs: loreStore.romancePrefs[key] || null,
+        dismissed: {
+          bodyState: loreStore.dismissed.bodyState[key] || [],
+          forcedBond: loreStore.dismissed.forcedBond[key] || [],
+          npcDisposition: loreStore.dismissed.npcDisposition[key] || [],
+          romancePrefs: loreStore.dismissed.romancePrefs[key] || []
+        }
+      },
+      intimacyCards: intimacyMap[key] || [],
+      relationshipState: relsimStore.chats[key] || null
+    });
+    return { scopeKey: key, ...metrics };
+  };
+
+  const mergeUniqueCards = (existing = [], incoming = [], keyFn = item => text(item?.id || item?.name || '').trim().toLowerCase()) => {
+    const out = Array.isArray(existing) ? existing.map(item => cloneJson(item)) : [];
+    const indexByKey = new Map();
+    out.forEach((item, idx) => { const k = keyFn(item); if (k) indexByKey.set(k, idx); });
+    for (const item of (Array.isArray(incoming) ? incoming : [])) {
+      const k = keyFn(item);
+      if (k && indexByKey.has(k)) out[indexByKey.get(k)] = cloneJson(item);
+      else { if (k) indexByKey.set(k, out.length); out.push(cloneJson(item)); }
+    }
+    return out;
+  };
+
+  const mergeGradiaChatStatePayloads = (existingInput, incomingInput) => {
+    const base = normalizeGradiaChatStatePayload(existingInput);
+    const inc = normalizeGradiaChatStatePayload(incomingInput);
+    const npcDisposition = (() => {
+      if (!base.npcDisposition) return inc.npcDisposition ? cloneJson(inc.npcDisposition) : null;
+      if (!inc.npcDisposition) return cloneJson(base.npcDisposition);
+      return {
+        default: inc.npcDisposition.default || base.npcDisposition.default || '',
+        npcs: mergeUniqueCards(base.npcDisposition.npcs, inc.npcDisposition.npcs, item => text(item?.name || item?.id || '').trim().toLowerCase())
+      };
+    })();
+    const bondKey = item => `${text(item?.from || '').trim().toLowerCase()}::${text(item?.to || '').trim().toLowerCase()}::${text(item?.relation || '').trim().toLowerCase()}` || text(item?.id || '').trim().toLowerCase();
+    const nameKey = item => text(item?.name || item?.id || '').trim().toLowerCase();
+    const mergeStrList = (a = [], b = []) => [...new Set([...(Array.isArray(a) ? a : []), ...(Array.isArray(b) ? b : [])].map(v => String(v || '').trim()).filter(Boolean))];
+    const loreCards = {
+      bodyState: mergeUniqueCards(base.loreCards.bodyState, inc.loreCards.bodyState, nameKey),
+      forcedBond: mergeUniqueCards(base.loreCards.forcedBond, inc.loreCards.forcedBond, bondKey),
+      npcDisposition: mergeUniqueCards(base.loreCards.npcDisposition, inc.loreCards.npcDisposition, nameKey),
+      romancePrefs: base.loreCards.romancePrefs || inc.loreCards.romancePrefs
+        ? { ...(base.loreCards.romancePrefs || {}), ...(inc.loreCards.romancePrefs || {}) }
+        : null,
+      dismissed: {
+        bodyState: mergeStrList(base.loreCards.dismissed.bodyState, inc.loreCards.dismissed.bodyState),
+        forcedBond: mergeStrList(base.loreCards.dismissed.forcedBond, inc.loreCards.dismissed.forcedBond),
+        npcDisposition: mergeStrList(base.loreCards.dismissed.npcDisposition, inc.loreCards.dismissed.npcDisposition),
+        romancePrefs: mergeStrList(base.loreCards.dismissed.romancePrefs, inc.loreCards.dismissed.romancePrefs)
+      }
+    };
+    const relationshipState = (() => {
+      if (!base.relationshipState) return inc.relationshipState ? cloneJson(inc.relationshipState) : null;
+      if (!inc.relationshipState) return cloneJson(base.relationshipState);
+      return {
+        turn: Math.max(Number(base.relationshipState.turn || 0), Number(inc.relationshipState.turn || 0)),
+        lastInputHash: text(inc.relationshipState.lastInputHash || base.relationshipState.lastInputHash || '').trim(),
+        pairs: { ...(base.relationshipState.pairs || {}), ...(inc.relationshipState.pairs || {}) },
+        pending: mergeUniqueCards(base.relationshipState.pending, inc.relationshipState.pending, item => `${item?.inputHash || ''}::${item?.createdAt || ''}`),
+        notes: mergeUniqueCards(base.relationshipState.notes, inc.relationshipState.notes, item => `${item?.at || ''}::${text(item?.text || '').trim()}`)
+      };
+    })();
+    return normalizeGradiaChatStatePayload({
+      npcDisposition,
+      forcedBondCards: mergeUniqueCards(base.forcedBondCards, inc.forcedBondCards, bondKey),
+      bodyStateCards: mergeUniqueCards(base.bodyStateCards, inc.bodyStateCards, nameKey),
+      loreCards,
+      intimacyCards: mergeUniqueCards(base.intimacyCards, inc.intimacyCards, nameKey),
+      relationshipState
+    });
+  };
+
+  const invalidateGradiaScopeCaches = (scopeKey = '') => {
+    Runtime.settings = null;
+    Runtime.settingsLoadedAt = 0;
+    Runtime.loreCards = null;
+    Runtime.intimacyCards = null;
+    Runtime.relationshipState = null;
+    if (scopeKey) Runtime.activeScopeKey = scopeKey;
+    clearRequestReuseCache();
+  };
+
+  const applyGradiaPayloadToStores = async (targetScopeKey, payload) => {
+    const key = compact(targetScopeKey, 512);
+    if (!key) throw new Error('GRADIA_TARGET_SCOPE_REQUIRED');
+    const src = normalizeGradiaChatStatePayload(payload);
+
+    // 1. runtime_settings:v2
+    const nextSettings = await readRuntimeSettings();
+    const nextNpc = normalizeNpcDispositionMap(nextSettings.npcDisposition);
+    const nextBond = normalizeForcedBondCardMap(nextSettings.forcedBondCards);
+    const nextBody = normalizeBodyStateCardMap(nextSettings.bodyStateCards);
+    if (src.npcDisposition && !npcDispositionEntryIsEmpty(src.npcDisposition)) nextNpc[key] = cloneJson(src.npcDisposition);
+    else delete nextNpc[key];
+    if (src.forcedBondCards.length) nextBond[key] = cloneJson(src.forcedBondCards);
+    else delete nextBond[key];
+    if (src.bodyStateCards.length) nextBody[key] = cloneJson(src.bodyStateCards);
+    else delete nextBody[key];
+    nextSettings.npcDisposition = nextNpc;
+    nextSettings.forcedBondCards = nextBond;
+    nextSettings.bodyStateCards = nextBody;
+    await writeRuntimeSettings(nextSettings);
+
+    // 2. lore_cards:v1
+    const lc = src.loreCards;
+    const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+    const nextLore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
+    if (lc.bodyState.length) nextLore.bodyState[key] = cloneJson(lc.bodyState); else delete nextLore.bodyState[key];
+    if (lc.forcedBond.length) nextLore.forcedBond[key] = cloneJson(lc.forcedBond); else delete nextLore.forcedBond[key];
+    if (lc.npcDisposition.length) nextLore.npcDisposition[key] = cloneJson(lc.npcDisposition); else delete nextLore.npcDisposition[key];
+    if (lc.romancePrefs) nextLore.romancePrefs[key] = cloneJson(lc.romancePrefs); else delete nextLore.romancePrefs[key];
+    if (lc.dismissed.bodyState.length) nextLore.dismissed.bodyState[key] = cloneJson(lc.dismissed.bodyState); else delete nextLore.dismissed.bodyState[key];
+    if (lc.dismissed.forcedBond.length) nextLore.dismissed.forcedBond[key] = cloneJson(lc.dismissed.forcedBond); else delete nextLore.dismissed.forcedBond[key];
+    if (lc.dismissed.npcDisposition.length) nextLore.dismissed.npcDisposition[key] = cloneJson(lc.dismissed.npcDisposition); else delete nextLore.dismissed.npcDisposition[key];
+    if (lc.dismissed.romancePrefs.length) nextLore.dismissed.romancePrefs[key] = cloneJson(lc.dismissed.romancePrefs); else delete nextLore.dismissed.romancePrefs[key];
+    await writeObject(STORAGE_LORE_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeLoreCardsStore(nextLore) });
+
+    // 3. intimacy_cards:v1
+    const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+    const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
+    if (src.intimacyCards.length) nextIntimacy[key] = cloneJson(src.intimacyCards);
+    else delete nextIntimacy[key];
+    await writeObject(STORAGE_INTIMACY_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeIntimacyCardMap(nextIntimacy) });
+
+    // 4. relationship_state:v1
+    const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+    const nextRelsim = normalizeRelsimStore(rawRelsim);
+    if (src.relationshipState && isGradiaRelsimChatPopulated(src.relationshipState)) nextRelsim.chats[key] = cloneJson(src.relationshipState);
+    else delete nextRelsim.chats[key];
+    await writeObject(STORAGE_RELATIONSHIP_STATE_KEY, { version: 1, savedAt: new Date().toISOString(), ...normalizeRelsimStore(nextRelsim) });
+  };
+
+  const writeGradiaChatStateSnapshot = async (targetScopeKey, payloadInput, options = {}) => {
+    const key = compact(targetScopeKey, 512);
+    if (!key) throw new Error('GRADIA_TARGET_SCOPE_REQUIRED');
+    const before = await readGradiaChatStateSnapshot(key);
+    const effectivePayload = options.merge === true
+      ? mergeGradiaChatStatePayloads(before.payload, payloadInput)
+      : normalizeGradiaChatStatePayload(payloadInput);
+    const expected = computeGradiaChatStateMetrics(effectivePayload);
+    try {
+      await applyGradiaPayloadToStores(key, expected.payload);
+      const after = await readGradiaChatStateSnapshot(key);
+      if (after.digest !== expected.digest) {
+        throw new Error('GRADIA_STATE_WRITE_READBACK_MISMATCH');
+      }
+      invalidateGradiaScopeCaches(key);
+      return { ok: true, verified: true, durable: true, before, after };
+    } catch (error) {
+      try {
+        await applyGradiaPayloadToStores(key, before.payload);
+        invalidateGradiaScopeCaches(key);
+      } catch (_) {}
+      throw error;
+    }
+  };
+
+  const readGradiaHandoffLedger = async () => {
+    const ledgerRaw = await readObject(STORAGE_GRADIA_HANDOFF_LEDGER_KEY, {});
+    const receipts = ledgerRaw?.receipts && typeof ledgerRaw.receipts === 'object' ? { ...ledgerRaw.receipts } : {};
+    return { ledgerRaw, receipts };
+  };
+
+  const recordGradiaHandoffReceipt = async (receiptId, receipt) => {
+    const id = text(receiptId || '').trim();
+    if (!id) return receipt;
+    const { receipts } = await readGradiaHandoffLedger();
+    receipts[id] = receipt;
+    const keys = Object.keys(receipts);
+    if (keys.length > GRADIA_HANDOFF_LEDGER_MAX) {
+      keys.sort((a, b) => Number(receipts[a]?.at || 0) - Number(receipts[b]?.at || 0))
+        .slice(0, keys.length - GRADIA_HANDOFF_LEDGER_MAX)
+        .forEach(oldKey => { delete receipts[oldKey]; });
+    }
+    await writeObject(STORAGE_GRADIA_HANDOFF_LEDGER_KEY, { version: 1, updatedAt: new Date().toISOString(), receipts });
+    return receipt;
+  };
+
+  const gradiaCopyTitleInfo = rawTitle => {
+    const raw = text(rawTitle || '').trim();
+    if (!raw) return { raw: '', marked: false, base: '', parent: '' };
+    const patterns = [
+      { re: /^(.*?)\s*\(Copy(?:\s+\d+)?\)$/i, group: 1 },
+      { re: /^Copy(?:\s+\d+)?\s+of\s+(.+)$/i, group: 1 },
+      { re: /^(.*?)\s*-\s*Copy(?:\s+\d+)?$/i, group: 1 },
+      { re: /^(.*?)\s*\(복사본(?:\s*\d+)?\)$/i, group: 1 },
+      { re: /^(.*?)\s*복사본(?:\s*\d+)?$/i, group: 1 }
+    ];
+    let current = raw;
+    let parent = '';
+    let marked = false;
+    for (let depth = 0; depth < 6; depth += 1) {
+      let matched = false;
+      for (const { re, group } of patterns) {
+        const m = current.match(re);
+        if (m && text(m[group] || '').trim()) {
+          const next = text(m[group]).trim();
+          if (!marked) parent = next;
+          marked = true;
+          current = next;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) break;
+    }
+    return { raw, marked, base: current.toLowerCase(), parent };
+  };
+
+  const inspectGradiaNativeContinuity = async (options = {}) => {
+    const resolved = await resolveGradiaChatFromHost(options.targetChatId || '');
+    if (!resolved.character || !resolved.chat) {
+      return {
+        ok: false,
+        kind: 'unavailable',
+        reason: 'active_chat_unavailable',
+        targetChatId: '',
+        targetScopeKey: '',
+        targetItems: 0,
+        hostLineage: null,
+        candidate: null,
+        candidates: []
+      };
+    }
+    const { character, chat: targetChat, chatId: targetChatId, chatIndex: targetIndex } = resolved;
+    const targetScopeKey = loreContinuityScopeKey(character, targetChat);
+    const targetSnap = await readGradiaChatStateSnapshot(targetScopeKey);
+    const hostLineage = MemorySuiteHostLineage.inspect(character, targetChat);
+    const chats = Array.isArray(character.chats) ? character.chats : [];
+
+    // 1. Native Branch (authoritative RisuAI branchedfrom marker)
+    if (hostLineage.kind === 'native_branch') {
+      if (hostLineage.inheritanceEligible !== true || hostLineage.status !== 'verified') {
+        return {
+          ok: true,
+          kind: 'native_branch',
+          eligible: false,
+          blocked: true,
+          reason: hostLineage.reason || 'branch_unverified',
+          targetChatId,
+          targetScopeKey,
+          targetItems: targetSnap.totalItems,
+          hostLineage,
+          candidate: null,
+          candidates: []
+        };
+      }
+      const parentChat = chats.find(item => gradiaChatIdOf(item) === hostLineage.parentChatId) || null;
+      if (!parentChat) {
+        return {
+          ok: true,
+          kind: 'native_branch',
+          eligible: false,
+          blocked: true,
+          reason: 'branch_parent_not_found',
+          targetChatId,
+          targetScopeKey,
+          targetItems: targetSnap.totalItems,
+          hostLineage,
+          candidate: null,
+          candidates: []
+        };
+      }
+      const sourceScopeKey = loreContinuityScopeKey(character, parentChat);
+      const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey);
+      const candidate = {
+        origin: 'native_branch',
+        reason: 'verified_native_branch',
+        sourceChatId: gradiaChatIdOf(parentChat),
+        sourceChatTitle: gradiaChatTitleOf(parentChat),
+        sourceScopeKey,
+        sourceItems: sourceSnap.totalItems,
+        sourceCounts: sourceSnap.counts,
+        sourceDigest: sourceSnap.digest,
+        commonPrefixMessages: hostLineage.commonPrefixMessages,
+        commonPrefixPairs: hostLineage.commonPrefixPairs,
+        transferId: `branch_${stableDraftHash(`${sourceScopeKey}|${targetScopeKey}`)}`
+      };
+      return {
+        ok: true,
+        kind: 'native_branch',
+        eligible: targetSnap.totalItems === 0 && sourceSnap.totalItems > 0,
+        blocked: false,
+        reason: sourceSnap.totalItems === 0 ? 'source_empty' : (targetSnap.totalItems > 0 ? 'target_already_populated' : 'ready'),
+        targetChatId,
+        targetScopeKey,
+        targetItems: targetSnap.totalItems,
+        hostLineage,
+        candidate,
+        candidates: [candidate]
+      };
+    }
+
+    // 2. Native Chat Copy (sibling chat with copy title + prefix match or exact transcript prefix match)
+    const targetTitle = gradiaCopyTitleInfo(gradiaChatTitleOf(targetChat, targetIndex));
+    const targetMsgs = gradiaChatMessagesOf(targetChat);
+    const candidates = [];
+    for (let i = 0; i < chats.length; i += 1) {
+      const sibling = chats[i];
+      if (!sibling || sibling === targetChat) continue;
+      const siblingId = gradiaChatIdOf(sibling);
+      if (!siblingId || siblingId === targetChatId) continue;
+      const siblingTitle = gradiaCopyTitleInfo(gradiaChatTitleOf(sibling, i));
+      const immediateTitle = Boolean(targetTitle.parent && siblingTitle.raw.toLowerCase() === targetTitle.parent.toLowerCase());
+      const baseTitleMatch = Boolean(targetTitle.base && siblingTitle.base === targetTitle.base);
+      const titleDetected = targetTitle.marked && baseTitleMatch;
+      const siblingMsgs = gradiaChatMessagesOf(sibling);
+      const shared = MemorySuiteHostLineage.prefix(sibling, targetChat);
+      const minLen = Math.min(siblingMsgs.length, targetMsgs.length);
+      const exactPrefixCompatible = minLen === 0 ? (siblingMsgs.length === 0 && targetMsgs.length === 0) : (shared.commonPrefixMessages === minLen);
+      const transcriptDetected = !titleDetected && minLen > 0 && shared.commonPrefixPairs >= 1 && exactPrefixCompatible;
+      if (!titleDetected && !transcriptDetected) continue;
+      if (titleDetected && !exactPrefixCompatible && !(immediateTitle && siblingMsgs.length === 0 && targetMsgs.length === 0)) continue;
+      const sourceScopeKey = loreContinuityScopeKey(character, sibling);
+      if (!sourceScopeKey || sourceScopeKey === targetScopeKey) continue;
+      const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey);
+      if (sourceSnap.totalItems <= 0) continue;
+      const priority = immediateTitle ? 700 : (titleDetected ? 600 : 400);
+      candidates.push({
+        origin: 'native_chat_copy',
+        reason: immediateTitle ? 'risu_native_chat_copy_immediate_title' : (titleDetected ? 'risu_native_chat_copy_title' : 'risu_native_chat_copy_transcript'),
+        priority,
+        sourceChatId: siblingId,
+        sourceChatTitle: gradiaChatTitleOf(sibling, i),
+        sourceScopeKey,
+        sourceItems: sourceSnap.totalItems,
+        sourceCounts: sourceSnap.counts,
+        sourceDigest: sourceSnap.digest,
+        commonPrefixMessages: shared.commonPrefixMessages,
+        commonPrefixPairs: shared.commonPrefixPairs,
+        chatIndex: i,
+        transferId: `nativecopy_${stableDraftHash(`${sourceScopeKey}|${targetScopeKey}`)}`
+      });
+    }
+    candidates.sort((a, b) => b.priority - a.priority
+      || b.commonPrefixPairs - a.commonPrefixPairs
+      || b.commonPrefixMessages - a.commonPrefixMessages
+      || b.sourceItems - a.sourceItems
+      || a.chatIndex - b.chatIndex);
+    const selected = candidates[0] || null;
+    return {
+      ok: true,
+      kind: selected ? 'native_chat_copy' : 'independent_chat',
+      eligible: Boolean(selected && targetSnap.totalItems === 0 && selected.sourceItems > 0),
+      blocked: false,
+      reason: !selected ? 'no_copy_source_found' : (targetSnap.totalItems > 0 ? 'target_already_populated' : 'ready'),
+      targetChatId,
+      targetScopeKey,
+      targetItems: targetSnap.totalItems,
+      hostLineage,
+      candidate: selected,
+      candidates
+    };
+  };
+
+  const ensureGradiaNativeContinuity = async (options = {}) => {
+    const resolved = await resolveGradiaChatFromHost(options.targetChatId || '');
+    if (!resolved.character || !resolved.chat) {
+      return { ok: false, adopted: false, skipped: true, reason: 'active_chat_unavailable' };
+    }
+    const targetScopeKey = loreContinuityScopeKey(resolved.character, resolved.chat);
+    if (!targetScopeKey) return { ok: false, adopted: false, skipped: true, reason: 'scope_unavailable' };
+
+    if (options.force !== true && GradiaContinuityRuntime.checkedByScope.has(targetScopeKey)) {
+      return GradiaContinuityRuntime.checkedByScope.get(targetScopeKey);
+    }
+    if (GradiaContinuityRuntime.inFlightByScope.has(targetScopeKey)) {
+      return await GradiaContinuityRuntime.inFlightByScope.get(targetScopeKey);
+    }
+
+    const work = (async () => {
+      const inspection = await inspectGradiaNativeContinuity({ targetChatId: resolved.chatId });
+      if (!inspection.ok || !inspection.candidate) {
+        const result = { ok: inspection.ok, adopted: false, skipped: true, kind: inspection.kind, reason: inspection.reason, targetScopeKey, hostLineage: inspection.hostLineage };
+        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        GradiaContinuityRuntime.lastResult = result;
+        return result;
+      }
+      const cand = inspection.candidate;
+      const { receipts } = await readGradiaHandoffLedger();
+      const existing = receipts[cand.transferId];
+      if (existing && existing.targetScopeKey === targetScopeKey && existing.sourceScopeKey === cand.sourceScopeKey) {
+        const result = { ok: true, adopted: false, skipped: true, idempotentReplay: true, kind: cand.origin, reason: 'already_inherited', receipt: existing, targetScopeKey, hostLineage: inspection.hostLineage };
+        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        GradiaContinuityRuntime.lastResult = result;
+        return result;
+      }
+      if (!inspection.eligible) {
+        const result = { ok: true, adopted: false, skipped: true, kind: cand.origin, reason: inspection.reason, targetScopeKey, candidate: cand, hostLineage: inspection.hostLineage };
+        GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+        GradiaContinuityRuntime.lastResult = result;
+        return result;
+      }
+
+      const sourceSnap = await readGradiaChatStateSnapshot(cand.sourceScopeKey);
+      const writeRes = await writeGradiaChatStateSnapshot(targetScopeKey, sourceSnap.payload, { merge: false });
+      const sourceAfter = await readGradiaChatStateSnapshot(cand.sourceScopeKey);
+      if (sourceAfter.digest !== sourceSnap.digest) throw new Error('GRADIA_CONTINUITY_SOURCE_MUTATION_DETECTED');
+
+      const receipt = {
+        schema: 'gradia.continuity_adoption.receipt.v1',
+        ok: true,
+        adopted: true,
+        verified: true,
+        durable: true,
+        sourcePreserved: true,
+        origin: cand.origin,
+        reason: cand.reason,
+        transferId: cand.transferId,
+        sourceChatId: cand.sourceChatId,
+        sourceChatTitle: cand.sourceChatTitle,
+        targetChatId: resolved.chatId,
+        sourceScopeKey: cand.sourceScopeKey,
+        targetScopeKey,
+        items: writeRes.after.totalItems,
+        counts: writeRes.after.counts,
+        sourceDigest: sourceSnap.digest,
+        targetDigest: writeRes.after.digest,
+        at: Date.now()
+      };
+      await recordGradiaHandoffReceipt(cand.transferId, receipt);
+      const result = { ...receipt, kind: cand.origin, hostLineage: inspection.hostLineage };
+      GradiaContinuityRuntime.checkedByScope.set(targetScopeKey, result);
+      GradiaContinuityRuntime.lastResult = result;
+      return result;
+    })();
+
+    GradiaContinuityRuntime.inFlightByScope.set(targetScopeKey, work);
+    try { return await work; }
+    finally { GradiaContinuityRuntime.inFlightByScope.delete(targetScopeKey); }
+  };
+
+  const listGradiaCopySourceChats = async () => {
+    const resolved = await resolveGradiaChatFromHost('');
+    if (!resolved.character || !resolved.chat) return { ok: false, targetChatId: '', targetScopeKey: '', items: [] };
+    const { character, chat: targetChat, chatId: targetChatId } = resolved;
+    const targetScopeKey = loreContinuityScopeKey(character, targetChat);
+    const chats = Array.isArray(character.chats) ? character.chats : [];
+    const items = [];
+    for (let i = 0; i < chats.length; i += 1) {
+      const item = chats[i];
+      if (!item || item === targetChat) continue;
+      const cid = gradiaChatIdOf(item);
+      if (!cid || cid === targetChatId) continue;
+      const scopeKey = loreContinuityScopeKey(character, item);
+      if (!scopeKey || scopeKey === targetScopeKey) continue;
+      const snap = await readGradiaChatStateSnapshot(scopeKey);
+      if (snap.totalItems <= 0) continue;
+      const shared = MemorySuiteHostLineage.prefix(item, targetChat);
+      items.push({
+        chatId: cid,
+        title: gradiaChatTitleOf(item, i),
+        chatIndex: i,
+        scopeKey,
+        totalItems: snap.totalItems,
+        counts: snap.counts,
+        digest: snap.digest,
+        commonPrefixPairs: shared.commonPrefixPairs,
+        commonPrefixMessages: shared.commonPrefixMessages
+      });
+    }
+    items.sort((a, b) => b.commonPrefixPairs - a.commonPrefixPairs || b.totalItems - a.totalItems || a.chatIndex - b.chatIndex);
+    return { ok: true, targetChatId, targetScopeKey, items };
+  };
+
+  const copyGradiaChatStateFromChat = async ({ sourceChatId = '', mode = 'replace' } = {}) => {
+    const srcId = text(sourceChatId || '').trim();
+    if (!srcId) throw new Error('복사할 원본 채팅을 선택해 주세요.');
+    const active = await resolveGradiaChatFromHost('');
+    if (!active.character || !active.chat) throw new Error('현재 활성 채팅을 확인하지 못했습니다.');
+    const source = await resolveGradiaChatFromHost(srcId);
+    if (!source.character || !source.chat) throw new Error('선택한 원본 채팅을 찾지 못했습니다.');
+    const sourceScopeKey = loreContinuityScopeKey(source.character, source.chat);
+    const targetScopeKey = loreContinuityScopeKey(active.character, active.chat);
+    if (!sourceScopeKey || !targetScopeKey || sourceScopeKey === targetScopeKey) {
+      throw new Error('같은 채팅으로는 복사할 수 없습니다.');
+    }
+    const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey);
+    if (sourceSnap.totalItems <= 0) throw new Error('선택한 원본 채팅에 복사할 GRADIA 데이터가 없습니다.');
+    const isMerge = mode === 'merge';
+    const writeRes = await writeGradiaChatStateSnapshot(targetScopeKey, sourceSnap.payload, { merge: isMerge });
+    const sourceAfter = await readGradiaChatStateSnapshot(sourceScopeKey);
+    if (sourceAfter.digest !== sourceSnap.digest) throw new Error('GRADIA_MANUAL_COPY_SOURCE_MUTATION_DETECTED');
+    const transferId = `manualcopy_${Date.now().toString(36)}_${stableDraftHash(`${sourceScopeKey}|${targetScopeKey}|${sourceSnap.digest}`)}`;
+    const receipt = {
+      schema: 'gradia.continuity_adoption.receipt.v1',
+      ok: true,
+      adopted: true,
+      verified: true,
+      durable: true,
+      sourcePreserved: true,
+      origin: 'manual_chat_copy',
+      mode: isMerge ? 'merge' : 'replace',
+      transferId,
+      sourceChatId: source.chatId,
+      sourceChatTitle: gradiaChatTitleOf(source.chat, source.chatIndex),
+      targetChatId: active.chatId,
+      sourceScopeKey,
+      targetScopeKey,
+      items: writeRes.after.totalItems,
+      counts: writeRes.after.counts,
+      sourceDigest: sourceSnap.digest,
+      targetDigest: writeRes.after.digest,
+      at: Date.now()
+    };
+    await recordGradiaHandoffReceipt(transferId, receipt);
+    GradiaContinuityRuntime.checkedByScope.delete(targetScopeKey);
+    GradiaContinuityRuntime.lastResult = receipt;
+    return receipt;
+  };
+
+  // Canonical JSON + SHA-256 for Portable Chat JSON Backup/Restore
+  const gradiaCanonicalJson = value => {
+    const walk = item => {
+      if (item === null || typeof item !== 'object') return JSON.stringify(item);
+      if (Array.isArray(item)) return '[' + item.map(walk).join(',') + ']';
+      return '{' + Object.keys(item).sort().map(k => JSON.stringify(k) + ':' + walk(item[k])).join(',') + '}';
+    };
+    return walk(value);
+  };
+
+  const gradiaSha256Hex = async textInput => {
+    const encoded = new TextEncoder().encode(String(textInput || ''));
+    try {
+      if (globalThis?.crypto?.subtle?.digest) {
+        const buf = await globalThis.crypto.subtle.digest('SHA-256', encoded);
+        return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (_) {}
+    // Fallback deterministic SHA-256 in pure JS when WebCrypto is unavailable
+    const K = new Uint32Array([0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+    const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const paddedLen = Math.ceil((encoded.length + 9) / 64) * 64;
+    const msg = new Uint8Array(paddedLen);
+    msg.set(encoded);
+    msg[encoded.length] = 0x80;
+    const dv = new DataView(msg.buffer);
+    dv.setUint32(paddedLen - 8, Math.floor(encoded.length / 0x20000000));
+    dv.setUint32(paddedLen - 4, (encoded.length * 8) >>> 0);
+    const W = new Uint32Array(64);
+    const r = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < paddedLen; off += 64) {
+      for (let i = 0; i < 16; i += 1) W[i] = dv.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i += 1) {
+        const s0 = r(W[i-15], 7) ^ r(W[i-15], 18) ^ (W[i-15] >>> 3);
+        const s1 = r(W[i-2], 17) ^ r(W[i-2], 19) ^ (W[i-2] >>> 10);
+        W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i += 1) {
+        const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) >>> 0;
+        const t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+        h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      H[0] = (H[0]+a)>>>0; H[1] = (H[1]+b)>>>0; H[2] = (H[2]+c)>>>0; H[3] = (H[3]+d)>>>0;
+      H[4] = (H[4]+e)>>>0; H[5] = (H[5]+f)>>>0; H[6] = (H[6]+g)>>>0; H[7] = (H[7]+h)>>>0;
+    }
+    return Array.from(H, v => v.toString(16).padStart(8, '0')).join('');
+  };
+
+  const exportGradiaChatBackup = async (options = {}) => {
+    const resolved = await resolveGradiaChatFromHost(options.chatId || '');
+    if (!resolved.character || !resolved.chat) throw new Error('현재 활성 채팅을 확인하지 못했습니다.');
+    const { character, chat, chatId, chatIndex } = resolved;
+    const scopeKey = loreContinuityScopeKey(character, chat);
+    const snap = await readGradiaChatStateSnapshot(scopeKey);
+    const hostLineage = MemorySuiteHostLineage.inspect(character, chat);
+    const msgs = gradiaChatMessagesOf(chat);
+    const unsigned = {
+      schema: GRADIA_PORTABLE_BACKUP_SCHEMA,
+      formatVersion: GRADIA_PORTABLE_BACKUP_FORMAT_VERSION,
+      plugin: {
+        id: 'serial_gradation_agents_for_rp',
+        name: 'GRADIA',
+        version: PLUGIN_VERSION
+      },
+      exportedAt: new Date().toISOString(),
+      source: {
+        characterId: gradiaCharacterIdOf(character),
+        characterName: text(character.name || character.nickname || '').trim(),
+        chatId,
+        chatTitle: gradiaChatTitleOf(chat, chatIndex),
+        scopeKey,
+        messageCount: msgs.length,
+        pairCount: MemorySuiteHostLineage.countPairs(msgs),
+        transcriptFingerprint: MemorySuiteHostLineage.fingerprint(msgs),
+        hostLineageKind: hostLineage.kind,
+        hostLineageStatus: hostLineage.status
+      },
+      policy: {
+        scope: 'current_chat_only',
+        includesSecrets: false,
+        includesGlobalSettings: false,
+        stores: [
+          STORAGE_RUNTIME_SETTINGS_KEY,
+          STORAGE_LORE_CARDS_KEY,
+          STORAGE_INTIMACY_CARDS_KEY,
+          STORAGE_RELATIONSHIP_STATE_KEY
+        ]
+      },
+      counts: snap.counts,
+      totalItems: snap.totalItems,
+      payloadDigest: snap.digest,
+      payload: snap.payload
+    };
+    const digest = await gradiaSha256Hex(gradiaCanonicalJson(unsigned));
+    const envelope = { ...unsigned, integrity: { algorithm: 'SHA-256', digest } };
+    GradiaContinuityRuntime.lastBackupExport = { at: Date.now(), scopeKey, chatId, totalItems: snap.totalItems, digest };
+    return envelope;
+  };
+
+  const inspectGradiaChatBackup = async rawInput => {
+    let parsed = rawInput;
+    if (typeof rawInput === 'string') {
+      try { parsed = JSON.parse(rawInput); }
+      catch (error) { throw new Error(`JSON 형식이 올바르지 않습니다: ${error?.message || error}`); }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('GRADIA 채팅 백업 파일은 JSON 객체여야 합니다.');
+    }
+    if (parsed.schema !== GRADIA_PORTABLE_BACKUP_SCHEMA) {
+      throw new Error('GRADIA 이 채팅 백업 파일(gradia.portable_chat_backup.v1)이 아닙니다.');
+    }
+    if (Number(parsed.formatVersion) !== GRADIA_PORTABLE_BACKUP_FORMAT_VERSION) {
+      throw new Error(`지원하지 않는 백업 버전입니다: v${parsed.formatVersion}`);
+    }
+    const integrity = parsed.integrity && typeof parsed.integrity === 'object' ? parsed.integrity : null;
+    if (!integrity || integrity.algorithm !== 'SHA-256' || !text(integrity.digest || '').trim()) {
+      throw new Error('백업 파일의 SHA-256 무결성 정보가 누락되었습니다.');
+    }
+    const unsigned = { ...parsed };
+    delete unsigned.integrity;
+    const computedIntegrity = await gradiaSha256Hex(gradiaCanonicalJson(unsigned));
+    if (computedIntegrity !== String(integrity.digest).trim()) {
+      const err = new Error('백업 파일의 SHA-256 무결성 검증에 실패했습니다. 파일이 손상되었거나 변조되었을 수 있습니다.');
+      err.code = 'GRADIA_BACKUP_INTEGRITY_MISMATCH';
+      throw err;
+    }
+    const metrics = computeGradiaChatStateMetrics(parsed.payload || {});
+    if (text(parsed.payloadDigest || '').trim() && metrics.digest !== text(parsed.payloadDigest).trim()) {
+      const err = new Error('백업 페이로드 해시가 일치하지 않습니다.');
+      err.code = 'GRADIA_BACKUP_PAYLOAD_DIGEST_MISMATCH';
+      throw err;
+    }
+
+    const active = await resolveGradiaChatFromHost('');
+    const currentCharacterId = active.character ? gradiaCharacterIdOf(active.character) : '';
+    const currentChatId = active.chatId || '';
+    const currentScopeKey = active.character && active.chat ? loreContinuityScopeKey(active.character, active.chat) : '';
+    const currentSnap = currentScopeKey ? await readGradiaChatStateSnapshot(currentScopeKey) : null;
+    const currentMsgs = active.chat ? gradiaChatMessagesOf(active.chat) : [];
+    const currentFingerprint = active.chat ? MemorySuiteHostLineage.fingerprint(currentMsgs) : '';
+
+    const src = parsed.source && typeof parsed.source === 'object' ? parsed.source : {};
+    const sameCharacter = Boolean(currentCharacterId && text(src.characterId || '').trim() === currentCharacterId);
+    const sameChat = Boolean(sameCharacter && currentChatId && text(src.chatId || '').trim() === currentChatId);
+    const sameScope = Boolean(currentScopeKey && text(src.scopeKey || '').trim() === currentScopeKey);
+    const transcriptMatch = Boolean(currentFingerprint && text(src.transcriptFingerprint || '').trim() && currentFingerprint === text(src.transcriptFingerprint).trim());
+
+    const modes = [];
+    if (sameChat || sameScope) {
+      modes.push({
+        mode: GRADIA_PORTABLE_RESTORE_MODES.SAME_CHAT_REPLACE,
+        title: '같은 채팅 백업 시점으로 복원 (교체)',
+        description: '현재 채팅의 GRADIA 데이터를 백업 파일 상태로 교체합니다.',
+        recommended: true
+      });
+    }
+    if (sameCharacter && !sameChat) {
+      modes.push({
+        mode: GRADIA_PORTABLE_RESTORE_MODES.OTHER_CHAT_REPLACE,
+        title: transcriptMatch ? '복사 채팅으로 복구 (교체)' : '다른 채팅으로 이식 (교체)',
+        description: transcriptMatch
+          ? '원문 지문이 일치하는 복사 채팅입니다. 현재 채팅 데이터를 백업 상태로 교체합니다.'
+          : '같은 캐릭터의 다른 채팅입니다. 현재 채팅 데이터를 백업 상태로 교체합니다.',
+        recommended: true
+      });
+    }
+    if (!sameCharacter && currentScopeKey) {
+      modes.push({
+        mode: GRADIA_PORTABLE_RESTORE_MODES.UPDATED_BOT_REPLACE,
+        title: '업데이트된 봇 / 다른 캐릭터로 이식 (교체)',
+        description: transcriptMatch
+          ? '원문 지문이 일치합니다. 새 캐릭터의 현재 채팅으로 GRADIA 데이터를 재바인딩합니다.'
+          : '다른 캐릭터의 현재 채팅으로 GRADIA 데이터를 재바인딩해 교체합니다.',
+        recommended: true
+      });
+    }
+    if (currentScopeKey) {
+      modes.push({
+        mode: GRADIA_PORTABLE_RESTORE_MODES.OTHER_CHAT_MERGE,
+        title: '현재 채팅 데이터와 병합',
+        description: '현재 채팅에 남아 있는 카드·관계 상태를 유지하면서 백업 항목을 병합합니다.',
+        recommended: false
+      });
+    }
+
+    return {
+      ok: true,
+      envelope: parsed,
+      source: src,
+      counts: metrics.counts,
+      totalItems: metrics.totalItems,
+      payloadDigest: metrics.digest,
+      integrityDigest: computedIntegrity,
+      target: {
+        characterId: currentCharacterId,
+        characterName: active.character ? text(active.character.name || active.character.nickname || '').trim() : '',
+        chatId: currentChatId,
+        chatTitle: active.chat ? gradiaChatTitleOf(active.chat, active.chatIndex) : '',
+        scopeKey: currentScopeKey,
+        existingItems: currentSnap ? currentSnap.totalItems : 0
+      },
+      match: { sameCharacter, sameChat, sameScope, transcriptMatch },
+      modes,
+      recommendedMode: modes.find(m => m.recommended)?.mode || modes[0]?.mode || ''
+    };
+  };
+
+  const restoreGradiaChatBackup = async (rawInput, options = {}) => {
+    const inspection = await inspectGradiaChatBackup(rawInput);
+    if (!inspection.target.scopeKey) throw new Error('복원할 활성 채팅을 확인하지 못했습니다.');
+    const requestedMode = text(options.mode || inspection.recommendedMode || '').trim();
+    const allowed = inspection.modes.find(item => item.mode === requestedMode);
+    if (!allowed) {
+      const err = new Error(`현재 채팅에서 허용되지 않는 복원 모드입니다: ${requestedMode || 'unspecified'}`);
+      err.code = 'GRADIA_BACKUP_RESTORE_MODE_BLOCKED';
+      throw err;
+    }
+    const isMerge = requestedMode === GRADIA_PORTABLE_RESTORE_MODES.OTHER_CHAT_MERGE;
+    const writeRes = await writeGradiaChatStateSnapshot(inspection.target.scopeKey, inspection.envelope.payload, { merge: isMerge });
+    const transferId = `jsonrestore_${Date.now().toString(36)}_${stableDraftHash(`${inspection.integrityDigest}|${inspection.target.scopeKey}|${requestedMode}`)}`;
+    const receipt = {
+      schema: 'gradia.portable_restore.receipt.v1',
+      ok: true,
+      restored: true,
+      verified: true,
+      durable: true,
+      origin: 'portable_json_restore',
+      mode: requestedMode,
+      transferId,
+      sourceChatId: text(inspection.source?.chatId || '').trim(),
+      sourceScopeKey: text(inspection.source?.scopeKey || '').trim(),
+      targetChatId: inspection.target.chatId,
+      targetScopeKey: inspection.target.scopeKey,
+      items: writeRes.after.totalItems,
+      counts: writeRes.after.counts,
+      targetDigest: writeRes.after.digest,
+      backupIntegrityDigest: inspection.integrityDigest,
+      at: Date.now()
+    };
+    await recordGradiaHandoffReceipt(transferId, receipt);
+    GradiaContinuityRuntime.checkedByScope.delete(inspection.target.scopeKey);
+    GradiaContinuityRuntime.lastBackupRestore = receipt;
+    return receipt;
+  };
+
   const beforeRequest = async (messages, type) => {
     if (Runtime.inFlight && isMainNarrativeRequest(type)) LibReadConsumer.invalidate('LIB_READ_SUPERSEDED');
     if (activeLibEvidenceRun && isMainNarrativeRequest(type)) { const prior = activeLibEvidenceRun; prior.fail('LIB_READ_SUPERSEDED'); prior.close(); }
     if ((messages || []).some(message => isSgaTransportInjectionMessage(message) && hasLibEvidenceMarker(contentToText(message?.content)))) {
       throw libEvidenceError('LIB_READ_RETRY_DISABLED');
     }
+    // Auto-adopt native branch / native chat-copy state (local pluginStorage only, cached per scope).
+    try { await ensureGradiaNativeContinuity(); } catch (_) {}
     // Empty/continuation input is intentionally not rewritten here. RisuAI can
     // dispatch its native empty-send path before a plugin can safely replace it;
     // the explicit chat-menu action generates text for user-reviewed copying.
@@ -48081,6 +49119,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if(manageAction==='import-file'){app.querySelector('#mockup-import-file')?.click();return;}
       if(manageAction==='import-review'||manageAction==='import-replace'){mockupOpenImportReview('replace');return;}
       if(manageAction==='import-merge'){mockupOpenImportReview('merge');return;}
+      if(manageAction==='chat-backup-file'){void (async()=>{try{const env=await exportGradiaChatBackup();const date=new Date().toISOString().slice(0,10);downloadJson(`gradia-chat-backup-${date}.json`,env);guiSetStatus(`이 채팅 데이터 백업 JSON을 저장했습니다 (${env.totalItems}개 항목 · SHA-256).`);}catch(error){guiSetStatus(error?.message||String(error),true,true);}})();return;}
+      if(manageAction==='chat-backup-copy'){void (async()=>{try{const env=await exportGradiaChatBackup();const ok=await mockupCopyText(JSON.stringify(env,null,2));guiSetStatus(ok?`이 채팅 데이터 백업 JSON을 복사했습니다 (${env.totalItems}개 항목).`:'클립보드에 접근하지 못했습니다.');}catch(error){guiSetStatus(error?.message||String(error),true,true);}})();return;}
+      if(manageAction==='chat-backup-open-file'){app.querySelector('#gradia-chat-backup-file')?.click();return;}
+      if(manageAction==='chat-backup-review'){void mockupOpenChatBackupRestoreDialog(Gui.chatBackupImportText||'');return;}
+      if(manageAction==='chat-continuity-recheck'){void (async()=>{try{const res=await ensureGradiaNativeContinuity({force:true});await ensureGuiState(true);await renderSettingsGui();await refreshGradiaManageChatTools(app);guiSetStatus(res?.adopted?`${res.origin==='native_branch'?'네이티브 브랜치':'채팅 복사'}에서 ${res.items}개 항목을 자동 승계했습니다.`:`계보 확인 완료 · ${res?.kind||'independent_chat'} (${res?.reason||'ok'})`);}catch(error){guiSetStatus(error?.message||String(error),true,true);}})();return;}
+      if(manageAction==='chat-copy-replace'||manageAction==='chat-copy-merge'){const select=app.querySelector('#gradia-chat-copy-source');const sourceChatId=select?.value||'';const mode=manageAction==='chat-copy-merge'?'merge':'replace';void mockupOpenChatCopyConfirmDialog(sourceChatId,mode,app);return;}
       if(manageAction==='debug-copy'||manageAction==='debug-file'){
         const payload=runtimeForDisplay();
         if(manageAction==='debug-file'){downloadJson(`gradia-debug-${new Date().toISOString().slice(0,10)}.json`,payload);guiSetStatus('현재 GRADIA 진단 JSON을 저장했습니다.');}
@@ -49499,6 +50543,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     });
     const actions=page.querySelectorAll('button');
     actions.forEach(button=>{
+      if(button.dataset.manageAction)return;
       const text=button.textContent.trim();
       if(text.includes('JSON 파일로 저장'))button.dataset.manageAction='export-file';
       else if(text.includes('클립보드로 복사'))button.dataset.manageAction='export-copy';
@@ -49509,6 +50554,153 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       else if(text.includes('디버그 JSON 복사'))button.dataset.manageAction='debug-copy';
       else if(text.includes('파일로 저장'))button.dataset.manageAction='debug-file';
     });
+    if(!io.querySelector('[data-gradia-chat-backup-card]')){
+      const backupCard=mockupNode('section','card stack stack--sm');
+      backupCard.dataset.gradiaChatBackupCard='true';
+      backupCard.append(
+        mockupNode('h2','card__title','이 채팅 데이터 백업 / 복원 (JSON)'),
+        mockupNode('p','card__desc','현재 채팅의 NPC 성향·억결·신체·로어 카드·친밀도·관계 시뮬레이터 상태를 SHA-256 무결성 검증 JSON으로 백업하거나 복원합니다. API 키와 전역 설정은 포함되지 않습니다.')
+      );
+      const backupSummary=mockupNode('div','note');backupSummary.dataset.gradiaChatBackupSummary='true';backupSummary.textContent='현재 채팅 데이터 요약 확인 중…';
+      const backupBtns=mockupNode('div','cluster');
+      const mkBtn=(label,action,cls='btn')=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=label;b.dataset.manageAction=action;return b;};
+      backupBtns.append(
+        mkBtn('JSON 백업 다운로드','chat-backup-file','btn btn--primary'),
+        mkBtn('백업 JSON 복사','chat-backup-copy'),
+        mkBtn('백업 파일 불러오기','chat-backup-open-file'),
+        mkBtn('복원 검토','chat-backup-review')
+      );
+      const backupArea=document.createElement('textarea');backupArea.id='gradia-chat-backup-text';backupArea.className='textarea';backupArea.rows=4;backupArea.placeholder='여기에 GRADIA 이 채팅 백업 JSON을 붙여넣거나 위에서 파일을 불러오세요.';backupArea.value=Gui.chatBackupImportText||'';backupArea.addEventListener('input',()=>{Gui.chatBackupImportText=backupArea.value;});
+      const backupFile=document.createElement('input');backupFile.type='file';backupFile.accept='application/json,.json';backupFile.id='gradia-chat-backup-file';backupFile.hidden=true;
+      backupFile.addEventListener('change',async()=>{const selected=backupFile.files?.[0];backupFile.value='';if(!selected)return;try{Gui.chatBackupImportText=await selected.text();backupArea.value=Gui.chatBackupImportText;await mockupOpenChatBackupRestoreDialog(Gui.chatBackupImportText);}catch(error){guiSetStatus(error?.message||String(error),true,true);}});
+      backupCard.append(backupSummary,backupBtns,backupArea,backupFile);
+      io.appendChild(backupCard);
+    }
+    if(!io.querySelector('[data-gradia-chat-continuity-card]')){
+      const contCard=mockupNode('section','card stack stack--sm');
+      contCard.dataset.gradiaChatContinuityCard='true';
+      contCard.append(
+        mockupNode('h2','card__title','채팅 계보 · 브랜치 / 채팅 복사'),
+        mockupNode('p','card__desc','RisuAI 네이티브 브랜치 및 채팅 복사를 자동 감지해 이 채팅 데이터를 승계합니다. 필요하면 같은 캐릭터의 다른 채팅에서 수동으로 복사할 수도 있습니다.')
+      );
+      const lineageBox=mockupNode('div','note');lineageBox.dataset.gradiaChatLineageBox='true';lineageBox.textContent='채팅 계보 확인 중…';
+      const copyField=mockupNode('label','field');
+      copyField.append(mockupNode('span','label','원본 채팅 선택 (수동 복사)'));
+      const copySelect=document.createElement('select');copySelect.id='gradia-chat-copy-source';copySelect.className='select';
+      mockupOption(copySelect,'','복사할 원본 채팅을 불러오는 중…');
+      copyField.append(copySelect);
+      const contBtns=mockupNode('div','cluster');
+      const mkBtn=(label,action,cls='btn')=>{const b=document.createElement('button');b.type='button';b.className=cls;b.textContent=label;b.dataset.manageAction=action;return b;};
+      contBtns.append(
+        mkBtn('계보 다시 확인','chat-continuity-recheck'),
+        mkBtn('교체해서 복사','chat-copy-replace','btn btn--primary'),
+        mkBtn('병합해서 복사','chat-copy-merge')
+      );
+      contCard.append(lineageBox,copyField,contBtns);
+      io.appendChild(contCard);
+    }
+    void refreshGradiaManageChatTools(app);
+  };
+  const refreshGradiaManageChatTools = async app => {
+    if(!app)return;
+    try{
+      const [active,continuity,sources]=await Promise.all([resolveGradiaChatFromHost(''),inspectGradiaNativeContinuity(),listGradiaCopySourceChats()]);
+      const summaryEl=app.querySelector('[data-gradia-chat-backup-summary]');
+      if(summaryEl){
+        if(!active.character||!active.chat){summaryEl.textContent='현재 활성 채팅을 확인하지 못했습니다.';}
+        else{
+          const scopeKey=loreContinuityScopeKey(active.character,active.chat);
+          const snap=await readGradiaChatStateSnapshot(scopeKey);
+          const c=snap.counts;
+          summaryEl.textContent=`현재 채팅: ${gradiaChatTitleOf(active.chat,active.chatIndex)} · 총 ${snap.totalItems}개 (성향 ${c.npcDisposition} · 억결 ${c.forcedBondCards} · 신체 ${c.bodyStateCards} · 로어 ${c.loreCards}/${c.dismissedLoreCards} · 친밀도 ${c.intimacyCards} · 관계 ${c.relationshipState})`;
+        }
+      }
+      const lineageEl=app.querySelector('[data-gradia-chat-lineage-box]');
+      if(lineageEl){
+        const kindLabel=continuity.kind==='native_branch'?'네이티브 브랜치':(continuity.kind==='native_chat_copy'?'네이티브 채팅 복사 감지':'독립 채팅');
+        const candText=continuity.candidate?` · 원본: ${continuity.candidate.sourceChatTitle||continuity.candidate.sourceChatId} (${continuity.candidate.sourceItems}개 항목)`:'';
+        const last=GradiaContinuityRuntime.lastResult;
+        const lastText=last?.adopted?` · 최근 자동 승계: ${last.items}개 (${last.origin})`:'';
+        lineageEl.textContent=`계보 상태: ${kindLabel}${candText}${lastText}`;
+      }
+      const select=app.querySelector('#gradia-chat-copy-source');
+      if(select){
+        const prev=select.value;
+        select.innerHTML='';
+        if(!sources.items?.length){mockupOption(select,'','복사 가능한 GRADIA 데이터가 있는 다른 채팅이 없습니다.');}
+        else{
+          mockupOption(select,'','원본 채팅 선택…');
+          sources.items.forEach(item=>mockupOption(select,item.chatId,`${item.title} (${item.totalItems}개 항목${item.commonPrefixPairs>0?` · 공통 ${item.commonPrefixPairs}턴`:''})`));
+          if(prev&&sources.items.some(item=>item.chatId===prev))select.value=prev;
+        }
+      }
+    }catch(_){}
+  };
+  const mockupOpenChatBackupRestoreDialog = async rawText => {
+    try{
+      const inspection=await inspectGradiaChatBackup(rawText);
+      if(!inspection.modes.length){guiSetStatus('복원할 활성 채팅을 확인하지 못했습니다.',true,true);return;}
+      let selectedMode=inspection.recommendedMode;
+      const modeSelect=document.createElement('select');modeSelect.className='select';
+      inspection.modes.forEach(m=>mockupOption(modeSelect,m.mode,m.title));
+      modeSelect.value=selectedMode;
+      const modeDesc=guiEl('p',{class:'hint',text:inspection.modes.find(m=>m.mode===selectedMode)?.description||''});
+      modeSelect.addEventListener('change',()=>{selectedMode=modeSelect.value;modeDesc.textContent=inspection.modes.find(m=>m.mode===selectedMode)?.description||'';});
+      const c=inspection.counts;
+      const src=inspection.source||{};
+      const matchSummary=inspection.match.sameChat?'같은 채팅 일치':(inspection.match.sameCharacter?(inspection.match.transcriptMatch?'같은 캐릭터 · 원문 지문 일치(복사 채팅)':'같은 캐릭터 · 다른 채팅'):(inspection.match.transcriptMatch?'다른 캐릭터(봇 업데이트) · 원문 지문 일치':'다른 캐릭터 · 다른 채팅'));
+      openGuiDialog({
+        title:'이 채팅 데이터 백업 복원 검토',
+        description:'SHA-256 무결성 검증을 통과했습니다. 복원 방식을 확인한 뒤 적용하세요. 실패 시 기존 데이터로 자동 롤백됩니다.',
+        body:[
+          guiEl('div',{class:'note'},[
+            guiEl('b',{text:`원본: ${src.characterName||src.characterId||'-'} / ${src.chatTitle||src.chatId||'-'}`}),
+            guiEl('p',{text:`일치 상태: ${matchSummary} · 백업 항목 ${inspection.totalItems}개 (성향 ${c.npcDisposition}, 억결 ${c.forcedBondCards}, 신체 ${c.bodyStateCards}, 로어 ${c.loreCards}/${c.dismissedLoreCards}, 친밀도 ${c.intimacyCards}, 관계 ${c.relationshipState})`}),
+            guiEl('p',{text:`현재 채팅 기존 항목: ${inspection.target.existingItems}개 · 내보낸 시각: ${inspection.envelope.exportedAt||'-'}`})
+          ]),
+          guiEl('div',{class:'field'},[guiEl('label',{text:'복원 방식'}),modeSelect,modeDesc])
+        ],
+        actions:[
+          guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),
+          guiEl('button',{class:'btn btn--primary',text:'복원 실행',onClick:async()=>{
+            try{
+              const receipt=await restoreGradiaChatBackup(inspection.envelope,{mode:selectedMode});
+              closeGuiDialog();
+              await ensureGuiState(true);
+              await renderSettingsGui();
+              guiSetStatus(`이 채팅 데이터 복원 완료 · ${receipt.items}개 항목 적용됨 (${selectedMode}).`);
+            }catch(error){guiSetStatus(error?.message||String(error),true,true);}
+          }})
+        ]
+      });
+    }catch(error){guiSetStatus(error?.message||String(error),true,true);}
+  };
+  const mockupOpenChatCopyConfirmDialog = async (sourceChatId, mode, app) => {
+    if(!sourceChatId){guiSetStatus('먼저 복사할 원본 채팅을 선택해 주세요.',true,true);return;}
+    try{
+      const src=await resolveGradiaChatFromHost(sourceChatId);
+      if(!src.character||!src.chat){guiSetStatus('선택한 원본 채팅을 찾지 못했습니다.',true,true);return;}
+      const srcSnap=await readGradiaChatStateSnapshot(loreContinuityScopeKey(src.character,src.chat));
+      const title=gradiaChatTitleOf(src.chat,src.chatIndex);
+      openGuiDialog({
+        title:mode==='merge'?'다른 채팅의 GRADIA 데이터를 병합할까요?':'다른 채팅의 GRADIA 데이터로 교체할까요?',
+        description:'원본 채팅의 데이터는 수정되지 않으며, 현재 채팅에만 복제됩니다.',
+        body:[guiEl('div',{class:'note'},[guiEl('b',{text:`원본 채팅: ${title}`}),guiEl('p',{text:`복사 대상 ${srcSnap.totalItems}개 항목 · 방식: ${mode==='merge'?'현재 채팅과 병합':'현재 채팅 데이터 교체'}`})])],
+        actions:[
+          guiEl('button',{class:'btn btn--ghost',text:'취소',onClick:closeGuiDialog}),
+          guiEl('button',{class:'btn btn--primary',text:mode==='merge'?'병합 복사 실행':'교체 복사 실행',onClick:async()=>{
+            try{
+              const receipt=await copyGradiaChatStateFromChat({sourceChatId,mode});
+              closeGuiDialog();
+              await ensureGuiState(true);
+              await renderSettingsGui();
+              await refreshGradiaManageChatTools(app);
+              guiSetStatus(`‘${title}’에서 ${receipt.items}개 항목을 복사했습니다.`);
+            }catch(error){guiSetStatus(error?.message||String(error),true,true);}
+          }})
+        ]
+      });
+    }catch(error){guiSetStatus(error?.message||String(error),true,true);}
   };
   const mockupCopyText = async value => {
     const textValue=String(value??'');
@@ -52842,8 +54034,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const GRADIA_RETRACE_IPC_SCHEMA = 'gradia-retrace-ipc-v1';
     const GRADIA_RETRACE_REQUEST_CHANNEL = 'gradia_memory_bridge_request_v1';
     const GRADIA_RETRACE_RESPONSE_CHANNEL = 'gradia_memory_bridge_response_v1';
-    const STORAGE_GRADIA_HANDOFF_LEDGER_KEY = 'serial_gradation_agents_for_rp:handoff_ledger:v1';
-    const GRADIA_HANDOFF_LEDGER_MAX = 64;
     let gradiaRetraceIpcRetryTimer = null;
     let gradiaRetraceIpcRetryRunning = false;
     let gradiaRetraceIpcRetryAttempts = 0;
@@ -52861,102 +54051,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       supportedStorageModes: ['plugin_only'],
       capabilities: ['inspect', 'adopt_session_handoff', 'idempotent_transfer', 'source_preserved_readback']
     });
-
-    const gradiaChatIdOf = chat => text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
-    const resolveGradiaChatFromHost = async (chatId = '') => {
-      const liveApi = getLiveApi(['getCharacter']);
-      const character = typeof liveApi?.getCharacter === 'function' ? await liveApi.getCharacter() : null;
-      if (!character || typeof character !== 'object') return { character: null, chat: null, chatId: '' };
-      const chats = Array.isArray(character.chats) ? character.chats : [];
-      const wanted = text(chatId || '').trim();
-      let chat = null;
-      if (wanted) {
-        chat = chats.find(row => gradiaChatIdOf(row) === wanted) || null;
-      } else {
-        let idx = Number.isInteger(character.chatPage) ? character.chatPage : 0;
-        if (typeof liveApi?.getCurrentChatIndex === 'function') {
-          try {
-            const liveIdx = Number(await liveApi.getCurrentChatIndex());
-            if (Number.isInteger(liveIdx) && liveIdx >= 0) idx = liveIdx;
-          } catch (_) {}
-        }
-        chat = chats[idx] || chats[0] || character.chat || null;
-      }
-      return { character, chat, chatId: gradiaChatIdOf(chat) };
-    };
-
-    const isGradiaRelsimChatPopulated = chat => {
-      if (!chat || typeof chat !== 'object') return false;
-      if (Object.keys(chat.pairs || {}).length > 0) return true;
-      if (Object.keys(chat.profiles || {}).length > 0) return true;
-      if (Array.isArray(chat.notes) && chat.notes.length > 0) return true;
-      if (Array.isArray(chat.history) && chat.history.length > 0) return true;
-      if (Number(chat.lastTurn || 0) > 0) return true;
-      return false;
-    };
-
-    const readGradiaChatStateSnapshot = async (scopeKey = '') => {
-      const key = compact(scopeKey, 512);
-      if (!key) {
-        return {
-          scopeKey: '',
-          payload: null,
-          counts: { npcDisposition: 0, forcedBondCards: 0, bodyStateCards: 0, loreCards: 0, dismissedLoreCards: 0, intimacyCards: 0, relationshipState: 0 },
-          totalItems: 0,
-          digest: stableDraftHash('empty')
-        };
-      }
-      const runtimeSettings = await readRuntimeSettings();
-      const npcDispositionMap = normalizeNpcDispositionMap(runtimeSettings?.npcDisposition);
-      const forcedBondMap = normalizeForcedBondCardMap(runtimeSettings?.forcedBondCards);
-      const bodyStateMap = normalizeBodyStateCardMap(runtimeSettings?.bodyStateCards);
-      const npcDisposition = npcDispositionMap[key] ? cloneJson(npcDispositionMap[key]) : null;
-      const forcedBondCards = Array.isArray(forcedBondMap[key]) && forcedBondMap[key].length ? cloneJson(forcedBondMap[key]) : [];
-      const bodyStateCards = Array.isArray(bodyStateMap[key]) && bodyStateMap[key].length ? cloneJson(bodyStateMap[key]) : [];
-
-      const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
-      const loreStore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
-      const loreCards = {
-        bodyState: cloneJson(loreStore.bodyState[key] || []),
-        forcedBond: cloneJson(loreStore.forcedBond[key] || []),
-        npcDisposition: cloneJson(loreStore.npcDisposition[key] || []),
-        romancePrefs: loreStore.romancePrefs[key] ? cloneJson(loreStore.romancePrefs[key]) : null,
-        dismissed: {
-          bodyState: cloneJson(loreStore.dismissed.bodyState[key] || []),
-          forcedBond: cloneJson(loreStore.dismissed.forcedBond[key] || []),
-          npcDisposition: cloneJson(loreStore.dismissed.npcDisposition[key] || []),
-          romancePrefs: cloneJson(loreStore.dismissed.romancePrefs[key] || [])
-        }
-      };
-
-      const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
-      const intimacyMap = normalizeIntimacyCardMap(rawIntimacy.cards || {});
-      const intimacyCards = Array.isArray(intimacyMap[key]) && intimacyMap[key].length ? cloneJson(intimacyMap[key]) : [];
-
-      const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
-      const relsimStore = normalizeRelsimStore(rawRelsim);
-      const relsimEntry = relsimStore.chats[key] && isGradiaRelsimChatPopulated(relsimStore.chats[key])
-        ? cloneJson(relsimStore.chats[key])
-        : null;
-
-      const npcDispCount = npcDisposition ? ((npcDisposition.default ? 1 : 0) + (Array.isArray(npcDisposition.npcs) ? npcDisposition.npcs.length : 0)) : 0;
-      const loreCardCount = loreCards.bodyState.length + loreCards.forcedBond.length + loreCards.npcDisposition.length + (loreCards.romancePrefs ? Object.keys(loreCards.romancePrefs).length : 0);
-      const dismissedCount = loreCards.dismissed.bodyState.length + loreCards.dismissed.forcedBond.length + loreCards.dismissed.npcDisposition.length + loreCards.dismissed.romancePrefs.length;
-      const relsimCount = relsimEntry ? 1 : 0;
-      const counts = {
-        npcDisposition: npcDispCount,
-        forcedBondCards: forcedBondCards.length,
-        bodyStateCards: bodyStateCards.length,
-        loreCards: loreCardCount,
-        dismissedLoreCards: dismissedCount,
-        intimacyCards: intimacyCards.length,
-        relationshipState: relsimCount
-      };
-      const totalItems = counts.npcDisposition + counts.forcedBondCards + counts.bodyStateCards + counts.loreCards + counts.dismissedLoreCards + counts.intimacyCards + counts.relationshipState;
-      const payload = { npcDisposition, forcedBondCards, bodyStateCards, loreCards, intimacyCards, relationshipState: relsimEntry };
-      const digest = stableDraftHash(JSON.stringify(payload));
-      return { scopeKey: key, payload, counts, totalItems, digest };
-    };
 
     const inspectGradiaSessionHandoff = async (payload = {}) => {
       const resolved = await resolveGradiaChatFromHost(payload?.sourceChatId || '');
@@ -53328,24 +54422,39 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         if (globalThis.__SerialGradationAgentsForRP === publicApi) delete globalThis.__SerialGradationAgentsForRP;
       } catch (_) {}
       try {
-        if (globalThis.__ShadowActSerialAIDE === publicApi) delete globalThis.__ShadowActSerialAIDE;
+        if (globalThis.__ShadowActSerialAIDE === publicApi || globalThis.__ShadowActSerialAIDE === exportedApi) delete globalThis.__ShadowActSerialAIDE;
       } catch (_) {}
+      GradiaContinuityRuntime.checkedByScope.clear();
+      GradiaContinuityRuntime.inFlightByScope.clear();
     };
     try {
       if (typeof API.onUnload === 'function') { await API.onUnload(unload); Runtime.hookStatus.unload = true; }
       else if (typeof API.addEventListener === 'function') { await API.addEventListener('unload', unload); Runtime.hookStatus.unload = true; }
     } catch (_) {}
 
-    const exportedApi = Object.freeze({ ...publicApi, inspectGradiaSessionHandoff, adoptGradiaSessionHandoff, gradiaRetraceCompatibility });
+    const exportedApi = Object.freeze({
+      ...publicApi,
+      inspectGradiaSessionHandoff,
+      adoptGradiaSessionHandoff,
+      gradiaRetraceCompatibility,
+      readGradiaChatStateSnapshot,
+      inspectGradiaNativeContinuity,
+      ensureGradiaNativeContinuity,
+      listGradiaCopySourceChats,
+      copyGradiaChatStateFromChat,
+      exportGradiaChatBackup,
+      inspectGradiaChatBackup,
+      restoreGradiaChatBackup,
+      GRADIA_PORTABLE_RESTORE_MODES
+    });
     try { globalThis.__SerialGradationAgentsForRP = exportedApi; } catch (_) {}
     try { globalThis.__ShadowActSerialAIDE = exportedApi; } catch (_) {} // legacy alias
     await registerPluginUi();
     await ensureGradiaRetraceIpc();
     await LibReadConnection.start();
-    // Native chat-copy adoption is a local storage rebind, not an LLM call. Probe once
-    // at startup so opening a copied chat can inherit its Story Arc/Writer state before
-    // the first Input Assist or draft request.
-    ;
+    // Native branch & native chat-copy adoption is a local pluginStorage rebind, not an LLM call.
+    // Probe once at startup so opening a branched or copied chat inherits per-chat GRADIA state immediately.
+    try { await ensureGradiaNativeContinuity(); } catch (_) {}
 
     console.log(`${PUBLIC_LOG_PREFIX} ${PUBLIC_DISPLAY_NAME} v${PLUGIN_VERSION} loaded. Internal code: ${INTERNAL_CODE_NAME}`);
   } catch (error) {

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T05:59:44.548Z",
+  "generatedAt": "2026-11-20T06:16:49.113Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -4336,8 +4336,8 @@
       "bytes": 3971713
     },
     "plugins/GRADIA.js": {
-      "sha256": "81e00ca0df03fcdb4337525016c7638c754f668abc6bb0339fa7e760f1ec9d0c",
-      "bytes": 3699649
+      "sha256": "83f36a67f0d12f9dd3c79068f61240da71fcfb16641fe6ad61dcb8825612b135",
+      "bytes": 3763894
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "8e06b97d38e6a18df62bd4a58bd5ace0ef6c411c3b52566bf1b324df50cc5a44",
@@ -11066,6 +11066,10 @@
     "tests/retrace_fresh_target_storage_audit_test.cjs": {
       "sha256": "d6a5e8177f3211ff20163b03d17c4f351ba0472bb7cf781362991b844827cbbb",
       "bytes": 2217
+    },
+    "tests/retrace_gradia_handoff_runtime_test.cjs": {
+      "sha256": "af937442a28ef348f1ff5799f722637602d740674ea22df58d75229df3cc6801",
+      "bytes": 15024
     },
     "tests/retrace_gui_public_handoff_runtime_test.cjs": {
       "sha256": "befb50a059b95d1abb1e55885d07816245f92402bc423a783d7856d0173008c9",
