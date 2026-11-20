@@ -5,6 +5,7 @@
 //@allowed-ipc libra
 //@allowed-ipc hayaku_locator_continuity
 //@allowed-ipc flashback_memory
+//@allowed-ipc flashback_hayaku_bridge
 
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/GRADIA.js
 
@@ -52832,7 +52833,390 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       try { await API.addRisuChatListener('output', recordCommittedOutput); registered.completionOutput = recordCommittedOutput; }
       catch (error) { warn('completion_receipt_listener_unavailable', error); }
     }
-    
+
+    const RETRACE_PLUGIN_ID = 'flashback_hayaku_bridge';
+    const RETRACE_PEER_COMPATIBILITY_SCHEMA = 'retrace.peer_compatibility.v1';
+    const RETRACE_PEER_PROTOCOL_MAJOR = 1;
+    const GRADIA_HANDOFF_CONTRACT = 'gradia.handoff_chat_state.v1';
+    const GRADIA_HANDOFF_RECEIPT_SCHEMA = 'gradia.session_handoff.receipt.v1';
+    const GRADIA_RETRACE_IPC_SCHEMA = 'gradia-retrace-ipc-v1';
+    const GRADIA_RETRACE_REQUEST_CHANNEL = 'gradia_memory_bridge_request_v1';
+    const GRADIA_RETRACE_RESPONSE_CHANNEL = 'gradia_memory_bridge_response_v1';
+    const STORAGE_GRADIA_HANDOFF_LEDGER_KEY = 'serial_gradation_agents_for_rp:handoff_ledger:v1';
+    const GRADIA_HANDOFF_LEDGER_MAX = 64;
+    let gradiaRetraceIpcRetryTimer = null;
+    let gradiaRetraceIpcRetryRunning = false;
+    let gradiaRetraceIpcRetryAttempts = 0;
+    let gradiaRetraceUnloaded = false;
+
+    const gradiaRetraceCompatibility = () => ({
+      schema: RETRACE_PEER_COMPATIBILITY_SCHEMA,
+      protocolMajor: RETRACE_PEER_PROTOCOL_MAJOR,
+      pluginId: 'serial_gradation_agents_for_rp',
+      pluginVersion: PLUGIN_VERSION,
+      handoffContract: GRADIA_HANDOFF_CONTRACT,
+      receiptSchema: GRADIA_HANDOFF_RECEIPT_SCHEMA,
+      storagePolicy: 'local_only',
+      localOnly: true,
+      supportedStorageModes: ['plugin_only'],
+      capabilities: ['inspect', 'adopt_session_handoff', 'idempotent_transfer', 'source_preserved_readback']
+    });
+
+    const gradiaChatIdOf = chat => text(chat?.id || chat?.chatId || chat?.uuid || '').trim();
+    const resolveGradiaChatFromHost = async (chatId = '') => {
+      const liveApi = getLiveApi(['getCharacter']);
+      const character = typeof liveApi?.getCharacter === 'function' ? await liveApi.getCharacter() : null;
+      if (!character || typeof character !== 'object') return { character: null, chat: null, chatId: '' };
+      const chats = Array.isArray(character.chats) ? character.chats : [];
+      const wanted = text(chatId || '').trim();
+      let chat = null;
+      if (wanted) {
+        chat = chats.find(row => gradiaChatIdOf(row) === wanted) || null;
+      } else {
+        let idx = Number.isInteger(character.chatPage) ? character.chatPage : 0;
+        if (typeof liveApi?.getCurrentChatIndex === 'function') {
+          try {
+            const liveIdx = Number(await liveApi.getCurrentChatIndex());
+            if (Number.isInteger(liveIdx) && liveIdx >= 0) idx = liveIdx;
+          } catch (_) {}
+        }
+        chat = chats[idx] || chats[0] || character.chat || null;
+      }
+      return { character, chat, chatId: gradiaChatIdOf(chat) };
+    };
+
+    const isGradiaRelsimChatPopulated = chat => {
+      if (!chat || typeof chat !== 'object') return false;
+      if (Object.keys(chat.pairs || {}).length > 0) return true;
+      if (Object.keys(chat.profiles || {}).length > 0) return true;
+      if (Array.isArray(chat.notes) && chat.notes.length > 0) return true;
+      if (Array.isArray(chat.history) && chat.history.length > 0) return true;
+      if (Number(chat.lastTurn || 0) > 0) return true;
+      return false;
+    };
+
+    const readGradiaChatStateSnapshot = async (scopeKey = '') => {
+      const key = compact(scopeKey, 512);
+      if (!key) {
+        return {
+          scopeKey: '',
+          payload: null,
+          counts: { npcDisposition: 0, forcedBondCards: 0, bodyStateCards: 0, loreCards: 0, dismissedLoreCards: 0, intimacyCards: 0, relationshipState: 0 },
+          totalItems: 0,
+          digest: stableDraftHash('empty')
+        };
+      }
+      const runtimeSettings = await readRuntimeSettings();
+      const npcDispositionMap = normalizeNpcDispositionMap(runtimeSettings?.npcDisposition);
+      const forcedBondMap = normalizeForcedBondCardMap(runtimeSettings?.forcedBondCards);
+      const bodyStateMap = normalizeBodyStateCardMap(runtimeSettings?.bodyStateCards);
+      const npcDisposition = npcDispositionMap[key] ? cloneJson(npcDispositionMap[key]) : null;
+      const forcedBondCards = Array.isArray(forcedBondMap[key]) && forcedBondMap[key].length ? cloneJson(forcedBondMap[key]) : [];
+      const bodyStateCards = Array.isArray(bodyStateMap[key]) && bodyStateMap[key].length ? cloneJson(bodyStateMap[key]) : [];
+
+      const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+      const loreStore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
+      const loreCards = {
+        bodyState: cloneJson(loreStore.bodyState[key] || []),
+        forcedBond: cloneJson(loreStore.forcedBond[key] || []),
+        npcDisposition: cloneJson(loreStore.npcDisposition[key] || []),
+        romancePrefs: loreStore.romancePrefs[key] ? cloneJson(loreStore.romancePrefs[key]) : null,
+        dismissed: {
+          bodyState: cloneJson(loreStore.dismissed.bodyState[key] || []),
+          forcedBond: cloneJson(loreStore.dismissed.forcedBond[key] || []),
+          npcDisposition: cloneJson(loreStore.dismissed.npcDisposition[key] || []),
+          romancePrefs: cloneJson(loreStore.dismissed.romancePrefs[key] || [])
+        }
+      };
+
+      const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+      const intimacyMap = normalizeIntimacyCardMap(rawIntimacy.cards || {});
+      const intimacyCards = Array.isArray(intimacyMap[key]) && intimacyMap[key].length ? cloneJson(intimacyMap[key]) : [];
+
+      const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+      const relsimStore = normalizeRelsimStore(rawRelsim);
+      const relsimEntry = relsimStore.chats[key] && isGradiaRelsimChatPopulated(relsimStore.chats[key])
+        ? cloneJson(relsimStore.chats[key])
+        : null;
+
+      const npcDispCount = npcDisposition ? ((npcDisposition.default ? 1 : 0) + (Array.isArray(npcDisposition.npcs) ? npcDisposition.npcs.length : 0)) : 0;
+      const loreCardCount = loreCards.bodyState.length + loreCards.forcedBond.length + loreCards.npcDisposition.length + (loreCards.romancePrefs ? Object.keys(loreCards.romancePrefs).length : 0);
+      const dismissedCount = loreCards.dismissed.bodyState.length + loreCards.dismissed.forcedBond.length + loreCards.dismissed.npcDisposition.length + loreCards.dismissed.romancePrefs.length;
+      const relsimCount = relsimEntry ? 1 : 0;
+      const counts = {
+        npcDisposition: npcDispCount,
+        forcedBondCards: forcedBondCards.length,
+        bodyStateCards: bodyStateCards.length,
+        loreCards: loreCardCount,
+        dismissedLoreCards: dismissedCount,
+        intimacyCards: intimacyCards.length,
+        relationshipState: relsimCount
+      };
+      const totalItems = counts.npcDisposition + counts.forcedBondCards + counts.bodyStateCards + counts.loreCards + counts.dismissedLoreCards + counts.intimacyCards + counts.relationshipState;
+      const payload = { npcDisposition, forcedBondCards, bodyStateCards, loreCards, intimacyCards, relationshipState: relsimEntry };
+      const digest = stableDraftHash(JSON.stringify(payload));
+      return { scopeKey: key, payload, counts, totalItems, digest };
+    };
+
+    const inspectGradiaSessionHandoff = async (payload = {}) => {
+      const resolved = await resolveGradiaChatFromHost(payload?.sourceChatId || '');
+      if (!resolved.character || !resolved.chat) {
+        return {
+          ok: false,
+          reason: 'source_chat_unavailable',
+          scopeKey: '',
+          sourceChatId: text(payload?.sourceChatId || '').trim(),
+          itemCount: 0,
+          counts: { npcDisposition: 0, forcedBondCards: 0, bodyStateCards: 0, loreCards: 0, dismissedLoreCards: 0, intimacyCards: 0, relationshipState: 0 },
+          digest: '',
+          hasData: false,
+          compatibility: gradiaRetraceCompatibility(),
+          pluginVersion: PLUGIN_VERSION
+        };
+      }
+      const scopeKey = loreContinuityScopeKey(resolved.character, resolved.chat);
+      const snap = await readGradiaChatStateSnapshot(scopeKey);
+      return {
+        ok: true,
+        scopeKey,
+        sourceChatId: resolved.chatId,
+        itemCount: snap.totalItems,
+        counts: snap.counts,
+        digest: snap.digest,
+        hasData: snap.totalItems > 0,
+        compatibility: gradiaRetraceCompatibility(),
+        pluginVersion: PLUGIN_VERSION
+      };
+    };
+
+    const adoptGradiaSessionHandoff = async (payload = {}) => {
+      const targetChatId = text(payload?.targetChatId || '').trim();
+      const transferId = text(payload?.transferId || '').trim();
+      const expectedSourceDigest = text(payload?.expectedSourceDigest || '').trim();
+      if (!targetChatId || !transferId) throw new Error('GRADIA_HANDOFF_IDENTITY_REQUIRED');
+      const active = await resolveGradiaChatFromHost('');
+      if (!active.character || !active.chat || active.chatId !== targetChatId) {
+        throw new Error('GRADIA_HANDOFF_TARGET_CHAT_MISMATCH');
+      }
+      const bridge = active.chat?.memorySessionBridge;
+      if (!bridge || typeof bridge !== 'object'
+        || text(bridge.targetChatId || '').trim() !== targetChatId
+        || text(bridge.transferId || '').trim() !== transferId
+        || !text(bridge.sourceChatId || '').trim()
+        || text(bridge.sourceChatId || '').trim() === targetChatId
+        || text(bridge.handoffJournal?.transferId || '').trim() !== transferId) {
+        throw new Error('GRADIA_HANDOFF_BRIDGE_MARKER_INVALID');
+      }
+      const sourceChatId = text(bridge.sourceChatId || payload?.sourceChatId || '').trim();
+      const sourceResolved = await resolveGradiaChatFromHost(sourceChatId);
+      if (!sourceResolved.character || !sourceResolved.chat) throw new Error('GRADIA_HANDOFF_SOURCE_CHAT_UNAVAILABLE');
+      const sourceScopeKey = text(payload?.sourceScopeKey || bridge.sourceGradiaScopeKey || '').trim() || loreContinuityScopeKey(sourceResolved.character, sourceResolved.chat);
+      const targetScopeKey = loreContinuityScopeKey(active.character, active.chat);
+      if (!sourceScopeKey || !targetScopeKey || sourceScopeKey === targetScopeKey) {
+        throw new Error('GRADIA_HANDOFF_SCOPE_COLLISION');
+      }
+      const sourceSnap = await readGradiaChatStateSnapshot(sourceScopeKey);
+      if (expectedSourceDigest && sourceSnap.digest !== expectedSourceDigest) {
+        throw new Error('GRADIA_HANDOFF_SOURCE_DIGEST_MISMATCH');
+      }
+      const targetBefore = await readGradiaChatStateSnapshot(targetScopeKey);
+      const ledgerRaw = await readObject(STORAGE_GRADIA_HANDOFF_LEDGER_KEY, {});
+      const receipts = ledgerRaw?.receipts && typeof ledgerRaw.receipts === 'object' ? { ...ledgerRaw.receipts } : {};
+      const existingReceipt = receipts[transferId];
+      if (existingReceipt
+        && existingReceipt.sourceScopeKey === sourceScopeKey
+        && existingReceipt.targetScopeKey === targetScopeKey
+        && existingReceipt.sourceDigest === sourceSnap.digest
+        && targetBefore.digest === sourceSnap.digest) {
+        return {
+          ...existingReceipt,
+          idempotentReplay: true,
+          verified: true,
+          durable: true,
+          sourcePreserved: true,
+          compatibility: gradiaRetraceCompatibility()
+        };
+      }
+      if (targetBefore.totalItems > 0 && (!existingReceipt || existingReceipt.transferId !== transferId)) {
+        throw new Error('GRADIA_HANDOFF_TARGET_NOT_EMPTY');
+      }
+
+      const src = sourceSnap.payload;
+      if (sourceSnap.totalItems > 0 && src) {
+        // 1. runtime_settings:v2 (npcDisposition, forcedBondCards, bodyStateCards)
+        if (src.npcDisposition || src.forcedBondCards.length || src.bodyStateCards.length) {
+          const nextSettings = await readRuntimeSettings();
+          const nextNpc = normalizeNpcDispositionMap(nextSettings.npcDisposition);
+          const nextBond = normalizeForcedBondCardMap(nextSettings.forcedBondCards);
+          const nextBody = normalizeBodyStateCardMap(nextSettings.bodyStateCards);
+          if (src.npcDisposition && !npcDispositionEntryIsEmpty(src.npcDisposition)) nextNpc[targetScopeKey] = cloneJson(src.npcDisposition);
+          if (src.forcedBondCards.length) nextBond[targetScopeKey] = cloneJson(src.forcedBondCards);
+          if (src.bodyStateCards.length) nextBody[targetScopeKey] = cloneJson(src.bodyStateCards);
+          nextSettings.npcDisposition = nextNpc;
+          nextSettings.forcedBondCards = nextBond;
+          nextSettings.bodyStateCards = nextBody;
+          await writeRuntimeSettings(nextSettings);
+        }
+        // 2. lore_cards:v1 (AI proposals + dismissed lists)
+        const lc = src.loreCards;
+        const hasLore = lc && (lc.bodyState.length || lc.forcedBond.length || lc.npcDisposition.length || lc.romancePrefs
+          || lc.dismissed.bodyState.length || lc.dismissed.forcedBond.length || lc.dismissed.npcDisposition.length || lc.dismissed.romancePrefs.length);
+        if (hasLore) {
+          const rawLore = await readObject(STORAGE_LORE_CARDS_KEY, {});
+          const nextLore = normalizeLoreCardsStore(rawLore.cards || rawLore || {});
+          if (lc.bodyState.length) nextLore.bodyState[targetScopeKey] = cloneJson(lc.bodyState);
+          if (lc.forcedBond.length) nextLore.forcedBond[targetScopeKey] = cloneJson(lc.forcedBond);
+          if (lc.npcDisposition.length) nextLore.npcDisposition[targetScopeKey] = cloneJson(lc.npcDisposition);
+          if (lc.romancePrefs) nextLore.romancePrefs[targetScopeKey] = cloneJson(lc.romancePrefs);
+          if (lc.dismissed.bodyState.length) nextLore.dismissed.bodyState[targetScopeKey] = cloneJson(lc.dismissed.bodyState);
+          if (lc.dismissed.forcedBond.length) nextLore.dismissed.forcedBond[targetScopeKey] = cloneJson(lc.dismissed.forcedBond);
+          if (lc.dismissed.npcDisposition.length) nextLore.dismissed.npcDisposition[targetScopeKey] = cloneJson(lc.dismissed.npcDisposition);
+          if (lc.dismissed.romancePrefs.length) nextLore.dismissed.romancePrefs[targetScopeKey] = cloneJson(lc.dismissed.romancePrefs);
+          await writeObject(STORAGE_LORE_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeLoreCardsStore(nextLore) });
+        }
+        // 3. intimacy_cards:v1
+        if (src.intimacyCards.length) {
+          const rawIntimacy = await readObject(STORAGE_INTIMACY_CARDS_KEY, {});
+          const nextIntimacy = normalizeIntimacyCardMap(rawIntimacy.cards || {});
+          nextIntimacy[targetScopeKey] = cloneJson(src.intimacyCards);
+          await writeObject(STORAGE_INTIMACY_CARDS_KEY, { version: 1, savedAt: new Date().toISOString(), cards: normalizeIntimacyCardMap(nextIntimacy) });
+        }
+        // 4. relationship_state:v1
+        if (src.relationshipState) {
+          const rawRelsim = await readObject(STORAGE_RELATIONSHIP_STATE_KEY, {});
+          const nextRelsim = normalizeRelsimStore(rawRelsim);
+          nextRelsim.chats[targetScopeKey] = cloneJson(src.relationshipState);
+          await writeObject(STORAGE_RELATIONSHIP_STATE_KEY, { version: 1, savedAt: new Date().toISOString(), ...normalizeRelsimStore(nextRelsim) });
+        }
+      }
+
+      // Physical readback verification of both target and untouched source
+      const [sourceAfter, targetAfter] = await Promise.all([
+        readGradiaChatStateSnapshot(sourceScopeKey),
+        readGradiaChatStateSnapshot(targetScopeKey)
+      ]);
+      const sourcePreserved = sourceAfter.digest === sourceSnap.digest;
+      const targetVerified = targetAfter.digest === sourceSnap.digest;
+      if (!sourcePreserved) throw new Error('GRADIA_HANDOFF_SOURCE_MUTATION_DETECTED');
+      if (!targetVerified) throw new Error('GRADIA_HANDOFF_READBACK_MISMATCH');
+
+      // Invalidate in-memory caches so GRADIA GUI & next turn read inherited data immediately
+      Runtime.settings = null;
+      Runtime.settingsLoadedAt = 0;
+      Runtime.loreCards = null;
+      Runtime.intimacyCards = null;
+      Runtime.relationshipState = null;
+      Runtime.activeScopeKey = targetScopeKey;
+      clearRequestReuseCache();
+
+      const receipt = {
+        schema: GRADIA_HANDOFF_RECEIPT_SCHEMA,
+        handoffContract: GRADIA_HANDOFF_CONTRACT,
+        ok: true,
+        adopted: sourceSnap.totalItems > 0,
+        verified: true,
+        durable: true,
+        sourcePreserved: true,
+        transferId,
+        sourceChatId,
+        targetChatId,
+        sourceScopeKey,
+        targetScopeKey,
+        items: targetAfter.totalItems,
+        counts: targetAfter.counts,
+        sourceDigest: sourceSnap.digest,
+        targetDigest: targetAfter.digest,
+        at: Date.now(),
+        compatibility: gradiaRetraceCompatibility()
+      };
+      receipts[transferId] = receipt;
+      const keys = Object.keys(receipts);
+      if (keys.length > GRADIA_HANDOFF_LEDGER_MAX) {
+        keys.sort((a, b) => Number(receipts[a]?.at || 0) - Number(receipts[b]?.at || 0))
+          .slice(0, keys.length - GRADIA_HANDOFF_LEDGER_MAX)
+          .forEach(oldKey => { delete receipts[oldKey]; });
+      }
+      await writeObject(STORAGE_GRADIA_HANDOFF_LEDGER_KEY, { version: 1, updatedAt: new Date().toISOString(), receipts });
+      return receipt;
+    };
+
+    const registerGradiaRetraceIpc = async () => {
+      if (registered.retraceIpc) return true;
+      if (gradiaRetraceUnloaded) return false;
+      const ipcApi = getLiveApi(['addPluginChannelListener', 'postPluginChannelMessage']);
+      if (typeof ipcApi?.addPluginChannelListener !== 'function' || typeof ipcApi?.postPluginChannelMessage !== 'function') return false;
+      const handler = async (message, metadata = {}) => {
+        if (gradiaRetraceUnloaded) return;
+        const request = message && typeof message === 'object' && !Array.isArray(message) ? message : {};
+        if (request.schema !== GRADIA_RETRACE_IPC_SCHEMA || request.kind !== 'request') return;
+        if (String(metadata?.sender || '') !== RETRACE_PLUGIN_ID) return;
+        const requestId = text(request.requestId || '').trim();
+        const action = text(request.action || '').trim();
+        if (!requestId || !action) return;
+        let response;
+        try {
+          let result;
+          if (action === 'ping' || action === 'capabilities') {
+            result = {
+              ok: true,
+              ownerPluginId: 'serial_gradation_agents_for_rp',
+              authorizedRequester: RETRACE_PLUGIN_ID,
+              compatibility: gradiaRetraceCompatibility(),
+              pluginVersion: PLUGIN_VERSION
+            };
+          } else if (action === 'inspect') {
+            result = await inspectGradiaSessionHandoff(request.payload || {});
+          } else if (action === 'adopt_session_handoff') {
+            result = await adoptGradiaSessionHandoff(request.payload || {});
+          } else {
+            throw new Error(`Unsupported GRADIA RE:TRACE action: ${action}`);
+          }
+          response = { schema: GRADIA_RETRACE_IPC_SCHEMA, kind: 'response', requestId, action, ok: true, result };
+        } catch (error) {
+          response = { schema: GRADIA_RETRACE_IPC_SCHEMA, kind: 'response', requestId, action, ok: false, error: String(error?.message || error) };
+        }
+        if (gradiaRetraceUnloaded) return;
+        try { await ipcApi.postPluginChannelMessage(RETRACE_PLUGIN_ID, GRADIA_RETRACE_RESPONSE_CHANNEL, response); } catch (_) {}
+      };
+      const registration = await ipcApi.addPluginChannelListener(GRADIA_RETRACE_REQUEST_CHANNEL, handler);
+      if (gradiaRetraceUnloaded) {
+        try { if (typeof registration === 'function') await registration(); else if (typeof ipcApi.removePluginChannelListener === 'function') await ipcApi.removePluginChannelListener(GRADIA_RETRACE_REQUEST_CHANNEL, handler); } catch (_) {}
+        return false;
+      }
+      registered.retraceIpc = handler;
+      registered.retraceIpcApi = ipcApi;
+      registered.retraceIpcRegistration = registration;
+      Runtime.hookStatus.retraceIpc = true;
+      return true;
+    };
+
+    const ensureGradiaRetraceIpc = async () => {
+      if (gradiaRetraceUnloaded || gradiaRetraceIpcRetryRunning || registered.retraceIpc) return;
+      gradiaRetraceIpcRetryRunning = true;
+      gradiaRetraceIpcRetryAttempts += 1;
+      try { await registerGradiaRetraceIpc(); } catch (error) { warn('GRADIA RE:TRACE IPC registration failed.', error); }
+      finally { gradiaRetraceIpcRetryRunning = false; }
+      if (!gradiaRetraceUnloaded && !registered.retraceIpc && gradiaRetraceIpcRetryAttempts < 40 && gradiaRetraceIpcRetryTimer === null) {
+        gradiaRetraceIpcRetryTimer = setTimeout(() => { gradiaRetraceIpcRetryTimer = null; void ensureGradiaRetraceIpc(); }, 500);
+      }
+    };
+
+    const unregisterGradiaRetraceIpc = async () => {
+      gradiaRetraceUnloaded = true;
+      if (gradiaRetraceIpcRetryTimer !== null) { clearTimeout(gradiaRetraceIpcRetryTimer); gradiaRetraceIpcRetryTimer = null; }
+      const handler = registered.retraceIpc;
+      const registration = registered.retraceIpcRegistration;
+      const ipcApi = registered.retraceIpcApi;
+      registered.retraceIpc = null;
+      registered.retraceIpcRegistration = null;
+      registered.retraceIpcApi = null;
+      Runtime.hookStatus.retraceIpc = false;
+      try {
+        if (typeof registration === 'function') await registration();
+        else if (registration && typeof registration.dispose === 'function') await registration.dispose();
+        else if (handler && typeof ipcApi?.removePluginChannelListener === 'function') await ipcApi.removePluginChannelListener(GRADIA_RETRACE_REQUEST_CHANNEL, handler);
+      } catch (_) {}
+    };
 
     const unload = async () => {
       await libOwnerSelectionReader?.dispose?.();
@@ -52858,7 +53242,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         Runtime.hookStatus.beforeRequest = false;
         Runtime.hookStatus.afterRequest = false;
       } catch (_) {}
-      ;
+      try { await unregisterGradiaRetraceIpc(); } catch (_) {}
       try {
         if (registered.setting && typeof API.unregisterUIPart === 'function') await API.unregisterUIPart(registered.setting.id || registered.setting);
         Runtime.hookStatus.setting = false;
@@ -52952,9 +53336,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       else if (typeof API.addEventListener === 'function') { await API.addEventListener('unload', unload); Runtime.hookStatus.unload = true; }
     } catch (_) {}
 
-    try { globalThis.__SerialGradationAgentsForRP = publicApi; } catch (_) {}
-    try { globalThis.__ShadowActSerialAIDE = publicApi; } catch (_) {} // legacy alias
+    const exportedApi = Object.freeze({ ...publicApi, inspectGradiaSessionHandoff, adoptGradiaSessionHandoff, gradiaRetraceCompatibility });
+    try { globalThis.__SerialGradationAgentsForRP = exportedApi; } catch (_) {}
+    try { globalThis.__ShadowActSerialAIDE = exportedApi; } catch (_) {} // legacy alias
     await registerPluginUi();
+    await ensureGradiaRetraceIpc();
     await LibReadConnection.start();
     // Native chat-copy adoption is a local storage rebind, not an LLM call. Probe once
     // at startup so opening a copied chat can inherit its Story Arc/Writer state before
