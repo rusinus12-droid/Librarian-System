@@ -119,3 +119,26 @@ test('NPC disposition is left out of a stage with no room rather than failing th
   assert.ok(!JSON.stringify(prompts[0]).includes('NPC DISPOSITION (반응 경향성)'),'the SHADOW request carries no disposition');
   assert.ok(JSON.stringify(out).includes('[NPC DISPOSITION GUARD]'),'the final pass keeps its own guard');
 });
+
+// This turn's random scene variable is a creative nudge, not a user directive: when the prompt does
+// not fit, it is left out of that request before the turn would fail. The random draw used to make
+// a 16k model fail only on the runs that drew a variable.
+test('the random scene variable is left out of a request that cannot hold it',async t=>{
+  const prompts=[];
+  const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
+  f.host.plugin.debugSetSceneVarianceRandom([0.1,0.0,0.0]);
+  t.after(()=>f.host.plugin.debugSetSceneVarianceRandom(null));
+  await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
+    model:'tight-model',context_window:15700,max_tokens:16384,timeout_ms:5000,stream:false});
+  await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
+    failure_mode:'hard',lore_activation_mode:'off',scene_variance:'high',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
+  await f.connect();
+  const out=await f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
+  assert.equal(prompts.length,4,'the turn runs');
+  assert.ok(JSON.stringify(out).includes(DRAFT));
+  const record=f.host.plugin.getRuntime().contextDegradations.find(item=>item.stage==='shadow_act');
+  assert.ok(record&&record.dropped.includes('scene_variable'),`the drop is recorded: ${JSON.stringify(record)}`);
+  assert.ok(record.sceneVariableRemovedChars>0);
+  assert.ok(!JSON.stringify(prompts[0]).includes('THIS TURN’S VARIABLE'),'the SHADOW request carries no variable');
+  assert.ok(JSON.stringify(prompts[0]).includes('DIALOGUE-TO-SCENE ANCHOR'),'the scene rules around it stay');
+});

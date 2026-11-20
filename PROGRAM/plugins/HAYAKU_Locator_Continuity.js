@@ -55677,10 +55677,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       durable: commit.durable === true
     };
   });
-/* LIBRARIAN SYSTEM SOURCE REVIEW v1.0.0 START
- * Own-iframe diff and immutable, owner-scoped approved-input evidence.
- * Never writes chat messages, calls a model, or grants another owner's consent.
- */
 // 원문 태그 필터 원칙 (docs/SOURCE_TAG_FILTER_PRINCIPLE_20261119.md). userHash/assistantVisibleHash
 // hash the filtered text, so a source tag filter change moves them without any edit. A stored
 // record or turn node is still this turn when its visible hashes match, or when it is the same
@@ -55702,6 +55698,10 @@ function hayakuSameTurnSource(stored, pair) {
   const livePackets = new Set((Array.isArray(pair.packetHashes) ? pair.packetHashes : []).map(s).filter(Boolean));
   return storedPackets.some(hash => livePackets.has(hash));
 }
+/* LIBRARIAN SYSTEM SOURCE REVIEW v1.0.0 START
+ * Own-iframe diff and immutable, owner-scoped approved-input evidence.
+ * Never writes chat messages, calls a model, or grants another owner's consent.
+ */
 function memorySuiteReviewFingerprint(value) {
   const body = typeof value === 'string' ? value : JSON.stringify(value);
   let a = 2166136261, b = 2246822507;

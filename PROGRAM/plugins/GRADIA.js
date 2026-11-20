@@ -4939,6 +4939,37 @@ ${BIANCA_PERSONA_TEXT}`;
     parsed[key] = target;
     return { changed: true, body: JSON.stringify(parsed), before, after: target };
   };
+  // The per-turn random variable is a creative nudge, not a user directive: on a model whose
+  // context cannot hold the prompt it is left out of this request instead of failing the turn.
+  // The prefixes are the lines the variable block writes (see "THIS TURN’S VARIABLE").
+  const SCENE_VARIABLE_FOLLOW_PREFIXES = Object.freeze(['- The variable comes from inside this scene', '- Write it into the first draft',
+    '- The draft carries this variable on purpose', '- Give it one small effect', '- It may belong to any character',
+    '- It is a change in the world only', '- It belongs to an NPC or the world', '- A character’s variable comes from their lore']);
+  const dropSceneVariableBlock = (serialized) => {
+    let parsed;
+    try { parsed = JSON.parse(serialized); } catch (_) { return { changed: false, body: serialized }; }
+    let removedChars = 0;
+    const walk = value => {
+      if (typeof value === 'string') {
+        if (!value.includes('- THIS TURN’S VARIABLE (')) return value;
+        const lines = value.split('\n'), kept = [];
+        let inBlock = false;
+        for (const line of lines) {
+          if (line.startsWith('- THIS TURN’S VARIABLE (')) { inBlock = true; removedChars += line.length + 1; continue; }
+          if (inBlock && SCENE_VARIABLE_FOLLOW_PREFIXES.some(prefix => line.startsWith(prefix))) { removedChars += line.length + 1; continue; }
+          inBlock = false;
+          kept.push(line);
+        }
+        return kept.join('\n');
+      }
+      if (Array.isArray(value)) return value.map(walk);
+      if (value && typeof value === 'object') { for (const key of Object.keys(value)) value[key] = walk(value[key]); }
+      return value;
+    };
+    const next = walk(parsed);
+    if (!removedChars) return { changed: false, body: serialized };
+    return { changed: true, body: JSON.stringify(next), removedChars };
+  };
   const trimSharedReferenceBlock = (serialized) => {
     let parsed;
     try { parsed = JSON.parse(serialized); } catch (_) { return { changed: false, body: serialized }; }
@@ -5257,7 +5288,19 @@ ${BIANCA_PERSONA_TEXT}`;
               }
             }
           }
-          // 4) Leave the disposition out of this stage rather than fail the turn.
+          // 4) Leave out this turn's random scene variable; it is a nudge, not a user directive.
+          if (!base.fits) {
+            const dropped = dropSceneVariableBlock(workingBody);
+            if (dropped.changed) {
+              const next = budgetMeter.inspect(input(dropped.body,'',dropped.body));
+              if (next.status === 'available') {
+                workingBody = dropped.body; base = next;
+                degradation.dropped.push('scene_variable');
+                degradation.sceneVariableRemovedChars = dropped.removedChars;
+              }
+            }
+          }
+          // 5) Leave the disposition out of this stage rather than fail the turn.
           if (!base.fits) {
             const dropped = compactNpcDispositionDetail(workingBody, { dropBlock: true });
             if (dropped.changed) {
@@ -26237,8 +26280,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : `- Settle this scene’s purpose first: the one thing this response must move forward, taken from the current input first, then the author note, the open pressure at the end of the last response, and the active arc.${gate === 'novel' ? '' : ' In RP the purpose is how the world and the other characters answer the persona, never a decision for the persona.'}`);
     lines.push('- Arrange the development and every reaction by that purpose: each character responds from their own position in a way that pushes, resists, or complicates it, and the world (the place, objects, sound, time, bystanders) supports or presses on it.');
     lines.push('- A beat the purpose cannot explain does not belong here: tie it to the purpose or cut it. Nothing unrelated to this scene enters the response.');
-    lines.push('- DIALOGUE-TO-SCENE ANCHOR: every NPC line must answer or push on something concretely present in this exchange — the current input’s actual words or actions, the speaker’s immediate physical action or object in hand, or the active tension of this moment. Never let an NPC blurt out an unprompted tangent from lore, memory, or an address/honorific rule that nobody triggered here, and never rationalize a phantom remark in-character (e.g., “oh, you didn’t actually say that”).');
-    lines.push('- NARRATION–DIALOGUE SEAM: keep each spoken line glued to the surrounding action and emotional beat; do not stack disconnected mini-topics into a wandering NPC monologue.');
+    lines.push('- DIALOGUE-TO-SCENE ANCHOR: every NPC line must answer or push on something concretely present in this exchange (the input’s words or acts, the speaker’s own action, the live tension). No unprompted tangent from lore, memory, or an untriggered address rule; no in-character excuse for a remark never made.');
+    lines.push('- NARRATION–DIALOGUE SEAM: keep each spoken line glued to the surrounding action; no wandering monologue of loose topics.');
     if (stageName === 'aide_character' || stageName === 'aide_plot') lines.push('- If an NPC utters an unprompted tangent, reacts to a word or form of address never spoken in this scene, or jumps off the active narrative thread, cut that tangent or rewrite it so the line grows directly out of the physical action and pressure right in front of them.');
     if (isAide) lines.push(`- OUTPUT: add a top-level "scene_purpose": one short line naming the purpose this draft serves${purpose ? ' (the purpose above)' : ''}, and a top-level "story_arc": one short line naming the arc, its phase, and this scene’s step in it${purpose?.arc ? ' (the arc reading above)' : ''}.`);
     if (run.variable) {
@@ -26249,16 +26292,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : stageName === 'aide_plot'
           ? '- The draft carries this variable on purpose. Keep it when it stays inside the scene and serves or tests the purpose, and make sure it does not become the ending. If it drifted off the scene, tie it back to the scene or remove it; never add an unrelated substitute.'
           : '- The draft carries this variable on purpose. Keep it when it stays inside the scene and make it fit the character; if it drifted off the scene or works against the purpose, tie it back or remove it.');
-      lines.push('- Give it one small effect on what happens next without inventing new lore, technology, or obligations to make it fit.');
+      lines.push('- Give it one small effect on what follows; invent no lore, technology, or obligation for it, and never let it override user direction, canon, mode rules, or reserved choices.');
       lines.push(gate === 'novel'
         ? '- It may belong to any character, the protagonist included, unless the author reserved that choice.'
         : gate === 'staging'
           ? '- It is a change in the world only; no character takes a new act or line.'
           : '- It belongs to an NPC or the world, never to the persona.');
-      lines.push('- It never overrides user direction, canon, mode rules, or reserved choices.');
       if (gate !== 'staging') {
-        lines.push('- LORE ALIGNMENT: when this variable involves character behavior, ground it in the acting character’s established lore (goals, temperament, habits, vulnerabilities) rather than generic randomness.');
-        lines.push('- CAUSAL PRIORITY: never force this variable to hijack the characters’ primary emotional or situational reaction, contradict the authorial tone/direction, or manufacture an unnatural detour. If it does not fit the immediate moment naturally, keep it as subtle background texture or omit it.');
+        lines.push('- A character’s variable comes from their lore (goals, temperament, habits, weak spots), not randomness. It never displaces their main reaction, the author’s tone, or forces a detour; if it does not fit naturally, keep it as background texture or omit it.');
       }
     }
     if (repetition.questions >= 3) {
@@ -26618,7 +26659,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- Acts on objects, words, and social moves land fully according to the NPC’s lore and stance. An act on the persona’s body may begin, but its effect on the persona stays open for the user under the existing RP touch rules. Hand the NPC’s stance back to the persona as the pull for the next turn.'
     ];
   };
-  const npcDispositionStageBlock = (stageName, recent = {}, settings = {}, phase = 'writing') => {
+  const npcDispositionStageBlock = (stageName, recentInput = {}, settings = {}, phase = 'writing') => {
+    // Callers without a recent view pass null; the default parameter covers only undefined.
+    const recent = recentInput && typeof recentInput === 'object' ? recentInput : {};
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const shouldAskProfiles = phase !== 'writing' && npcDispositionNeedsLoreEstimation(settings) && stageName === npcDispositionEstimatorStage(settings);
     const profileOutputLine = `OUTPUT: add a top-level "disposition_profiles" array with one item per NPC listed under MISSING DISPOSITION CARDS or present in the scene (never the persona, never a group or world card title) who has no disposition row yet; use an empty array when every present NPC already has one. Estimate each NPC’s baseline attitude toward the persona (${npcDispositionDisplayName()}) from their lore (character card, lorebook, relationship history, and memory evidence); where lore is silent, infer from personality and state so in basis. Fields: name; level (hostile, dislike, acquaintance, like, or affection); note (one short sentence on why or how they hold this attitude toward the persona); basis (the lore it rests on). A saved profile becomes a lasting disposition card for this chat and is never overwritten automatically.`;
@@ -49997,7 +50040,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const resultsContextDegradationSection = () => {
     const record = Runtime.lastContextDegradation;
     if (!record) return null;
-    const label = { output_tokens: '출력 토큰 축소', shared_reference: '공유 참조 축소', npc_disposition_detail: 'NPC 반응 경향성 요약', npc_disposition: 'NPC 반응 경향성 생략(이 단계)', memory_evidence: '기억 증거 생략' };
+    const label = { output_tokens: '출력 토큰 축소', shared_reference: '공유 참조 축소', npc_disposition_detail: 'NPC 반응 경향성 요약', npc_disposition: 'NPC 반응 경향성 생략(이 단계)', scene_variable: '이번 턴 변수 생략(이 단계)', memory_evidence: '기억 증거 생략' };
     const dropped = Array.isArray(record.dropped) ? record.dropped : [];
     const detail = [];
     if (dropped.includes('output_tokens')) detail.push(`출력 ${Number(record.outputBefore || 0).toLocaleString('ko-KR')} → ${Number(record.outputAfter || 0).toLocaleString('ko-KR')} 토큰`);

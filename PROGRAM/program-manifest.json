@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-19T23:43:10.595Z",
+  "generatedAt": "2026-11-20T00:46:26.543Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -3880,7 +3880,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "a1b9ee803b7a8b7ff946cbd092ff7211af805ec389cf59a4d39faa0c0d65bd88",
+      "sha256": "6b115f1ca30abf2e14c124107b7277dcaf4d8234a1a9a99adb4488302d941640",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4070,6 +4070,10 @@
     "docs/SOURCE_TRACKING_PATCH_REAUDIT_20260913.md": {
       "sha256": "7546c0b2193c0c5dc141954a116fa19ecbdfef3d6bb6e43b56b380228302b89c",
       "bytes": 3765
+    },
+    "docs/STATE_PROJECTION_PARTIAL_FAILURE_20261120.md": {
+      "sha256": "85a026bcec30763077ee9c2d880d4e96a4c9cc37e14787a526a85aa41f7e33b5",
+      "bytes": 2976
     },
     "docs/STORAGE_LINKAGE_FIX_20260911.md": {
       "sha256": "04c3d3f181fb29a5c15773afc953d375f9a3b815d3ca3c642e9826101ac4421e",
@@ -4292,11 +4296,11 @@
       "bytes": 3931265
     },
     "plugins/GRADIA.js": {
-      "sha256": "1dd51594ed6dc270a6fe25f20db4987af9f7507fd65cddea51f9a2e6a7587042",
-      "bytes": 3616985
+      "sha256": "29ba003e09c413ab256e731805f39317c3742cba71a73c68ff411447dc15dabd",
+      "bytes": 3619173
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "1111d5aa51b1088bab429276f5f9905bf11af41e89a46684d2f38f2f9ce3a954",
+      "sha256": "00eca9fb9305a05f251cf58548bb789908d138d8804866f3ca4a006db2708db0",
       "bytes": 4352930
     },
     "plugins/LIA_Persona_Linker.js": {
@@ -6892,8 +6896,8 @@
       "bytes": 1584
     },
     "tests/gradia/context-degradation.test.cjs": {
-      "sha256": "dc101ecac78558d5ce1505351c2d0a9b12664e8c446a2a28f97b5cdaa2e24954",
-      "bytes": 9162
+      "sha256": "e4398774add83ce53e0069c4f0765803dda420fc399573a22e81bc91b9787b0c",
+      "bytes": 11032
     },
     "tests/gradia/creative-direction-clear.test.cjs": {
       "sha256": "e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc",
@@ -10094,6 +10098,10 @@
     "tests/libra_state_no_count_pruning_test.cjs": {
       "sha256": "227e0e2b2802d961218e6fa0a216d799550d71e77e8046c7401b7758a1fc1454",
       "bytes": 3056
+    },
+    "tests/libra_state_projection_partial_failure_test.cjs": {
+      "sha256": "c9c740d16d51e394dff1ae125b961b27b13fb5b9901024a0aa66f3bfb6c7ff46",
+      "bytes": 6056
     },
     "tests/libra_state_rebuild_transfer_contract_test.cjs": {
       "sha256": "7470a2452736d78d5ba704b0083ccce6d9cf46c356c56f80b02e865ac1b11e73",
