@@ -65,3 +65,46 @@ test('lens preserves notes on same chatId + intact quote after tag refresh, and 
     await f.close?.();
   }
 });
+
+test('legacy lens record without sourcePairs preserves via canonical fallback and whitespace-normalized quote check', async () => {
+  const f = await lensFixture({
+    beforeRun: async f => {
+      f.chat.message[3].data = '안쪽이 굳었다.\n\n몇 초 동안 풀리지 않았다. 오늘 돌려주겠다고 약속했다';
+    }
+  });
+  try {
+    f.setReply({
+      items: [{
+        label: '몸 상태',
+        text: '안쪽이 굳었다가 잠시 후 풀렸다',
+        refs: ['t2-a'],
+        quote: '안쪽이 굳었다. 몇 초 동안 풀리지 않았다.'
+      }]
+    });
+    await f.add('몸 상태 렌즈', 'active', { cadence: { mode: 'every_batch' }, recall: { role: 'relevant' } });
+
+    // Strip sourcePairs from stored lens record to simulate pre-patch legacy lens records in DB.
+    for (const [k, raw] of f.r.values.entries()) {
+      if (k.includes(':lens:') && k.endsWith(':records')) {
+        const store = JSON.parse(raw);
+        for (const rec of Object.values(store.records || {})) delete rec.sourcePairs;
+        f.r.values.set(k, JSON.stringify(store));
+      }
+    }
+
+    // Append non-XML tags so sourceDigest/rawSourceDigest no longer match, keeping chatId and text intact.
+    f.chat.message[3].data += '\n\n◈CG\nTIME|2027.04.25(일)|21:31|휴일\n@|천소연|soyeon\n◈\n\n---\n \n---';
+
+    const inspected = await f.api.inspectScopeLenses();
+    assert.equal(inspected.memories.filter(m => m.sourceCurrent).length, 1);
+    assert.equal(inspected.memories.filter(m => !m.sourceCurrent).length, 0);
+
+    const ranges = await f.api.listReanalysisRanges({ kind: 'lens' });
+    assert.equal(ranges.ranges[0].status, 'saved');
+
+    const recalled = await f.api.recallLensMemories({ query: '안쪽이 굳었다', canonicalBudgetChars: 12000 });
+    assert.ok(recalled.injectedItems.length > 0, 'legacy record with normalized quote stays recallable');
+  } finally {
+    await f.close?.();
+  }
+});

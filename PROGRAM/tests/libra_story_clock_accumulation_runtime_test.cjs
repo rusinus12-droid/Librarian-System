@@ -30,6 +30,7 @@ const pureTimeline = core => {
     [4, {kind: 'same_day', timeOfDay: 'night'}], [5, {kind: 'same_day', timeOfDay: 'dawn'}]]), pairs(5));
   assert.deepEqual(view.entries.map(e => [e.day, e.timeOfDay, e.basis]), [[1, '', 'story'], [1, 'evening', 'story'], [3, 'morning', 'story'], [3, 'night', 'story'], [4, 'dawn', 'story']]);
   assert.equal(view.current.day, 4);
+  assert.deepEqual([view.anchorDate, view.derivedAnchorDate, view.effectiveAnchorDate, view.anchorSource], ['', '', '', '']);
   // Pairs the clock never saw stay unknown; counting then starts on the clock basis.
   view = t(clock([[3, {kind: 'days', days: 5}], [4, {kind: 'days', days: 1}]]), pairs(4));
   assert.deepEqual(view.entries.map(e => [e.known, e.day, e.status]), [[false, null, 'before_clock'], [false, null, 'before_clock'], [true, 1, 'recorded'], [true, 2, 'recorded']]);
@@ -38,17 +39,31 @@ const pureTimeline = core => {
   view = t(clock([[1, {kind: 'none'}], [2, {kind: 'days', days: 3}, 'old'], [3, {kind: 'days', days: 1}]]), pairs(3));
   assert.deepEqual(view.entries.map(e => [e.day, e.status, e.estimated]), [[1, 'recorded', false], [1, 'missing', true], [2, 'recorded', true]]);
   // Absolute dates: the first one dates every earlier day; a later one moves the count forward;
-  // one before the current day is ignored for counting.
+  // one before the current day is ignored for counting. Also derives Day 1 date without pinning anchorDate.
   view = t(clock([[1, {kind: 'none'}], [2, {kind: 'days', days: 1}], [3, {kind: 'date', date: '2026-04-10'}], [4, {kind: 'date', date: '2026-04-13'}], [5, {kind: 'date', date: '2026-04-01'}]]), pairs(5));
   assert.deepEqual(view.entries.map(e => [e.day, e.date]), [[1, '2026-04-09'], [2, '2026-04-10'], [2, '2026-04-10'], [5, '2026-04-13'], [5, '2026-04-13']]);
   assert.equal(view.entries[4].dateConflict, true);
+  assert.deepEqual([view.anchorDate, view.derivedAnchorDate, view.effectiveAnchorDate, view.anchorSource], ['', '2026-04-09', '2026-04-09', 'derived']);
+  // Clock-basis case with earlier stale pairs (matching real multi-turn chat where earlier pairs rotated revisions):
+  view = t(clock([
+    [1, {kind: 'date', date: '2027-04-25', timeOfDay: 'late_night'}, 'stale-1'],
+    [27, {kind: 'same_day', timeOfDay: 'night'}],
+    [28, {kind: 'date', date: '2027-04-25', timeOfDay: 'night'}],
+    [32, {kind: 'date', date: '2027-04-26', timeOfDay: 'morning'}],
+    [33, {kind: 'same_day', timeOfDay: 'morning'}]
+  ]), pairs(33));
+  assert.equal(view.basis, 'clock');
+  assert.equal(view.current.date, '2027-04-26');
+  assert.deepEqual([view.anchorDate, view.derivedAnchorDate, view.effectiveAnchorDate, view.anchorSource], ['', '2027-04-25', '2027-04-25', 'derived']);
   // The anchor dates day 1; a correction resets the count and every later pair follows.
   view = t(clock([[1, {kind: 'none'}], [2, {kind: 'days', days: 1}], [3, {kind: 'days', days: 2}]], {anchorDate: '2026-01-30', corrections: {2: {day: 10}}}), pairs(3));
   assert.deepEqual(view.entries.map(e => [e.day, e.date, e.status]), [[1, '2026-01-30', 'recorded'], [10, '2026-02-08', 'corrected'], [12, '2026-02-10', 'recorded']]);
-  // A correction on a pair before the clock starts the count there on the story basis.
+  assert.deepEqual([view.anchorDate, view.derivedAnchorDate, view.effectiveAnchorDate, view.anchorSource], ['2026-01-30', '', '2026-01-30', 'manual']);
+  // A correction on a pair before the clock starts the count there on the story basis and derives Day 1.
   view = t(clock([[3, {kind: 'days', days: 1}]], {corrections: {2: {day: 4, date: '2026-05-05'}}}), pairs(3));
   assert.deepEqual(view.entries.map(e => [e.known, e.day, e.date]), [[false, null, ''], [true, 4, '2026-05-05'], [true, 5, '2026-05-06']]);
   assert.equal(view.basis, 'story');
+  assert.deepEqual([view.anchorDate, view.derivedAnchorDate, view.effectiveAnchorDate, view.anchorSource], ['', '2026-05-02', '2026-05-02', 'derived']);
   // Malformed reports are no report.
   view = t(clock([[1, {kind: 'days', days: 0}], [2, {kind: 'date', date: '2026-02-30'}], [3, {kind: 'later'}]]), pairs(3));
   assert.ok(view.entries.every(e => !e.known) && view.current === null);
@@ -99,6 +114,8 @@ const pureTimeline = core => {
       // Anchor date and a correction; later pairs count on from the corrected pair.
       await assert.rejects(api.setStoryClockAnchor('2026-02-30'), /YYYY-MM-DD/);
       clock = await api.setStoryClockAnchor('2026-04-01');
+      assert.equal(clock.effectiveAnchorDate, '2026-04-01');
+      assert.equal(clock.anchorSource, 'manual');
       assert.deepEqual([6, 7, 8].map(turn => day(turn).date), ['2026-04-01', '2026-04-01', '2026-04-02']);
       clock = await api.correctStoryClockTurn(7, {day: 5});
       assert.deepEqual([6, 7, 8].map(turn => [day(turn).day, day(turn).date]), [[1, '2026-04-01'], [5, '2026-04-05'], [6, '2026-04-06']]);
@@ -111,9 +128,17 @@ const pureTimeline = core => {
       if (f.chat.message.length === 10) f.chat.message.push(...added);
       clock = await api.getStoryClock();
       assert.equal(clock.anchorDate, '2026-04-01');
+      assert.equal(clock.effectiveAnchorDate, '2026-04-01');
+      assert.equal(clock.anchorSource, 'manual');
       assert.deepEqual([6, 7, 8].map(turn => day(turn).day), [1, 5, 6]);
       clock = await api.correctStoryClockTurn(7, null);
       assert.deepEqual([6, 7, 8].map(turn => day(turn).day), [1, 1, 2], 'removing the correction re-accumulates');
+
+      // Clearing manual anchor reverts cleanly when only relative advances exist, then restoring manual anchor works.
+      clock = await api.setStoryClockAnchor('');
+      assert.deepEqual([clock.anchorDate, clock.derivedAnchorDate, clock.effectiveAnchorDate, clock.anchorSource], ['', '', '', '']);
+      clock = await api.setStoryClockAnchor('2026-04-01');
+      assert.equal(clock.anchorSource, 'manual');
 
       // Lens notes carry the day of their source turn; GRADIA-facing structured days too.
       const lens = await api.createLens({name: '시계 렌즈', instruction: {goal: '몸 상태 기록'}, evidenceMode: 'strict', trackTime: true, trackSubject: false,

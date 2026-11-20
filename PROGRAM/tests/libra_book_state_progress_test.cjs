@@ -43,6 +43,20 @@ failedCommit.runs = [{runId:'run-new',stateTracking:{status:'failed_open',reason
 assert.equal(classify('world', failedCommit).state, 'failed');
 failedCommit.continuityState.domainStatus.world = ready(10);
 assert.equal(classify('world', failedCommit).state, 'ready', 'an old failure must not override a recovered domain');
+const supersededReplay = snapshot({
+  narrative: {
+    status: 'not_updated',
+    throughTurn: 25,
+    reason: 'unified_bindings_pending',
+    attemptedEvidence: { turnRange: { start: 26, end: 30 } }
+  }
+}, 30);
+supersededReplay.manifest.memories[1].runId = 'run-old-failed-open';
+supersededReplay.runs = [{ runId: 'run-old-failed-open', stateTracking: { status: 'failed_open', reason: 'UNIFIED_MEMORY_FIRST_STATE_FAILED:UNIFIED_REPLAY_SOURCE_CHANGED' } }];
+const supersededResult = classify('story', supersededReplay);
+assert.equal(supersededResult.state, 'partial', 'superseded failed_open run must not hide a later pending replay reason');
+assert.equal(supersededResult.retry, true);
+assert.doesNotMatch(supersededResult.detail, /UNIFIED_REPLAY_SOURCE_CHANGED/);
 // The approved readonly status dialog replaces the paper header detail wrapper.
 // Keep every classifier assertion above and check the new actual refresh owner.
 const approved=require('./helpers/libra_approved_gui_contract.cjs');

@@ -17587,10 +17587,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       if (entry.known && !entry.date && firstRef) entry.date = storyClockDateFromNumber(firstRef.number + (entry.day - firstRef.day));
       delete entry._ref;
     }
+    const derivedAnchorDate = !clock.anchorDate && firstRef
+      ? storyClockDate(storyClockDateFromNumber(firstRef.number + (1 - firstRef.day)))
+      : '';
+    const effectiveAnchorDate = clock.anchorDate || derivedAnchorDate;
+    const anchorSource = clock.anchorDate ? 'manual' : (derivedAnchorDate ? 'derived' : '');
     const current = [...entries].reverse().find(entry => entry.known) || null;
     const latest = entries[entries.length - 1] || null;
     return {
-      schema: 'libra.story_clock_timeline.v1', anchorDate: clock.anchorDate, basis, entries,
+      schema: 'libra.story_clock_timeline.v1', anchorDate: clock.anchorDate, derivedAnchorDate, effectiveAnchorDate, anchorSource, basis, entries,
       current: current ? { ...current, asOfTurn: current.turn, latestTurn: latest?.turn ?? current.turn, pendingTurns: entries.filter(entry => entry.turn > current.turn).length } : null
     };
   };
@@ -17609,7 +17614,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!timeline?.current) return null;
     const pick = entry => ({ turn: entry.turn, known: entry.known === true, ...(entry.known ? { day: entry.day, timeOfDay: entry.timeOfDay, date: entry.date,
       basis: entry.basis, estimated: entry.estimated === true } : {}) });
-    return { schema: 'libra.story_clock_delivery.v1', anchorDate: timeline.anchorDate || '', basis: timeline.basis,
+    return { schema: 'libra.story_clock_delivery.v1', anchorDate: timeline.anchorDate || '',
+      effectiveAnchorDate: timeline.effectiveAnchorDate || timeline.anchorDate || '', basis: timeline.basis,
       current: { ...pick(timeline.current), asOfTurn: timeline.current.asOfTurn, latestTurn: timeline.current.latestTurn,
         pendingTurns: timeline.current.pendingTurns, label: formatStoryClockDay(timeline.current) },
       line: storyClockCurrentLine(timeline.current) };
@@ -60421,7 +60427,24 @@ function mountMemorySuiteReanalysisReview(container,config) {
               else {domainPending.add('narrative');pending.push({fact:f.tempFactId,domain:'narrative',reason:targetCheck.reason});
                 lifecycleId=`tl_${stableHash(`${memory.scopeKey}:${memory.sourceDigest}:${f.tempFactId}:unsealed`)}`;}
             }else if(threadValue.linkStatus==='pending'){
-              domainPending.add('narrative');pending.push({fact:f.tempFactId,domain:'narrative',reason:`thread_link_pending:${threadValue.linkPendingReason||'unknown'}`});
+              const reaffirmMatches=threadValue.link==='reaffirm'
+                && threadValue.linkPendingReason==='participant_mismatch'
+                && UNIFIED_THREAD_ACTIVE_STATUS.includes(string(threadValue.status||''))
+                && asArray(threadValue.participantIds).length>0
+                ? threads.filter(t=>UNIFIED_THREAD_ACTIVE_STATUS.includes(string(t?.status||'open'))
+                    && !t?.linkPending
+                    && string(t?.kind||'other')===string(threadValue.kind||'other')
+                    && threadParticipantsCompatible(asArray(threadValue.participantIds),asArray(t?.participants),'reaffirm'))
+                  .map(t=>({thread:t,score:unifiedThreadAnchorSimilarity(t,threadValue)}))
+                  .filter(row=>row.score>=0.12)
+                  .sort((a,b)=>b.score-a.score)
+                : [];
+              const reaffirmGap=reaffirmMatches.length>1?reaffirmMatches[0].score-reaffirmMatches[1].score:Infinity;
+              if(reaffirmMatches.length>=1&&reaffirmGap>=0.12){
+                linkAccepted=true;
+              }else{
+                domainPending.add('narrative');pending.push({fact:f.tempFactId,domain:'narrative',reason:`thread_link_pending:${threadValue.linkPendingReason||'unknown'}`});
+              }
             }else if(threadValue.link&&!threadValue.linkStatus){
               domainPending.add('narrative');pending.push({fact:f.tempFactId,domain:'narrative',reason:'thread_link_requires_runtime_target'});
               lifecycleId=`tl_${stableHash(`${memory.scopeKey}:${memory.sourceDigest}:${f.tempFactId}:legacy-link`)}`;
@@ -61380,13 +61403,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
         await storage.setJson(unifiedReplayTxKey(context.scope),tx);
         unifiedAssert(digest(await storage.getJson(unifiedReplayTxKey(context.scope),null))===digest(tx),'UNIFIED_REPLAY_TX_READBACK');
         const committed = await commitUnifiedReplayTransaction(context,tx,{signal});
-        if (committed.ok && serverBackend) {
+        if (committed.ok) {
           try {
             await resolveStateReplayErrors(context.scope, {
-              worldlineId:activeId, code:'UNIFIED_SERVER_LEGACY_NOT_SUPPORTED', checkedSince:descriptorCheckStartedAt,
-              resolutionReason:'server_legacy_replay_verified'
+              worldlineId: activeId,
+              replayFingerprint,
+              throughTurn: Number(head.throughTurn || 0),
+              at: head.updatedAt || nowIso()
             });
-          } catch (error) { warn('LIBRA legacy replay error resolution readback failed',error); }
+          } catch (error) { warn('LIBRA unified replay error resolution readback failed',error); }
         }
         return committed;
       }catch(error){
@@ -72751,11 +72776,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ? {...emptyCorrectionCounts,...clone(correctionMeta.correctionCounts),available:true}
         : {...emptyCorrectionCounts,active:null,total:null,available:false};
       const activeId=string(meta.activeWorldlineId||'main'); const errors=asArray(replayErrors?.records);
+      const replaySucceededAtMs = replayCache && string(replayCache.worldlineId || '') === activeId
+        ? Date.parse(string(replayCache.updatedAt || ''))
+        : NaN;
       const lastError=[...errors].reverse().find(row=>{
         const errorContext=row?.context&&typeof row.context==='object'?row.context:{}; const errorWorldline=string(errorContext.worldlineId||'');
         const rollbackIncomplete=errorContext.rollbackIncomplete===true || /ROLLBACK_INCOMPLETE/.test(string(row?.code||''));
         if (rollbackIncomplete) return true;
         if (row?.resolvedAt) return false;
+        const errorAtMs = Date.parse(string(row?.at || ''));
+        if (Number.isFinite(replaySucceededAtMs) && Number.isFinite(errorAtMs) && replaySucceededAtMs > errorAtMs) return false;
         return !errorWorldline || errorWorldline===activeId;
       })||null;
       const snapshotValue=typeof state!=='undefined'&&state?.snapshot&&string(state.snapshot?.scope?.scopeKey||'')===string(context.scope.scopeKey)?state.snapshot:null;
@@ -75549,15 +75579,15 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     const lensBatchQuotesPresent = (record, batch) => {
       const quotes = [
-        ...asArray(record?.items).map(item => ({ quote: string(item?.quote || '').trim(), ref: string(item?.quoteRef || '') })),
-        ...asArray(record?.closures).map(c => ({ quote: string(c?.quote || '').trim(), ref: string(c?.ref || '') }))
+        ...asArray(record?.items).map(item => ({ quote: canonicalEvidenceComparable(item?.quote), ref: string(item?.quoteRef || '') })),
+        ...asArray(record?.closures).map(c => ({ quote: canonicalEvidenceComparable(c?.quote), ref: string(c?.ref || '') }))
       ].filter(entry => entry.quote);
       if (!quotes.length) return false;
       const turnText = new Map(asArray(batch).map(pair => [
         Number(pair.turn),
-        `${string(pair?.user?.text || '')}\n${string(pair?.assistant?.text || '')}`
+        canonicalEvidenceComparable(`${string(pair?.user?.text || '')}\n${string(pair?.assistant?.text || '')}`)
       ]));
-      const fullText = [...turnText.values()].join('\n');
+      const fullText = canonicalEvidenceComparable(asArray(batch).map(pair => `${string(pair?.user?.text || '')}\n${string(pair?.assistant?.text || '')}`).join('\n'));
       return quotes.every(({ quote, ref }) => {
         const match = ref.match(/^t(\d+)-/);
         const targetText = match ? (turnText.get(Number(match[1])) ?? fullText) : fullText;
@@ -75617,7 +75647,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const map = new Map();
       try {
         const manifest = await storage.getJson(key.manifest(scope), null);
-        const refs = asArray(manifest?.memories).filter(r => r?.status === 'committed' && !r.inheritedSessionHistory);
+        const refs = Object.values(asObject(manifest?.memories)).filter(r => r?.status === 'committed' && !r.inheritedSessionHistory);
         await Promise.all(refs.map(async ref => {
           try {
             const mem = await loadMemoryRef(ref);
@@ -75685,6 +75715,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const clock = await loadStoryClock(context.scope);
       const timeline = await readStoryClockTimeline(context, { clock, ...(options.asOfTurn != null ? { asOfTurn: Number(options.asOfTurn) } : {}) });
       return clone({ schema: 'libra.story_clock_view.v1', scopeKey: context.scope.scopeKey, anchorDate: clock.anchorDate,
+        derivedAnchorDate: timeline.derivedAnchorDate || '',
+        effectiveAnchorDate: timeline.effectiveAnchorDate || clock.anchorDate || '',
+        anchorSource: timeline.anchorSource || (clock.anchorDate ? 'manual' : ''),
         corrections: clock.corrections, recordedPairs: Object.keys(clock.pairs).length, updatedAt: clock.updatedAt,
         current: timeline.current, currentLabel: timeline.current ? formatStoryClockDay(timeline.current) : formatStoryClockDay(null),
         basis: timeline.basis, entries: timeline.entries.map(entry => ({ ...entry, label: formatStoryClockDay(entry) })) });
@@ -76903,7 +76936,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       if (asArray(authority.pendingDomains).length) stateNotes.push(`대기 영역: ${authority.pendingDomains.join(', ')}`);
       if (pendingApplications) stateNotes.push(`상태 적용 ${pendingApplications}건 보류`);
       if (authority.pending === true && !stateNotes.length) stateNotes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
-      const replayError = await attempt(async () => asArray((await storage.getJson(key.stateReplayErrors(scope), null))?.records).filter(row => !row?.resolvedAt).at(-1) || null);
+      const replayError = await attempt(async () => {
+        const [errorsStore, replayCache] = await Promise.all([
+          storage.getJson(key.stateReplayErrors(scope), null),
+          storage.getJson(key.stateReplayCache(scope), null)
+        ]);
+        const headWorldline = string(stateRead.value?.head?.worldlineId || 'main');
+        const cacheSuccessMs = replayCache && string(replayCache.worldlineId || headWorldline) === headWorldline
+          ? (Date.parse(string(replayCache.updatedAt || '')) || 0) : 0;
+        const headSuccessMs = Date.parse(string(stateRead.value?.head?.updatedAt || '')) || 0;
+        const latestSuccessMs = Math.max(cacheSuccessMs, headSuccessMs);
+        return asArray(errorsStore?.records).filter(row => {
+          const errorContext = row?.context && typeof row.context === 'object' ? row.context : {};
+          const rollbackIncomplete = errorContext.rollbackIncomplete === true || /ROLLBACK_INCOMPLETE/.test(string(row?.code || ''));
+          if (rollbackIncomplete) return true;
+          if (row?.resolvedAt) return false;
+          const errorAtMs = Date.parse(string(row?.at || ''));
+          if (latestSuccessMs > 0 && Number.isFinite(errorAtMs) && latestSuccessMs > errorAtMs) return false;
+          return true;
+        }).at(-1) || null;
+      });
       const stateJob = { id: 'state', label: 'State projection', detail: '정본과 미크로에서 현재 상태를 만듭니다.', at: '',
         headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${through}까지` : through ? `마지막 반영 · T${through}` : '반영 대기 중',
         status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
@@ -79852,7 +79904,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.note--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}',
     '.lens-item{display:grid;gap:14px;padding:20px 22px;border:1px solid var(--card-line,var(--border));border-radius:var(--r-md);background:var(--surface)}',
     '.lens-item.is-stale{background:var(--surface2);border-style:dashed}',
-    '.lens-item__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}','.lens-item__meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}','.lens-label{font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}','.lens-label::before{content:"· ";color:var(--text3)}','.lens-item__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-top:12px;border-top:1px solid var(--border)}','.lens-item__states{display:flex;flex-wrap:wrap;gap:6px}',
+    '.lens-item__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}','.lens-item__head-right{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto}','.lens-item__meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}','.lens-label{font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}','.lens-label::before{content:"· ";color:var(--text3)}','.lens-item__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-top:12px;border-top:1px solid var(--border)}','.lens-item__states{display:flex;flex-wrap:wrap;gap:6px}',
     '.lens-item__badges{gap:6px}',
     '.lens-item__text{margin:0;font-size:15px;line-height:1.75;color:var(--text)}',
     '.lens-when{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 14px;border:1px solid var(--accent-line,var(--accent));border-radius:var(--r-sm);background:var(--accent-soft)}',
@@ -79901,6 +79953,37 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-reader__head h2{margin:0}',
     '.lens-reader__head .deck{margin:8px 0 0}','.lens-reader .detail-pane>.stack{gap:20px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
     '.lens-items{gap:18px}',
+    '.lens-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}',
+    '.lens-toolbar__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}',
+    '.lens-group-lens{display:grid;gap:12px;contain:layout style}',
+    '.lens-group-lens__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;padding:4px 2px 8px;border-bottom:1px solid var(--border)}',
+    '.lens-group-lens__head strong{font:750 15px/1.4 var(--font-sans);color:var(--text)}',
+    '.lens-group-lens__head span{font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
+    '.lens-group-person{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);contain:layout style}',
+    '.lens-group-person__summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:12px 16px;border-radius:var(--r-md);cursor:pointer;user-select:none;background:var(--surface)}',
+    '.lens-group-person[open]>.lens-group-person__summary{border-radius:var(--r-md) var(--r-md) 0 0}',
+    '.lens-group-person__summary::-webkit-details-marker{display:none}',
+    '.lens-group-person__title{display:inline-flex;align-items:center;gap:8px;min-width:0;font:750 14.5px/1.35 var(--font-sans);color:var(--text)}',
+    '.lens-group-person__title b{min-width:22px;padding:1px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent-ink);text-align:center;font-size:11.5px}',
+    '.lens-group-person__meta{display:inline-flex;align-items:center;gap:8px;font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
+    '.lens-group-person__chev{display:inline-block;line-height:1;font-size:11px;color:var(--text3)}',
+    '.lens-group-person[open]>.lens-group-person__summary .lens-group-person__chev{transform:rotate(180deg)}',
+    '.lens-group-person__body{padding:12px 14px;display:grid;gap:12px;background:var(--surface2);border-top:1px solid var(--border);border-radius:0 0 var(--r-md) var(--r-md)}',
+    '.lens-group-span{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);content-visibility:auto;contain-intrinsic-size:auto 160px}',
+    '.lens-group-span__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);border-radius:var(--r-sm) var(--r-sm) 0 0;font:650 12px/1.4 var(--font-sans);color:var(--text2)}',
+    '.lens-group-span__list{display:grid;border-radius:0 0 var(--r-sm) var(--r-sm)}',
+    '.lens-item:not(.lens-item--compact){content-visibility:auto;contain-intrinsic-size:auto 240px}',
+    '.lens-item--compact{padding:12px 14px;gap:8px;border:0;border-radius:0;border-top:1px solid var(--border);background:transparent;contain:style}',
+    '.lens-item--compact:first-child{border-top:0}',
+    '.lens-item--compact .lens-item__text{font-size:14px;line-height:1.65}',
+    '.lens-item--compact .lens-quote,.lens-item--compact .lens-basis{padding:7px 11px;font-size:12.5px;line-height:1.55}',
+    '.lens-item--compact .lens-extra{gap:6px}',
+    '.lens-item--compact .lens-extra__pair{padding:2px 9px;font-size:11.5px}',
+    '.lens-item--compact .lens-item__foot{padding-top:6px;border-top:0;gap:6px}',
+    '.lens-item--compact .lens-item__head-right .btn--sm{min-height:26px;padding:2px 9px;font-size:11.5px}',
+    '.lens-item--compact .lens-prov>summary{min-height:34px;padding:6px 10px;font-size:12px}',
+    '.lens-inline-meta{display:inline-flex;align-items:center;padding:1px 8px;border-radius:99px;border:1px solid var(--border);background:var(--surface2);font:600 11.5px/1.4 var(--font-sans);color:var(--text2)}',
+    '.lens-inline-meta.is-warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}',
     // Micro reader: turn rail rows with a two-line preview and a status badge; State summary bar.
     '.micro-turn{align-items:flex-start;min-height:52px}','.micro-turn__body{display:grid;gap:2px;flex:1 1 auto;min-width:0}','.micro-turn__body b{font:750 13.5px/1.35 var(--font-sans);min-width:0;padding:0;background:none;text-align:left}',
     '.micro-turn__body small{color:var(--text3);font:500 12px/1.45 var(--font-sans);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}','.micro-turn>.badge{flex:none}',
@@ -80166,10 +80249,28 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .wl-list>.wl-row,.t-libra .list>.row{content-visibility:auto;contain-intrinsic-size:auto 56px}'
   ].join('\n');
   const injectGuiStyle = () => {
-    if (typeof document === 'undefined' || document.getElementById('sga-rp-gui-style')) return;
+    if (typeof document === 'undefined') return;
+    if (!injectGuiStyle._cache) {
+      const cssText = `${LIBRA_APPROVED_MOCKUP_STYLE}\n${LIBRA_UX_POLISH_STYLE}`;
+      let hash = 2166136261;
+      for (let i = 0; i < cssText.length; i += 1) {
+        hash ^= cssText.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      injectGuiStyle._cache = { cssText, sig: `${cssText.length}:${(hash >>> 0).toString(16)}` };
+    }
+    const { cssText, sig } = injectGuiStyle._cache;
+    const existing = document.getElementById('sga-rp-gui-style');
+    if (existing) {
+      if (existing.dataset?.libraStyleSig === sig) return;
+      existing.textContent = cssText;
+      if (existing.dataset) existing.dataset.libraStyleSig = sig;
+      return;
+    }
     const style = document.createElement('style');
     style.id = 'sga-rp-gui-style';
-    style.textContent = `${LIBRA_APPROVED_MOCKUP_STYLE}\n${LIBRA_UX_POLISH_STYLE}`;
+    style.textContent = cssText;
+    if (style.dataset) style.dataset.libraStyleSig = sig;
     document.head.appendChild(style);
   };
 
@@ -84616,6 +84717,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         filterEvidence: text(Gui.lensReader?.filterEvidence || 'all'),
         filterPerson: text(Gui.lensReader?.filterPerson || 'all'),
         query: text(Gui.lensReader?.query || ''),
+        groupMode: ['lens_person_span', 'lens_span', 'flat'].includes(Gui.lensReader?.groupMode) ? Gui.lensReader.groupMode : 'lens_person_span',
+        turnOrder: ['desc', 'asc'].includes(Gui.lensReader?.turnOrder) ? Gui.lensReader.turnOrder : 'desc',
+        collapsedGroups: Gui.lensReader?.collapsedGroups instanceof Set ? Gui.lensReader.collapsedGroups : new Set(),
         category: 'current',
         excludedSelection: new Map(),
         deletingExcluded: false,
@@ -87386,7 +87490,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const turn = known ? Math.min(...turns) : null;
     const basis = turn != null && turn > 0 ? `T${turn}까지 반영` : '반영 기준 미확인';
     const reasons = rows.map(row => String(row.reason || '')).filter(Boolean);
-    const unappliedRuns = new Set(saved.filter(row => Number(row.turnRange?.end || 0) > (turn ?? 0)).map(row => row.runId).filter(Boolean));
+    const unappliedRuns = new Set(saved.filter(row => {
+      const endTurn = Number(row.turnRange?.end || 0);
+      if (endTurn <= (turn ?? 0)) return false;
+      const attemptedByLaterReplay = rows.length > 0 && rows.every(d => (
+        Number(d?.attemptedEvidence?.turnRange?.end || 0) >= endTurn
+        && !['failed', 'error', 'failed_open'].includes(d.status)
+        && !/failed|error|timeout/i.test(String(d.reason || ''))
+      ));
+      return !attemptedByLaterReplay;
+    }).map(row => row.runId).filter(Boolean));
     const failedRun = (snapshot.runs || []).find(run => unappliedRuns.has(run.runId)
       && ['failed', 'error', 'failed_open'].includes(run.stateTracking?.status));
     const detailRows = domains.map((domain, index) => {
@@ -87438,7 +87551,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (context.scope?.scopeKey !== progress.scopeKey) throw new Error('채팅이 변경되었습니다. 현재 화면을 다시 열어 주세요.');
           const result = await LibraMemoryCore.recoverPendingStateTrackingJournal(context, { force: true, unifiedOnly: true });
           await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
-          guiSetStatus(`상태 ${result.recovered || 0}개 작업 적용 · ${result.remaining || 0}개 대기`, !result.ok, true);
+          const afterSnap = LibraMemoryCore.peekSnapshot() || {};
+          const afterHead = afterSnap.continuityState;
+          const afterSavedTurn = Math.max(0, ...Object.values(afterSnap.manifest?.memories || {})
+            .filter(row => row?.status === 'committed')
+            .map(row => Number(row.turnRange?.end || 0)));
+          const stillNeedsReplay = afterSavedTurn > 0 && progress.domains.some(domain => {
+            const row = afterHead?.domainStatus?.[domain];
+            return !row || row.status !== 'ready' || Number(row.throughTurn || 0) < afterSavedTurn;
+          });
+          if (stillNeedsReplay) {
+            const rebuilt = await LibraMemoryCore.rebuildCurrentStateForWorldline({
+              expectedScopeKey: progress.scopeKey,
+              reason: 'book_state_manual_refresh'
+            });
+            if (rebuilt?.ok === false) throw new Error(String(rebuilt.error || rebuilt.code || '상태 재생 실패'));
+            await LibraMemoryCore.refreshSnapshot(undefined, { suppressGuiSchedule: true });
+            guiSetStatus('저장된 기억으로 현재 상태를 다시 갱신했습니다.', false, true);
+          } else {
+            guiSetStatus(`상태 ${result.recovered || 0}개 작업 적용 · ${result.remaining || 0}개 대기`, !result.ok, true);
+          }
           queueGuiRender(0, 'body');
         } catch (error) { message.textContent = `적용하지 못했습니다. ${String(error.message || error)}`; }
         finally { Gui.bookStateApplying = false; if (target) { target.disabled = false; target.textContent = '상태 다시 갱신'; } }
@@ -87939,6 +88071,216 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     ]);
   };
 
+  const primaryLensPerson = (item, filterPerson = 'all') => {
+    if (item?.whoTracked !== true) return { key: '__unassigned__', name: '인물 미지정' };
+    const people = guiAsArray(item.people);
+    if (filterPerson !== 'all') {
+      if (filterPerson === 'unknown') return { key: 'unknown', name: '인물 불명' };
+      const matched = people.find(person => text(person?.key || person?.name || '') === filterPerson);
+      return matched
+        ? { key: text(matched.key || matched.name), name: text(matched.name || matched.written || '인물') }
+        : { key: 'unknown', name: '인물 불명' };
+    }
+    if (!people.length) return { key: 'unknown', name: '인물 불명' };
+    const primary = people.find(person => person?.role !== 'user') || people[0];
+    return {
+      key: text(primary?.key || primary?.name || 'unknown') || 'unknown',
+      name: text(primary?.name || primary?.written || '인물 불명') || '인물 불명'
+    };
+  };
+
+  const groupLensMemoriesForReader = (items = [], { lenses = [], filterPerson = 'all', turnOrder = 'desc' } = {}) => {
+    const lensOrder = new Map(guiAsArray(lenses).map((lens, idx) => [text(lens?.lensId || ''), idx]));
+    const lensNameById = new Map(guiAsArray(lenses).map(lens => [text(lens?.lensId || ''), text(lens?.name || lens?.lensId || '렌즈')]));
+    const sortSpans = spans => [...spans].sort((a, b) => (
+      turnOrder === 'asc'
+        ? a.start - b.start || a.end - b.end
+        : b.end - a.end || b.start - a.start
+    ));
+    const sortItems = list => [...list].sort((a, b) => {
+      const aStart = Number(a?.turnRange?.start || 0), aEnd = Number(a?.turnRange?.end || 0);
+      const bStart = Number(b?.turnRange?.start || 0), bEnd = Number(b?.turnRange?.end || 0);
+      return turnOrder === 'asc'
+        ? aStart - bStart || aEnd - bEnd
+        : bEnd - aEnd || aStart - bStart;
+    });
+    const byLens = new Map();
+    for (const item of guiAsArray(items)) {
+      const lid = text(item?.lensId || '');
+      if (!byLens.has(lid)) {
+        byLens.set(lid, { lensId: lid, lensName: text(item?.lensName || lensNameById.get(lid) || lid || '렌즈'), items: [] });
+      }
+      byLens.get(lid).items.push(item);
+    }
+    const orderedLenses = [...byLens.values()].sort((a, b) => {
+      const ia = lensOrder.has(a.lensId) ? lensOrder.get(a.lensId) : Number.MAX_SAFE_INTEGER;
+      const ib = lensOrder.has(b.lensId) ? lensOrder.get(b.lensId) : Number.MAX_SAFE_INTEGER;
+      return ia - ib || a.lensName.localeCompare(b.lensName, 'ko');
+    });
+    return orderedLenses.map(lensGroup => {
+      const personMap = new Map();
+      const lensSpanMap = new Map();
+      for (const item of lensGroup.items) {
+        const start = Number(item?.turnRange?.start || 0);
+        const end = Number(item?.turnRange?.end || 0);
+        const spanKey = `${start}-${end}`;
+        const label = start > 0 ? (start === end ? `T${start}` : `T${start}–T${end}`) : '구간 미상';
+        if (!lensSpanMap.has(spanKey)) lensSpanMap.set(spanKey, { key: spanKey, start, end, label, items: [] });
+        lensSpanMap.get(spanKey).items.push(item);
+
+        const person = primaryLensPerson(item, filterPerson);
+        if (!personMap.has(person.key)) personMap.set(person.key, { key: person.key, name: person.name, count: 0, spanMap: new Map(), minStart: Infinity, maxEnd: 0 });
+        const pg = personMap.get(person.key);
+        pg.count += 1;
+        if (start > 0 && start < pg.minStart) pg.minStart = start;
+        if (end > pg.maxEnd) pg.maxEnd = end;
+        if (!pg.spanMap.has(spanKey)) pg.spanMap.set(spanKey, { key: spanKey, start, end, label, items: [] });
+        pg.spanMap.get(spanKey).items.push(item);
+      }
+      const personGroups = [...personMap.values()].map(pg => ({
+        key: pg.key,
+        name: pg.name,
+        count: pg.count,
+        rangeLabel: pg.maxEnd > 0 && pg.minStart < Infinity ? (pg.minStart === pg.maxEnd ? `T${pg.minStart}` : `T${pg.minStart}–T${pg.maxEnd}`) : '',
+        spanGroups: sortSpans(pg.spanMap.values())
+      })).sort((a, b) => (
+        Number(['unknown', '__unassigned__'].includes(a.key)) - Number(['unknown', '__unassigned__'].includes(b.key))
+        || b.count - a.count
+        || a.name.localeCompare(b.name, 'ko')
+      ));
+      return {
+        lensId: lensGroup.lensId,
+        lensName: lensGroup.lensName,
+        count: lensGroup.items.length,
+        personGroups,
+        spanGroups: sortSpans(lensSpanMap.values()),
+        flatItems: sortItems(lensGroup.items)
+      };
+    });
+  };
+
+  const buildGroupedLensRecords = (items, { sectionPrefix, reader, filterLensId, filterPerson, lenses, makeCardOptions }) => {
+    const groups = groupLensMemoriesForReader(items, { lenses, filterPerson, turnOrder: reader.turnOrder });
+    const showLensHeader = filterLensId === 'all' || groups.length > 1;
+    const personGroupKeys = [];
+    const renderSpanSection = (spanGroup, primaryPersonKey = '') => guiEl('section', {
+      class: 'lens-group-span',
+      dataset: { lensSpanGroup: spanGroup.label }
+    }, [
+      guiEl('div', { class: 'lens-group-span__head' }, [
+        guiEl('span', { text: spanGroup.label }),
+        guiEl('span', { text: `${spanGroup.items.length}건` })
+      ]),
+      guiEl('div', { class: 'lens-group-span__list' }, spanGroup.items.map(item => lensItemCard(item, {
+        ...makeCardOptions(item),
+        compact: true,
+        showLens: false,
+        hideTurnRange: true,
+        primaryPersonKey
+      })))
+    ]);
+    const nodes = groups.map(lensGroup => {
+      if (reader.groupMode === 'flat') {
+        return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
+          showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
+            guiEl('strong', { text: lensGroup.lensName }),
+            guiEl('span', { text: `${lensGroup.count}건` })
+          ]) : null,
+          ...lensGroup.flatItems.map(item => lensItemCard(item, makeCardOptions(item)))
+        ].filter(Boolean));
+      }
+      if (reader.groupMode === 'lens_span') {
+        return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
+          showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
+            guiEl('strong', { text: lensGroup.lensName }),
+            guiEl('span', { text: `${lensGroup.count}건 · ${lensGroup.spanGroups.length}개 구간` })
+          ]) : null,
+          ...lensGroup.spanGroups.map(spanGroup => renderSpanSection(spanGroup, ''))
+        ].filter(Boolean));
+      }
+      return guiEl('section', { class: 'stack lens-group-lens', dataset: { lensGroup: lensGroup.lensId } }, [
+        showLensHeader ? guiEl('div', { class: 'lens-group-lens__head' }, [
+          guiEl('strong', { text: lensGroup.lensName }),
+          guiEl('span', { text: `${lensGroup.count}건 · 인물 ${lensGroup.personGroups.length}명` })
+        ]) : null,
+        ...lensGroup.personGroups.map(personGroup => {
+          const groupKey = `${sectionPrefix}:${lensGroup.lensId}:${personGroup.key}`;
+          personGroupKeys.push(groupKey);
+          const isOpen = !reader.collapsedGroups?.has(groupKey);
+          const bodyNode = guiEl('div', { class: 'lens-group-person__body' });
+          let hydrated = false;
+          const ensureHydrated = () => {
+            if (hydrated) return;
+            hydrated = true;
+            appendGuiChildren(bodyNode, personGroup.spanGroups.map(spanGroup => renderSpanSection(spanGroup, personGroup.key)));
+          };
+          if (isOpen) ensureHydrated();
+          const details = guiEl('details', {
+            class: 'lens-group-person',
+            open: isOpen,
+            dataset: { lensPersonGroup: personGroup.key, lensGroupKey: groupKey, guiManagedDisclosure: 'true' }
+          }, [
+            guiEl('summary', { class: 'lens-group-person__summary', onClick: () => ensureHydrated() }, [
+              guiEl('span', { class: 'lens-group-person__title' }, [
+                guiEl('span', { text: personGroup.name }),
+                guiEl('b', { text: `${personGroup.count}건` })
+              ]),
+              guiEl('span', { class: 'lens-group-person__meta' }, [
+                personGroup.rangeLabel ? guiEl('span', { text: personGroup.rangeLabel }) : null,
+                guiEl('span', { text: `${personGroup.spanGroups.length}개 구간` }),
+                guiEl('span', { class: 'lens-group-person__chev', text: '▾', 'aria-hidden': 'true' })
+              ].filter(Boolean))
+            ]),
+            bodyNode
+          ]);
+          details._hydrateLensGroup = ensureHydrated;
+          details.addEventListener('toggle', () => {
+            if (details.open) ensureHydrated();
+            if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+            if (details.open) reader.collapsedGroups.delete(groupKey);
+            else reader.collapsedGroups.add(groupKey);
+          });
+          return details;
+        })
+      ].filter(Boolean));
+    });
+    return { nodes, personGroupKeys };
+  };
+
+  const rerenderLensReaderInPlace = ({ detailOnly = false } = {}) => {
+    if (Gui.lensSearchTimer) { clearTimeout(Gui.lensSearchTimer); Gui.lensSearchTimer = null; }
+    const existing = Gui.app?.querySelector?.('[data-lens-reader="true"]');
+    if (!existing) {
+      queueGuiNavigationRender();
+      return false;
+    }
+    const scroller = Gui.app?.querySelector?.('.page-body');
+    const scrollTop = scroller ? Number(scroller.scrollTop || 0) : 0;
+    const next = buildBookLensReaderProjection();
+    if (detailOnly) {
+      const prevDetail = existing.querySelector?.('.detail-pane');
+      const nextDetail = next.querySelector?.('.detail-pane');
+      if (prevDetail && nextDetail && typeof prevDetail.replaceWith === 'function') {
+        prevDetail.replaceWith(nextDetail);
+        if (scroller) scroller.scrollTop = scrollTop;
+        return true;
+      }
+    }
+    if (typeof existing.replaceWith !== 'function') {
+      queueGuiNavigationRender();
+      return false;
+    }
+    if (existing.id) next.id = existing.id;
+    if (existing.dataset?.productReadback) next.dataset.productReadback = existing.dataset.productReadback;
+    const role = existing.getAttribute?.('role');
+    if (role) next.setAttribute?.('role', role);
+    const ariaLabel = existing.getAttribute?.('aria-label');
+    if (ariaLabel) next.setAttribute?.('aria-label', ariaLabel);
+    existing.replaceWith(next);
+    if (scroller) scroller.scrollTop = scrollTop;
+    return true;
+  };
+
   const buildBookLensReaderProjection = () => {
     const reader = ensureLensReaderPage();
     const refresh = () => void loadLensReaderData(true);
@@ -87981,22 +88323,31 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const filters = showExcluded ? [] : [
       guiEl('div', { class: 'lens-filter', role: 'group', 'aria-label': '렌즈 선택' }, [['all', '모든 렌즈', memories.length, ''], ...lenses.map(lens => [lens.lensId, lens.name, countFor(lens.lensId), lens.status])].map(([id, label, count, status]) => guiEl('button', {
         type: 'button', class: 'lens-filter__item', 'aria-pressed': String(filterLensId === id), dataset: { lensFilter: id },
-        onClick: () => { reader.filterLensId = id; reader.runLensId = id === 'all' ? '' : id; queueGuiNavigationRender(); }
+        onClick: () => { reader.filterLensId = id; reader.runLensId = id === 'all' ? '' : id; rerenderLensReaderInPlace(); }
       }, [guiEl('span', { text: label }), status === 'paused' ? guiEl('small', { text: '일시정지' }) : null, guiEl('b', { text: String(count) })]))),
       guiEl('div', { class: 'lens-rail__section' }, [
         guiEl('span', { class: 'lens-rail__label', text: '근거' }),
-        lensSeg(filterEvidence, [['all', `전체 ${byLens.length}`], ['quoted', `인용 ${evidenceCount('quoted')}`], ['interpreted', `해석 ${evidenceCount('interpreted')}`]], value => { reader.filterEvidence = value; queueGuiNavigationRender(); }, '근거 수준 필터')
+        lensSeg(filterEvidence, [['all', `전체 ${byLens.length}`], ['quoted', `인용 ${evidenceCount('quoted')}`], ['interpreted', `해석 ${evidenceCount('interpreted')}`]], value => { reader.filterEvidence = value; rerenderLensReaderInPlace(); }, '근거 수준 필터')
       ]),
       personRows.length ? guiEl('div', { class: 'lens-rail__section', dataset: { lensPeople: 'true' } }, [
         guiEl('span', { class: 'lens-rail__label', text: '인물' }),
         guiEl('div', { class: 'lens-people', role: 'group', 'aria-label': '인물 필터' }, [{ key: 'all', name: '모든 인물', count: byLens.filter(item => item.whoTracked === true).length }, ...personRows].map(row => guiEl('button', {
           type: 'button', class: `lens-person${row.key === 'unknown' ? ' is-unknown' : ''}`, 'aria-pressed': String(filterPerson === row.key), dataset: { lensPerson: row.key },
-          onClick: () => { reader.filterPerson = row.key; queueGuiNavigationRender(); }
+          onClick: () => { reader.filterPerson = row.key; rerenderLensReaderInPlace(); }
         }, [guiEl('span', { text: row.name }), guiEl('b', { text: String(row.count) })])))
       ]) : null,
       guiEl('div', { class: 'lens-rail__section' }, [
         guiEl('input', { class: 'input', type: 'search', placeholder: '내용·인용·라벨·인물 검색', 'aria-label': '렌즈 기억 검색', value: reader.query || '',
-          onInput: event => { reader.query = event.target.value; queueGuiNavigationRender(); } })
+          onInput: event => {
+            reader.query = event.target.value;
+            if (Gui.lensSearchTimer) clearTimeout(Gui.lensSearchTimer);
+            Gui.lensSearchTimer = setTimeout(() => {
+              Gui.lensSearchTimer = null;
+              if (!LibraMemoryCore.state.disposed && Gui.app?.querySelector?.('[data-lens-reader="true"]')) {
+                rerenderLensReaderInPlace({ detailOnly: true });
+              }
+            }, 100);
+          } })
       ]),
       lenses.length?guiEl('div',{class:'lens-rail__section'},[
         guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{lensReaderReanalysis:'true'},disabled:!runLens||!Number(data.pairCount),onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:runLens.lensId})}),
@@ -88013,7 +88364,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       ]),
       lensSeg(reader.category, [['current', '렌즈 기억'], ['excluded', `제외 ${excluded.length}`]], value => {
         reader.category = value;
-        queueGuiNavigationRender();
+        rerenderLensReaderInPlace();
       }, '렌즈 기록 범주'),
       ...filters
     ].filter(Boolean));
@@ -88038,28 +88389,105 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         guiEl('b', { text: '아직 렌즈가 없습니다' }),
         guiEl('p', { text: '떡밥·복선, 감정선, 말투 변화처럼 원하는 관점의 렌즈를 만들면 5턴마다 이곳에 메모가 쌓입니다.' }),
         guiEl('button', { class: 'btn btn--primary', type: 'button', text: '렌즈 만들기', onClick: () => { lensStudioState().view = 'create'; openApprovedPromptDialog(); } })
-      ]) : filtered.length ? guiEl('div', { class:'stack lens-items' }, [
-        filtered.some(item=>!item.inherited) ? guiEl('section',{class:'stack',dataset:{lensCurrentGroup:'true'}},[
-          guiEl('h3',{text:'이 대화의 기록'}),...filtered.filter(item=>!item.inherited).map(item=>lensItemCard(item,{
-            memory:true,showLens:filterLensId==='all',onReanalyze:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:item.lensId,startTurn:item.turnRange.start,endTurn:item.turnRange.end}),
-        onEdit: async draft => {
-          draft.busy = true; draft.error = ''; queueGuiNavigationRender();
-          try {
-            await LibraMemoryCore.editLensMemory({ memoryId: draft.memoryId, recordId: draft.recordId, text: draft.text, label: draft.label,
-              ...(item.evidenceLevel === 'interpreted' ? { basis: draft.basis } : {}) });
-            if (Gui.lensEditing === draft) Gui.lensEditing = null;
+      ]) : filtered.length ? (() => {
+        const makeCurrentCardOptions = item => ({
+          memory: true,
+          showLens: filterLensId === 'all',
+          onReanalyze: () => void showLibraSourceReanalysisDrawer({ kind: 'lens', scopeKey: reader.scopeKey, lensId: item.lensId, startTurn: item.turnRange.start, endTurn: item.turnRange.end }),
+          onEdit: async draft => {
+            draft.busy = true; draft.error = ''; rerenderLensReaderInPlace();
+            try {
+              await LibraMemoryCore.editLensMemory({
+                memoryId: draft.memoryId, recordId: draft.recordId, text: draft.text, label: draft.label,
+                ...(item.evidenceLevel === 'interpreted' ? { basis: draft.basis } : {})
+              });
+              if (Gui.lensEditing === draft) Gui.lensEditing = null;
+              await loadLensReaderData(true);
+            } catch (error) { draft.busy = false; draft.error = text(error?.message || error); rerenderLensReaderInPlace(); }
+          },
+          onDelete: async () => {
+            if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
+            try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
             await loadLensReaderData(true);
-          } catch (error) { draft.busy = false; draft.error = text(error?.message || error); queueGuiNavigationRender(); }
-        },
-        onDelete: async () => {
-          if (!(await confirmApprovedOperation(`이 렌즈 항목을 삭제할까요?\n${text(item.text).slice(0, 80)}`, { title: '렌즈 항목 삭제', target: item.label, kind: '삭제', cost: '모델 요청을 보내지 않습니다.', actionLabel: '삭제' }))) return;
-          try { await LibraMemoryCore.deleteLensMemories({ memoryId: item.id }); } catch (error) { guiSetStatus(text(error?.message || error), true, true); }
-          await loadLensReaderData(true);
-        }
-          }))]) : null,
-        filtered.some(item=>item.inherited) ? guiEl('section',{class:'stack',dataset:{lensInheritedGroup:'true'}},[
-          guiEl('h3',{text:'이전 대화에서 넘어온 기록'}),...filtered.filter(item=>item.inherited).map(item=>lensItemCard(item,{memory:true,showLens:filterLensId==='all'}))]) : null
-      ].filter(Boolean)) : guiEl('div', { class: 'empty' }, [
+          }
+        });
+        const makeInheritedCardOptions = () => ({ memory: true, showLens: filterLensId === 'all' });
+        const currentItems = filtered.filter(item => !item.inherited);
+        const inheritedItems = filtered.filter(item => item.inherited);
+        const currentGrouped = currentItems.length
+          ? buildGroupedLensRecords(currentItems, { sectionPrefix: 'current', reader, filterLensId, filterPerson, lenses, makeCardOptions: makeCurrentCardOptions })
+          : { nodes: [], personGroupKeys: [] };
+        const inheritedGrouped = inheritedItems.length
+          ? buildGroupedLensRecords(inheritedItems, { sectionPrefix: 'inherited', reader, filterLensId, filterPerson, lenses, makeCardOptions: makeInheritedCardOptions })
+          : { nodes: [], personGroupKeys: [] };
+        const allPersonKeys = [...currentGrouped.personGroupKeys, ...inheritedGrouped.personGroupKeys];
+        const toolbar = guiEl('div', { class: 'lens-toolbar', dataset: { lensToolbar: 'true' } }, [
+          lensSeg(reader.groupMode, [['lens_person_span', '종류 · 인물 · 구간'], ['lens_span', '종류 · 구간'], ['flat', '개별 카드']], value => {
+            reader.groupMode = value;
+            rerenderLensReaderInPlace();
+          }, '렌즈 보기 방식'),
+          guiEl('div', { class: 'lens-toolbar__actions' }, [
+            guiEl('button', {
+              class: 'btn btn--sm',
+              type: 'button',
+              dataset: { lensTurnOrder: 'true' },
+              text: reader.turnOrder === 'asc' ? '시간순' : '최신순',
+              onClick: () => {
+                reader.turnOrder = reader.turnOrder === 'asc' ? 'desc' : 'asc';
+                rerenderLensReaderInPlace();
+              }
+            }),
+            reader.groupMode === 'lens_person_span' && allPersonKeys.length ? guiEl('button', {
+              class: 'btn btn--sm',
+              type: 'button',
+              dataset: { lensExpandAll: 'true' },
+              text: '모두 펼치기',
+              onClick: event => {
+                if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+                for (const k of allPersonKeys) reader.collapsedGroups.delete(k);
+                const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
+                const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
+                if (nodes.length) {
+                  for (const node of nodes) {
+                    if (typeof node._hydrateLensGroup === 'function') node._hydrateLensGroup();
+                    node.open = true;
+                  }
+                } else {
+                  rerenderLensReaderInPlace();
+                }
+              }
+            }) : null,
+            reader.groupMode === 'lens_person_span' && allPersonKeys.length ? guiEl('button', {
+              class: 'btn btn--sm',
+              type: 'button',
+              dataset: { lensCollapseAll: 'true' },
+              text: '모두 접기',
+              onClick: event => {
+                if (!(reader.collapsedGroups instanceof Set)) reader.collapsedGroups = new Set();
+                for (const k of allPersonKeys) reader.collapsedGroups.add(k);
+                const root = event?.currentTarget?.closest?.('[data-lens-reader="true"]') || Gui.app?.querySelector?.('[data-lens-reader="true"]');
+                const nodes = root ? Array.from(root.querySelectorAll('details.lens-group-person')) : [];
+                if (nodes.length) {
+                  for (const node of nodes) node.open = false;
+                } else {
+                  rerenderLensReaderInPlace();
+                }
+              }
+            }) : null
+          ].filter(Boolean))
+        ]);
+        return guiEl('div', { class: 'stack lens-items' }, [
+          toolbar,
+          currentItems.length ? guiEl('section', { class: 'stack', dataset: { lensCurrentGroup: 'true' } }, [
+            guiEl('h3', { text: '이 대화의 기록' }),
+            ...currentGrouped.nodes
+          ]) : null,
+          inheritedItems.length ? guiEl('section', { class: 'stack', dataset: { lensInheritedGroup: 'true' } }, [
+            guiEl('h3', { text: '이전 대화에서 넘어온 기록' }),
+            ...inheritedGrouped.nodes
+          ]) : null
+        ].filter(Boolean));
+      })() : guiEl('div', { class: 'empty' }, [
         guiEl('b', { text: reader.loading ? '렌즈 기억을 불러오는 중…' : memories.length ? '조건에 맞는 항목이 없습니다.' : '아직 이 대화의 렌즈 기억이 없습니다.' }),
         reader.loading ? null : guiEl('p', { text: memories.length ? '필터나 검색어를 바꿔 보세요.' : '켜진 렌즈는 다음 5턴이 정본으로 저장될 때 자동으로 분석합니다. 재분석 버튼으로 원문 재분석 화면에서 구간을 선택할 수 있습니다.' })
       ].filter(Boolean))
@@ -89379,9 +89807,11 @@ advanced
     }
     const page = document.scrollingElement || document.documentElement;
     const disclosures = {};
-    Array.from(stateRoot?.querySelectorAll('details') || []).forEach((node, index) => {
-      disclosures[guiDisclosureStateKey(node, index)] = node.open === true;
-    });
+    Array.from(stateRoot?.querySelectorAll('details') || [])
+      .filter(node => node?.dataset?.guiManagedDisclosure !== 'true')
+      .forEach((node, index) => {
+        disclosures[guiDisclosureStateKey(node, index)] = node.open === true;
+      });
     const controls = Array.from(stateRoot?.querySelectorAll('input,select,textarea,button') || []);
     const active = document.activeElement;
     const activeIndex = controls.indexOf(active);
@@ -89420,12 +89850,14 @@ advanced
       try {
         if (!Gui.visible || state.targetViewKey !== guiBodyViewKey()) return;
         const stateRoot = state.navigation ? null : Gui.root;
-        Array.from(stateRoot?.querySelectorAll('details') || []).forEach((node, index) => {
-          const key = guiDisclosureStateKey(node, index);
-          if (Object.prototype.hasOwnProperty.call(state.disclosures || {}, key)) {
-            node.open = state.disclosures[key] === true;
-          }
-        });
+        Array.from(stateRoot?.querySelectorAll('details') || [])
+          .filter(node => node?.dataset?.guiManagedDisclosure !== 'true')
+          .forEach((node, index) => {
+            const key = guiDisclosureStateKey(node, index);
+            if (Object.prototype.hasOwnProperty.call(state.disclosures || {}, key)) {
+              node.open = state.disclosures[key] === true;
+            }
+          });
         if (state.focus) {
           const controls = Array.from(stateRoot?.querySelectorAll('input,select,textarea,button') || []);
           const target = controls.find((node, index) => guiInteractiveStateKey(node, index) === state.focus.key);
@@ -89581,8 +90013,18 @@ advanced
 
     const snapshot = LibraMemoryCore.peekSnapshot() || {};
     const view = worldManagerSnapshotView();
-    const stateThroughTurn = Number(view.throughTurn || 0);
-    const stateLagging = lastCommittedTurn > stateThroughTurn;
+    const headDomainRows = ['characters', 'relationships', 'world', 'narrative']
+      .map(domain => snapshot?.continuityState?.domainStatus?.[domain])
+      .filter(Boolean);
+    const domainMinTurn = headDomainRows.length
+      ? Math.min(...headDomainRows.map(row => Number(row.throughTurn || 0)))
+      : Number(view.throughTurn || 0);
+    const domainPendingOrFailed = lastCommittedTurn > 0 && headDomainRows.some(row => (
+      Number(row.throughTurn || 0) < lastCommittedTurn
+      || ['not_updated', 'failed', 'error', 'failed_open'].includes(String(row.status || ''))
+    ));
+    const stateThroughTurn = Math.min(Number(view.throughTurn || 0), domainMinTurn);
+    const stateLagging = lastCommittedTurn > stateThroughTurn || domainPendingOrFailed;
     const unappliedCount = savedRanges.filter(r => Number(r.endTurn || 0) > stateThroughTurn).length;
 
     let embedConfig = { enabled: false };
@@ -91159,22 +91601,19 @@ advanced
   // One stored or trial lens item. `options.memory` adds provenance and delete for stored items.
   const lensItemCard = (item, options = {}) => {
     const memory = options.memory === true;
+    const compactMode = options.compact === true;
+    const hideTurnRange = options.hideTurnRange === true || compactMode;
+    const primaryPersonKey = text(options.primaryPersonKey || '');
     const evidence = item.evidenceLevel === 'quoted'
       ? libraStatusBadge('인용 확인', 'good')
       : libraStatusBadge('해석', 'warn');
     const extraEntries = Object.entries(item.extra || {});
-    const meta = [
-      item.inherited ? libraStatusBadge('이전 대화','info') : null,
-      options.showLens ? guiEl('span', { class: 'lens-chip', text: text(item.lensName || '') }) : null,
-      item.turnRange ? guiEl('span', { class: 'lens-meta', text: lensRangeLabel(item.turnRange) }) : null,
-      guiEl('span', { class: 'lens-label', text: text(item.label || '기록') })
-    ].filter(Boolean);
     // A note made with time tracking shows its time first: the source's expression, or plainly
     // unknown. "원문 명시" means the expression was found in the analyzed source, not that its link to
     // this event was verified; the help text and the provenance fold say so.
     const timeTracked = item.whenTracked === true || (item.whenTracked === undefined && item.when !== undefined);
     const timeHelp = '“원문 명시”는 이 표현을 분석한 원문에서 찾았다는 뜻입니다. 이 사건의 시점이 맞는지는 “근거 · 출처 보기”에서 원문으로 확인하세요.';
-    const timeRow = timeTracked ? guiEl('div', { class: `lens-when${item.when ? '' : ' is-unknown'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '' }, [
+    const timeRow = !compactMode && timeTracked ? guiEl('div', { class: `lens-when${item.when ? '' : ' is-unknown'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '' }, [
       guiEl('span', { class: 'lens-when__label', text: '시점' }),
       guiEl('b', { text: item.when?.text || '시점 불명' }),
       item.when ? libraStatusBadge('원문 명시', 'good') : libraStatusBadge(item.whenIssue ? '원문에서 확인되지 않아 제외' : '확인된 시점 없음', 'warn')
@@ -91184,7 +91623,7 @@ advanced
     // written name; or plainly unknown.
     const peopleTracked = item.whoTracked === true || (item.whoTracked === undefined && item.who !== undefined);
     const people = guiAsArray(item.people).length ? guiAsArray(item.people) : guiAsArray(item.who).map(person => ({ name: person.name, written: person.name, role: person.role }));
-    const personRow = peopleTracked ? guiEl('div', { class: `lens-when lens-who${people.length ? '' : ' is-unknown'}`, dataset: { lensWho: people.length ? 'named' : 'unknown' } }, [
+    const personRow = !compactMode && peopleTracked ? guiEl('div', { class: `lens-when lens-who${people.length ? '' : ' is-unknown'}`, dataset: { lensWho: people.length ? 'named' : 'unknown' } }, [
       guiEl('span', { class: 'lens-when__label', text: '인물' }),
       people.length ? guiEl('span', { class: 'lens-who__names' }, people.map(person => guiEl('b', {}, [
         document.createTextNode(text(person.name)),
@@ -91195,6 +91634,26 @@ advanced
       !people.length ? libraStatusBadge(item.whoIssue ? '원문에서 확인되지 않아 제외' : '확인된 인물 없음', 'warn')
         : item.whoIssue ? libraStatusBadge('확인되지 않은 이름 제외', 'warn') : null
     ].filter(Boolean)) : null;
+    const otherPeople = compactMode && peopleTracked
+      ? people.filter(person => !primaryPersonKey || text(person.key || person.name) !== primaryPersonKey)
+      : [];
+    const compactCoPeople = compactMode && peopleTracked
+      ? (otherPeople.length
+        ? guiEl('span', { class: 'lens-inline-meta', dataset: { lensWho: 'named' }, text: `${primaryPersonKey ? '함께: ' : ''}${otherPeople.map(p => text(p.name)).join(', ')}` })
+        : (!people.length && primaryPersonKey !== 'unknown' && primaryPersonKey !== '__unassigned__'
+          ? guiEl('span', { class: 'lens-inline-meta is-warn', dataset: { lensWho: 'unknown' }, text: '인물 불명' }) : null))
+      : null;
+    const compactTime = compactMode && timeTracked
+      ? guiEl('span', { class: `lens-inline-meta${item.when ? '' : ' is-warn'}`, dataset: { lensWhen: item.when ? 'stated' : 'unknown' }, title: item.when ? timeHelp : '', text: item.when?.text ? `시점: ${text(item.when.text)}` : '시점 불명' })
+      : null;
+    const meta = [
+      item.inherited ? libraStatusBadge('이전 대화','info') : null,
+      options.showLens ? guiEl('span', { class: 'lens-chip', text: text(item.lensName || '') }) : null,
+      !hideTurnRange && item.turnRange ? guiEl('span', { class: 'lens-meta', text: lensRangeLabel(item.turnRange) }) : null,
+      guiEl('span', { class: 'lens-label', text: text(item.label || '기록') }),
+      compactCoPeople,
+      compactTime
+    ].filter(Boolean);
     const states = [
       memory && item.sourceCurrent === false ? libraStatusBadge('원문 변경됨 · 회상 제외', 'danger') : null,
       memory && item.instructionCurrent === false ? libraStatusBadge('이전 지침으로 생성', 'info') : null,
@@ -91204,7 +91663,7 @@ advanced
     // An open provenance fold stays open when the reader re-renders (a background refresh).
     const provKey = text(item.id || `${item.lensId}::${item.recordKey}::${item.itemId}`);
     const openFolds = Gui.lensOpenProvenance || (Gui.lensOpenProvenance = new Set());
-    const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov', open: openFolds.has(provKey) }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
+    const provenance = memory ? guiLazyDetails({ class: 'fold lens-prov', open: openFolds.has(provKey), dataset: { guiManagedDisclosure: 'true' } }, guiEl('summary', { text: '근거 · 출처 보기' }), () => [guiEl('div', { class: 'fold__body stack stack--sm' }, [
       ...[...new Set([...guiAsArray(item.refs), item.quoteRef, item.when?.ref, ...guiAsArray(item.who).map(person => person.ref)].filter(Boolean))].map(ref => {
         // Inherited notes read only their archived excerpts, never a same-numbered live turn.
         const excerpt = item.inherited ? item.sourceTurns?.[ref] : Gui.lensReader?.data?.sourceTurns?.[ref];
@@ -91252,27 +91711,31 @@ advanced
         editing.error ? guiEl('p', { class: 'note note--danger', role: 'alert', text: editing.error }) : null,
         guiEl('div', { class: 'cluster' }, [
           guiEl('button', { class: 'btn btn--sm btn--primary', type: 'button', text: editing.busy ? '저장 중…' : '저장', disabled: editing.busy, dataset: { lensEditSave: 'true' }, onClick: () => void options.onEdit(editing) }),
-          guiEl('button', { class: 'btn btn--sm btn--ghost', type: 'button', text: '취소', disabled: editing.busy, dataset: { lensEditCancel: 'true' }, onClick: () => { Gui.lensEditing = null; queueGuiNavigationRender(); } })
+          guiEl('button', { class: 'btn btn--sm btn--ghost', type: 'button', text: '취소', disabled: editing.busy, dataset: { lensEditCancel: 'true' }, onClick: () => { Gui.lensEditing = null; rerenderLensReaderInPlace(); } })
         ])
       ].filter(Boolean));
     })() : null;
     const startEdit = memory && !item.inherited && options.onEdit && !editing ? () => {
       Gui.lensEditing = { id: provKey, memoryId: text(item.id || ''), recordId: text(item.recordId || ''), text: text(item.text), label: text(item.label || ''), basis: text(item.basis || ''), busy: false, error: '' };
-      queueGuiNavigationRender();
+      rerenderLensReaderInPlace();
     } : null;
-    const card = guiEl('article', { class: `lens-item${item.sourceCurrent === false ? ' is-stale' : ''}${editing ? ' is-editing' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
-      guiEl('header', { class: 'lens-item__head' }, [guiEl('div', { class: 'lens-item__meta' }, meta), evidence]),
+    const editBtn = startEdit ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '수정', 'aria-label': `${text(item.label)} 항목 수정`, dataset: { lensItemEdit: 'true' }, onClick: startEdit }) : null;
+    const reanalyzeBtn = memory && !item.inherited && options.onReanalyze ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '재분석', dataset: { lensItemReanalysis: 'true' }, onClick: options.onReanalyze }) : null;
+    const deleteBtn = memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null;
+    const card = guiEl('article', { class: `lens-item${compactMode ? ' lens-item--compact' : ''}${item.sourceCurrent === false ? ' is-stale' : ''}${editing ? ' is-editing' : ''}`, dataset: { lensItemId: text(item.itemId || ''), lensId: text(item.lensId || ''), evidenceLevel: text(item.evidenceLevel || '') } }, [
+      guiEl('header', { class: 'lens-item__head' }, [
+        guiEl('div', { class: 'lens-item__meta' }, meta),
+        guiEl('div', { class: 'lens-item__head-right' }, [editBtn, reanalyzeBtn, evidence].filter(Boolean))
+      ]),
       personRow,
       timeRow,
       editForm || guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
       extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
-      states.length || (memory && !item.inherited && (options.onDelete||options.onReanalyze||options.onEdit)) ? guiEl('footer', { class: 'lens-item__foot' }, [
+      states.length || deleteBtn ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
-        startEdit ? guiEl('button', { class: 'btn btn--sm', type: 'button', text: '수정', 'aria-label': `${text(item.label)} 항목 수정`, dataset: { lensItemEdit: 'true' }, onClick: startEdit }) : null,
-        memory&&!item.inherited&&options.onReanalyze?guiEl('button',{class:'btn btn--sm',type:'button',text:'재분석',dataset:{lensItemReanalysis:'true'},onClick:options.onReanalyze}):null,
-        memory && !item.inherited && options.onDelete ? guiEl('button', { class: 'btn btn--sm btn--ghost lens-danger', type: 'button', text: '삭제', 'aria-label': `${text(item.label)} 항목 삭제`, onClick: options.onDelete }) : null
+        deleteBtn
       ].filter(Boolean)) : null,
       provenance
     ].filter(Boolean));
@@ -92325,7 +92788,7 @@ advanced
   const saveStoryClockPanel = async (action, notice) => {
     const panel=storyClockPanelState();if(panel.loading)return;
     panel.loading=true;panel.error='';panel.notice='';queueGuiNavigationRender();
-    try{const view=await action(globalThis.__LIBRA__);if(panel===storyClockPanelState()){panel.view=view;panel.loaded=true;panel.notice=notice;}}
+    try{const view=await action(globalThis.__LIBRA__);if(panel===storyClockPanelState()){panel.view=view;panel.loaded=true;panel.notice=typeof notice==='function'?notice(view):notice;}}
     catch(error){if(panel===storyClockPanelState())panel.error=String(error?.message||error);}
     finally{panel.loading=false;queueGuiNavigationRender();}
   };
@@ -92345,6 +92808,8 @@ advanced
     if(!panel.loaded&&!panel.loading&&!panel.error)void loadStoryClockPanel();
     const view=panel.view,entries=guiAsArray(view?.entries),current=view?.current||null;
     const unknown=entries.filter(entry=>!entry.known).length;
+    const anchorValue=text(view?.anchorDate||view?.effectiveAnchorDate||view?.derivedAnchorDate||'');
+    const anchorIsDerived=!text(view?.anchorDate||'')&&Boolean(anchorValue);
     const fact=(value,label)=>guiEl('div',{class:'fact'},[guiEl('b',{text:String(value)}),guiEl('span',{text:label})]);
     const field=(label,control)=>guiEl('label',{class:'field'},[guiEl('span',{class:'label',text:label}),control]);
     let anchorInput,dayInput,dateInput,timeSelect;
@@ -92374,12 +92839,20 @@ advanced
       guiEl('p',{class:'hint',text:'턴을 기억할 때 시간이 얼마나 흘렀는지 함께 읽어 일차를 셉니다. 시계가 생기기 전 턴은 일차 모름으로 남고, 재분석하면 채워집니다.'}),
       view?guiEl('div',{class:'facts'},[fact(entries.length-unknown,'일차 확인 턴'),fact(unknown,'일차 모름'),fact(Object.keys(guiAsObject(view.corrections)).length,'정정')]):null,
       guiEl('div',{class:'stack stack--sm',dataset:{storyClockAnchor:'true'}},[
-        guiEl('span',{class:'label',text:'기준 날짜(1일째, 선택)'}),
+        guiEl('div',{class:'split',style:{flexWrap:'wrap',gap:'6px 10px'}},[
+          guiEl('span',{class:'label',text:view?.basis==='clock'?'기준 날짜(기록 1일째, 선택)':'기준 날짜(1일째, 선택)'}),
+          anchorIsDerived?guiEl('span',{class:'badge badge--info',dataset:{storyClockAnchorSource:'derived'},text:'기록에서 자동 인식'}):
+          text(view?.anchorDate||'')?guiEl('span',{class:'badge',dataset:{storyClockAnchorSource:'manual'},text:'직접 저장됨'}):null
+        ].filter(Boolean)),
         guiEl('div',{class:'search'},[
-          anchorInput=guiEl('input',{class:'input',type:'date',value:text(view?.anchorDate||''),'aria-label':'이야기 1일째의 날짜'}),
-          guiEl('button',{class:'btn btn--sm',type:'button',disabled:panel.loading,text:'저장',onClick:()=>void saveStoryClockPanel(api=>api.setStoryClockAnchor(anchorInput.value||''),anchorInput.value?'기준 날짜를 저장했습니다.':'기준 날짜를 지웠습니다.')})
-        ])
-      ]),
+          anchorInput=guiEl('input',{class:'input',type:'date',value:anchorValue,'aria-label':'이야기 1일째의 날짜'}),
+          guiEl('button',{class:'btn btn--sm',type:'button',disabled:panel.loading,text:'저장',onClick:()=>{
+            const nextValue=text(anchorInput.value||'').trim();
+            void saveStoryClockPanel(api=>api.setStoryClockAnchor(nextValue),nextView=>nextValue?'기준 날짜를 저장했습니다.':(nextView?.effectiveAnchorDate?`직접 지정한 기준 날짜를 지우고 기록 기준(${nextView.effectiveAnchorDate})으로 돌렸습니다.`:'기준 날짜를 지웠습니다.'));
+          }})
+        ]),
+        anchorIsDerived?guiEl('p',{class:'hint',text:`대화 기록의 날짜에서 1일째 기준 날짜(${anchorValue})를 자동으로 읽었습니다. 다른 날짜로 고정하려면 바꾼 뒤 저장하세요.`}):null
+      ].filter(Boolean)),
       panel.error?guiEl('p',{class:'hint',role:'alert',text:panel.error}):panel.notice?guiEl('p',{class:'hint',role:'status',text:panel.notice}):null,
       entries.length?guiEl('details',{class:'fold',dataset:{storyClockTurns:'true'},open:panel.selectedTurn!==null},[guiEl('summary',{text:'턴별 일차 · 정정'}),guiEl('div',{class:'fold__body stack'},[
         guiEl('div',{class:'list'},rows),editor
@@ -92644,6 +93117,7 @@ advanced
 
   async function renderSettingsGuiOnce() {
     if (typeof document === 'undefined') return false;
+    injectGuiStyle();
     if (!Gui.state) await ensureGuiState();
     if (LibraMemoryCore.state.disposed || !Gui.root) return false;
     ensureCanonicalReaderLifetime();
@@ -92818,6 +93292,7 @@ advanced
     LibraMemoryCore.healthRecovery.clear();
     Gui.safeHealthState = null;
     Gui.unifiedSixthForms=null;
+    if (Gui.storyClockPanel) Gui.storyClockPanel.loaded = false;
     closeCanonicalRangeDrawer();
     Gui.visible = false;
     try { globalThis.__memorySuiteTheme?.stop?.(); } catch (_e) { try { globalThis.__librarianDiag && globalThis.__librarianDiag('libra', 'theme.bridge.stop', _e); } catch (__) {} }
@@ -92838,6 +93313,7 @@ advanced
     if (Gui.refreshTimer) { clearTimeout(Gui.refreshTimer); Gui.refreshTimer = null; }
     if (Gui.inputRenderTimer) { clearTimeout(Gui.inputRenderTimer); Gui.inputRenderTimer = null; }
     if (Gui.navigationRenderTimer) { clearTimeout(Gui.navigationRenderTimer); Gui.navigationRenderTimer = null; }
+    if (Gui.lensSearchTimer) { clearTimeout(Gui.lensSearchTimer); Gui.lensSearchTimer = null; }
     if (Gui.openHydrationTimer) { clearTimeout(Gui.openHydrationTimer); Gui.openHydrationTimer = null; }
     if (Gui.canonicalJobTicker) { clearInterval(Gui.canonicalJobTicker); Gui.canonicalJobTicker = null; }
     if (Gui.canonicalJobRenderTimer) { clearTimeout(Gui.canonicalJobRenderTimer); Gui.canonicalJobRenderTimer = null; }
