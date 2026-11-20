@@ -1,7 +1,7 @@
 //@name hayaku_locator_continuity
-//@display-name HAYAKU · Locator Continuity v4.0.7
+//@display-name HAYAKU · Locator Continuity v4.1.0
 //@api 3.0
-//@version 4.0.7
+//@version 4.1.0
 //@allowed-ipc serial_gradation_agents_for_rp
 //@author rusinus12@gmail.com
 //@allowed-ipc flashback_hayaku_bridge
@@ -814,7 +814,7 @@ const MemorySuiteExecutionContract = (() => {
   };
 
   const PLUGIN_NAME = 'HAYAKU';
-  const PLUGIN_VERSION = '4.0.7';
+  const PLUGIN_VERSION = '4.1.0';
   // Historical distribution identity only. Sparse RRF runs locally; no HAYAKU runtime
   // registers this retired Compute operation and the manifest discloses its retirement.
   const HAYAKU_SPARSE_RRF_COMPUTE_OPERATION = 'hayaku.sparse-rrf-fusion.v1';

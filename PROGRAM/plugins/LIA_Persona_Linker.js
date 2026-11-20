@@ -1,7 +1,7 @@
 //@name lia_persona_linker
 //@display-name LIA: Persona Linker
 //@api 3.0
-//@version 0.30.3
+//@version 0.31.0
 //@update-url https://raw.githubusercontent.com/rusinus12-droid/Librarian-System/refs/heads/main/PROGRAM/plugins/LIA_Persona_Linker.js
 //@allowed-ipc flashback_hayaku_bridge
 /* Target-only handoff storage preparation v1. Authenticated owner handlers only. */
@@ -107,7 +107,7 @@ async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, paylo
   const OPERATION_LOG_MAX = 300;
   const DEBUG_LOG_MAX = 600;
   const LOG_PERSIST_DEBOUNCE_MS = 1500;
-const PLUGIN_VERSION = "0.30.3";
+const PLUGIN_VERSION = "0.31.0";
   const LIA_SETTING_UI_ID = "lia-persona-linker-setting";
   const LIA_BUTTON_UI_ID = "lia-persona-linker-button";
   const PERSONA_PROOF_VERSION = 1;
@@ -10594,7 +10594,11 @@ ${revisionText}`);
       await refreshPreview();
       return;
     }
-    document.body.innerHTML = `<div class="stage"><div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div></div>`;
+    if (existingStage) existingStage.remove();
+    const stage = document.createElement("div");
+    stage.className = "stage";
+    stage.innerHTML = `<div class="frame" data-device="desktop"><div class="app" id="dpg-preview-root"></div></div>`;
+    document.body.appendChild(stage);
     root = document.getElementById("dpg-preview-root");
     if (root) {
       if (root.dataset) root.dataset.liaUiBound = "1";
