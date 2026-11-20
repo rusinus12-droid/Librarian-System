@@ -55383,6 +55383,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const applied=[],rejected=[],blocked=[],reviewTransitions=[];
       const autoApply=(await loadSettings()).memoryStateAutoApply!==false;
       const resolve=name=>{const matches=asArray(catalog.registry?.entities).filter(e=>e.validated===true&&[e.name,...asArray(e.aliases)].some(n=>statePipelineIdentityKey(n)===statePipelineIdentityKey(name)));return matches.length===1?matches[0]:null;};
+      // Read-only: the same first checks the apply below makes, in the same order.
+      const microReviewUnapplicable=(row,item)=>{
+        try{
+          const intent=asObject(item?.claim?.stateIntent),domain=row.domain,field=row.field;
+          const fieldReason=microStateFieldAdmissionReason(intent.domain,field);if(fieldReason)return fieldReason;
+          if(domain!=='characters'&&domain!=='world')return '';
+          const entity=resolve(intent.target?.entityName);if(!entity)return 'registry_target_unresolved';
+          if(intent.operation!=='clear'){
+            const typed=microStateValueForField({domain:domain==='characters'?'character':domain,field,value:clone(intent.value??null),quote:item.claim.evidence?.exactQuote,subjectId:entity.id,
+              resolve:(name,type)=>{const found=resolve(name);return found&&(!type||found.type===type)?found:null;}});
+            if(!typed.ok)return string(typed.reason||'state_value_unresolved');
+          }
+          const target=asArray(head[domain]).find(r=>r.id===entity.id);
+          if((target?.fieldCorrectionProvenance?.[field]||target?.clearedFieldCorrectionProvenance?.[field])?.correctionId)return 'explicit_user_correction';
+          const previousEvidence=target?.fieldEvidence?.[field]||target?.clearedFieldEvidence?.[field];
+          const through=Number(previousEvidence?.sourceTurnRange?.start||previousEvidence?.canonical?.turnRange?.start||previousEvidence?.turn||0);
+          return through>row.turn?'newer_state_field_evidence':'';
+        }catch(_){return '';}
+      };
       // A user-confirmed value outranks an automatic value of the same turn; newer evidence still wins across turns.
       const writers=new Map();
       for(const row of [...catalog.rows.filter(r=>r.status!=='confirmed'),...catalog.rows.filter(r=>r.status==='confirmed')]){
@@ -55398,7 +55417,10 @@ function mountMemorySuiteReanalysisReview(container,config) {
         if(row.kind==='micro'&&row.status==='automatic'&&heldForReview&&[
           'micro_same_turn_field_conflict','canonical_overlap_conflict','canonical_overlap_field_provenance_unavailable',
           'later_canonical_field_evidence','newer_state_field_evidence','registry_containment_subject_unconfirmed','registry_entity_kind_conflict','state_goal_is_observed_action'
-        ].includes(row.reason)){row.stateOutcome='not_applied';continue;}
+        ].includes(row.reason)){
+          const unapplicable=microReviewUnapplicable(row,item);
+          if(unapplicable){row.stateEligible=false;row.stateOutcome='blocked';row.stateBlockReason=unapplicable;blocked.push(row);continue;}
+          row.stateOutcome='not_applied';continue;}
         try{
           let domain=row.domain,targetId='',field=row.field,value,clear=false,sourceRow=null,reviewAdditive=null;
           if(row.kind==='canonical'){
@@ -55477,6 +55499,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const handled=new Set([...applied,...rejected].map(row=>row.id));
       if(head.unifiedApplied)head.unifiedApplied.pending=asArray(head.unifiedApplied.pending).filter(p=>!catalog.rows.some(row=>row.kind==='canonical'&&handled.has(row.id)&&row.memoryId===p.memoryId&&Number(row.revision)===Number(p.revision)&&catalog.internal.get(row.id)?.index===p.fact));
       if(head.microProjection)head.microProjection.pendingClaims=asArray(head.microProjection.pendingClaims).filter(p=>!catalog.rows.some(row=>row.kind==='micro'&&handled.has(row.id)&&row.turn===p.turn&&catalog.internal.get(row.id)?.index===p.claimIndex));
+      if(head.microProjection){
+        const unapplied=asArray(head.microProjection.pendingClaims).map(p=>({p,row:blocked.find(row=>row.kind==='micro'&&row.turn===p.turn&&catalog.internal.get(row.id)?.index===p.claimIndex)})).filter(x=>x.row);
+        if(unapplied.length){
+          head.microProjection.pendingClaims=asArray(head.microProjection.pendingClaims).filter(p=>!unapplied.some(x=>x.p===p));
+          head.microProjection.settledClaims=[...asArray(head.microProjection.settledClaims),...unapplied.map(({p,row})=>({turn:p.turn,claimIndex:p.claimIndex,reason:string(row.stateBlockReason||p.reason),heldAs:string(p.reason||''),reviewId:row.id}))].slice(0,64);
+        }
+      }
       // A rejected fact (memory_record_quarantined) has no value to apply; older Heads still list it as blocking.
       const blocking=unifiedPendingHoldsDomain;
       const canonicalThrough=Number(head.reviewedThroughCanonical?.turnRange?.end||head.throughTurn||0);
@@ -77018,7 +77047,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         status: lensRead.error ? 'attention' : lensFailed ? 'failed' : lensRead.value?.running || asArray(lensRead.value?.queue).length ? 'running' : latestLens ? 'ok' : enabledLenses.length ? 'waiting' : 'off',
         note: asArray(lensRead.value?.queue).length ? `대기 ${asArray(lensRead.value.queue).length}건` : latestLens?.turnRange ? `최근 T${latestLens.turnRange.start}–T${latestLens.turnRange.end}` : '', error: lensFailed ? string(latestLens.reason || latestLens.error) : lensRead.error || '' };
 
-      const stateRead = await attempt(() => loadContinuityStateForResponse(scope, manifest, { skipMemoryReview: true }));
+      const stateRead = await attempt(() => loadContinuityStateForResponse(scope, manifest));
       const authority = asObject(stateRead.value?.authority), through = Number(stateRead.value?.head?.throughTurn || 0);
       // `throughTurn` is the furthest turn any projection reached, and Micro can run ahead of the
       // canonical Head (T33 projected while every domain is still T30). The card describes the
