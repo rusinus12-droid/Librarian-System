@@ -308,7 +308,7 @@ test('RE:TRACE handoff inherits all 4 GRADIA per-chat stores, preserves source, 
   assert.notEqual(targetInspect.scopeKey, sourceScopeKey);
 
   // 4. Idempotent retry with same transferId succeeds without duplicating data
-  const replay = await gradia.publicApi.adoptGradiaSessionHandoff({
+  const replay = await gradia.publicApi.adoptGradiaChatStateHandoff({
     targetChatId,
     transferId: result.transferId,
     sourceScopeKey,

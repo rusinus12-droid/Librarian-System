@@ -54083,7 +54083,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
     };
 
-    const adoptGradiaSessionHandoff = async (payload = {}) => {
+    const adoptGradiaChatStateHandoff = async (payload = {}) => {
       const targetChatId = text(payload?.targetChatId || '').trim();
       const transferId = text(payload?.transferId || '').trim();
       const expectedSourceDigest = text(payload?.expectedSourceDigest || '').trim();
@@ -54261,7 +54261,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           } else if (action === 'inspect') {
             result = await inspectGradiaSessionHandoff(request.payload || {});
           } else if (action === 'adopt_session_handoff') {
-            result = await adoptGradiaSessionHandoff(request.payload || {});
+            result = await adoptGradiaChatStateHandoff(request.payload || {});
           } else {
             throw new Error(`Unsupported GRADIA RE:TRACE action: ${action}`);
           }
@@ -54435,7 +54435,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const exportedApi = Object.freeze({
       ...publicApi,
       inspectGradiaSessionHandoff,
-      adoptGradiaSessionHandoff,
+      adoptGradiaChatStateHandoff,
       gradiaRetraceCompatibility,
       readGradiaChatStateSnapshot,
       inspectGradiaNativeContinuity,
