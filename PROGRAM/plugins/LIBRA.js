@@ -38966,7 +38966,13 @@ function createLibraReadonlySourceContext(owner) {
           };
         }
       }
-      const current = exactBasis && pendingDomains.length === 0 && head.status === 'ready';
+      // Currentness is decided by the domains (each ready and at the canonical frontier), by a
+      // pending fact that holds a whole domain, and by unreconstructed legacy history — never by
+      // `head.status`, which replay and the incremental path used to write with different rules.
+      // Reading the flag here kept every reader at `last_known` after a replay even though all
+      // four domains were ready.
+      const current = exactBasis && pendingDomains.length === 0 && !(Number(head.unifiedCoverage?.legacyCount || 0) > 0)
+        && !asArray(head.unifiedApplied?.pending).some(unifiedPendingHoldsDomain);
       const hasAnyState = asArray(head.characters).length > 0 || asArray(head.relationships).length > 0 || asArray(head.world).length > 0
         || !!head.narrative?.summary || asArray(head.narrative?.arcs).length > 0 || asArray(head.narrative?.threads).length > 0;
       if (!current) head.status = hasAnyState ? 'partial' : 'empty';
@@ -61210,7 +61216,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
         const domain=STATE_PIPELINE_DOMAIN_HEAD_KEYS[p.domain];
         if(domain)head.domainStatus[domain]={...asObject(head.domainStatus?.[domain]),status:'not_updated',reason:'unified_bindings_pending'};
       }
-      head.status=pending.length||head.unifiedCoverage?.legacyCount>0?'partial':'ready';
+      // A field-level hold keeps its own field last-known; it does not make the whole Head stale.
+      // Domain status and the overall Head status are read by the same question ("is the State
+      // current?"), so they must answer with the same rule: one rejected fact used to keep every
+      // reader at `last_known` forever while all four domains were already ready.
+      head.status=pending.some(unifiedPendingHoldsDomain)||head.unifiedCoverage?.legacyCount>0?'partial':'ready';
       return head;
     };
     const unifiedReplayReceipt = (context,memory,head,registry) => {
@@ -76885,6 +76895,17 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       });
     };
 
+    // Micro can project past the canonical Head, so `head.throughTurn` is the furthest projected
+    // turn, not the State's basis. The card reports the oldest domain turn (the same rule the 서사
+    // 연감 progress card uses) and mentions the Micro frontier separately.
+    const stateProjectionBasisTurn = head => {
+      const value = asObject(head);
+      const turns = RESPONSE_STATE_DOMAINS
+        .map(domain => Number(asObject(value.domainStatus?.[domain]).throughTurn))
+        .filter(turn => Number.isFinite(turn) && turn >= 0);
+      return turns.length ? Math.min(...turns) : Number(value.throughTurn || 0);
+    };
+
     // Read-only answer to "what ran, what is waiting and what failed" for the current chat.
     const getRecentWorkOverview = async ({ expectedScopeKey = '' } = {}) => {
       const context = await resolveContext(), scope = context.scope, scopeKey = string(scope.scopeKey);
@@ -76930,12 +76951,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
       const stateRead = await attempt(() => loadContinuityStateForResponse(scope, manifest, { skipMemoryReview: true }));
       const authority = asObject(stateRead.value?.authority), through = Number(stateRead.value?.head?.throughTurn || 0);
+      // `throughTurn` is the furthest turn any projection reached, and Micro can run ahead of the
+      // canonical Head (T33 projected while every domain is still T30). The card describes the
+      // canonical State, so its basis is the oldest domain turn and the Micro frontier is reported
+      // beside it, not as the basis.
+      const basis = stateProjectionBasisTurn(stateRead.value?.head);
       const journalRead = await attempt(() => loadStateTrackingJournal(scope));
       const pendingApplications = asArray(journalRead.value?.entries).filter(entry => ['scheduled', 'running', 'pending'].includes(entry.state)).length;
       const stateNotes = [];
       if (asArray(authority.pendingDomains).length) stateNotes.push(`대기 영역: ${authority.pendingDomains.join(', ')}`);
       if (pendingApplications) stateNotes.push(`상태 적용 ${pendingApplications}건 보류`);
       if (authority.pending === true && !stateNotes.length) stateNotes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
+      if (through > basis) stateNotes.push(`미크로 T${through}까지 반영`);
       const replayError = await attempt(async () => {
         const [errorsStore, replayCache] = await Promise.all([
           storage.getJson(key.stateReplayErrors(scope), null),
@@ -76957,7 +76984,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         }).at(-1) || null;
       });
       const stateJob = { id: 'state', label: 'State projection', detail: '정본과 미크로에서 현재 상태를 만듭니다.', at: '',
-        headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${through}까지` : through ? `마지막 반영 · T${through}` : '반영 대기 중',
+        headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${basis}까지` : basis ? `마지막 반영 · T${basis}` : '반영 대기 중',
         status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
         note: stateNotes.join(' · '), error: replayError.value ? string(replayError.value.message || replayError.value.code) : stateRead.error || journalRead.error || '' };
 
