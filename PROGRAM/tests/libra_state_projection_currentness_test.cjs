@@ -13,7 +13,7 @@ const exposeInternals = source => source
   .replace('    const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {',
     '    globalThis.__fixtureResponseAuthority = responseStateAuthorityForHead;\n    const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {')
   .replace('    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.',
-    '    globalThis.__fixtureStateBasisTurn = stateProjectionBasisTurn;\n    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.');
+    '    globalThis.__fixtureStateBasisTurn = stateProjectionBasisTurn;\n    globalThis.__fixtureStateNotes = stateProjectionNotes;\n    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.');
 
 const cloneJson = value => JSON.parse(JSON.stringify(value));
 const domainStatus = () => ({
@@ -69,9 +69,22 @@ const headWith = (pending, extra = {}) => ({ status: 'ready', throughTurn: 30, d
     const legacyHead = cloneJson(staleFlagHead);
     legacyHead.unifiedCoverage = { legacyCount: 1 };
     assert.equal(authorityFor(legacyHead, [], { exactBasis: true }).authority.current, false, 'unreconstructed legacy history is not current');
+
+    // 6. The card names why it waits. Micro claims that could not bind their value to the source
+    //    are counted and pointed at the review screen; they must not be reported as "미크로 T33까지".
+    const notes = f.r.context.__fixtureStateNotes;
+    assert.equal(typeof notes, 'function', 'stateProjectionNotes exposed');
+    assert.equal(notes({ authority: { pendingDomains: [], pending: false }, basis: 30, through: 33 }).join(' | '), '미크로 T33까지 반영');
+    assert.equal(notes({ authority: { pendingDomains: ['narrative'], pending: true }, basis: 25, through: 30 }).join(' | '), '대기 영역: narrative | 미크로 T30까지 반영');
+    assert.equal(notes({ authority: { pendingDomains: [], pending: true }, basis: 30, through: 33 }).join(' | '), '현재 원문과 상태의 일치 여부를 확인 중입니다. | 미크로 T33까지 반영');
+    const unbound = reason => ({ turn: 32, claimIndex: 6, reason });
+    const held = notes({ authority: { pendingDomains: [], pending: true, microProjection: { pendingClaims: [{ ...unbound('state_value_not_source_bound'), turn: 32, claimIndex: 6 }, { ...unbound('state_value_not_source_bound'), claimIndex: 12 }, { ...unbound('state_value_not_source_bound'), turn: 33, claimIndex: 19 }] } }, basis: 30, through: 33 });
+    assert.equal(held.join(' | '), '미크로 보류 3건 · T32–T33 · 값 이름이 인용문에 없음', 'an uncited value is named as the cause, not as a re-analysis request');
+    const other = notes({ authority: { pendingDomains: [], pending: true, microProjection: { pendingClaims: [{ turn: 35, claimIndex: 1, reason: 'read_failed' }] } }, basis: 30, through: 35 });
+    assert.equal(other.join(' | '), '미크로 보류 1건 · T35', 'an unreported cause stays a bare count');
   } finally { await f.r.cleanup?.(); }
 
-  // 6. End to end: one rejected fact, every domain ready -> the card reports the State as current.
+  // 7. End to end: one rejected fact, every domain ready -> the card reports the State as current.
   //    The replay path is the one that used to demote the Head, so replay again before reading it.
   const g = await fixture();
   try {

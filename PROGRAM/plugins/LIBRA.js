@@ -76906,6 +76906,26 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return turns.length ? Math.min(...turns) : Number(value.throughTurn || 0);
     };
 
+    // The card must name the reason it waits: a held domain, queued applications, or Micro claims
+    // that could not be bound to their quote. Approving such a claim in the review screen cannot
+    // help — the same value/quote check runs again — so the note asks for a re-analysis instead of
+    // leaving a generic "확인 중" line.
+    const stateProjectionNotes = ({ authority, basis, through, pendingApplications = 0 }) => {
+      const value = asObject(authority), notes = [];
+      const microPending = asArray(asObject(value.microProjection).pendingClaims);
+      const turns = [...new Set(microPending.map(claim => Number(claim?.turn)).filter(turn => Number.isFinite(turn) && turn > 0))].sort((a, b) => a - b);
+      // Say what actually blocks the claim when the reason is the user-visible kind; never tell the
+      // reader to re-analyze, because a claim whose quote omits the value fails the same way again.
+      const causes = [...new Set(microPending.map(claim => string(claim?.reason)).filter(Boolean))];
+      const cause = causes.length === 1 && causes[0] === 'state_value_not_source_bound' ? ' · 값 이름이 인용문에 없음' : '';
+      if (asArray(value.pendingDomains).length) notes.push(`대기 영역: ${asArray(value.pendingDomains).join(', ')}`);
+      if (pendingApplications) notes.push(`상태 적용 ${pendingApplications}건 보류`);
+      if (microPending.length) notes.push(`미크로 보류 ${microPending.length}건${turns.length ? ` · T${turns[0]}${turns.at(-1) !== turns[0] ? `–T${turns.at(-1)}` : ''}` : ''}${cause}`);
+      else if (value.pending === true && !notes.length) notes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
+      if (!microPending.length && Number(through) > Number(basis)) notes.push(`미크로 T${through}까지 반영`);
+      return notes;
+    };
+
     // Read-only answer to "what ran, what is waiting and what failed" for the current chat.
     const getRecentWorkOverview = async ({ expectedScopeKey = '' } = {}) => {
       const context = await resolveContext(), scope = context.scope, scopeKey = string(scope.scopeKey);
@@ -76958,11 +76978,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const basis = stateProjectionBasisTurn(stateRead.value?.head);
       const journalRead = await attempt(() => loadStateTrackingJournal(scope));
       const pendingApplications = asArray(journalRead.value?.entries).filter(entry => ['scheduled', 'running', 'pending'].includes(entry.state)).length;
-      const stateNotes = [];
-      if (asArray(authority.pendingDomains).length) stateNotes.push(`대기 영역: ${authority.pendingDomains.join(', ')}`);
-      if (pendingApplications) stateNotes.push(`상태 적용 ${pendingApplications}건 보류`);
-      if (authority.pending === true && !stateNotes.length) stateNotes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
-      if (through > basis) stateNotes.push(`미크로 T${through}까지 반영`);
+      const stateNotes = stateProjectionNotes({ authority, basis, through, pendingApplications });
       const replayError = await attempt(async () => {
         const [errorsStore, replayCache] = await Promise.all([
           storage.getJson(key.stateReplayErrors(scope), null),
