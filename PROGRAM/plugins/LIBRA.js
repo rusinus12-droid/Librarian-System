@@ -41650,6 +41650,48 @@ function createLibraReadonlySourceContext(owner) {
         // A previous attempt may have published only one physical copy of the
         // head. Revalidate this source, then transport the same pointer again.
       }
+      const hasChangedMicroSourceRevision = async currentReceipt => {
+        const priorMicroHead = await storage.getVerifiedJson(key.microMemoryHead(scope, worldlineId, sessionEpoch, turn), scope, null);
+        if (priorMicroHead?.analysisStatus !== 'verified' || !priorMicroHead?.sourceRevisionId || priorMicroHead.sourceRevisionId === revisionId) {
+          return false;
+        }
+        const carried = await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, currentReceipt);
+        return !carried;
+      };
+      const reserveSourceChangedMicroWork = async currentReceipt => {
+        if (options.allowSourceChangeReanalysis !== true || !options.microPlanBoundary) return false;
+        try {
+          if (!(await hasChangedMicroSourceRevision(currentReceipt))) return false;
+          const claim = { scope, identity: receiptRecoveryIdentity(context, pair), boundary: options.microPlanBoundary };
+          const initialPermit = await validateReceiptRecoveryClaim(claim);
+          if (initialPermit.status !== 'current') return false;
+          const workKey = key.microWork(scope, worldlineId, sessionEpoch, turn, revisionId, microProducerVersion);
+          const captureKey = key.completedTurnCapture(scope, worldlineId, sessionEpoch, turn, revisionId);
+          const [priorWork, priorCapture] = await Promise.all([
+            storage.getVerifiedJson(workKey, scope, null),
+            storage.getVerifiedJson(captureKey, scope, null)
+          ]);
+          if (priorWork || priorCapture) return false;
+          const finalPermit = await validateReceiptRecoveryClaim(claim);
+          if (finalPermit.status !== 'current') return false;
+          const reservedAt = Date.now();
+          await storage.setVerifiedJson(workKey, {
+            schema: 'libra.micro_work.v1', scopeKey: scope.scopeKey, worldlineId, sessionEpoch, turn,
+            sourceRevisionId: revisionId, sourceDigest: head.sourceDigest, receiptKey,
+            producerVersion: microProducerVersion, status: 'reserved', phase: 'planned',
+            planProvenance: 'source_revision_changed_reanalysis',
+            planRuntimeToken: state.microRuntimeToken,
+            planRestoreGeneration: Number(state.microRestoreGeneration || 0),
+            attemptId: 'micro_' + digest([workKey, reservedAt, Math.random()]),
+            logicalAttempts: 1, physicalAttemptsUsed: 0, attemptHistory: [],
+            reservedAt, leaseExpiresAt: reservedAt + 45000, result: null
+          }, scope);
+          if (state.lastMicroPlanRefusal?.scopeKey === scope.scopeKey && Number(state.lastMicroPlanRefusal?.turn) === Number(turn)) {
+            state.lastMicroPlanRefusal = null;
+          }
+          return true;
+        } catch (_) { return false; }
+      };
       if (storedHead?.revisionId === revisionId && storedHead?.receiptKey === receiptKey) {
         let verifiedReceipt = null;
         try { verifiedReceipt = await storage.getVerifiedJson(receiptKey, scope, null); }
@@ -41659,6 +41701,7 @@ function createLibraReadonlySourceContext(owner) {
         if (receiptMatchesSource(verifiedReceipt)) {
           const active = await readActiveCompletedTurnReceipt(scope, worldlineId, sessionEpoch, turn);
           if (active.status !== 'verified') throw new Error(`LIBRA_COMPLETED_TURN_${active.status.toUpperCase()}`);
+          const sourceChangedReanalysis = await reserveSourceChangedMicroWork(verifiedReceipt);
           let captureStatus = 'pending_reconciliation', captureError = '';
           let attachment;
           try { attachment=await attachmentFor(verifiedReceipt);
@@ -41675,6 +41718,7 @@ function createLibraReadonlySourceContext(owner) {
             catch (error) { inventoryError = compact(error?.message || error, 300); }
           }
           return { status: 'verified', duplicate: true, revisionId, receiptKey, headKey,
+            sourceChangedReanalysis,
             captureStatus, captureError, inventoryStatus, inventoryError, rawDurable: true, rawPacketRef: raw.rawPacketRef,
             rawVariantChanged:attachment?.rawVariantChanged===true };
         }
@@ -41710,6 +41754,7 @@ function createLibraReadonlySourceContext(owner) {
         microPlanRefusal = string(reason);
         state.lastMicroPlanRefusal = { at: Date.now(), scopeKey: scope.scopeKey, turn, revisionId, captureSource, reason: microPlanRefusal };
       };
+      let sourceChangedReanalysis = false;
       if (!priorReceipt && (captureSource === 'risu_chat_output' || mainCompletion) && options.admitMicroPlan === true
         && options.microPlanBoundary) {
         if (state.lastMicroPlanRefusal?.scopeKey === scope.scopeKey && Number(state.lastMicroPlanRefusal?.turn) === Number(turn)) state.lastMicroPlanRefusal = null;
@@ -41753,19 +41798,22 @@ function createLibraReadonlySourceContext(owner) {
           /* Receipt persistence continues; unproved Micro remains unknown. */
           noteMicroPlanRefusal('plan_reservation_failed:' + string(error?.code || error?.message || 'error').slice(0, 80));
         }
-      } else if (!priorReceipt && options.suppressPlanRefusal !== true) {
-        let carriedEquivalent = null;
-        try {
-          const priorMicroHead = await storage.getVerifiedJson(key.microMemoryHead(scope, worldlineId, sessionEpoch, turn), scope, null);
-          if (priorMicroHead?.analysisStatus === 'verified' && priorMicroHead?.sourceRevisionId && priorMicroHead.sourceRevisionId !== revisionId) {
-            carriedEquivalent = await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, receipt);
+      } else if (!priorReceipt) {
+        sourceChangedReanalysis = await reserveSourceChangedMicroWork(receipt);
+        if (!sourceChangedReanalysis && options.suppressPlanRefusal !== true) {
+          let carriedEquivalent = null;
+          try {
+            const priorMicroHead = await storage.getVerifiedJson(key.microMemoryHead(scope, worldlineId, sessionEpoch, turn), scope, null);
+            if (priorMicroHead?.analysisStatus === 'verified' && priorMicroHead?.sourceRevisionId && priorMicroHead.sourceRevisionId !== revisionId) {
+              carriedEquivalent = await readTextEquivalentReceipt(scope, worldlineId, sessionEpoch, turn, priorMicroHead.sourceRevisionId, receipt);
+            }
+          } catch (_) {}
+          if (!carriedEquivalent) {
+            // The Micro worker can only ever answer "work journal missing" for this
+            // turn, so record the actual admission decision while it is still known.
+            noteMicroPlanRefusal(options.microPlanReason
+              || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing'));
           }
-        } catch (_) {}
-        if (!carriedEquivalent) {
-          // The Micro worker can only ever answer "work journal missing" for this
-          // turn, so record the actual admission decision while it is still known.
-          noteMicroPlanRefusal(options.microPlanReason
-            || (options.microPlanBoundary ? 'plan_admission_refused' : 'plan_boundary_missing'));
         }
       }
       // A verified immutable receipt is sufficient: transport only its pointer.
@@ -41811,7 +41859,7 @@ function createLibraReadonlySourceContext(owner) {
         catch (error) { inventoryError = compact(error?.message || error, 300); }
       }
       return { status: 'verified', duplicate: false, revisionId, receiptKey, headKey, captureSource,
-        microPlanRefusal,
+        microPlanRefusal, sourceChangedReanalysis,
         captureStatus, captureError, inventoryStatus, inventoryError, rawDurable: true, rawPacketRef: raw.rawPacketRef,
         rawVariantChanged:attachment?.rawVariantChanged===true };
     };
@@ -42640,6 +42688,7 @@ function createLibraReadonlySourceContext(owner) {
             deferInventory: true, beforeWrite: preparationGuard,
             admitMicroPlan:microPlanProof.ok, microPlanReason:microPlanProof.reason,
             microPlanBoundary:recoveryBoundary,mainAfterRequestBoundary,
+            allowSourceChangeReanalysis: !historical,
             suppressPlanRefusal: gapTurns.has(Number(pair.turn))
           });
           await preparationGuard?.();
@@ -42647,7 +42696,7 @@ function createLibraReadonlySourceContext(owner) {
           if (persisted?.status === 'verified') result.verifiedTurns.push(Number(pair.turn));
           if (persisted.captureStatus !== 'verified') result.capturePending += 1;
           inventoryTurns.push(Number(pair.turn));
-          microTurns.push({ turn: Number(pair.turn), revisionId: persisted.revisionId });
+          microTurns.push({ turn: Number(pair.turn), revisionId: persisted.revisionId, sourceChangedReanalysis: persisted.sourceChangedReanalysis === true });
         } catch (error) {
           if (error?.receiptPreparationRejected === true) throw error;
           noteCompletedTurnReceiptFailure(context,pair,recoveryBoundary,error);
@@ -42668,10 +42717,31 @@ function createLibraReadonlySourceContext(owner) {
         }
       }));
       await preparationGuard?.();
+      const worldlineId = hostWorldlineIdForScope(context.scope);
       for (const item of microTurns) {
+        if (item.sourceChangedReanalysis && !gapTurns.has(item.turn)) {
+          // Debounce consecutive module refreshes on the same turn so rapid
+          // multi-module edits settle before firing one Micro reanalysis.
+          const timerKey = `micro_source_change:${context.scope.scopeKey}:${item.turn}`;
+          const prevTimer = state.timers.get(timerKey);
+          if (prevTimer) { clearTimeout(prevTimer); state.timers.delete(timerKey); }
+          const settleScope = clone(context.scope);
+          const settleTimer = setTimeout(() => {
+            if (state.timers.get(timerKey) === settleTimer) state.timers.delete(timerKey);
+            if (state.disposed) return;
+            void (async () => {
+              const active = await readActiveCompletedTurnReceipt(settleScope, worldlineId, 0, item.turn);
+              if (active?.status !== 'verified' || active.receipt?.revisionId !== item.revisionId) return;
+              await scheduleMicroForTurn(settleScope, worldlineId, 0, item.turn, item.revisionId);
+            })().catch(() => null);
+          }, 1500);
+          settleTimer?.unref?.();
+          state.timers.set(timerKey, settleTimer);
+          continue;
+        }
         // A gap turn's earlier attempt ended without a Micro (outcome unknown, failed):
         // re-open it once through the explicit retry path instead of re-reading that result.
-        void scheduleMicroForTurn(context.scope, hostWorldlineIdForScope(context.scope),
+        void scheduleMicroForTurn(context.scope, worldlineId,
           0, item.turn, item.revisionId, gapTurns.has(item.turn) ? { manual: true, reason: 'receipt_gap_repair' } : {});
       }
       Object.defineProperty(result, 'settledSnapshot', { value: { context: settledContext, pairs: settledPairs } });
@@ -54346,7 +54416,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       return state.microRestoreGeneration;
     };
     const microPlannedWithoutInvocation = work => work?.status==='reserved' && work.phase==='planned'
-      && ['risu_chat_output_fresh_receipt','main_after_request_fresh_receipt'].includes(work.planProvenance)
+      && ['risu_chat_output_fresh_receipt','main_after_request_fresh_receipt','source_revision_changed_reanalysis'].includes(work.planProvenance)
       && work.planRuntimeToken===state.microRuntimeToken
        && Number(work.planRestoreGeneration)===Number(state.microRestoreGeneration||0)
       && Number(work.logicalAttempts)===1 && Number(work.physicalAttemptsUsed)===0
@@ -59077,6 +59147,15 @@ function mountMemorySuiteReanalysisReview(container,config) {
       if(matches.length!==1)return {ok:false,reason:'same_batch_target_ambiguous'};
       return {ok:true,targetFact:prior};
     };
+    const threadParticipantsCompatible = (left, right, kind = '') => {
+      if (digest(left) === digest(right)) return true;
+      if (kind !== 'reaffirm') return false;
+      const leftIds = [...new Set(asArray(left).map(p => string(p?.personId || '')).filter(Boolean))].sort();
+      const rightIds = [...new Set(asArray(right).map(p => string(p?.personId || '')).filter(Boolean))].sort();
+      if (!leftIds.length || !rightIds.length) return false;
+      if (digest(leftIds) === digest(rightIds)) return true;
+      return rightIds.length === 1 && leftIds.length === 2 && leftIds.includes(rightIds[0]);
+    };
     const canonicalizeUnifiedThreadLifecycle = ({artifact,batch,basis,candidateContext,factIds=null}) => {
       const probe={scopeKey:basis.scopeKey,unifiedIdentityScope:basis.scopeKey,turnRange:{start:Number(batch[0].turn),end:Number(batch.at(-1).turn)},
         memoryId:'thread-link-probe',revision:1,sourceDigest:sourceDigest(batch),artifactDigest:digest(artifact),canonicalArtifact:artifact,
@@ -59120,7 +59199,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           value.lifecycleId=newLifecycleId;value.linkStatus='new';(participantIds.length?value.participantIds=participantIds:delete value.participantIds);continue;
         }
         const anchorRanks=target?candidateContext.candidates.filter(candidate=>candidate.allowedLinks.includes(kind)
-          &&digest(candidate.participantIds)===digest(participantIds)&&string(candidate.value.kind||'other')===string(value.kind||'other'))
+          &&threadParticipantsCompatible(participantIds,candidate.participantIds,kind)&&string(candidate.value.kind||'other')===string(value.kind||'other'))
           .map(candidate=>({candidate,score:unifiedThreadAnchorSimilarity(candidate.value,value)})).filter(row=>row.score>=0.12)
           .sort((a,b)=>b.score-a.score):[];
         const anchorGap=anchorRanks.length>1?anchorRanks[0].score-anchorRanks[1].score:Infinity;
@@ -59156,7 +59235,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
           reason=alias?'unknown_or_stale_candidate_alias':'target_alias_required';
         }
         else if(!target.allowedLinks.includes(kind))reason='candidate_status_disallows_link';
-        else if(digest(participantIds)!==digest(target.participantIds))reason='participant_mismatch';
+        else if(!threadParticipantsCompatible(participantIds,target.participantIds,kind))reason='participant_mismatch';
         else if(string(value.kind||'other')!==string(target.value.kind||'other'))reason='thread_kind_mismatch';
         else if(!anchorRanks.some(row=>row.candidate.alias===target.alias))reason='thread_anchor_mismatch';
         // A reaffirmation changes nothing in the target, so it needs no wording
