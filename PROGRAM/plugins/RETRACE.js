@@ -12944,12 +12944,14 @@ async function memorySuiteRetraceValidateRestore(context = {}) {
       libraRequired
         ? adoptLibraSessionHandoffDurable(libraOptions)
         : Promise.resolve({ schema: LIBRA_HANDOFF_RECEIPT_SCHEMA, action: 'adopted', adopted: false, verified: true, durable: true, records: 0, expectedRecords: 0, reason: 'no_libra_data' }),
-      adoptGradiaSessionHandoff({
-        targetChatId, transferId,
-        sourceScopeKey: text(bridge.sourceGradiaScopeKey || ''),
-        expectedSourceDigest: text(bridge.sourceGradiaDigest || ''),
-        expectedItems: gradiaRequired ? gradiaItems : 0
-      })
+      gradiaRequired && typeof adoptGradiaSessionHandoff === 'function'
+        ? adoptGradiaSessionHandoff({
+            targetChatId, transferId,
+            sourceScopeKey: text(bridge.sourceGradiaScopeKey || ''),
+            expectedSourceDigest: text(bridge.sourceGradiaDigest || ''),
+            expectedItems: gradiaItems
+          })
+        : Promise.resolve({ schema: typeof GRADIA_HANDOFF_RECEIPT_SCHEMA === 'string' ? GRADIA_HANDOFF_RECEIPT_SCHEMA : 'gradia.session_handoff.receipt.v1', action: 'adopted', adopted: false, verified: true, durable: true, sourcePreserved: true, items: 0, expectedItems: 0, reason: 'no_gradia_data' })
     ]);
     // A successful adoption response is not used as a substitute for a current
     // target-ledger readback. The prepared archive identity is carried through

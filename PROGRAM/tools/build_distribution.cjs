@@ -472,6 +472,7 @@ function runNodeProcess(args = [], cwd = programDir, options = {}) {
     cwd,
     encoding: 'utf8',
     timeout: options.timeoutMs || 180000,
+    maxBuffer: options.maxBuffer || 64 * 1024 * 1024,
     stdio: options.inherit ? 'inherit' : 'pipe',
     env: { ...process.env, ...(options.env || {}) }
   });
