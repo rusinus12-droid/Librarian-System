@@ -16,8 +16,7 @@
   --danger:#a23a30; --danger-soft:#f6e1dc; --danger-line:#dfaaa2; --danger-ink:#7f2a21;
   --top-bg:#fbf8f0; --brand-bg:#2f3f8f; --brand-ink:#fff;
   --side-bg:#1f3a33; --side-text:#d4e2d9; --side-label:#a9c4b6; --side-hover:#294a41; --side-active-bg:#f3eddc; --side-active-text:#1f3a33; --side-line:#173029; --side-count-bg:#33564b; --side-count-text:#e6f0ea; --side-foot-bg:#193129;
-  --font-display:"Noto Serif KR","Nanum Myeongjo",Georgia,serif;
-  --scrim:rgba(14,18,16,.66);
+   --scrim:rgba(14,18,16,.66);
 }
 .t-libra .eyebrow{color:var(--accent)}
 .t-libra .page-title{font-weight:700}
@@ -36,7 +35,6 @@
   --side-bg:#16303c; --side-text:#c3d6dc; --side-label:#9bb7c0; --side-hover:#1f4050; --side-active-bg:#e9eff1; --side-active-text:#10303a; --side-line:#10212b; --side-count-bg:#27505f; --side-count-text:#e1f0f2; --side-foot-bg:#10252f;
   --scrim:rgba(7,16,22,.68);
 }
-.t-hayaku .brand__name{letter-spacing:.04em}
 
 /* ---- Flashback · 현상실: 웜 페이퍼 + 차콜 + 벽돌 (현행 구현 유지) ---- */
 .t-flashback{

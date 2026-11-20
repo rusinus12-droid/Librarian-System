@@ -285,33 +285,33 @@
     "plugins": {
       "flashback": {
         "version": "2.0.6",
-        "sha256": "64108826d5c01edde06edc5475c4ead5c8d8c08a589c9836d65d6161b86e2411",
-        "bytes": 3931953
+        "sha256": "a1ac06201c261b2c6810923963ccb915a208f0b41f7cb95234e4d25d47224419",
+        "bytes": 3989567
       },
       "hayaku": {
         "version": "4.0.7",
-        "sha256": "f1cd34167bd573bd4276396c68872289764024b70af188f05e892c129ac1d1c0",
-        "bytes": 4353405
+        "sha256": "856703a85ef7177fbaae4588c19cef9daf4171d8ee90b568d4d3d02d90753b87",
+        "bytes": 4411026
       },
       "libra": {
         "version": "3.0.8",
-        "sha256": "2cd4611634aef3bce0d1aef798d849db1a3a2bd566ff0b192d22b80104be31e8",
-        "bytes": 6819009
+        "sha256": "562115c81afc4dc776506c97d6d3eb2e4df95f74e47ec6a76ffebf1fd799c439",
+        "bytes": 6876630
       },
       "lia": {
         "version": "0.30.3",
-        "sha256": "3a0fa4a03424b9952bb3a6b6b63aeb41857a3dc6920604d3010ba329560c6cf0",
-        "bytes": 801890
+        "sha256": "2724d6874708f3d1ec4ba0965fc3ccfe9ce7045bc5485f58f52500a9e40fbd56",
+        "bytes": 859511
       },
       "retrace": {
         "version": "2.0.2",
-        "sha256": "7d6b3072edc899c2b74ea5773d70afb13c6101bd06a0b86781fe8eb3553c6004",
-        "bytes": 1247940
+        "sha256": "cfde728d900654a6e71f5908ee29914700d2a03a7d52235434dc9a9b6a34d0a8",
+        "bytes": 1305561
       },
       "gradia": {
         "version": "1.1.4",
-        "sha256": "88ff77673b1809c85d81015345cc372ac5c442f121672e830cf9d73d09437409",
-        "bytes": 3619900
+        "sha256": "9335c21bb82cd23348ad1499bf3d7b7e7dc7609a5aa625696c5f917219c0c485",
+        "bytes": 3677521
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

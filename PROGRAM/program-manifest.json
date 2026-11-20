@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T02:58:35.679Z",
+  "generatedAt": "2026-11-20T03:30:00.433Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -1944,16 +1944,16 @@
       "bytes": 5702
     },
     "docs/gui-redesign/assets/suite.css": {
-      "sha256": "cab167032821a022763609172bdfcfdd113194c359ebac5dbd51772ee5c54b0a",
-      "bytes": 27868
+      "sha256": "520a9d62cc8aaf76faa36209b0b7779efed41b77622d218f29083784b04ec87b",
+      "bytes": 85589
     },
     "docs/gui-redesign/assets/suite.js": {
       "sha256": "c0f69d5dfd423d02c87ed4b5af897d860ac6b276db87cda50034239c4b4d61b3",
       "bytes": 46082
     },
     "docs/gui-redesign/assets/themes.css": {
-      "sha256": "4e2a86441ac24322ebf9583119e38588f5b91b208a82916d4a1fbcf0bcddf6c4",
-      "bytes": 7166
+      "sha256": "74a693939026c9061fafe6afd698b1b565673fbbf930c760b38de6ab776ff601",
+      "bytes": 7057
     },
     "docs/gui-redesign/AUDIT-RESPONSE.md": {
       "sha256": "48ef07d5038a255eadfc0d2630c9b1fe88039d289c09a2fd33543b7dfd6a3fbd",
@@ -1964,8 +1964,8 @@
       "bytes": 4643
     },
     "docs/gui-redesign/flashback.html": {
-      "sha256": "a9e3eaf9dfee6525815d72f396f5c8ed40c029977f5d282401e1a50e0914141e",
-      "bytes": 70508
+      "sha256": "52f19ba183b9cdf29ce18fb4f06c9e222f666f631b4e252f10922744225c6363",
+      "bytes": 70501
     },
     "docs/gui-redesign/GRADIA-PRODUCT-MAPPING.md": {
       "sha256": "50848454acb4f7657ae32d170005b2f563b44ea04d6c524aeb28bbec71ddf9e6",
@@ -3912,7 +3912,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "f5880554c4edfdb568638a2d86e6e3c6862a7d5de2fcbbbd97f43a01383ae688",
+      "sha256": "e4e9f6e03142f2a6e63e14053b8878c1cee64bfbaedfc5eddb0331ce542f142c",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4324,28 +4324,28 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "64108826d5c01edde06edc5475c4ead5c8d8c08a589c9836d65d6161b86e2411",
-      "bytes": 3931953
+      "sha256": "a1ac06201c261b2c6810923963ccb915a208f0b41f7cb95234e4d25d47224419",
+      "bytes": 3989567
     },
     "plugins/GRADIA.js": {
-      "sha256": "88ff77673b1809c85d81015345cc372ac5c442f121672e830cf9d73d09437409",
-      "bytes": 3619900
+      "sha256": "9335c21bb82cd23348ad1499bf3d7b7e7dc7609a5aa625696c5f917219c0c485",
+      "bytes": 3677521
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "f1cd34167bd573bd4276396c68872289764024b70af188f05e892c129ac1d1c0",
-      "bytes": 4353405
+      "sha256": "856703a85ef7177fbaae4588c19cef9daf4171d8ee90b568d4d3d02d90753b87",
+      "bytes": 4411026
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "3a0fa4a03424b9952bb3a6b6b63aeb41857a3dc6920604d3010ba329560c6cf0",
-      "bytes": 801890
+      "sha256": "2724d6874708f3d1ec4ba0965fc3ccfe9ce7045bc5485f58f52500a9e40fbd56",
+      "bytes": 859511
     },
     "plugins/LIBRA.js": {
-      "sha256": "2cd4611634aef3bce0d1aef798d849db1a3a2bd566ff0b192d22b80104be31e8",
-      "bytes": 6819009
+      "sha256": "562115c81afc4dc776506c97d6d3eb2e4df95f74e47ec6a76ffebf1fd799c439",
+      "bytes": 6876630
     },
     "plugins/RETRACE.js": {
-      "sha256": "7d6b3072edc899c2b74ea5773d70afb13c6101bd06a0b86781fe8eb3553c6004",
-      "bytes": 1247940
+      "sha256": "cfde728d900654a6e71f5908ee29914700d2a03a7d52235434dc9a9b6a34d0a8",
+      "bytes": 1305561
     },
     "release-policy.json": {
       "sha256": "ab1730201128e2b83b576c80373b7b3bf655a4b0a46d160a06141161f57870ab",
