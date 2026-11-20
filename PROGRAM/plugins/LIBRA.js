@@ -80339,7 +80339,23 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.t-libra .story-structure .story-structure__lead{margin:6px 0 0;font:15px/1.85 var(--font-display);color:var(--text)}.t-libra .story-structure .story-structure__lead.muted{color:var(--text2)}',
     '.t-libra .story-structure .facts{margin:16px 0 0}',
     '@media(max-width:560px){.t-libra .story-structure .facts{grid-template-columns:repeat(2,minmax(0,1fr))}}',
-    '.t-libra .wl-list>.wl-row,.t-libra .list>.row{content-visibility:auto;contain-intrinsic-size:auto 56px}'
+    '.t-libra .wl-list>.wl-row,.t-libra .list>.row{content-visibility:auto;contain-intrinsic-size:auto 56px}',
+    // 기억 상태: title left, actions top right; the header stays reachable while the log scrolls.
+    '.state-dialog__head{position:sticky;top:-24px;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;margin:-24px -24px 16px;padding:20px 24px 14px;background:var(--surface);border-bottom:1px solid var(--border)}',
+    '.state-dialog__head h2{margin:2px 0 0}',
+    '.state-dialog__head>.dialog__actions{margin:0;flex:0 1 auto;justify-content:flex-end}',
+    '.state-dialog__summary.kv{grid-template-columns:repeat(2,minmax(84px,auto) minmax(0,1fr));gap:8px 16px;margin:0 0 18px}',
+    '.state-dialog__summary.kv dt{margin-top:0}',
+    '@media(max-width:560px){.state-dialog__head>.dialog__actions{flex:1 1 100%;justify-content:flex-start}.state-dialog__summary.kv{grid-template-columns:minmax(84px,auto) minmax(0,1fr)}}',
+    // 실행 기록: one framed section; the view tabs are its top-level tabs and the selected view
+    // (with its own filter chips) is drawn inside the same frame, under the selected tab.
+    '.exec-logs{border:1px solid var(--border2);border-radius:var(--r-md);background:var(--surface);overflow:hidden}',
+    '.exec-logs__head{padding:16px 20px 0;background:var(--surface2);border-bottom:1px solid var(--border2)}',
+    '.exec-logs__head .card__title{margin:0}.exec-logs__head .card__desc{margin:3px 0 12px}',
+    '.exec-logs .exec-logs__tabs{display:flex;gap:4px;margin:0 0 -1px;border-bottom:0;overflow-x:auto;scrollbar-width:none}',
+    '.exec-logs .exec-logs__tabs>.tab{min-height:40px;padding:9px 16px;margin:0;border:1px solid transparent;border-bottom:0;border-radius:var(--r-sm) var(--r-sm) 0 0;background:transparent;color:var(--text2)}',
+    '.exec-logs .exec-logs__tabs>.tab.is-on{background:var(--surface);border-color:var(--border2);color:var(--text);font-weight:750;box-shadow:inset 0 3px 0 var(--accent)}',
+    '.exec-logs__body{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;padding:18px 20px 20px}'
   ].join('\n');
   const injectGuiStyle = () => {
     if (typeof document === 'undefined') return;
@@ -87324,16 +87340,18 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const viewOf=()=>EXECUTION_LOG_VIEWS.find(([id])=>id===Gui.executionLogView)||EXECUTION_LOG_VIEWS[0];
     let panel=null;
     const renderContent=()=>[
-      guiEl('div',{class:'card'},[guiEl('div',{class:'card__head'},[guiEl('div',{},[guiEl('h2',{class:'card__title',text:'실행 기록'}),guiEl('p',{class:'card__desc',text:'현재 채팅에서 돌아간 작업과 결과를 확인합니다.'})])]),
-        guiEl('div',{class:'tabs',role:'tablist','aria-label':'실행 기록 보기'},EXECUTION_LOG_VIEWS.map(([id,label])=>guiEl('button',{class:'tab'+(viewOf()[0]===id?' is-on':''),type:'button',role:'tab','aria-selected':String(viewOf()[0]===id),text:label,onClick:()=>{
+      guiEl('div',{class:'exec-logs__head'},[
+        guiEl('h2',{class:'card__title',text:'실행 기록'}),
+        guiEl('p',{class:'card__desc',text:'현재 채팅에서 돌아간 작업과 결과를 확인합니다.'}),
+        guiEl('div',{class:'tabs exec-logs__tabs',role:'tablist','aria-label':'실행 기록 보기'},EXECUTION_LOG_VIEWS.map(([id,label])=>guiEl('button',{class:'tab'+(viewOf()[0]===id?' is-on':''),type:'button',role:'tab','aria-selected':String(viewOf()[0]===id),dataset:{executionLogTab:id},text:label,onClick:()=>{
           if (viewOf()[0] === id) return;
           Gui.executionLogView=id;
           rerenderExecutionLogs();
         }})))
       ]),
-      viewOf()[2]()
+      guiEl('div',{class:'exec-logs__body',role:'tabpanel','aria-label':viewOf()[1]},[viewOf()[2]()])
     ];
-    panel=guiEl('div',{class:'stack',dataset:{executionLogs:viewOf()[0]}},renderContent());
+    panel=guiEl('section',{class:'exec-logs',dataset:{executionLogs:viewOf()[0]}},renderContent());
     panel.libraRerenderExecutionLogs=()=>{
       panel.dataset.executionLogs=viewOf()[0];
       panel.replaceChildren(...renderContent());
@@ -91386,7 +91404,9 @@ advanced
           ?`분석 완료 · 상태 승인 ${Number(admission.admitted||0)}개 · 보류 ${Number(admission.pending||0)+Number(admission.pendingReconciliation||0)}개`:'분석 결과 확인 필요'}));
       }
     };
-    overlay.querySelector('.dialog').style.width='min(760px,100%)';
+    const dialogNode=overlay.querySelector('.dialog');dialogNode.style.width='min(760px,100%)';dialogNode.classList.add('state-dialog');
+    const head=guiEl('div',{class:'state-dialog__head',dataset:{stateDialogHead:'true'}},[guiEl('div',{},[overlay.querySelector('.eyebrow'),overlay.querySelector('#ds-t')]),overlay.querySelector('.dialog__actions')]);
+    dialogNode.prepend(head);overlay.querySelector('.kv').classList.add('state-dialog__summary');
     const workHost=guiEl('div',{dataset:{recentWorkHost:'true'}},[buildSharedExecutionLogsPanel()]);
     overlay.querySelector('.kv').after(workHost);
     overlay.libraRefreshState();
