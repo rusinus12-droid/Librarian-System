@@ -13,7 +13,7 @@ const exposeInternals = source => source
   .replace('    const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {',
     '    globalThis.__fixtureResponseAuthority = responseStateAuthorityForHead;\n    const loadContinuityStateForResponse = async (scope, manifest = null, options = {}) => {')
   .replace('    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.',
-    '    globalThis.__fixtureStateBasisTurn = stateProjectionBasisTurn;\n    globalThis.__fixtureStateNotes = stateProjectionNotes;\n    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.');
+    '    globalThis.__fixtureStateBasisTurn = stateProjectionBasisTurn;\n    globalThis.__fixtureStateNotes = stateProjectionNotes;\n    globalThis.__fixtureStateAwaitsUser = stateProjectionAwaitsUser;\n    // Read-only answer to "what ran, what is waiting and what failed" for the current chat.');
 
 const cloneJson = value => JSON.parse(JSON.stringify(value));
 const domainStatus = () => ({
@@ -85,6 +85,20 @@ const headWith = (pending, extra = {}) => ({ status: 'ready', throughTurn: 30, d
     // A settled (never-retryable) rejection is not a wait: the card stays current and only reports it.
     const settled = notes({ authority: { pendingDomains: [], pending: false, microProjection: { settledClaims: [{ turn: 32, claimIndex: 6, reason: 'state_value_not_source_bound' }, { turn: 33, claimIndex: 19, reason: 'state_value_not_source_bound' }] } }, basis: 30, through: 33 });
     assert.equal(settled.join(' | '), '기록 2건 반영 안 함 · T32–T33 · 값 이름이 인용문에 없음', 'settled claims are reported without the frontier note');
+    // A conflict with Canonical is settled only by the user: the card asks for a check, not a wait.
+    // (Real chat ffeb99ef_19:0 after the overlap fix: 9 conflicts T2–T30, 8 settled T2–T33.)
+    const awaitsUser = f.r.context.__fixtureStateAwaitsUser;
+    assert.equal(typeof awaitsUser, 'function', 'stateProjectionAwaitsUser exposed');
+    const conflict = (turn, claimIndex) => ({ turn, claimIndex, reason: 'canonical_overlap_conflict' });
+    const conflicts = { pendingDomains: [], pending: true, microProjection: { pendingClaims: [conflict(2, 6), conflict(30, 1)], settledClaims: [{ turn: 6, claimIndex: 6, reason: 'state_value_not_source_bound' }] } };
+    assert.equal(notes({ authority: conflicts, basis: 30, through: 33 }).join(' | '),
+      '확인 필요 2건 · T2–T30 · 정본과 다른 값 · 자동 반영 검토에서 선택 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
+    assert.equal(awaitsUser(conflicts), true, 'only user-settled conflicts remain');
+    const mixed = cloneJson(conflicts); mixed.microProjection.pendingClaims.push({ turn: 31, reason: 'micro_read_failed' });
+    assert.equal(notes({ authority: mixed, basis: 30, through: 33 }).join(' | '),
+      '확인 필요 2건 · T2–T30 · 정본과 다른 값 · 자동 반영 검토에서 선택 | 미크로 보류 1건 · T31 | 기록 1건 반영 안 함 · T6 · 값 이름이 인용문에 없음');
+    assert.equal(awaitsUser(mixed), false, 'a hold that may still resolve keeps the card waiting');
+    assert.equal(awaitsUser({ ...conflicts, pendingDomains: ['narrative'] }), false, 'a held domain keeps the card waiting');
   } finally { await f.r.cleanup?.(); }
 
   // 7. End to end: one rejected fact, every domain ready -> the card reports the State as current.

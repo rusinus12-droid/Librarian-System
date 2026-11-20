@@ -36153,6 +36153,11 @@ function createLibraReadonlySourceContext(owner) {
     // still resolve, so those keep their claim pending.
     const MICRO_SETTLED_ADMISSION = /^(state_value_not_source_bound|state_value_shape_invalid|state_field_names_record|narrative_thread_canonical_only|narrative_field_canonical_only|relationship_field_invalid|relationship_quantitative_state_forbidden|state_goal_is_observed_action|appearance_attribute_not_bound_to_subject_quote)$/;
     const microAdmissionSettled = reason => MICRO_SETTLED_ADMISSION.test(String(reason || ''));
+    // A conflict only the user can settle: waiting changes nothing, but the State stays
+    // non-authoritative for it until the user picks a value in the automatic review.
+    const MICRO_REVIEW_CONFLICT_REASONS = Object.freeze(['micro_same_turn_field_conflict', 'canonical_overlap_conflict',
+      'canonical_overlap_field_provenance_unavailable', 'registry_containment_subject_unconfirmed', 'registry_entity_kind_conflict']);
+    const microAdmissionNeedsReview = reason => MICRO_REVIEW_CONFLICT_REASONS.includes(String(reason || ''));
     const microNarrativeCandidateField = (domain, field) => domain === 'narrative'
       && ['threads', 'arcs', 'resolvedArcs', 'turningPoints', 'motifs', 'closedThreads', 'events'].includes(field);
     const microCollectionIntent = intent => MICRO_STRING_COLLECTION_FIELDS.has(intent?.field)
@@ -56189,7 +56194,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
               stateProofs.push(activeMicroConsumptionProof(active));
               const prefix = key.microStateAdmission(scope, worldlineId, 0, turn,
                 active.record.sourceRevisionId, active.record.analysisRevisionId, claimIndex, '');
-              const prior = [];
+              const prior = [], undecided = [];
               let readFailed = false;
               for (const decisionKey of admissionKeys.filter(storageKey => string(storageKey).startsWith(prefix)
                 && !string(storageKey).includes('::chunk:'))) {
@@ -56211,7 +56216,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
                 if (decision.status === 'admitted') {
                   prior.push({ decision, decisionKey });
                   stateProofs.push(stateDecisionConsumptionProof(decisionKey, decision));
-                }
+                } else undecided.push({ decision, decisionKey });
               }
               if (!readFailed && !prior.length) {
                 const intent = asObject(claim.stateIntent);
@@ -56249,6 +56254,27 @@ function mountMemorySuiteReanalysisReview(container,config) {
                     microRecordKey: active.recordKey,
                     canonicalKey: string(head.reviewedThroughCanonical?.key || ''),
                     disposition: 'absorbed' });
+                  continue;
+                }
+              }
+              if (!readFailed && !prior.length && undecided.length) {
+                const intent = asObject(claim.stateIntent);
+                const superseded = undecided.find(row => row.decision.status === 'superseded');
+                if (superseded) {
+                  stateProofs.push(stateDecisionConsumptionProof(superseded.decisionKey, superseded.decision));
+                  transitions.push({ turn, claimIndex, domain: string(intent.domain || ''),
+                    targetId: string(superseded.decision.targetIds?.[0] || ''), field: string(intent.field || ''),
+                    decisionKey: superseded.decisionKey, disposition: string(superseded.decision.disposition || 'corrected'),
+                    reason: string(superseded.decision.reason || '') });
+                  continue;
+                }
+                const durable = undecided.filter(row => row.decision.status === 'pending');
+                const reasons = [...new Set(durable.map(row => string(row.decision.reason || '')).filter(Boolean))];
+                if (durable.length === undecided.length && reasons.length) {
+                  for (const row of durable) stateProofs.push(stateDecisionConsumptionProof(row.decisionKey, row.decision));
+                  const review = reasons.find(microAdmissionNeedsReview);
+                  if (review) pendingClaims.push({ turn, claimIndex, reason: review });
+                  else settledClaims.push({ turn, claimIndex, reason: reasons.find(microAdmissionSettled) || reasons[0] });
                   continue;
                 }
               }
@@ -76931,11 +76957,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       };
       if (asArray(value.pendingDomains).length) notes.push(`대기 영역: ${asArray(value.pendingDomains).join(', ')}`);
       if (pendingApplications) notes.push(`상태 적용 ${pendingApplications}건 보류`);
-      if (microPending.length) notes.push(`미크로 보류 ${microPending.length}건${spanOf(microPending)}${causeOf(microPending)}`);
+      const review = microPending.filter(row => microAdmissionNeedsReview(row?.reason));
+      const waiting = microPending.filter(row => !microAdmissionNeedsReview(row?.reason));
+      if (review.length) notes.push(`확인 필요 ${review.length}건${spanOf(review)} · 정본과 다른 값 · 자동 반영 검토에서 선택`);
+      if (waiting.length) notes.push(`미크로 보류 ${waiting.length}건${spanOf(waiting)}${causeOf(waiting)}`);
       else if (value.pending === true && !notes.length) notes.push('현재 원문과 상태의 일치 여부를 확인 중입니다.');
       if (!microPending.length && !settled.length && Number(through) > Number(basis)) notes.push(`미크로 T${through}까지 반영`);
       if (settled.length) notes.push(`기록 ${settled.length}건 반영 안 함${spanOf(settled)}${causeOf(settled)}`);
       return notes;
+    };
+
+    // Every remaining hold is a conflict the user settles in the automatic review: nothing will
+    // clear it by waiting, so the card asks for a check instead of showing a wait.
+    const stateProjectionAwaitsUser = authority => {
+      const value = asObject(authority), pending = asArray(value.microProjection?.pendingClaims);
+      return !asArray(value.pendingDomains).length && pending.length > 0
+        && pending.every(row => microAdmissionNeedsReview(row?.reason));
     };
 
     // Read-only answer to "what ran, what is waiting and what failed" for the current chat.
@@ -77013,7 +77050,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       });
       const stateJob = { id: 'state', label: 'State projection', detail: '정본과 미크로에서 현재 상태를 만듭니다.', at: '',
         headline: stateRead.error ? '확인 불가' : authority.current === true ? `현재 상태 반영 · T${basis}까지` : basis ? `마지막 반영 · T${basis}` : '반영 대기 중',
-        status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
+        status: stateRead.error ? 'attention' : replayError.value ? 'failed' : pendingApplications || (authority.pending === true && (through || refs.length) && !stateProjectionAwaitsUser(authority)) ? 'waiting' : authority.current === true ? 'ok' : refs.length ? 'attention' : 'none',
         note: stateNotes.join(' · '), error: replayError.value ? string(replayError.value.message || replayError.value.code) : stateRead.error || journalRead.error || '' };
 
       const work = asArray(state.embeddingWork).filter(row => !row.scopeKey || row.scopeKey === scopeKey), lastOf = id => work.find(row => row.work === id) || null;
