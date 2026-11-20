@@ -42733,6 +42733,9 @@ function createLibraReadonlySourceContext(owner) {
               const active = await readActiveCompletedTurnReceipt(settleScope, worldlineId, 0, item.turn);
               if (active?.status !== 'verified' || active.receipt?.revisionId !== item.revisionId) return;
               await scheduleMicroForTurn(settleScope, worldlineId, 0, item.turn, item.revisionId);
+              if (typeof scheduleChangedBatchLensReanalysis === 'function') {
+                await scheduleChangedBatchLensReanalysis({ scope: settleScope, turn: item.turn });
+              }
             })().catch(() => null);
           }, 1500);
           settleTimer?.unref?.();
@@ -59390,7 +59393,13 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // The final live-source check still binds the complete ordered batch.
       if(expectedRefs)unifiedAssert(asArray(expectedRefs).length===BATCH_SIZE,'CANONICAL_ORIGINAL_RAW_REFS_INVALID');
       const rows=await Promise.all(expectedBatch.map(async (pair,index)=>{
-        const active=await readActiveCompletedTurnReceipt(scope,worldlineId,0,Number(pair.turn),{allowProjectedEquivalent:true,...(jobContext?{context}:{})});
+        let active=await readActiveCompletedTurnReceipt(scope,worldlineId,0,Number(pair.turn),{allowProjectedEquivalent:true,...(jobContext?{context}:{})});
+        if (!expectedRefs && active.status === 'stale_source' && active.reason === 'current_pair_revision_changed') {
+          try {
+            await persistCompletedTurnReceipt(context, pair, 'completed_pair_reconcile', { deferInventory: true, allowSourceChangeReanalysis: true });
+            active = await readActiveCompletedTurnReceipt(scope, worldlineId, 0, Number(pair.turn), { allowProjectedEquivalent: true, ...(jobContext ? { context } : {}) });
+          } catch (_) {}
+        }
         unifiedAssert(active.status==='verified'&&(sourceDigest([pair])===active.receipt?.sourceDigest||isTextEquivalentCompletedTurn(active.receipt,pair)),
           'CANONICAL_COMPLETED_RECEIPT_UNAVAILABLE:'+(active.reason||'receipt_source_digest_mismatch'));
         const expectedRef=expectedRefs?.[index]||null;
@@ -61458,7 +61467,11 @@ function mountMemorySuiteReanalysisReview(container,config) {
       // The usual contiguous append keeps the existing incremental, readback-verified
       // transaction. Replay stored artifacts only when a hole or pending State requires it.
       if(basis.memoryFirst && (basis.statePending || missingStateBinding || laterSavedMemory)){
-        const result=await rebuildUnifiedStateForWorldline({context,manifest:verified.manifest,signal,reason:'memory_first_contiguous_state',allowIncompletePrefix:true});
+        let result=await rebuildUnifiedStateForWorldline({context,manifest:verified.manifest,signal,reason:'memory_first_contiguous_state',allowIncompletePrefix:true});
+        if(!result.ok && string(result.error||result.code||'')==='UNIFIED_REPLAY_SOURCE_CHANGED' && !signal?.aborted && !state.disposed){
+          await new Promise(resolve=>setTimeout(resolve,150));
+          result=await rebuildUnifiedStateForWorldline({context,manifest:verified.manifest,signal,reason:'memory_first_contiguous_state',allowIncompletePrefix:true});
+        }
         unifiedAssert(result.ok,'UNIFIED_MEMORY_FIRST_STATE_FAILED:'+(result.error||result.code||''));
         if(basis.snapshotKey)await storage.remove(basis.snapshotKey);
         if(result.pendingBoundary)return {...result,ok:true,skipped:true,reason:result.pendingBoundary.reason,receiptKey:'',receipt:{status:'pending',memoryId:memory.memoryId,revision:memory.revision,pendingBoundary:result.pendingBoundary}};
@@ -68962,6 +68975,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
           worldlineId=lensWorldline;
           const endLimit=Math.min(pairs.length,Number(meta?.worldlines?.[lensWorldline]?.cutoffTurn??pairs.length));
           const records=await loadLensRecordsMap(scope,lensId),runs=await loadLensRunsList(scope,lensId),covered=new Set(),units=new Map();
+          const fallbackPairsByRange = await loadLensCanonicalFallbackPairs(scope);
+          const lensRecordStands = lensRecordSourceCheck(scope, pairs, lensWorldline, endLimit, fallbackPairsByRange);
           const analysisSpan=lenses.find(row=>row.lensId===lensId).analysisSpan;
           const add=(start,end,status,summary='')=>{
             if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>endLimit)return;
@@ -68970,7 +68985,7 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
               description:lens.name+' · '+(end-start+1)+'턴 구간 · '+({saved:'저장됨',failed:'이전 분석 실패 · 다시 분석 가능',missing:'기억 없음 · 분석 가능'})[status],summary});
             for(let turn=start;turn<=end;turn++)covered.add(turn);
           };
-          for(const record of Object.values(records))if(record.worldlineId===lensWorldline)add(Number(record.turnRange?.start),Number(record.turnRange?.end),'saved',compact(asArray(record.items).map(item=>item.text).join(' · '),160));
+          for(const record of Object.values(records))if(record.worldlineId===lensWorldline && lensRecordStands(record))add(Number(record.turnRange?.start),Number(record.turnRange?.end),'saved',compact(asArray(record.items).map(item=>item.text).join(' · '),160));
           for(const run of runs)if(run.worldlineId===lensWorldline&&run.status==='failed')add(Number(run.turnRange?.start),Number(run.turnRange?.end),'failed');
           for(let start=1;start<=endLimit;){
             if(covered.has(start)){start++;continue;}
@@ -75532,7 +75547,24 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
 
     const lensRecordKey = (worldlineId, turnRange) => `${string(worldlineId || 'main')}:t${Number(turnRange?.start || 0)}-t${Number(turnRange?.end || 0)}`;
 
-    const lensRecordSourceCheck = (scope, pairs, worldlineId, cutoff) => {
+    const lensBatchQuotesPresent = (record, batch) => {
+      const quotes = [
+        ...asArray(record?.items).map(item => ({ quote: string(item?.quote || '').trim(), ref: string(item?.quoteRef || '') })),
+        ...asArray(record?.closures).map(c => ({ quote: string(c?.quote || '').trim(), ref: string(c?.ref || '') }))
+      ].filter(entry => entry.quote);
+      if (!quotes.length) return false;
+      const turnText = new Map(asArray(batch).map(pair => [
+        Number(pair.turn),
+        `${string(pair?.user?.text || '')}\n${string(pair?.assistant?.text || '')}`
+      ]));
+      const fullText = [...turnText.values()].join('\n');
+      return quotes.every(({ quote, ref }) => {
+        const match = ref.match(/^t(\d+)-/);
+        const targetText = match ? (turnText.get(Number(match[1])) ?? fullText) : fullText;
+        return targetText.includes(quote);
+      });
+    };
+    const lensRecordSourceCheck = (scope, pairs, worldlineId, cutoff, fallbackPairsByRange = null) => {
       const revisions = new Map();
       return record => {
         if (record.inherited) return true;
@@ -75544,7 +75576,13 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           let revision = null;
           if (batch.length === end - start + 1) {
             const bodyDigest = sourceDigest(batch);
-            revision = { bodyDigest, rawDigest: rawSourceDigest(batch), revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}` };
+            revision = {
+              batch,
+              pairs: sourcePairs(batch),
+              bodyDigest,
+              rawDigest: rawSourceDigest(batch),
+              revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}`
+            };
           }
           revisions.set(rangeKey, revision);
         }
@@ -75552,11 +75590,45 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // 같은 턴: the same analyzed text (a raw change the rules leave out, such as illustrations), or
         // the same raw bytes (only the source rules changed). Notes written before rawSourceDigest
         // existed follow the analyzed text alone.
-        return revision != null && (revision.bodyDigest === record.sourceDigest
-          || (!!record.rawSourceDigest && revision.rawDigest === record.rawSourceDigest));
+        if (revision == null) return false;
+        if (revision.bodyDigest === record.sourceDigest
+          || (!!record.rawSourceDigest && revision.rawDigest === record.rawSourceDigest)) {
+          return true;
+        }
+        // Fallback for non-XML module refreshes (e.g. appended status/CG tags):
+        // keep the note if every turn's chatId slot is identical AND every quoted span still exists in the batch.
+        const storedPairs = asArray(record.sourcePairs).length
+          ? asArray(record.sourcePairs)
+          : asArray(fallbackPairsByRange?.get?.(rangeKey));
+        if (storedPairs.length === revision.pairs.length && storedPairs.length > 0) {
+          const slotsMatch = storedPairs.every((sp, idx) => {
+            const lp = revision.pairs[idx];
+            return Number(sp?.turn) === Number(lp?.turn)
+              && !!string(sp?.userChatId) && string(sp.userChatId) === string(lp?.userChatId)
+              && !!string(sp?.assistantChatId) && string(sp.assistantChatId) === string(lp?.assistantChatId);
+          });
+          if (slotsMatch && lensBatchQuotesPresent(record, revision.batch)) return true;
+        }
+        return false;
       };
     };
 
+    const loadLensCanonicalFallbackPairs = async scope => {
+      const map = new Map();
+      try {
+        const manifest = await storage.getJson(key.manifest(scope), null);
+        const refs = asArray(manifest?.memories).filter(r => r?.status === 'committed' && !r.inheritedSessionHistory);
+        await Promise.all(refs.map(async ref => {
+          try {
+            const mem = await loadMemoryRef(ref);
+            if (mem?.turnRange?.start && mem?.turnRange?.end && asArray(mem.sourcePairs).length) {
+              map.set(`${mem.turnRange.start}-${mem.turnRange.end}`, mem.sourcePairs);
+            }
+          } catch (_) {}
+        }));
+      } catch (_) {}
+      return map;
+    };
     // ---- story clock ---------------------------------------------------------------------------
     // One record per scope, read and written through the same storage path in plugin and server
     // mode. Writes for one scope are serialized so parallel Micro jobs cannot drop each other's pair.
@@ -76469,6 +76541,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         instructionRevision: lens.instructionRevision, instructionText:lens.instructionText, evidenceMode: lens.evidenceMode,
         scopeKey: token.scopeKey, worldlineId: token.worldlineId, turnRange: clone(token.turnRange),
         sourceRevisionId: token.sourceRevisionId, sourceDigest: token.sourceDigest, rawSourceDigest: token.rawSourceDigest || '',
+        sourcePairs: sourcePairs(token.batch),
         canonicalContextIncluded: Boolean(canonicalSummary), trackedTime: lens.trackTime === true, trackedSubject: lens.trackSubject === true, runId, createdAt: finishedAt,
         model: run.model, presetName: run.presetName, items: clone(admission.acceptedItems),
         ...(closureResult.closures.length ? { closures: closureResult.closures } : {})
@@ -76572,7 +76645,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           if (string(current?.scope?.scopeKey || '') !== job.scopeKey) continue;
           await runLensForRange({
             lensId: job.lensId, startTurn: job.startTurn, endTurn: job.endTurn, trigger: job.trigger,
-            context: current, canonicalMemory: job.canonicalMemory, requireActive: true, skipIfCurrent: true
+            context: current, canonicalMemory: job.canonicalMemory, requireActive: true, skipIfCurrent: job.skipIfCurrent !== false
           });
         } catch (error) {
           warn(`LIBRA lens ${job.lensId} run failed open`, error);
@@ -76644,6 +76717,46 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return { queued: [] };
       }
     };
+    const scheduleChangedBatchLensReanalysis = async ({ scope, turn } = {}) => {
+      try {
+        if (!scope?.scopeKey || !Number.isInteger(Number(turn)) || Number(turn) < 1) return { queued: [] };
+        const registry = await readLensRegistry();
+        if (registry.enabled === false) return { queued: [] };
+        const lenses = registry.lenses.filter(lens => lens.status === 'active' && lens.cadence.mode !== 'manual');
+        if (!lenses.length) return { queued: [] };
+        const context = await resolveContext();
+        if (string(context?.scope?.scopeKey || '') !== string(scope.scopeKey)) return { queued: [] };
+        const pairs = buildPairs(context.chat, scope.scopeKey);
+        const worldlineId = await lensActiveWorldlineId(scope);
+        const fallbackPairsByRange = await loadLensCanonicalFallbackPairs(scope);
+        const lensRecordStands = lensRecordSourceCheck(scope, pairs, worldlineId, null, fallbackPairsByRange);
+        const queued = [];
+        for (const lens of lenses) {
+          const records = await loadLensRecordsMap(scope, lens.lensId);
+          const matching = Object.values(records).filter(rec => !rec.inherited && rec.worldlineId === worldlineId
+            && Number(rec.turnRange?.start) <= Number(turn) && Number(rec.turnRange?.end) >= Number(turn)
+            && pairs.length >= Number(rec.turnRange?.end || 0));
+          if (!matching.length || matching.every(lensRecordStands)) continue;
+          for (const rec of matching) {
+            if (lensRecordStands(rec)) continue;
+            const job = {
+              scopeKey: scope.scopeKey, lensId: lens.lensId,
+              startTurn: Number(rec.turnRange.start), endTurn: Number(rec.turnRange.end),
+              trigger: 'source_changed_reanalysis', skipIfCurrent: false
+            };
+            if (lensQueue.some(item => item.scopeKey === job.scopeKey && item.lensId === job.lensId
+              && item.startTurn === job.startTurn && item.endTurn === job.endTurn)) continue;
+            lensQueue.push(job);
+            queued.push({ lensId: lens.lensId, startTurn: job.startTurn, endTurn: job.endTurn });
+          }
+        }
+        if (queued.length) void kickLensQueue();
+        return { queued };
+      } catch (error) {
+        warn('LIBRA changed-batch lens reanalysis scheduling failed open', error);
+        return { queued: [] };
+      }
+    };
 
     // ---- inspection & editing ------------------------------------------------------------------
     const inspectScopeLenses = async ({ expectedScopeKey = '', includeTrash = false } = {}) => {
@@ -76656,7 +76769,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const cutoff=lensMeta?.worldlines?.[activeWorldlineId]?.cutoffTurn;
       const registry = await readLensRegistry();
       const head = await loadLensScopeHead(scope);
-      const lensRecordStands = lensRecordSourceCheck(scope, pairs, activeWorldlineId, cutoff);
+      const fallbackPairsByRange = await loadLensCanonicalFallbackPairs(scope);
+      const lensRecordStands = lensRecordSourceCheck(scope, pairs, activeWorldlineId, cutoff, fallbackPairsByRange);
       const sourceTurns = {};
       const sourceMarks = new Map();
       const resolvePeople = await lensPeopleResolver(scope);
@@ -77304,7 +77418,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const pairs = buildPairs(context.chat, scope.scopeKey);
       const lensMeta=await loadStateWorldlineMeta(scope),worldlineId=string(lensMeta?.activeWorldlineId||'main');
       const cutoff=Math.min(lensMeta?.worldlines?.[worldlineId]?.cutoffTurn ?? Infinity, options.asOfTurn ?? Infinity);
-      const lensRecordStands = lensRecordSourceCheck(scope, pairs, worldlineId, cutoff);
+      const fallbackPairsByRange = await loadLensCanonicalFallbackPairs(scope);
+      const lensRecordStands = lensRecordSourceCheck(scope, pairs, worldlineId, cutoff, fallbackPairsByRange);
       const queryText = string(queryBundle?.query || queryBundle?.currentText || queryBundle?.queryText || queryBundle?.text || '');
       const queryTokens = new Set(tokenStream(queryText).filter(token => token.length >= 2));
       // Korean text is matched by character bigrams, so one shared bigram is too weak a signal for
@@ -88411,7 +88526,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
   // 분석" and "현재 세계선".
   const buildBookReceiptRecoveryPanel = () => {
     const state=bookReceiptRecoveryState();
-    if(state.scopeKey && !state.loaded && !state.loading)void loadBookReceiptRecoveryStatus();
+    const livePubAt=Number(LibraMemoryCore.getCaptureBackendState?.()?.lastMicroPublication?.at||0);
+    const livePairCount=Array.isArray(LibraMemoryCore.peekSnapshot?.()?.pairs)?LibraMemoryCore.peekSnapshot().pairs.length:0;
+    const staleAgainstLive=state.loaded&&((livePubAt>0&&livePubAt!==Number(state.lastObservedMicroPubAt||0))||(livePairCount>0&&livePairCount!==Number(state.lastObservedLiveTurns||0)));
+    if(state.scopeKey && (!state.loaded || staleAgainstLive) && !state.loading){
+      state.lastObservedMicroPubAt=livePubAt;
+      state.lastObservedLiveTurns=livePairCount;
+      void loadBookReceiptRecoveryStatus();
+    }
     const status=state.status||{},receiptRows=Array.isArray(status.receiptStages)?status.receiptStages:[],
       microRows=Array.isArray(status.microJobs)?status.microJobs:[];
     const receiptLabel={verified:'저장 확인됨',missing:'저장 대기',queued:'복구 대기',running:'복구 중',
