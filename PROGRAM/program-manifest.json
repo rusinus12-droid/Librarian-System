@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T00:46:26.543Z",
+  "generatedAt": "2026-11-20T02:51:36.622Z",
   "server": {
     "version": "1.3.0",
     "protocol": {

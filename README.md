@@ -1,4 +1,10 @@
-# 📚 Librarian System
+<p align="center"><img src="PROGRAM/docs/brand/librarian-system.svg" width="96" alt="Librarian System"></p>
+
+# Librarian System
+
+<p>
+<img src="PROGRAM/docs/brand/libra.svg" width="28" alt="LIBRA"> <img src="PROGRAM/docs/brand/flashback.svg" width="28" alt="FLASHBACK"> <img src="PROGRAM/docs/brand/hayaku.svg" width="28" alt="HAYAKU"> <img src="PROGRAM/docs/brand/lia.svg" width="28" alt="LIA"> <img src="PROGRAM/docs/brand/retrace.svg" width="28" alt="RE:TRACE"> <img src="PROGRAM/docs/brand/gradia.svg" width="28" alt="GRADIA">
+</p>
 
 [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/rusinus12-droid/Librarian-System)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.13.0-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
