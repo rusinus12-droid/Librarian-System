@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T02:51:36.622Z",
+  "generatedAt": "2026-11-20T02:58:35.679Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -1567,6 +1567,38 @@
       "sha256": "efd3eb2dc09dde8871bd32b6682952fd4b8d5090b766784852efcbdef3fd29f4",
       "bytes": 5902
     },
+    "docs/brand/flashback.svg": {
+      "sha256": "b44d53ecf27543ec8f9ceafd1d726f71a052243ed309a5c2ff37291d65fc99c1",
+      "bytes": 480
+    },
+    "docs/brand/gradia.svg": {
+      "sha256": "0b6601aaab9928c0e67828700198092ffd4e434658c90347674bce3085e52de0",
+      "bytes": 474
+    },
+    "docs/brand/hayaku.svg": {
+      "sha256": "0adb0c884665e1988ac268121c4544800f03ec4f48f037c366e6a1e56a5486b5",
+      "bytes": 529
+    },
+    "docs/brand/lia.svg": {
+      "sha256": "bec50cb20ea4731af93c06c152c0d8f8443da0fe01be8fb32957db68412063c3",
+      "bytes": 454
+    },
+    "docs/brand/libra.svg": {
+      "sha256": "77a58585ac107d98f845b1fb5b372287f46879773067933d967139e3a90ff977",
+      "bytes": 503
+    },
+    "docs/brand/librarian-system.svg": {
+      "sha256": "3047517c02ad91bc4cd6e273acb4b1b1628345b1bbb16dc8936f98eabc8484ad",
+      "bytes": 651
+    },
+    "docs/brand/README.md": {
+      "sha256": "5b9043461a393b3e55385ca7a13c24602e2e86f60c57240be75a516ba2e5c62d",
+      "bytes": 4500
+    },
+    "docs/brand/retrace.svg": {
+      "sha256": "10d34a8932321b6b0a6178c5f55b4e80e2c0f69f23d53abc5ffd85585c075955",
+      "bytes": 456
+    },
     "docs/CHAT_ATTENTION_IDENTITY_20261016.md": {
       "sha256": "ed555707e5f93bd4e11a14ee78d78c699d80965322d146f6f9d0439c10faed7a",
       "bytes": 1703
@@ -1912,16 +1944,16 @@
       "bytes": 5702
     },
     "docs/gui-redesign/assets/suite.css": {
-      "sha256": "d932d2ff39d74538587521967dcdf4de9ae6867ab3378872154decb1c57a9492",
-      "bytes": 27498
+      "sha256": "cab167032821a022763609172bdfcfdd113194c359ebac5dbd51772ee5c54b0a",
+      "bytes": 27868
     },
     "docs/gui-redesign/assets/suite.js": {
       "sha256": "c0f69d5dfd423d02c87ed4b5af897d860ac6b276db87cda50034239c4b4d61b3",
       "bytes": 46082
     },
     "docs/gui-redesign/assets/themes.css": {
-      "sha256": "5ae76e4c283a418063b12801b9edf1ca131a2af23195ca4eba4db5e407c5e959",
-      "bytes": 7181
+      "sha256": "4e2a86441ac24322ebf9583119e38588f5b91b208a82916d4a1fbcf0bcddf6c4",
+      "bytes": 7166
     },
     "docs/gui-redesign/AUDIT-RESPONSE.md": {
       "sha256": "48ef07d5038a255eadfc0d2630c9b1fe88039d289c09a2fd33543b7dfd6a3fbd",
@@ -1932,16 +1964,16 @@
       "bytes": 4643
     },
     "docs/gui-redesign/flashback.html": {
-      "sha256": "7e74598e62efb08b50431bc37b814ca023e450b1c89f6521f27306ed3edea6c2",
-      "bytes": 70176
+      "sha256": "a9e3eaf9dfee6525815d72f396f5c8ed40c029977f5d282401e1a50e0914141e",
+      "bytes": 70508
     },
     "docs/gui-redesign/GRADIA-PRODUCT-MAPPING.md": {
       "sha256": "50848454acb4f7657ae32d170005b2f563b44ea04d6c524aeb28bbec71ddf9e6",
       "bytes": 12837
     },
     "docs/gui-redesign/gradia.html": {
-      "sha256": "7466157624086d0adb7a5f2667adddcfb20d30903662e4ad230f4ccbe448cf70",
-      "bytes": 99689
+      "sha256": "942101af4dd27ba92425cc059df49c09e5810c9fd14bf372607bfae72de2f6cf",
+      "bytes": 100541
     },
     "docs/gui-redesign/GUI-APPLICATION.md": {
       "sha256": "f25df59987446b7d2e808fc34dedd776f74cb6557b6a560de89d17371d4d1b13",
@@ -1956,8 +1988,8 @@
       "bytes": 4053
     },
     "docs/gui-redesign/hayaku.html": {
-      "sha256": "f990e77d91aa354ec3d41065c69b0624477fbbc0526d12652c754a96cf8cecef",
-      "bytes": 104915
+      "sha256": "8289cb1ea4648ab080a67834e453dd02460b86c0eb71b6faf298fbfe5586a2e0",
+      "bytes": 106924
     },
     "docs/gui-redesign/index.html": {
       "sha256": "0bb69ab01a1cebe978e981d8d210c16c0ab185060b965b52e67955e80eaeff4a",
@@ -1968,16 +2000,16 @@
       "bytes": 8799
     },
     "docs/gui-redesign/lia.html": {
-      "sha256": "4e2453483e55b25f8148b7b88a364a8d3cd6af19d1e62d8339834d27de19abbd",
-      "bytes": 132474
+      "sha256": "7f07a1f6fe0deb603d724bf6743d1cb074c04f2345499288c17914b112ea2b5b",
+      "bytes": 132580
     },
     "docs/gui-redesign/LIBRA-PRODUCT-MAPPING.md": {
       "sha256": "a4d3fe784a2c657ab60e7f942ea77e5db58cc499526dd94a970d591a66f2d879",
       "bytes": 16031
     },
     "docs/gui-redesign/libra.html": {
-      "sha256": "9b8a0b28b9ab4da5c85f3aa1209232de2454999ce5bcd81101b58adbcef43c30",
-      "bytes": 143117
+      "sha256": "ec5906d02d29e9622a42a6c567302559d9504dd87a6f2cac020f89484502730b",
+      "bytes": 143472
     },
     "docs/gui-redesign/README.md": {
       "sha256": "af575775138961ae1068e7eefdae2d35b17809b6094dd437b636001c406284b8",
@@ -1988,8 +2020,8 @@
       "bytes": 7524
     },
     "docs/gui-redesign/retrace.html": {
-      "sha256": "6d5cff690daba85fc36b7cef27de37ca97e252c8a385303997ccfe05626a2f78",
-      "bytes": 68646
+      "sha256": "3de36be1f3669362bb7f989a0c152d39e8640f0baead0a761f872f6a5432124c",
+      "bytes": 68954
     },
     "docs/gui-redesign/verification/audit/state_hfgr.md": {
       "sha256": "5be35a0831dedcea512e21f584f99b84860b3567efbfef2fe26138b042768775",
@@ -3880,7 +3912,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "6b115f1ca30abf2e14c124107b7277dcaf4d8234a1a9a99adb4488302d941640",
+      "sha256": "f5880554c4edfdb568638a2d86e6e3c6862a7d5de2fcbbbd97f43a01383ae688",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4292,28 +4324,28 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "b747d2fff89ed8ff11d802afb740f2a014a5bcc2ec2f0db1380830f246edcb2b",
-      "bytes": 3931265
+      "sha256": "64108826d5c01edde06edc5475c4ead5c8d8c08a589c9836d65d6161b86e2411",
+      "bytes": 3931953
     },
     "plugins/GRADIA.js": {
-      "sha256": "29ba003e09c413ab256e731805f39317c3742cba71a73c68ff411447dc15dabd",
-      "bytes": 3619173
+      "sha256": "88ff77673b1809c85d81015345cc372ac5c442f121672e830cf9d73d09437409",
+      "bytes": 3619900
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "00eca9fb9305a05f251cf58548bb789908d138d8804866f3ca4a006db2708db0",
-      "bytes": 4352930
+      "sha256": "f1cd34167bd573bd4276396c68872289764024b70af188f05e892c129ac1d1c0",
+      "bytes": 4353405
     },
     "plugins/LIA_Persona_Linker.js": {
-      "sha256": "0fb2d14222cede81c813f08737e14256498b54f79b1bd7007a4ad575675ce516",
-      "bytes": 801200
+      "sha256": "3a0fa4a03424b9952bb3a6b6b63aeb41857a3dc6920604d3010ba329560c6cf0",
+      "bytes": 801890
     },
     "plugins/LIBRA.js": {
-      "sha256": "60ce0d08bd5f854912cf3cd0035ccced6b0cbbc17bf84574fc2d6e543a035c04",
-      "bytes": 6818272
+      "sha256": "2cd4611634aef3bce0d1aef798d849db1a3a2bd566ff0b192d22b80104be31e8",
+      "bytes": 6819009
     },
     "plugins/RETRACE.js": {
-      "sha256": "e8cdf6bd108b62eec52711be15d3281c25732e3e8fa82276a50f96144cc3a6d9",
-      "bytes": 1247248
+      "sha256": "7d6b3072edc899c2b74ea5773d70afb13c6101bd06a0b86781fe8eb3553c6004",
+      "bytes": 1247940
     },
     "release-policy.json": {
       "sha256": "ab1730201128e2b83b576c80373b7b3bf655a4b0a46d160a06141161f57870ab",
@@ -7132,8 +7164,8 @@
       "bytes": 3825
     },
     "tests/gui_shared_theme_runtime_test.cjs": {
-      "sha256": "26ee901bf29db017d0f7a17439dcc81826b708d8f905666a7cd1b7e23c776c65",
-      "bytes": 2704
+      "sha256": "54e561f6d20a6df2505c066f6ff79b548486fd8a8f1d5452cc70352716198629",
+      "bytes": 2907
     },
     "tests/handoff_target_storage_server_test.cjs": {
       "sha256": "7a468421dfe2e1c39486aa5a9a8abfab64d12a4c3e90f22a328c81e46f882e57",

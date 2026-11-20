@@ -20,7 +20,10 @@ assert.equal(require('../tools/lib/approved_gui_css.cjs').verifyApprovedCss(root
 const approvedSuite=fs.readFileSync(path.join(root,'docs/gui-redesign/assets/suite.css'),'utf8');
 const changedSuite=approvedSuite.replace('--font-sans:', '--test-drift-font-sans:');
 assert.notEqual(changedSuite,approvedSuite,'negative control changes a real design token');
-const drifted=hayaku.split(JSON.stringify(approvedSuite)).join(JSON.stringify(changedSuite));
+// HAYAKU keeps its dialog rules in the same string literal right after the suite CSS, so match
+// the escaped stylesheet text rather than a whole quoted literal.
+const escaped=text=>JSON.stringify(text).slice(1,-1);
+const drifted=hayaku.split(escaped(approvedSuite)).join(escaped(changedSuite));
 assert.notEqual(drifted,hayaku,'negative control changes the embedded suite CSS');
 assert.throws(()=>require('../tools/lib/approved_gui_css.cjs').verifyApprovedCss(root,'HAYAKU_Locator_Continuity.js',drifted),/approved CSS drift/);
 assert.match(source.tokens,/--ms-motion:\.2s;/);assert.ok(!source.tokens.includes('--risu-animation-speed'));
