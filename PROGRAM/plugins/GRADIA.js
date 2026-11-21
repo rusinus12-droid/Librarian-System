@@ -4115,9 +4115,12 @@ ${BIANCA_PERSONA_TEXT}`;
     // This run's random scene variable (shared by all stages); not stored.
     sceneVarianceRun: null,
     bodyStateReadings: {},
+    bodyStateSleep: {},
     bodyStateVerdicts: {},
     worldDynamicsReadings: {},
     intimacyReadings: {},
+    intimacyTelemetry: {},
+    shadowPrevious: {},
     // 정사 AIDE preference cards: loaded from storage once, then written through on change.
     intimacyCards: null,
     // 관계 시뮬레이터: this run's readings (memory only), the loaded relationship state, and the run's prepared rolls.
@@ -27621,12 +27624,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
       if (cues.length) lines.push(`  scene condition this turn: ${cues.map(([, label, signs]) => `${label} → ${signs}`).join('; ')}`);
       if (gate !== 'staging') {
         const sleepLine = bodyStateSleepReport(name, mine, context.recent, scopeKey);
-        if (sleepLine) lines.push(sleepLine);
+        if (sleepLine) {
+          lines.push(sleepLine);
+          if (Array.isArray(context.sleepItems)) context.sleepItems.push({ name, line: sleepLine.trim() });
+        }
       }
     }
     if (!lines.length && !evidence.length) return '';
     return [`- ${bodyStateDisplayName(name)}:`, ...(lines.length ? lines : ['  no tracked condition']), ...evidence].join('\n');
   };
+  const bodyStateSleepNotes = scopeKey => (scopeKey ? (Runtime.bodyStateSleep?.[scopeKey]?.items || []) : [])
+    .map(item => ({ title: `${forcedBondPersonLabel(item.name)} · 수면·각성`, body: item.line }));
   const bodyStatePacket = (recent = {}, settings = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const gate = bodyStateModeGate(settings);
@@ -27636,12 +27644,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const timeOfDay = bodyStateTimeOfDay(recent, clock);
     const scenePeople = extensionScenePeople(recent);
     const cardPerson = extensionCardPerson(recent, scenePeople);
+    const sleepItems = [];
     const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
       clock,
       recent,
+      sleepItems,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
         || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
+    if (scopeKey) Runtime.bodyStateSleep[scopeKey] = { at: Date.now(), items: sleepItems };
     const libHits = entries.some(entry => entry.source === 'LIB');
     return compact([
       clock ? `Story clock (LIBRA): day ${clock.day}${clock.estimated ? ' (estimated)' : ''}${clock.timeOfDay ? ` · ${clock.timeOfDay}` : ''}${clock.date ? ` · ${clock.date}` : ''}.` : '',
@@ -28588,11 +28599,37 @@ Begin directly with the in-world response and finish the complete same-turn draf
       };
     });
   };
+  const intimacyTelemetryNotes = scopeKey => {
+    const telemetry = scopeKey ? Runtime.intimacyTelemetry?.[scopeKey] : null;
+    if (!telemetry) return [];
+    const notes = [];
+    const ext = telemetry.externalReaction;
+    if (ext) {
+      notes.push({
+        title: `외부반응 · ${ext.place} (${ext.score}/${ext.maxScore})`,
+        body: `${ext.noticed ? '인지됨 (제3자 반응 발생)' : '미인지'} · 인지 확률 ${ext.noticeChance}% (위험도 ${String(ext.riskBand || '').toUpperCase()})${ext.factors?.length ? ` · ${ext.factors.join(', ')}` : ''}`
+      });
+    }
+    for (const g of telemetry.gauges || []) {
+      if (!(g.climaxGauge > 0 || g.ejaculationGauge > 0 || g.lastTurnDeltaClimax !== 0 || g.lastTurnDeltaEjac !== 0)) continue;
+      notes.push({
+        title: `게이지 · ${forcedBondPersonLabel(g.name)}`,
+        body: `절정 ${g.climaxGauge}/100${g.ejaculationGauge > 0 || g.lastTurnDeltaEjac !== 0 ? ` · 사정 ${g.ejaculationGauge}/100` : ''}${g.stimulatedParts?.length ? ` · 자극: ${g.stimulatedParts.join(', ')}` : ''}`
+      });
+    }
+    return notes;
+  };
   const intimacyPacket = (recent = {}) => {
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const scene = intimacyScene(recent);
-    const cards = intimacyCardsForScope(compact(Runtime.activeScopeKey || '', 512));
+    const cards = intimacyCardsForScope(scopeKey);
     const gauges = computeIntimacyParticipantGauges(recent, cards);
     const externalReaction = scene.engaged ? computeIntimacyExternalReaction(recent, scene) : null;
+    if (scopeKey) {
+      Runtime.intimacyTelemetry[scopeKey] = scene.engaged || gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0)
+        ? { at: Date.now(), gauges, externalReaction }
+        : { at: Date.now(), gauges: [], externalReaction: null };
+    }
     if (!scene.engaged && !gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0)) return { scene, cards, gauges, externalReaction: null, text: '' };
     return {
       scene,
@@ -44115,6 +44152,12 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     } else if (codePreviousRecord.hasContent) {
       ledger.previousRecord = { text: codePreviousRecord.text };
     }
+    const prevScopeKey = compact(Runtime.activeScopeKey || '', 512);
+    if (prevScopeKey) {
+      Runtime.shadowPrevious[prevScopeKey] = ledger.previousRecord
+        ? { at: Date.now(), record: ledger.previousRecord }
+        : { at: Date.now(), record: null };
+    }
     if (shadowPlanning.hasContent) {
       ledger.shadowDesign = {
         ...(shadowPlanning.hasPreviousRecord ? { previousRecord: shadowPlanning.previousRecord } : {}),
@@ -48232,21 +48275,41 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   // stages read and decided, and the random variable drawn. The next run replaces it.
   const SCENE_VARIANCE_CATEGORY_LABELS = Object.freeze({ inner: '내면', initiative: '주도', world: '세계', protagonist: '주인공' });
   const sceneRunSnapshot = () => {
-    const key = Runtime.sceneVarianceRun?.key || Runtime.scenePurposeRun?.key || Runtime.sceneArcSource?.key || '';
+    const scopeKey = compact(Runtime.activeScopeKey || '', 512);
+    const prevEntry = scopeKey ? Runtime.shadowPrevious?.[scopeKey] : null;
+    const key = Runtime.sceneVarianceRun?.key || Runtime.scenePurposeRun?.key || Runtime.sceneArcSource?.key || (prevEntry?.record ? scopeKey : '');
     if (!key) return null;
     const same = run => (run && run.key === key ? run : null);
     const variance = same(Runtime.sceneVarianceRun), purpose = same(Runtime.scenePurposeRun), arcSource = same(Runtime.sceneArcSource);
-    const fixationState = Runtime.sceneFixations?.[compact(Runtime.activeScopeKey || '', 512) || 'default'] || null;
+    const fixationState = Runtime.sceneFixations?.[scopeKey || 'default'] || null;
     return cloneJson({
       fixations: {
         detected: Runtime.sceneFixationDetected?.key === key ? Runtime.sceneFixationDetected.items : [],
         named: (fixationState?.named || []).map(item => ({ text: item.text, stage: item.stage, runsLeft: item.runsLeft, fromThisRun: item.addedIn === key }))
       },
-      schema: 'gradia.scene_run.v1', at: Math.max(Number(variance?.at || 0), Number(purpose?.at || 0), Number(arcSource?.at || 0)),
+      schema: 'gradia.scene_run.v1', at: Math.max(Number(variance?.at || 0), Number(purpose?.at || 0), Number(arcSource?.at || 0), Number(prevEntry?.at || 0)),
+      previous: prevEntry?.record || null,
       arcSource: arcSource ? { kind: arcSource.lines.length ? 'libra_story_arc' : 'read_from_scene', lines: arcSource.lines } : null,
       arcReading: purpose?.arc || '', purpose: purpose?.text || '', setBy: purpose?.stage || '',
       variance: variance ? { level: variance.level, variable: variance.variable || null } : null
     });
+  };
+  const formatShadowPreviousForGui = prev => {
+    if (!prev || typeof prev !== 'object') return '';
+    if (prev.what_happened?.length || prev.ongoing_consequences?.length || prev.do_not_misremember?.length) {
+      return [
+        ...(prev.what_happened || []).map(line => `• ${line}`),
+        ...(prev.ongoing_consequences || []).map(line => `→ ${line}`),
+        ...(prev.do_not_misremember || []).map(line => `주의: ${line}`)
+      ].join('\n');
+    }
+    if (prev.text) {
+      return String(prev.text)
+        .split(/\r?\n/)
+        .filter(line => line.trim() && !line.startsWith('[PREVIOUS') && !line.startsWith('- 아래는 Shadow Act') && !line.startsWith('- 과거 사건의 행위자'))
+        .join('\n');
+    }
+    return '';
   };
   const renderSceneRunCard = results => {
     const bar = results?.querySelector('[data-subtabs="rs"]');
@@ -48259,9 +48322,11 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const arcSourceText = !run?.arcSource ? '확인되지 않음'
       : run.arcSource.kind === 'libra_story_arc' ? run.arcSource.lines.join('\n') : '서사 연감 기록 없음 · 최근 장면에서 판독';
     const variable = run?.variance?.variable;
+    const prevText = formatShadowPreviousForGui(run?.previous);
     card.replaceChildren(
       guiEl('h3', { class: 'section-title', text: '장면 목적 · 아크' }),
       ...(run ? [guiEl('dl', { class: 'kv', style: 'white-space:pre-line' }, [
+        ...row('PREVIOUS (과거 종합)', prevText || '기록 없음', !prevText),
         ...row('아크 출처', arcSourceText, run.arcSource?.kind !== 'libra_story_arc'),
         ...row('이번 턴 아크 판독', run.arcReading ? run.arcReading + by : '판독 없음', !run.arcReading),
         ...row('장면 목적', run.purpose ? run.purpose + by : '정해지지 않음', !run.purpose),
@@ -48280,10 +48345,16 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const note = (title, body) => guiEl('div', { class: 'note' }, [guiEl('b', { text: title }), guiEl('p', { text: body })]);
     let rows = [];
-    if (stageId === 'aide_body_state') rows = (scopeKey ? Runtime.bodyStateReadings?.[scopeKey]?.readings || [] : [])
-      .map(item => note(forcedBondPersonLabel(item.character), item.summary));
-    else if (stageId === 'aide_intimacy') rows = (scopeKey ? Runtime.intimacyReadings?.[scopeKey]?.readings || [] : [])
-      .map(item => note(`${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}`, item.summary));
+    if (stageId === 'aide_body_state') rows = [
+      ...(scopeKey ? Runtime.bodyStateReadings?.[scopeKey]?.readings || [] : [])
+        .map(item => note(forcedBondPersonLabel(item.character), item.summary)),
+      ...bodyStateSleepNotes(scopeKey).map(item => note(item.title, item.body))
+    ];
+    else if (stageId === 'aide_intimacy') rows = [
+      ...intimacyTelemetryNotes(scopeKey).map(item => note(item.title, item.body)),
+      ...(scopeKey ? Runtime.intimacyReadings?.[scopeKey]?.readings || [] : [])
+        .map(item => note(`${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}`, item.summary))
+    ];
     else if (stageId === 'aide_world_dynamics') rows = (scopeKey ? Runtime.worldDynamicsReadings?.[scopeKey]?.readings || [] : [])
       .map(item => note(`${item.movement} · ${WORLD_DYNAMICS_STATUS_LABELS[item.status] || item.status}`, item.summary));
     else if (stageId === 'aide_relationship_sim') rows = relsimReadingNotes(scopeKey).map(item => note(item.title, item.body));
@@ -50624,8 +50695,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ])
       ])));
       const readings = scopeKey ? (Runtime.bodyStateReadings?.[scopeKey]?.readings || []) : [];
-      readingBox.replaceChildren(...(readings.length
-        ? readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: forcedBondPersonLabel(item.character) }), guiEl('p', { text: item.summary })]))
+      const sleepRows = bodyStateSleepNotes(scopeKey);
+      const allBodyRows = [
+        ...readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: forcedBondPersonLabel(item.character) }), guiEl('p', { text: item.summary })])),
+        ...sleepRows.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: item.title }), guiEl('p', { text: item.body })]))
+      ];
+      readingBox.replaceChildren(...(allBodyRows.length
+        ? allBodyRows
         : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 상태 AIDE가 실행되면 이번 턴의 인물별 몸 상태가 여기에 표시됩니다. 저장되지 않습니다.' })])]));
     }
   };
@@ -50682,8 +50758,13 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const readingBox = app.querySelector('[data-intimacy-readings]');
     if (readingBox) {
       const readings = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [];
-      readingBox.replaceChildren(...(readings.length
-        ? readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}` }), guiEl('p', { text: item.summary })]))
+      const telemetryRows = intimacyTelemetryNotes(scopeKey);
+      const allIntimacyRows = [
+        ...telemetryRows.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: item.title }), guiEl('p', { text: item.body })])),
+        ...readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}` }), guiEl('p', { text: item.summary })]))
+      ];
+      readingBox.replaceChildren(...(allIntimacyRows.length
+        ? allIntimacyRows
         : [guiEl('div', { class: 'empty' }, [guiEl('span', { text: '아직 판독이 없습니다. 성교 장면에서 정사 AIDE가 실행되면 이번 턴의 단계·체위·인물별 상태가 여기에 표시됩니다. 판독은 저장되지 않습니다.' })])]));
     }
   };
@@ -50727,12 +50808,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const relsimReadingNotes = scopeKey => {
     const reading = scopeKey ? Runtime.relationshipSimReadings?.[scopeKey] : null;
     if (!reading) return [];
-    const rows = (reading.verdicts || []).map(item => ({
-      title: `${forcedBondPersonLabel(item.actor)} → ${forcedBondPersonLabel(item.responder)} · ${RELSIM_ACT_LABELS[item.act] || item.act}${item.expected ? ' · 입력에 있음' : ''}`,
+    const activeVerdicts = (reading.verdicts || []).filter(item => item.expected);
+    const rows = activeVerdicts.map(item => ({
+      title: `${forcedBondPersonLabel(item.actor)} → ${forcedBondPersonLabel(item.responder)} · ${RELSIM_ACT_LABELS[item.act] || item.act} · 입력에 있음`,
       body: `${item.success ? '성공' : '실패'} (${item.percent}%, 굴림 ${item.roll})${item.factors?.length ? ` · ${item.factors.join(', ')}` : ''}`
     }));
     for (const item of reading.events || []) rows.push({ title: `일어난 일 · ${RELSIM_ACT_LABELS[item.act] || item.act}`, body: `${item.summary || ''}${item.outcomeShown ? '' : ' (판정 결과가 드러나지 않아 기록하지 않음)'}` });
     for (const item of reading.occasions || []) rows.push({ title: `${item.label} · ${item.dueText}`, body: item.phase === 'soon' ? `${item.until}일 남음` : item.phase === 'today' ? '오늘' : '챙기지 않고 지남' });
+    if (!rows.length) rows.push({ title: '이번 턴 관계 이벤트', body: '감지된 관계 이벤트 없음 (일반 대화 턴)' });
     return rows;
   };
   const relsimEmpty = (title, body) => guiEl('div', { class: 'empty' }, [guiEl('b', { text: title }), guiEl('span', { text: body })]);

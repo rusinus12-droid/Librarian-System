@@ -346,3 +346,14 @@ test('external reaction (외부반응) scales 100..200 by venue/crowding/loudnes
     assert.match(block, /Ignore \/ unbothered \(무시·신경 안 씀/);
   }
 });
+
+test('GUI intimacy panel shows external reaction and climax/ejaculation gauges after an encounter turn', async t => {
+  const f = await start(t);
+  await runTurn(f, '도서관 서고에서 민아의 유두를 만지고 후배위로 삽입한다.');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const readingsEl = f.document.querySelector('[data-intimacy-readings]');
+  assert.ok(readingsEl, 'intimacy readings box exists');
+  assert.match(readingsEl.textContent, /외부반응 · 도서관·서고·열람실/);
+  assert.match(readingsEl.textContent, /게이지 ·/);
+});

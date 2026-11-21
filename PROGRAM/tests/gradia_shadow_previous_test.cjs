@@ -188,4 +188,11 @@ test('previous schema and pass run in shadow_act heavyweight analysis and feed r
   assert.ok(charAnalysisPrompt, 'aide_character analysis ran');
   assert.match(userOf(charAnalysisPrompt), /\[PREVIOUS — CONFIRMED PAST RECORD \(LIB \+ RECENT CHAT, READ ONLY\)\]/);
   assert.match(userOf(charAnalysisPrompt), /서연은 잃어버렸던 도서관 열쇠를 이미 찾아 책상 위에 두었다\./);
+
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('results');
+  const card = f.document.querySelector('[data-scene-run-card]');
+  assert.ok(card, 'scene run card exists in results tab');
+  assert.match(card.textContent, /PREVIOUS \(과거 종합\)/);
+  assert.match(card.textContent, /서연은 잃어버렸던 도서관 열쇠를 이미 찾아 책상 위에 두었다\./);
 });

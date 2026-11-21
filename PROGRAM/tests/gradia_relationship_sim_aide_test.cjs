@@ -338,3 +338,14 @@ test('memory relationship and emotion signals adjust event success probability',
   assert.ok(negConfess.factors.some(item => item.includes('기억 관계신호')));
   assert.ok(negConfess.factors.some(item => item.includes('기억 감정신호')));
 });
+
+test('GUI relationship sim readings panel filters to detected events only', async t => {
+  const { f } = await start(t, { pair: { status: 'more_than_friend' } });
+  await runTurn(f, '커피 좋아해? 오늘 날씨 정말 좋다.');
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const box = f.document.querySelector('[data-relsim-readings]');
+  assert.ok(box, 'relsim readings box exists');
+  assert.match(box.textContent, /감지된 관계 이벤트 없음/);
+  assert.doesNotMatch(box.textContent, /고백/);
+});
