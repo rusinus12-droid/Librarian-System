@@ -54121,20 +54121,60 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const parseMicroProducerEnvelope = rawContent => {
         const raw = string(rawContent || '').trim();
         if (!raw) return { jsonValid: false, envelope: null };
+        const extractTrailingEnvelopeJson = sourceText => {
+          const schemaHint = sourceText.lastIndexOf('{"schema"');
+          const candidates = [];
+          if (schemaHint >= 0) candidates.push(schemaHint);
+          const lastOpen = sourceText.lastIndexOf('{');
+          if (lastOpen >= 0 && lastOpen !== schemaHint) candidates.push(lastOpen);
+          for (const start of candidates) {
+            let depth = 0, inString = false, escaped = false;
+            for (let i = start; i < sourceText.length; i += 1) {
+              const ch = sourceText[i];
+              if (inString) {
+                if (escaped) escaped = false;
+                else if (ch === '\\') escaped = true;
+                else if (ch === '"') inString = false;
+                continue;
+              }
+              if (ch === '"') { inString = true; continue; }
+              if (ch === '{') depth += 1;
+              else if (ch === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                  const slice = sourceText.slice(start, i + 1);
+                  try {
+                    const obj = JSON.parse(slice);
+                    if (isPlainObject(obj) && (obj.schema === 'libra.micro_producer_envelope.v1'
+                      || obj.schema === 'libra.micro_memory.v1' || isPlainObject(obj.micro))) return obj;
+                  } catch (_) {
+                    const relaxed = relaxedJsonParse(slice);
+                    if (isPlainObject(relaxed) && (relaxed.schema === 'libra.micro_producer_envelope.v1'
+                      || relaxed.schema === 'libra.micro_memory.v1' || isPlainObject(relaxed.micro))) return relaxed;
+                  }
+                  break;
+                }
+              }
+            }
+          }
+          return null;
+        };
         const unwrapped = stripLeadingClosedReasoningWrappers(raw);
-        if (unwrapped.unclosedReasoning) return { jsonValid: false, envelope: null };
-        let candidateText = unwrapped.body;
-        try {
-          candidateText = unwrapLibraTypedResponse(raw).json;
-        } catch (_) {
-          candidateText = unwrapped.body;
-        }
         let parsed = null;
-        try {
-          parsed = JSON.parse(candidateText);
-        } catch (_) {
-          parsed = relaxedJsonParse(candidateText);
+        if (!unwrapped.unclosedReasoning) {
+          let candidateText = unwrapped.body;
+          try {
+            candidateText = unwrapLibraTypedResponse(raw).json;
+          } catch (_) {
+            candidateText = unwrapped.body;
+          }
+          try {
+            parsed = JSON.parse(candidateText);
+          } catch (_) {
+            parsed = relaxedJsonParse(candidateText);
+          }
         }
+        if (!parsed || !isPlainObject(parsed)) parsed = extractTrailingEnvelopeJson(raw);
         if (!parsed || !isPlainObject(parsed)) return { jsonValid: false, envelope: null };
         if (parsed.schema === 'libra.micro_producer_envelope.v1') return { jsonValid: true, envelope: parsed };
         if (parsed.schema === 'libra.micro_memory.v1') {
@@ -74097,18 +74137,22 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         ownerRecords: refs.reduce((count, ref) => count + Number(ref.recordCount || 0), 0)};
     };
 
-    const portableNativeMicroInput = async (bundle, targetPairs, matchedStarts) => {
+    const portableNativeMicroInput = async (bundle, targetPairs, matchedStarts, options = {}) => {
       const ownerRows = asArray(bundle.microArchive?.records);
-      if (!ownerRows.length) return {sourcePairs: [], sourceRows: [], pendingRows: [],
-        sourceOptions: {keys: [], read: async () => null}};
+      const allowDirectTurns = new Set(asArray(options?.allowDirectReceiptTurns).map(Number).filter(turn => turn > 0));
+      const startsList = asArray(matchedStarts).map(Number).filter(turn => turn > 0);
+      if (!ownerRows.length || (!startsList.length && !allowDirectTurns.size)) {
+        return {sourcePairs: [], sourceRows: [], pendingRows: [], sourceOptions: {keys: [], read: async () => null}};
+      }
       const byKey = new Map(ownerRows.map(row => [row.key, row.value]));
       const sourceOptions = {keys: [...byKey.keys()].sort(),
         read: async storageKey => byKey.get(string(storageKey || '')) || null,
         worldlineId: string(bundle.microArchive.activeWorldlineId || '')};
-      const through = Math.max(...asArray(matchedStarts).map(Number)) + BATCH_SIZE - 1;
+      const through = Math.max(0, ...startsList.map(start => start + BATCH_SIZE - 1), ...allowDirectTurns);
+      if (through <= 0) return {sourcePairs: [], sourceRows: [], pendingRows: [], sourceOptions};
       const sourcePairs = targetPairs.slice(0, through);
       const expectedIds = new Map();
-      for (const startTurn of matchedStarts) {
+      for (const startTurn of startsList) {
         const ref = bundle.currentRefs.find(row => Number(row?.turnRange?.start || 0) === startTurn);
         const memory = ref && bundle.memoryForRef(ref);
         const identities = asArray(memory?.sourcePairs);
@@ -74121,17 +74165,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const selected = new Map();
       for (const row of receiptHeads) {
         const head = row.value;
+        const turn = Number(head.turn);
         const receipt = byKey.get(string(head.receiptKey || ''));
-        const ids = expectedIds.get(Number(head.turn));
-        if (!ids || receipt?.schema !== 'libra.completed_turn_receipt.v1'
-          || receipt.user?.chatId !== ids.userChatId
-          || receipt.assistant?.chatId !== ids.assistantChatId) continue;
-        const pair = {turn: Number(head.turn), user: receipt.user, assistant: receipt.assistant};
-        if (head.revisionId !== receipt.revisionId
+        const ids = expectedIds.get(turn);
+        const directAllowed = !ids && allowDirectTurns.has(turn);
+        if ((!ids && !directAllowed) || receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
+        if (ids && (receipt.user?.chatId !== ids.userChatId || receipt.assistant?.chatId !== ids.assistantChatId)) continue;
+        const pair = {turn, user: receipt.user, assistant: receipt.assistant};
+        if (!targetPairs[turn - 1]
+          || head.revisionId !== receipt.revisionId
           || head.sourceDigest !== receipt.sourceDigest
           || completedTurnRevisionId(pair) !== receipt.revisionId
           || sourceDigest([pair]) !== receipt.sourceDigest
-          || nativeCopyPairSignature(pair) !== nativeCopyPairSignature(targetPairs[head.turn - 1])) {
+          || nativeCopyPairSignature(pair) !== nativeCopyPairSignature(targetPairs[turn - 1])) {
           throw new Error(`portable_native_micro_source_invalid:t${head.turn}`);
         }
         if (selected.has(pair.turn)) throw new Error(`portable_native_micro_source_ambiguous:t${pair.turn}`);
@@ -74141,7 +74187,8 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const requiredTurns = ownerRows.filter(row => ['libra.micro_memory_head.v1',
         'libra.completed_turn_head.v1'].includes(row.value?.schema)
         && row.value.worldlineId === sourceOptions.worldlineId
-        && Number(row.value.turn) <= through).map(row => Number(row.value.turn));
+        && Number(row.value.turn) <= through
+        && (expectedIds.has(Number(row.value.turn)) || allowDirectTurns.has(Number(row.value.turn)))).map(row => Number(row.value.turn));
       for (const turn of requiredTurns) {
         if (!selected.has(turn)) throw new Error(`portable_native_micro_source_unmatched:t${turn}`);
       }
@@ -74737,6 +74784,44 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         expectedStart += BATCH_SIZE;
       }
       if (!divergenceTurn && matchedStarts.length < bundle.currentRefs.length) divergenceTurn = expectedStart;
+      // For updated-bot rebinding, allow non-contiguous matching batches and verified Micro/receipt turns
+      // so a missing earlier batch (e.g. T1-T5) never blocks transferring later batches or Micro turns.
+      const rebindMatchedStarts = [];
+      for (const ref of bundle.currentRefs) {
+        const startTurn = Number(ref?.turnRange?.start || 0);
+        if (startTurn < 1) continue;
+        const targetBatch = batchForStart(targetPairs, startTurn);
+        const sourceContentDigest = lineageBatches.get(startTurn) || '';
+        if (targetBatch.length !== BATCH_SIZE || !sourceContentDigest || nativeCopyBatchContentDigest(targetBatch) !== sourceContentDigest) continue;
+        const targetDigest = sourceDigest(targetBatch);
+        const existingRef = memoryRefForStart(targetManifest, startTurn);
+        if (existingRef?.key && existingRef.status === 'committed' && string(existingRef.sourceDigest || '') !== targetDigest) {
+          if (!conflictTurn) conflictTurn = startTurn;
+          continue;
+        }
+        rebindMatchedStarts.push(startTurn);
+      }
+      const rebindMatchedMicroTurns = [];
+      const microOwnerRows = asArray(bundle.microArchive?.records);
+      if (microOwnerRows.length) {
+        const microByKey = new Map(microOwnerRows.map(row => [row.key, row.value]));
+        const microWl = string(bundle.microArchive.activeWorldlineId || '');
+        for (const row of microOwnerRows) {
+          if (row.value?.schema !== 'libra.completed_turn_head.v1' || row.value.worldlineId !== microWl) continue;
+          const turn = Number(row.value.turn);
+          if (!Number.isInteger(turn) || turn < 1 || !targetPairs[turn - 1]) continue;
+          const receipt = microByKey.get(string(row.value.receiptKey || ''));
+          if (receipt?.schema !== 'libra.completed_turn_receipt.v1') continue;
+          const pair = { turn, user: receipt.user, assistant: receipt.assistant };
+          if (row.value.revisionId === receipt.revisionId
+            && row.value.sourceDigest === receipt.sourceDigest
+            && completedTurnRevisionId(pair) === receipt.revisionId
+            && sourceDigest([pair]) === receipt.sourceDigest
+            && nativeCopyPairSignature(pair) === nativeCopyPairSignature(targetPairs[turn - 1])) {
+            rebindMatchedMicroTurns.push(turn);
+          }
+        }
+      }
       const priorReceipt = bundle.importId
         ? asArray(targetManifest.portableImports).find(item => string(item?.importId || '') === bundle.importId && item?.verified === true && item?.durable === true)
         : null;
@@ -74754,14 +74839,14 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         schema: 'libra.portable_import.preview.v1', source: bundle.source, target: context.scope, sameChat, sameCharacter,
         sourceMemories: bundle.currentRefs.length, sourceInheritedMemories: bundle.inheritedRefs.length,
         targetMemories: targetCurrentRefs.length, targetInheritedMemories: targetInheritedRefs.length, targetPairs: targetPairs.length,
-        matchedStarts, matchedMemories: matchedStarts.length, divergenceTurn, conflictTurn,
+        matchedStarts, rebindMatchedStarts, rebindMatchedMicroTurns, matchedMemories: matchedStarts.length, divergenceTurn, conflictTurn,
         lineageAvailable: bundle.lineage?.schema === 'libra.portable_lineage.v1', alreadyImported,
         priorReceiptFound: !!priorReceipt, priorReceiptReadbackFailed, priorReceipt: priorReceipt ? clone(priorReceipt) : null,
         modes: {
           restore_same_scope: { available: sameChat, reason: sameChat ? '' : !sameCharacter ? 'character_mismatch' : 'chat_id_mismatch' },
           import_as_predecessor_archive: { available: !sameChat && sameCharacter && (bundle.currentRefs.length + bundle.inheritedRefs.length) > 0 && targetCurrentRefs.length === 0 && (targetInheritedRefs.length === 0 && targetInheritedMicroRefs.length === 0 || archiveRepair) && !targetManifest.inFlight?.runId, repair: archiveRepair, reason: sameChat ? 'same_chat' : !sameCharacter ? 'character_mismatch' : !(bundle.currentRefs.length + bundle.inheritedRefs.length) ? 'source_memories_missing' : targetCurrentRefs.length || ((targetInheritedRefs.length || targetInheritedMicroRefs.length) && !archiveRepair) ? 'target_not_empty' : targetManifest.inFlight?.runId ? 'target_in_flight' : '' },
           reconstruct_native_copy: { available: !sameChat && sameCharacter && matchedStarts.length > 0 && !conflictTurn && !targetManifest.inFlight?.runId, reason: sameChat ? 'same_chat' : !sameCharacter ? 'character_mismatch' : !bundle.lineage?.schema ? 'lineage_missing' : conflictTurn ? `target_conflict_t${conflictTurn}` : !matchedStarts.length ? 'no_contiguous_match' : targetManifest.inFlight?.runId ? 'target_in_flight' : '' },
-          rebind_updated_bot: portableUpdatedBotRebindAvailability({ bundle, context, sameCharacter, matchedStarts, conflictTurn, targetManifest })
+          rebind_updated_bot: portableUpdatedBotRebindAvailability({ bundle, context, sameCharacter, matchedStarts: rebindMatchedStarts, microTurns: rebindMatchedMicroTurns, conflictTurn, targetManifest })
         }
       });
     };
@@ -74770,17 +74855,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     // that crosses characters, and it does not widen any scope check: it reuses the native-copy
     // rebinding below, which writes every adopted memory under the CURRENT chat's own scope, and
     // only for 5-turn batches whose U+A text matches the backup's lineage byte for byte.
-    const portableUpdatedBotRebindAvailability = ({ bundle, context, sameCharacter, matchedStarts, conflictTurn, targetManifest }) => {
+    const portableUpdatedBotRebindAvailability = ({ bundle, context, sameCharacter, matchedStarts, microTurns = [], conflictTurn, targetManifest }) => {
       const sourceCharacterId = string(bundle?.source?.canonicalCharacterId || bundle?.source?.characterId || '');
       const targetCharacterId = string(context?.scope?.canonicalCharacterId || context?.scope?.characterId || '');
       const sourceScopeKey = string(bundle?.source?.scopeKey || '');
       const targetScopeKey = string(context?.scope?.scopeKey || '');
+      const hasCurrentRefs = asArray(bundle?.currentRefs).length > 0;
+      const hasMatches = hasCurrentRefs ? asArray(matchedStarts).length > 0 : asArray(microTurns).length > 0;
+      const needsLineage = bundle?.lineage?.schema !== 'libra.portable_lineage.v1' && (hasCurrentRefs || asArray(microTurns).length === 0);
       const reason = sameCharacter ? 'same_character'
         : !sourceCharacterId || !targetCharacterId ? 'character_identity_missing'
           : !sourceScopeKey || !targetScopeKey || sourceScopeKey === targetScopeKey ? 'scope_identity_unusable'
-            : bundle?.lineage?.schema !== 'libra.portable_lineage.v1' ? 'lineage_missing'
+            : needsLineage ? 'lineage_missing'
               : conflictTurn ? `target_conflict_t${conflictTurn}`
-                : !matchedStarts.length ? 'no_contiguous_match'
+                : !hasMatches ? 'no_contiguous_match'
                   : targetManifest?.inFlight?.runId ? 'target_in_flight' : '';
       return { available: !reason, reason, sourceCharacterId, targetCharacterId, sourceScopeKey, targetScopeKey };
     };
@@ -74986,10 +75074,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         await rollback.capture(key.continuityState(context.scope));
         await rollback.capture(key.canonicalVariantIndex(context.scope));
         const targetManifest = await loadManifest(context.scope, pairs.length);
+        const effectiveStarts = crossBot ? asArray(preview.rebindMatchedStarts) : asArray(preview.matchedStarts);
+        const effectiveMicroTurns = crossBot ? asArray(preview.rebindMatchedMicroTurns) : [];
         const repairReceipt = preview.priorReceiptReadbackFailed && preview.priorReceipt?.mode === 'reconstruct_native_copy' ? preview.priorReceipt : null;
-        const repairStarts = new Set(repairReceipt ? asArray(preview.matchedStarts).map(Number).filter(value => value > 0) : []);
+        const repairStarts = new Set(repairReceipt ? effectiveStarts.map(Number).filter(value => value > 0) : []);
         if (repairReceipt) targetManifest.portableImports = asArray(targetManifest.portableImports).filter(item => string(item?.importId || '') !== bundle.importId);
-        const nativeMicro = await portableNativeMicroInput(bundle, pairs, preview.matchedStarts);
+        const nativeMicro = await portableNativeMicroInput(bundle, pairs, effectiveStarts, { allowDirectReceiptTurns: effectiveMicroTurns });
         const inheritedMicroPlan = portableMicroArchivePlan(bundle, context.scope,
           {includeDirect: false, sessionEpochDelta: 0});
         if (bundle.inheritedRefs.length) {
@@ -75008,7 +75098,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         const sourceRefs = new Map(bundle.currentRefs.map(ref => [Number(ref.turnRange?.start || 0), ref]));
         const copiedStarts = [];
         const reboundRevisions = {};
-        for (const startTurn of preview.matchedStarts) {
+        for (const startTurn of effectiveStarts) {
           const targetBatch = batchForStart(pairs, startTurn);
           const targetDigest = sourceDigest(targetBatch);
           const sourceRef = sourceRefs.get(startTurn);
@@ -80196,11 +80286,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-trash__row:last-child{border-bottom:0}',
     '.lens-trash__info{display:grid;gap:2px;min-width:0}',
     '.note--ok{background:var(--ok-soft);border-color:var(--ok-line);color:var(--ok-ink)}',
-    '.lens-item{display:grid;gap:14px;padding:20px 22px;border:1px solid var(--card-line,var(--border));border-radius:var(--r-md);background:var(--surface)}',
+    '.lens-item{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--card-line,var(--border));border-radius:var(--r-md);background:var(--surface)}',
     '.lens-item.is-stale{background:var(--surface2);border-style:dashed}',
-    '.lens-item__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}','.lens-item__head-right{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto}','.lens-item__meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}','.lens-label{font:700 12.5px/1.4 var(--font-sans);color:var(--text2)}','.lens-label::before{content:"· ";color:var(--text3)}','.lens-item__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-top:12px;border-top:1px solid var(--border)}','.lens-item__states{display:flex;flex-wrap:wrap;gap:6px}',
+    '.lens-item__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}','.lens-item__head-right{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;margin-left:auto}','.lens-item__meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;min-width:0}','.lens-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:6px;background:var(--surface2);border:1px solid var(--border);font:700 11.5px/1.35 var(--font-sans);color:var(--text2)}','.lens-item__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-top:4px;border-top:0}','.lens-item__states{display:flex;flex-wrap:wrap;gap:6px}',
     '.lens-item__badges{gap:6px}',
-    '.lens-item__text{margin:0;font-size:15px;line-height:1.75;color:var(--text)}',
+    '.lens-item__text{margin:0;font-size:14.5px;line-height:1.7;color:var(--text)}',
     '.lens-when{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 14px;border:1px solid var(--accent-line,var(--accent));border-radius:var(--r-sm);background:var(--accent-soft)}',
     '.lens-when b{font:750 15px/1.4 var(--font-sans);color:var(--text);overflow-wrap:anywhere}',
     '.lens-when__label{font:750 11.5px/1.4 var(--font-sans);letter-spacing:.06em;color:var(--accent-ink)}',
@@ -80212,27 +80302,31 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.row.lens-recall-row>.muted{overflow-wrap:anywhere}',
     '.lens-who__names{display:flex;flex-wrap:wrap;gap:4px 14px}',
     '.lens-who__names small{margin-left:6px;color:var(--text3);font:500 12px/1.4 var(--font-sans)}',
-    '.lens-people{display:flex;flex-wrap:wrap;gap:8px}',
-    '.lens-person{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:6px 12px;border:1px solid var(--border);border-radius:99px;background:var(--surface);color:var(--text);font:600 13px/1.3 var(--font-sans);cursor:pointer}',
-    '.lens-person b{min-width:20px;padding:0 6px;border-radius:99px;background:var(--surface3);text-align:center;font-size:11px}',
+    '.lens-people{display:flex;flex-wrap:wrap;gap:6px}',
+    '.lens-person{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:4px 10px;border:1px solid var(--border);border-radius:99px;background:var(--surface);color:var(--text);font:600 12px/1.3 var(--font-sans);cursor:pointer}',
+    '.lens-person b{min-width:18px;padding:0 6px;border-radius:99px;background:var(--surface3);text-align:center;font-size:11px}',
     '.lens-person[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent-line,var(--accent))}',
     '.lens-person.is-unknown{color:var(--warn-ink)}',
-    '.lens-quote{margin:0;padding:12px 16px;line-height:1.65;border-left:3px solid var(--ok-line,var(--ok));background:var(--ok-soft);border-radius:0 var(--r-sm) var(--r-sm) 0;display:grid;gap:2px;font-size:13px}',
-    '.lens-quote small{color:var(--text3)}',
-    '.lens-basis{margin:0;padding:12px 16px;display:grid;gap:4px;line-height:1.65;border-left:3px solid var(--warn-line,var(--warn));background:var(--warn-soft);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:13px}',
-    '.lens-extra{display:flex;flex-wrap:wrap;gap:8px}',
-    '.lens-extra__pair{padding:4px 12px;border:1px solid var(--border2);border-radius:99px;font-size:12px;background:var(--surface2);overflow-wrap:anywhere}',
+    '.lens-quote{margin:0;padding:6px 12px;line-height:1.55;border-left:2px solid var(--ok-line,var(--ok));background:transparent;border-radius:0;display:grid;gap:2px;font-size:12.5px;color:var(--text2)}',
+    '.lens-quote small{color:var(--text3);font-size:11.5px}',
+    '.lens-basis{margin:0;padding:7px 12px;display:grid;gap:3px;line-height:1.55;border-left:2px solid var(--warn-line,var(--warn));background:var(--warn-soft);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:12.5px}',
+    '.lens-extra{display:flex;flex-wrap:wrap;gap:5px}',
+    '.lens-extra__pair{padding:2px 9px;border:1px solid var(--border);border-radius:99px;font-size:11.5px;background:var(--surface2);overflow-wrap:anywhere}',
     '.lens-extra__pair b{color:var(--text3);font-weight:650}',
+    '.lens-extra-fold{margin:0}',
+    '.lens-extra-fold>summary{list-style:none;display:inline-flex;align-items:center;gap:4px;font:600 11.5px/1.4 var(--font-sans);color:var(--text3);cursor:pointer;user-select:none}',
+    '.lens-extra-fold>summary::-webkit-details-marker{display:none}',
+    '.lens-extra-fold[open]>summary{margin-bottom:6px;color:var(--text2)}',
     '.lens-chip{display:inline-flex;align-items:center;padding:2px 10px;border-radius:99px;background:var(--accent-soft);color:var(--accent-ink);font:700 12px/1.5 var(--font-sans)}',
     '.lens-ref{display:grid;gap:4px}',
     '.lens-source{margin:0;padding:12px 14px;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-sm);background:var(--surface2);font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto}',
     '.lens-source mark{background:var(--ok-soft);color:var(--ok-ink);border-bottom:2px solid var(--ok-line);padding:0 1px}',
-    '.lens-rail{display:grid;gap:24px;align-content:start;padding:20px}',
+    '.lens-rail{display:grid;gap:16px;align-content:start;padding:16px}',
     '.lens-rail__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}',
-    '.lens-rail__section{display:grid;gap:10px}',
+    '.lens-rail__section{display:grid;gap:7px}',
     '.lens-rail__label{font:750 11.5px/1.4 var(--font-sans);letter-spacing:.06em;color:var(--accent-ink)}',
-    '.lens-filter{display:grid;gap:6px}',
-    '.lens-filter__item{display:flex;align-items:center;gap:10px;min-height:42px;padding:8px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text);text-align:left;cursor:pointer;font:600 13px/1.3 var(--font-sans)}',
+    '.lens-filter{display:grid;gap:3px}',
+    '.lens-filter__item{display:flex;align-items:center;gap:10px;min-height:36px;padding:6px 10px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text);text-align:left;cursor:pointer;font:600 12.5px/1.3 var(--font-sans)}',
     '.lens-filter__item span{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}',
     '.lens-filter__item small{color:var(--text3);font-size:11px}',
     '.lens-filter__item b{min-width:24px;padding:1px 7px;border-radius:99px;background:var(--surface3);text-align:center;font-size:11.5px}',
@@ -80243,18 +80337,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-run-box{padding:14px 16px;border:1px solid var(--inset-line,var(--border));border-radius:var(--r-md);background:var(--inset-bg,var(--surface2))}',
     '.lens-run-box__range{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}',
     '.lens-run-box .note{margin:0;font-size:12px}',
-    '.lens-reader__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 12px}',
+    '.lens-reader__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding-bottom:10px;border-bottom:1px solid var(--border)}',
     '.lens-reader__head h2{margin:0}',
-    '.lens-reader__head .deck{margin:8px 0 0}','.lens-reader .detail-pane>.stack{gap:20px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
-    '.lens-items{gap:18px}',
-    '.lens-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface2)}',
+    '.lens-reader__head .deck{margin:4px 0 0;font-size:12.5px}','.lens-reader .detail-pane{overflow-anchor:none}','.lens-reader .detail-pane>.stack{gap:12px}','.lens-rail__head strong{font:750 15px/1.4 var(--font-sans)}','.lens-prov>.fold__body{padding:16px 18px;gap:14px}','.lens-ref{gap:6px}',
+    '.lens-items{gap:14px;overflow-anchor:none}',
+    '.lens-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 10px;padding:6px 0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}',
     '.lens-toolbar__actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}',
-    '.lens-group-lens{display:grid;gap:12px;contain:layout style}',
-    '.lens-group-lens__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;padding:4px 2px 8px;border-bottom:1px solid var(--border)}',
+    '.lens-group-lens{display:grid;gap:10px;contain:layout style}',
+    '.lens-group-lens__head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 12px;padding:2px 0 8px;border-bottom:2px solid var(--border)}',
     '.lens-group-lens__head strong{font:750 15px/1.4 var(--font-sans);color:var(--text)}',
     '.lens-group-lens__head span{font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
     '.lens-group-person{border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface);contain:layout style}',
-    '.lens-group-person__summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:12px 16px;border-radius:var(--r-md);cursor:pointer;user-select:none;background:var(--surface)}',
+    '.lens-group-person__summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 14px;border-radius:var(--r-md);cursor:pointer;user-select:none;background:var(--surface)}',
+    '.lens-group-person__summary:hover{background:var(--surface2)}',
     '.lens-group-person[open]>.lens-group-person__summary{border-radius:var(--r-md) var(--r-md) 0 0}',
     '.lens-group-person__summary::-webkit-details-marker{display:none}',
     '.lens-group-person__title{display:inline-flex;align-items:center;gap:8px;min-width:0;font:750 14.5px/1.35 var(--font-sans);color:var(--text)}',
@@ -80262,20 +80357,20 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     '.lens-group-person__meta{display:inline-flex;align-items:center;gap:8px;font:600 12px/1.4 var(--font-sans);color:var(--text3)}',
     '.lens-group-person__chev{display:inline-block;line-height:1;font-size:11px;color:var(--text3)}',
     '.lens-group-person[open]>.lens-group-person__summary .lens-group-person__chev{transform:rotate(180deg)}',
-    '.lens-group-person__body{padding:12px 14px;display:grid;gap:12px;background:var(--surface2);border-top:1px solid var(--border);border-radius:0 0 var(--r-md) var(--r-md)}',
-    '.lens-group-span{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);content-visibility:auto;contain-intrinsic-size:auto 160px}',
-    '.lens-group-span__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:8px 14px;background:var(--surface2);border-bottom:1px solid var(--border);border-radius:var(--r-sm) var(--r-sm) 0 0;font:650 12px/1.4 var(--font-sans);color:var(--text2)}',
-    '.lens-group-span__list{display:grid;border-radius:0 0 var(--r-sm) var(--r-sm)}',
+    '.lens-group-person__body{padding:4px 14px 12px;display:grid;gap:10px;background:var(--surface);border-top:1px solid var(--border);border-radius:0 0 var(--r-md) var(--r-md)}',
+    '.lens-group-span{border:0;border-radius:0;background:transparent;content-visibility:auto;contain-intrinsic-size:auto 420px;contain:layout style}',
+    '.lens-group-span__head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:6px 0 5px;background:transparent;border-bottom:1px dashed var(--border);font:700 11.5px/1.4 var(--font-sans);color:var(--accent-ink);letter-spacing:.02em}',
+    '.lens-group-span__list{display:grid;gap:0}',
     '.lens-item:not(.lens-item--compact){content-visibility:auto;contain-intrinsic-size:auto 240px}',
-    '.lens-item--compact{padding:12px 14px;gap:8px;border:0;border-radius:0;border-top:1px solid var(--border);background:transparent;contain:style}',
+    '.lens-item--compact{padding:11px 2px;gap:7px;border:0;border-radius:0;border-top:1px solid var(--border);background:transparent;contain:layout style}',
     '.lens-item--compact:first-child{border-top:0}',
     '.lens-item--compact .lens-item__text{font-size:14px;line-height:1.65}',
-    '.lens-item--compact .lens-quote,.lens-item--compact .lens-basis{padding:7px 11px;font-size:12.5px;line-height:1.55}',
-    '.lens-item--compact .lens-extra{gap:6px}',
+    '.lens-item--compact .lens-quote,.lens-item--compact .lens-basis{padding:6px 11px;font-size:12.5px;line-height:1.55}',
+    '.lens-item--compact .lens-extra{gap:5px}',
     '.lens-item--compact .lens-extra__pair{padding:2px 9px;font-size:11.5px}',
-    '.lens-item--compact .lens-item__foot{padding-top:6px;border-top:0;gap:6px}',
-    '.lens-item--compact .lens-item__head-right .btn--sm{min-height:26px;padding:2px 9px;font-size:11.5px}',
-    '.lens-item--compact .lens-prov>summary{min-height:34px;padding:6px 10px;font-size:12px}',
+    '.lens-item--compact .lens-item__foot{padding-top:4px;border-top:0;gap:6px}',
+    '.lens-item--compact .lens-item__head-right .btn--sm{min-height:26px;padding:2px 9px;font-size:11.5px;color:var(--text2)}',
+    '.lens-item--compact .lens-prov>summary{min-height:32px;padding:5px 10px;font-size:12px}',
     '.lens-inline-meta{display:inline-flex;align-items:center;padding:1px 8px;border-radius:99px;border:1px solid var(--border);background:var(--surface2);font:600 11.5px/1.4 var(--font-sans);color:var(--text2)}',
     '.lens-inline-meta.is-warn{background:var(--warn-soft);border-color:var(--warn-line);color:var(--warn-ink)}',
     // Micro reader: turn rail rows with a two-line preview and a status badge; State summary bar.
@@ -88780,6 +88875,19 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     const countFor = lensId => memories.filter(item => item.lensId === lensId).length;
     const evidenceCount = level => byLens.filter(item => item.evidenceLevel === level).length;
     const filters = showExcluded ? [] : [
+      guiEl('div', { class: 'lens-rail__section' }, [
+        guiEl('input', { class: 'input', type: 'search', placeholder: '내용·인용·라벨·인물 검색', 'aria-label': '렌즈 기억 검색', value: reader.query || '',
+          onInput: event => {
+            reader.query = event.target.value;
+            if (Gui.lensSearchTimer) clearTimeout(Gui.lensSearchTimer);
+            Gui.lensSearchTimer = setTimeout(() => {
+              Gui.lensSearchTimer = null;
+              if (!LibraMemoryCore.state.disposed && Gui.app?.querySelector?.('[data-lens-reader="true"]')) {
+                rerenderLensReaderInPlace({ detailOnly: true });
+              }
+            }, 100);
+          } })
+      ]),
       guiEl('div', { class: 'lens-filter', role: 'group', 'aria-label': '렌즈 선택' }, [['all', '모든 렌즈', memories.length, ''], ...lenses.map(lens => [lens.lensId, lens.name, countFor(lens.lensId), lens.status])].map(([id, label, count, status]) => guiEl('button', {
         type: 'button', class: 'lens-filter__item', 'aria-pressed': String(filterLensId === id), dataset: { lensFilter: id },
         onClick: () => { reader.filterLensId = id; reader.runLensId = id === 'all' ? '' : id; rerenderLensReaderInPlace(); }
@@ -88795,19 +88903,6 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           onClick: () => { reader.filterPerson = row.key; rerenderLensReaderInPlace(); }
         }, [guiEl('span', { text: row.name }), guiEl('b', { text: String(row.count) })])))
       ]) : null,
-      guiEl('div', { class: 'lens-rail__section' }, [
-        guiEl('input', { class: 'input', type: 'search', placeholder: '내용·인용·라벨·인물 검색', 'aria-label': '렌즈 기억 검색', value: reader.query || '',
-          onInput: event => {
-            reader.query = event.target.value;
-            if (Gui.lensSearchTimer) clearTimeout(Gui.lensSearchTimer);
-            Gui.lensSearchTimer = setTimeout(() => {
-              Gui.lensSearchTimer = null;
-              if (!LibraMemoryCore.state.disposed && Gui.app?.querySelector?.('[data-lens-reader="true"]')) {
-                rerenderLensReaderInPlace({ detailOnly: true });
-              }
-            }, 100);
-          } })
-      ]),
       lenses.length?guiEl('div',{class:'lens-rail__section'},[
         guiEl('button',{class:'btn btn--sm btn--primary',type:'button',text:'재분석',dataset:{lensReaderReanalysis:'true'},disabled:!runLens||!Number(data.pairCount),onClick:()=>void showLibraSourceReanalysisDrawer({kind:'lens',scopeKey:reader.scopeKey,lensId:runLens.lensId})}),
         guiEl('small',{class:'hint',text:'원문 재분석에서 렌즈와 구간을 확인한 뒤 실행합니다.'})
@@ -88839,9 +88934,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           guiEl('h2', { text: filterLensId === 'all' ? '렌즈 기억' : text(lenses.find(lens => lens.lensId === filterLensId)?.name || '렌즈 기억') }),
           guiEl('p', { class: 'deck', text: `켜진 렌즈 ${lenses.filter(lens => lens.status === 'active').length}개 · 이 대화의 렌즈 기억 ${memories.filter(item=>!item.inherited).length}개 · 이전 대화 ${memories.filter(item=>item.inherited).length}개${oldInstruction ? ` · 이전 지침 기록 ${oldInstruction}개` : ''}` })
         ]),
-        registry.enabled === false ? libraStatusBadge('렌즈 기능 꺼짐', 'warn') : null
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('span', { class: 'lens-inline-meta', title: '렌즈 기억은 정본이 아닌 보조 메모입니다. 응답할 때 별도 예산으로 참고 메모로만 전달되고, 정본 기억과 충돌하면 정본이 우선합니다.', text: '보조 메모 · 정본 우선' }),
+          registry.enabled === false ? libraStatusBadge('렌즈 기능 꺼짐', 'warn') : null
+        ].filter(Boolean))
       ]),
-      guiEl('p', { class: 'hint', text: '렌즈 기억은 정본이 아닌 보조 메모입니다. 응답할 때 별도 예산으로 참고 메모로만 전달되고, 정본 기억과 충돌하면 정본이 우선합니다.' }),
       guiAsArray(data.inheritedArchiveUnavailable).length ? guiEl('p',{class:'note note--warn',role:'status',text:'이전 대화 기록을 읽지 못함 · 무결성을 확인할 수 없는 보관은 표시·회상에서 제외했습니다.'}) : null,
       errorNote,
       !lenses.length && reader.loaded ? guiEl('div', { class: 'empty' }, [
@@ -88938,9 +89035,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         return guiEl('div', { class: 'stack lens-items' }, [
           toolbar,
           currentItems.length ? guiEl('section', { class: 'stack', dataset: { lensCurrentGroup: 'true' } }, [
-            guiEl('h3', { text: '이 대화의 기록' }),
+            inheritedItems.length ? guiEl('h3', { text: '이 대화의 기록' }) : null,
             ...currentGrouped.nodes
-          ]) : null,
+          ].filter(Boolean)) : null,
           inheritedItems.length ? guiEl('section', { class: 'stack', dataset: { lensInheritedGroup: 'true' } }, [
             guiEl('h3', { text: '이전 대화에서 넘어온 기록' }),
             ...inheritedGrouped.nodes
@@ -92238,7 +92335,13 @@ advanced
       editForm || guiEl('p', { class: 'lens-item__text', text: text(item.text) }),
       item.quote ? guiEl('blockquote', { class: 'lens-quote' }, [guiEl('span', { text: `“${text(item.quote)}”` }), guiEl('small', { text: /-u$/.test(item.quoteRef || '') ? '사용자 원문' : 'AI 응답 원문' })])
         : item.basis ? guiEl('p', { class: 'lens-basis' }, [guiEl('b', { text: '해석 근거' }), guiEl('span', { text: text(item.basis) })]) : null,
-      extraEntries.length ? guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))]))) : null,
+      extraEntries.length ? (() => {
+        const extraGrid = guiEl('div', { class: 'lens-extra', 'aria-label': '추가 값' }, extraEntries.map(([k, v]) => guiEl('span', { class: 'lens-extra__pair' }, [guiEl('b', { text: `${lensExtraLabel(k)} `, title: k }), document.createTextNode(Array.isArray(v) ? v.join(', ') : String(v))])));
+        const shouldFold = compactMode && (extraEntries.length > 2 || extraEntries.some(([, v]) => String(Array.isArray(v) ? v.join(', ') : v).length > 36));
+        return shouldFold
+          ? guiEl('details', { class: 'lens-extra-fold', dataset: { guiManagedDisclosure: 'true' } }, [guiEl('summary', { text: `세부 항목 ${extraEntries.length}개 ▾` }), extraGrid])
+          : extraGrid;
+      })() : null,
       states.length || deleteBtn ? guiEl('footer', { class: 'lens-item__foot' }, [
         guiEl('div', { class: 'lens-item__states' }, states),
         deleteBtn

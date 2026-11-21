@@ -58333,6 +58333,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       }
       const updatedBotTranscriptMatches = transcriptMatches
         || (updatedBotTurns.total > 0 && updatedBotTurns.unmatched.length === 0);
+      const envelopeDigest = textValue(envelope?.integrity?.digest || envelope?.integrity?.sha256);
+      const alreadyAppliedUpdatedBot = !target.empty
+        && target.manifest?.portableRestoreMode === Flashback_PORTABLE_RESTORE_MODES.UPDATED_BOT
+        && Boolean(envelopeDigest)
+        && textValue(target.manifest?.portableEnvelopeDigest) === envelopeDigest;
       const modes = {
         [Flashback_PORTABLE_RESTORE_MODES.SAME_CHAT]: {
           allowed: sameChat,
@@ -58351,8 +58356,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
           reason: sameChat ? 'same_chat_use_replace'
             : !stableCharacterId(sourceCharacterId) || !stableCharacterId(targetCharacterId) ? 'character_identity_missing'
               : !differentCharacter ? 'same_character_use_copy'
-                : !target.empty ? 'target_not_empty'
-                  : !updatedBotTranscriptMatches ? 'updated_bot_transcript_mismatch' : 'updated_bot_ready'
+                : alreadyAppliedUpdatedBot ? 'updated_bot_already_applied'
+                  : !target.empty ? 'target_not_empty'
+                    : !updatedBotTranscriptMatches ? 'updated_bot_transcript_mismatch' : 'updated_bot_ready'
         }
       };
       return { envelope, payload, target, sameChat, actorMatches, transcriptMatches, modes,
@@ -59181,6 +59187,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       same_chat_use_replace: '같은 채팅 백업은 기본 복원을 사용하세요.',
       source_actor_mismatch: '캐릭터 또는 Persona가 일치하지 않습니다.',
       target_not_empty: '대상 채팅의 Flashback 저장소가 비어 있지 않습니다.',
+      updated_bot_already_applied: '이미 이 백업으로 업데이트된 봇 이어하기가 완료되어 있습니다. 다시 실행할 필요가 없습니다.',
       archive_migration_ready: '과거 세션 아카이브로 안전하게 연결할 수 있습니다.',
       transcript_fingerprint_mismatch: '백업 당시 대화와 현재 대화의 지문 또는 메시지 수가 다릅니다.',
       chat_copy_ready: '현재 대화가 백업 당시 채팅과 정확히 일치합니다.',

@@ -27560,15 +27560,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     for(const record of records){const n=Number(record.targetPairIndex);if(!byTurn.has(n))byTurn.set(n,[]);byTurn.get(n).push(record);}
     const tombstones=ensureArray(ledger.tombstones).map(normalizeStorageTombstone).filter(t=>t?.active===true);
     const bodyValid=new Map();
+    const isArchivedPortableCold = r => r?.captureSource === 'shared_archive_layer'
+      && text(r?.packetType || '').toLowerCase() === 'cold_start_snapshot'
+      && r?.recordState === 'historical'
+      && Boolean(text(r?.coldStartEpochId || ''))
+      && Boolean(ledger?.portableImport?.mode && isCopyRecoveryMode(ledger.portableImport.mode));
     const verifiedBody=record=>{
       const key=record.hash+'\u0001'+record.recordId;
       if(bodyValid.has(key))return bodyValid.get(key);
       const raw=text(record.raw||'').trim();const parsed=safeJsonParse(raw,null);
+      const bridgeLike = isBridgeAnalysisCaptureSource(record.captureSource) || isArchivedPortableCold(record);
       const valid=!!raw && record.hash===stableHash64(raw) && objectish(parsed)
-        && (isBridgeAnalysisCaptureSource(record.captureSource)?validateBridgeAnalysisPacket(parsed,record.captureSource):validateHayakuPacket(parsed)).ok===true;
+        && (bridgeLike?validateBridgeAnalysisPacket(parsed, isArchivedPortableCold(record) ? 'bridge_cold_start' : record.captureSource):validateHayakuPacket(parsed)).ok===true;
       bodyValid.set(key,valid);return valid;
     };
-    const historicalCold=records.filter(r=>r.captureSource==='bridge_cold_start'&&r.recordState==='historical'&&(!ledger.coldStart?.activeEpochId||r.coldStartEpochId===ledger.coldStart.activeEpochId)&&verifiedBody(r));
+    const historicalCold=records.filter(r=>((r.captureSource==='bridge_cold_start'&&r.recordState==='historical'&&(!ledger.coldStart?.activeEpochId||r.coldStartEpochId===ledger.coldStart.activeEpochId))||isArchivedPortableCold(r))&&verifiedBody(r));
     const coldTurns=new Set(bridgeAnalyzedPairIndices(historicalCold,ledger));
     const rows=pairs.map(pair=>{
       const turn=Number(pair.pairIndex),owner=activeWorldlineNodeForPair(worldline,pair,activeByTurn);
@@ -40522,6 +40528,11 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const ledgerRecords = ensureArray(ledger?.records);
     const activeColdStartEpochId = compact(ledger?.coldStart?.activeEpochId || '', 128);
     const expectedColdRecords = finiteNonNegativeInteger(ledger?.coldStart?.recordCount, 0);
+    const isArchivedPortableCold = r => r?.captureSource === 'shared_archive_layer'
+      && textValue(r?.packetType).toLowerCase() === 'cold_start_snapshot'
+      && r?.recordState === 'historical'
+      && Boolean(textValue(r?.coldStartEpochId))
+      && Boolean(ledger?.portableImport?.mode && isCopyRecoveryMode(ledger.portableImport.mode));
     const coldGroupRecords = ledgerRecords.filter(record => (
       record?.captureSource === 'bridge_cold_start'
       && (record?.recordState === 'historical' || record?.recordState === 'tombstoned'
@@ -40546,11 +40557,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     const covered = new Set();
     ensureArray(records).forEach(record => {
       const state = compact(record?.recordState || '', 32);
-      const coldStartRecord = record?.captureSource === 'bridge_cold_start'
+      const coldStartRecord = (record?.captureSource === 'bridge_cold_start'
         && state === 'historical'
         && coldGroupComplete
         && (!activeColdStartEpochId
-          || compact(record?.coldStartEpochId || '', 128) === activeColdStartEpochId);
+          || compact(record?.coldStartEpochId || '', 128) === activeColdStartEpochId))
+        || isArchivedPortableCold(record);
       const recordRecoveryId = compact(record?.incrementalRecoveryRunId || '', 128);
       const incrementalRecord = record?.captureSource === 'bridge_incremental_recovery'
         && state === 'active'
@@ -66508,13 +66520,25 @@ function mountMemorySuiteReanalysisReview(container,config) {
           && textValue(record?.userHash) === textValue(sourcePair.userHash)
           && textValue(record?.assistantVisibleHash) === textValue(sourcePair.assistantVisibleHash);
       });
-      const historicalRecords = ensureArray(source.ledger.records).filter(record => (
+      const sourceColdEpoch = textValue(source.ledger?.coldStart?.activeEpochId);
+      const coldStartRecords = ensureArray(source.ledger.records).filter(record => {
+        if (record?.captureSource !== 'bridge_cold_start' || record?.recordState !== 'historical') return false;
+        if (sourceColdEpoch && textValue(record?.coldStartEpochId) !== sourceColdEpoch) return false;
+        const range = storageRecordTurnRange(record);
+        if (!range.turnStart || !range.turnEnd || range.turnEnd < range.turnStart) return false;
+        for (let t = range.turnStart; t <= range.turnEnd; t += 1) {
+          if (!pairMatch.mapping.has(t)) return false;
+        }
+        return true;
+      });
+      const coldStartSet = new Set(coldStartRecords);
+      const historicalRecords = ensureArray(source.ledger.records).filter(record => !coldStartSet.has(record) && (
         record?.inheritedSessionHistory === true
         || record?.memoryClass === 'historical'
         || record?.recordState === 'historical'
         || record?.permanentSessionHistory === true
       ));
-      if (!matchedRecords.length && !historicalRecords.length) throw new Error('portable_copy_no_verified_matches');
+      if (!matchedRecords.length && !coldStartRecords.length && !historicalRecords.length) throw new Error('portable_copy_no_verified_matches');
       // Another bot is only "the same session" when its transcript is the backup's transcript.
       if (updatedBot && !pairMatch.mapping.size) throw new Error('portable_updated_bot_transcript_mismatch');
       return {
@@ -66533,6 +66557,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
         pairMatch,
         liveRecords,
         matchedRecords,
+        coldStartRecords,
         historicalRecords,
         matchedPairs: pairMatch.mapping.size,
         ambiguousPairs: pairMatch.ambiguous,
@@ -66669,7 +66694,30 @@ function mountMemorySuiteReanalysisReview(container,config) {
         });
         if (normalized) cloned.push(normalized);
       }
-      if (!cloned.length && !archivedRecords) throw new Error('portable_copy_no_importable_records');
+      const reboundColdStart = [];
+      for (const record of ensureArray(prepared.coldStartRecords)) {
+        const range = storageRecordTurnRange(record);
+        const mappedStart = prepared.pairMatch.mapping.get(range.turnStart);
+        const mappedEnd = prepared.pairMatch.mapping.get(range.turnEnd);
+        if (!mappedStart || !mappedEnd) continue;
+        const normalizedCold = normalizeStorageRecord({
+          ...record,
+          recordId: undefined,
+          captureSource: 'bridge_cold_start',
+          recordState: 'historical',
+          memoryClass: 'historical',
+          inheritedSessionHistory: true,
+          inheritedFromScopeKey: `cold_start:${textValue(prepared.targetScope?.key)}`,
+          inheritedViaScopeKey: prepared.sourceScopeKey,
+          coldStartEpochId: textValue(record?.coldStartEpochId || prepared.ledger?.coldStart?.activeEpochId),
+          recoveryTurnStart: Number(mappedStart.pairIndex || range.turnStart),
+          recoveryTurnEnd: Number(mappedEnd.pairIndex || range.turnEnd),
+          portableSourceScopeKey: prepared.sourceScopeKey,
+          portableEnvelopeDigest: textValue(envelope.integrity?.digest || envelope.integrity?.fallbackDigest)
+        });
+        if (normalizedCold) reboundColdStart.push(normalizedCold);
+      }
+      if (!cloned.length && !reboundColdStart.length && !archivedRecords) throw new Error('portable_copy_no_importable_records');
       const portableCopyRebase = {
         verified: true,
         mode: prepared.mode,
@@ -66686,11 +66734,20 @@ function mountMemorySuiteReanalysisReview(container,config) {
       }, prepared.snapshot, prepared.targetScope);
       const coalesced = coalesceStorageVariantRecords([
         ...ensureArray(prepared.targetLedger.records).filter(record => record?.archiveReferenceOnly !== true),
-        ...cloned
+        ...cloned,
+        ...reboundColdStart
       ]);
+      const nextColdStart = reboundColdStart.length ? {
+        activeEpochId: textValue(prepared.ledger?.coldStart?.activeEpochId || reboundColdStart[0]?.coldStartEpochId),
+        transferId: textValue(prepared.ledger?.coldStart?.transferId || reboundColdStart[0]?.coldStartTransferId),
+        sourceHash: textValue(prepared.ledger?.coldStart?.sourceHash || reboundColdStart[0]?.coldStartSourceHash),
+        adoptedAt: Number(prepared.ledger?.coldStart?.adoptedAt || Date.now()),
+        recordCount: reboundColdStart.length
+      } : prepared.targetLedger.coldStart;
       let workingLedger = {
         ...prepared.targetLedger,
         archiveRef,
+        coldStart: nextColdStart,
         worldline: targetWorldline,
         records: coalesced.records
       };
@@ -66699,7 +66756,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       const heads = reconcileStorageSlotHeads(binding.ledger, binding.activeRecords, liveChatRecords);
       const receipt = portableImportReceipt(prepared, envelope, {
         matchedPairs: prepared.matchedPairs,
-        importedRecords: cloned.length,
+        importedRecords: cloned.length + reboundColdStart.length,
         archivedRecords,
         ambiguousPairs: prepared.ambiguousPairs,
         unmatchedPairs: prepared.unmatchedPairs,
@@ -66710,6 +66767,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       workingLedger = {
         ...heads.ledger,
         archiveRef,
+        coldStart: nextColdStart,
         worldline: targetWorldline,
         portableImport: receipt
       };
