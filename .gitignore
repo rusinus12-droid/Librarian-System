@@ -108,3 +108,6 @@ id_ed25519*
 coverage/
 test-results/
 playwright-report/
+
+# Claude Code local worktrees and scratch
+/.claude/

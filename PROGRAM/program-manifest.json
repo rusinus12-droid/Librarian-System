@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-21T02:58:16.938Z",
+  "generatedAt": "2026-11-21T04:20:20.424Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -7152,8 +7152,8 @@
       "bytes": 11398
     },
     "tests/gradia/suite-inventory.json": {
-      "sha256": "5eb96f3b9e874556fab75efc7d2f5fca416b10e201f8628605edd84070c2ce56",
-      "bytes": 1909
+      "sha256": "d85c1a69461ffd2a8849f5382d0e554ded0b0d7a97e21e85c9b032803caa792a",
+      "bytes": 1949
     },
     "tests/gradia/turn-eligibility.test.cjs": {
       "sha256": "3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0",
@@ -10812,8 +10812,8 @@
       "bytes": 3500
     },
     "tests/program_data_layout_test.cjs": {
-      "sha256": "e1f7ab67c901607b8e883564eb29dc51f7959553b55091abd312291bfe3e1c4b",
-      "bytes": 14256
+      "sha256": "3e452d4558659f7ed95d06c47e67e2a2a9b5df8e5beeae734a809e362b65cb65",
+      "bytes": 15588
     },
     "tests/rag_eval_flashback_floor_test.cjs": {
       "sha256": "bf7d335985a5c2ba1b792d6db2d48d451572534882a179c0278ae3ce0bf6e99c",
@@ -12192,8 +12192,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "f091233df5a6646f21dd8b78dd00eb57d6bdf43602030437ed5af244196829e1",
-      "bytes": 61545
+      "sha256": "d1549e9156563aa819bc0ce32a819dd85d90de7e5812a885d72d410ee7ef59da",
+      "bytes": 62029
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",

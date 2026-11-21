@@ -391,10 +391,17 @@ function shouldCopyUpdater(relativePath) {
   return REQUIRED_UPDATER_FILES.has(normalized);
 }
 
+// The updater writes these while it runs (its log, the operation lock, the last update state).
+// They are gitignored, are never part of the distribution (copying is allowlisted by
+// shouldCopyUpdater), and a developer who ran the updater from the source tree must not fail
+// the updater-source cleanliness gate because of them.
+const UPDATER_RUNTIME_STATE = /^(?:logs(?:\/|$)|operation-lock\.sqlite$|update-state\.json$)/;
+
 function assertUpdaterSourceClean(updaterRoot) {
   const root = path.resolve(updaterRoot);
   const actual = listFiles(root).map(file => path.relative(root, file).split(path.sep).join('/'));
   for (const relative of actual) {
+    if (UPDATER_RUNTIME_STATE.test(relative)) continue;
     if (UPDATER_SENSITIVE_PATH_PATTERN.test(relative)) throw new Error(`distribution_updater_sensitive_file_detected:${relative}`);
     if (!REQUIRED_UPDATER_FILES.has(relative)) throw new Error(`distribution_updater_file_not_allowlisted:${relative}`);
   }
