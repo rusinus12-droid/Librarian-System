@@ -30270,16 +30270,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const buildShadowPreviousRecord = (recent = {}, settings = {}) => {
     const rawLib = libEvidenceWithoutMarkers(settings);
+    const isManagedEvidenceBlock = /^\s*GRADIA EXTERNAL EVIDENCE:\s*UNTRUSTED QUOTED DATA/m.test(String(rawLib || ''));
     const libFacts = [];
     let libChars = 0;
-    for (const rawLine of String(rawLib || '').split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line || /^\[?(?:GRADIA EXTERNAL EVIDENCE|LIBRA|HAYAKU|FLASHBACK|MEMORY|STORY ARC)/i.test(line)) continue;
-      const cleaned = compact(line.replace(/^[-*•]\s*/, ''), 180);
-      if (!cleaned) continue;
-      if (libChars + cleaned.length > 900 || libFacts.length >= 10) break;
-      libFacts.push(cleaned);
-      libChars += cleaned.length;
+    if (!isManagedEvidenceBlock) {
+      for (const rawLine of String(rawLib || '').split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || /^\[?(?:GRADIA EXTERNAL EVIDENCE|LIBRA|HAYAKU|FLASHBACK|MEMORY|STORY ARC)/i.test(line)) continue;
+        const cleaned = compact(line.replace(/^[-*•]\s*/, ''), 180);
+        if (!cleaned) continue;
+        if (libChars + cleaned.length > 900 || libFacts.length >= 10) break;
+        libFacts.push(cleaned);
+        libChars += cleaned.length;
+      }
     }
 
     const currentInput = text(submittedCurrentInput(recent) || '').trim();

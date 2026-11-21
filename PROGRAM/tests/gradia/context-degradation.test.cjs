@@ -22,7 +22,7 @@ test('an oversized request is degraded and the loss is recorded instead of faili
   const prompts=[];
   const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
   await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
-    model:'tight-model',context_window:16000,max_tokens:16384,timeout_ms:5000,stream:false});
+    model:'tight-model',context_window:15750,max_tokens:16384,timeout_ms:5000,stream:false});
   await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
     failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
   await f.connect();
@@ -35,7 +35,7 @@ test('an oversized request is degraded and the loss is recorded instead of faili
   assert.equal(record.stage,'shadow_act');
   assert.ok(record.dropped.includes('output_tokens'),`output reservation was not reduced: ${JSON.stringify(record.dropped)}`);
   assert.ok(record.outputAfter<record.outputBefore,'the output reservation shrank');
-  assert.equal(record.contextLimit,16000);
+  assert.equal(record.contextLimit,15750);
   const draftBudget=Number(prompts[0].max_tokens||prompts[0].max_completion_tokens||0);
   assert.ok(draftBudget>0&&draftBudget<16384,`the request carried the reduced budget (got ${draftBudget})`);
   assert.ok(!JSON.stringify(prompts[0]).includes('memory:'),'no owner memory text is forced into the oversized draft');
