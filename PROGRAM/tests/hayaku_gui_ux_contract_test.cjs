@@ -39,7 +39,9 @@ assert.ok(source.includes("node.setAttribute('aria-current', 'page')"), 'active 
 assert.ok(source.includes("node.setAttribute('tabindex', selected ? '0' : '-1')"), 'active sidebar destination must use roving tabindex');
 
 for (const id of [
+  'hayakuHeaderPacketMode',
   'hayakuOverviewHealth',
+  'hayakuOverviewPacketModeCard',
   'hayakuOverviewPackets',
   'hayakuOverviewCoverage',
   'hayakuOverviewJournal',

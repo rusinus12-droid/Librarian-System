@@ -67,6 +67,14 @@ const pureTimeline = core => {
   // Malformed reports are no report.
   view = t(clock([[1, {kind: 'days', days: 0}], [2, {kind: 'date', date: '2026-02-30'}], [3, {kind: 'later'}]]), pairs(3));
   assert.ok(view.entries.every(e => !e.known) && view.current === null);
+  // Equivalent revision IDs allow a stored pair to remain recorded when the current revision rotated without changing the turn.
+  const eqPairs = pairs(3);
+  eqPairs[1].equivalentRevisionIds = ['old-eq-2'];
+  view = t(clock([[1, {kind: 'none'}], [2, {kind: 'days', days: 2}, 'old-eq-2'], [3, {kind: 'days', days: 1}]]), eqPairs);
+  assert.deepEqual(view.entries.map(e => [e.day, e.status, e.estimated]), [[1, 'recorded', false], [3, 'recorded', false], [4, 'recorded', false]]);
+  eqPairs[1].equivalentRevisionIds = ['other-rev'];
+  view = t(clock([[1, {kind: 'none'}], [2, {kind: 'days', days: 2}, 'old-eq-2'], [3, {kind: 'days', days: 1}]]), eqPairs);
+  assert.deepEqual(view.entries.map(e => [e.day, e.status, e.estimated]), [[1, 'recorded', false], [1, 'missing', true], [2, 'recorded', true]]);
 };
 
 (async () => {
@@ -182,6 +190,25 @@ const pureTimeline = core => {
         assert.equal(entry.day, item.expectedDay);
         assert.equal(entry.timeOfDay, item.expectedTod);
       }
+
+      // Regression: adding an ignored tag (which rotates rawPayloadDigests and completedTurnRevisionId
+      // while leaving filtered turn text identical) must NOT mark the story clock turn as stale.
+      const turn7Msg = f.chat.message.find(m => m.chatId === 't7-a');
+      const turn7OrigData = turn7Msg.data;
+      turn7Msg.data = `${turn7OrigData}\n<thought>ignored-memo</thought>`;
+      let filterClock = await api.getStoryClock();
+      assert.deepEqual([6, 7, 8].map(t => {
+        const e = filterClock.entries.find(row => row.turn === t);
+        return [e.day, e.status, e.estimated];
+      }), [[1, 'recorded', false], [1, 'recorded', false], [2, 'recorded', false]], 'filter-equivalent turn keeps story clock');
+      // A real dialogue edit must still invalidate the turn and mark later turns estimated.
+      turn7Msg.data = '완전히 다른 내용으로 수정되었다.';
+      filterClock = await api.getStoryClock();
+      const editedTurn7 = filterClock.entries.find(row => row.turn === 7);
+      const afterTurn7 = filterClock.entries.find(row => row.turn === 8);
+      assert.equal(editedTurn7.status, 'missing', 'real dialogue edit invalidates story clock entry');
+      assert.equal(afterTurn7.estimated, true, 'later turn becomes estimated after real edit');
+      turn7Msg.data = turn7OrigData;
 
       console.log(`PASS story clock accumulation, anchor, correction, persistence and lens days in ${mode}`);
     } finally { await fixture.cleanup(); }

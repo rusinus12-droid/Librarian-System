@@ -340,5 +340,56 @@ test('late publication repair result from an old scope is not shown in the new d
   assert.equal(calls,1);assert.equal(c.Gui.receiptDesk.scopeKey,'scope-B');
   assert.equal(c.Gui.receiptDesk.status,null);
 });
+test('live micro/lens publication and turn count changes force status and lens refresh when already loaded',async()=>{
+  let statusCalls=0,lensCalls=0;
+  const captureState={lastMicroPublication:{at:100,scopeKey:'scope-A'},lastLensPublication:{at:100,scopeKey:'scope-A'}};
+  const {c,current}=deskContext({
+    getCaptureBackendState:()=>captureState,
+    getReceiptRecoveryStatus:async()=>{statusCalls++;return {scopeKey:'scope-A',receiptStages:[],microJobs:[]};},
+    listReanalysisRanges:async({kind})=>{assert.equal(kind,'lens');lensCalls++;return {scopeKey:'scope-A',kind:'lens',lensId:'L1',lenses:[{lensId:'L1',name:'관계',status:'active',analysisSpan:5}],ranges:[]};}
+  });
+  current.pairs=[{}];
+  await c.loadBookReceiptRecoveryStatus();
+  assert.equal(statusCalls,1);assert.equal(lensCalls,1);
+  // Same signals -> no extra load on re-render
+  c.buildBookDeskPanel();await tick();
+  assert.equal(statusCalls,1);assert.equal(lensCalls,1);
+  // New micro publication -> forces status + lens refresh
+  captureState.lastMicroPublication={at:200,scopeKey:'scope-A'};
+  c.buildBookDeskPanel();await tick();await tick();
+  assert.equal(statusCalls,2);assert.equal(lensCalls,2);
+  // New lens publication -> forces status + lens refresh
+  captureState.lastLensPublication={at:300,scopeKey:'scope-A'};
+  c.buildBookDeskPanel();await tick();await tick();
+  assert.equal(statusCalls,3);assert.equal(lensCalls,3);
+  // New turn -> forces status + lens refresh
+  current.pairs=[{},{}];
+  c.buildBookDeskPanel();await tick();await tick();
+  assert.equal(statusCalls,4);assert.equal(lensCalls,4);
+});
+test('background poll skips queueGuiNavigationRender when status and lens are unchanged',async()=>{
+  let renders=0,lensStatus='missing';
+  const timers=[];
+  const {c}=deskContext({
+    getReceiptRecoveryStatus:async()=>({scopeKey:'scope-A',receiptStages:[{scopeKey:'scope-A',turn:1,status:'verified'}],microJobs:[{scopeKey:'scope-A',turn:1,status:'succeeded'}]}),
+    listReanalysisRanges:async()=>({scopeKey:'scope-A',kind:'lens',lensId:'L1',lenses:[{lensId:'L1',name:'관계',status:'active',analysisSpan:5}],ranges:[{key:'1-5',start:1,end:5,label:'T1–T5',status:lensStatus}]})
+  });
+  c.queueGuiNavigationRender=()=>{renders++;};
+  c.setTimeout=(callback,delay)=>{const timer={callback,delay,unref(){}};timers.push(timer);return timer;};
+  c.clearTimeout=()=>{};
+  await c.loadBookReceiptRecoveryStatus();
+  assert.equal(renders,1,'initial load renders');
+  // Poll with unchanged data -> skips render
+  timers[0].callback();await tick();await tick();
+  assert.equal(renders,1,'unchanged poll must not trigger a re-render');
+  // Poll when lens changes (6th poll or forced) -> triggers render
+  lensStatus='saved';
+  await c.loadBookReceiptRecoveryStatus(true,{lens:true});
+  assert.equal(renders,2,'changed lens triggers re-render');
+});
+test('worldline turn list CSS disables scroll anchoring and avoids content-visibility height oscillation',()=>{
+  assert.match(source,/\.wl-list\{[^}]*overflow-anchor:none/);
+  assert.doesNotMatch(source,/\.wl-list>\.wl-row[^{]*\{[^}]*content-visibility:auto/);
+});
 (async()=>{let failed=0;for(const {name,fn} of cases){try{await fn();console.log('PASS '+name);}catch(error){failed++;console.error('FAIL '+name,error);}}
  console.log(`RESULT ${cases.length-failed}/${cases.length} passed`);if(failed)process.exitCode=1;})().catch(error=>{console.error(error);process.exitCode=1;});

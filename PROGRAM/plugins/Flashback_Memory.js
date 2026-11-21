@@ -1,7 +1,7 @@
 //@name flashback_memory
-//@display-name ⚡ FLASHBACK Memory v2.1.0
+//@display-name ⚡ FLASHBACK Memory v2.1.1
 //@api 3.0
-//@version 2.1.0
+//@version 2.1.1
 //@allowed-ipc serial_gradation_agents_for_rp
 //@allowed-ipc flashback_hayaku_bridge
 //@allowed-ipc libra
@@ -1340,7 +1340,7 @@ const MemorySuiteExecutionContract = (() => {
   const PLUGIN_STORAGE_ID = 'vector_rag_memory';
   const PLUGIN_SLUG = 'flashback_memory';
   const PLUGIN_NAME = '⚡ FLASHBACK Memory';
-const PLUGIN_VERSION = '2.1.0';
+const PLUGIN_VERSION = '2.1.1';
   const FLASHBACK_CAPTURE_BACKENDS = Object.freeze({
     CHAT_OUTPUT_V3: 'chat_output_v3',
     SCRIPT_OUTPUT_LEGACY: 'script_output_legacy',
@@ -32044,15 +32044,25 @@ function memorySuiteProjectSourceRules(value,rules) {
   }
   // A malformed selection fails back to the full original, not a partial projection.
   if(warnings.length)return {text:String(value??''),warnings};
-  const dropped=memorySuiteSourceRanges(body,rules.ignoredTags);
-  if(dropped.invalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제외 태그는 보존합니다.');
-  if(!dropped.invalid)body=memorySuiteEraseSourceRanges(body,dropped.ranges.filter(r=>{
+  let dropInvalid=false;const dropRanges=[];
+  for(const entry of rules.ignoredTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)dropInvalid=true;
+    else dropRanges.push(...part.ranges);
+  }
+  if(dropInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제외 태그는 보존합니다.');
+  if(dropRanges.length)body=memorySuiteEraseSourceRanges(body,dropRanges.filter(r=>{
     const opening=body.slice(r.start,r.innerStart);
     return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());
   }));
-  const unwrapped=memorySuiteSourceRanges(body,rules.unwrapTags);
-  if(unwrapped.invalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제거 표식은 보존합니다.');
-  else body=memorySuiteEraseSourceRanges(body,unwrapped.tokens);
+  let unwrapInvalid=false;const unwrapTokens=[];
+  for(const entry of rules.unwrapTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)unwrapInvalid=true;
+    else unwrapTokens.push(...part.tokens);
+  }
+  if(unwrapInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제거 표식은 보존합니다.');
+  if(unwrapTokens.length)body=memorySuiteEraseSourceRanges(body,unwrapTokens);
   for(const control of rules.controls){
     if(control==='html-comment')body=body.replace(/<!--[\s\S]*?-->/g,'');
     if(control==='lbdata')body=body.replace(/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'');
@@ -32380,7 +32390,7 @@ function mountMemorySuiteSourceTagFinder(host, config) {
       if(row.name==='lb-xnai')text.append(make('small','안에 서술이 있으면 그 서술은 분석에 남고, 이미지 호출만 빠집니다.'));
       const actions=make('div');actions.className='ms-finder-actions';
       if(draft&&row.treatment==='analyzed'){
-        const actionsFor=row.kind==='control'?[['ignoredTags','분석에서 빼기']]:[['ignoredTags','분석에서 빼기'],['unwrapTags','태그만 지우기']];
+        const actionsFor=row.kind==='control'?[['ignoredTags','원문 태그 필터에 등록']]:[['ignoredTags','원문 태그 필터에 등록'],['unwrapTags','태그만 지우기']];
         for(const [key,label] of actionsFor){const add=make('button',label);add.type='button';add.dataset.sourceTagFinderAdd=key;add.disabled=config.busy?.()===true;
           add.onclick=()=>{if(config.busy?.()===true)return;config.addRule(row.kind==='control'?row.name:row.name,key);render();};actions.append(add);}
       }
@@ -32433,10 +32443,12 @@ function memorySuiteMarkSourceProjection(value, rules) {
     }
   }
   if(!failedBack){
-    const dropped=memorySuiteSourceRanges(body,rules.ignoredTags);
-    if(!dropped.invalid)erase(dropped.ranges.filter(r=>{const opening=body.slice(r.start,r.innerStart);return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());}));
-    const unwrapped=memorySuiteSourceRanges(body,rules.unwrapTags);
-    if(!unwrapped.invalid)erase(unwrapped.tokens);
+    const dropRanges=[];
+    for(const entry of rules.ignoredTags){const part=memorySuiteSourceRanges(body,[entry]);if(!part.invalid)dropRanges.push(...part.ranges);}
+    if(dropRanges.length)erase(dropRanges.filter(r=>{const opening=body.slice(r.start,r.innerStart);return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());}));
+    const unwrapTokens=[];
+    for(const entry of rules.unwrapTags){const part=memorySuiteSourceRanges(body,[entry]);if(!part.invalid)unwrapTokens.push(...part.tokens);}
+    if(unwrapTokens.length)erase(unwrapTokens);
     const patterns={'html-comment':/<!--[\s\S]*?-->/g,'lbdata':/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'inlay':/\{\{inlay::[^{}\r\n]+\}\}/gi,
       'suite-blocks':/\[(HAYAKU (?:PACKET MEMORY|PACKET WRITE|CONTINUITY CONTEXT|IMMUTABLE CORE|RAW SOURCE ATTACHMENT|RAW SOURCE TIMELINE)|VECTOR RAG MEMORY|FLASHBACK EVIDENCE|ACTIVE CONTINUITY EVIDENCE|PAST EVIDENCE RULES)\][\s\S]*?\[\/\1\]|<<<\s*HAYAKU_STATE_PACKET_START\s*>>>[\s\S]*?<<<\s*HAYAKU_STATE_PACKET_END\s*>>>|HAYAKU_STATE_PACKET_START\b[\s\S]*?\bHAYAKU_STATE_PACKET_END/gi};
     for(const control of rules.controls)if(patterns[control])erase([...body.matchAll(patterns[control])].map(m=>({start:m.index,end:m.index+m[0].length})));
@@ -32674,10 +32686,11 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
   const check=async()=>{if(!config.sync)return;peerStates={};draw();try{peerStates=await config.sync.compareBudget();}catch{peerStates={};}draw();};
   const reason=error=>/CONFLICT/.test(error||'')?'그사이 그 플러그인의 예산이 바뀌어 덮어쓰지 않음':/BUSY/.test(error||'')?'처리 중이라 저장하지 못함':/TIMEOUT|UNAVAILABLE/.test(error||'')?'응답 없음':/UNSUPPORTED|ACTION_INVALID/.test(error||'')?'이 기능이 없는 버전':error;
   for(const node of [enabled,total,...Object.values(shares)])node.addEventListener(node===enabled?'change':'input',()=>{if(loaded)status.textContent='바꾼 예산을 적용해 주세요.';draw();});
-  apply.onclick=async()=>{
-    if(!loaded||busy||config.busy?.()===true)return;
-    let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
-    if(savedFingerprint()!==savedAtFill&&!overwriteConfirmed){overwriteConfirmed=true;status.textContent='그사이 다른 기억 플러그인에서 예산이 바뀌었습니다. 이 값으로 덮어쓰려면 예산 적용을 한 번 더 누르세요.';return;}
+  const applyBudget=async()=>{
+    if(!loaded||busy||config.busy?.()===true)return {ok:false,skipped:true};
+    let value;try{value=draft();}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
+    if(fingerprint(value)===initial)return {ok:true,skipped:true};
+    if(savedFingerprint()!==savedAtFill&&!overwriteConfirmed){overwriteConfirmed=true;status.textContent='그사이 다른 기억 플러그인에서 예산이 바뀌었습니다. 이 값으로 덮어쓰려면 예산 적용을 한 번 더 누르세요.';return {ok:false,error:status.textContent};}
     busy=true;status.textContent='적용 중…';draw();
     try{
       await config.policy.setRecallBudget(value);fill();
@@ -32691,14 +32704,18 @@ function mountMemorySuiteRecallBudgetPanel(host, config) {
           await check();
         }else status.textContent='예산을 적용했습니다.';
       }else status.textContent='예산을 적용했습니다.';
-    }catch(e){status.textContent='적용 실패: '+String(e.message||e);}
+      config.onApplied?.(value);
+      return {ok:true,applied:true};
+    }catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
     finally{busy=false;draw();}
   };
+  apply.onclick=()=>applyBudget();
+  area.__msApplyPending=applyBudget;
   // Another plugin applied a budget here: an untouched panel shows it, an edited one keeps the draft.
   const unsubscribe=config.sync?.subscribeBudget?.(()=>{
     if(!area.isConnected||config.isDisposed?.()===true){unsubscribe();return;}
     if(!loaded||busy)return;
-    if(fingerprint(draftOrNull()||config.policy.recallBudget())===initial){fill();status.textContent='다른 기억 플러그인에서 바뀐 예산을 불러왔습니다.';void check();}
+    if(fingerprint(draftOrNull()||config.policy.recallBudget())===initial){fill();status.textContent='다른 기억 플러그인에서 바뀐 예산을 불러왔습니다.';void check();config.onApplied?.(config.policy.recallBudget());}
     else{overwriteConfirmed=false;status.textContent='다른 기억 플러그인에서 예산을 바꿨습니다. 지금 값을 적용하면 그 예산을 덮어씁니다.';void check();}
   })||(()=>{});
   const load=()=>{loaded=true;fill();void check();};
@@ -32744,14 +32761,14 @@ function mountMemorySuiteSourceInputControls(container, config) {
     remoteNotice.className='ms-input-defaults-notice';remoteNotice.dataset.sourceRemoteChanged='';remoteNotice.setAttribute('role','alert');remoteNotice.hidden=true;
     remoteLoad.type='button';remoteLoad.dataset.sourceRemoteLoad='';remoteNotice.append(remoteText,remoteLoad);
     box.append(style,toolbar,status,remoteNotice,noticeHost,syncHost,hint,head,list);
-    const budgetPanel=typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
+    const budgetPanel=config.includeRecallBudget!==false&&typeof policy.recallBudget==='function'?mountMemorySuiteRecallBudgetPanel(budgetHost,{policy,sync:config.ruleSync||null,busy:()=>config.busy?.()===true,isDisposed:disposed}):null;
     const previewArea=make('section'),previewButton=make('button','현재 채팅 미리보기'),previewStatus=make('p'),warning=make('p'),output=make('pre');
     previewArea.className='ms-input-preview';previewButton.type='button';previewButton.dataset.sourceInputPreview='';previewButton.disabled=true;
     previewStatus.dataset.sourceInputPreviewStatus='';previewStatus.setAttribute('role','status');previewStatus.setAttribute('aria-live','polite');
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output,previewListHost);box.append(finderHost,previewArea);
-    box.append(budgetHost);const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    if(budgetPanel)box.append(budgetHost);const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],removed=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -32873,21 +32890,23 @@ function mountMemorySuiteSourceInputControls(container, config) {
     add.onclick=()=>{if(!loaded||applying||disposed())return;const row=rows.find(isEmpty)||addRow();row.element.scrollIntoView?.({block:'nearest'});row.value.focus();};
     undo.onclick=()=>{if(!loaded||applying||disposed())return;const entry=removed.pop();if(!entry)return;const index=Math.min(entry.index,rows.length);list.insertBefore(entry.row.element,rows[index]?.element||null);rows.splice(index,0,entry.row);changed();status.textContent='삭제한 규칙을 되돌렸습니다. 적용 전입니다.';};
     defaults.onclick=()=>{if(!loaded||applying||disposed())return;fill({...memorySuiteDefaultSourceRules(owner),ignoredTags:[...new Set([...memorySuiteSourceIgnoredTags(),'thoughts',...memorySuiteDefaultPresentationTags()])].sort()},false);changed();status.textContent='기본 규칙을 복원한 초안입니다. 적용을 눌러야 저장됩니다.';};
-    apply.onclick=async()=>{
-      if(!loaded||applying||disposed())return;
-      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return;}catch(e){status.textContent='적용 실패: '+String(e.message||e);return;}
+    const applyDraft=async()=>{
+      if(!loaded||applying||disposed())return {ok:false,skipped:true};
+      let rules;try{rules=readDraft();if(fingerprint(rules)===initial)return {ok:true,skipped:true};}catch(e){status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:status.textContent};}
       // The saved rules moved since this draft began (another plugin applied them): say so and
       // overwrite only on a second 적용.
       if(remoteChanged()&&!overwriteConfirmed){
         overwriteConfirmed=true;remoteNotice.hidden=false;
         remoteText.textContent='다른 기억 플러그인에서 이 플러그인의 규칙을 바꿨습니다. 지금 초안을 적용하면 그 규칙을 덮어씁니다.';
-        status.textContent='그사이 저장된 규칙이 바뀌었습니다. 초안으로 덮어쓰려면 적용을 한 번 더 누르세요.';return;
+        status.textContent='그사이 저장된 규칙이 바뀌었습니다. 초안으로 덮어쓰려면 적용을 한 번 더 누르세요.';return {ok:false,error:status.textContent};
       }
       applying=true;status.textContent='적용 중…';setEnabled();
-      try{await setSourceRules(rules);if(disposed())return;fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));}
-      catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);}
+      try{await setSourceRules(rules);if(disposed())return {ok:false,skipped:true};fill();status.textContent='규칙을 적용했습니다. 기존 기억은 유지됩니다.';await showPreview();previewList.refresh();void syncPanel?.afterApply(memorySuiteSourceRules(owner));return {ok:true,applied:true};}
+      catch(e){if(!disposed())status.textContent='적용 실패: '+String(e.message||e);return {ok:false,error:String(e.message||e)};}
       finally{applying=false;if(!disposed())setEnabled();}
     };
+    apply.onclick=()=>applyDraft();
+    box.__msApplyPending=applyDraft;
     previewButton.onclick=async()=>{
       if(!loaded||readingSample||disposed()||typeof config.readSample!=='function')return;
       readingSample=true;sample=null;void previewList.load();const version=++previewVersion;output.textContent='';output.hidden=true;warning.textContent='';warning.hidden=true;previewStatus.textContent='현재 채팅을 읽는 중…';setEnabled();
@@ -33659,7 +33678,30 @@ const MemorySuiteHealthRecovery = (() => {
   let flashbackSourceRuleSync=null;
   const getFlashbackSourceRuleSync=()=>flashbackSourceRuleSync||(flashbackSourceRuleSync=createMemorySuiteSourceRuleSync({owner:'flashback',policy:getFlashbackSourceInput(),isDisposed:()=>Runtime.unloaded,
     api:()=>getLiveApi(['addPluginChannelListener','postPluginChannelMessage'])}));
-  const mountFlashbackSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...flashbackSourceInputConfig,policy:getFlashbackSourceInput(),ruleSync:getFlashbackSourceRuleSync(),isDisposed:()=>Runtime.unloaded||Runtime.sourceEditDisposed});
+  const mountFlashbackSourceInput=container=>mountMemorySuiteSourceInputControls(container,{...flashbackSourceInputConfig,policy:getFlashbackSourceInput(),ruleSync:getFlashbackSourceRuleSync(),includeRecallBudget:false,isDisposed:()=>Runtime.unloaded||Runtime.sourceEditDisposed});
+  const mountFlashbackRecallBudgetPanel=container=>{
+    if(!container?.ownerDocument||container.querySelector('[data-recall-budget]'))return null;
+    const doc=container.ownerDocument,box=doc.createElement('div');
+    box.className='ms-source-settings';
+    const style=doc.createElement('style');
+    style.textContent=`
+.ms-source-settings{display:grid;gap:12px;width:100%;min-width:0;color:inherit;font:inherit;font-size:var(--fs-body,13px);line-height:1.55}
+.ms-source-settings *{box-sizing:border-box}.ms-source-settings p,.ms-source-settings h3{margin:0}.ms-source-settings label{display:grid;gap:5px;font-size:12.5px}.ms-source-settings small{opacity:.8}
+.ms-source-settings button,.ms-source-settings input{font:inherit;font-size:13px;color:inherit;border:1px solid var(--border2,#8887);border-radius:var(--r-sm,8px);background:var(--input-bg,var(--surface,transparent));min-width:0;min-height:38px;padding:7px 10px}.ms-source-settings button{cursor:pointer;padding:7px 14px;font-weight:650;background:var(--surface,transparent)}.ms-source-settings button:hover:not(:disabled){background:var(--surface3,#8881)}.ms-source-settings button:disabled{opacity:.5;cursor:default}
+.ms-source-settings .ms-input-apply{background:var(--accent,#79522d);color:var(--on-accent,#fff);border-color:var(--accent,#79522d)}.ms-source-settings .ms-input-apply:hover:not(:disabled){background:var(--accent-hover,var(--accent,#79522d))}
+`+memorySuiteSourceFinderCss();
+    box.appendChild(style);
+    container.appendChild(box);
+    const panel=mountMemorySuiteRecallBudgetPanel(box,{
+      policy:getFlashbackSourceInput(),
+      sync:getFlashbackSourceRuleSync(),
+      isDisposed:()=>Runtime.unloaded||Runtime.sourceEditDisposed
+    });
+    getFlashbackSourceInput().ready().then(()=>{
+      if(!Runtime.unloaded&&!Runtime.sourceEditDisposed&&box.isConnected)panel.load();
+    }).catch(()=>{});
+    return panel;
+  };
   const listFlashbackReanalysisRanges=async()=>{
     await getFlashbackSourceInput().ready();const snapshot=await flashbackSourceEditSnapshot();
     if(!snapshot)throw Error('SOURCE_EDIT_SCOPE_UNAVAILABLE');
@@ -42834,7 +42876,7 @@ const MemorySuiteHealthRecovery = (() => {
         }
         invalidateGuiDataCache('all');
         refreshEmbeddingCostPanel().catch(error => warn('embedding cost panel refresh failed', error));
-        if (isGuiRenderActive() && Runtime.guiTab === 'provider') void refreshEmbeddingWorkPanel(guiRoot, result);
+        if (isGuiRenderActive() && (Runtime.guiTab === 'import' || Runtime.guiTab === 'provider')) void refreshEmbeddingWorkPanel(guiRoot, result);
         // A pass that timed out before any wire submission sent nothing and owes no
         // outcome check; give it a few spaced retries instead of waiting for the next turn.
         const unsentTimeout = result.reason === 'TIMEOUT' && !Number(result.physicalRequests || 0) && !result.uncertain;
@@ -43519,7 +43561,12 @@ const MemorySuiteHealthRecovery = (() => {
       const plan = settings.maxInjectionChars >= 800 ? planFlashbackEvidenceBudget(recall, settings, settings.maxInjectionChars) : { text: '' };
       const content = text(plan.text || '').trim();
       Runtime.lastInjectedPrompt = content;
-      if (Runtime.lastRecall) Runtime.lastRecall.injectedPrompt = content;
+      if (Runtime.lastRecall) {
+        Runtime.lastRecall.injectedPrompt = content;
+        if (Runtime.lastRecall.scopeKey && Runtime.lastRecallByScope.has(Runtime.lastRecall.scopeKey)) {
+          Runtime.lastRecallByScope.get(Runtime.lastRecall.scopeKey).injectedPrompt = content;
+        }
+      }
       return { content };
     } finally { closeFlashbackRecallReadSet(token); }
   };
@@ -43592,6 +43639,7 @@ const MemorySuiteHealthRecovery = (() => {
       Runtime.lastRecall = {
         at: Date.now(),
         skipped: true,
+        auxiliary: true,
         reason: requestClass.reason,
         requestType: requestClass.requestType,
         normalizedType: requestClass.normalizedType,
@@ -44127,6 +44175,9 @@ const MemorySuiteHealthRecovery = (() => {
           } : null
         }))
       };
+      Runtime.lastRecallByScope.delete(scope.scopeKey);
+      Runtime.lastRecallByScope.set(scope.scopeKey, { ...Runtime.lastRecall });
+      if (Runtime.lastRecallByScope.size > 4) Runtime.lastRecallByScope.delete(Runtime.lastRecallByScope.keys().next().value);
       refreshLastRecallPanel();
       refreshEmbeddingCostPanel().catch(error => warn('embedding cost panel refresh failed', error));
       opLog('before_recall_complete', { hook: 'beforeRequest', type, pending: pendingCapture.pending, scope, recall, blockChars: text(dynamicBlock).length });
@@ -50293,38 +50344,27 @@ ${cleanedText}`, 80),
     const more = data.hasMore === true
       ? `<button id="manualEditorMoreBtn" class="btn" type="button" data-manual-load-more="1">더 보기 ${formatNumber(visible)} / ${formatNumber(total)}</button>`
       : '';
-    return `<div class="grid g-side" data-manual-editor>
-      <aside class="list" style="display:flex;flex-direction:column;gap:6px;max-height:680px">
-        <div class="manual-turn-search-box" style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:6px">
-          <input type="number" id="manualTurnSearchInput" class="input" style="width:54px;height:28px;padding:2px 4px;text-align:center;font-weight:700" min="1" placeholder="턴#" value="${selectedTurn || ''}" aria-label="턴 번호">
+    return `<div class="stack stack--sm" data-manual-editor>
+      <div class="cluster" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="manual-turn-search-box" style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm,8px)">
+          <input type="number" id="manualTurnSearchInput" class="input" style="width:62px;height:30px;padding:2px 6px;text-align:center;font-weight:700" min="1" placeholder="턴#" value="${selectedTurn || ''}" aria-label="턴 번호">
           <span style="font-size:13px;font-weight:600;white-space:nowrap">턴</span>
-          <button type="button" id="manualTurnSearchBtn" class="btn btn--sm" style="height:28px;padding:2px 10px;white-space:nowrap">찾기</button>
+          <button type="button" id="manualTurnSearchBtn" class="btn btn--sm" style="height:30px;padding:2px 10px;white-space:nowrap">찾기</button>
         </div>
-        <div class="manual-turn-list" style="display:flex;flex-direction:column;gap:3px">
-          <button class="row ${!selectedTurn ? 'is-on' : ''}" type="button" data-manual-turn="all">
-            <span class="row__icon" style="font-size:12px;font-weight:700">전체</span>
-            <span>
-              <span class="row__title">모든 턴</span>
-              <span class="row__meta" style="display:block">총 ${formatNumber(totalTurns)}개 턴</span>
-            </span>
-          </button>
-        </div>
-      </aside>
-      <section class="stack stack--sm">
-        <div class="cluster"><div class="search grow"><input class="input" style="padding-left:12px;padding-right:42px" id="manualEditorSearch" value="${escapeHtml(data.search || '')}" placeholder="원문 검색..." aria-label="원문 검색"><button id="manualEditorSearchBtn" class="btn btn--icon" style="position:absolute;right:4px;top:4px;border:0;background:transparent;padding:4px" type="button" aria-label="검색">${searchIcon}</button></div>
-            <select class="select" style="width:auto" id="manualEditorSort" aria-label="원문 정렬">
-              <option value="newest" ${data.sort === 'newest' ? 'selected' : ''}>최신순</option>
-              <option value="oldest" ${data.sort === 'oldest' ? 'selected' : ''}>오래된 순</option>
-              <option value="longest" ${data.sort === 'longest' ? 'selected' : ''}>긴 원문 우선</option>
-            </select>
-            </div>
-        ${selectedTurn ? `<div class="cluster" style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(255,255,255,0.04);border-radius:6px;border:1px solid rgba(255,255,255,0.08)"><span style="font-size:13px;font-weight:600">T${selectedTurn} 턴 원문 (${formatNumber(visible)}개 청크)</span><button type="button" class="btn btn--sm" data-manual-turn="all" style="padding:2px 8px;font-size:12px">전체 턴 보기</button></div>` : ''}
-        ${warning}
-        <div id="manualEditorRecordList" class="stack stack--sm">${rows || `<div class="empty">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : selectedTurn ? `T${selectedTurn} 턴에 해당하는 응답 원문이 없습니다.` : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
-        ${total > visible && !data.hasMore && !selectedTurn ? '<p class="hint">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
-        ${more}
-        <div class="toolbar-lite card card--flat"><div class="split"><span id="manualEditorPendingText">삭제 후보 ${formatNumber(selectedCount)}개</span><div class="cluster"><button id="manualEditorClearBtn" class="btn btn--sm" type="button" ${selectedCount ? '' : 'disabled'}>후보 비우기</button><button id="manualEditorApplyBtn" class="btn btn--sm btn--danger" type="button" ${selectedCount ? '' : 'disabled'}>선택 삭제 적용…</button></div></div><p class="hint">후보에 추가해도 삭제되지 않습니다. 확인 후 선택 항목만 삭제합니다.</p></div>
-      </section>
+        <span class="badge">총 ${formatNumber(totalTurns)}개 턴</span>
+        <div class="search grow"><input class="input" style="padding-left:12px;padding-right:42px" id="manualEditorSearch" value="${escapeHtml(data.search || '')}" placeholder="원문 검색..." aria-label="원문 검색"><button id="manualEditorSearchBtn" class="btn btn--icon" style="position:absolute;right:4px;top:4px;border:0;background:transparent;padding:4px" type="button" aria-label="검색">${searchIcon}</button></div>
+        <select class="select" style="width:auto" id="manualEditorSort" aria-label="원문 정렬">
+          <option value="newest" ${data.sort === 'newest' ? 'selected' : ''}>최신순</option>
+          <option value="oldest" ${data.sort === 'oldest' ? 'selected' : ''}>오래된 순</option>
+          <option value="longest" ${data.sort === 'longest' ? 'selected' : ''}>긴 원문 우선</option>
+        </select>
+      </div>
+      ${selectedTurn ? `<div class="cluster" style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:var(--surface2);border-radius:var(--r-sm,8px);border:1px solid var(--border)"><span style="font-size:13px;font-weight:600">T${selectedTurn} 턴 원문 (${formatNumber(visible)}개 청크)</span><button type="button" class="btn btn--sm" data-manual-turn="all" style="padding:2px 8px;font-size:12px">전체 턴 보기</button></div>` : ''}
+      ${warning}
+      <div id="manualEditorRecordList" class="stack stack--sm">${rows || `<div class="empty">${problems.length ? '원문을 읽지 못했습니다. 위의 확인 상태를 참고해 주세요.' : selectedTurn ? `T${selectedTurn} 턴에 해당하는 응답 원문이 없습니다.` : data.search ? '검색 조건에 맞는 원문이 없습니다.' : '저장된 응답 원문이 없습니다.'}</div>`}</div>
+      ${total > visible && !data.hasMore && !selectedTurn ? '<p class="hint">화면 표시 상한에 도달했습니다. 원문 검색으로 범위를 좁혀 주세요.</p>' : ''}
+      ${more}
+      <div class="toolbar-lite card card--flat"><div class="split"><span id="manualEditorPendingText">삭제 후보 ${formatNumber(selectedCount)}개</span><div class="cluster"><button id="manualEditorClearBtn" class="btn btn--sm" type="button" ${selectedCount ? '' : 'disabled'}>후보 비우기</button><button id="manualEditorApplyBtn" class="btn btn--sm btn--danger" type="button" ${selectedCount ? '' : 'disabled'}>선택 삭제 적용…</button></div></div><p class="hint">후보에 추가해도 삭제되지 않습니다. 확인 후 선택 항목만 삭제합니다.</p></div>
     </div>`;
   };
 
@@ -50380,7 +50420,18 @@ ${cleanedText}`, 80),
     return formatGuiTime(at);
   };
 
+  const resolveDisplayRecall = (recall, currentScopeKey = '') => {
+    if (!recall?.skipped) return recall;
+    const isAuxiliarySkip = recall.auxiliary === true
+      || /hard_auxiliary_prompt|requestType:otherax/i.test(String(recall.reason || ''));
+    if (!isAuxiliarySkip) return recall;
+    const scopeKey = String(currentScopeKey || Runtime.currentScope?.scopeKey || '');
+    const previous = scopeKey ? Runtime.lastRecallByScope.get(scopeKey) : null;
+    return previous && !previous.skipped ? previous : recall;
+  };
+
   const renderLastRecallPanel = (recall = Runtime.lastRecall, currentScopeKey = Runtime.currentScope?.scopeKey || '') => {
+    recall = resolveDisplayRecall(recall, currentScopeKey);
     if (!recall || (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey)) {
       return '<div class="lab"><div class="eyebrow">Current frame · 최근 검색 장면</div><p class="lab__q">아직 이번 세션에서 떠오른 기억이 없습니다.</p><div class="lab__meta">실제 리콜 결과가 생기면 프레임과 근거를 확인할 수 있습니다.</div><div class="lab__chips"><span class="badge">리콜 기록 없음</span></div></div><div class="frames"><div class="empty"><b>표시할 기억 프레임이 없습니다.</b></div></div><div class="film" aria-hidden="true" style="min-height:24px"></div><details class="fold" open><summary>최종 주입 프롬프트</summary><div class="fold__body"><pre class="mono hint" style="margin:0;white-space:pre-wrap">이번 세션에서 주입된 프롬프트가 없습니다.</pre></div></details>';
     }
@@ -50463,7 +50514,7 @@ ${cleanedText}`, 80),
       title: '기억 유지보수',
       description: '기억 상태 진단과 안전한 유지보수를 진행합니다.'
     }),
-    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'원문 수정 동기화',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
+    'source-edits': Object.freeze({eyebrow:'SOURCE EDITS',title:'직접 원문 재분석',description:'선택한 구간을 현재 원문으로 직접 재분석합니다. 목록 조회만으로 저장된 기억은 바뀌지 않습니다.'}),
     restore: Object.freeze({eyebrow:'MEMORY RESTORE',title:'기억 복원',description:'JSON 기억 백업과 복원·채팅 이사를 관리합니다.'}),
     worldline: Object.freeze({ eyebrow: 'WORLDLINE CONTINUITY', title: '세계선', description: '채팅 분기 근거, 원문 승계 기록과 턴 연속성을 읽기 전용으로 확인합니다.' }),
     storage: Object.freeze({
@@ -50585,6 +50636,7 @@ ${cleanedText}`, 80),
   const flashbackHealthChipLabel = health => ({'저장 상태 확인 필요':'저장 확인','임베딩 확인 필요':'벡터 확인','임베딩 미완료':'벡터 미완료','현재 채팅 상태 불러오는 중':'불러오는 중','부분 통계 표시 중':'부분 통계','기본 저장 상태에서 이상 없음':'기본 정상'})[health.title] || health.title;
 
   const flashbackOverviewRecallSummary = (recall = Runtime.lastRecall, currentScopeKey = '') => {
+    recall = resolveDisplayRecall(recall, currentScopeKey);
     if (!recall) return { value: '아직 없음', meta: '이번 세션에서 리콜 기록이 없습니다.', badge: '대기' };
     if (recall.scopeKey && currentScopeKey && recall.scopeKey !== currentScopeKey) {
       return { value: '아직 없음', meta: '현재 채팅의 리콜 기록이 없습니다.', badge: '대기' };
@@ -50940,7 +50992,19 @@ ${cleanedText}`, 80),
       onOpened:cleanup=>{cancel=()=>{getFlashbackRecoveryActions().clear();cleanup(false);};flashbackSourceReanalysisCancel=cancel;}
     });}finally{if(flashbackSourceReanalysisCancel===cancel)flashbackSourceReanalysisCancel=null;}
   };
-  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 class="card__title">원문 수정 동기화</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><details class="fold" data-reanalysis-fold><summary id="fbSourceEditTitle">직접 원문 재분석</summary><div class="fold__body"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="stack stack--sm"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div><details class="fold" id="fbTagFilterFold"><summary>원문 태그 필터</summary><div id="fbSourceTrackingSettings" class="stack stack--sm"></div></details></div></details></section>`;
+  const openFlashbackReanalysisSourceDialog=async(inventory,range)=>{
+    try{
+      const sample=await readFlashbackReanalysisTurn(inventory,range);
+      const userText=memorySuiteStripInternalSource(sample.user);
+      const assistantText=memorySuiteStripInternalSource(sample.assistant);
+      const bodyHtml=`<div class="stack stack--sm"><div><div class="eyebrow" style="margin-bottom:4px">사용자 원문</div><pre class="mono" style="margin:0;padding:12px;max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)">${escapeHtml(userText||'(비어 있음)')}</pre></div><div><div class="eyebrow" style="margin-bottom:4px">AI 응답 원문</div><pre class="mono" style="margin:0;padding:12px;max-height:300px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2)">${escapeHtml(assistantText||'(비어 있음)')}</pre></div></div>`;
+      await guiDialog('',{title:`${range.label} 원문 보기`,okText:'닫기',bodyHtml});
+    }catch(error){
+      await guiDialog('원문 조회 실패: '+String(error?.message||error),{title:`${range?.label||''} 원문 보기`,okText:'닫기'});
+    }
+  };
+  const buildFlashbackSourceEditCard=()=>`<section id="panel-source-edits" data-panel="source-edits" class="card"><div class="card__head"><div><h2 id="fbSourceEditTitle" class="card__title">직접 원문 재분석</h2><p class="card__desc">제품 원문 변경을 확인하고 선택한 범위만 현재 원문으로 재분석합니다.</p></div></div><div data-reanalysis-fold class="stack stack--sm"><p class="card__desc">단일 턴은 바로 재분석하거나 원문과 제외할 태그를 확인할 수 있습니다. 여러 턴은 바로 재분석합니다. LLM 호출은 없습니다. 검색용 임베딩은 자동 처리가 켜져 있고 모델이 설정되어 있으면 저장 후 자동 예약되며, 후속 작업에서 모델 사용량이 발생할 수 있습니다.</p><div class="cluster"><button type="button" class="btn" id="fbReanalysisRefresh">구간 목록 새로고침</button><button type="button" class="btn btn--primary" id="fbReanalysisRun" disabled>바로 재분석</button><button type="button" class="btn" id="fbReanalysisReview" hidden>확인 후 재분석</button></div><div id="fbReanalysisRanges" class="fb-reanalysis-grid"></div><div id="fbReanalysisReviewPanel"></div><div id="fbSourceEditStatus" class="hint" role="status" aria-live="polite"></div></div></section>`;
+  const buildFlashbackTagFilterCard=()=>`<section id="panel-tag-filter" data-panel="tag-filter" class="card fb-tag-filter-card"><div class="card__head"><div><h2 class="card__title">원문 태그 필터</h2><p class="card__desc">분석과 저장에서 제외하거나 태그만 걷어낼 표식을 관리합니다.</p></div></div><div id="fbSourceTrackingSettings" class="fb-tag-filter-host"></div></section>`;
   const renderFlashbackSourceEditStatus=(status,message='')=>`<p class="hint">${escapeHtml(message||status?.error||'원하는 구간을 선택하세요.')}</p>`;
   const refreshFlashbackSourceEditPanel=async(message='')=>{
     if(!['import','source-edits'].includes(Runtime.guiTab))return false;
@@ -50972,7 +51036,7 @@ ${cleanedText}`, 80),
     };
     try{
       inventory=await listFlashbackReanalysisRanges();if(!current())return false;flashbackSourceEditView=inventory;
-      for(const range of inventory.ranges)appendMemorySuiteReanalysisRange(list,range,{changed,current,read:()=>readFlashbackReanalysisTurn(inventory,range)});
+      for(const range of inventory.ranges)appendMemorySuiteReanalysisRange(list,range,{compact:true,changed,current,read:()=>readFlashbackReanalysisTurn(inventory,range),onPreviewSource:()=>void openFlashbackReanalysisSourceDialog(inventory,range)});
       setNodeText('fbSourceEditStatus',message||(inventory.ranges.length?'원하는 턴을 선택하세요. 원문 보기에서 내용을 확인할 수 있습니다.':'재분석할 저장 구간이 없습니다.'));sync();
       run.onclick=()=>{if(reviewSaving)return;const keys=new Set(selected());if(!keys.size)return;return execute({scopeKey:inventory.scopeKey,topology:inventory.topology,ranges:inventory.ranges.filter(row=>keys.has(row.key))});};
       review.onclick=async()=>{
@@ -51065,14 +51129,9 @@ ${cleanedText}`, 80),
     const previewRows = Array.isArray(preview?.rows) ? preview.rows.length : null;
     const previewUnknown = Array.isArray(preview?.unknown) ? preview.unknown.length : null;
     return `<section class="card">
-      <div class="card__head"><div><h2 class="card__title">같은 공간 이전 미리보기</h2><p class="card__desc">검증 등록부와 저장된 생성 이력이 일치하는 항목만 이전합니다. <b>벡터 원본 보존 · API 호출 0.</b> 원문 재임베딩과는 다릅니다.</p></div><span class="badge">API 호출 0</span></div>
-      <dl class="cost-table"><dt>이전 가능</dt><dd id="sameSpaceEligibleCount">${previewRows == null ? '아직 미리보지 않음' : formatNumber(previewRows)}</dd><dt>이전 불가</dt><dd id="sameSpaceUnknownCount">${previewUnknown == null ? '미확인' : formatNumber(previewUnknown)}${previewUnknown == null ? '' : ' (등록부·생성 이력 검증 불일치)'}</dd></dl>
-      <div class="cluster" style="margin-top:12px"><button id="sameSpacePreviewBtn" class="btn" type="button">같은 공간 이전 미리보기</button><button id="sameSpaceApplyBtn" class="btn btn--primary" type="button">미리본 메타데이터 이전 적용…</button><button id="multilingualProbeMaintenanceBtn" class="btn btn--ghost" type="button" ${showMaintenance ? '' : 'hidden'}>재임베딩 화면으로</button></div><p id="sameSpaceStatus" class="hint" role="status">${preview ? '미리보기가 준비됐습니다. 적용 전 검사된 항목과 자격을 다시 확인합니다.' : '아직 아무것도 바뀌지 않았습니다.'}</p>
-    </section>
-    <section class="card">
-      <div class="card__head"><div><h2 class="card__title">다국어 리콜 검증</h2><p class="card__desc">현재 AI 연결이 한국어·영어·일본어·중국어의 의미를 양방향으로 연결하고 근거 기준을 통과하는지 확인합니다. 고정된 비개인 문장을 쓰지만 <b>외부 AI 사용량이 발생</b>할 수 있습니다.</p></div><span class="badge ${state === 'verified' ? 'badge--ok' : state === 'failed' ? 'badge--danger' : 'badge--warn'}">${escapeHtml(state === 'verified' ? '검증됨' : state === 'failed' ? '검증 실패' : state === 'running' ? '검증 중' : '설정 변경으로 만료됨')}</span></div>
-      <div class="cluster"><button id="multilingualProbeBtn" class="btn btn--primary" type="button" ${running || state === 'not_applicable' ? 'disabled' : ''}>사용자 실행</button><button id="cancelMultilingualProbeBtn" class="btn" type="button" ${running ? '' : 'hidden'}>검증 중지</button></div>
-      <div id="multilingualProbeStatus" role="status" aria-live="polite">${renderMultilingualProbeResults(settings)}</div>
+      <div class="card__head"><div><h2 class="card__title">기존 임베딩 벡터 재사용 (무료 이전)</h2><p class="card__desc">임베딩 연결 경로(예: 직접 연결 ↔ 프록시·경유)만 바꾸고 같은 모델·차원을 그대로 쓸 때, 이미 만든 벡터를 다시 계산하지 않고 현재 연결에 맞게 그대로 이어 씁니다. <b>벡터 원본 보존 · API 호출 0.</b> 다른 모델로 바꾼 경우에는 재임베딩이 필요합니다.</p></div><span class="badge">API 호출 0</span></div>
+      <dl class="cost-table"><dt>재사용 가능</dt><dd id="sameSpaceEligibleCount">${previewRows == null ? '아직 확인 안 함' : formatNumber(previewRows)}</dd><dt>재임베딩 필요</dt><dd id="sameSpaceUnknownCount">${previewUnknown == null ? '미확인' : formatNumber(previewUnknown)}${previewUnknown == null ? '' : ' (다른 모델·차원 또는 확인 불가)'}</dd></dl>
+      <div class="cluster" style="margin-top:12px"><button id="sameSpacePreviewBtn" class="btn" type="button">재사용 가능 항목 확인</button><button id="sameSpaceApplyBtn" class="btn btn--primary" type="button">기존 벡터 그대로 이어 쓰기</button><button id="multilingualProbeMaintenanceBtn" class="btn btn--ghost" type="button" ${showMaintenance ? '' : 'hidden'}>재임베딩 화면으로</button></div><p id="sameSpaceStatus" class="hint" role="status">${preview ? '확인이 끝났습니다. 적용을 누르면 기존 벡터를 그대로 유지한 채 연결 정보만 갱신합니다.' : '먼저 확인을 누르면 현재 채팅에서 무료로 이어 쓸 수 있는 벡터 수를 보여 줍니다.'}</p>
     </section>`;
   };
 
@@ -51119,8 +51178,6 @@ ${cleanedText}`, 80),
         <div class="cluster"><button id="saveSettingsBtn" class="btn btn--primary" type="button">설정 저장</button><button id="restoreDefaultsBtn" class="btn" type="button">기본값 불러오기</button><button id="clearEmbeddingKeyBtn" class="btn btn--danger" type="button">키 삭제…</button><button id="testEmbedBtn" class="btn" type="button">임베딩 테스트</button><button id="refreshOllamaModelsBtn" class="btn" type="button" ${ollamaVisible?'':'hidden'}>Ollama 모델 검색</button></div>
         <p id="restoreDefaultsStatus" class="hint" role="status"></p><p id="embeddingTestStatus" class="hint" role="status" aria-live="polite"></p><p id="ollamaModelStatus" class="hint" role="status" aria-live="polite">${escapeHtml(ollamaDiscoveryStatusText())}</p><p class="hint">${escapeHtml(embeddingKeyPersistenceStatusText())}</p>
       </section>
-      ${buildEmbeddingWorkCard()}
-      ${renderEmbeddingCostPanel(settings, stats)}
     </div>`;
   };
 
@@ -51362,6 +51419,7 @@ ${cleanedText}`, 80),
     return `<div class="stack">
       <section class="card"><div class="card__head"><div><h2 class="card__title">리콜 품질 프리셋</h2><p class="card__desc">Top K와 최소 점수를 함께 조절합니다. 현재 값은 저장 설정에서 읽었습니다.</p></div><span id="recallQualityPresetStatus" class="badge">${escapeHtml(RECALL_QUALITY_PRESET_LABELS[preset] || '직접 설정')}</span></div><div class="choices" data-preset-group="recall">${presetButtons}</div><input id="recallQualityPreset" type="hidden" value="${escapeHtml(preset)}"></section>
       <section class="card"><div class="card__head"><div><h2 class="card__title">기억 경로</h2><p class="card__desc">저장 원천은 유저 입력과 AI 최종 응답 턴입니다.</p></div></div>${setting('captureAfterRequest','응답 자동 캡처','완결된 응답을 현재 채팅의 기억으로 저장합니다.',settings.captureAfterRequest)}${setting('evidenceGate','증거 게이트','근거가 약한 기억은 리콜 후보에서 제외합니다.',settings.evidenceGate)}</section>
+      <section id="fbRecallBudgetCard" class="card"><div id="fbRecallBudgetHost"></div></section>
       <details class="fold"><summary>세부 값 <span class="hint">검색 수 · 근거 · 문맥</span></summary><div class="fold__body grid g2">
         ${field('topK','Top K',settings.topK,'type="number" min="1" max="80"')}${field('minScore','최소 점수',settings.minScore,'type="number" min="0" max="1" step="0.01"')}
         ${field('candidateLimit','후보 수',settings.candidateLimit,'type="number" min="8" max="400"')}${field('gateHighCosine','고유사도 기준',settings.gateHighCosine,'type="number" min="0" max="1" step="0.01"')}
@@ -51551,11 +51609,12 @@ ${cleanedText}`, 80),
       provider: 'connect', server: 'connect', activity: 'log', advanced: 'settings'
     })[tab] || 'lab';
     const pageFor = routeFor(activeTab);
-    const subtabs = { vault: Runtime.guiVaultSubtab || (activeTab === 'worldline' ? 'wl' : 'resp'), connect: Runtime.guiConnectSubtab || (activeTab === 'server' ? 'srv' : 'emb') };
+    const subtabs = { vault: Runtime.guiVaultSubtab || (activeTab === 'worldline' ? 'wl' : 'resp'), care: Runtime.guiCareSubtab || (activeTab === 'source-edits' ? 'reanalyze' : activeTab === 'restore' ? 'restore' : 'import'), connect: Runtime.guiConnectSubtab || (activeTab === 'server' ? 'srv' : 'emb') };
     if (activeTab === 'worldline') subtabs.vault = 'wl';
     if (activeTab === 'server') subtabs.connect = 'srv';
-    const recall = Runtime.lastRecall && (!Runtime.lastRecall.scopeKey || !current.scope?.scopeKey || Runtime.lastRecall.scopeKey === current.scope.scopeKey)
-      ? Runtime.lastRecall : null;
+    const displayRecall = resolveDisplayRecall(Runtime.lastRecall, current.scope?.scopeKey || '');
+    const recall = displayRecall && (!displayRecall.scopeKey || !current.scope?.scopeKey || displayRecall.scopeKey === current.scope.scopeKey)
+      ? displayRecall : null;
     const selected = Array.isArray(recall?.selected) ? recall.selected : [];
     const delivery = recall?.delivery || {};
     const pipeline = delivery.pipeline || {};
@@ -51574,18 +51633,22 @@ ${cleanedText}`, 80),
     const routeTabKey = {lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'};
     const subtab = (group,id,label,selected) => `<button class="tab" type="button" role="tab" data-subtab="${id}" data-group="${group}" aria-selected="${selected ? 'true':'false'}">${label}</button>`;
     const storageMarkup = `<section id="panel-storage" data-panel="storage"><div class="tabs" role="tablist" data-subtabs="v">${subtab('v','resp','응답 원문',subtabs.vault==='resp')}${subtab('v','wl','세계선',subtabs.vault==='wl')}${subtab('v','scopes',`스코프 정리 <span class="count" id="tab-scope-n">${storageScopeCountLabel()}</span>`,subtabs.vault==='scopes')}</div><div data-subpanel="resp" data-group="v" class="${subtabs.vault==='resp'?'is-active':''}"><div class="cluster" style="justify-content:space-between;margin-bottom:10px"><span class="hint">저장되는 원문에서 뺄 태그와 표식은 원문 태그 필터에서 정합니다.</span><button class="btn btn--sm" type="button" data-fb-open-tag-filter>원문 태그 필터</button></div><div id="manualEditorPanel">${renderManualEditorPanelHtml(null)}</div></div><div id="panel-worldline" data-panel="worldline" data-subpanel="wl" data-group="v" class="${subtabs.vault==='wl'?'is-active':''}"><div class="stack"><div class="cluster"><button type="button" class="btn" id="fbWorldlineRefresh">세계선 새로고침</button><button type="button" class="btn" data-open-manual-editor="response">저장 원문 보기</button></div><div id="fbWorldlineContent" aria-live="polite">${renderFlashbackWorldlineView(null)}</div></div></div><div data-subpanel="scopes" data-group="v" class="${subtabs.vault==='scopes'?'is-active':''}"><div class="stack"><div class="note note--warn">삭제·정리는 선택 항목을 실행 시점에 다시 확인합니다. 확인할 수 없는 데이터는 자동 정리하지 않습니다. 저장 모드와 별개로 로컬 데이터 삭제, 서버 데이터 삭제, 둘 다 삭제를 선택할 수 있습니다. 서버 삭제 전에는 백업하며 저장 모드는 바꾸지 않습니다.</div><div id="storageScopeLoadStatus" class="note note--warn" role="status" aria-live="polite" hidden></div><div class="cluster"><select id="storageManagementView" class="select" aria-label="저장소 분류">${[['memory','기억 저장소'],['cleanup','정리 후보'],['orphan','고아 기억'],['all','전체']].map(([value,label])=>`<option value="${value}" ${(Runtime.guiStorageManagementView||'memory')===value?'selected':''}>${label}</option>`).join('')}</select><div class="search grow"><i data-i="search" data-size="sm"></i><input id="storageScopeFilter" class="input" type="search" placeholder="캐릭터 / 채팅 이름으로 찾기" aria-label="스코프 검색"></div><label>삭제 대상 <select id="storageDeleteTarget" class="select" aria-label="스코프 삭제 대상">${[['local','로컬 데이터 삭제'],['server','서버 데이터 삭제'],['both','둘 다 삭제']].map(([value,label])=>`<option value="${value}" ${flashbackScopeDeleteTarget()===value?'selected':''}>${label}</option>`).join('')}</select></label><button id="deleteSelectedScopesBtn" class="btn btn--danger" disabled>선택 삭제</button></div><div class="cluster"><button id="refreshStorageBtn" class="btn">새로고침</button><button id="repairScopeRegistryBtn" class="btn">목록 상태 검사</button><button id="selectCleanupCandidatesBtn" class="btn">빈 목록·저장소 선택</button><button id="cleanupSelectedScopesBtn" class="btn" disabled>선택 항목 로컬 정리</button><button id="selectOrphanScopesBtn" class="btn">고아 기억 선택</button><span id="selectedScopeCount" class="hint">선택 0개</span><span id="storageScopeFilterCount" class="hint"></span></div><div class="table-wrap"><table class="table scopes"><thead><tr><th><input id="selectAllScopes" class="storage-scope-select" type="checkbox" aria-label="모든 스코프 선택"></th><th>캐릭터 / 채팅</th><th>토큰</th><th>기억 청크</th><th>샤드 / 보관</th><th>업데이트</th><th></th></tr></thead><tbody id="storageRows"><tr><td colspan="7" class="muted">저장소 목록을 불러오는 중…</td></tr></tbody></table></div></div></div></section>`;
-    const careBody = buildImportTab() + buildFlashbackSourceEditCard() + `<section id="panel-restore" data-panel="restore" class="card"><div class="card__head"><div><h2 class="card__title">백업 · 복원 · 이사</h2><p class="card__desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다. 대화 원문과 비공개 기억이 포함될 수 있으니 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></section>`;
+    const careBody = `<div class="tabs" role="tablist" data-subtabs="k">${subtab('k','import','유지보수',subtabs.care==='import')}${subtab('k','reanalyze','직접 원문 재분석',subtabs.care==='reanalyze')}${subtab('k','tags','원문 태그 필터',subtabs.care==='tags')}${subtab('k','restore','백업 · 복원',subtabs.care==='restore')}</div>`
+      + `<div data-subpanel="import" data-group="k" class="${subtabs.care==='import'?'is-active':''}"><div class="stack stack--lg">${buildImportTab()}${buildEmbeddingWorkCard()}</div></div>`
+      + `<div data-subpanel="reanalyze" data-group="k" class="${subtabs.care==='reanalyze'?'is-active':''}"><div class="stack stack--lg">${buildFlashbackSourceEditCard()}</div></div>`
+      + `<div data-subpanel="tags" data-group="k" class="${subtabs.care==='tags'?'is-active':''}"><div class="stack stack--lg">${buildFlashbackTagFilterCard()}</div></div>`
+      + `<div data-subpanel="restore" data-group="k" class="${subtabs.care==='restore'?'is-active':''}"><div class="stack stack--lg"><section id="panel-restore" data-panel="restore" class="card"><div class="card__head"><div><h2 class="card__title">백업 · 복원 · 이사</h2><p class="card__desc">파일을 검사하고 대상과 복원 방식을 확인한 뒤 적용합니다. 대화 원문과 비공개 기억이 포함될 수 있으니 안전한 곳에 보관하세요.</p></div><span class="badge">JSON</span></div><div data-portable-backup-host="flashback_memory" aria-label="JSON 기억 백업 및 복원"></div><p class="hint">같은 채팅 복원·새 채팅 이사·복사된 채팅 복구는 검사된 파일의 허용 조건을 따릅니다.</p></section></div></div>`;
     const providerBody = buildProviderTab(settings, current.stats);
     const serverBody = buildServerConnectionTab();
     const logSubtab = Runtime.guiLogSubtab || 'a';
     const warningText = Runtime.warnings.slice(-8).map(w => `[${new Date(w.at).toLocaleTimeString()}] ${w.msg}`).join('\n') || '없음';
-    const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div><details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
+    const activityBody = `<div class="page-actions"><button id="clearActivityLogBtn" class="btn" type="button">로그 비우기</button></div><div class="tabs" role="tablist" data-subtabs="l"><button class="tab" role="tab" data-group="l" data-subtab="a" aria-selected="${logSubtab==='a'}">작업 로그 <span class="count" id="tab-log-n">${formatNumber(Runtime.activityLog.length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="b" aria-selected="${logSubtab==='b'}">무시된 오류 <span class="count" id="swallowedDiagCount">${formatNumber((globalThis.__librarianDiag?.snapshot?.() || []).length)}</span></button><button class="tab" role="tab" data-group="l" data-subtab="c" aria-selected="${logSubtab==='c'}">경고</button></div><div data-subpanel="a" data-group="l" class="${logSubtab==='a'?'is-active':''}"><div class="stack stack--sm"><div id="activityLogList" class="list">${renderActivityLogHtml()}</div>${renderEmbeddingCostPanel(settings, current.stats)}<details class="fold"><summary>마지막 작업 세부 정보</summary><pre id="lastActionLog" class="mono hint">${lastAction ? escapeHtml(safeStringify(lastAction,'{}')) : '아직 없음'}</pre></details></div></div><div data-subpanel="b" data-group="l" class="${logSubtab==='b'?'is-active':''}"><div id="swallowedDiagList" class="list">${renderSwallowedDiagHtml()}</div></div><div data-subpanel="c" data-group="l" class="${logSubtab==='c'?'is-active':''}"><pre id="warningLog" class="card mono" style="white-space:pre-wrap">${escapeHtml(warningText)}</pre></div>`;
     const settingsBody = buildAdvancedTab(settings);
     const pages = [
       `<section class="page ${pageFor==='lab'?'is-active':''}" data-page="lab"><div class="page-head"><div class="page-head__copy"><div class="eyebrow" id="guiPageEyebrow">Memory recall lab</div><h1 class="page-title" id="guiPageTitle">기억 현상실</h1><p class="page-desc" id="guiPageDescription">현재 장면과 연결되어 떠오른 기억을 프레임으로 확인합니다.</p></div><div class="page-actions"><button class="btn" id="overviewMaintenanceBtn" type="button"><i data-i="shield" data-size="sm"></i>상태 점검 및 자동 복구</button></div></div><div class="stack stack--lg"><section><div id="lastRecallPanel">${recallFrame}</div></section><div class="stats"><div class="stat"><div class="stat__label">저장 기억</div><div class="stat__value" id="metricChunkTotal">${formatNumber(current.records.length)}</div><div class="stat__meta" id="metricChunkLabel">${current.stats?.statsPartial?'현재 채팅 레코드 · 부분 통계':'현재 채팅 레코드'}</div></div><div class="stat"><div class="stat__label">최근 리콜 <span class="badge ${recall?.skipped?'badge--warn':returned?'badge--ok':''}" id="overviewRecallBadge">${recall ? (recall.skipped?'미주입':returned?'주입됨':'전달 미확인') : '대기'}</span></div><div class="stat__value" id="overviewRecallCount">${recall ? `${formatNumber(selected.length)}개` : '아직 없음'}</div><div class="stat__meta" id="overviewRecallMeta">${recall ? `${actualChars?`${formatNumber(actualChars)}자 · `:''}${recallAgeText(recall.at)}` : '이번 세션에서 리콜 기록이 없습니다.'}</div></div><div class="stat"><div class="stat__label">토큰 추정</div><div class="stat__value" id="metricTokenTotal">${formatNumber(current.stats.tokenTotal)}</div><div class="stat__meta" id="metricTokenLabel">저장된 기억 기준${current.stats?.statsPartial?' · 부분':''}</div></div><div class="stat"><div class="stat__label">비용 추정</div><div class="stat__value" id="metricEmbeddingCost">${escapeHtml(formatCostSummary(currentCost))}</div><div class="stat__meta" id="overviewProviderSummary">${escapeHtml(embeddingLabel)}</div></div></div><div class="card" id="turnVectorCard"><div class="card__head"><div><h2 class="card__title">턴별 벡터 상태</h2><p class="card__desc">${escapeHtml(turnVectorSummary)}</p></div>${turnVectorBadgeHtml}</div>${turnVectorRowsHtml}</div><div class="rec-split"><div class="card"><div class="card__head"><div><h2 class="card__title">기억 분포</h2><p class="card__desc">${escapeHtml(flashbackStatsCoverageLabel(current.stats,current.manifest))}</p></div><span class="badge">${escapeHtml(settings.mode)}</span></div><dl class="kv" id="miniCounts">${byType.map(item=>`<dt>${escapeHtml(item.label)}</dt><dd>${formatNumber(item.records)} · ${formatNumber(item.tokens)} tokens</dd>`).join('')}</dl></div><div class="card"><div class="card__head"><div><h2 class="card__title">최근 활동</h2><p class="card__desc" id="overviewLastCapture">마지막 캡처 · ${escapeHtml(captureText)}</p></div><button id="overviewActivityMoreBtn" class="btn btn--sm" type="button">전체 보기</button></div><dl id="overviewActivityList" class="kv">${activityHtml}</dl></div></div></div></section>`,
       `<section class="page ${pageFor==='vault'?'is-active':''}" data-page="vault"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Storage</div><h1 class="page-title">필름 보관함</h1><p class="page-desc">저장된 원문, 채팅 분기(세계선), 다른 채팅의 저장소를 한 곳에서 살펴봅니다. 세계선은 읽기 전용입니다.</p></div></div>${storageMarkup}</section>`,
       `<section class="page ${pageFor==='care'?'is-active':''}" data-page="care"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Memory care</div><h1 class="page-title">기억 관리</h1><p class="page-desc">진단 → 예상 변경·비용 → 승인 → 진행 → 결과 순서입니다. 진단은 아무것도 바꾸지 않습니다.</p></div></div><div class="stack stack--lg">${careBody}</div></section>`,
-      `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','이전 · 검증',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
+      `<section class="page ${pageFor==='connect'?'is-active':''}" data-page="connect" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Connection</div><h1 class="page-title">임베딩 · 서버</h1><p class="page-desc">검색에 쓰는 임베딩 모델과 저장·연산 서버를 한곳에서 설정하고 한 번에 저장합니다.</p></div></div><div class="tabs" role="tablist" data-subtabs="c">${subtab('c','emb','임베딩',subtabs.connect==='emb')}${subtab('c','mig','벡터 재사용',subtabs.connect==='mig')}${subtab('c','srv','서버',subtabs.connect==='srv')}</div><div id="panel-provider" data-panel="provider" data-subpanel="emb" data-group="c" class="${subtabs.connect==='emb'?'is-active':''}"><div class="stack">${providerBody}</div></div><div data-subpanel="mig" data-group="c" class="${subtabs.connect==='mig'?'is-active':''}"><div class="stack">${buildMultilingualProbeCard(settings)}</div></div><div id="panel-server" data-panel="server" data-subpanel="srv" data-group="c" class="${subtabs.connect==='srv'?'is-active':''}">${serverBody}</div></section>`,
       `<section class="page ${pageFor==='log'?'is-active':''}" data-page="log"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Session log</div><h1 class="page-title">현상 기록</h1><p class="page-desc">현재 실행의 리콜·캡처·유지보수 기록입니다. 다시 로드하면 사라집니다.</p></div><div class="page-actions">${activityBody.match(/<div class="page-actions">([\s\S]*?)<\/div>/)?.[1] || ''}</div></div>${activityBody.replace(/<div class="page-actions">[\s\S]*?<\/div>/,'')}</section>`,
       `<section class="page ${pageFor==='settings'?'is-active':''}" data-page="settings" data-track data-track-group="fb"><div class="page-head"><div class="page-head__copy"><div class="eyebrow">Recall settings</div><h1 class="page-title">리콜 설정</h1><p class="page-desc">프리셋으로 시작하고, 필요한 값만 세부 조정합니다. 저장 출처와 ARG 우선순위를 확인합니다.</p></div></div><div class="stack">${settingsBody}</div></section>`
     ].join('');
@@ -51594,7 +51657,21 @@ ${cleanedText}`, 80),
     const sidebar = `<nav class="sidebar" aria-label="Flashback 메뉴">${[['상태',[side[0]]],['기억',[side[1],side[2]]],['연결',[side[3]]],['설정 및 진단',[side[4],side[5]]]].map(([group,items])=>`<div class="nav-label">${group}</div>${items.map(([go,icon,label,short])=>`<button class="nav-item" type="button" data-go="${go}" data-short="${short}" aria-current="${pageFor===go?'page':'false'}"><i data-i="${icon}"></i><span class="nav-text">${label}</span>${go==='vault'?`<span class="count" id="nav-scope-n">${storageScopeCountLabel()}</span>`:''}${go==='log'?`<span class="count" id="nav-log-n">${formatNumber(Runtime.activityLog.length)}</span>`:''}</button>`).join('')}`).join('')}<div class="side-foot"><b id="foot-model">${escapeHtml(settings.embeddingModel || '모델 미설정')}</b><span id="foot-meta">${escapeHtml(settings.embeddingProvider || 'provider 미설정')} · ${settings.embeddingDimensions?`${formatNumber(settings.embeddingDimensions)}차원`:'차원 자동'}</span></div></nav>`;
     const root = `<div class="stage"><div class="frame" data-device="desktop"><div class="app t-flashback" data-flashback-memory="flashback_memory"><header class="topbar"><div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="currentColor" stroke-width="1.4"/></svg></div><div><div class="brand__name">FLASHBACK</div><div class="brand__ver">v${escapeHtml(PLUGIN_VERSION)}</div></div></div><div class="scope"><b id="currentScopeText">${escapeHtml(current.scope?.characterName || current.scope?.characterId || '현재 채팅 없음')}</b><span>›</span><span id="currentChatText">${escapeHtml(current.scope?.chatTitle || current.scope?.chatId || '')}</span><span id="topModeBadge" class="badge ${settings.mode==='off'?'':'badge--ok'}">${settings.mode==='off'?'OFF':'ON'}</span></div><div class="grow"></div><span class="health ${healthTone}" id="sidebarHealth" title="${escapeHtml(healthDescription)}"><i aria-hidden="true"></i><span id="sidebarHealthState">${escapeHtml(flashbackHealthChipLabel(health))}</span><span id="sidebarHealthMeta"> · ${formatNumber(current.records.length)}개</span></span><div class="menu topbar-actions"><button class="btn btn--icon" id="topMoreBtn" type="button" aria-label="더 보기" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu"><i data-i="more"></i></button><div id="topMoreMenu" class="menu__panel" role="menu" hidden><button id="topMenuRefreshBtn" class="menu-item" type="button" role="menuitem"><i data-i="refresh"></i>새로고침</button><button id="topMenuDebugBtn" class="menu-item" type="button" role="menuitem"><i data-i="download"></i>디버그 로그 내보내기</button></div></div><button id="closeBtn" class="btn btn--icon fb-window-close" type="button" aria-label="Flashback 닫기" title="닫기"><i data-i="close"></i></button></header>${sidebar}<main class="main"><div class="page-body">${pages}</div></main><nav class="tabbar" aria-label="Flashback 하단 메뉴">${side.slice(0,4).map(([go,icon,label,short])=>`<button type="button" data-go="${go}" aria-current="${pageFor===go?'page':'false'}"><svg class="ic"><use href="#i-${icon}"/></svg>${short}</button>`).join('')}<button type="button" data-more="1" aria-haspopup="dialog" aria-controls="sheet-more" aria-expanded="false"><svg class="ic"><use href="#i-more"/></svg>더보기</button></nav><div class="overlay overlay--bottom" id="sheet-more" aria-hidden="true"><div class="sheet" role="dialog" aria-modal="true" aria-label="더보기"><div data-more-list>${side.slice(4).map(([go,icon,label])=>`<button type="button" class="row" data-go="${go}" data-close><span class="row__icon"><svg class="ic"><use href="#i-${icon}"/></svg></span><span><span class="row__title">${label}</span></span><svg class="ic ic--sm faint"><use href="#i-arrow"/></svg></button>`).join('')}</div></div></div><div class="toasts" aria-live="polite"></div></div></div></div>`;
     return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(PLUGIN_NAME)}</title><style>${FLASHBACK_GUI_MOCKUP_STYLES}${FLASHBACK_GUI_DATA_STYLES}${FLASHBACK_GUI_SERVER_STYLES}${FLASHBACK_GUI_WINDOW_STYLES}
-.frames>.frame-card,.list>.row{content-visibility:auto;contain-intrinsic-size:auto 72px}</style></head><body>${root}</body></html>`;
+.frames>.frame-card,.list>.row{content-visibility:auto;contain-intrinsic-size:auto 72px}
+.fb-reanalysis-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px;min-width:0}
+.fb-reanalysis-grid>.ms-reanalysis-turn--compact{aspect-ratio:auto;padding:10px 11px;gap:6px;min-height:112px;border-color:color-mix(in srgb,var(--border) 70%,transparent);border-radius:var(--r-md,11px);background:var(--surface)}
+.fb-reanalysis-grid>.ms-reanalysis-turn--compact .ms-turn-eyebrow{display:none}
+.fb-reanalysis-grid>.ms-reanalysis-turn--compact .ms-turn-summary{-webkit-line-clamp:2;font-size:11.5px;line-height:1.45}
+.fb-turn-preview-btn{width:100%;margin-top:auto;min-height:28px;padding:4px 8px;font-size:11.5px;justify-content:center}
+@media(max-width:960px){.fb-reanalysis-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.fb-reanalysis-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.fb-tag-filter-card .fb-tag-filter-host{padding-top:4px}
+#fbSourceTrackingSettings .ms-source-settings{gap:18px;padding:2px 0}
+#fbSourceTrackingSettings .ms-input-toolbar,#fbSourceTrackingSettings .ms-input-sync,#fbSourceTrackingSettings .ms-input-finder,#fbSourceTrackingSettings .ms-input-preview{padding:14px 16px;border-color:color-mix(in srgb,var(--border) 55%,transparent);border-radius:var(--r-md,12px)}
+#fbSourceTrackingSettings .ms-input-row{padding:10px 12px;gap:10px;border-color:color-mix(in srgb,var(--border) 55%,transparent)}
+#fbSourceTrackingSettings .ms-input-preview{border-top:1px solid color-mix(in srgb,var(--border) 45%,transparent);padding-top:16px}
+#fbRecallBudgetHost .ms-input-sync{padding:0;border:0;background:transparent;gap:12px}
+</style></head><body>${root}</body></html>`;
   };
 
 
@@ -53274,6 +53351,9 @@ ${cleanedText}`, 80),
     const routeTab = ({lab:'overview',vault:'storage',care:'import',connect:'provider',log:'activity',settings:'advanced'})[route];
     if (activeTab === 'worldline') Runtime.guiVaultSubtab = 'wl';
     else if (activeTab === 'storage' && !['wl','scopes'].includes(Runtime.guiVaultSubtab)) Runtime.guiVaultSubtab = 'resp';
+    if (activeTab === 'source-edits') Runtime.guiCareSubtab = 'reanalyze';
+    else if (activeTab === 'restore') Runtime.guiCareSubtab = 'restore';
+    else if (activeTab === 'import' && !['reanalyze','tags','restore'].includes(Runtime.guiCareSubtab)) Runtime.guiCareSubtab = 'import';
     if (activeTab === 'server') Runtime.guiConnectSubtab = 'srv';
     else if (activeTab === 'provider' && !['mig','srv'].includes(Runtime.guiConnectSubtab)) Runtime.guiConnectSubtab = 'emb';
     for (const page of Array.from(root.querySelectorAll?.('.page[data-page]') || [])) {
@@ -53283,7 +53363,7 @@ ${cleanedText}`, 80),
       const selected = button.getAttribute?.('data-go') === route;
       button.setAttribute?.('aria-current', selected ? 'page' : 'false');
     }
-    const wantedSubtabs = {v:Runtime.guiVaultSubtab || 'resp',c:Runtime.guiConnectSubtab || 'emb',l:Runtime.guiLogSubtab || 'a'};
+    const wantedSubtabs = {v:Runtime.guiVaultSubtab || 'resp',k:Runtime.guiCareSubtab || 'import',c:Runtime.guiConnectSubtab || 'emb',l:Runtime.guiLogSubtab || 'a'};
     for (const button of Array.from(root.querySelectorAll?.('[data-subtab][data-group]') || [])) {
       const selected = button.getAttribute?.('data-subtab') === wantedSubtabs[button.getAttribute?.('data-group')];
       button.setAttribute?.('aria-selected', selected ? 'true' : 'false');
@@ -53840,8 +53920,9 @@ ${cleanedText}`, 80),
     if (refreshToken !== Runtime.guiRefreshToken) return false;
     if (activeTab === 'worldline') await refreshFlashbackWorldlinePanel();
     if (activeTab === 'import' || activeTab === 'source-edits') await refreshFlashbackSourceEditPanel();
-    if (activeTab === 'provider') await refreshEmbeddingWorkPanel(guiRoot);
+    if (activeTab === 'import' || activeTab === 'provider') await refreshEmbeddingWorkPanel(guiRoot);
     mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
+    mountFlashbackRecallBudgetPanel(getGuiNode('fbRecallBudgetHost'));
     if (activeTab === 'storage' || options.storage === true) {
       const scopeKey = current?.scope?.scopeKey || Runtime.currentScope?.scopeKey || '';
       const task = refreshStoragePanel(scopeKey, { refreshToken, manualEditor: options.manualEditor, force: options.forceData === true });
@@ -54240,16 +54321,15 @@ ${cleanedText}`, 80),
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus?.(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus?.(); }
     });
-    // 원문 태그 필터 lives in 기억 관리 → 원문 수정 동기화; this opens it from 필름 보관함 → 응답 원문.
+    // 원문 태그 필터 lives as an independent tab in 기억 관리; this opens it from 필름 보관함 → 응답 원문.
     for (const button of Array.from(root.querySelectorAll?.('[data-fb-open-tag-filter]') || [])) {
       button.addEventListener('click', () => {
+        Runtime.guiCareSubtab = 'tags';
         root.querySelector?.('[data-go="care"]')?.click();
-        const fold = getGuiNode('fbTagFilterFold');
-        if (!fold) return;
-        for (let node = fold; node; node = node.parentElement?.closest?.('details')) node.open = true;
+        root.querySelector?.('button[data-group="k"][data-subtab="tags"]')?.click?.();
         mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
-        fold.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-        fold.querySelector?.('summary')?.focus?.();
+    mountFlashbackRecallBudgetPanel(getGuiNode('fbRecallBudgetHost'));
+        getGuiNode('panel-tag-filter')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
       });
     }
     for (const button of Array.from(root.querySelectorAll?.('[data-go]') || [])) {
@@ -54285,6 +54365,9 @@ ${cleanedText}`, 80),
         if (group === 'v') {
           Runtime.guiVaultSubtab = destination;
           tab = destination === 'wl' ? 'worldline' : 'storage';
+        } else if (group === 'k') {
+          Runtime.guiCareSubtab = destination;
+          tab = destination === 'reanalyze' ? 'source-edits' : destination === 'restore' ? 'restore' : 'import';
         } else if (group === 'c') {
           Runtime.guiConnectSubtab = destination;
           tab = destination === 'srv' ? 'server' : 'provider';
@@ -54293,6 +54376,9 @@ ${cleanedText}`, 80),
           tab = 'activity';
         }
         setActiveGuiTab(tab);
+        if (group === 'k' && destination === 'tags') mountFlashbackSourceInput(getGuiNode('fbSourceTrackingSettings'));
+        else if (group === 'k' && destination === 'reanalyze') void refreshFlashbackSourceEditPanel();
+        else if (group === 'k' && destination === 'import') void refreshEmbeddingWorkPanel(guiRoot);
         if (group === 'v' && destination === 'resp') openManualEditorForSourceType(MANUAL_EDITOR_SOURCE_TYPE).catch(error => warn('manual editor open failed', error));
         else runGuiRefresh(tab, { summary:false, deferHeavy:true, storage:group === 'v' && destination !== 'wl' });
       });
@@ -54556,8 +54642,8 @@ ${cleanedText}`, 80),
       setNodeText('sameSpaceEligibleCount', Array.isArray(preview?.rows) ? formatNumber(preview.rows.length) : '아직 미리보지 않음');
       setNodeText('sameSpaceUnknownCount', Array.isArray(preview?.unknown) ? `${formatNumber(preview.unknown.length)} (등록부·생성 이력 검증 불일치)` : '미확인');
     };
-    getGuiNode('sameSpacePreviewBtn')?.addEventListener('click',async()=>{try{const preview=await previewVerifiedEmbeddingMigration();Runtime.sameSpacePreview=preview;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`현재 채팅 · 이전 가능 ${preview.rows.length}개 · 근거 부족 ${preview.unknown.length}개 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
-    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`이전 ${result.migrated}개 · 벡터·원문 재읽기 확인 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    getGuiNode('sameSpacePreviewBtn')?.addEventListener('click',async()=>{try{const preview=await previewVerifiedEmbeddingMigration();Runtime.sameSpacePreview=preview;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`현재 채팅 · 재사용 가능 ${preview.rows.length}개 · 재임베딩 필요 ${preview.unknown.length}개 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
+    getGuiNode('sameSpaceApplyBtn')?.addEventListener('click',async()=>{try{const result=await applyVerifiedEmbeddingMigration(Runtime.sameSpacePreview);Runtime.sameSpacePreview=null;refreshSameSpacePreviewCounts();setNodeText('sameSpaceStatus',`기존 벡터 ${result.migrated}개 연결 갱신 완료 · 재읽기 확인 · API 호출 0`);}catch(e){setNodeText('sameSpaceStatus',String(e.message||e));}});
     getGuiNode('cancelMaintenanceResultBtn')?.addEventListener('click',()=>{if(!maintenanceExecutionStatus().canCancel)return;Runtime.maintenanceController?.abort();Runtime.maintenanceExecutionLedger?.cancel();renderMaintenanceExecution();});
     getGuiNode('maintenanceExecutionDetailsBtn')?.addEventListener('click',()=>{
       const button=getGuiNode('maintenanceExecutionDetailsBtn'),panel=getGuiNode('maintenanceExecutionDetails');

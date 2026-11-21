@@ -229,15 +229,25 @@ function memorySuiteProjectSourceRules(value,rules) {
   }
   // A malformed selection fails back to the full original, not a partial projection.
   if(warnings.length)return {text:String(value??''),warnings};
-  const dropped=memorySuiteSourceRanges(body,rules.ignoredTags);
-  if(dropped.invalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제외 태그는 보존합니다.');
-  if(!dropped.invalid)body=memorySuiteEraseSourceRanges(body,dropped.ranges.filter(r=>{
+  let dropInvalid=false;const dropRanges=[];
+  for(const entry of rules.ignoredTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)dropInvalid=true;
+    else dropRanges.push(...part.ranges);
+  }
+  if(dropInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제외 태그는 보존합니다.');
+  if(dropRanges.length)body=memorySuiteEraseSourceRanges(body,dropRanges.filter(r=>{
     const opening=body.slice(r.start,r.innerStart);
     return !(/^<lb-xnai\b/i.test(opening)&&body.slice(r.innerStart,r.innerEnd).replace(/\{\{inlay::[^{}\r\n]+\}\}/gi,'').trim());
   }));
-  const unwrapped=memorySuiteSourceRanges(body,rules.unwrapTags);
-  if(unwrapped.invalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제거 표식은 보존합니다.');
-  else body=memorySuiteEraseSourceRanges(body,unwrapped.tokens);
+  let unwrapInvalid=false;const unwrapTokens=[];
+  for(const entry of rules.unwrapTags){
+    const part=memorySuiteSourceRanges(body,[entry]);
+    if(part.invalid)unwrapInvalid=true;
+    else unwrapTokens.push(...part.tokens);
+  }
+  if(unwrapInvalid)warnings.push('닫히지 않거나 짝이 맞지 않는 제거 표식은 보존합니다.');
+  if(unwrapTokens.length)body=memorySuiteEraseSourceRanges(body,unwrapTokens);
   for(const control of rules.controls){
     if(control==='html-comment')body=body.replace(/<!--[\s\S]*?-->/g,'');
     if(control==='lbdata')body=body.replace(/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi,'');

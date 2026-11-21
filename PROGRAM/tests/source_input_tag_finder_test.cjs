@@ -135,3 +135,23 @@ test('LIBRA’s own editor carries the same notice and finder over the current c
     assert.ok(Array.from(f.api.getSourceEditRules().unwrapTags).includes('choice'));
   } finally { await f.cleanup?.(); dom.window.close(); }
 });
+
+test('an unclosed ignored tag does not disable other valid ignored tags or leak nested inlay markers', () => {
+  const api = sdk();
+  const messages = [
+    '본문 <section>열린 섹션\n<lb-xnai>{{inlay::abc-123}}</lb-xnai>',
+  ];
+  const baseRules = api.memorySuiteDefaultSourceRules('libra');
+  const before = api.memorySuiteSourceTagInventory(messages, baseRules);
+  assert.equal(before.find(r => r.name === 'section')?.treatment, 'analyzed');
+  assert.equal(before.find(r => r.name === '@inlay')?.treatment, 'covered');
+
+  const withSection = { ...baseRules, ignoredTags: [...baseRules.ignoredTags, 'section'] };
+  const projected = api.memorySuiteProjectSourceRules(messages[0], withSection);
+  assert.ok(projected.warnings.length > 0, 'unclosed section still warns');
+  assert.ok(projected.text.includes('<section>'), 'unclosed section is preserved');
+  assert.ok(!projected.text.includes('{{inlay::abc-123}}'), 'valid lb-xnai block is still excluded');
+
+  const after = api.memorySuiteSourceTagInventory(messages, withSection);
+  assert.equal(after.find(r => r.name === '@inlay')?.treatment, 'covered', '@inlay stays covered and never flips to analyzed');
+});
