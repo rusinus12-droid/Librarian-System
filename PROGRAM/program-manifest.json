@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-20T18:14:20.261Z",
+  "generatedAt": "2026-11-21T02:50:20.216Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -1874,6 +1874,10 @@
     "docs/gradia/INTIMACY-AIDE-DESIGN-20261118.md": {
       "sha256": "66396384a2c9e0750b6affa41efcc21ccc485b8355d3b2a56cdf53e8d4eeecfa",
       "bytes": 7531
+    },
+    "docs/gradia/KNOWLEDGE-BOUNDARY-AIDE-DESIGN-20261121.md": {
+      "sha256": "7030adb1667f687a525912df53e72bee698b9344fe18cfda65aadd430fc7e599",
+      "bytes": 6063
     },
     "docs/gradia/LIB-COMPAT-CONTRACT-20261104.md": {
       "sha256": "fcbcea5fd3d0d63f6a72e474d0a92decb5d1c507321b1b05d3b883f75c8d72b7",
@@ -4336,8 +4340,8 @@
       "bytes": 3971713
     },
     "plugins/GRADIA.js": {
-      "sha256": "9eb50d561c859a15e554e74808e704c9d2950c6ac70c38ad58a0096deea6b630",
-      "bytes": 3763900
+      "sha256": "7cfc9267bcb3e1ae1ad583d2fab4e4d86816176adfb4e280b5e71e11ca60137c",
+      "bytes": 3793145
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "8e06b97d38e6a18df62bd4a58bd5ace0ef6c411c3b52566bf1b324df50cc5a44",
@@ -6724,8 +6728,8 @@
       "bytes": 2764
     },
     "tests/gradia_gui_scope_pages_test.cjs": {
-      "sha256": "46d12825d2c606d16db200c71e2ba5c5de242384c38bea463a7a42b5af9f3958",
-      "bytes": 12196
+      "sha256": "30078dfac6ad03b99174f124affb7df52407859be057be52ebe976a417b4c41a",
+      "bytes": 12223
     },
     "tests/gradia_hayaku_opening_failure_test.cjs": {
       "sha256": "23d56b18fe143373817248763025da913400eff556c2444aed0ea3f2132c4ad4",
@@ -6920,8 +6924,8 @@
       "bytes": 31532
     },
     "tests/gradia/aide-reasoning-patch.test.cjs": {
-      "sha256": "2555de8f6756d1db5301ae87353da145de6b00b5a888f0fc1795bc3e783a1694",
-      "bytes": 22252
+      "sha256": "5074f83eea4835d02251552e1c39b9df68534743acd613833d473b1434e659e4",
+      "bytes": 22276
     },
     "tests/gradia/author-note-all-stages.test.cjs": {
       "sha256": "77ddeede255504bf53aeb68d0b4829c688b048dfa6c772598ae3b51334bd6530",
@@ -10118,6 +10122,10 @@
     "tests/libra_state_candidate_protection_runtime_test.cjs": {
       "sha256": "0ebd82a45c0c978a92a6e9785c808400c4a8d700c5204751e37e7c065b742e2c",
       "bytes": 6583
+    },
+    "tests/libra_state_card_review_approval_test.cjs": {
+      "sha256": "484c93dbc547e5811cafc57ef45d5f18bc2ed866efe285db2c760a77ba7e495e",
+      "bytes": 6099
     },
     "tests/libra_state_correction_meta_transaction_rc2_test.cjs": {
       "sha256": "13ec346c7054cce3b5e8c32978e5e5bafe1001d9f06153ec34a04c07e7473932",
