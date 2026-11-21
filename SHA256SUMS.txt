@@ -735,7 +735,7 @@ cc5c400ee8db9091b3de9dee6a88a39905da9bd569a3966bcec6a4ac57c81a3c  ./PROGRAM/macO
 0ca6e446712d5e99c2c60a960ef168b3cc706c1347872acc6ce4139833ef18ec  ./PROGRAM/plugins/LIA_Persona_Linker.js
 3dac03adcfc8b210fea90e6686920fbdbc6f9d242f072ed64141ffe25946aa0c  ./PROGRAM/plugins/LIBRA.js
 8cfa401442fa1ee5c236c23dcab4d89d4e2c106b443a5c9280fb826a9b9b408d  ./PROGRAM/plugins/RETRACE.js
-82e5c82cba5482d051824b1a8a7fafb20f128eca931d1fc03901ea2be5e85ffb  ./PROGRAM/program-manifest.json
+37d73677fb7b1e773c664a9a8d8910d02548d548ad2f51a8fb74cc033661e56b  ./PROGRAM/program-manifest.json
 ab1730201128e2b83b576c80373b7b3bf655a4b0a46d160a06141161f57870ab  ./PROGRAM/release-policy.json
 38f798a00ebc9fe69e474d7342bad540350dc07e106ae1c4fdceb6c9e299b751  ./PROGRAM/RisuAI_플러그인_폴더_열기.bat
 3a51d17302d148c0f00bbbff90da0abe8096fa5cac356f06034be1ab1b8dd11b  ./PROGRAM/run_regression_batch.py
@@ -1407,6 +1407,7 @@ f86be499ad44304dceb355d4eb3868f7969ed6513ce3965c5f97091fd1af2af7  ./PROGRAM/test
 d32f382e98d7defeeb32c22c1ec624c18753188b0a137477bff7d27538ec5d17  ./PROGRAM/tests/gradia/input-assist-reference-cap.test.cjs
 6e4a6949095291006f54f8f4e26954238d658a68c9a5f0228d887dda9063ced2  ./PROGRAM/tests/gradia/input-choice-envelope.test.cjs
 f1480b14117e0c351f0307ffa01a57a8547e2018101138bb9012be55b03eb8c6  ./PROGRAM/tests/gradia/ipc_connection_fixture.cjs
+0e7e80ea52f036dd3e039a94e5df8e6aa07ba23734b91fd902de54103d8ba523  ./PROGRAM/tests/gradia/knowledge-boundary-aide.test.cjs
 890b443b6eb663cc43c06246f945f7fa044b086269762206c3d577c11b2ec02c  ./PROGRAM/tests/gradia/legacy-removal.test.cjs
 4893916de251c1f5b3316ea00b53d99907485299c6b8ceaf14883a980cccb416  ./PROGRAM/tests/gradia/lib-read-consumer.test.cjs
 999ac8faf30fbae97f84004d98af5f3808bf12019de7e3b9ddbf4301094ca29c  ./PROGRAM/tests/gradia/load-dev-dependency.test.cjs
