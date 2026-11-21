@@ -41202,6 +41202,26 @@ function createLibraReadonlySourceContext(owner) {
       user: pair.user.text,
       assistant: pair.assistant.text
     })));
+    // A module refresh (an appended LBDATA block, an illustration element, a ◈CG footer, a separator
+    // line) adds bytes without changing what the reader actually said. Notes are compared on this
+    // normalized text as well, so a footer keeps its note current while an appended or rewritten
+    // sentence — which survives normalization — still makes it stale.
+    const lensModuleText = value => text(value)
+      .replace(/\[LBDATA START\][\s\S]*?\[LBDATA END\]/gi, ' ')
+      .replace(/\{\{\s*inlay::[^}]*\}\}/gi, ' ')
+      .replace(/<lb-[a-z0-9-]+\b[^>]*>[\s\S]*?<\/lb-[a-z0-9-]+\s*>/gi, ' ')
+      .replace(/<\s*\/?\s*(?:lb-[a-z0-9-]+|lightboard-[a-z0-9-]+)\b[^>]*>/gi, ' ')
+      .replace(/◈\s*CG\b[\s\S]*?◈/g, ' ')
+      .replace(/^[ \t]*-{3,}[ \t]*$/gm, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const lensModuleDigest = batch => digest(batch.map(pair => ({
+      turn: Number(pair?.turn || 0),
+      userChatId: string(pair?.user?.chatId || ''),
+      assistantChatId: string(pair?.assistant?.chatId || ''),
+      user: lensModuleText(pair?.user?.text || ''),
+      assistant: lensModuleText(pair?.assistant?.text || '')
+    })));
     // 같은 턴 (one rule for every revision check): the same messages whose raw bytes did not change,
     // so only the source rules moved (a tag rule was added or edited). Paired with an unchanged
     // analyzed text (sourceDigest), which covers raw changes the rules leave out (illustrations, an
@@ -75609,6 +75629,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         turnRange: { start: Number(startTurn), end: Number(endTurn) },
         sourceDigest: digestValue,
         rawSourceDigest: rawSourceDigest(batch),
+        moduleDigest: lensModuleDigest(batch),
         sourceRevisionId: `lrev_${digest([scopeKey, worldlineId, startTurn, endTurn, digestValue, revisionIds]).slice(0, 16)}`,
         batch: clone(batch)
       };
@@ -75684,6 +75705,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
               pairs: sourcePairs(batch),
               bodyDigest,
               rawDigest: rawSourceDigest(batch),
+              moduleDigest: lensModuleDigest(batch),
               revisionId: `lrev_${digest([scope.scopeKey, worldlineId, start, end, bodyDigest, batch.map(completedTurnRevisionId)]).slice(0, 16)}`
             };
           }
@@ -75695,11 +75717,16 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         // existed follow the analyzed text alone.
         if (revision == null) return false;
         if (revision.bodyDigest === record.sourceDigest
-          || (!!record.rawSourceDigest && revision.rawDigest === record.rawSourceDigest)) {
+          || (!!record.rawSourceDigest && revision.rawDigest === record.rawSourceDigest)
+          || (!!record.moduleDigest && revision.moduleDigest === record.moduleDigest)) {
           return true;
         }
         // Fallback for non-XML module refreshes (e.g. appended status/CG tags):
         // keep the note if every turn's chatId slot is identical AND every quoted span still exists in the batch.
+        // Only records written before moduleDigest existed need the heuristic below: for current
+        // records a module refresh already matches on moduleDigest, and the slot/quote check would
+        // also keep a note whose source gained a real sentence.
+        if (record.moduleDigest) return false;
         const storedPairs = asArray(record.sourcePairs).length
           ? asArray(record.sourcePairs)
           : asArray(fallbackPairsByRange?.get?.(rangeKey));
@@ -76647,6 +76674,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
         instructionRevision: lens.instructionRevision, instructionText:lens.instructionText, evidenceMode: lens.evidenceMode,
         scopeKey: token.scopeKey, worldlineId: token.worldlineId, turnRange: clone(token.turnRange),
         sourceRevisionId: token.sourceRevisionId, sourceDigest: token.sourceDigest, rawSourceDigest: token.rawSourceDigest || '',
+        moduleDigest: token.moduleDigest || '',
         sourcePairs: sourcePairs(token.batch),
         canonicalContextIncluded: Boolean(canonicalSummary), trackedTime: lens.trackTime === true, trackedSubject: lens.trackSubject === true, runId, createdAt: finishedAt,
         model: run.model, presetName: run.presetName, items: clone(admission.acceptedItems),
