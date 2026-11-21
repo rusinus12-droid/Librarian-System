@@ -1,10 +1,10 @@
 {
   "schema": "librarian.update-manifest.v1",
   "repository": "rusinus12-droid/Librarian-System",
-  "version": "1.3.0",
-  "tag": "v1.3.0",
+  "version": "1.4.0",
+  "tag": "v1.4.0",
   "channel": "stable",
-  "assetName": "Librarian-System-1.3.0.zip",
+  "assetName": "Librarian-System-1.4.0.zip",
   "updatePolicy": "program_only",
   "minimumSourceVersion": "1.0.0",
   "compatibility": {
@@ -16,7 +16,7 @@
     "releaseArchiveContract": 1
   },
   "components": {
-    "backend": "1.3.0",
+    "backend": "1.4.0",
     "libra": "3.1.0",
     "hayaku": "4.1.0",
     "flashback": "2.1.0",
