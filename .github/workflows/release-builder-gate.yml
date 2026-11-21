@@ -111,10 +111,42 @@ jobs:
             PROGRAM/tests/gradia_forced_bond_aide_test.cjs \
             PROGRAM/tests/gradia_body_state_aide_test.cjs \
             PROGRAM/tests/gradia_world_dynamics_aide_test.cjs \
+            PROGRAM/tests/gradia_intimacy_aide_test.cjs \
+            PROGRAM/tests/gradia_relationship_sim_aide_test.cjs \
+            PROGRAM/tests/gradia_group_card_cast_test.cjs \
+            PROGRAM/tests/gradia_gui_scope_pages_test.cjs \
             PROGRAM/tests/gradia_profile_initiative_test.cjs \
             PROGRAM/tests/gradia_rp_pacing_prompt_test.cjs \
             PROGRAM/tests/gradia_present_profile_lore_test.cjs \
             PROGRAM/tests/gradia_scene_fixation_test.cjs \
+            PROGRAM/tests/gradia_npc_disposition_test.cjs \
+            PROGRAM/tests/hayaku_missed_after_request_canonical_packet_test.cjs \
+            PROGRAM/tests/libra_main_after_request_proof_revision_test.cjs \
+            PROGRAM/tests/libra_micro_claim_changed_retry_test.cjs \
+            PROGRAM/tests/libra_micro_not_durably_ready_retry_test.cjs \
+            PROGRAM/tests/libra_micro_timeout_and_schema_recovery_test.cjs \
+            PROGRAM/tests/libra_text_equivalent_revision_test.cjs \
+            PROGRAM/tests/hayaku_source_filter_binding_test.cjs \
+            PROGRAM/tests/libra_state_projection_partial_failure_test.cjs \
+            PROGRAM/tests/libra_last_micro_publication_order_test.cjs \
+            PROGRAM/tests/gradia/context-degradation.test.cjs \
+            PROGRAM/tests/gradia/author-note-all-stages.test.cjs \
+            PROGRAM/tests/gradia/creative-direction-clear.test.cjs \
+            PROGRAM/tests/gradia_three_owner_pipeline_test.cjs \
+            PROGRAM/tests/gradia/evidence-bridge.test.cjs \
+            PROGRAM/tests/gradia_optional_memory_runtime_test.cjs \
+            PROGRAM/tests/gradia_input_writer_unified_runtime_test.cjs \
+            PROGRAM/tests/gradia_owner_handback_test.cjs \
+            PROGRAM/tests/gradia_plugin_mode_long_chat_test.cjs \
+            PROGRAM/tests/gradia_plugin_read_test.cjs \
+            PROGRAM/tests/gradia_three_owner_allocation_test.cjs \
+            PROGRAM/tests/source_input_tag_finder_test.cjs \
+            PROGRAM/tests/source_rule_sync_preview_test.cjs \
+            PROGRAM/tests/source_rule_sync_real_ipc_test.cjs \
+            PROGRAM/tests/memory_suite_recall_share_test.cjs \
+            PROGRAM/tests/flashback_state_line_bookkeeping_free_test.cjs \
+            PROGRAM/tests/flashback_source_rule_change_maintenance_test.cjs \
+            PROGRAM/tests/gradia_object_continuity_test.cjs \
             PROGRAM/tests/libra_cycle_lens_pregnancy_runtime_test.cjs \
             PROGRAM/tests/gradia_live_eval_regressions_test.cjs \
             PROGRAM/tests/lia_settings_save_in_place_test.cjs \

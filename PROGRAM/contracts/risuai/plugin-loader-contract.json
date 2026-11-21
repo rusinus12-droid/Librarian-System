@@ -72,7 +72,9 @@
       "hasVersionDirective": true,
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "libra",
+        "flashback_memory"
       ]
     },
     "flashback": {
@@ -85,7 +87,9 @@
       "hasVersionDirective": true,
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "libra",
+        "hayaku_locator_continuity"
       ]
     },
     "libra": {
@@ -98,7 +102,9 @@
       "hasVersionDirective": true,
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "hayaku_locator_continuity",
+        "flashback_memory"
       ]
     },
     "lia": {

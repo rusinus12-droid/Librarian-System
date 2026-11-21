@@ -73,3 +73,72 @@ test('an unset context window uses the model heuristic instead of the ollama 32k
   assert.equal(budget.source,'model_heuristic');
   assert.ok(!runtime.lastContextDegradation,'nothing has to be dropped at the real model size');
 });
+
+// NPC 반응 경향성 adds a long block to every stage. On a small model it is condensed first (the
+// fixed stances and the NPC list stay), then left out of that stage, and the turn never fails.
+const FOUR_NPCS=[{name:'준호',level:'affection'},{name:'민아',level:'dislike'},{name:'세라',level:'like'},{name:'도윤',level:'acquaintance'}];
+// The prompt's base size varies by a few hundred tokens between runs, so the drop case uses a cast
+// whose condensed rows alone (16 NPCs with notes) cannot fit beside it on a 16k model.
+const MANY_NPCS=Array.from({length:16},(_,i)=>({name:'인물'+i,level:'hostile',note:'페르소나를 오래전 사건의 원흉으로 여기며 공개적인 자리에서도 적의를 감추지 않는다 '.repeat(3).slice(0,190)}));
+const dispositionRun=async(t,contextWindow,npcs=FOUR_NPCS)=>{
+  const prompts=[];
+  const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
+  await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
+    model:'tight-model',context_window:contextWindow,max_tokens:16384,timeout_ms:5000,stream:false});
+  await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
+    failure_mode:'hard',lore_activation_mode:'off',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
+  await f.connect();
+  const send=()=>f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
+  await send();
+  const key=f.host.plugin.debugActiveScopeKey();
+  await f.host.plugin.saveRuntimeSettings({...await f.host.plugin.getRuntimeSettings(),npc_disposition:JSON.stringify({[key]:{default:'hostile',npcs}})});
+  prompts.length=0;
+  const out=await send();
+  return {f,prompts,out,record:f.host.plugin.getRuntime().contextDegradations.find(item=>item.stage==='shadow_act'&&String(item.dropped).includes('npc_disposition'))};
+};
+
+test('NPC disposition is condensed when the full block does not fit, keeping the stances',async t=>{
+  const {prompts,out,record}=await dispositionRun(t,16600);
+  assert.equal(prompts.length,4,'the turn runs');
+  assert.ok(JSON.stringify(out).includes(DRAFT));
+  assert.ok(record,'the disposition step is recorded');
+  assert.ok(record.dropped.includes('npc_disposition_detail'));
+  assert.ok(!record.dropped.includes('npc_disposition'),'the condensed block fits, so it is not dropped');
+  const shadow=JSON.stringify(prompts[0]);
+  assert.ok(shadow.includes('NPC DISPOSITION (반응 경향성)'),'the block header stays');
+  assert.ok(shadow.includes('- 준호: affection (애정)'),'the stances stay');
+  assert.ok(shadow.includes('it never drifts, and lore decides only how it shows'),'the condensed rule stays');
+  assert.ok(!shadow.includes('LEVELS IN USE'),'the long explanation is gone');
+});
+
+test('NPC disposition is left out of a stage with no room rather than failing the turn',async t=>{
+  const {prompts,out,record}=await dispositionRun(t,16000,MANY_NPCS);
+  assert.equal(prompts.length,4,'the turn runs');
+  assert.ok(JSON.stringify(out).includes(DRAFT));
+  assert.ok(record&&record.dropped.includes('npc_disposition'),'the drop is recorded');
+  assert.ok(!JSON.stringify(prompts[0]).includes('NPC DISPOSITION (반응 경향성)'),'the SHADOW request carries no disposition');
+  assert.ok(JSON.stringify(out).includes('[NPC DISPOSITION GUARD]'),'the final pass keeps its own guard');
+});
+
+// This turn's random scene variable is a creative nudge, not a user directive: when the prompt does
+// not fit, it is left out of that request before the turn would fail. The random draw used to make
+// a 16k model fail only on the runs that drew a variable.
+test('the random scene variable is left out of a request that cannot hold it',async t=>{
+  const prompts=[];
+  const f=await ipcHost(t,{chatMessages:ROWS,onModel:modelStub(prompts)});
+  f.host.plugin.debugSetSceneVarianceRandom([0.1,0.0,0.0]);
+  t.after(()=>f.host.plugin.debugSetSceneVarianceRandom(null));
+  await f.host.plugin.saveProviderPreset('tight',{provider:'custom',url:'https://offline.invalid/v1/chat/completions',key:'synthetic',
+    model:'tight-model',context_window:15700,max_tokens:16384,timeout_ms:5000,stream:false});
+  await f.host.plugin.saveRuntimeSettings({mode:'normal',default_preset:'tight',input_assist_mode:'off',multi_pipeline_mode:'lightweight',
+    failure_mode:'hard',lore_activation_mode:'off',scene_variance:'high',enable_shadow_act:true,enable_character_aide:true,enable_world_aide:true,enable_plot_aide:true});
+  await f.connect();
+  const out=await f.host.hooks.beforeRequest(ROWS.map(row=>({role:row.role,content:row.data,messageId:row.chatId,chatId:row.chatId})),'model');
+  assert.equal(prompts.length,4,'the turn runs');
+  assert.ok(JSON.stringify(out).includes(DRAFT));
+  const record=f.host.plugin.getRuntime().contextDegradations.find(item=>item.stage==='shadow_act');
+  assert.ok(record&&record.dropped.includes('scene_variable'),`the drop is recorded: ${JSON.stringify(record)}`);
+  assert.ok(record.sceneVariableRemovedChars>0);
+  assert.ok(!JSON.stringify(prompts[0]).includes('THIS TURN’S VARIABLE'),'the SHADOW request carries no variable');
+  assert.ok(JSON.stringify(prompts[0]).includes('DIALOGUE-TO-SCENE ANCHOR'),'the scene rules around it stay');
+});

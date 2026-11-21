@@ -4,7 +4,7 @@
 const assert=require('node:assert/strict');
 const {pause,until}=require('../fixtures/libra_gui_memory_dom_host.cjs');
 const groups={ai:'ai',embedding:'ai',memory:'mem',pipeline:'mem',logs:'mem',references:'ref',source_edits:'ref',server:'store',recovery:'store',transfer:'store',state:'adv',general:'adv'};
-const labels={ai:'AI 연결',embedding:'임베딩 연결',memory:'성능 프리셋',pipeline:'기억 분석',logs:'기록 보관소',references:'참고 자료',source_edits:'분석할 내용',server:'서버 · 저장',recovery:'백업 · 복구',transfer:'데이터 이동',state:'현재 상태 적용',general:'일반 · 진단'};
+const labels={ai:'AI 연결',embedding:'임베딩 연결',memory:'성능 프리셋',pipeline:'기억 분석',logs:'기록 보관소',references:'참고 자료',source_edits:'원문 태그 필터',server:'서버 · 저장',recovery:'백업 · 복구',transfer:'데이터 이동',state:'현재 상태 적용',general:'일반 · 진단'};
 async function goSettings(s,section='memory'){
  if(section==='performance')section='memory';assert.ok(groups[section],`approved setting ${section}`);
  const firstRun=s.doc.querySelector('[data-libra-quick-dialog] .dialog__actions button');if(firstRun){firstRun.click();await pause(200);assert.equal(s.doc.querySelector('[data-libra-quick-dialog]'),null,'first-run dialog dismissed');}

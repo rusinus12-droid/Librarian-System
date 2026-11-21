@@ -156,12 +156,12 @@ test('results page places input assist next to plot, and defaults to SHADOW ACT 
     assert.ok(results, 'results page renders');
 
     const tabs = [...results.querySelectorAll('[data-subtabs="rs"] [data-subtab]')];
-    assert.equal(tabs.length, 8, 'eight tabs in results');
+    assert.equal(tabs.length, 11, 'eleven tabs in results');
 
     // Tab order follows the run: each sub-AIDE sits right after the core AIDE whose call runs it
-    // (상태 → 인물, 세계 동역학 → 세계관, 억결 → 플롯), then 입력 도우미.
+    // (상태·지식·정사·관계 → 인물, 세계 동역학 → 세계관, 억결 → 플롯), then 입력 도우미.
     const tabKeys = tabs.map(t => t.dataset.subtab);
-    assert.deepEqual(tabKeys, ['s', 'c', 'b', 'w', 'd', 'p', 'f', 'i'], 'tab order: SHADOW ACT, 인물, 상태, 세계관, 세계 동역학, 플롯, 억결, 입력 도우미');
+    assert.deepEqual(tabKeys, ['s', 'c', 'b', 'k', 'x', 'r', 'w', 'd', 'p', 'f', 'i'], 'tab order: SHADOW ACT, 인물, 상태, 지식, 정사, 관계, 세계관, 세계 동역학, 플롯, 억결, 입력 도우미');
     const inputTab = tabs[tabKeys.indexOf('i')];
 
     // SHADOW ACT tab should be active by default
@@ -183,5 +183,237 @@ test('results page places input assist next to plot, and defaults to SHADOW ACT 
     assert.equal(shadowPanel?.classList.contains('is-active'), false, 'SHADOW ACT panel is inactive after click');
   } finally {
     await f.close();
+  }
+});
+
+test('copilot token exchange sends User-Agent, non-GPT copilot preset sends reasoning_effort, and 400 unsupported retry strips it', async () => {
+  const { instrument, messages } = require('./evidence-bridge.test.cjs');
+  const tokenRequests = [];
+  const chatRequests = [];
+  const host = await load({
+    transformSource: source => instrument(source, {}),
+    api: {
+      nativeFetch: async (url, init) => {
+        if (url === 'https://api.github.com/copilot_internal/v2/token') {
+          tokenRequests.push({ url, headers: init?.headers || {} });
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ token: 'copilot-session-token-1', expires_at: Math.floor(Date.now() / 1000) + 1800 }),
+            text: async () => JSON.stringify({ token: 'copilot-session-token-1', expires_at: Math.floor(Date.now() / 1000) + 1800 })
+          };
+        }
+        const body = JSON.parse(init.body);
+        chatRequests.push({ url, headers: init?.headers || {}, body });
+        const system = body.messages?.filter(m => m.role === 'system').map(m => m.content).join('\n') || '';
+        const stageMatch = system.match(/Return the compact (aide_\w+) patch JSON/);
+        if (stageMatch && stageMatch[1] === 'aide_character' && !chatRequests.some(r => r.rejected)) {
+          chatRequests[chatRequests.length - 1].rejected = true;
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({ error: { message: 'Unsupported parameter: reasoning_effort is not supported for this model' } }),
+            text: async () => JSON.stringify({ error: { message: 'Unsupported parameter: reasoning_effort is not supported for this model' } })
+          };
+        }
+        const content = stageMatch
+          ? JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage: stageMatch[1], ok: true, domain: {}, analysis: { summary: 'Keep scene', constraints: [], risks: [] }, edits: [] })
+          : 'SHADOW_DRAFT The archivist waited quietly inside the library.';
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content }, finish_reason: 'stop' }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] })
+        };
+      }
+    }
+  });
+  await host.hooks.beforeRequest(messages(), 'model');
+  const settings = {
+    ...host.plugin.getRuntime().settings,
+    inputAssistMode: 'off',
+    enableShadowAct: true,
+    enableCharacterAide: true,
+    enableWorldAide: false,
+    enablePlotAide: false,
+    multiPipelineMode: 'lightweight',
+    mode: 'normal',
+    failureMode: 'hard',
+    loreActivationMode: 'off',
+    stagePresetNames: {},
+    defaultPresetName: 'cop',
+    presets: {
+      cop: {
+        provider: 'copilot',
+        url: 'https://api.githubcopilot.com/chat/completions',
+        key: 'ghu_test_oauth_key',
+        model: 'gemini-4-carbon',
+        request_format: 'chat_completions',
+        context_window: 128000,
+        max_tokens: 16384,
+        reasoning_preset: 'auto',
+        timeout_ms: 5000,
+        stream: false
+      }
+    },
+    skillRouterEnabled: false
+  };
+  const r = await host.pipeline(messages(), 'model', settings);
+  assert.equal(r.ok, true);
+  assert.ok(tokenRequests.length >= 1, 'copilot token exchange must be called');
+  assert.equal(tokenRequests[0].headers['User-Agent'], 'GitHubCopilotChat/0.22.0');
+  assert.equal(chatRequests[0].headers.Authorization, 'Bearer copilot-session-token-1');
+  assert.ok(chatRequests[0].body.reasoning_effort, 'non-GPT copilot preset must send reasoning_effort');
+  const rejectedIdx = chatRequests.findIndex(entry => entry.rejected);
+  assert.ok(rejectedIdx >= 0, 'rejected request observed');
+  assert.ok(chatRequests[rejectedIdx].body.reasoning_effort, 'initial rejected call had reasoning_effort');
+  assert.equal(chatRequests[rejectedIdx + 1].body.reasoning_effort, undefined, 'thinkingUnsupportedRetry omits reasoning_effort');
+});
+
+test('reasoning-starved partial-content length stop retries with low effort and concise nudge in native and evidence runs', async () => {
+  const { instrument, messages } = require('./evidence-bridge.test.cjs');
+  const crypto = require('node:crypto');
+  const sha = v => crypto.createHash('sha256').update(v).digest('hex');
+  const canonical = value => JSON.stringify(value, (_k, v) => v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.keys(v).sort().reduce((o, k) => (o[k] = v[k], o), {}) : v);
+
+  for (const withEvidence of [false, true]) {
+    const prompts = [];
+    const boundary = {
+      mode: 'server_only',
+      modeGeneration: 7,
+      scope: { characterId: 'c1', chatId: 'chat1', branchId: 'b1', personaId: 'p1', worldlineRevision: 'w1' },
+      data: { instanceId: 'DATA-fixture', resetEpoch: 'reset-4' },
+      nativeRevision: 'native-18',
+      currentInputHash: sha('Continue the scene.'),
+      recentTurnDigest: '0'.repeat(64)
+    };
+    const issued = new Map();
+    const deps = withEvidence ? {
+      digest: async v => sha(v),
+      getBoundary: async () => JSON.parse(JSON.stringify(boundary)),
+      assertCurrent: async packet => canonical(issued.get(packet.requestId)) === canonical(packet),
+      recall: async req => {
+        const content = 'EVIDENCE_LINE: The clock struck five.';
+        const receipt = {
+          schema: 'gradia.lib-read-receipt.v1',
+          requestId: req.requestId,
+          boundary: JSON.parse(JSON.stringify(boundary)),
+          evidenceRevision: 'rev-1',
+          completeness: 'complete',
+          truncated: false,
+          items: [{ id: 'libra:1', owner: 'libra', content, contentHash: sha(content), authority: 'owner_memory', eligibility: 'eligible', source: { scope: JSON.parse(JSON.stringify(boundary.scope)), sourceRevision: 'sr-1', turnIds: ['turn-u-101', 'turn-a-102'], variantId: 'generation-a-2', handle: 'h1' } }]
+        };
+        issued.set(req.requestId, JSON.parse(JSON.stringify(receipt)));
+        return receipt;
+      }
+    } : undefined;
+
+    let worldAttempts = 0;
+    const host = await load({
+      transformSource: source => instrument(source, {}),
+      testGlobals: { crypto: crypto.webcrypto, __testDependencies: deps },
+      api: {
+        nativeFetch: async (url, init) => {
+          if (url === 'https://api.github.com/copilot_internal/v2/token') {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({ token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 1800 }),
+              text: async () => JSON.stringify({ token: 'tok', expires_at: Math.floor(Date.now() / 1000) + 1800 })
+            };
+          }
+          const body = JSON.parse(init.body);
+          prompts.push(body);
+          const system = body.messages?.filter(m => m.role === 'system').map(m => m.content).join('\n') || '';
+          const stageMatch = system.match(/Return the compact (aide_\w+) patch JSON/);
+          if (stageMatch && stageMatch[1] === 'aide_world') {
+            worldAttempts += 1;
+            if (worldAttempts === 1) {
+              const partial = '{"schema":"serial_gradation_agents_for_rp_draft_patch_v1","stage":"aide_world","ok":true,"scene_purpose":"' + 'x'.repeat(210);
+              const payload = {
+                choices: [{ message: { content: partial }, finish_reason: 'length' }],
+                usage: { completion_tokens: 16384, reasoning_tokens: 16218 }
+              };
+              return { ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload) };
+            }
+          }
+          const content = stageMatch
+            ? JSON.stringify({ schema: 'serial_gradation_agents_for_rp_draft_patch_v1', stage: stageMatch[1], ok: true, domain: {}, analysis: { summary: 'Keep scene', constraints: [], risks: [] }, edits: [] })
+            : 'SHADOW_DRAFT The archivist waited quietly inside the library.';
+          const payload = { choices: [{ message: { content }, finish_reason: 'stop' }] };
+          return { ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload) };
+        }
+      }
+    });
+    await host.hooks.beforeRequest(messages(), 'model');
+    const settings = {
+      ...host.plugin.getRuntime().settings,
+      inputAssistMode: 'off',
+      enableShadowAct: true,
+      enableCharacterAide: false,
+      enableWorldAide: true,
+      enablePlotAide: false,
+      multiPipelineMode: 'lightweight',
+      mode: 'normal',
+      failureMode: 'soft',
+      loreActivationMode: 'off',
+      stagePresetNames: {},
+      defaultPresetName: 'cop',
+      presets: {
+        cop: {
+          provider: 'copilot',
+          url: 'https://api.githubcopilot.com/chat/completions',
+          key: 'tok',
+          model: 'gemini-4-carbon',
+          request_format: 'chat_completions',
+          context_window: 128000,
+          max_tokens: 16384,
+          reasoning_preset: 'auto',
+          timeout_ms: 5000,
+          stream: false
+        }
+      },
+      skillRouterEnabled: false
+    };
+    if (withEvidence) {
+      const stages = ['shadow_act', 'aide_world'];
+      const input = messages();
+      const selections = stages.map(stage => {
+        const recent = host.buildRecent(input, { ...settings, turnWindow: settings.stageOptions?.[stage]?.turn_window || settings.turnWindow });
+        const view = {
+          ...Object.fromEntries(['latestUser','latestAssistantRaw','latestAssistant','terminalVisibleScene','previousTurnUser','previousTurnAssistant','previousTurnText','earlierTurnsText','completeTurnsText','sceneAnchor','previousResponseEvidence','text','visibleText'].map(k => [k, recent[k] || ''])),
+          visibleMessages: recent.visibleMessages.map(m => ({ role: m.role, content: m.content }))
+        };
+        return { stage, turns: recent.turnEligibility.selected, viewSHA256: sha(canonical(view)) };
+      });
+      const refs = [...new Map(selections.flatMap(s => s.turns.flatMap(t => [t.user, ...t.assistants, t.boundary])).map(r => [JSON.stringify(r), r])).values()];
+      const current = input.at(-1);
+      let hash = 2166136261;
+      for (let i = 0; i < current.content.length; i++) { hash ^= current.content.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+      hash ^= 31; hash = Math.imul(hash, 16777619);
+      const currentInputRef = { messageId: current.messageId, generationId: null, speakerId: null, speakerName: null, contentHash: (hash >>> 0).toString(16).padStart(8, '0') + ':' + (current.content.length + 1) };
+      const nativeReadSet = {
+        schema: 'gradia.native-read-set.v1',
+        currentInputRef,
+        selections,
+        turns: refs.map(ref => ({ ...ref, role: input.find(m => m.messageId === ref.messageId).role, contentSHA256: sha(input.find(m => m.messageId === ref.messageId).content) }))
+      };
+      boundary.recentTurnDigest = sha(canonical(nativeReadSet));
+      boundary.currentInputHash = sha(input.at(-1).content);
+    }
+
+    const r = await host.pipeline(messages(), 'model', settings);
+    try {
+      assert.equal(r.ok, true, `mode withEvidence=${withEvidence} failed: ${r.reason}`);
+      assert.equal(worldAttempts, 2, `withEvidence=${withEvidence}: aide_world must retry once`);
+      assert.ok(r.stages.every(s => s.ok && !s.fallback), `withEvidence=${withEvidence}: no stage fallback allowed: ${JSON.stringify(r.stages)}`);
+      const worldRetry = prompts.at(-1);
+      assert.equal(worldRetry.reasoning_effort, 'low', `withEvidence=${withEvidence}: retry must lower reasoning_effort to low`);
+      const retrySys = worldRetry.messages.filter(m => m.role === 'system').map(m => m.content).join('\n');
+      assert.match(retrySys, /Keep internal reasoning very brief/, `withEvidence=${withEvidence}: retry must include concise reasoning nudge`);
+    } finally {
+      r.closeEvidence?.();
+    }
   }
 });

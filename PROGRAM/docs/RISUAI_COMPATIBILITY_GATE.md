@@ -61,7 +61,7 @@ PROGRAM/contracts/risuai/
 ├── runtime-semantics.json       # v3.svelte.ts 등 19개 핵심 구현 블록의 정규화 AST/코드 지문
 ├── plugin-loader-contract.json  # 6개 플러그인 헤더, //@arg 스키마, //@version 500B 제한
 ├── storage-contract.json        # pluginStorage / safeLocalStorage / getLocalPluginStorage 의미론
-├── ipc-contract.json            # 양방향 //@allowed-ipc 토폴로지 (14개 허용 쌍)
+├── ipc-contract.json            # 양방향 //@allowed-ipc 토폴로지 (20개 허용 쌍)
 └── replay/                      # H06 시나리오 (Product-Path 1개 + Host-Contract 3개 + Contract-Fixture 4개)
     ├── [Host-Contract] H06-01.json  # output 리스너 스냅샷 격리, messageIndex=-1 무시, 이어쓰기 대체 (RisuAI host chat listener)
     ├── [Product-Path]  H06-02.json  # 네이티브 브랜치 T12 분기 및 부모/형제 스코프 오염 방지 (실제 Librarian Native branch capability)

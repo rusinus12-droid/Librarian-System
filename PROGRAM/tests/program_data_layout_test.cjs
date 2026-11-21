@@ -33,6 +33,18 @@ function runPrepare(tempProgram, dataDir) {
   });
 }
 
+function gitIgnoredRootEntries(root, names) {
+  // The builder copies by allowlist (shouldCopySourceProgram / shouldCopyUpdater), so an
+  // ignored developer directory at the root can never reach an artifact. Rejecting it only
+  // made the check fail on machines where a local tool (git worktrees under .claude, the
+  // gitignored .development scratch tree, __pycache__) happened to exist. Ignored entries
+  // are dropped from the listing below; an untracked entry git does NOT ignore is still
+  // rejected, because that is the case a stray duplicate file creates.
+  if (!names.length || !fs.existsSync(path.join(root, '.git'))) return new Set();
+  const result = spawnSync('git', ['-C', root, 'check-ignore', '--stdin'], { input: names.join('\n'), encoding: 'utf8' });
+  return new Set(String(result.stdout || '').split(/\r?\n/).filter(Boolean));
+}
+
 function assertPackageRoot(root, { allowSourceInput = false } = {}) {
   // macOS writes .DS_Store into any directory Finder has displayed. It is
   // gitignored, never tracked, and never copied into a release: the builder is an
@@ -43,7 +55,7 @@ function assertPackageRoot(root, { allowSourceInput = false } = {}) {
   // treated as a bundle entry.
   const OS_METADATA_NAMES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
   const bundleEntries = dir => fs.readdirSync(dir).filter(name => !OS_METADATA_NAMES.has(name)).sort();
-  const rootEntries = bundleEntries(root);
+  const rawRootEntries = bundleEntries(root);
   const expectedRootEntries = ['0_설치_안내.txt', 'DATA', 'PROGRAM', 'SHA256SUMS.txt', 'UPDATER', '업데이트.bat', '업데이트.command', '업데이트.sh'];
   if (fs.existsSync(path.join(root, 'update-manifest.json'))) expectedRootEntries.push('update-manifest.json');
   const workspaceMarker = path.join(root, '.development', 'workspace.json');
@@ -77,6 +89,12 @@ function assertPackageRoot(root, { allowSourceInput = false } = {}) {
     if (fs.existsSync(path.join(root, '.github'))) expectedRootEntries.push('.github');
     if (fs.existsSync(path.join(root, 'README.md'))) expectedRootEntries.push('README.md');
   }
+  // Entries git ignores are local developer state, not bundle entries: the builder copies by
+  // allowlist, so they cannot ship. Declared entries are always listed so a missing one still
+  // fails the comparison below.
+  const declaredRootEntries = new Set(expectedRootEntries);
+  const ignoredRootEntries = gitIgnoredRootEntries(root, rawRootEntries);
+  const rootEntries = rawRootEntries.filter(name => declaredRootEntries.has(name) || !ignoredRootEntries.has(name));
   assert.deepEqual(rootEntries, expectedRootEntries.sort(), 'Bundle root contains only PROGRAM/DATA, updater, and verified release artifacts.');
 }
 

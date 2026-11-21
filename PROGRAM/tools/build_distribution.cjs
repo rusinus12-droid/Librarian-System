@@ -90,6 +90,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'distribution_metadata_coherence_test.cjs',
   'release_asset_contract_test.cjs',
   'remote_update_program_only_apply_test.cjs',
+  'updater_journal_rename_retry_test.cjs',
   'remote_update_crash_recovery_test.cjs',
   'remote_update_recovery_boundaries_test.cjs',
   'remote_update_commit_boundary_test.cjs',
@@ -391,10 +392,17 @@ function shouldCopyUpdater(relativePath) {
   return REQUIRED_UPDATER_FILES.has(normalized);
 }
 
+// The updater writes these while it runs (its log, the operation lock, the last update state).
+// They are gitignored, are never part of the distribution (copying is allowlisted by
+// shouldCopyUpdater), and a developer who ran the updater from the source tree must not fail
+// the updater-source cleanliness gate because of them.
+const UPDATER_RUNTIME_STATE = /^(?:logs(?:\/|$)|operation-lock\.sqlite$|update-state\.json$)/;
+
 function assertUpdaterSourceClean(updaterRoot) {
   const root = path.resolve(updaterRoot);
   const actual = listFiles(root).map(file => path.relative(root, file).split(path.sep).join('/'));
   for (const relative of actual) {
+    if (UPDATER_RUNTIME_STATE.test(relative)) continue;
     if (UPDATER_SENSITIVE_PATH_PATTERN.test(relative)) throw new Error(`distribution_updater_sensitive_file_detected:${relative}`);
     if (!REQUIRED_UPDATER_FILES.has(relative)) throw new Error(`distribution_updater_file_not_allowlisted:${relative}`);
   }
@@ -472,6 +480,7 @@ function runNodeProcess(args = [], cwd = programDir, options = {}) {
     cwd,
     encoding: 'utf8',
     timeout: options.timeoutMs || 180000,
+    maxBuffer: options.maxBuffer || 64 * 1024 * 1024,
     stdio: options.inherit ? 'inherit' : 'pipe',
     env: { ...process.env, ...(options.env || {}) }
   });
@@ -694,7 +703,10 @@ function runReleaseSmokeFromSource() {
   if (!support?.modulesDir) throw new Error('distribution_build_support_unavailable');
   smokeEnv.GRADIA_TOOLCHAIN_ROOT = support.modulesDir;
   smokeEnv.NODE_PATH = process.env.NODE_PATH || support.modulesDir;
-  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:900000,env:smokeEnv});
+  // A hang guard, not a speed target. The suite takes about 13 minutes on a developer machine
+  // (gradia_suite_test alone runs its files one by one for about 10), so the former 15-minute
+  // limit failed on slower CI runners with every test still passing.
+  const smoke=runNodeProcess(['--test','--test-concurrency=4',...RELEASE_SMOKE_TESTS.map(name=>path.join(programDir,'tests',name))],programDir,{timeoutMs:1800000,env:smokeEnv});
   assertTreeSourceUnchanged(programDir,programSnapshot,shouldCopySourceProgram,'program_source_after_smoke',true);
   assertTreeSourceUnchanged(updaterRoot,updaterSnapshot,shouldCopyUpdater,'updater_source_after_smoke');
   return smoke;

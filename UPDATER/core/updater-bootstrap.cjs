@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const fsp = fs.promises;
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { syncDirectory } = require('./journal.cjs');
+const { syncDirectory, renameWithRetry } = require('./journal.cjs');
 
 const RUNTIME_TOP_LEVEL = new Set([
   'update-state.json',
@@ -87,7 +87,7 @@ async function durableCopyFile(source, destination) {
     await handle.sync();
     await handle.close();
     handle = null;
-    await fsp.rename(temporary, destination);
+    await renameWithRetry(temporary, destination);
     await syncDirectory(path.dirname(destination));
   } finally {
     if (handle) await handle.close().catch(() => {});

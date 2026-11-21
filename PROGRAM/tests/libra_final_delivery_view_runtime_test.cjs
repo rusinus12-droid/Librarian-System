@@ -78,6 +78,40 @@ test('final delivery GUI uses only the current receipt and never promotes select
   assert.deepEqual([...notes.querySelectorAll('.recall-line')].map(row=>row.querySelector('.recall-line__text').textContent),['Micro receipt text']);
   assert.equal(notes.querySelector('.recall-filter button[data-val="micro"]').getAttribute('aria-pressed'),'true');
   assert.equal(notes.querySelectorAll('.recall-mix__part').length,2);assert.doesNotMatch(notes.textContent,/selected but never delivered/);
+  // Without recent-turn exclusions, a single-line 0건 status appears with no expandable toggle.
+  const emptyExcluded=notes.querySelector('[data-recent-excluded-notes]');
+  assert.ok(emptyExcluded);assert.match(emptyExcluded.textContent,/최근 턴으로 인해 제외된 기록\s*0건/);
+  assert.equal(emptyExcluded.tagName,'DIV');assert.equal(emptyExcluded.querySelector('[data-recent-excluded-toggle]'),null);
+
+  // With recent-turn exclusions, the bottom shows N건 + 열람 toggle that reveals the excluded records lazily.
+  const receiptWithExcluded={...structuredClone(receipt),recallDiagnostics:{recentChatExcluded:{
+    visibleTurns:[1,2,3,4,5,6],excludedCanonicalRefs:1,excludedMicroTurns:1,excludedCount:2,
+    items:[
+      {family:'canonical',turnStart:1,turn:5,preview:'<script>alert(1)</script>1~5턴 정본 요약 미리보기'},
+      {family:'micro',turnStart:6,turn:6,preview:'6턴 장면 세부 미리보기'}
+    ]
+  }}};
+  u.Runtime.lastMemoryRecallViewer=receiptWithExcluded;
+  const previousNote=notes;
+  view=u.bookFinalDeliveryView();notes=u.buildBookDeliveryNotes(view,previousNote);
+  assert.notEqual(notes,previousNote,'updating recentChatExcluded invalidates note cache key');
+  const excludedEl=notes.querySelector('details[data-recent-excluded-notes]');
+  assert.ok(excludedEl);assert.equal(excludedEl.open,false);
+  assert.match(excludedEl.querySelector('.recall-excluded__status').textContent,/최근 턴으로 인해 제외된 기록\s*2건/);
+  assert.equal(excludedEl.querySelector('[data-recent-excluded-toggle]').textContent,'열람');
+  assert.equal(notes.querySelectorAll('.recall-line').length,2,'excluded records do not alter delivered .recall-line count');
+  excludedEl.open=true;excludedEl.dispatchEvent(new dom.window.Event('toggle'));
+  await Promise.resolve();
+  assert.equal(excludedEl.querySelector('[data-recent-excluded-toggle]').textContent,'접기');
+  assert.match(excludedEl.querySelector('.recall-excluded__turns').textContent,/T1, T2, T3, T4, T5, T6/);
+  const excludedItems=[...excludedEl.querySelectorAll('.recall-excluded__item')];
+  assert.equal(excludedItems.length,2);
+  assert.match(excludedItems[0].textContent,/정본 요약/);assert.match(excludedItems[0].textContent,/T1~5/);
+  assert.equal(excludedItems[0].querySelector('script'),null,'excluded preview is inert text');
+  assert.match(excludedItems[0].textContent,/<script>alert\(1\)<\/script>1~5턴 정본 요약 미리보기/);
+  assert.match(excludedItems[1].textContent,/장면 세부/);assert.match(excludedItems[1].textContent,/T6/);
+  assert.doesNotMatch(notes.textContent,/이번 턴|이번 리콜|추가 LLM/);
+  u.Runtime.lastMemoryRecallViewer=structuredClone(receipt);
   u.openBookFinalEvidenceDialog();const overlay=document.querySelector('[data-final-evidence]');assert.ok(overlay);
   assert.equal(overlay.querySelectorAll('[data-evidence-family]').length,2);
   const full=overlay.querySelector('[data-final-injection-body]');assert.ok(full);

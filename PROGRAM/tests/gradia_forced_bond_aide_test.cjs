@@ -153,8 +153,8 @@ test('with no card, 억결 binds scene people and asks for a beat only when the 
   assert.match(bond, /If the user closes or explicitly excludes a relationship thread, keep it out of the scene/);
   assert.match(bond, /Auto bonds: no user card exists, so read each bond’s tone/);
   assert.match(bond, /If the scene gives the main bond a natural opening and its beat is missing, add one/);
-  assert.match(bond, /do not add a beat or recruit a substitute bond/);
-  assert.match(bond, /return empty bond_readings and bond_proposals/);
+  assert.match(bond, /if the scene gives the main bond a natural opening and its beat is missing|do not add a beat or recruit a substitute bond/i);
+  assert.match(bond, /return empty bond_readings and bond_profiles/);
   assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_character')), /\[FORCED BOND/, 'checkers get the bond block for auto bonds');
   assert.match(systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot')), /Keep earned bond beats that respect the user’s focus, player agency and causality/);
   assert.match(f.prompts.find(item => !stageOf(item)).messages.map(m => m.content).join('\n'), /Write one visible beat early or mid-scene/, 'SHADOW plans the beat');
@@ -194,35 +194,36 @@ test('lightweight AIDEs return bond_check through the schema and 억결 reads th
   assert.ok(!JSON.stringify(f.prompts.find(item => stageOf(item) === 'aide_plot')).includes('"bond_check"'), 'the host settles readings instead of checking');
 });
 
-test('readings and proposals stay in memory for the GUI and are never written to storage', async t => {
+test('readings stay in memory for the GUI, no AI proposals schema or storage exists', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
   wireModel(f, '준호가 문 앞에서 기다렸다.', {
     aide_plot: {
-      bond_readings: [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }],
-      bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호 wait for the persona' }, { from: '@persona', to: '준호', tones: ['rivalry'], why: 'already a card' }]
+      bond_readings: [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }]
     }
   });
   await withCards(f);
   const keysBefore = new Set(f.values.keys());
   await runTurn(f, '준호를 지나쳐 간다.');
+  const plotPrompt = f.prompts.find(item => stageOf(item) === 'aide_plot');
+  assert.ok(!JSON.stringify(plotPrompt).includes('"bond_proposals"'), 'bond_proposals is removed from the schema and prompt');
   const state = f.host.plugin.debugForcedBondState();
   assert.deepEqual(JSON.parse(JSON.stringify(state.readings.readings)), [{ card: 'bond-junho', tones: ['hatred', 'longing'], stage: 'expressed', evidence: 'recent' }]);
-  assert.equal(state.proposals.length, 1, 'a proposal for a pair that already has a card is dropped');
-  assert.equal(state.proposals[0].to, '민아');
+  assert.equal(state.proposals, undefined, 'no AI proposals list in state');
   const newKeys = [...f.values.keys()].filter(key => !keysBefore.has(key));
   assert.deepEqual(newKeys.filter(key => /bond|reading|proposal/i.test(key)), [], 'no bond state is persisted');
 });
 
-test('the 억결 panel edits per-chat cards and accepts proposals as cards', async t => {
+test('the 이 채팅 page edits 억결 cards without an AI proposals section', async t => {
   const f = await fixture(t, { writingMode: 'rp', unified: false });
-  wireModel(f, '준호가 문 앞에서 기다렸다.', {
-    aide_plot: { bond_readings: [], bond_proposals: [{ from: '준호', to: '민아', tones: ['jealousy'], why: '민아 watches 준호' }] }
-  });
+  wireModel(f, '준호가 문 앞에서 기다렸다.');
   const scopeKey = await withCards(f, {}, []);
   await runTurn(f, '준호를 지나쳐 간다.');
   await f.host.plugin.openSettingsGui();
   await f.host.plugin.debugNavigateGui('pipeline');
-  const panel = f.document.querySelector('.stage-detail[data-detail="forced_bond"]');
+  assert.ok(f.document.querySelector('.stage-detail[data-detail="forced_bond"] [data-go="chat"][data-go-sub="bond"]'), 'the 억결 panel points to the 이 채팅 page');
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"] [data-chat-section="bond"]');
+  assert.equal(panel.querySelector('[data-forced-bond-proposals]'), null, 'AI-proposed relationship section is removed');
   assert.ok(panel.querySelector('[data-forced-bond-cards] .empty'), 'empty state before any card');
   panel.querySelector('[data-forced-bond-action="add"]').click();
   const to = panel.querySelector('[data-forced-bond-card-field="to"]');
@@ -232,18 +233,13 @@ test('the 억결 panel edits per-chat cards and accepts proposals as cards', asy
   const hatred = panel.querySelector('[data-forced-bond-card-field="tone"][data-tone="hatred"]');
   hatred.checked = true;
   hatred.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
-  const accept = await f.wait(() => panel.querySelector('[data-forced-bond-action="accept"]'), 'proposal shown');
-  accept.click();
-  await f.wait(() => panel.querySelectorAll('[data-forced-bond-card]').length === 2, 'proposal became a card');
   f.document.querySelector('#savebar [data-save]').click();
   await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
   const stored = JSON.parse((await f.host.plugin.getRuntimeSettings()).forced_bond_cards);
   const cards = stored[scopeKey];
-  assert.equal(cards.length, 2);
+  assert.equal(cards.length, 1);
   assert.equal(cards[0].to, '세라');
   assert.deepEqual(cards[0].tones, ['hatred'], 'a new card has no default tone');
-  assert.equal(cards[1].from, '준호');
-  assert.equal(cards[1].origin, 'proposal');
   assert.deepEqual(Object.keys(stored), [scopeKey], 'cards are stored only for this chat');
 });
 
@@ -327,4 +323,48 @@ test('a bond follows the user’s direction and the story, never gender, and lor
   assert.match(bond, /Lore describing a character’s feelings or preferences is background, not a script/);
   assert.match(bond, /NARRATIVE: move each bond along its own arc in this story/);
   assert.match(bond, /User direction this turn \(current input\): 준호에게 오늘은 친구로서 이야기하자고 말한다\./);
+});
+
+test('a bond profile from the host becomes a stored lore card that replaces auto-1 on later turns and nothing overwrites', async t => {
+  const LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
+  const storedBondCards = f => {
+    const raw = f.values.get(LORE_CARDS_KEY) ?? f.local.get(LORE_CARDS_KEY);
+    if (!raw) return {};
+    return (typeof raw === 'string' ? JSON.parse(raw) : raw).cards?.forcedBond || {};
+  };
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '준호가 문 앞에서 기다렸다.', {
+    aide_plot: {
+      bond_readings: [],
+      bond_profiles: [
+        { from: '@persona', to: '준호', direction: 'mutual', tones: ['wariness', 'curiosity'], stage: 'tension', visibility: 'hidden', pressure: 'situational', limits: [], basis: '경쟁 가문 출신이자 서로 의식하는 사이(캐릭터 로어).' }
+      ]
+    }
+  });
+  await configure(f);
+  await runTurn(f, '준호에게 말을 건다.');
+  const cards = Object.values(storedBondCards(f)).flat();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].from, '@persona');
+  assert.equal(cards[0].to, '준호');
+  assert.deepEqual(cards[0].tones, ['wariness', 'curiosity']);
+  assert.equal(cards[0].stage, 'tension');
+  assert.equal(cards[0].origin, 'lore');
+
+  f.chat.message.push({ role: 'assistant', chatId: 'a2', data: '준호가 문 앞에서 기다렸다.' });
+  wireModel(f, '준호가 고개를 돌렸다.', {
+    aide_plot: {
+      bond_readings: [],
+      bond_profiles: [
+        { from: '@persona', to: '준호', direction: 'mutual', tones: ['affection'], stage: 'settled', visibility: 'known', pressure: 'explicit', limits: [], basis: '덮어쓰기 시도' }
+      ]
+    }
+  });
+  await runTurn(f, '준호를 바라본다.');
+  const plotSys = systemOf(f.prompts.find(item => stageOf(item) === 'aide_plot'));
+  assert.match(plotSys, /the user persona → 준호 \(mutual\) · tones: wariness, curiosity · card stage: tension/);
+  assert.doesNotMatch(plotSys, /- auto-1:/, 'the saved lore card replaces temporary auto-1');
+  const after = Object.values(storedBondCards(f)).flat();
+  assert.equal(after.length, 1);
+  assert.deepEqual(after[0].tones, ['wariness', 'curiosity']);
 });

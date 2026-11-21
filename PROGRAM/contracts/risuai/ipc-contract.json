@@ -28,7 +28,9 @@
       "file": "HAYAKU_Locator_Continuity.js",
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "libra",
+        "flashback_memory"
       ]
     },
     "flashback_memory": {
@@ -36,7 +38,9 @@
       "file": "Flashback_Memory.js",
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "libra",
+        "hayaku_locator_continuity"
       ]
     },
     "libra": {
@@ -44,7 +48,9 @@
       "file": "LIBRA.js",
       "allowedIPC": [
         "serial_gradation_agents_for_rp",
-        "flashback_hayaku_bridge"
+        "flashback_hayaku_bridge",
+        "hayaku_locator_continuity",
+        "flashback_memory"
       ]
     },
     "lia_persona_linker": {

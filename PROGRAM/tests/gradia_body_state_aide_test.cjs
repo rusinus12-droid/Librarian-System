@@ -234,19 +234,23 @@ test('the 상태 panel turns the stage on, edits per-chat cards, saves the repro
   await f.host.plugin.debugNavigateGui('pipeline');
   const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
   assert.ok(panel, 'the pipeline page renders the 상태 panel');
-  assert.match(panel.querySelector('[data-body-state-readings]').textContent, /민아.*발목 염좌 3일째/, 'last run readings show');
+  // 2026-11-18: cards and readings belong to the chat, so they live on the 이 채팅 page; the stage
+  // panel keeps the stage switch, the reproduction switch and a pointer.
+  const chat = f.document.querySelector('section[data-page="chat"]');
+  assert.ok(panel.querySelector('[data-go="chat"][data-go-sub="state"]'), 'the 상태 panel points to the 이 채팅 page');
+  assert.match(chat.querySelector('[data-body-state-readings]').textContent, /민아.*발목 염좌 3일째/, 'last run readings show');
   const change = node => node.dispatchEvent(new f.dom.window.Event('change', { bubbles: true }));
   const toggle = panel.querySelector('#on-s6');
   assert.equal(toggle.checked, false);
   toggle.checked = true; change(toggle);
   const reproduction = panel.querySelector('[data-body-state-field="reproduction"]');
   reproduction.checked = true; change(reproduction);
-  panel.querySelector('[data-body-state-action="add"]').click();
-  const name = await f.wait(() => panel.querySelector('[data-body-state-card-field="name"]'), 'card editor');
+  chat.querySelector('[data-body-state-action="add"]').click();
+  const name = await f.wait(() => chat.querySelector('[data-body-state-card-field="name"]'), 'card editor');
   name.value = '민아'; change(name);
-  const cycle = await f.wait(() => panel.querySelector('[data-body-state-card-field="cycleLength"]'), 'cycle field');
+  const cycle = await f.wait(() => chat.querySelector('[data-body-state-card-field="cycleLength"]'), 'cycle field');
   cycle.value = '30'; change(cycle);
-  const contraception = await f.wait(() => panel.querySelector('[data-body-state-card-field="contraception"]'), 'contraception field');
+  const contraception = await f.wait(() => chat.querySelector('[data-body-state-card-field="contraception"]'), 'contraception field');
   contraception.value = 'pill'; change(contraception);
   f.document.querySelector('#savebar [data-save]').click();
   await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
@@ -427,8 +431,8 @@ test('a positive verdict runs on the timeline, and the 상태 panel can pin it t
   assert.match(verdict.conception, /^이야기 \d+일째$/);
 
   await f.host.plugin.openSettingsGui();
-  await f.host.plugin.debugNavigateGui('pipeline');
-  const panel = f.document.querySelector('.stage-detail[data-detail="body_state"]');
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"]');
   const pin = await f.wait(() => panel.querySelector('[data-body-state-action="pin"]'), 'pin button');
   assert.ok(panel.querySelector('[data-body-state-verdicts]').textContent.includes(`세라 · 임신 판정 (수정 ${verdict.conception})`));
   pin.click();
@@ -491,4 +495,54 @@ test('a recorded birth or pregnancy end closes the pregnancy and starts recovery
   // A contact before the birth belongs to that pregnancy and gets no new verdict.
   const afterBirth = packetFor(`[STORY CLOCK] 현재: 이야기 300일째 · 저녁\n이야기 10일째 · 밤 세라는 하준과 관계를 가졌다\n${preg}\n이야기 290일째 세라는 아들을 낳았다`);
   assert.doesNotMatch(afterBirth, /sexual contact 290 days ago/);
+});
+
+test('a state profile from the host becomes a stored lore card that later turns follow and nothing overwrites', async t => {
+  const LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
+  const storedBodyCards = f => {
+    const raw = f.values.get(LORE_CARDS_KEY) ?? f.local.get(LORE_CARDS_KEY);
+    if (!raw) return {};
+    return (typeof raw === 'string' ? JSON.parse(raw) : raw).cards?.bodyState || {};
+  };
+  const chat = { id: 'h', message: [
+    { role: 'user', chatId: 'u1', data: '5월 20일 아침, 민아에게 인사를 건넨다.' },
+    { role: 'assistant', chatId: 'a1', data: '5월 20일 아침, 민아는 창가에서 조용히 고개를 끄덕였다.' }
+  ] };
+  const character = { chaId: 'c', name: '민아', chats: [chat], chatPage: 0, lorebook: [] };
+  const f = await fixture(t, { writingMode: 'rp', unified: false, chat, character });
+  wireModel(f, '민아는 잔을 내려놓았다.', {
+    aide_character: {
+      state_readings: [{ character: '민아', summary: '추위를 잘 타며 컨디션 양호' }],
+      state_profiles: [
+        { name: '민아', constitution: '추위를 잘 타고 빈혈기가 있음', can_conceive: 'yes', cycle_length: 30, contraception: 'pill', basis: '병약하고 창백한 체질(캐릭터 카드).' },
+        { name: '@persona', constitution: '강철 체력', can_conceive: 'no', cycle_length: 0, contraception: '', basis: 'RP에서는 페르소나 카드를 만들지 않는다.' }
+      ]
+    }
+  });
+  await configure(f);
+  await runTurn(f, '민아에게 따뜻한 차를 건넨다.');
+  const cards = Object.values(storedBodyCards(f)).flat();
+  assert.equal(cards.length, 1, 'only the NPC profile is stored; RP persona is skipped');
+  assert.equal(cards[0].name, '민아');
+  assert.equal(cards[0].constitution, '추위를 잘 타고 빈혈기가 있음');
+  assert.equal(cards[0].canConceive, 'yes');
+  assert.equal(cards[0].cycleLength, 30);
+  assert.equal(cards[0].contraception, 'pill');
+  assert.equal(cards[0].origin, 'lore');
+
+  f.chat.message.push({ role: 'assistant', chatId: 'a2', data: '민아는 찻잔을 두 손으로 감싸 쥐었다.' });
+  wireModel(f, '민아는 미소를 지었다.', {
+    aide_character: {
+      state_readings: [],
+      state_profiles: [{ name: '민아', constitution: '더위를 잘 탐', can_conceive: 'no', cycle_length: 0, contraception: 'condom', basis: '덮어쓰기 시도' }]
+    }
+  });
+  await runTurn(f, '민아의 안색을 살핀다.');
+  const hostSystem = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  assert.match(hostSystem, /constitution \(card\): 추위를 잘 타고 빈혈기가 있음/);
+  assert.match(hostSystem, /cycle: day \d+ of 30/);
+  const after = Object.values(storedBodyCards(f)).flat();
+  assert.equal(after.length, 1);
+  assert.equal(after[0].constitution, '추위를 잘 타고 빈혈기가 있음');
+  assert.equal(after[0].cycleLength, 30);
 });

@@ -84,6 +84,7 @@
       while (stateMicroIndexes.size > STATE_MICRO_INDEX_SCOPES) stateMicroIndexes.delete(stateMicroIndexes.keys().next().value);
       const allowed = new Set(asArray(turns).map(Number));
       const revisions = new Map(asArray(pairs).map(pair => [Number(pair.turn), completedTurnRevisionId(pair)]));
+      const pairByTurn = new Map(asArray(pairs).map(pair => [Number(pair.turn), pair]));
       for (const turn of [...cache.turns.keys()]) if (!revisions.has(turn)) cache.turns.delete(turn);
       const at = Date.now();
       // An entry is reused only while its turn still has the source revision it was read for.
@@ -100,8 +101,12 @@
           await frame.prefetch(keys);
           for (const [index, turn] of pending.entries()) {
             const head = await storage.getVerifiedJson(keys[index], scanScope, null), projection = head?.recallProjection;
-            const usable = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
-              && head.sourceRevisionId === revisions.get(turn) && projection?.schema === 'libra.micro_recall_projection.v1';
+            const pair = pairByTurn.get(turn);
+            const validShape = head?.schema === 'libra.micro_memory_head.v1' && Number(head.turn) === turn
+              && projection?.schema === 'libra.micro_recall_projection.v1';
+            const usable = validShape && (head.sourceRevisionId === revisions.get(turn)
+              || (!!pair && !!head.sourceRevisionId && (await readTextEquivalentReceipt(scanScope, worldline, 0, turn, head.sourceRevisionId,
+                { scopeKey: string(scanScope.scopeKey), sourceDigest: sourceDigest([pair]), user: pair.user, assistant: pair.assistant }))?.status === 'verified'));
             cache.turns.set(turn, { revision: revisions.get(turn), at,
               text: usable ? (string(projection.summary) + '\n' + string(projection.searchText)).slice(0, STATE_MICRO_INDEX_TEXT_CHARS) : null });
           }
@@ -510,7 +515,7 @@
           const pairs = buildPairs(context.chat, context.scope.scopeKey), worldline = hostWorldlineIdForScope(context.scope);
           // The enclosing selection validates its captured context and source proofs
           // again before delivery; avoid another host context read for every candidate.
-          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true });
+          const active = await readActiveMicroMemory(context.scope, worldline, 0, turn, { context, pairs, skipFinalContextCheck: true, allowProjectedEquivalent: true });
           if (active.status !== 'verified') return null;
           const memory = microRecallMemoryFromRecord(active.record, active.receipt, active.recordKey);
           if (!memory) throw Error('LIBRA_STATE_MICRO_INVALID');

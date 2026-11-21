@@ -594,8 +594,9 @@ test('an owner that becomes available after startup can answer before status ref
  assert.ok(start>=0 && end>start);
  let calls=0, refreshes=0;
  const select=require('node:vm').runInNewContext(source.slice(start,end)+'\nselectLibOwnerRecall',{
-  libOwnerReader:()=>({select:async()=>++calls===1
+  libOwnerReader:()=>({describe:async(scope,owners)=>({scopes:{[owners[0]]:scope},unavailable:{}}),select:async()=>++calls===1
    ? {absent:true,code:'LIB_READ_SCOPE_UNAVAILABLE'} : {content:'ready'}}),
+  noteLibOwnerLost:()=>{},
   LibReadConnection:{
    status:()=>({unavailable:{flashback:'LIB_READ_OWNER_UNAVAILABLE'}}),
    refreshOwners:()=>{refreshes++;return new Promise(()=>{});}
@@ -605,6 +606,26 @@ test('an owner that becomes available after startup can answer before status ref
  assert.equal((await select('flashback',scope,'query')).code,'LIB_READ_SCOPE_UNAVAILABLE');
  assert.equal((await select('flashback',scope,'query')).content,'ready');
  assert.equal(refreshes,1);
+});
+
+// An owner plugin that is off or unloaded never answers select; the short describe probe reports it
+// absent at once, so the read does not wait for the long select deadline.
+test('an owner that does not answer the availability probe is skipped without a select',async()=>{
+ const source=require('node:fs').readFileSync(require('node:path').join(__dirname,'../../plugins/GRADIA.js'),'utf8');
+ const start=source.indexOf('  const libOwnerAbsentUntil = ');
+ const end=source.indexOf('\n  const LibReadConsumer =',start);
+ let selects=0,describes=0;const lost=[];
+ const select=require('node:vm').runInNewContext(source.slice(start,end)+'\nselectLibOwnerRecall',{
+  libOwnerReader:()=>({describe:async(scope,owners)=>{describes++;return {scopes:{},unavailable:{[owners[0]]:'LIB_READ_TIMEOUT'}};},select:async()=>{selects++;return {content:'never'};}}),
+  noteLibOwnerLost:(owner,code)=>lost.push([owner,code]),
+  LibReadConnection:{status:()=>({unavailable:{}}),refreshOwners:()=>Promise.resolve()}
+ });
+ const first=await select('hayaku',{chatId:'chat-1'},'query');
+ assert.deepEqual([first.absent,first.code],[true,'LIB_READ_TIMEOUT']);
+ assert.equal(selects,0,'no select is sent to an owner that did not answer');
+ assert.deepEqual(lost,[['hayaku','LIB_READ_TIMEOUT']]);
+ const again=await select('hayaku',{chatId:'chat-1'},'query');
+ assert.equal(again.code,'LIB_READ_TIMEOUT');assert.equal(describes,1,'a brief absent cache spares the next probe');
 });
 
 test('truncated world and plot mandatory analyses recover independently after SHADOW length expansion',async()=>{

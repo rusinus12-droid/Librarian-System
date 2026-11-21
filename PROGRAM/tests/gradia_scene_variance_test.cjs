@@ -232,3 +232,27 @@ test('the run results card and the debug export show the arc source, arc reading
   const tabs = f.document.querySelector('[data-page="results"] [data-subtabs="rs"]');
   assert.equal(card.nextElementSibling, tabs, 'the card sits above the stage tabs');
 });
+
+test('dialogue-to-scene anchor and silent address canon lock prevent unprompted NPC tangents', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wire(f);
+  await run(f, { scene_variance: 'off' });
+  const shadow = shadowText(f);
+  const character = systemOf(f.prompts.find(body => stageOf(body) === 'aide_character'));
+  const plot = systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot'));
+  for (const text of [shadow, character, plot]) {
+    assert.match(text, /DIALOGUE-TO-SCENE ANCHOR: every NPC line must answer or push on something concretely present/);
+    assert.match(text, /NARRATION–DIALOGUE SEAM: keep each spoken line glued to the surrounding action/);
+  }
+  assert.match(character, /reacts to a word or form of address never spoken in this scene/);
+  assert.match(plot, /reacts to a word or form of address never spoken in this scene/);
+
+  const lock = f.host.plugin.debugBuildRelationshipCanonLock(
+    [{ label: '호칭 규칙', content: '소연과 준호는 동갑내기 소꿉친구라 이름 뒤에 씨를 붙이지 않고 편하게 부른다.' }],
+    '소연 옆에 앉는다.',
+    '',
+    { character: { name: '소연', desc: '소연' }, persona: { name: '준호', desc: '준호' } }
+  );
+  assert.match(lock.block, /Apply these silently when rendering names, titles, and speech registers; never have a character bring up, complain about, or comment on a form of address unless someone in the current exchange actually used or changed it\./);
+  assert.match(character, /cut any unprompted character complaints about an address form that nobody actually used here\./);
+});

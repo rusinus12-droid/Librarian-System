@@ -98,6 +98,7 @@ id_ed25519*
 /PROGRAM/dist/
 /PROGRAM/build/
 /PROGRAM/releases/
+/.development/
 /.development/build/
 /.development/evidence/
 /.development/STATUS.json
@@ -107,3 +108,6 @@ id_ed25519*
 coverage/
 test-results/
 playwright-report/
+
+# Claude Code local worktrees and scratch
+/.claude/

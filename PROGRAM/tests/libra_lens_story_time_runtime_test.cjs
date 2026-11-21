@@ -105,9 +105,9 @@ test('records keep their own setting; counts persist; recall states the time', a
     assert.equal(unknown.whenTracked, true, 'unknown time is distinct from not recorded');
 
     let recall = await api.recallLensMemories({ query: '지호 열쇠 약속 오늘', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /\(T1–T5 · 시점: 오늘 · 약속\)/);
+    assert.match(recall.renderedBlock, /\(시점: 오늘 · 약속\)/);
     recall = await api.recallLensMemories({ query: '준호 열쇠 보관', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /\(T1–T5 · 시점 불명 · 보관\)/);
+    assert.match(recall.renderedBlock, /\(시점 불명 · 보관\)/);
 
     recall = await api.recallLensMemories({ query: '오늘', canonicalBudgetChars: 12000 });
     assert.match(recall.renderedBlock, /시점: 오늘/, 'the time text counts toward relevance');
@@ -174,7 +174,7 @@ test('handoff, a second handoff, native copy and portable round trip keep time p
     checkInherited(await inheritedTimes(f), 'second handoff');
 
     const recall = await api.recallLensMemories({ query: '지호 열쇠 반환 약속', canonicalBudgetChars: 12000 });
-    assert.match(recall.renderedBlock, /\[lens:시점 렌즈 · 이전 대화\] \(T1–T5 · 시점: 그날 밤 열 시 · 약속\)/);
+    assert.match(recall.renderedBlock, /\[lens:시점 렌즈 · 이전 대화\] \(시점: 그날 밤 열 시 · 약속\)/);
 
     let envelope;
     for (let i = 0; i < 100 && !envelope; i += 1) {

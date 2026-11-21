@@ -137,5 +137,66 @@ const coldRecords = async r => (await r.hayaku.ledger.inspect({ includeRecords: 
       assert.equal(calls, 1, 'no per-turn retry after a transport failure');
     } finally { await r.dispose(); }
   }
+  // 5 consecutive host failures preserve exact host reason (never truncated at SINK_LIMIT=3) and map to CONNECTION_FAILED.
+  {
+    let calls = 0;
+    const fiveTurnMessages = Array.from({ length: 5 }, (_, i) => i + 1).flatMap(n => [
+      { role: 'user', id: 'u5_' + n, chatId: 'u5_' + n, data: 'Open box ' + n },
+      { role: 'assistant', id: 'a5_' + n, chatId: 'a5_' + n, data: sentence(n) }
+    ]);
+    const r = await createHayakuRuntime({
+      arguments: { hayaku_debug: 'true' },
+      autoRepair: false,
+      messages: fiveTurnMessages,
+      llmResponder: async () => { calls++; return { type: 'fail', result: '요청 에러:"TypeError: Failed to fetch"' }; }
+    });
+    try {
+      const out = await r.hayaku.recovery.coldStart({ resume: true, batchTurns: 1 });
+      assert.equal(out.completed, false);
+      assert.equal(calls, 5, 'each batch fails once without automatic per-turn retries');
+      const summaries = await r.hayaku.recovery.failedAnalysis.summaries();
+      assert.equal(summaries.length, 5, JSON.stringify(summaries));
+      for (const s of summaries) {
+        assert.equal(s.code, 'HAYAKU_NATIVE_LLM_HOST_FAILED');
+        assert.equal(s.diagnosisCode, 'CONNECTION_FAILED');
+        assert.match(s.reason, /TypeError: Failed to fetch/);
+      }
+      const failed = await r.hayaku.recovery.failedAnalysis.list();
+      assert.equal((failed.entries || []).length, 5, JSON.stringify(failed.entries));
+      for (const entry of failed.entries) {
+        assert.match(entry.reason, /TypeError: Failed to fetch/);
+        const read = await r.hayaku.recovery.failedAnalysis.read(entry.failureId);
+        assert.equal(read.payload?.failure?.code, 'HAYAKU_NATIVE_LLM_HOST_FAILED');
+        assert.match(read.payload?.failure?.message || '', /TypeError: Failed to fetch/);
+      }
+      const hostFailLogs = (r.hayaku.activityLog.list() || []).filter(e => e.event === 'native_llm:host_fail');
+      assert.equal(hostFailLogs.length, 5, 'operation log records all 5 host failures without capping at SINK_LIMIT=3');
+      for (const row of hostFailLogs) {
+        assert.equal(row.detail?.code, 'HAYAKU_NATIVE_LLM_HOST_FAILED');
+        assert.match(row.detail?.detail || '', /TypeError: Failed to fetch/);
+      }
+    } finally { await r.dispose(); }
+  }
+  // Genuinely empty success response still reports HAYAKU_NATIVE_LLM_EMPTY (never HAYAKU_NATIVE_LLM_HOST_FAILED).
+  {
+    let calls = 0;
+    const r = await createHayakuRuntime({
+      arguments: { hayaku_debug: 'true' },
+      autoRepair: false,
+      messages,
+      llmResponder: async () => { calls++; return { type: 'success', result: '   ', finish_reason: 'stop' }; }
+    });
+    try {
+      const out = await r.hayaku.recovery.coldStart({ resume: true, batchTurns: 5 });
+      assert.equal(out.completed, false);
+      assert.equal(calls, 1);
+      const summaries = await r.hayaku.recovery.failedAnalysis.summaries();
+      assert.equal(summaries.length, N);
+      for (const s of summaries) {
+        assert.equal(s.code, 'HAYAKU_NATIVE_LLM_EMPTY');
+        assert.notEqual(s.code, 'HAYAKU_NATIVE_LLM_HOST_FAILED');
+      }
+    } finally { await r.dispose(); }
+  }
   console.log('PASS cold start automatic retry: absent empty axis admitted, original refusal reason kept, one-run retry completes and resolves the batch failure, failed retry stays partial, opt-out and transport failure make no retry calls');
 })().catch(e => { console.error(e); process.exitCode = 1; });

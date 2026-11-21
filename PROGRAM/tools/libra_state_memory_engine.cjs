@@ -121,9 +121,17 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     }
     return table;
   };
+  const entityMentionedIn = (body, name) => {
+    if (!body || !name) return false;
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (/^[a-z0-9 _-]+$/i.test(name)) {
+      return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(body);
+    }
+    return new RegExp(`(?:^|[^가-힣a-z0-9])${escaped}(?:$|[^가-힣a-z0-9]|(?:은|는|이|가|을|를|의|에|에게|에서|와|과|도|만|로|으로|께서|한테|랑|이랑|야|아|씨|님|군|양)(?:$|[^가-힣a-z0-9]))`, 'u').test(body);
+  };
   const mentionedEntities = (text, table) => {
     const body = normalize(text), found = new Set();
-    if (body) for (const entity of array(table)) if (entity.names.some(name => body.includes(name))) found.add(entity.id);
+    if (body) for (const entity of array(table)) if (entity.names.some(name => entityMentionedIn(body, name))) found.add(entity.id);
     return found;
   };
   const identitySignal = (queryEntities, text, table) => {
@@ -344,7 +352,9 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
           || Array.isArray(value) && !value.length) continue;
         const shown = display(value);
         if (unresolved(shown)) continue;
-        const readable = field === 'status' ? statuses[String(shown)] || format(shown) : field === 'resolvedTurn' ? `T${shown}` : format(shown);
+        // The chat turn a thread closed on is a position in the chat, not story content: not shown.
+        if (field === 'resolvedTurn') continue;
+        const readable = field === 'status' ? statuses[String(shown)] || format(shown) : format(shown);
         if (!readable) continue;
         const text = `${labels[axis]} · ${name} · ${field}: ${typeof shown === 'string' ? shown : readable}`;
         const promptText = `${name} — ${fieldLabels[field] || field}: ${readable}`;
@@ -463,6 +473,8 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     const docs = q ? validRows.map(row => ({ text: termFrequency(row.text) })) : [];
     const corpus = q ? buildCorpus(docs) : null, terms = q ? queryTerms(q) : [];
     const queryEntities = q ? mentionedEntities(q, entities) : new Set();
+    const characterEntityIds = new Set(array(entities).filter(entity => entity.axis === 'characters').map(entity => entity.id));
+    const queryCharacterEntities = new Set([...queryEntities].filter(id => characterEntityIds.has(id)));
     // Source statements behind a State field that answers the question travel with it
     // when the question asks how or what exactly, not what is true now.
     const linkedKeys = new Set();
@@ -482,20 +494,29 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
       const ngramVal = q ? charNgramSignal(qGrams, dGrams) : 0;
       const bm25Val = q ? bm25fScore(terms, docs[index], corpus) : 0;
       const identityVal = identitySignal(queryEntities, row.text, entities);
-      const linkedVal = row.family !== 'state' && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
+      const rowCharacterEntities = queryCharacterEntities.size
+        ? [...mentionedEntities(row.text, entities)].filter(id => characterEntityIds.has(id))
+        : [];
+      const entityMismatch = queryCharacterEntities.size > 0
+        && rowCharacterEntities.length > 0
+        && !rowCharacterEntities.some(id => queryCharacterEntities.has(id))
+        && (row.axis === 'characters' || row.axis === 'relationships' || row.family === 'lens');
+      const linkedVal = row.family !== 'state' && !entityMismatch && array(row.evidenceKeys).some(key => linkedKeys.has(key)) ? 1 : 0;
       const semanticVal = q ? Math.max(0, Math.min(1, Number(row.semanticScore) || 0)) : 0;
-      const relevant = !q || bm25Val > 0 || ngramVal > 0 || exactVal > 0 || identityVal > 0 || linkedVal > 0 || semanticVal > 0;
+      const strongLexical = exactVal > 0 || ngramVal >= 0.22 || bm25Val >= 0.6;
+      const relevant = !q || (!entityMismatch && (identityVal > 0 || linkedVal > 0 || semanticVal > 0 || strongLexical));
       const anchorVal = relevant ? (row.family === 'state' ? 1.0 : (row.evidence ? 0.7 : 0)) : 0;
-      const rawScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const baseScore = (q ? scorePrecomputed(doc, dGrams, q, qWords, qScoreGrams) : 0) + (row.family === 'state' && relevant ? 0.5 : 0) + 0.5 * identityVal + 0.5 * linkedVal + 4 * semanticVal;
+      const rawScore = entityMismatch ? baseScore * 0.15 : baseScore;
       return {
         ...row,
         score: rawScore,
-        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal }
+        signals: { bm25: bm25Val, charNgram: ngramVal, exact: exactVal, anchor: anchorVal, identity: identityVal, linked: linkedVal, semantic: semanticVal, relevant, entityMismatch }
       };
     });
 
     const candidates = q ? sparseRrfFusion(scoredCandidates, ['bm25', 'charNgram', 'exact', 'anchor', 'identity', 'linked', 'semantic'], 60, 0.20) : scoredCandidates;
-    candidates.sort((a, b) => b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
+    candidates.sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch) || b.score - a.score || Number(b.turn || 0) - Number(a.turn || 0) || a.id.localeCompare(b.id));
 
     const selected = [], seen = new Set(), textSeen = new Set(), evidenceSeen = new Map(), contextLensGroups = new Set();
     const suppressedEvidenceDuplicates = new Set();
@@ -536,14 +557,16 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     // question still keeps room for those records: State then leads with a third of the evidence share.
     const evidenceItems = groups.find(group => group.key === 'evidence')?.items || maxItems;
     const stateLeadLimit = ['history','detail'].includes(plan?.intent) ? Math.max(1, Math.ceil(evidenceItems / 3)) : evidenceItems;
-    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0)
+    const leadingState = new Set(candidates.filter(row => row.family === 'state' && row.signals.anchor > 0 && !row.signals.entityMismatch)
       .sort((a, b) => b.score - a.score).slice(0, stateLeadLimit).map(row => row.id));
     const tier = row => row.family !== 'state' ? 1 : leadingState.has(row.id) ? 0 : 2;
     const ordered = plan ? candidates.slice().sort((a, b) => {
       const rank = row => row.family === 'lens' ? -1 : plan.order.indexOf(row.family);
       if (a.family === 'lens' || b.family === 'lens') return rank(a) - rank(b)
+        || Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
         || Number(a.lensItem?.floorPassed === false) - Number(b.lensItem?.floorPassed === false) || b.score - a.score;
-      return tier(a) - tier(b)
+      return Number(a.signals.entityMismatch) - Number(b.signals.entityMismatch)
+        || tier(a) - tier(b)
         || (plan.intent === 'mixed' ? b.score - a.score || rank(a) - rank(b) : rank(a) - rank(b) || b.score - a.score);
     }) : candidates;
     for (const group of groups) {
@@ -551,6 +574,8 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
         let used = 0, count = 0;
         for (const row of ordered.filter(row => (row.family === 'lens') === (group.key === 'lens'))) {
           if (count >= group.items) break;
+          if (q && row.signals.entityMismatch) continue;
+          if (q && !row.signals.relevant && !(row.family === 'lens' && row.lensItem?.floorPassed !== false)) continue;
           const cost = costOf(row);
           if (used + cost <= targetCharacters && add(row)) { used += cost; count++; }
         }
@@ -563,10 +588,15 @@ module.exports = function createLibraStateMemoryEngine({ fingerprint, tokenizer 
     for (let n = 0; n < minimumPerAxis; n++) for (const axis of axes) {
       if (selected.filter(row => row.axis === axis).length > n) continue;
       const ranked = candidates.filter(row => row.axis === axis && !seen.has(row.id))
-        .sort((a, b) => Number(b.family === 'state') - Number(a.family === 'state') || b.score - a.score);
+        .sort((a, b) => Number(!b.signals.entityMismatch) - Number(!a.signals.entityMismatch)
+          || Number(b.signals.relevant) - Number(a.signals.relevant)
+          || Number(b.family === 'state') - Number(a.family === 'state')
+          || b.score - a.score);
       for (const row of ranked) if (floorUsed[axis] + costOf(row) <= floorBudget && add(row)) { floorUsed[axis] += costOf(row); break; }
     }
-    for (const row of ordered) if (row.family === 'state' || row.family === 'lens' || row.score > 0) add(row);
+    for (const row of ordered) {
+      if (!q ? (row.family === 'state' || row.family === 'lens' || row.score > 0) : (row.signals.relevant && !row.signals.entityMismatch)) add(row);
+    }
     for (const [family, allocation] of Object.entries(familyAllocation)) {
       const chosen = selected.filter(row => family === 'evidence' ? row.family !== 'lens' : row.family === family);
       allocation.selected = chosen.length;

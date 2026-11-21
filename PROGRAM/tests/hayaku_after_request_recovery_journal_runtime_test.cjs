@@ -192,7 +192,7 @@ const historicalEnvelope = assistantText => {
   // Exercise the actual beforeRequest ledger writer, not a manually armed capture.
   // Change a readset setting during its write; recall must fail closed while the
   // independent, source-bound afterRequest repair still gets one chance.
-  for(const editPrefix of [false,true]){
+  for(const mode of ['unchanged','prefix_drift','prefix_length_mismatch']){
     const rows=[user('independent-u1','I inspect the valve.'),assistant('independent-a1','The valve is closed.'),user('independent-u2','I turn the brass valve.')];
     const h=await createHayakuRuntime({messages:rows,afterRequestAutoRepair:true,backgroundAutoRepair:false});
     try{
@@ -212,17 +212,22 @@ const historicalEnvelope = assistantText => {
       const scope=await h.hayaku._test.currentChatScope();
       const pending=h.hayaku._test.selectPendingCapture([],scope,'model');
       assert.ok(pending,'request capture survives recall rejection');
-      if(editPrefix){rows[1].data='The earlier scene has changed.';h.setMessages(rows);}
+      if(mode==='prefix_drift'){rows[1].data='The earlier scene has changed.';h.setMessages(rows);}
+      if(mode==='prefix_length_mismatch'){rows.splice(0,2);h.setMessages(rows);}
+      const expectBlocked=mode==='prefix_length_mismatch';
       const l=pending.lineage;
       h.setLlmResponder(async()=>({type:'success',result:JSON.stringify(currentEnvelope(assistantText,{
         parent_turn_node_id:l.parentTurnNodeId,logical_turn_id:l.logicalTurnId,request_nonce:l.requestNonce,
         identity_version:2,lineage_schema:l.lineageSchema,turn_owner_key:l.turnOwnerKey,generation_attempt_id:l.generationAttemptId
       }))}));
       const response=await h.callAfterRequest(assistantText,'model');
-      assert.equal(h.llmCalls.length,editPrefix?0:1,'one repair only for unchanged source');
-      assert.equal(response!==assistantText,!editPrefix);
+      assert.equal(h.llmCalls.length,expectBlocked?0:1,`repair behavior for ${mode}`);
+      assert.equal(response!==assistantText,!expectBlocked);
+      if(mode==='prefix_drift'){
+        assert.ok(h.hayaku.lastDebug().operationLog.some(e=>e.event==='native_recovery:after_request_prefix_drift'),'logs non-blocking prefix drift warning');
+      }
       await h.callAfterRequest(response,'model');
-      assert.equal(h.llmCalls.length,editPrefix?0:1,'repeated afterRequest must not resend');
+      assert.equal(h.llmCalls.length,expectBlocked?0:1,'repeated afterRequest must not resend');
     }finally{await h.dispose();}
   }
   console.log('PASS hayaku_after_request_recovery_journal_runtime_test');

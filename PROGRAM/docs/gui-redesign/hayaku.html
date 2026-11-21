@@ -46,11 +46,25 @@
 .axis h4{margin:0 0 6px;font-size:12.5px;color:var(--accent-ink)}.axis p{margin:0;font-size:12.5px;color:var(--text2)}
 pre.json{margin:0;padding:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-size:12px;line-height:1.6;overflow:auto;max-height:220px;white-space:pre-wrap}
 .cost{display:flex;gap:10px;align-items:flex-start}
-.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-.picker label{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface);cursor:pointer}
-.picker input{width:17px;height:17px;margin-top:2px;accent-color:var(--accent)}
-.picker label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
-.picker small{display:block;color:var(--text3);font-size:11.5px}
+.mt-summary{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 12px}
+.mt-chip{display:inline-flex;align-items:baseline;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface2);font-size:12.5px;color:var(--text2)}
+.mt-chip b{font:700 14px var(--font-mono);color:var(--text)}
+.mt-chip--accent{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
+.mt-toolbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0;margin-bottom:12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.mt-list{display:grid;border:1px solid var(--border2);border-radius:var(--r-md);overflow:hidden;background:var(--surface)}
+.mt-row{display:grid;grid-template-columns:20px 52px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-top:1px solid var(--border);cursor:pointer;min-width:0}
+.mt-row:first-child{border-top:0}.mt-row:hover{background:var(--surface2)}
+.mt-row input{width:17px;height:17px;margin:0;accent-color:var(--accent)}
+.mt-row:has(input:checked){background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.mt-row:has(input:disabled){cursor:default}
+.mt-turn{justify-self:start;padding:2px 8px;border-radius:6px;background:var(--surface3);font:700 13px var(--font-mono);color:var(--accent-ink);white-space:nowrap}
+.mt-text{display:grid;gap:2px;min-width:0}
+.mt-label{font-size:13.5px;font-weight:650;color:var(--text);overflow-wrap:anywhere;word-break:keep-all}
+.mt-why{font-size:12px;color:var(--text3);overflow-wrap:anywhere;word-break:keep-all}
+.mt-tag{padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap;border:1px solid var(--border2);color:var(--text2);background:var(--surface2)}
+.mt-row[data-state=ready] .mt-tag{border-color:var(--ok-line,var(--ok));color:var(--ok-ink);background:var(--ok-soft)}
+.mt-row[data-state=held] .mt-tag{border-color:var(--warn-line,var(--warn));color:var(--warn-ink);background:var(--warn-soft)}
+@container app (max-width:520px){.mt-row{grid-template-columns:20px 44px minmax(0,1fr)}.mt-tag{grid-column:3;justify-self:start}}
 .st-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
 .st-nav{display:grid;gap:3px;position:sticky;top:0}
 .st-nav button{text-align:left;padding:10px 12px;border:1px solid transparent;border-radius:var(--r-sm);background:transparent;color:var(--text)}
@@ -90,7 +104,7 @@ html[data-scenario=fail] .fail-box{display:block}
 <div class="app">
 
   <header class="topbar">
-    <div class="brand"><div class="brand__mark" style="font:800 20px var(--font-sans)">速</div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v3.0.138</div></div></div>
+    <div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M24 5c-6.6 0-11 4.6-11 10.6C13 23.4 24 33 24 33s11-9.6 11-17.4C35 9.6 30.6 5 24 5z"/><circle cx="24" cy="15.5" r="3.8"/><path d="M5 41h38M11 38v6M37 38v6"/><circle cx="24" cy="41" r="3" fill="currentColor" stroke="none"/></svg></div><div><div class="brand__name">HAYAKU</div><div class="brand__ver">CONTINUITY CONTROL · v3.0.138</div></div></div>
     <div class="scope"><b>아스텔</b><span>›</span><span>에피소드 42 · 밤의 정원 · 세계선 A</span></div>
     <div class="grow"></div>
     <!-- 상태는 한 곳(상단 칩)에서만 판정해 모든 화면에서 보임 -->

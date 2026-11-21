@@ -3,8 +3,6 @@ const assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {JSDOM}=require('jsdom');
 const {load}=require('../gradia/host.cjs');
 const createBus=require('./libra_gradia_read_bus.cjs');
-const createOwner=require('../../tools/libra_gradia_unified_read.cjs');
-const fingerprint=v=>crypto.createHash('sha256').update(v).digest('hex');
 const wait=async(fn,label='condition',ms=120000)=>{const at=Date.now();while(Date.now()-at<ms){const v=fn();if(v)return v;await new Promise(r=>setTimeout(r,10));}throw Error('WAIT_TIMEOUT: '+label);};
 async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvailable=true,bus:providedBus,chat:providedChat,character:providedCharacter}={}){
  const bus=providedBus||createBus(),controls={current:true,onQuery:null,onModel:null,onCurrent:null,denied:false},unloads=[],prompts=[],sent=[],copied=[],permissions=[];
@@ -17,11 +15,34 @@ async function fixture(t,{native=false,writingMode='novel',unified=true,sendAvai
  values.set('__memory_suite_internal_scope_routes_v1__:libra',JSON.stringify({schema:'memory-suite.scope-routing.v1',namespace:'libra',legacyGlobalModeImported:true,entries:{[scope.scopeKey]:{scopeId:scope.scopeKey,scopeKey:scope.scopeKey,mode:'server_only',origin:'user_explicit',updatedAt:1}}}));
  const store={getItem:async k=>values.get(k)??null,setItem:async(k,v)=>{values.set(k,v);return true;},removeItem:async k=>{values.delete(k);return true;}},device={getItem:async k=>local.get(k)??values.get(k)??null,setItem:async(k,v)=>{local.set(k,v);return true;}};
  let owner,queries=0,ownerSerial=0;
- if(!native){owner=createOwner({role:'owner',api:bus.api('libra'),fingerprint,randomId:()=>String(++ownerSerial),
-  boundary:async request=>({scope:request.scope,dataInstanceId:dataId,resetEpoch:0}),
-  query:async(request,authority)=>{queries++;authority.bindGraph({readerFrame:{},nodes:[],edges:[],bases:[]});await controls.onQuery?.(request);
-   return {modelDispatchEligible:true,queryComplete:false,deliveryOutcome:'partial',windowRead:{limit:20},nextWindow:null,
-    bundle:{generation:'g1'},packet:{renderedText:controls.evidenceText||'WRITER_OWNER_EVIDENCE: 준호가 은빛 열쇠를 보관한다.',packetDigest:fingerprint(controls.evidenceText||'packet')}};},verify:async()=>{await controls.onCurrent?.();return controls.current;}});await owner.start();}
+ // Owners answer GRADIA over plugin IPC (gradia_memory_read_*_v1), the only read path GRADIA keeps.
+ // Each owner describes its scope and answers select with its evidence; queries counts selects.
+ // Only a unified fixture installs them: a test without it may put real owners on the same bus.
+ if(!native&&unified){
+  const REQUEST='gradia_memory_read_request_v1',RESPONSE='gradia_memory_read_response_v1',reader='serial_gradation_agents_for_rp';
+  const ownerIds={libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory'};
+  const ownerListeners=[];
+  for(const [ownerKey,ownerId] of Object.entries(ownerIds)){
+   const ownerApi=bus.api(ownerId);
+   const reply=(message,result,error)=>ownerApi.postPluginChannelMessage(reader,RESPONSE,{schema:'memory-suite.gradia-plugin-read.v1',kind:'response',id:message.id,action:message.action,...(error?{error}:{result})});
+   const listener=async message=>{
+    if(message?.kind!=='request')return;
+    if(controls.denied)return reply(message,null,'LIB_READ_FORBIDDEN');
+    const ownerScope={scopeKey:ownerKey==='libra'?scope.scopeKey:scope.scopeKey+'-'+ownerKey,characterId:scope.characterId,chatId:scope.chatId};
+    if(message.native&&(message.native.characterId!==scope.characterId||message.native.chatId!==scope.chatId))return reply(message,null,'LIB_READ_NATIVE_SCOPE_CHANGED');
+    if(message.action==='describe')return reply(message,{owner:ownerKey,source:'plugin_ipc',readOnly:true,scope:ownerScope});
+    if(message.action==='select'){
+     queries++;await controls.onQuery?.(message);
+     const content=ownerKey==='libra'?(controls.evidenceText||'WRITER_OWNER_EVIDENCE: 준호가 은빛 열쇠를 보관한다.'):'';
+     return reply(message,{owner:ownerKey,source:'plugin_ipc',readOnly:true,scope:ownerScope,content});
+    }
+    if(message.action==='release')return reply(message,{released:true});
+    return reply(message,null,'LIB_READ_REQUEST_INVALID');
+   };
+   await ownerApi.addPluginChannelListener(REQUEST,listener);ownerListeners.push([ownerApi,listener]);
+  }
+  owner={dispose:async()=>{for(const [ownerApi,listener] of ownerListeners)await ownerApi.removePluginChannelListener(REQUEST,listener);}};
+ }
  const dom=new JSDOM('<!doctype html><html><body></body></html>',{pretendToBeVisual:true,url:'https://offline.invalid/'});
  const transport=async(target,init={})=>{
   if(target.startsWith(url+'/')){

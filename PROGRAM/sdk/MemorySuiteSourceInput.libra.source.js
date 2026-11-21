@@ -11,6 +11,11 @@ function memorySuiteSourceTagPolicy(owner, tags) {
   if (tags !== undefined) policies.set(owner, memorySuiteSourceIgnoredTags(tags));
   return policies.get(owner) || ['lb-xnai'];
 }
+// 공통 기준: presentation markup (images, LightBoard lazy/stage markers) that never carries narrative.
+// The same list is every plugin's default rules and is also removed by every plugin's built-in cleanup
+// (no saved rules), so LIBRA, HAYAKU and Flashback analyze the same text and a rule set copied
+// between them changes nothing beyond what its own rules say.
+const MEMORY_SUITE_PRESENTATION_TAGS = Object.freeze(['img', 'lb-lazy', 'lb-stage', 'lb-stage-marker']);
 function memorySuiteSourceTagKey(owner) { return JSON.stringify([memorySuiteSourceTagPolicy(owner),memorySuiteSourceRules(owner)]); }
 function memorySuiteProjectSourceTags(value, owner) {
   const explicit=memorySuiteCanonicalSource(value,owner);if(explicit!==null)return explicit;
@@ -20,6 +25,11 @@ function memorySuiteProjectSourceTags(value, owner) {
   if (names.delete('lb-xnai')) body = body
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?>([\s\S]*?)<\/lb-xnai\s*>/gi, (whole, inner) => inner.replace(/\{\{inlay::[^{}\r\n]+\}\}/gi, '').trim() === '' ? '' : whole)
     .replace(/<lb-xnai\b(?:"[^"]*"|'[^']*'|[^'">])*?\/\s*>/gi, '');
+  // 공통 기준 (built-in side): the shared presentation tags, matched as the rules match them.
+  // Unclosed or mismatched blocks are retained, as with saved rules.
+  const presentation = memorySuiteSourceTagRanges(body, MEMORY_SUITE_PRESENTATION_TAGS);
+  if (!presentation.invalid && presentation.ranges.length) body = memorySuiteEraseSourceRanges(body, presentation.ranges);
+  for (const name of MEMORY_SUITE_PRESENTATION_TAGS) names.delete(name);
   if (!names.size) return body;
   const tokens = /<\/?([a-z][a-z0-9:_-]*)(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/gi;
   const ranges = [], stack = []; let start = -1, match;
@@ -37,10 +47,95 @@ function memorySuiteProjectSourceTags(value, owner) {
   return body;
 }
 // Rules are a projection, never an authorization to rewrite stored evidence.
+// Saved rules replace the built-in cleanup, so the defaults carry the shared presentation tags too:
+// saving one new rule changes nothing else in any plugin's analysis. One list for all three owners.
+function memorySuiteDefaultPresentationTags() { return [...MEMORY_SUITE_PRESENTATION_TAGS]; }
 function memorySuiteDefaultSourceRules(owner) {
   // External defaults are shared; saved owner-specific policies remain authoritative.
   // Do not broadly discard status, choices, or other potential narrative evidence.
-  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts'])],unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+  return {version:1,ignoredTags:[...new Set([...memorySuiteSourceTagPolicy(owner),'thoughts',...memorySuiteDefaultPresentationTags()])].sort(),unwrapTags:[],sourceTags:[],controls:['html-comment','lbdata']};
+}
+// Shared presentation tags a saved rule set does not handle in any way (any action counts).
+function memorySuiteMissingDefaultSourceTags(rules) {
+  if(!rules||typeof rules!=='object')return [];
+  const handled=new Set(['ignoredTags','unwrapTags','sourceTags'].flatMap(key=>Array.isArray(rules[key])?rules[key]:[]).filter(entry=>typeof entry==='string'));
+  return memorySuiteDefaultPresentationTags().filter(name=>!handled.has(name));
+}
+// 기억 주입 공통 예산: one total for the recalled evidence the three memory plugins inject into a
+// request, split by fixed shares. It is stored with each plugin's source-input preferences and
+// kept equal across the plugins by the rule-sync channel. Off by default: each plugin then uses
+// its own budget setting. Each plugin still shrinks below its share when the context is short.
+const MEMORY_SUITE_RECALL_OWNERS = Object.freeze(['libra', 'hayaku', 'flashback']);
+const MEMORY_SUITE_RECALL_TOTAL_MIN = 1000, MEMORY_SUITE_RECALL_TOTAL_MAX = 40000;
+function memorySuiteDefaultRecallBudget() {
+  return {version:1,enabled:false,totalChars:16000,shares:{libra:50,hayaku:25,flashback:25}};
+}
+function memorySuiteNormalizeRecallBudget(input) {
+  if(!input||typeof input!=='object'||Array.isArray(input)||(input.version!=null&&input.version!==1))throw Error('RECALL_BUDGET_INVALID');
+  const total=Number(input.totalChars);
+  if(!Number.isInteger(total)||total<MEMORY_SUITE_RECALL_TOTAL_MIN||total>MEMORY_SUITE_RECALL_TOTAL_MAX)
+    throw Error('RECALL_BUDGET_INVALID: 전체 예산은 '+MEMORY_SUITE_RECALL_TOTAL_MIN.toLocaleString('en-US')+'~'+MEMORY_SUITE_RECALL_TOTAL_MAX.toLocaleString('en-US')+'자 사이의 정수입니다.');
+  const shares={};
+  for(const owner of MEMORY_SUITE_RECALL_OWNERS){
+    const value=Number(input.shares?.[owner]);
+    if(!Number.isInteger(value)||value<0||value>100)throw Error('RECALL_BUDGET_INVALID: 비율은 0~100 사이의 정수입니다.');
+    shares[owner]=value;
+  }
+  if(MEMORY_SUITE_RECALL_OWNERS.reduce((sum,owner)=>sum+shares[owner],0)!==100)throw Error('RECALL_BUDGET_INVALID: 세 비율의 합이 100이어야 합니다.');
+  return {version:1,enabled:input.enabled===true,totalChars:total,shares};
+}
+function memorySuiteRecallBudget(owner, next) {
+  const policies=memorySuiteRecallBudget.policies||(memorySuiteRecallBudget.policies=new Map());
+  if(next!==undefined)policies.set(owner,next);
+  return policies.get(owner)||null;
+}
+// This plugin's share in characters while the shared budget is on; null when it is off.
+function memorySuiteRecallShareChars(owner) {
+  const budget=memorySuiteRecallBudget(owner);
+  if(!budget||budget.enabled!==true||!MEMORY_SUITE_RECALL_OWNERS.includes(owner))return null;
+  return Math.floor(budget.totalChars*budget.shares[owner]/100);
+}
+// 중복 제거: what the other memory plugins already put into this request (the request hooks run one
+// after another, each receiving the previous result), so a later plugin can leave out text that is
+// already there. Only verbatim repeats count; different wording of the same turn is kept.
+const MEMORY_SUITE_RECALL_BLOCKS = Object.freeze({
+  libra: Object.freeze([/<LIBRA_CLASSIC_RECALL>([\s\S]*?)<\/LIBRA_CLASSIC_RECALL>/gi, /\[LIBRA 장기기억[^\]\n]*\]([\s\S]*)$/gi]),
+  // HAYAKU's context message: the scene head and the recalled records (its lead line is localized),
+  // up to the packet-writing instructions that follow them.
+  hayaku: Object.freeze([/(?:\[HAYAKU ACTIVE SCENE HEAD\]|앞서 확립된 정황:|What had already been established:|これまでに明らかになったこと：|此前已经发生的事：)([\s\S]*?)(?=\[HAYAKU (?:RUNTIME PACKET SHAPE|PACKET WRITE|CANONICAL PACKET AUTHORING CONTRACT|LAST-PACKET REPAIR)\]|$)/g,
+    /\[HAYAKU PACKET MEMORY\]([\s\S]*?)\[\/HAYAKU PACKET MEMORY\]/gi, /\[VERBATIM PAST EVIDENCE\]([\s\S]*?)\[\/VERBATIM PAST EVIDENCE\]/gi,
+    /\[HAYAKU CONTINUITY CONTEXT\]([\s\S]*?)\[\/HAYAKU CONTINUITY CONTEXT\]/gi]),
+  flashback: Object.freeze([/\[ACTIVE CONTINUITY EVIDENCE\]([\s\S]*?)\[\/ACTIVE CONTINUITY EVIDENCE\]/gi, /\[FLASHBACK EVIDENCE\]([\s\S]*?)\[\/FLASHBACK EVIDENCE\]/gi,
+    /\[VECTOR RAG MEMORY\]([\s\S]*?)\[\/VECTOR RAG MEMORY\]/gi])
+});
+const memorySuiteRecallNorm = value => String(value??'').normalize('NFKC').toLowerCase()
+  .replace(/[\s"'`“”‘’「」『』()\[\]{}<>.,!?;:~…·*_=+|\/\\—–-]/g,'');
+// Sentences of an item, without list marks, leading [labels] or a short "field:" label, so
+// "- [T3] 문장" and "- summary: 문장" both match "문장".
+const memorySuiteRecallPieces = value => String(value??'').split(/\n+|(?<=[.!?。！？…])\s+/)
+  .map(line=>memorySuiteRecallNorm(line.replace(/^\s*(?:[-*•]\s*)?(?:\[[^\]\n]{1,40}\]\s*)*(?:[A-Za-z가-힣][A-Za-z가-힣 _]{0,23}:\s+)?/,''))).filter(piece=>piece.length>=8);
+function memorySuitePeerRecallIndex(messages, owner) {
+  const parts=[],owners=new Set();
+  const bodyOf=message=>typeof message?.content==='string'?message.content
+    :Array.isArray(message?.content)?message.content.map(part=>typeof part==='string'?part:typeof part?.text==='string'?part.text:'').join('\n'):'';
+  for(const message of Array.isArray(messages)?messages:[]){
+    const body=bodyOf(message);if(!body)continue;
+    for(const [peer,patterns] of Object.entries(MEMORY_SUITE_RECALL_BLOCKS)){
+      if(peer===owner)continue;
+      for(const pattern of patterns){pattern.lastIndex=0;for(const hit of body.matchAll(pattern)){if(hit[1]&&hit[1].trim()){parts.push(hit[1]);owners.add(peer);}}}
+    }
+  }
+  const text=memorySuiteRecallNorm(parts.join('\n'));
+  // Share of an item's characters (sentence by sentence) already present in a peer block.
+  const ratio=value=>{
+    if(!text)return 0;
+    const pieces=memorySuiteRecallPieces(value);let total=0,covered=0;
+    for(const piece of pieces){total+=piece.length;if(text.includes(piece))covered+=piece.length;}
+    return total?covered/total:0;
+  };
+  let digest=0;for(let i=0;i<text.length;i++)digest=(digest*31+text.charCodeAt(i))>>>0;
+  return Object.freeze({owners:[...owners].sort(),chars:text.length,digest:text?owners.size+':'+text.length+':'+digest.toString(36):'',
+    ratio,covered:(value,threshold=0.8)=>ratio(value)>=threshold});
 }
 function memorySuiteSourceRules(owner, next) {
   const policies=memorySuiteSourceRules.policies||(memorySuiteSourceRules.policies=new Map());
@@ -201,8 +296,11 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(value.sourceRules)value.sourceRules={...value.sourceRules,...memorySuiteExternalSourceRules(memorySuiteNormalizeSourceRules(value.sourceRules),value.externalRulesVersion!==1)};
       value.externalRulesVersion=1;
       if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      // A malformed stored budget is ignored (shared budget off) rather than blocking the plugin.
+      let budget=null;if(value.recallBudget){try{budget=memorySuiteNormalizeRecallBudget(value.recallBudget);}catch(_){budget=null;}}
+      if(budget)value.recallBudget=budget;else delete value.recallBudget;
       preferences=value;
-      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);
+      memorySuiteSourceTagPolicy(owner,value.ignoredTags);memorySuiteSourceRules(owner,value.sourceRules||null);memorySuiteRecallBudget(owner,budget);
       return value;
     })().finally(()=>{loading=null;});
     return loading;
@@ -229,6 +327,23 @@ function createMemorySuiteSourceInputPolicy(config) {
     saving=work;return work.finally(()=>{if(saving===work)saving=null;});
   }
   const setSourceRules=input=>save(null,input);
+  const recallBudget=()=>clone(memorySuiteRecallBudget(owner)||memorySuiteDefaultRecallBudget());
+  // The shared recall budget lives in the same stored preferences; saving it keeps every other field.
+  function setRecallBudget(input) {
+    if(saving||config.busy?.()===true)return Promise.reject(Error('RECALL_BUDGET_BUSY: 현재 요청·처리가 끝난 뒤 저장하세요.'));
+    const work=(async()=>{
+      await ready();
+      const budget=memorySuiteNormalizeRecallBudget(input);
+      const desired={...preferences,recallBudget:budget},body=JSON.stringify(desired);
+      if(disposed||config.busy?.()===true)throw Error('RECALL_BUDGET_BUSY');
+      if(await config.write(body)===false)throw Error('SOURCE_INPUT_WRITE_REJECTED');
+      const raw=await config.read();if((typeof raw==='string'?raw:JSON.stringify(raw))!==body)throw Error('SOURCE_INPUT_READBACK_FAILED');
+      if(disposed)throw Error('SOURCE_INPUT_DISPOSED');
+      preferences=desired;memorySuiteRecallBudget(owner,budget);
+      return recallBudget();
+    })();
+    saving=work;return work.finally(()=>{if(saving===work)saving=null;});
+  }
   // readSample is an explicit local read: string or {text,label?,role?}; never stored.
   // projectLegacySample preserves the owner's actual normalizer until rules are edited.
   function mountControls(container) {
@@ -255,7 +370,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     warning.dataset.sourceInputWarning='';warning.className='ms-input-warning';warning.setAttribute('role','alert');warning.hidden=true;
     output.dataset.sourceInputOutput='';output.hidden=true;output.setAttribute('aria-label','실제 분석 입력 미리보기');
     previewArea.append(previewButton,make('small','현재 채팅에서 불러온 메시지를 기준으로 실제 분석 입력을 보여 줍니다. AI를 호출하지 않으며 미리보기 본문을 저장하거나 로그에 남기지 않습니다.'),previewStatus,warning,output);box.append(previewArea);
-    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. 일반 표식은 직접 구분자를 켜고 여는 표식과 닫는 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
+    const help=make('details'),summary=make('summary','규칙 사용 방법');help.append(summary,make('p','태그 이름(예: original), 여는 태그 또는 XML 예시를 붙여 넣으세요. 표준 태그는 닫는 태그를 자동으로 찾습니다. [START]…[END]처럼 태그가 아닌 표식은 ‘시작·끝 표식’을 켜고 시작 표식과 끝 표식을 입력하세요. 내용 전체 제외 → 태그와 내용 제거, 태그만 제거 → 안의 내용 유지, 이 안만 분석 → 바깥 내용 제외입니다. 적용 순서는 이 안만 분석, 내용 전체 제외, 태그만 제거입니다. 선택 영역이 비어 있거나 불완전·중복이면 전체 본문을 사용하며 미리보기에 경고합니다. Suite 자체 운용 표식은 내부에서 처리합니다.'));box.append(help);
     const controlLabels={'html-comment':'HTML 주석','lbdata':'LBDATA 제어 블록','inlay':'삽화 호출'};
     const actionNames={ignoredTags:'내용 전체 제외',unwrapTags:'태그만 제거',sourceTags:'이 안만 분석'};
     let rows=[],loaded=false,applying=false,initial='',legacy=false,sample=null,previewVersion=0,readingSample=false;
@@ -265,7 +380,7 @@ function createMemorySuiteSourceInputPolicy(config) {
       if(/^[a-z][a-z0-9:_-]{0,63}$/i.test(value))return value.toLowerCase();
       const tag=/^<([a-z][a-z0-9:_-]{0,63})(?=[\s/>])(?:"[^"]*"|'[^']*'|[^'">])*?>/i.exec(value);
       if(tag){const rest=value.slice(tag[0].length);if(!rest.trim()||new RegExp('</'+tag[1]+'\\s*>$','i').test(rest))return tag[1].toLowerCase();}
-      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 일반 표식은 직접 구분자를 켜 주세요.');
+      throw Error('태그 이름 또는 짝이 맞는 XML 예시를 입력하세요. 태그가 아닌 표식은 ‘시작·끝 표식’을 켜 주세요.');
     }
     function readDraft() {
       const draft={version:1,ignoredTags:[],unwrapTags:[],sourceTags:[],controls:[]};
@@ -313,9 +428,9 @@ function createMemorySuiteSourceInputPolicy(config) {
       const element=make('div'),fields=make('div'),tagLabel=make('label','태그 이름 또는 XML 예시'),valueInput=make('textarea'),customLabel=make('label'),custom=make('input'),customFields=make('div'),open=make('input'),close=make('input'),actionLabel=make('label','처리 방법'),action=make('select'),remove=make('button','삭제');
       element.dataset.sourceInputRow='';element.className='ms-input-row';fields.className='ms-input-fields';tagLabel.dataset.ruleTagLabel='';
       valueInput.dataset.ruleValue='';valueInput.rows=1;valueInput.placeholder='예: decoration 또는 <decoration>예시</decoration>';tagLabel.append(valueInput);
-      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','직접 구분자'));
+      custom.type='checkbox';custom.dataset.ruleCustom='';customLabel.className='ms-custom-toggle';customLabel.append(custom,make('span','시작·끝 표식'));
       customFields.className='ms-custom-fields';open.dataset.ruleOpen='';close.dataset.ruleClose='';open.type=close.type='text';open.maxLength=close.maxLength=256;
-      const openLabel=make('label','여는 표식'),closeLabel=make('label','닫는 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
+      const openLabel=make('label','시작 표식'),closeLabel=make('label','끝 표식');openLabel.append(open);closeLabel.append(close);customFields.append(openLabel,closeLabel);
       for(const [optionValue,label]of Object.entries(actionNames)){const option=make('option',label);option.value=optionValue;action.append(option);}action.value=key;action.dataset.ruleAction='';actionLabel.append(action);
       remove.type='button';remove.dataset.ruleDelete='';remove.setAttribute('aria-label','이 규칙 삭제');
       if(value&&typeof value==='object'){custom.checked=true;open.value=value.open;close.value=value.close;}else if(value)valueInput.value=value;
@@ -360,7 +475,7 @@ function createMemorySuiteSourceInputPolicy(config) {
     status.textContent='저장된 규칙을 읽는 중…';
     loadPreferences().then(()=>{if(disposed)return;loaded=true;fill();status.textContent='';if(typeof config.readSample!=='function')previewStatus.textContent='현재 채팅 미리보기를 사용할 수 없습니다.';}).catch(()=>{if(!disposed)status.textContent='저장된 규칙을 읽지 못했습니다. 설정을 다시 열어 주세요.';});
   }
-  return Object.freeze({ready,sourceRules,setSourceRules,setIgnoredTags:input=>save(input),
+  return Object.freeze({ready,sourceRules,setSourceRules,recallBudget,setRecallBudget,setIgnoredTags:input=>save(input),
     ignoredTags:()=>[...memorySuiteSourceTagPolicy(owner)],mountControls,dispose:()=>{disposed=true;}});
 }
 // Keep the established LIBRA factory name for existing consumers.

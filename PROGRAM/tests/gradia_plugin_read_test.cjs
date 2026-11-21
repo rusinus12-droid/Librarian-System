@@ -11,7 +11,7 @@ async function setup(t, options = {}) {
       return { items: [{ id: 'i', key: 'k', content: 'IPC_OWNER_EVIDENCE', source: { namespace: 'hayaku' } }],
         assertCurrent: async () => state.current, close: () => state.close++ };
     } });
-  const reader = create({ role: 'reader', api: bus.api('serial_gradation_agents_for_rp'), primitives, timeoutMs: 70, ...options });
+  const reader = create({ role: 'reader', api: bus.api('serial_gradation_agents_for_rp'), primitives, timeoutMs: 70, describeTimeoutMs: 70, ...options });
   await owner.start(); t.after(async () => { await reader.dispose(); await owner.dispose(); });
   return { bus, state, owner, reader, client: reader.createClient({ hayaku: scope }) };
 }

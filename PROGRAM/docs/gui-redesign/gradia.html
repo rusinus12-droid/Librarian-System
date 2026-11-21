@@ -38,6 +38,15 @@ html[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}
 .node:not(:last-child)::after{content:"";position:absolute;left:21px;top:42px;bottom:-14px;width:3px;background:linear-gradient(var(--c),var(--c2,var(--c)));z-index:0}
 .node b{display:block;font-size:13.5px}.node small{display:block;font-size:12px;color:var(--text3)}
 .node.is-off{opacity:.55}
+.tab.tab--sub::before{content:"+ ";color:var(--text3)}
+.node--sub{padding-top:6px;padding-bottom:6px}
+.node--sub .node__dot{width:22px;height:22px;margin-left:10px;font-size:11px}
+.node--sub b{font-size:12.5px}
+.node--sub .node__parent{display:block;font-size:11px;color:var(--text3)}
+.mini__sub{margin-left:4px;font-weight:600;color:var(--text3)}
+.ladder--aside{margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}
+.ladder__label{display:block;padding:0 0 6px 8px}
+.mini__step.is-off{opacity:.5;border-style:dashed}
 .node--io .node__dot{border-radius:9px}
 .s1{--c:var(--stage1);--c2:var(--stage2)}.s2{--c:var(--stage2);--c2:var(--stage3)}.s3{--c:var(--stage3);--c2:var(--stage4)}.s4{--c:var(--stage4);--c2:var(--stage5)}.s5{--c:var(--stage5)}.s0{--c:#7e8aa6;--c2:var(--stage1)}
 .mini{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -69,7 +78,7 @@ html[data-writing=rp] .ribbon{display:flex;gap:8px;align-items:center}
 <div class="app">
 
   <header class="topbar">
-    <div class="brand"><div class="brand__mark"><i data-i="layers" data-size="lg"></i></div><div><div class="brand__name">GRADIA</div><div class="brand__ver">v0.25.83 · <span id="modeLabel">소설 모드</span></div></div></div>
+    <div class="brand"><div class="brand__mark"><svg class="brand__symbol" viewBox="0 0 48 48" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="32" width="8" height="10" rx="1.8" opacity=".38"/><rect x="15" y="24" width="8" height="18" rx="1.8" opacity=".58"/><rect x="25" y="15" width="8" height="27" rx="1.8" opacity=".8"/><rect x="35" y="6" width="8" height="36" rx="1.8"/></svg></div><div><div class="brand__name">GRADIA</div><div class="brand__ver">v0.25.83 · <span id="modeLabel">소설 모드</span></div></div></div>
     <div class="mode-switch" role="group" aria-label="작성 모드" data-dirty data-scope="gradia"><button data-mode="novel" aria-pressed="true">소설</button><button data-mode="rp" aria-pressed="false">RP</button></div>
     <div class="grow"></div>
     <span class="health health--ok hide-narrow"><i></i>훅 활성 · 대기 중</span>

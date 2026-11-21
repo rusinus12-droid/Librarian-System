@@ -1,0 +1,48 @@
+# 리콜에서 채팅 턴 표시 제거 — 2026-11-19
+
+대상: LIBRA 3.0.8, HAYAKU 4.0.7, Flashback 2.0.6.
+
+## 결정
+
+LIBRA·HAYAKU·Flashback이 요청에 넣는 기억에서 **채팅 턴 번호(`T5`, `T1–5`, `as of T5` 등)를 뺀다.**
+
+모델은 지금이 몇 번째 턴인지 모른다. 그래서 턴 번호는 모델에게 대체로 쓸모없는 메타 정보다. 그 번호가 하던 일은 플러그인 코드가 주입 전에 미리 처리하고, 모델에게는 정리된 결과만 준다.
+
+- **남기는 것:** 이야기 속 시간(스토리 시계의 "N일째", 렌즈 노트의 날짜·시점 표현)은 이야기 내용이므로 그대로 둔다.
+- **화면·진단:** 설정 화면과 진단 정보의 턴 표기는 바꾸지 않는다.
+- **분석 입력:** HAYAKU 패킷 작성 지침의 계보 상수와 재생성 대상 턴, 렌즈 분석 모델에 주는 이전 노트 목록은 리콜이 아니라 작성·분석 입력이라 대상이 아니다.
+
+## LIBRA
+
+턴 번호가 유일하게 실제 역할을 하던 곳이다. 읽기 규칙이 "기록이 현재 상태와 다르면 현재 상태가 우선, **단 기록이 상태 턴보다 나중이면** 그 기록이 우선"이라고 모델에게 숫자 비교를 맡겼다.
+
+- **판단을 코드로 옮김:** 렌더러(`tools/libra_state_memory_runtime.cjs`, LIBRA.js에 동기화)가 현재 상태가 마지막으로 반영한 턴보다 나중 기록을 골라낸다. 이 기록은 현재 상태 바로 다음의 `[RECENT CHANGES · newer than CURRENT STATE — where they differ from it, these are the present]` 절에 넣는다. 나머지 기록은 지난 일로 `RECORDED HISTORY`·`SCENE DETAILS`에 남긴다. 각 절 안에서는 이른 순서다.
+- **제목과 기록 표시:** `[CURRENT STATE · as of T5 — …]`는 `[CURRENT STATE — how things stand now]`가 되고, 기록 앞의 `(T1–5)`는 빠진다.
+- **읽기 규칙:** 턴 비교 문장을 빼고 "RECENT CHANGES는 상태가 마지막으로 갱신된 뒤의 일이며, 상태와 다르면 그쪽이 현재"로 바꿨다. "같은 절 안에서는 나중 줄이 앞 줄을 대신한다"는 규칙도 넣었다.
+- **상태 줄:** 스레드가 끝난 턴(`resolvedTurn`, "종결 기록 턴: T5")을 상태 줄에서 뺐다.
+- **스토리 시계 줄:** `(T8 기준, 이후 2턴 미반영)`은 `(가장 최근 대화는 아직 반영되지 않음)`이 된다. 반영되지 않은 턴이 없으면 아무것도 붙지 않는다. GRADIA는 이 줄에서 이야기 날짜만 읽으므로 영향이 없다.
+- **렌즈 노트 줄:** `(T1–T5 · 함께: … · 시점 … · 이야기 N일째 · 라벨)`에서 턴 범위가 빠진다. "이후 종료됨(T4)"은 "이후 종료됨"이 된다.
+
+진단(`stateAsOfTurn`, `turnLag`, `headFreshness`, `pointInTimeNotice`)은 그대로 남는다. 그래서 상태가 얼마나 뒤처졌는지는 화면과 로그에서 계속 볼 수 있다.
+
+## Flashback
+
+- **상태 줄:** `[T12 마지막 확인 · current_location]` 같은 표시를 통째로 뺐다. 상태 줄은 대상 머리글(`[Alice]`, `[WORLD]`) 아래의 확인 원문 문장만 남는다. "마지막 확인"은 절 제목 `LATEST CONFIRMED STATE`와 겹치고, 속성(`current_location`, `holder` 등)은 내부 키 이름이며, 관계 대상(`→ Bob`)은 원문 문장에 이미 들어 있다.
+- **고정 규칙:** `[PAST EVIDENCE RULES]`에서 "directional target (`→`), and historical confirmation turn (`T#`)" 문구를 뺐다. 고정 규칙 캐시 버전을 9에서 11로 올렸다.
+- **사건 순서:** 지난 사건은 원래부터 턴 번호 없이 이른 순서(`[E01]`, `[E02]`)로만 표시했다.
+
+## HAYAKU
+
+- **원문 발췌 표시:** `[T12 · ASSISTANT]`는 `[ASSISTANT]`가 되고, 이전 대화는 `[PREDECESSOR · ASSISTANT]`가 된다. 두 경로를 모두 고쳤다.
+- **출처 줄:** 같은 내용의 기록을 합칠 때 붙던 출처 줄(`[sources [{"id":…,"source":…,"at":…,"messageIndex":…}]]`)을 통째로 뺐다. 모델은 합친 기록 문장을 한 번만 읽는다. 출처(ID, 패킷 해시, 턴, 메시지 위치)는 `sourceRows`에 계속 보관되어 전달 집계에 쓰인다.
+- **역할 표시:** 원문 발췌의 `[ASSISTANT]`·`[USER]`는 남긴다. 그 문장이 사용자 페르소나의 말·행동인지 서술인지 구분하는 이야기 정보다.
+
+## 검증
+
+- **`libra_state_memory_runtime_test`:** 새 사례를 추가했다. 상태가 턴 2까지 반영된 동안 턴 3의 기록이 `RECENT CHANGES`로 상태 바로 다음에 오고, 턴 1의 기록은 지난 일로 남는다. 모델에게 가는 텍스트에 턴 번호와 `resolvedTurn`이 없고, 진단에는 턴이 남는다. 상태가 따라잡으면 `RECENT CHANGES`가 사라진다.
+- **형식 테스트:** `libra_recall_budget_prompt_test`(턴 번호와 읽기 규칙의 턴 비교 문장이 없음), 스토리 시계·렌즈 노트 형식 테스트 5개, `memory_suite_recall_share_test`를 새 형식에 맞췄다.
+- **`flashback_state_line_bookkeeping_free_test`(신규, 두 릴리스 workflow에 등록):** 상태 줄이 대상 머리글 아래 원문만 남는지, 고정 규칙에 확인 턴·방향 표시 문구가 없는지 확인한다.
+- **`hayaku_source_routing_scale_runtime_test`:** 합친 기록 6개가 모델 텍스트에는 한 번만 나오고 출처 표시는 없으며, 전달 집계에는 6개 출처가 모두 남는지 확인하도록 바꿨다.
+- **릴리스 workflow 테스트:** 366개가 모두 통과한다.
+
+모델 응답 품질이 실제로 좋아졌는지는 측정하지 않았다.

@@ -194,7 +194,7 @@ test('switching a custom delimiter to tag input cannot silently delete the store
  const f=await setup({preferences:{sourceRules:{...empty(),ignoredTags:[{open:'[OPEN]',close:'[CLOSE]'}]},externalRulesVersion:1}});try{
   const row=f.root.querySelector('[data-source-input-row]'),custom=row.querySelector('[data-rule-custom]');
   custom.checked=false;custom.dispatchEvent(new f.root.ownerDocument.defaultView.Event('change'));
-  await f.apply();assert.equal(f.writes.length,0);assert.match(f.find('[data-source-input-status]').textContent,/직접 구분자/);
+  await f.apply();assert.equal(f.writes.length,0);assert.match(f.find('[data-source-input-status]').textContent,/시작·끝 표식/);
   assert.equal(row.querySelector('[data-rule-value]').value,'[OPEN]');
  }finally{f.close();}
 });
