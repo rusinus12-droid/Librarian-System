@@ -58128,7 +58128,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
   });
 
   const LEDGER_VIEWER_ROOT_ID = 'hayaku-ledger-viewer-root';
-  const ledgerViewerIconSvg = '<span aria-hidden="true" style="display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;font:800 21px/1 \'Noto Sans CJK KR\',\'Noto Sans KR\',\'Malgun Gothic\',sans-serif;">速</span>';
+  const ledgerViewerIconSvg = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#126457"/><g transform="translate(8 8)"><g fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 5c-6.6 0-11 4.6-11 10.6C13 23.4 24 33 24 33s11-9.6 11-17.4C35 9.6 30.6 5 24 5z"/><circle cx="24" cy="15.5" r="3.8"/><path d="M5 41h38M11 38v6M37 38v6"/><circle cx="24" cy="41" r="3" fill="#fff" stroke="none"/></g></g></svg>';
   const viewerEscapeHtml = value => text(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

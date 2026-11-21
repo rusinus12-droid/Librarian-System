@@ -94011,7 +94011,7 @@ advanced
   const registerPluginUi = async () => {
     const openSettings = async () => LibraMemoryCore.state.disposed ? false : await showSettingsGui();
 
-    const icon = '🧠';
+    const icon = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#2f3f8f"/><g transform="translate(8 8)"><g fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="8" r="2.4" fill="#fff" stroke="none"/><path d="M24 11v29M16 40h16M9 15h30M9 15l-5 12M9 15l5 12M39 15l-5 12M39 15l5 12M3.5 27h11a5.5 5 0 0 1-11 0zM33.5 27h11a5.5 5 0 0 1-11 0z"/></g></g></svg>';
     const chatButtonApi = getLiveApi(['registerButton']);
     const settingApi = getLiveApi(['registerSetting']);
     let allOk = true;

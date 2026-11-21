@@ -55148,7 +55148,7 @@ ${cleanedText}`, 80),
     return { id: fallbackId, uncertain: true };
   };
 
-  const vectorRagIconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="18" height="16" rx="3" stroke="currentColor" stroke-width="2"/><path d="M7 8h6M7 12h10M7 16h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="17.5" cy="8.5" r="1.5" fill="currentColor"/></svg>';
+  const vectorRagIconSvg = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#a3530a"/><g transform="translate(8 8)"><g fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M34.6 13.4A15 15 0 1 0 37.5 31"/><path d="M37.5 31l-7 3.8M37.5 31l1.1 7.9"/><path d="M26.5 13.5L17.5 26H24l-2.5 9.5L30.5 22H24z" fill="#fff" stroke-width="1.4"/></g></g></svg>';
 
   const registerSettingEntry = async (uiApi) => {
     if (!uiApi || typeof uiApi.registerSetting !== 'function' || Runtime.registered.setting) return null;

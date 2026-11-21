@@ -66,7 +66,7 @@ async function prepareMemorySuiteHandoffTargetStorage(api, storage, owner, paylo
     return;
   }
 
-  const PLUGIN_ICON = "🔗";
+  const PLUGIN_ICON = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#a3365a"/><g transform="translate(8 8)"><g fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="19" cy="14" r="6.5"/><path d="M6 40c0-7.5 5.8-13 13-13 4.6 0 8.6 2.2 11 5.6"/><circle cx="36" cy="35" r="6.5"/><path d="M31.4 30.4l-3-3"/></g></g></svg>';
   // Alternative icon candidates: 🧵 lore/persona thread, 🌉 world bridge, 🪢 relationship knot.
   const PLUGIN_NAME = "LIA";
   const PLUGIN_SUBTITLE = "Persona Linker";

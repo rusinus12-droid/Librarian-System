@@ -51900,7 +51900,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   const registerPluginUi = async () => {
     try {
       const open = async () => { await showSettingsGui(); };
-      const icon = '⚙️';
+      const icon = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#6b3fa0"/><g transform="translate(8 8)"><g fill="#fff"><rect x="5" y="32" width="8" height="10" rx="1.8" opacity=".38"/><rect x="15" y="24" width="8" height="18" rx="1.8" opacity=".58"/><rect x="25" y="15" width="8" height="27" rx="1.8" opacity=".8"/><rect x="35" y="6" width="8" height="36" rx="1.8"/></g></g></svg>';
       const chatButtonApi = getLiveApi(['registerButton']);
       if (!registered.continueButton && typeof chatButtonApi?.registerButton === 'function') {
         registered.continueButton = await chatButtonApi.registerButton({

@@ -17408,7 +17408,7 @@ ${error?.message || error}`);
   const hydrateRetraceIcons = root => {
     for(const node of root?.querySelectorAll?.('i[data-i]')||[]){const paths=RETRACE_ICON_PATHS[node.getAttribute('data-i')];if(!paths)continue;node.outerHTML=`<svg class="ic${node.dataset.size?' ic--'+node.dataset.size:''}" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;}
   };
-  const bridgeIconSvg = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3 17h18M4 20h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M7 7v13M17 7v13M5.5 7h3M15.5 7h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M3 13.5C5.2 13.5 5.3 8 7 8c1.8 0 2.5 4 5 4s3.2-4 5-4c1.7 0 1.8 5.5 4 5.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+  const bridgeIconSvg = '<svg aria-hidden="true" focusable="false" viewBox="0 0 64 64" width="24" height="24"><rect width="24" height="24" rx="16" fill="#3e5566"/><g transform="translate(8 8)"><g fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 38h20a8 8 0 0 0 0-16H18a8 8 0 0 1 0-16h20"/><path d="M33 1.5L38 6l-5 4.5"/><circle cx="10" cy="38" r="3.2" fill="#fff" stroke="none"/></g></g></svg>';
   const iconSvg = bridgeIconSvg;
 
   const registerUi = async () => {
