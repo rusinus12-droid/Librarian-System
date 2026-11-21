@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-21T15:57:36.502Z",
+  "generatedAt": "2026-11-21T21:51:25.267Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "60e69183cbae7bb7ff70c85bec31c01f2e7c39719df95d13799008bb5b49a944",
+      "sha256": "a7ce4e5d6a73f8157dfcae7df85d54be17d3c730c64753dc64f880c1644eb296",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4332,7 +4332,7 @@
       "bytes": 1104
     },
     "PACKAGE_CONTENTS.txt": {
-      "sha256": "f26f58add03ac1fdc2989b2ec6cefc75aaef82b430bb63de2eaf0923f298abf9",
+      "sha256": "a365b5edeb278e00ade168299a77f0c2c077078909ba271c36dcada4c5ddf495",
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
@@ -4340,12 +4340,12 @@
       "bytes": 3980781
     },
     "plugins/GRADIA.js": {
-      "sha256": "cf7f8f3c4b8c6a6570a6dfd3cd8d18b312866347e051c0a904306e3b3734514c",
-      "bytes": 3793583
+      "sha256": "0bf0bcb7278ee80a4fcdd39e54c18ab7ac80e787bf5f5fe972a73f16529de88a",
+      "bytes": 3852081
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "fdce227444e198af808cf6160573a10632be5dcbdb4d5e803f0c75788bec941e",
-      "bytes": 4425388
+      "sha256": "a003d61854be3ededfb74a8f02e6253f964ab015f11f432c2f146f36eca94953",
+      "bytes": 4430021
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "ff0bcb0e5e507da26a98c0cc15a5c03f854be84c02fd7ff38afa52e741d996c0",
@@ -6688,8 +6688,8 @@
       "bytes": 7298
     },
     "tests/gradia_body_state_aide_test.cjs": {
-      "sha256": "baa0d99641b128df723e8bab11ccc7962bd7a2916b7f5e5643626f41d5fb469f",
-      "bytes": 41617
+      "sha256": "19671b8c8e37d7f55b5af2eeee25a2ae0d097a1dda190486aa8acbec212e6bfb",
+      "bytes": 47684
     },
     "tests/gradia_causal_realism_test.cjs": {
       "sha256": "015a4f2b24e62ed3a5b96bc919798f52f112fc88cf2e3b7dd07e7e97a8e8b36c",
@@ -6748,8 +6748,8 @@
       "bytes": 14818
     },
     "tests/gradia_intimacy_aide_test.cjs": {
-      "sha256": "cedb54b3b7b1de3ef9dca94f02952b2d90501e2a68c00203a3d6ab8e8a94456c",
-      "bytes": 10392
+      "sha256": "93063815aad86c488f5ef0449e0b81ed700532b9b6c224808a8e0a2f13bf9215",
+      "bytes": 19722
     },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",
@@ -6764,8 +6764,8 @@
       "bytes": 7825
     },
     "tests/gradia_npc_disposition_test.cjs": {
-      "sha256": "2a8bb01098aa27ebafdd3c8636fb74c1cc9a599093a2a100b9ec185c84b8fe4b",
-      "bytes": 21476
+      "sha256": "9ed7699785224bbe5c0462c883d918da5ca6cd09be706ca07ac0cffb46ae5be9",
+      "bytes": 23272
     },
     "tests/gradia_nsfw_gui_runtime_test.cjs": {
       "sha256": "b3849fc9a953ca6aa59b503eb4f3077d61b005f42d2dab3fbfcf67f83f63e3e7",
@@ -6844,8 +6844,8 @@
       "bytes": 17283
     },
     "tests/gradia_relationship_sim_aide_test.cjs": {
-      "sha256": "1707f25d73908f5d279db89700cf898b776deca75f6aecd7d19482b801b67056",
-      "bytes": 18281
+      "sha256": "90ceb573eb2de0599ce6c31f97b9d258a784e7c2861ed92854d210d0f9d30bd6",
+      "bytes": 22542
     },
     "tests/gradia_results_view_gui_test.cjs": {
       "sha256": "abc9378f57c4509ddc98bf9756f58206f9fac74a24a2feb40d9f351c1492a199",
@@ -6874,6 +6874,10 @@
     "tests/gradia_shadow_draft_mode_gui_test.cjs": {
       "sha256": "3a18aff7fae76fe624b6a2c51290fe96cbdf8164e1e400c534c245996fe2a1b1",
       "bytes": 2665
+    },
+    "tests/gradia_shadow_previous_test.cjs": {
+      "sha256": "be26052bb6dd503e5d6bd6c5104de18c9baef2d6fe608e4c57692dc6338701b9",
+      "bytes": 9228
     },
     "tests/gradia_suite_test.cjs": {
       "sha256": "a60bb0371478b585e295d545bd7d2dece1fa1e93e5407afdd4e5d8ad64410399",
@@ -7528,8 +7532,8 @@
       "bytes": 18413
     },
     "tests/hayaku_native_otherax_recovery_runtime_test.cjs": {
-      "sha256": "53e608873c0d3a50493e5663549cef2a9493fd987772eb0b30a9947d38c92978",
-      "bytes": 10288
+      "sha256": "ee40b1ba820d4ed9315683244bab824375807c7976eb01cf2dfd67ddd512f084",
+      "bytes": 14196
     },
     "tests/hayaku_native_otherax_runtime_test.cjs": {
       "sha256": "ded05bc2ff8b4fd8e1a6153b479f07a53d642fac8c816ba43b5cdfd2271ee6bc",
@@ -12840,7 +12844,7 @@
       "bytes": 827
     },
     "처음_읽어주세요.txt": {
-      "sha256": "085b1a148b0faaa862dcb1eebcc7d7e9b91d9c3fe577bf1d6620fc681cf5a45e",
+      "sha256": "e16f4817757e31cab753aa076c51d4a4b01f4109a809e0a196fbdecc795b3b2f",
       "bytes": 3781
     }
   },

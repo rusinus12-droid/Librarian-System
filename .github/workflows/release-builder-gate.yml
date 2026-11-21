@@ -167,7 +167,23 @@ jobs:
             PROGRAM/tests/libra_scope_switch_memory_gaps_test.cjs \
             PROGRAM/tests/libra_lens_memory_edit_runtime_test.cjs \
             PROGRAM/tests/libra_lens_excluded_reader_runtime_test.cjs \
-            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs
+            PROGRAM/tests/libra_receipt_validation_host_read_test.cjs \
+            PROGRAM/tests/gradia_shadow_previous_test.cjs \
+            PROGRAM/tests/gradia_continuity_and_backup_test.cjs \
+            PROGRAM/tests/retrace_gradia_handoff_runtime_test.cjs \
+            PROGRAM/tests/hayaku_native_otherax_recovery_runtime_test.cjs \
+            PROGRAM/tests/libra_receipt_recovery_desk_contract_test.cjs \
+            PROGRAM/tests/libra_lens_slot_preservation_and_reanalysis_test.cjs \
+            PROGRAM/tests/libra_lens_viewer_grouping_test.cjs \
+            PROGRAM/tests/libra_micro_overlap_settled_state_projection_test.cjs \
+            PROGRAM/tests/libra_micro_settled_state_projection_test.cjs \
+            PROGRAM/tests/libra_micro_source_change_reanalysis_test.cjs \
+            PROGRAM/tests/libra_reaffirm_participant_compat_test.cjs \
+            PROGRAM/tests/libra_state_card_review_approval_test.cjs \
+            PROGRAM/tests/libra_state_projection_currentness_test.cjs \
+            PROGRAM/tests/libra_state_replay_error_resolution_test.cjs \
+            PROGRAM/tests/libra_story_clock_ui_anchor_test.cjs \
+            PROGRAM/tests/libra_worldline_lens_status_truth_test.cjs
 
       - name: Verify clean working tree
         run: |

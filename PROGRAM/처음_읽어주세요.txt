@@ -50,9 +50,9 @@ Windows에서는 업데이트.bat, macOS에서는 업데이트.command, Linux/Te
 
 [현재 구성]
 - Librarian System Server 1.4.0
-- Flashback Memory 2.1.0
-- HAYAKU Locator Continuity 4.1.0
-- LIBRA 3.1.0
+- Flashback Memory 2.1.1
+- HAYAKU Locator Continuity 4.1.1
+- LIBRA 3.1.1
 - LIA Persona Linker 0.31.0
 - RE:TRACE 2.1.0
 - GRADIA 1.2.0
