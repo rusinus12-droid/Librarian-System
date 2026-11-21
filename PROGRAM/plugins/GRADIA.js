@@ -26867,8 +26867,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
     iud: Object.freeze({ label: '자궁내장치', factor: 0.01, pattern: /루프|자궁내장치|미레나|\biud\b/i }),
     implant: Object.freeze({ label: '피하이식', factor: 0.001, pattern: /임플라논|피하이식|implant/i }),
     withdrawal: Object.freeze({ label: '질외사정', factor: 0.2, pattern: /질외사정|withdrawal/i }),
-    emergency: Object.freeze({ label: '응급피임약', factor: 0.3, pattern: /사후피임|응급피임|morning.after/i })
+    emergency: Object.freeze({ label: '응급피임약', factor: 0.15, pattern: /사후\s*피임|응급\s*피임|애프터\s*필|노레보|엘라원|morning[\s.-]*after|plan\s*b\b|emergency\s*contracept/i })
   });
+  const BODY_STATE_EMERGENCY_WINDOW_DAYS = 5;
+  const BODY_STATE_EMERGENCY_FACTORS = Object.freeze([
+    [1, 0.05, '응급피임약 (24시간 이내)'],
+    [3, 0.15, '응급피임약 (72시간 이내)'],
+    [BODY_STATE_EMERGENCY_WINDOW_DAYS, 0.3, '응급피임약 (5일 이내)']
+  ]);
+  const bodyStateEmergencyByDelay = delayDays => {
+    const days = Number.isFinite(delayDays) ? Math.max(0, delayDays) : 1;
+    const hit = BODY_STATE_EMERGENCY_FACTORS.find(([limit]) => days <= limit) || BODY_STATE_EMERGENCY_FACTORS[1];
+    return { factor: hit[1], label: hit[2], delayDays: days };
+  };
   // Conception chance for one act by day relative to ovulation (fiction-grade approximation).
   const BODY_STATE_CONCEPTION_BY_OVULATION_DAY = Object.freeze({ '-5': 0.1, '-4': 0.16, '-3': 0.14, '-2': 0.27, '-1': 0.31, '0': 0.33, '1': 0.1 });
   const BODY_STATE_DEFAULT_CYCLE = 28;
@@ -27001,6 +27012,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       partner: compact(String(raw.partner || '').replace(/[\n·]/g, ' '), 60),
       knows: ['yes', 'no'].includes(raw.knows) ? raw.knows : 'auto',
       lastBirth: compact(raw.lastBirth || '', 40),
+      dismissedConceptions: Array.isArray(raw.dismissedConceptions)
+        ? [...new Set(raw.dismissedConceptions.map(item => compact(item || '', 40)).filter(Boolean))].slice(0, 12)
+        : [],
       // yes / no set by the user; auto infers from the profile.
       canConceive: ['yes', 'no'].includes(raw.canConceive) ? raw.canConceive : 'auto',
       basis: compact(raw.basis || '', 360),
@@ -27360,13 +27374,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (settings.bodyStateReproduction === true && gate !== 'staging' && fertility.value !== false && !card?.conceptionDate && newestRecord?.kind !== 'pregnant') {
       const exposures = mine.filter(entry => BODY_STATE_SEX_RE.test(entry.line))
         .filter(entry => closedAt === null || (() => { const days = recordAge(entry).days; return days === null || days < closedAt; })());
+      const emergencyEntries = mine
+        .map((entry, index) => ({ entry, index, age: recordAge(entry) }))
+        .filter(row => BODY_STATE_CONTRACEPTION.emergency.pattern.test(row.entry.line) && !BODY_STATE_RECORD_HEDGE_RE.test(row.entry.line));
+      const dismissedConceptions = new Set(Array.isArray(card?.dismissedConceptions) ? card.dismissedConceptions : []);
+      let verdictRecordedForCharacter = false;
       const seenContactKeys = new Set();
       for (const exposure of exposures.slice(-3)) {
         if (fertility.value === null) {
           lines.push(`  sexual contact recorded (${exposure.source}); whether this person can conceive is unknown (no card setting, no profile gender) — do not decide a pregnancy`);
           continue;
         }
-        const method = Object.entries(BODY_STATE_CONTRACEPTION).find(([, def]) => def.pattern.test(exposure.line))?.[0] || card?.contraception || '';
+        const exposureIndex = mine.indexOf(exposure);
+        const inlineMethod = Object.entries(BODY_STATE_CONTRACEPTION).find(([, def]) => def.pattern.test(exposure.line))?.[0] || '';
         let elapsed = bodyStateElapsed(exposure.full ? { ...exposure, line: exposure.full } : exposure, now, clock);
         // Contact shown in the recent scene with no time phrase happened today.
         if (elapsed.days === null && exposure.source === 'recent') elapsed = { days: 0, confidence: 'estimated (recent scene)' };
@@ -27374,21 +27394,54 @@ Begin directly with the in-world response and finish the complete same-turn draf
           lines.push(`  sexual contact recorded (${exposure.source}); conception cannot be judged: cycle day or date unknown — do not decide a pregnancy`);
           continue;
         }
+        const conception = bodyStateDayLabel(elapsed.days, now, clock);
+        const manuallyDismissed = Boolean(conception && dismissedConceptions.has(conception));
+        const followUpEmergency = inlineMethod === 'emergency'
+          ? { delayDays: 0 }
+          : emergencyEntries
+              .map(row => {
+                if (row.age.days !== null) {
+                  const delayDays = elapsed.days - row.age.days;
+                  if (delayDays < 0 || delayDays > BODY_STATE_EMERGENCY_WINDOW_DAYS) return null;
+                  if (delayDays === 0 && row.index < exposureIndex) return null;
+                  return { ...row, delayDays };
+                }
+                if (row.index > exposureIndex && elapsed.days <= BODY_STATE_EMERGENCY_WINDOW_DAYS) {
+                  return { ...row, delayDays: Math.min(elapsed.days, 1) };
+                }
+                return null;
+              })
+              .filter(Boolean)
+              .sort((a, b) => a.delayDays - b.delayDays || a.index - b.index)[0] || null;
+        const method = followUpEmergency ? 'emergency' : (inlineMethod || card?.contraception || '');
+        const emergencyTier = followUpEmergency ? bodyStateEmergencyByDelay(followUpEmergency.delayDays) : null;
         const exposureCycleDay = ((cycleDay - 1 - elapsed.days) % length + length) % length + 1;
         const fromOvulation = exposureCycleDay - (length - 14);
         const base = BODY_STATE_CONCEPTION_BY_OVULATION_DAY[String(fromOvulation)] || 0;
-        const factor = method ? BODY_STATE_CONTRACEPTION[method].factor : 1;
+        const baseFactor = (inlineMethod && inlineMethod !== 'emergency')
+          ? BODY_STATE_CONTRACEPTION[inlineMethod].factor
+          : (card?.contraception && card.contraception !== 'emergency' ? BODY_STATE_CONTRACEPTION[card.contraception].factor : 1);
+        const factor = manuallyDismissed
+          ? 0
+          : emergencyTier
+            ? Math.min(baseFactor, emergencyTier.factor)
+            : (method ? BODY_STATE_CONTRACEPTION[method].factor : 1);
+        const methodLabel = manuallyDismissed
+          ? '사후피임·판정 무효화'
+          : emergencyTier
+            ? emergencyTier.label
+            : (method ? BODY_STATE_CONTRACEPTION[method].label : 'contraception unknown, treated as none');
         const chance = base * factor;
         // Keyed to the day of contact, so the verdict stays the same when the event later
         // reaches GRADIA as a LIBRA note instead of a recent-scene line.
         const seedKey = today ? `${scopeKey}|${name}|contact-day:${today.day - elapsed.days}` : `${scopeKey}|${name}|${normalizeForLoreMatch(exposure.line)}`;
         if (seenContactKeys.has(seedKey)) continue;
         seenContactKeys.add(seedKey);
-        const pregnant = chance > 0 && bodyStateSeedRoll(seedKey) < chance;
+        const pregnant = !manuallyDismissed && chance > 0 && bodyStateSeedRoll(seedKey) < chance;
         if (pregnant && !pregnancyLine) {
           pregnancyLine = bodyStatePregnancyLine(elapsed.days, 'fixed verdict', card);
-          const conception = bodyStateDayLabel(elapsed.days, now, clock);
           if (scopeKey && conception) {
+            verdictRecordedForCharacter = true;
             const known = Runtime.bodyStateVerdicts[scopeKey]?.items || [];
             Runtime.bodyStateVerdicts[scopeKey] = { at: Date.now(), items: [...known.filter(item => item.name !== name), { name, conception }].slice(-FORCED_BOND_MAX_CARDS) };
           }
@@ -27396,7 +27449,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
         const aware = elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.symptomsDays
           ? 'symptoms may show (nausea, fatigue)'
           : elapsed.days >= BODY_STATE_PREGNANCY_AWARENESS.missedPeriodDays ? 'a missed period is possible; a test would now be reliable' : 'nothing noticeable yet';
-        lines.push(`  sexual contact ${elapsed.days} days ago (${elapsed.confidence}), cycle day ${exposureCycleDay} then, ${method ? BODY_STATE_CONTRACEPTION[method].label : 'contraception unknown, treated as none'} → chance ${(chance * 100).toFixed(1)}% → ${pregnant ? `PREGNANT (fixed verdict); ${aware}` : 'not pregnant (fixed verdict)'} [can conceive: ${fertility.source}]`);
+        lines.push(`  sexual contact ${elapsed.days} days ago (${elapsed.confidence}), cycle day ${exposureCycleDay} then, ${methodLabel} → chance ${(chance * 100).toFixed(1)}% → ${pregnant ? `PREGNANT (fixed verdict); ${aware}` : 'not pregnant (fixed verdict)'} [can conceive: ${fertility.source}]`);
+      }
+      if (scopeKey && !verdictRecordedForCharacter && Runtime.bodyStateVerdicts[scopeKey]?.items?.some(item => item.name === name)) {
+        Runtime.bodyStateVerdicts[scopeKey] = {
+          at: Date.now(),
+          items: Runtime.bodyStateVerdicts[scopeKey].items.filter(item => item.name !== name)
+        };
       }
     }
     if (pregnancyLine) lines.splice(cycleAt, 0, pregnancyLine);
@@ -49947,11 +50006,14 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       if (!verdictBox) { verdictBox = guiEl('div', { class: 'stack stack--sm', style: 'margin-top:8px', dataset: { bodyStateVerdicts: '' } }); (app.querySelector('[data-body-state-cards]')?.closest('.field') || readingBox).after(verdictBox); }
       const cardsNow = bodyStateCardsForScope(runtime, scopeKey);
       const open = (scopeKey ? Runtime.bodyStateVerdicts?.[scopeKey]?.items || [] : [])
-        .filter(item => !cardsNow.some(card => card.name === item.name && card.conceptionDate === item.conception));
+        .filter(item => !cardsNow.some(card => card.name === item.name && (card.conceptionDate === item.conception || (Array.isArray(card.dismissedConceptions) && card.dismissedConceptions.includes(item.conception)))));
       verdictBox.replaceChildren(...open.map(item => guiEl('div', { class: 'note' }, [
         guiEl('b', { text: `${forcedBondPersonLabel(item.name)} · 임신 판정 (수정 ${item.conception})` }),
         guiEl('p', { text: '판정은 관계 기록이 회상될 때만 다시 계산됩니다. 카드에 고정하면 기록이 회상되지 않아도 임신이 이어집니다.' }),
-        guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '이 판정을 카드에 고정', dataset: { bodyStateAction: 'pin', itemId: item.name } })])
+        guiEl('div', { class: 'cluster' }, [
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '이 판정을 카드에 고정', dataset: { bodyStateAction: 'pin', itemId: item.name } }),
+          guiEl('button', { class: 'btn btn--sm', type: 'button', text: '사후피임·판정 무효화', dataset: { bodyStateAction: 'dismiss-verdict', itemId: item.name } })
+        ])
       ])));
       const readings = scopeKey ? (Runtime.bodyStateReadings?.[scopeKey]?.readings || []) : [];
       readingBox.replaceChildren(...(readings.length
@@ -50683,8 +50745,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         mockupRefreshStatus();
         return;
       }
-    } else if (action === 'pin') {
-      // A verdict pinned to the card no longer depends on the contact line being recalled.
+    } else if (action === 'pin' || action === 'dismiss-verdict') {
+      // A verdict pinned to the card no longer depends on the contact line being recalled;
+      // a dismissed verdict is recorded on the card so the same contact day is treated as non-pregnant.
       const verdict = (Runtime.bodyStateVerdicts[scopeKey]?.items || []).find(item => item.name === itemId);
       if (!verdict) return;
       let card = cards.find(item => item.name === verdict.name);
@@ -50701,7 +50764,19 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
           cards.push(card);
         }
       }
-      card.conceptionDate = verdict.conception;
+      if (action === 'pin') {
+        card.conceptionDate = verdict.conception;
+        if (Array.isArray(card.dismissedConceptions)) {
+          card.dismissedConceptions = card.dismissedConceptions.filter(item => item !== verdict.conception);
+        }
+      } else {
+        const list = Array.isArray(card.dismissedConceptions) ? card.dismissedConceptions : [];
+        if (!list.includes(verdict.conception)) card.dismissedConceptions = [...list, verdict.conception];
+        if (card.conceptionDate === verdict.conception) card.conceptionDate = '';
+        if (Runtime.bodyStateVerdicts[scopeKey]?.items) {
+          Runtime.bodyStateVerdicts[scopeKey].items = Runtime.bodyStateVerdicts[scopeKey].items.filter(item => item.name !== verdict.name);
+        }
+      }
     } else return;
     if (cards.length) map[scopeKey] = cards; else delete map[scopeKey];
     runtime.bodyStateCards = normalizeBodyStateCardMap(map);

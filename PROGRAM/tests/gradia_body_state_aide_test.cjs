@@ -444,6 +444,63 @@ test('a positive verdict runs on the timeline, and the 상태 panel can pin it t
   assert.equal(cards.find(card => card.name === '세라').conceptionDate, verdict.conception);
 });
 
+test('after-pill taken within 1–5 days scales down conception chance and can flip a positive verdict; GUI can dismiss a verdict', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  wireModel(f, '민아는 문 앞에 섰다.');
+  await configure(f, { body_state_reproduction: true });
+  await runTurn(f, '문을 연다.');
+  const scopeKey = f.host.plugin.debugActiveScopeKey();
+  const baseSettings = {
+    writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal', bodyStateReproduction: true,
+    bodyStateCards: { [scopeKey]: [{ name: '세라', cycleLength: 28, lastPeriodStart: '' }] }
+  };
+  let positiveDay = 0;
+  for (let day = 1; day <= 28; day += 1) {
+    const p = f.host.plugin.debugBodyStatePacket({
+      personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+      libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${day + 30}일째 · 밤 세라는 하준과 관계를 가졌다`,
+      settings: baseSettings
+    });
+    if (/PREGNANT \(fixed verdict\)/.test(p)) { positiveDay = day + 30; break; }
+  }
+  assert.ok(positiveDay > 0, 'found a positive contact day');
+
+  // 1. After-pill taken the next day (within 24h -> factor 0.05) in a separate turn/note
+  const afterPill24h = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+    libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${positiveDay}일째 · 밤 세라는 하준과 관계를 가졌다\n이야기 ${positiveDay + 1}일째 · 아침 세라는 사후피임약을 복용했다`,
+    settings: baseSettings
+  });
+  assert.match(afterPill24h, /응급피임약 \(24시간 이내\)/);
+  assert.match(afterPill24h, /not pregnant \(fixed verdict\)/);
+  assert.doesNotMatch(afterPill24h, /pregnancy: week/);
+
+  // 2. After-pill taken 3 days later (within 72h -> factor 0.15)
+  const afterPill72h = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+    libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${positiveDay}일째 · 밤 세라는 하준과 관계를 가졌다\n이야기 ${positiveDay + 3}일째 · 아침 세라는 애프터필을 먹었다`,
+    settings: baseSettings
+  });
+  assert.match(afterPill72h, /응급피임약 \(72시간 이내\)/);
+
+  // 3. Re-trigger positive verdict and use GUI '사후피임·판정 무효화' button
+  f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey, profileGenders: { 세라: 'female' },
+    libText: `[STORY CLOCK] 현재: 이야기 60일째 · 저녁\n이야기 ${positiveDay}일째 · 밤 세라는 하준과 관계를 가졌다`,
+    settings: baseSettings
+  });
+  await f.host.plugin.openSettingsGui();
+  await f.host.plugin.debugNavigateGui('chat');
+  const panel = f.document.querySelector('section[data-page="chat"]');
+  const dismissBtn = await f.wait(() => panel.querySelector('[data-body-state-action="dismiss-verdict"]'), 'dismiss-verdict button');
+  dismissBtn.click();
+  assert.equal(panel.querySelector('[data-body-state-action="dismiss-verdict"]'), null, 'dismissed verdict is removed from the banner');
+  f.document.querySelector('#savebar [data-save]').click();
+  await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved after dismiss');
+  const savedCards = JSON.parse((await f.host.plugin.getRuntimeSettings()).body_state_cards)[scopeKey];
+  assert.ok(savedCards.find(card => card.name === '세라').dismissedConceptions.includes(`이야기 ${positiveDay}일째`));
+});
+
 // User decision 2026-11-17: pregnancy runs from the record without the card. LIBRA's 생체 주기 · 생식
 // lens labels a confirmed pregnancy, a birth and a pregnancy end; other memory and the recent scene
 // may say it in words. The card still wins, and hedged or negated lines are not records.
