@@ -6,6 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { Writable } = require('node:stream');
 const { inspectZip, extractEntry, sha256File } = require('../PROGRAM/server/portable/stream_archive.cjs');
+const { renameWithRetry } = require('./core/journal.cjs');
 const {
   OFFICIAL_REPOSITORY,
   expectedAssetName,
@@ -138,7 +139,7 @@ async function extractArchive({ archivePath, destinationRoot, targetVersion }) {
       if (/\.(?:sh|command)$/i.test(relative)) await fsp.chmod(output, 0o755);
       else await fsp.chmod(output, 0o644);
     }
-    await fsp.rename(temporary, destination);
+    await renameWithRetry(temporary, destination);
     return { root: destination, entries: info.entries.length, bytes: info.bytes, expandedBytes: info.expandedBytes };
   } catch (error) {
     await fsp.rm(temporary, { recursive: true, force: true }).catch(() => {});

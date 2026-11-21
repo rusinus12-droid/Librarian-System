@@ -12,7 +12,7 @@ const { withUpdateLock } = require('./core/lock.cjs');
 const { assertRuntime, validateRoot, detectPlatform } = require('./runtime.cjs');
 const { applyProgramOnly, recoverInterruptedProgramOnly } = require('./core/program-only.cjs');
 const { applyMigrationRequired, recoverInterruptedMigrationRequired } = require('./core/migration-required.cjs');
-const { readJournal, isTerminal } = require('./core/journal.cjs');
+const { readJournal, isTerminal, renameWithRetry } = require('./core/journal.cjs');
 
 const CODE_ROOT = path.resolve(__dirname, '..');
 const ROOT = CODE_ROOT;
@@ -96,7 +96,7 @@ async function downloadRelease(url, destination, expectedSha256) {
     const digest = hash.digest('hex');
     if (expectedSha256 && digest !== expectedSha256) throw new Error('release_sha256_mismatch');
     await fsp.rm(destination, { force: true });
-    await fsp.rename(temporary, destination);
+    await renameWithRetry(temporary, destination);
     return { path: destination, bytes, sha256: digest };
   } catch (error) {
     await fsp.rm(temporary, { force: true }).catch(() => {});

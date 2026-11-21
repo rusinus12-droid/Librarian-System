@@ -90,6 +90,7 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'distribution_metadata_coherence_test.cjs',
   'release_asset_contract_test.cjs',
   'remote_update_program_only_apply_test.cjs',
+  'updater_journal_rename_retry_test.cjs',
   'remote_update_crash_recovery_test.cjs',
   'remote_update_recovery_boundaries_test.cjs',
   'remote_update_commit_boundary_test.cjs',

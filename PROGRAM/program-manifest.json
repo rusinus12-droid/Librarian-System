@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.3.0",
-  "generatedAt": "2026-11-21T04:52:59.541Z",
+  "generatedAt": "2026-11-21T05:23:47.536Z",
   "server": {
     "version": "1.3.0",
     "protocol": {
@@ -12192,8 +12192,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "d1549e9156563aa819bc0ce32a819dd85d90de7e5812a885d72d410ee7ef59da",
-      "bytes": 62029
+      "sha256": "2502a684ba7f95420f805e885b9b0a56c0a4f4d70a12ac9fb6d788f259dceb76",
+      "bytes": 62072
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",
