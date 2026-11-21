@@ -27244,16 +27244,15 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (!userMessage || !assistantMessage) return null;
     if (!/^(?:user|human)$/i.test(normalizeMessageRole(userMessage?.role || roleFromUserFlag(userMessage)))) return null;
     if (!/^(?:assistant|model)$/i.test(normalizeMessageRole(assistantMessage?.role || roleFromUserFlag(assistantMessage)))) return null;
-    const userPayload = packetEvidencePayloadCandidates(userMessage).map(value => text(value)).join('\u0002');
-    const assistantPayload = packetEvidencePayloadCandidates(assistantMessage).map(value => text(value)).join('\u0002');
-    const canonicalUser = canonicalHistoryText(userPayload, 'user');
-    const canonicalAssistant = canonicalHistoryText(assistantPayload, 'assistant');
-    const userHash = canonicalUser ? stableHash64(canonicalUser) : '';
-    const assistantHash = canonicalAssistant ? stableHash64(canonicalAssistant) : '';
+    const scopeKey = liveScope?.key || '';
+    const userProjection = messageRevisionProjection(userMessage, userIndex, scopeKey, { diagnostics: false });
+    const assistantProjection = messageRevisionProjection(assistantMessage, assistantIndex, scopeKey, { diagnostics: false });
+    const userHash = messageRevisionVisibleHash(userProjection, scopeKey);
+    const assistantHash = messageRevisionVisibleHash(assistantProjection, scopeKey);
     if (pair?.userHash && userHash !== pair.userHash) return null;
     if (pair?.assistantVisibleHash && assistantHash !== pair.assistantVisibleHash) return null;
-    const userText = recoveryVisibleMessageText(userMessage, 'user');
-    const assistantText = recoveryVisibleMessageText(assistantMessage, 'assistant');
+    const userText = recoveryVisibleMessageText(userProjection.normalized, 'user');
+    const assistantText = recoveryVisibleMessageText(assistantProjection.normalized, 'assistant');
     if (!userText && !assistantText) return null;
     return {
       userText,

@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-21T15:22:05.243Z",
+  "generatedAt": "2026-11-21T15:48:09.959Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "18a40b9beffa76889854beda1f4bd6391d30b3095a455c603d903fcbc72a9007",
+      "sha256": "81e5fe94a6411856c2ea17970ccf6cb3fbb16106927b3e7dd5ffc1d7d6df88ae",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4344,16 +4344,16 @@
       "bytes": 3793583
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "13a13083ff44d234ecee51df3bd98ec4dc5c78250d15ed8a7eb0d16078025e2d",
-      "bytes": 4425460
+      "sha256": "fdce227444e198af808cf6160573a10632be5dcbdb4d5e803f0c75788bec941e",
+      "bytes": 4425388
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "ff0bcb0e5e507da26a98c0cc15a5c03f854be84c02fd7ff38afa52e741d996c0",
       "bytes": 860798
     },
     "plugins/LIBRA.js": {
-      "sha256": "b082ece6fb03a0358d50370951071cbb777369833b320f3376f8229b28be8ce2",
-      "bytes": 6963180
+      "sha256": "bb9562a34c0e50f57e25b63d55c6d2a4e12f0cadf990559623b5071970fa7173",
+      "bytes": 6977806
     },
     "plugins/RETRACE.js": {
       "sha256": "0d74abadd4c2ba10918f4ad4e4d70b56cff4769dee8160108ca32ffdc7714fcb",

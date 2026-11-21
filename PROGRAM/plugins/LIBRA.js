@@ -35678,7 +35678,13 @@ function createLibraReadonlySourceContext(owner) {
       forceCurrentScene: true,
       runDetailRetention: 50,
       runReceiptRetention: 200,
-      internalLanguage: 'follow_source'
+      internalLanguage: 'follow_source',
+      contextCutterEnabled: true,
+      contextCutterMaxTokens: 40000,
+      contextCutterTrimPercent: 30,
+      contextCutterPreserveMessages: 6,
+      contextCutterOnlyMemorized: true,
+      contextCutterTokenizer: 'tiktoken'
     });
     const DEFAULT_EMBEDDING = Object.freeze({
       enabled: true,
@@ -35706,6 +35712,7 @@ function createLibraReadonlySourceContext(owner) {
 
     const state = {
       settings: null,
+      contextCutterStates: new Map(),
       embeddingSettings: null,
       embeddingMigrated: false,
       embeddingRebuild: null,
@@ -38197,6 +38204,7 @@ function createLibraReadonlySourceContext(owner) {
       run: (scope, runId) => `${PREFIX}:scope:${scope.scopeKey}:run:${runId}`,
       storyArc: scope => `${PREFIX}:scope:${scope.scopeKey}:story-arc`,
       storyClock: scope => `${PREFIX}:scope:${scope.scopeKey}:story-clock:v1`,
+      contextCutter: scope => `${PREFIX}:scope:${scope.scopeKey}:context-cutter:v1`,
       continuityState: scope => `${PREFIX}:scope:${scope.scopeKey}:continuity-state`,
       canonicalVariantIndex: scope => `${PREFIX}:scope:${scope.scopeKey}:canonical-variants:v1`,
       canonicalJob: (scope, jobId) => `${PREFIX}:scope:${scope.scopeKey}:canonical-job:${String(jobId || '')}`,
@@ -39603,6 +39611,12 @@ function createLibraReadonlySourceContext(owner) {
           : performanceValues.recallMaxChars,
         continuationTailMessages: Math.floor(clamp(recallQueryMessagesSource, 1, 20, DEFAULT_SETTINGS.continuationTailMessages)),
         recallQueryMessages: Math.floor(clamp(recallQueryMessagesSource, 1, 20, DEFAULT_SETTINGS.recallQueryMessages)),
+        contextCutterEnabled: source.contextCutterEnabled !== false,
+        contextCutterMaxTokens: Math.floor(clamp(source.contextCutterMaxTokens, 4000, 200000, DEFAULT_SETTINGS.contextCutterMaxTokens)),
+        contextCutterTrimPercent: Math.floor(clamp(source.contextCutterTrimPercent, 5, 80, DEFAULT_SETTINGS.contextCutterTrimPercent)),
+        contextCutterPreserveMessages: Math.floor(clamp(source.contextCutterPreserveMessages, 2, 50, DEFAULT_SETTINGS.contextCutterPreserveMessages)),
+        contextCutterOnlyMemorized: source.contextCutterOnlyMemorized !== false,
+        contextCutterTokenizer: normalizeChoice(source.contextCutterTokenizer, ['tiktoken', 'claude', 'gemini', 'deepseek'], DEFAULT_SETTINGS.contextCutterTokenizer),
         recallSimilarityWeight: recallBlend.similarity,
         recallRecencyWeight: recallBlend.recency,
         autoCatchUpEnabled: true, // always on: missed 5-turn batches are always caught up; the toggle was removed
@@ -66998,6 +67012,205 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       return [...visible].sort((a, b) => a - b);
     };
 
+    const CONTEXT_CUTTER_SCHEMA = 'libra.context_cutter_state.v1';
+    const CONTEXT_CUTTER_TOKEN_MULTIPLIER = 0.8;
+    const CONTEXT_CUTTER_PROFILES = Object.freeze({
+      tiktoken: Object.freeze({ latinCharsPerToken: 3.7, cjkCharsPerToken: 1.05, overhead: 8 }),
+      claude: Object.freeze({ latinCharsPerToken: 3.5, cjkCharsPerToken: 1.0, overhead: 9 }),
+      gemini: Object.freeze({ latinCharsPerToken: 4.0, cjkCharsPerToken: 1.15, overhead: 8 }),
+      deepseek: Object.freeze({ latinCharsPerToken: 3.6, cjkCharsPerToken: 1.0, overhead: 8 })
+    });
+    const isContextCutterChatUuid = memo => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(string(memo || '').trim());
+    const isContextCutterCjk = code => (
+      (code >= 0x3040 && code <= 0x30FF)
+      || (code >= 0x3400 && code <= 0x9FFF)
+      || (code >= 0xF900 && code <= 0xFAFF)
+      || (code >= 0xAC00 && code <= 0xD7AF)
+    );
+    const estimateContextCutterMessageTokens = (message, tokenizerName = 'tiktoken') => {
+      const profile = CONTEXT_CUTTER_PROFILES[tokenizerName] || CONTEXT_CUTTER_PROFILES.tiktoken;
+      const body = contentToText(message?.content ?? message?.data ?? '');
+      const role = string(message?.role || '');
+      let latinBytes = 0, cjkCount = 0;
+      for (const ch of body) {
+        const code = ch.codePointAt(0) || 0;
+        if (isContextCutterCjk(code)) cjkCount += 1;
+        else latinBytes += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+      }
+      return Math.ceil((latinBytes / profile.latinCharsPerToken) + (cjkCount / profile.cjkCharsPerToken))
+        + Math.ceil(role.length / 4)
+        + profile.overhead;
+    };
+    const normalizeContextCutterState = (raw, scopeKey = '') => {
+      const src = isPlainObject(raw) && raw.schema === CONTEXT_CUTTER_SCHEMA ? raw : {};
+      const seen = new Set();
+      const removedIds = [];
+      for (const id of asArray(src.removedIds)) {
+        const memo = string(id || '').trim();
+        if (isContextCutterChatUuid(memo) && !seen.has(memo)) {
+          seen.add(memo);
+          removedIds.push(memo);
+        }
+      }
+      return {
+        schema: CONTEXT_CUTTER_SCHEMA,
+        scopeKey: string(src.scopeKey || scopeKey || ''),
+        removedIds,
+        omittedCount: Math.max(0, Number(src.omittedCount || 0) || 0),
+        estimatedTokensBefore: Math.max(0, Number(src.estimatedTokensBefore || 0) || 0),
+        estimatedTokensAfter: Math.max(0, Number(src.estimatedTokensAfter || 0) || 0),
+        targetTokens: Math.max(0, Number(src.targetTokens || 0) || 0),
+        trimmedThisTurn: src.trimmedThisTurn === true,
+        updatedAt: string(src.updatedAt || '')
+      };
+    };
+    const loadContextCutterState = async scope => {
+      const scopeKey = string(scope?.scopeKey || '');
+      if (!scopeKey) return normalizeContextCutterState(null, '');
+      if (state.contextCutterStates.has(scopeKey)) return state.contextCutterStates.get(scopeKey);
+      const loaded = normalizeContextCutterState(await storage.getJson(key.contextCutter(scope), null).catch(() => null), scopeKey);
+      state.contextCutterStates.set(scopeKey, loaded);
+      return loaded;
+    };
+    const getContextCutterState = (scopeKeyInput = '') => {
+      const scopeKey = string(scopeKeyInput || state.lastRequestScope?.scope?.scopeKey || '').trim();
+      if (!scopeKey) return normalizeContextCutterState(null, '');
+      return clone(state.contextCutterStates.get(scopeKey) || normalizeContextCutterState(null, scopeKey));
+    };
+    const resetContextCutterState = async (scopeKeyInput = '') => {
+      const context = await resolveContext().catch(() => null);
+      const scope = string(scopeKeyInput || '').trim()
+        ? { ...(context?.scope || {}), scopeKey: string(scopeKeyInput).trim() }
+        : (context?.scope || state.lastRequestScope?.scope || null);
+      const scopeKey = string(scope?.scopeKey || '');
+      const empty = normalizeContextCutterState({ schema: CONTEXT_CUTTER_SCHEMA, scopeKey, removedIds: [], omittedCount: 0, updatedAt: nowIso() }, scopeKey);
+      if (scopeKey) {
+        state.contextCutterStates.set(scopeKey, empty);
+        await storage.setJson(key.contextCutter(scope), empty).catch(() => null);
+      }
+      return clone(empty);
+    };
+    const applyLibraContextCutter = async (messages, { context, settings, completedPairs = [], requestManifest = null, receiptSet = null } = {}) => {
+      if (!Array.isArray(messages) || !messages.length || settings?.contextCutterEnabled === false) return messages;
+      const scope = context?.scope;
+      const scopeKey = string(scope?.scopeKey || '');
+      if (!scopeKey) return messages;
+      const tokenizer = normalizeChoice(settings?.contextCutterTokenizer, ['tiktoken', 'claude', 'gemini', 'deepseek'], 'tiktoken');
+      const maxContext = Math.floor(clamp(settings?.contextCutterMaxTokens, 4000, 200000, 40000));
+      const trimPercent = Math.floor(clamp(settings?.contextCutterTrimPercent, 5, 80, 30));
+      const preserveMessages = Math.floor(clamp(settings?.contextCutterPreserveMessages, 2, 50, 6));
+      const onlyMemorized = settings?.contextCutterOnlyMemorized !== false;
+
+      const order = [];
+      const seen = new Set();
+      const costs = new Map();
+      const blocked = new Set();
+      for (const message of messages) {
+        const memo = isContextCutterChatUuid(message?.memo) ? string(message.memo).trim() : '';
+        if (!memo) continue;
+        if (!seen.has(memo)) {
+          seen.add(memo);
+          order.push(memo);
+        }
+        costs.set(memo, (costs.get(memo) || 0) + estimateContextCutterMessageTokens(message, tokenizer));
+        const role = string(message?.role || '').toLowerCase();
+        if (role === 'tool' || role === 'function' || message?.tool_calls || message?.function_call) {
+          blocked.add(memo);
+        }
+      }
+      if (!order.length) return messages;
+
+      const prior = await loadContextCutterState(scope);
+      const removed = new Set(prior.removedIds);
+      const removedIds = [...prior.removedIds];
+
+      const latest = new Set();
+      for (let i = Math.max(0, order.length - preserveMessages); i < order.length; i += 1) {
+        latest.add(order[i]);
+      }
+
+      const memorizedMemos = new Set();
+      if (onlyMemorized) {
+        const memorizedTurns = new Set();
+        for (const ref of (requestManifest ? listCurrentMemoryRefs(requestManifest) : [])) {
+          const start = Number(ref?.turnRange?.start || 0);
+          const end = Number(ref?.turnRange?.end || 0);
+          if (start > 0 && end >= start) {
+            for (let t = start; t <= end; t += 1) memorizedTurns.add(t);
+          }
+        }
+        for (const t of asArray(receiptSet?.requestedTurns)) {
+          const turn = Number(t);
+          if (turn > 0) memorizedTurns.add(turn);
+        }
+        for (const pair of asArray(completedPairs)) {
+          if (!memorizedTurns.has(Number(pair?.turn))) continue;
+          for (const id of [pair?.user?.chatId, ...asArray(pair?.user?.chatIds), pair?.assistant?.chatId, ...asArray(pair?.assistant?.chatIds)]) {
+            const trimmed = string(id || '').trim();
+            if (isContextCutterChatUuid(trimmed)) memorizedMemos.add(trimmed);
+          }
+        }
+      }
+
+      let rawTotalAll = 0;
+      let rawTotalKept = 0;
+      for (const message of messages) {
+        const cost = estimateContextCutterMessageTokens(message, tokenizer);
+        rawTotalAll += cost;
+        const memo = isContextCutterChatUuid(message?.memo) ? string(message.memo).trim() : '';
+        if (!memo || !removed.has(memo) || blocked.has(memo)) {
+          rawTotalKept += cost;
+        }
+      }
+      const estimatedTokensBefore = Math.ceil(rawTotalAll * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+      let currentTokens = Math.ceil(rawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+      const targetTokens = Math.floor(maxContext * (1 - trimPercent / 100));
+      let trimmedThisTurn = false;
+
+      if (currentTokens > maxContext) {
+        for (const memo of order) {
+          if (currentTokens <= targetTokens) break;
+          if (removed.has(memo) || latest.has(memo) || blocked.has(memo)) continue;
+          if (onlyMemorized && memorizedMemos.size > 0 && !memorizedMemos.has(memo)) continue;
+          removed.add(memo);
+          removedIds.push(memo);
+          rawTotalKept = Math.max(0, rawTotalKept - (costs.get(memo) || 0));
+          currentTokens = Math.ceil(rawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+          trimmedThisTurn = true;
+        }
+      }
+
+      const kept = [];
+      let omittedCount = 0;
+      for (const message of messages) {
+        const memo = isContextCutterChatUuid(message?.memo) ? string(message.memo).trim() : '';
+        if (memo && removed.has(memo) && !blocked.has(memo)) {
+          omittedCount += 1;
+        } else {
+          kept.push(message);
+        }
+      }
+
+      const nextState = {
+        schema: CONTEXT_CUTTER_SCHEMA,
+        scopeKey,
+        removedIds,
+        omittedCount,
+        estimatedTokensBefore,
+        estimatedTokensAfter: currentTokens,
+        targetTokens,
+        trimmedThisTurn,
+        updatedAt: nowIso()
+      };
+      const prevIdsKey = prior.removedIds.join(',');
+      const nextIdsKey = removedIds.join(',');
+      state.contextCutterStates.set(scopeKey, nextState);
+      if (prevIdsKey !== nextIdsKey || prior.omittedCount !== omittedCount) {
+        void storage.setJson(key.contextCutter(scope), nextState).catch(() => null);
+      }
+      return kept;
+    };
+
     let latestRecallPublicationOwner = null;
     const beforeRequest = async (messages, type) => {
       invalidateReceiptValidationCharacterId();
@@ -67156,6 +67369,13 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         // verified earlier turns; a later losing read cannot overwrite this state.
         state.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
         Runtime.lastLiveTail = receiptView.liveTail ? clone(receiptView.liveTail) : null;
+        messages = await applyLibraContextCutter(messages, {
+          context,
+          settings,
+          completedPairs: responseView.pairs,
+          requestManifest,
+          receiptSet: receiptView.receiptSet
+        });
         let receiptSafeMessages = receiptDialogueMessages(receiptView.receiptSet, resolveCurrentTurnEvidence(messages).text);
         queryBundle = buildQueryBundle(responseView.cutoffTurn==null?messages:[{role:'user',content:resolveCurrentTurnEvidence(messages).text||''}],
           context, settings, receiptView.receiptSet.pairs, { receiptOnlyHistory: true });
@@ -78374,6 +78594,9 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       mountSourceReanalysisReview: (node,options) => mountMemorySuiteReanalysisReview(node,{...options,owner:'libra',policy:libraSourceInput,projectLegacySample:libraSourceInputConfig.projectLegacySample}),
       mountSourceInputControls: node => mountLibraSourceInputControls(node),
       mountRecallBudgetPanel: (node, options) => mountLibraRecallBudgetPanel(node, options),
+    getContextCutterState: scopeKey => getContextCutterState(scopeKey),
+    resetContextCutterState: scopeKey => resetContextCutterState(scopeKey),
+    applyContextCutter: (messages, options) => applyLibraContextCutter(messages, options),
       readySourceRules: () => libraSourceInput.ready(),
       disposeSourceRules: () => libraSourceInput.dispose(),
       getEmbeddingSettings: () => clone(state.embeddingSettings || DEFAULT_EMBEDDING),
@@ -90129,6 +90352,32 @@ card('기억 작동','LIBRA 기억을 쓰는지, AI 응답이 저장될 때마�
 ]),
 card('리콜 예산','전체 검색 예산과 렌즈 메모리 예산을 함께 조절합니다.',[budgetPresetButtons]),
 buildRecallBudgetCard(),
+(()=>{
+  const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
+  const cutterState=LibraMemoryCore.getContextCutterState?.(scopeKey)||{removedIds:[],omittedCount:0,estimatedTokensAfter:0};
+  const removedTotal=Array.isArray(cutterState.removedIds)?cutterState.removedIds.length:0;
+  return card('컨텍스트 자동 정리','하이파 미사용 환경에서 오래된 채팅 메시지를 요청 컨텍스트에서 일괄 제외해 기억 주입 여유 공간과 프롬프트 캐시 안정성을 확보합니다. 제외된 과거 대화는 LIBRA 장기기억 리콜이 대신 보완합니다.',[
+    guiEl('div',{class:'stack',dataset:{contextCutterSettings:'true'}},[
+      memoryToggle('contextCutterEnabled','컨텍스트 자동 정리 사용'),
+      memoryToggle('contextCutterOnlyMemorized','기억(정본·영수증) 저장이 완료된 과거 턴만 제외'),
+      guiEl('div',{class:'grid g2'},[
+        field('기준 컨텍스트 (토큰)',guiEl('input',{class:'input',type:'number',min:4000,max:200000,step:1000,value:settings.contextCutterMaxTokens,dataset:{memorySetting:'contextCutterMaxTokens'},onInput:event=>patch({contextCutterMaxTokens:Number(event.target.value)}),onChange:event=>patch({contextCutterMaxTokens:Number(event.target.value)})})),
+        field('초과 시 비울 비율 (%)',guiEl('input',{class:'input',type:'number',min:5,max:80,step:5,value:settings.contextCutterTrimPercent,dataset:{memorySetting:'contextCutterTrimPercent'},onInput:event=>patch({contextCutterTrimPercent:Number(event.target.value)}),onChange:event=>patch({contextCutterTrimPercent:Number(event.target.value)})})),
+        field('최신 보호 메시지 수',guiEl('input',{class:'input',type:'number',min:2,max:50,step:1,value:settings.contextCutterPreserveMessages,dataset:{memorySetting:'contextCutterPreserveMessages'},onInput:event=>patch({contextCutterPreserveMessages:Number(event.target.value)}),onChange:event=>patch({contextCutterPreserveMessages:Number(event.target.value)})})),
+        field('토큰 추정 기준',guiEl('select',{class:'input',value:settings.contextCutterTokenizer,dataset:{memorySetting:'contextCutterTokenizer'},onChange:event=>patch({contextCutterTokenizer:event.target.value})},[
+          guiEl('option',{value:'tiktoken',selected:settings.contextCutterTokenizer==='tiktoken',text:'OpenAI 호환 (tiktoken)'}),
+          guiEl('option',{value:'claude',selected:settings.contextCutterTokenizer==='claude',text:'Claude'}),
+          guiEl('option',{value:'gemini',selected:settings.contextCutterTokenizer==='gemini',text:'Gemini'}),
+          guiEl('option',{value:'deepseek',selected:settings.contextCutterTokenizer==='deepseek',text:'DeepSeek'})
+        ]))
+      ]),
+      guiEl('div',{class:'cluster',style:{justifyContent:'space-between',paddingTop:'4px'}},[
+        guiEl('span',{class:'hint',dataset:{contextCutterStatus:'true'},text:removedTotal>0?`현재 채팅 누적 제외 메시지 ${removedTotal.toLocaleString()}개 · 최근 요청 제외 ${Number(cutterState.omittedCount||0).toLocaleString()}개 (추정 ${Number(cutterState.estimatedTokensAfter||0).toLocaleString()} 토큰)`:'현재 채팅에서 제외된 메시지가 없습니다.'}),
+        guiEl('button',{class:'btn btn--sm',type:'button',dataset:{contextCutterReset:'true'},text:'현재 채팅 제외 상태 초기화',disabled:removedTotal===0,onClick:async()=>{await LibraMemoryCore.resetContextCutterState?.(scopeKey);queueGuiNavigationRender();}})
+      ])
+    ])
+  ]);
+})(),
 advanced
 ]);
     }
