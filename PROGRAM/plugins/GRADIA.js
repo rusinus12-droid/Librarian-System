@@ -27154,8 +27154,128 @@ Begin directly with the in-world response and finish the complete same-turn draf
     [/더위|더워|땀이|뙤약볕|\bhot\b|heat/i, 'heat', 'sweating, flushed, thirsty'],
     [/술을|취했|취한|맥주|소주|와인|drunk|wine|beer/i, 'alcohol', 'flushed, looser speech, unsteady'],
     [/배고|굶|공복|hungry|starving/i, 'hunger', 'stomach rumbling, short patience'],
-    [/못\s*잤|밤새|잠을\s*설|sleepless|all night/i, 'sleep loss', 'heavy eyelids, slower thought, irritable']
+    [/못\s*잤|밤새|잠을\s*설|sleepless|all night/i, 'sleep loss', 'heavy eyelids, slower thought, irritable'],
+    [/미약|최음(?:제|약)?|흥분제|감도(?:가|를)?\s*(?:높|올리|예민|증폭)|aphrodisiac/i, 'aphrodisiac / heightened sensitivity', 'flushed skin, shallow hot breath, trembling knees, hypersensitive to the lightest touch or brush of fabric'],
+    [/(?:로션|오일|젤|윤활제)(?:을|를)?\s*(?:바르|발라|발랐|문지르|문질|칠하|칠했|적시|적셨|붓|부어|부었|흘리|흘렸|도포)|(?:\blotion\b|\blube\b|lubricant|massage oil)\s*(?:on|over|across|rubbed|applied|smeared)|(?:rubbed|applied|smeared|poured)\s+(?:the\s+)?(?:lotion|oil|gel|lube|lubricant)/i, 'lotion / slick skin sensitivity', 'slick glistening skin, heightened tactile sensitivity where every slide or pressure sends sharp shivers']
   ]);
+  // Sleep depth & awakening mechanics (normal sleep = 100, deep sleep up to 200):
+  // - Sleep aids / sedatives / exhaustion push depth toward 160–200 and raise wake resistance.
+  // - Soothing interactions deepen sleep (increase depth, 0% wake chance).
+  // - Awakening interactions have distinct stimulus scores; repeated interactions across turns or
+  //   proximity to waking add a cumulative bonus so even low-score touches can eventually wake the NPC.
+  const BODY_STATE_SLEEP_ONSET_RE = /잠이?\s*(?:들었|든|들어|들고|드네)|잠들(?:었|어|고|며|자|기)|자고\s*있|잠든\s*(?:채|모습|얼굴|숨소|몸)|수면\s*(?:중|상태)|골아떨어|곯아떨어|숙면(?:을\s*취하|에\s*빠졌|\s*중)|깊은\s*잠|고른\s*숨소|새근새근|코를\s*골며|눈을\s*감고\s*잠|fell asleep|fast asleep|sleeping\b|slumber|dozed off|sound asleep/i;
+  const BODY_STATE_SLEEP_WAKE_RE = /잠에서?\s*(?:깼|깨어났|깨어나|깨어)|눈을\s*(?:떴|뜨고|비비며\s*일어)|일어났|부스스\s*일어|기상했|정신을\s*차렸|woke up|awakened|stirred awake|opened (?:her|his) eyes/i;
+  const BODY_STATE_DEEP_SLEEP_RE = /깊은\s*잠|숙면|골아떨어|곯아떨어|세상\s*모르고\s*자|죽은\s*듯(?:이)?\s*자|코를\s*골|기절하듯\s*잠|deep sleep|dead to the world|sound asleep|heavy sleep/i;
+  const BODY_STATE_LIGHT_SLEEP_RE = /선잠|얕은\s*잠|조는|꾸벅꾸벅|설잠|뒤척이며\s*자|light sleep|dozing|half[- ]asleep/i;
+  const BODY_STATE_SLEEP_AID_FACTORS = Object.freeze([
+    [/수면제|수면\s*유도제|안정제|진정제|마취|수면향|최면향|sleeping pill|sedative|tranquilizer|hypnotic/i, '수면제·진정제', 55, 0.45],
+    [/감기약|몸살약|항히스타민|처방약|약기운|cold medicine|drowsy medicine|medication/i, '졸음 유발 약물', 35, 0.65],
+    [/따뜻한\s*우유|우유를\s*마시|허브티|캐모마일|라벤더|아로마|향초|숙면\s*(?:차|음료)|warm milk|chamomile|herbal tea|lavender/i, '숙면 음료·아로마', 25, 0.78],
+    [/술에\s*취해|만취|술기운|와인|맥주|소주|술을\s*마시|drunk|alcohol|wine/i, '알코올·술기운', 30, 0.72],
+    [/지쳐|기진맥진|녹초|피로가\s*쌓|밤을\s*새우|과로|exhausted|worn out/i, '극심한 피로·기진맥진', 25, 0.8]
+  ]);
+  const BODY_STATE_SLEEP_INTERACTIONS = Object.freeze([
+    // Soothing actions: negative stimulus (deepens sleep instead of waking).
+    ['soothing', '이불 덮어주기·토닥이기·자장가 (숙면 유도)', /이불(?:을)?\s*(?:덮어|여며|끌어\s*올)|토닥(?:여|이|이며)|쓰다듬(?:어|으며)|머리카락(?:을)?\s*(?:넘겨|쓸어)|자장가|등을\s*쓸어|체온(?:을)?\s*나누|품에\s*안아\s*재우|tuck(?:ed|ing)? (?:her|him) in|pat(?:ted|ting)? gently|strok(?:ed|ing)? (?:her|his) hair|lullaby/i, -20],
+    // Strong / abrupt actions.
+    ['strong', '흔들어 깨우기·큰 소리·찬물·강한 충격', /흔들(?:어|며)|깨우(?:려|고|며)|소리(?:를)?\s*(?:지르|질러|치|쳐)|크게\s*부르|찬물|뺨(?:을)?\s*(?:때리|톡톡)|강하게\s*(?:잡|누르|밀|박)|거칠게|번쩍\s*안아|shake|shook|shout|yell|slap|splash|wake (?:her|him) up/i, 70],
+    // Intimate / intense physical touch.
+    ['intimate', '성적 접촉·깊은 애무·삽입·자극', /삽입|성기|자지|보지|음핵|클리토리스|유두|젖꼭지|(?:가슴|엉덩이|허벅지\s*안쪽)(?:을|를)?\s*(?:주무르|움켜|만지|애무|핥|빨)|손가락(?:을)?\s*넣|키스|입술(?:을)?\s*(?:포개|맞추|깨물|빨)|옷(?:을)?\s*(?:벗기|벗겨|내리|젖히)|penetrat|fondl|grope|nipple|clit|undress|kiss(?:ed|ing)? (?:her|his) lips/i, 38],
+    // Moderate physical or vocal contact.
+    ['moderate', '말 걸기·이름 부르기·몸 만지기·자세 바꾸기', /이름(?:을)?\s*부르|말(?:을)?\s*걸|불러\s*보|볼(?:을)?\s*(?:만지|건드|꼬집)|손(?:을)?\s*잡|안아|끌어안|눕히|돌려\s*눕|몸(?:을)?\s*(?:만지|더듬|건드)|허리(?:를)?\s*감싸|call(?:ed|ing)? (?:her|his) name|touch(?:ed|ing)? (?:her|his) (?:cheek|arm|shoulder|body)|hold(?:ing)? (?:her|his) hand/i, 24],
+    // Light / subtle contact.
+    ['light', '가벼운 접촉·속삭임·살짝 스치기', /속삭(?:이|이며)|작은\s*목소리|살짝\s*(?:건드|만지|스치|닿)|조심스레|가만히\s*(?:만지|손을\s*대)|이마(?:에)?\s*입(?:을)?\s*맞|볼에\s*입(?:을)?\s*맞|whisper|brush(?:ed|ing)? against|lightly touch|forehead kiss/i, 12]
+  ]);
+  const bodyStateSleepReport = (name, mine, recent, scopeKey) => {
+    const messages = (Array.isArray(recent?.visibleMessages) ? recent.visibleMessages : [])
+      .map(message => text(message?.content || ''))
+      .filter(Boolean);
+    const input = text(recent?.latestUser || '');
+    if (messages.length && input && messages[messages.length - 1].trim() === input.trim()) messages.pop();
+    const recentWindow = messages.slice(-6);
+    const characterLines = recentWindow
+      .flatMap(msg => forcedBondSentences(msg))
+      .filter(line => bodyStateLineMentions(line, name));
+    const checkLines = characterLines.length ? characterLines : mine.filter(entry => entry.source === 'recent').slice(-6).map(entry => entry.line);
+    let lastSleepIdx = -1;
+    let lastWakeIdx = -1;
+    checkLines.forEach((line, idx) => {
+      if (BODY_STATE_SLEEP_ONSET_RE.test(line)) lastSleepIdx = idx;
+      if (BODY_STATE_SLEEP_WAKE_RE.test(line)) lastWakeIdx = idx;
+    });
+    if (lastSleepIdx < 0 || lastWakeIdx > lastSleepIdx) return null;
+    const sleepContext = [...mine.slice(-8).map(entry => entry.line), ...recentWindow].join('\n');
+    let depth = 100;
+    if (BODY_STATE_DEEP_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 145;
+    else if (BODY_STATE_LIGHT_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 75;
+    const aids = [];
+    let aidMultiplier = 1;
+    for (const [pattern, label, addDepth, mult] of BODY_STATE_SLEEP_AID_FACTORS) {
+      if (pattern.test(sleepContext)) {
+        depth += addDepth;
+        aidMultiplier *= mult;
+        aids.push(`${label} (+${addDepth})`);
+      }
+    }
+    const priorScenesAfterSleep = recentWindow.slice(-4);
+    let repeatCount = 0;
+    let priorAccumulatedStimulus = 0;
+    let priorSoothingShift = 0;
+    for (const sceneText of priorScenesAfterSleep) {
+      if (BODY_STATE_SLEEP_WAKE_RE.test(sceneText)) {
+        repeatCount = 0;
+        priorAccumulatedStimulus = 0;
+        priorSoothingShift = 0;
+        continue;
+      }
+      const matched = BODY_STATE_SLEEP_INTERACTIONS.find(([, , pattern]) => pattern.test(sceneText));
+      if (!matched) continue;
+      if (matched[0] === 'soothing') {
+        priorSoothingShift += 20;
+      } else {
+        repeatCount += 1;
+        priorAccumulatedStimulus += Math.round(matched[3] * 0.45);
+      }
+    }
+    depth = Math.max(50, Math.min(200, depth + priorSoothingShift - priorAccumulatedStimulus));
+    const actionSource = input || recentWindow[recentWindow.length - 1] || '';
+    const currentInteractions = BODY_STATE_SLEEP_INTERACTIONS.filter(([, , pattern]) => pattern.test(actionSource));
+    if (!currentInteractions.length) {
+      const stageLabel = depth >= 160 ? 'deep sleep (깊은 숙면)' : depth >= 115 ? 'sound sleep (숙면)' : depth >= 85 ? 'normal sleep (일반 수면)' : 'light sleep (선잠·각성 임박)';
+      return `  sleep state: asleep — depth ${depth}/200 (${stageLabel}${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''}); no direct waking stimulus this turn → stays asleep`;
+    }
+    const soothingOnly = currentInteractions.every(([kind]) => kind === 'soothing');
+    if (soothingOnly) {
+      const nextDepth = Math.min(200, depth + 20);
+      return `  sleep state: asleep — soothing interaction (${currentInteractions.map(([, label]) => label).join(', ')}) deepens sleep (${depth} → ${nextDepth}/200${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''}) → wake chance 0.0% → STAYS DEEPLY ASLEEP (fixed verdict: breathing grows slower and more even)`;
+    }
+    const activeInteractions = currentInteractions.filter(([kind]) => kind !== 'soothing');
+    const primary = activeInteractions.reduce((best, cur) => (cur[3] > best[3] ? cur : best), activeInteractions[0]);
+    const extraStimulus = activeInteractions.filter(item => item !== primary).reduce((sum, item) => sum + Math.round(item[3] * 0.4), 0);
+    const rawStimulus = primary[3] + extraStimulus;
+    const turnCount = repeatCount + 1;
+    const proximityBonus = depth < 100 ? Math.round((100 - depth) * 0.45) : 0;
+    const repeatBonus = repeatCount > 0 ? repeatCount * 14 + Math.min(24, Math.round(priorAccumulatedStimulus * 0.35)) : 0;
+    const totalStimulus = rawStimulus + repeatBonus + proximityBonus;
+    const effectiveDepth = Math.max(25, depth - totalStimulus);
+    const rawChance = (totalStimulus / Math.max(55, depth)) * aidMultiplier;
+    const chance = Math.max(0.01, Math.min(0.98, rawChance));
+    const seedKey = `${scopeKey}|${name}|sleep-wake|${turnCount}|${normalizeForLoreMatch(actionSource.slice(0, 160))}`;
+    const roll = bodyStateSeedRoll(seedKey);
+    const wakes = roll < chance;
+    const bonusNotes = [
+      `stimulus ${rawStimulus} (${primary[1]})`,
+      repeatBonus > 0 ? `repeat bonus +${repeatBonus} (streak #${turnCount})` : '',
+      proximityBonus > 0 ? `near-wake bonus +${proximityBonus}` : '',
+      aids.length ? `sleep aids: ${aids.join(', ')} (wake resistance ×${aidMultiplier.toFixed(2)})` : ''
+    ].filter(Boolean).join(', ');
+    const outcomeText = wakes
+      ? 'WAKES UP THIS TURN (fixed verdict: show the NPC stirring and waking from the interaction)'
+      : effectiveDepth <= 75
+        ? `STAYS ASLEEP — NEAR WAKING (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; show eyelids fluttering, a muffled stir or hitched breath, on the verge of waking if touched again)`
+        : `STAYS ASLEEP (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; does not wake from this interaction)`;
+    return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}] → wake chance ${(chance * 100).toFixed(1)}% → ${outcomeText}`;
+  };
   // A time named for another day or as a span edge ("내일 아침", "아침부터", "tomorrow morning") is not
   // the scene's present. Live run 2026-11-15: "내일 아침 비가 그치면" in a night scene made the packet say
   // "morning: stiff", and the 상태 AIDE wrote morning stiffness into a stormy night.
@@ -27465,6 +27585,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (present) {
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
       if (cues.length) lines.push(`  scene condition this turn: ${cues.map(([, label, signs]) => `${label} → ${signs}`).join('; ')}`);
+      if (gate !== 'staging') {
+        const sleepLine = bodyStateSleepReport(name, mine, context.recent, scopeKey);
+        if (sleepLine) lines.push(sleepLine);
+      }
     }
     if (!lines.length && !evidence.length) return '';
     return [`- ${bodyStateDisplayName(name)}:`, ...(lines.length ? lines : ['  no tracked condition']), ...evidence].join('\n');
@@ -27480,6 +27604,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const cardPerson = extensionCardPerson(recent, scenePeople);
     const reports = bodyStateCast(settings, recent).map(name => bodyStateCharacterReport(name, entries, settings, now, gate, scopeKey, {
       clock,
+      recent,
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
         || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
@@ -27500,7 +27625,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // User decision 2026-11-15 after live runs: a sign is required only for a tracked condition. The
     // earlier every-character rule made the AIDE write filler (invented stiffness, knees, a restated
     // input line) for an uninjured persona in 4 of 5 runs while the real injury was already shown.
-    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings from the packet. A tracked condition is an illness, injury, symptom, treatment, pregnancy (fixed verdict or recorded), postpartum recovery, a recorded pregnancy end, a cycle phase with noticeable signs, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. Correct contradictions and remove unsupported health claims or explanations already in the draft. Preserve ordinary gestures and scene atmosphere. Return edits: [] when the portrayal already fits (quote supporting lines in analysis.summary) or no condition needs an edit.'
+    aide_body_state: 'Body State AIDE: read the verification notes and settle this turn’s readings from the packet. A tracked condition is an illness, injury, symptom, treatment, pregnancy (fixed verdict or recorded), postpartum recovery, a recorded pregnancy end, a cycle phase with noticeable signs, a sleep state and wake/stay-asleep verdict, or a scene condition listed in the packet (exertion, cold or wet, heat, alcohol, hunger, sleep loss, aphrodisiac / heightened sensitivity, lotion / slick skin sensitivity). For each present character with a tracked condition that the draft never shows, insert one bodily sign of it through action, breath, posture or pace, never as a report. When the packet gives a fixed sleep verdict (STAYS DEEPLY ASLEEP, STAYS ASLEEP, STAYS ASLEEP — NEAR WAKING, or WAKES UP THIS TURN), enforce that exact sleep/wake outcome in the draft. Correct contradictions and remove unsupported health claims or explanations already in the draft. Preserve ordinary gestures and scene atmosphere. Return edits: [] when the portrayal already fits (quote supporting lines in analysis.summary) or no condition needs an edit.'
   });
   const bodyStateOutputKind = (stageName, settings = {}) => {
     if (!bodyStateStageActive(settings)) return '';
@@ -28087,6 +28212,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     return found ? found.label : '';
   };
+  const INTIMACY_SENSITIVITY_BOOSTERS = Object.freeze([
+    ['aphrodisiac (미약·최음제)', /미약|최음(?:제|약)?|흥분제|감도(?:가|를)?\s*(?:높|올리|예민|증폭)|aphrodisiac/i, 'heightened nerve sensitivity: flushed skin, hot shallow breath, faster arousal and lubrication, and sharp involuntary shivers or gasps at even the lightest touch, graze, or friction'],
+    ['lotion / lubricant (로션·오일·윤활제 도포)', /(?:로션|오일|젤|윤활제)(?:을|를)?\s*(?:바르|발라|발랐|문지르|문질|칠하|칠했|적시|적셨|붓|부어|부었|흘리|흘렸|도포)|(?:\blotion\b|\blube\b|lubricant|massage oil)\s*(?:on|over|across|rubbed|applied|smeared)|(?:rubbed|applied|smeared|poured)\s+(?:the\s+)?(?:lotion|oil|gel|lube|lubricant)/i, 'slick heightened tactile sensitivity: glistening skin and reduced dry friction that magnifies every slide, stroke, temperature contrast, and pressure point']
+  ]);
+  const intimacySensitivityOf = (...texts) => {
+    const combined = texts.map(item => String(item || '')).join('\n');
+    if (!combined) return [];
+    return INTIMACY_SENSITIVITY_BOOSTERS
+      .filter(([, pattern]) => pattern.test(combined))
+      .map(([label, , effect]) => ({ label, effect }));
+  };
   const INTIMACY_RECENT_WINDOW = 4;
   // Where the encounter stands: the current input leads when it shows the act (it may start a
   // second round after a climax); otherwise the latest response that shows it.
@@ -28106,6 +28242,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const previousPhase = latest?.phase || 'none';
     const position = intimacyPositionOf(input) || (latestIndex >= 0 ? intimacyPositionOf(window[latestIndex]) : '')
       || [...window].reverse().map(intimacyPositionOf).find(Boolean) || '';
+    const sensitivityBoosters = intimacySensitivityOf(input, ...window);
     // An encounter that ended (afterplay) several messages ago and is not picked up again is over.
     const stale = fromInput.phase === 'none' && latestIndex >= 0 && latestIndex < window.length - 2;
     return {
@@ -28114,7 +28251,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       previousPhase,
       position,
       source: fromInput.phase !== 'none' ? 'current input' : latestIndex >= 0 ? 'recent scene' : 'none',
-      signals: [...new Set([...(fromInput.signals || []), ...(latest?.signals || [])])].slice(0, 6)
+      signals: [...new Set([...(fromInput.signals || []), ...(latest?.signals || [])])].slice(0, 6),
+      sensitivityBoosters
     };
   };
   // Reference notes (user decision 2026-11-18): rewritten from encyclopedic sources down to what a
@@ -28150,7 +28288,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : scene.phase === 'climax' ? ['climax', 'intercourse']
           : scene.phase === 'afterplay' ? ['afterplay', 'climax']
             : [];
-    return [INTIMACY_REFERENCE.flow, ...phases.flatMap(phase => INTIMACY_REFERENCE[phase].map(line => `[${phase}] ${line}`))]
+    const boosters = (scene.sensitivityBoosters || []).map(item => `[sensitivity: ${item.label}] ${item.effect}`);
+    return [INTIMACY_REFERENCE.flow, ...phases.flatMap(phase => INTIMACY_REFERENCE[phase].map(line => `[${phase}] ${line}`)), ...boosters]
       .map(line => `- ${line}`).join('\n');
   };
   const INTIMACY_PHASE_LABELS = Object.freeze({ none: '없음', foreplay: '전희', intercourse: '성교', climax: '절정', afterplay: '후희' });
@@ -28162,6 +28301,31 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const INTIMACY_STANCE_LABELS = Object.freeze({ likes: '좋아함', neutral: '보통', dislikes: '싫어함', unknown: '모름' });
   const INTIMACY_CARD_PHASES = Object.freeze(['foreplay', 'intercourse', 'afterplay']);
   const INTIMACY_MAX_CARDS = 12;
+  // Body-part stimulation definitions: [id, label, baseClimaxPoints, baseEjaculationPoints, pattern]
+  const INTIMACY_BODY_PARTS = Object.freeze([
+    ['lips_neck', '입술·목덜미·귀 (lips/neck/ears)', 10, 6, /키스|입술(?:을|에)?\s*(?:맞추|포개|빨|깨물|핥)|설키스|혀(?:를|가)?\s*(?:섞|얽|밀어\s*넣)|목덜미|목선|쇄골|귀(?:를|에|\s*뒤)|귓불|귓바퀴|kiss(?:ed|ing)?|tongue|neck|collarbone|earlobe/i],
+    ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방)(?:을|를|에)?\s*(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지)|nipple|breast|fondl(?:e|ed|ing)/i],
+    ['thighs_hips', '허벅지·골반·엉덩이 (thighs/hips/buttocks)', 12, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|골반|엉덩이|둔부|허리)(?:을|를|에)?\s*(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지)|inner thigh|thighs|hips|buttocks|groin/i],
+    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:보지|외음부|음순|비소)(?:을|를|에)?\s*(?:만지|만졌|문지|비비|핥|빨|자극)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
+    ['vaginal_interior', '질내·G스팟·자궁구 (vaginal interior)', 30, 26, /삽입|질\s*안|질내|보지\s*(?:안|속)|내벽|지스팟|G스팟|자궁구|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
+    ['penis_glans', '음경·귀두 (penis/glans)', 0, 32, /(?:자지|음경|성기|페니스|귀두|기둥|불알|고환)(?:을|를|에)?\s*(?:만지|만졌|쥐|쥐었|훑|비비|문지|핥|빨|물고|삼키)|펠라(?:티오|치오)?|오럴|사까시|대딸|손으로\s*훑|파이즈리|가슴으로\s*끼우|fellatio|blowjob|handjob|penis|glans|shaft|stroke(?:d|s|ing)? his/i],
+    ['anal_perineum', '후구·회음부 (anal/perineum)', 20, 22, /애널|항문|뒷구멍|후구|회음부|전립선|anal|perineum|prostate/i]
+  ]);
+  const INTIMACY_CLIMAX_RESET_RE = /절정(?:에\s*(?:달했|도달|올랐|이르)|을\s*맞)|가버렸|가\s*버렸|오르가[즘슴](?:을\s*느꼈|에\s*달했)|시오후키|조수(?:를|가)?\s*(?:뿜|쏟)|climaxed|orgasmed|came hard/i;
+  const INTIMACY_EJACULATION_RESET_RE = /사정(?:했|하였|하며|하고)|정액(?:을|이|가)?\s*(?:쏟|뿜|분출|가득\s*채웠)|싸버렸|쌌다|안에\s*쌌|속에\s*쌌|ejaculated|came inside|released his seed/i;
+  const parseErogenousMap = (sensitiveZones = '', dullZones = '') => {
+    const sensText = String(sensitiveZones || '');
+    const dullText = String(dullZones || '');
+    const map = {};
+    for (const [id, label, , , pattern] of INTIMACY_BODY_PARTS) {
+      const labelWords = label.split(/[\s·()/]+/).filter(w => w.length >= 2);
+      const matchesZone = raw => pattern.test(raw) || labelWords.some(w => raw.toLowerCase().includes(w.toLowerCase()));
+      if (sensText && matchesZone(sensText)) map[id] = 1.5;
+      else if (dullText && matchesZone(dullText)) map[id] = 0.6;
+      else map[id] = 1.0;
+    }
+    return map;
+  };
   const normalizeIntimacyCard = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const name = compact(value.name || '', 80);
@@ -28170,6 +28334,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
       name,
       likedPositions: compact(value.likedPositions || '', 240),
       dislikedPositions: compact(value.dislikedPositions || '', 240),
+      sensitiveZones: compact(value.sensitiveZones ?? value.sensitive_zones ?? '', 240),
+      dullZones: compact(value.dullZones ?? value.dull_zones ?? '', 240),
       basis: compact(value.basis || '', 360),
       origin: value.origin === 'user' ? 'user' : 'lore',
       createdAt: compact(value.createdAt || '', 40)
@@ -28206,21 +28372,126 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const intimacyCardLine = card => [
     `${forcedBondDisplayName(card.name)}${card.origin === 'user' ? ' (set by the user)' : ''}:`,
     `positions liked: ${card.likedPositions || 'none on record'}; disliked: ${card.dislikedPositions || 'none on record'}.`,
+    `erogenous sensitivity — sensitive (×1.5): ${card.sensitiveZones || 'none on record'}; dull/resistant (×0.6): ${card.dullZones || 'none on record'}.`,
     ...INTIMACY_CARD_PHASES.map(phase => `${phase}: ${card[`${phase}Stance`]}${card[`${phase}Style`] ? ` — ${card[`${phase}Style`]}` : ''}.`)
   ].join(' ');
+  const INTIMACY_PASSIVE_DECAY_CLIMAX = 16;
+  const INTIMACY_PASSIVE_DECAY_EJACULATION = 18;
+  const computeIntimacyParticipantGauges = (recent = {}, cards = []) => {
+    const input = text(recent.latestUser || '');
+    const messages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
+      .map(message => text(message?.content || ''))
+      .filter(Boolean);
+    if (messages.length && input && messages[messages.length - 1].trim() === input.trim()) messages.pop();
+    const steps = [...messages.slice(-6), ...(input ? [input] : [])];
+    const scenePeople = extensionScenePeople(recent);
+    const cardPerson = extensionCardPerson(recent, scenePeople);
+    const names = [];
+    for (const raw of [...cards.map(c => c.name), ...scenePeople, cardPerson].filter(Boolean)) {
+      if (bodyStateIsPersona(raw) || extensionSamePerson(raw, Runtime.activePersonaName)) continue;
+      if (!names.some(existing => extensionSamePerson(existing, raw))) names.push(raw);
+    }
+    return names.map(name => {
+      const card = cards.find(c => c.name && (c.name === name || extensionSamePerson(c.name, name))) || null;
+      const multMap = parseErogenousMap(card?.sensitiveZones || '', card?.dullZones || '');
+      const gender = bodyStateProfileGender(name);
+      let climaxGauge = 0;
+      let ejaculationGauge = 0;
+      let lastTurnDeltaClimax = 0;
+      let lastTurnDeltaEjac = 0;
+      let lastTurnParts = [];
+      let climaxTriggeredThisTurn = false;
+      let ejaculationTriggeredThisTurn = false;
+      steps.forEach((stepText, stepIdx) => {
+        const isCurrentTurn = stepIdx === steps.length - 1;
+        const boosters = intimacySensitivityOf(stepText);
+        const boosterMult = boosters.length ? 1.35 : 1.0;
+        const matchedParts = INTIMACY_BODY_PARTS.filter(([, , , , pattern]) => pattern.test(stepText));
+        if (!isCurrentTurn) {
+          if (INTIMACY_CLIMAX_RESET_RE.test(stepText)) climaxGauge = 15;
+          if (INTIMACY_EJACULATION_RESET_RE.test(stepText)) ejaculationGauge = 10;
+        }
+        if (!matchedParts.length) {
+          const decClimax = climaxGauge > 0 ? Math.min(climaxGauge, INTIMACY_PASSIVE_DECAY_CLIMAX) : 0;
+          const decEjac = ejaculationGauge > 0 ? Math.min(ejaculationGauge, INTIMACY_PASSIVE_DECAY_EJACULATION) : 0;
+          climaxGauge = Math.max(0, climaxGauge - decClimax);
+          ejaculationGauge = Math.max(0, ejaculationGauge - decEjac);
+          if (isCurrentTurn) {
+            lastTurnDeltaClimax = -decClimax;
+            lastTurnDeltaEjac = -decEjac;
+          }
+          return;
+        }
+        let addClimax = 0;
+        let addEjac = 0;
+        const partNotes = [];
+        matchedParts.forEach(([id, label, baseC, baseE], idx) => {
+          const dim = idx === 0 ? 1.0 : 0.55;
+          const zoneMult = multMap[id] || 1.0;
+          const cPts = Math.round(baseC * zoneMult * boosterMult * dim);
+          const ePts = Math.round(baseE * zoneMult * boosterMult * dim);
+          addClimax += cPts;
+          addEjac += ePts;
+          if (isCurrentTurn) {
+            partNotes.push(`${label.split(' ')[0]}${zoneMult > 1 ? ' (민감×1.5)' : zoneMult < 1 ? ' (둔감×0.6)' : ''}`);
+          }
+        });
+        climaxGauge = Math.min(100, climaxGauge + addClimax);
+        ejaculationGauge = Math.min(100, ejaculationGauge + addEjac);
+        if (isCurrentTurn) {
+          lastTurnDeltaClimax = addClimax;
+          lastTurnDeltaEjac = addEjac;
+          lastTurnParts = partNotes;
+          if (climaxGauge >= 100) climaxTriggeredThisTurn = true;
+          if (ejaculationGauge >= 100) ejaculationTriggeredThisTurn = true;
+        } else {
+          if (climaxGauge >= 100) climaxGauge = 20;
+          if (ejaculationGauge >= 100) ejaculationGauge = 10;
+        }
+      });
+      const showEjac = gender === 'male' || (gender !== 'female' && (ejaculationGauge > 0 || lastTurnDeltaEjac !== 0));
+      const showClimax = gender !== 'male' || climaxGauge > 0 || lastTurnDeltaClimax !== 0;
+      const fmtDelta = d => (d > 0 ? `+${d}` : d < 0 ? `${d} [자극 부재 감쇠]` : '±0');
+      const climaxText = showClimax
+        ? `절정 수치(climax): ${climaxGauge}/100 (${fmtDelta(lastTurnDeltaClimax)}) → ${climaxTriggeredThisTurn ? 'CLIMAX REACHED (100/100 — portray unmistakable climax this turn)' : climaxGauge >= 80 ? 'on the edge of climax (가쁜 호흡·경련 직전)' : climaxGauge >= 45 ? 'arousal climbing steadily' : 'building'}`
+        : '';
+      const ejacText = showEjac
+        ? `사정 수치(ejaculation): ${ejaculationGauge}/100 (${fmtDelta(lastTurnDeltaEjac)}) → ${ejaculationTriggeredThisTurn ? 'EJACULATION REACHED (100/100 — portray unmistakable ejaculation this turn)' : ejaculationGauge >= 80 ? 'on the brink of ejaculation (사정 임박)' : ejaculationGauge >= 45 ? 'stimulation building' : 'building'}`
+        : '';
+      return {
+        name,
+        climaxGauge,
+        ejaculationGauge,
+        lastTurnDeltaClimax,
+        lastTurnDeltaEjac,
+        climaxTriggeredThisTurn,
+        ejaculationTriggeredThisTurn,
+        stimulatedParts: lastTurnParts,
+        line: `- ${forcedBondDisplayName(name)}: ${[climaxText, ejacText].filter(Boolean).join(' · ')}${lastTurnParts.length ? ` [stimulated: ${lastTurnParts.join(', ')}]` : ' [no direct body-part stimulation this turn → gauge decayed]'}`
+      };
+    });
+  };
   const intimacyPacket = (recent = {}) => {
     const scene = intimacyScene(recent);
     const cards = intimacyCardsForScope(compact(Runtime.activeScopeKey || '', 512));
-    if (!scene.engaged) return { scene, cards, text: '' };
+    const gauges = computeIntimacyParticipantGauges(recent, cards);
+    if (!scene.engaged && !gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0)) return { scene, cards, gauges, text: '' };
     return {
       scene,
       cards,
+      gauges,
       text: compact([
         `Phase now: ${scene.phase} (${INTIMACY_PHASE_LABELS[scene.phase]}), read from the ${scene.source}.`,
         scene.source === 'current input' && scene.previousPhase !== 'none' && scene.previousPhase !== scene.phase
           ? `Previous response ended in: ${scene.previousPhase} (${INTIMACY_PHASE_LABELS[scene.previousPhase]}).` : '',
         scene.position ? `Position on record: ${scene.position}. Keep it until the prose moves the bodies.` : 'Position: not named. Read it from the scene; do not jump to a new one without a transition.',
         scene.signals.length ? `Signals: ${scene.signals.join(', ')}.` : '',
+        scene.sensitivityBoosters?.length
+          ? `Sensitivity boosters active: ${scene.sensitivityBoosters.map(item => `${item.label} → ${item.effect}`).join('; ')}. Portray touch, friction, and breath with heightened physical responsiveness.`
+          : '',
+        gauges.length
+          ? `CLIMAX & EJACULATION GAUGES (0–100; 100 triggers climax/ejaculation; decays when unstimulated):\n${gauges.map(g => g.line).join('\n')}`
+          : '',
         'These readings come from keywords. When the scene says otherwise, the scene wins.',
         cards.length
           ? `PREFERENCE CARDS (saved for this chat; treat as established character facts):\n${cards.map(card => `- ${intimacyCardLine(card)}`).join('\n')}`
@@ -28292,7 +28563,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
-            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
+            `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant has one. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 목덜미, 귀, 가슴, 유두, 허벅지, 골반, 엉덩이, 음핵, 질내, 음경, 귀두, 후구 — sensitive_zones multiply stimulation by ×1.5, dull_zones by ×0.6); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
     ].filter(Boolean).join('\n');
@@ -28308,7 +28579,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const stance = { type: 'string', enum: [...INTIMACY_STANCES] };
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
-        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
+        intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
     return {};
@@ -28349,6 +28620,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
         name: raw?.name,
         likedPositions: raw?.liked_positions,
         dislikedPositions: raw?.disliked_positions,
+        sensitiveZones: raw?.sensitive_zones,
+        dullZones: raw?.dull_zones,
         foreplayStance: raw?.foreplay_stance,
         foreplayStyle: raw?.foreplay_style,
         intercourseStance: raw?.intercourse_stance,
@@ -50046,7 +50319,9 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
       ]),
       guiEl('div', { class: 'opt-grid' }, [
         field('좋아하는 체위', input('likedPositions', card.likedPositions, '예: 기승위, 대면좌위')),
-        field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위'))
+        field('싫어하는 체위', input('dislikedPositions', card.dislikedPositions, '예: 후배위')),
+        field('민감한 신체 부위 (×1.5)', input('sensitiveZones', card.sensitiveZones, '예: 귀, 목덜미, 유두, 음핵')),
+        field('둔감한 신체 부위 (×0.6)', input('dullZones', card.dullZones, '예: 후구, 허벅지'))
       ]),
       phase('foreplay', '전희'),
       phase('intercourse', '성교'),
@@ -54234,7 +54509,11 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       const prepared = relsimPrepare(recent, live);
       return cloneJson({ verdicts: prepared.verdicts, occasions: prepared.occasions.map(({ card, ...rest }) => rest), scene: prepared.scene, identity: prepared.identity });
     },
-    debugIntimacyPacket({ recent = {} } = {}) {
+    debugIntimacyPacket({ recent = {}, characterName = '', personaName = '', scopeKey = '', profileGenders = null } = {}) {
+      if (characterName) Runtime.activeCharacterName = characterName;
+      if (personaName) Runtime.activePersonaName = personaName;
+      if (scopeKey) Runtime.activeScopeKey = scopeKey;
+      if (profileGenders) Runtime.activeProfileGenders = new Map(Object.entries(profileGenders).map(([k, v]) => [normalizeContinuityAlias(k), v]));
       return intimacyPacket(recent);
     },
     debugIntimacyStageBlock({ stageName = 'aide_character', recent = {}, settings = {} } = {}) {

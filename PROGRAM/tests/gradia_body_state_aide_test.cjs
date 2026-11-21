@@ -603,3 +603,46 @@ test('a state profile from the host becomes a stored lore card that later turns 
   assert.equal(after[0].constitution, '추위를 잘 타고 빈혈기가 있음');
   assert.equal(after[0].cycleLength, 30);
 });
+
+test('sleeping NPC tracks sleep depth (100 to 200), sleep aids, soothing deepening, and cumulative wake bonuses across repeated interactions', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const baseSettings = { writingMode: 'rp', rpImpersonationScope: 'persona', enableBodyStateAide: true, mode: 'normal' };
+
+  const soothing = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey: 's',
+    recent: {
+      latestUser: '세라에게 이불을 덮어주고 머리카락을 부드럽게 쓰다듬는다.',
+      visibleMessages: [{ role: 'assistant', content: '세라는 침대에 누워 고른 숨소리를 내며 잠들었다.' }]
+    },
+    settings: baseSettings
+  });
+  assert.match(soothing, /sleep state: asleep — soothing interaction .* deepens sleep \(100 → 120\/200\) → wake chance 0\.0% → STAYS DEEPLY ASLEEP/);
+
+  const deepWithAid = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey: 's',
+    recent: {
+      latestUser: '세라의 볼을 만지며 이름을 부른다.',
+      visibleMessages: [{ role: 'assistant', content: '세라는 따뜻한 우유와 수면제를 먹고 깊은 잠에 빠져 곯아떨어졌다.' }]
+    },
+    settings: baseSettings
+  });
+  assert.match(deepWithAid, /sleep state: asleep \(depth 200\/200\)/);
+  assert.match(deepWithAid, /sleep aids: 수면제·진정제 \(\+55\), 숙면 음료·아로마 \(\+25\)/);
+
+  const repeated = f.host.plugin.debugBodyStatePacket({
+    personaName: '하준', characterName: '세라', scopeKey: 's',
+    recent: {
+      latestUser: '세라의 귓가에 속삭이며 볼에 입을 맞춘다.',
+      visibleMessages: [
+        { role: 'assistant', content: '세라는 침대에서 잠들었다.' },
+        { role: 'user', content: '세라의 볼을 살짝 건드린다.' },
+        { role: 'assistant', content: '세라는 잠든 채 미동도 하지 않았다.' },
+        { role: 'user', content: '세라의 어깨를 살짝 만지며 속삭인다.' },
+        { role: 'assistant', content: '세라는 자고 있으면서도 눈꺼풀을 파르르 떨었다.' }
+      ]
+    },
+    settings: baseSettings
+  });
+  assert.match(repeated, /repeat bonus \+\d+ \(streak #3\)/);
+  assert.match(repeated, /near-wake bonus \+\d+/);
+});

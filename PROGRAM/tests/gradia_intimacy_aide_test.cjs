@@ -178,3 +178,89 @@ test('an encounter that ended several messages ago is over', async t => {
   const scene = await sceneOf(t, '아침을 먹는다.', ['후배위로 삽입했다.', '둘은 잠들었다.', '해가 떴다.', '민아가 부엌으로 갔다.']);
   assert.equal(scene.engaged, false);
 });
+
+test('aphrodisiac or lotion/oil application activates heightened sensitivity cues in both intimacy and body-state packets', async t => {
+  const f = await fixture(t, { writingMode: 'novel', unified: false });
+  const intimacy = f.host.plugin.debugIntimacyPacket({
+    recent: {
+      latestUser: '민아의 허벅지에 로션을 바르고 애무한다.',
+      visibleMessages: [{ role: 'assistant', content: '미약을 마신 민아는 숨을 몰아쉬었다.' }]
+    }
+  });
+  assert.equal(intimacy.scene.engaged, true);
+  assert.equal(intimacy.scene.sensitivityBoosters.length, 2);
+  assert.match(intimacy.text, /Sensitivity boosters active: aphrodisiac \(미약·최음제\)/);
+  assert.match(intimacy.text, /lotion \/ lubricant \(로션·오일·윤활제 도포\)/);
+
+  const bodyPacket = f.host.plugin.debugBodyStatePacket({
+    characterName: '민아',
+    scopeKey: 's',
+    recent: { visibleMessages: [{ role: 'assistant', content: '민아는 미약이 든 차를 마시고 허벅지에 로션을 발랐다.' }] },
+    settings: { writingMode: 'novel', enableBodyStateAide: true, mode: 'normal' }
+  });
+  assert.match(bodyPacket, /aphrodisiac \/ heightened sensitivity/);
+  assert.match(bodyPacket, /lotion \/ slick skin sensitivity/);
+});
+
+test('lore-estimated erogenous sensitivity scales body-part climax/ejaculation gauges, decays when unstimulated, and triggers at 100', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.debugIntimacyLoadCards();
+  const scopeKey = 's';
+  f.host.plugin.debugSetActiveScope(scopeKey, '하준');
+  const settings = {
+    enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'],
+    mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp'
+  };
+  const rec = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings,
+    parsed: {
+      intimacyReadings: [{ participant: '세라', phase: 'foreplay', position: '', summary: '가슴이 예민해 숨이 가빠짐' }],
+      intimacyProfiles: [{
+        name: '세라', liked_positions: '정상위', disliked_positions: '후배위',
+        sensitive_zones: '유두, 귀, 음핵', dull_zones: '허벅지',
+        foreplay_stance: 'likes', foreplay_style: '귀와 가슴 애무에 약하다.',
+        intercourse_stance: 'likes', intercourse_style: '깊은 밀착을 선호한다.',
+        afterplay_stance: 'likes', afterplay_style: '안겨 있기를 좋아한다.',
+        basis: '로어북에 귀와 가슴이 특히 민감하다고 명시됨.'
+      }]
+    }
+  });
+  assert.equal(rec.cards.length, 1);
+  assert.equal(rec.cards[0].sensitiveZones, '유두, 귀, 음핵');
+  assert.equal(rec.cards[0].dullZones, '허벅지');
+
+  const p1 = f.host.plugin.debugIntimacyPacket({
+    characterName: '세라', personaName: '하준', scopeKey, profileGenders: { 세라: 'female' },
+    recent: { latestUser: '세라의 유두를 부드럽게 만지고 핥는다.', visibleMessages: [] }
+  });
+  const g1 = p1.gauges.find(g => g.name === '세라');
+  assert.equal(g1.climaxGauge, 27);
+  assert.match(p1.text, /가슴·유두 \(민감×1\.5\)/);
+
+  const pDecay = f.host.plugin.debugIntimacyPacket({
+    characterName: '세라', personaName: '하준', scopeKey, profileGenders: { 세라: 'female' },
+    recent: {
+      latestUser: '잠시 멈추고 세라의 눈을 바라보며 숨을 고른다.',
+      visibleMessages: [{ role: 'assistant', content: '세라의 유두를 만지고 핥자 세라가 신음을 흘렸다.' }]
+    }
+  });
+  const gDecay = pDecay.gauges.find(g => g.name === '세라');
+  assert.equal(gDecay.climaxGauge, 11);
+  assert.match(pDecay.text, /-16 \[자극 부재 감쇠\]/);
+
+  const pClimax = f.host.plugin.debugIntimacyPacket({
+    characterName: '세라', personaName: '하준', scopeKey, profileGenders: { 세라: 'female' },
+    recent: {
+      latestUser: '세라의 음핵을 문지르며 질 안 깊숙이 삽입해 거칠게 피스톤질한다.',
+      visibleMessages: [
+        { role: 'assistant', content: '세라의 유두를 빨고 음핵을 애무했다.' },
+        { role: 'assistant', content: '미약을 마신 세라의 보지 안으로 삽입해 허리를 흔들었다.' }
+      ]
+    }
+  });
+  const gClimax = pClimax.gauges.find(g => g.name === '세라');
+  assert.equal(gClimax.climaxGauge, 100);
+  assert.equal(gClimax.climaxTriggeredThisTurn, true);
+  assert.match(pClimax.text, /CLIMAX REACHED \(100\/100/);
+});
