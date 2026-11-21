@@ -1,2 +1,13 @@
-# Plugin sources contain generated SDK blocks checked against LF source bytes.
-PROGRAM/plugins/*.js text eol=lf
+# The release builder hashes, compares and executes source bytes: check_sdk_sync and
+# sync_source_review compare LF source against the embedded blocks, and the staged tree must keep
+# shell scripts LF. A Windows clone with core.autocrlf=true would otherwise rewrite PROGRAM/sdk,
+# UPDATER and the root launchers to CRLF, and the build dies before packaging.
+# Pin every text file to LF so a checkout cannot change what the gate sees.
+* text=auto eol=lf
+
+# Batch files are stored with CRLF on purpose (the batch parser needs it), and binary fixtures
+# must keep their exact bytes.
+*.bat -text
+*.cmd -text
+*.sqlite binary
+*.fixture -text
