@@ -264,3 +264,85 @@ test('lore-estimated erogenous sensitivity scales body-part climax/ejaculation g
   assert.equal(gClimax.climaxTriggeredThisTurn, true);
   assert.match(pClimax.text, /CLIMAX REACHED \(100\/100/);
 });
+
+test('external reaction (외부반응) scales 100..200 by venue/crowding/loudness/stealth and applies even in private rooms', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const settings = {
+    enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'],
+    mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp'
+  };
+
+  // Library with open door, people nearby, and loud climax -> capped at 200
+  const libLoud = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-lib-1',
+    recent: {
+      latestUser: '도서관 서고 열린 문 앞에서 큰 소리로 신음을 터뜨리며 절정에 달한다.',
+      visibleMessages: [{ role: 'assistant', content: '주변에 사람들이 오가고 사서가 복도 끝에 있었다.' }]
+    }
+  });
+  assert.equal(libLoud.externalReaction.baseScore, 100);
+  assert.equal(libLoud.externalReaction.score, 200);
+  assert.equal(libLoud.externalReaction.maxScore, 200);
+  assert.equal(libLoud.externalReaction.spaceType, 'semi_public');
+  assert.equal(libLoud.externalReaction.riskBand, 'critical');
+  assert.match(libLoud.text, /EXTERNAL REACTION \(외부반응/);
+
+  // Park / restroom also detected properly
+  const park = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-park-1',
+    recent: { latestUser: '공원 벤치 뒤에서 손가락을 넣어 애무한다.', visibleMessages: [] }
+  });
+  assert.equal(park.externalReaction.place, '공원·정원');
+  assert.ok(park.externalReaction.score > 100);
+
+  const restroom = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-rest-1',
+    recent: { latestUser: '화장실 칸막이 안에서 입을 막고 조용히 삽입한다.', visibleMessages: [] }
+  });
+  assert.equal(restroom.externalReaction.place, '화장실·세면실');
+  assert.equal(restroom.externalReaction.spaceType, 'semi_public');
+
+  // Private room still computes external reaction (never null/skipped) and responds to thin walls / roommates
+  const privateQuiet = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-room-1',
+    recent: { latestUser: '내 방 문을 잠그고 조용히 입을 막으며 삽입한다.', visibleMessages: [] }
+  });
+  assert.ok(privateQuiet.externalReaction);
+  assert.equal(privateQuiet.externalReaction.spaceType, 'private');
+  assert.ok(privateQuiet.externalReaction.score < 100);
+
+  const privateRisky = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-room-2',
+    recent: { latestUser: '자취방에서 룸메이트가 문 밖에 있는데도 침대가 삐걱거리게 거칠게 삽입한다.', visibleMessages: [] }
+  });
+  assert.equal(privateRisky.externalReaction.spaceType, 'private');
+  assert.ok(privateRisky.externalReaction.score > 100);
+
+  // Deterministic roll: identical inputs yield identical roll & noticed
+  const repeat = f.host.plugin.debugIntimacyPacket({
+    scopeKey: 'ext-lib-1',
+    recent: {
+      latestUser: '도서관 서고 열린 문 앞에서 큰 소리로 신음을 터뜨리며 절정에 달한다.',
+      visibleMessages: [{ role: 'assistant', content: '주변에 사람들이 오가고 사서가 복도 끝에 있었다.' }]
+    }
+  });
+  assert.equal(repeat.externalReaction.roll, libLoud.externalReaction.roll);
+  assert.equal(repeat.externalReaction.noticed, libLoud.externalReaction.noticed);
+
+  // Stage block includes character-dependent reaction options (direct, indirect, ignore) when noticed
+  // Find a seed where noticed is true (score 200 -> noticeChance 98%)
+  const block = f.host.plugin.debugIntimacyStageBlock({
+    stageName: 'aide_character',
+    settings,
+    recent: {
+      latestUser: '도서관 서고 열린 문 앞에서 큰 소리로 신음을 터뜨리며 절정에 달한다.',
+      visibleMessages: [{ role: 'assistant', content: '주변에 사람들이 오가고 사서가 복도 끝에 있었다.' }]
+    }
+  });
+  assert.match(block, /EXTERNAL REACTION \(외부반응\):/);
+  if (libLoud.externalReaction.noticed) {
+    assert.match(block, /Direct interference \(직접 훼방/);
+    assert.match(block, /Indirect interference \(간접 훼방/);
+    assert.match(block, /Ignore \/ unbothered \(무시·신경 안 씀/);
+  }
+});

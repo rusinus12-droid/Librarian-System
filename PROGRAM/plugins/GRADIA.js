@@ -24641,7 +24641,15 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       relationshipPairs: Array.isArray(parsed.relationship_pairs) ? parsed.relationship_pairs : [],
       relationshipProfiles: Array.isArray(parsed.relationship_profiles) ? parsed.relationship_profiles : [],
       relationshipLibStatus: Array.isArray(parsed.relationship_lib_status) ? parsed.relationship_lib_status : [],
-      dispositionProfiles: Array.isArray(parsed.disposition_profiles) ? parsed.disposition_profiles : [],
+      dispositionProfiles: Array.isArray(parsed.disposition_profiles)
+        ? parsed.disposition_profiles
+        : Array.isArray(parsed.dispositionProfiles)
+          ? parsed.dispositionProfiles
+          : Array.isArray(parsed.domain?.disposition_profiles)
+            ? parsed.domain.disposition_profiles
+            : Array.isArray(parsed.domain?.dispositionProfiles)
+              ? parsed.domain.dispositionProfiles
+              : [],
       knowledgeCheck: Array.isArray(parsed.knowledge_check) ? parsed.knowledge_check : [],
       knowledgeLeaks: Array.isArray(parsed.knowledge_leaks) ? parsed.knowledge_leaks : [],
       knowledgeKept: Array.isArray(parsed.knowledge_kept) ? parsed.knowledge_kept : [],
@@ -25415,9 +25423,11 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
 
   const shadowActIntegratedPlanningContract = (settings = {}) => {
     const plan = shadowDraftLengthPlan(settings);
+    const pass0 = 'PASS 0 — PREVIOUS (BEFORE PLANNING): silently synthesize the supplied LIB memory evidence and recent completed chat into a chronological fact record of what actually happened (who did/said what, confirmed outcomes, ongoing consequences, and what did NOT happen; recent chat outranks older LIB memory when they differ) so past events are never misstated or conflated.';
     if (rpScopeLocksCast(settings)) return [
       'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE PLANNING:',
       ...buildRpImpersonationScopeLines(settings),
+      pass0,
       'Before writing, silently list what the submitted input states, and mark everything else this detail mode forbids.',
       'The visible output must contain only in-world RP prose.'
     ].join('\n');
@@ -25425,6 +25435,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       return [
         'LIGHTWEIGHT SHADOW ACT — PLAYER-CONTROLLED PRIVATE REACTION PLANNING:',
         'Before writing, silently identify the exact user-authored contribution already enacted this turn. Do not restage it. Anything the input states about other characters or the situation has not been written yet: show it first.',
+        pass0,
         'PASS 1 — USER AGENCY BOUNDARY: identify actor/action/target/dialogue/completion state actually present in the submitted input and mark every unprovided user behavior as forbidden.',
         'PASS 2 — NPC/WORLD REACTION DIRECTOR: choose causally supported NPC actions/dialogue, world consequences, staging, timing, sensory grounding, and relationship response.',
         'PASS 3 — USER AGENCY FRONTIER: after planning satisfying NPC/world motion, identify the first later beat that actually requires a NEW player-character contribution. Continue model-owned causality until that boundary, then end there on a seed from the scene.',
@@ -25435,11 +25446,12 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
     }
     return [
       'LIGHTWEIGHT SHADOW ACT — INTEGRATED PRIVATE PLANNING:',
-      'Before writing, silently complete the following two compact internal passes in this same call. Do not output, label, summarize, or expose either pass.',
+      'Before writing, silently complete the following compact internal passes in this same call. Do not output, label, summarize, or expose any pass.',
+      pass0,
       `PASS 1 — STORY AUTHOR: determine the scene purpose, primary unresolved tension, direct alignment with the Current Submitted User Input, open questions, conditional payoff candidates, do-not-resolve boundaries, and at least ${plan.minBeats} causally ordered stimulus/action -> observable reaction -> changed-pressure beats.`,
       'PASS 2 — DIRECTOR: translate that exact plan into required visible outcomes, continuity locks, forbidden moves, staging, dialogue rhythm, pacing, reaction timing, and an ending boundary just before the scene resolves.',
       'Every planned beat must receive an observable treatment inside this same response. Director execution must not replace Story Author meaning, contradict explicit author-fixed events/reservations, or force an uncertain pre-existing fact. The user persona may be authored as part of the whole cast.',
-      'After both private passes, write the complete RP response. The visible output must contain only in-world RP prose; never output analysis, plans, labels, JSON, reasoning, or metadata.'
+      'After these private passes, write the complete RP response. The visible output must contain only in-world RP prose; never output analysis, plans, labels, JSON, reasoning, or metadata.'
     ].join('\n');
   };
 
@@ -25464,6 +25476,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
   });
   const analysisDomainJsonSchemaForStage = stageName => {
     if (stageName === 'shadow_act') return closedJsonObject({
+      previous: closedJsonObject({
+        what_happened: stringArrayJsonSchema(),
+        ongoing_consequences: stringArrayJsonSchema(),
+        do_not_misremember: stringArrayJsonSchema()
+      }),
       current_scene_anchor: closedJsonObject({
         latest_confirmed_situation: { type: 'string' },
         location_time_and_social_context: stringArrayJsonSchema(),
@@ -25852,6 +25869,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const aideAnalysisDomainContract = (stageName, settings = {}) => {
     const playerControlled = isPlayerControlledDraftMode(settings);
     if (stageName === 'shadow_act') return `"domain": {
+    "previous": {
+      "what_happened": ["chronological facts of what actually occurred across LIB memory + recent completed chat (who did/said what, confirmed outcomes); recent chat outranks older LIB memory when they differ"],
+      "ongoing_consequences": ["unresolved commitments, injuries, locations, or relationship shifts still active from those past events"],
+      "do_not_misremember": ["past events, actors, or outcomes that must NOT be misstated, swapped, or invented (e.g. things proposed/refused/not yet done)"]
+    },
     "current_scene_anchor": {
       "latest_confirmed_situation": "literal endpoint immediately before the new response",
       "location_time_and_social_context": ["current location, time, public/private status, witnesses, active social pressure"],
@@ -25994,10 +26016,22 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return '"domain": {}';
   };
 
+  const extraJsonContractLinesForStage = (stageName, settings = {}) => {
+    const keys = Object.keys(withExtensionAideJsonProperties({ required: [], properties: {} }, stageName, settings).properties || {});
+    if (!keys.length) return '';
+    return keys.map(key => {
+      if (key === 'disposition_profiles') {
+        return `,\n  "disposition_profiles": [{"name": "NPC name", "level": "hostile|dislike|acquaintance|like|affection", "note": "short attitude reason", "basis": "lore basis"}]`;
+      }
+      return `,\n  "${key}": []`;
+    }).join('');
+  };
+
   const aideAnalysisJsonContract = (stageName, settings = {}) => {
     const optionalBeatField = stageName === 'shadow_act'
       ? ''
       : ',\n  "beats": ["key beats that belong inside this same rewritten response, not a following scene"]';
+    const extraFields = extraJsonContractLinesForStage(stageName, settings);
     const actionTarget = stageName === 'shadow_act'
       ? 'short imperative actions that the first same-turn draft must realize'
       : 'short imperative edits that can be applied directly to CURRENT_SAME_TURN_DRAFT';
@@ -26014,7 +26048,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ${aideAnalysisDomainContract(stageName, settings)},
   "rewrite_directives": ["${actionTarget}"],
   "do_not_reveal": ["secrets or hidden facts that must NOT be revealed in the response"],
-  "pov_limits": ["POV, perception, knowledge, and writing-mode authority boundaries for this scene"]${optionalBeatField}
+  "pov_limits": ["POV, perception, knowledge, and writing-mode authority boundaries for this scene"]${optionalBeatField}${extraFields}
 }`;
   };
 
@@ -28223,6 +28257,89 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .filter(([, pattern]) => pattern.test(combined))
       .map(([label, , effect]) => ({ label, effect }));
   };
+  const INTIMACY_EXTERNAL_BASE_SCORE = 100;
+  const INTIMACY_EXTERNAL_MAX_SCORE = 200;
+  // Ordered from more specific / higher-exposure venues to general private spaces.
+  const INTIMACY_EXTERNAL_PLACES = Object.freeze([
+    ['downtown', '번화가·광장', 45, 'public', /번화가|광장|거리\s*한복판|시장\s*통|downtown|plaza|busy street/i],
+    ['transit', '대중교통 (버스·지하철·기차·비행기)', 45, 'public', /버스|지하철|전철|기차|열차|비행기|기내|대중교통|bus|subway|train|airplane|cabin/i],
+    ['venue_public', '카페·식당·술집', 40, 'public', /카페|커피숍|식당|레스토랑|술집|바\b|펍|주점|cafe|restaurant|bar\b|pub\b/i],
+    ['facility_public', '백화점·마트·영화관·수영장·찜질방·목욕탕·PC방', 40, 'public', /백화점|쇼핑몰|마트|영화관|극장|수영장|찜질방|사우나|목욕탕|온천|pc방|피시방|mall|cinema|pool|sauna|bathhouse/i],
+    ['park', '공원·정원', 35, 'public', /공원|정원|산책로|벤치|\bpark\b|garden/i],
+    ['corridor', '복도·계단·옥상·엘리베이터', 35, 'semi_public', /복도|계단|비상구|옥상|엘리베이터|승강기|현관|corridor|hallway|stairwell|rooftop|elevator/i],
+    ['library', '도서관·서고·열람실', 30, 'semi_public', /도서관|서고|열람실|독서실|서점|library|reading room|archive/i],
+    ['workplace', '교실·강의실·사무실·회의실·연구실', 30, 'semi_public', /교실|강의실|양호실|보건실|동아리방|사무실|회의실|연구실|작업실|집무실|classroom|office|meeting room|lab\b/i],
+    ['restroom', '화장실·세면실', 25, 'semi_public', /화장실|세면실|파우더룸|칸막이|restroom|bathroom|washroom|stall/i],
+    ['secluded_semi', '골목·차 안·창고', 15, 'semi_public', /골목|뒷길|차\s*안|차량|뒷좌석|창고|탈의실|alley|car\b|backseat|storage|locker room/i],
+    ['private_room', '방·침실·집·숙소', -20, 'private', /침실|내\s*방|그녀의\s*방|그의\s*방|안방|자취방|기숙사|거실|호텔|모텔|여관|숙소|(?:^|[^가-힣])방(?:에|에서|안|으로)|(?:^|[^가-힣])집(?:에|에서|안|으로)|bedroom|my room|her room|his room|dorm|apartment|hotel|motel|inn|\bhome\b/i]
+  ]);
+  const INTIMACY_CROWD_HIGH_RE = /사람들|인파|북적|붐비|붐벼|만석|시끌벅적|지나다니|오가는|crowded|busy|full of people|passersby/i;
+  const INTIMACY_CROWD_NEARBY_RE = /옆\s*방|벽\s*너머|얇은\s*벽|문\s*밖|밖에서|복도에|누군가|다른\s*사람|동거|룸메이트|가족|부모님|손님|관리인|사서|경비|직원|next room|thin wall|outside the door|someone nearby|roommate|family|staff|guard|librarian/i;
+  const INTIMACY_CROWD_LOW_RE = /아무도\s*없|인적\s*없|인적이\s*끊|한적|조용한\s*밤|늦은\s*밤|새벽|텅\s*빈|폐관|문\s*닫은|nobody around|deserted|empty|late at night|after hours/i;
+  const INTIMACY_LOUD_HIGH_RE = /비명|큰\s*소리|신음(?:이|을)?\s*(?:터|새어|질렀|내질|참지)|소리\s*(?:내|지르|질렀)|울부짖|거칠게|격렬|침대(?:가|를)?\s*(?:삐걱|흔들|부딪)|살이\s*부딪|찰싹|퍼억|loud|scream|cry out|moan(?:ed|ing)? loudly|creaking|slapping|noisy/i;
+  const INTIMACY_LOUD_LOW_RE = /입을\s*(?:막|틀어막)|입술을\s*깨물|소리(?:를|가)?\s*(?:죽이|죽여|삼키|삼켜|참|억누르)|조용히|속삭|숨죽|낮은\s*소리|cover(?:ed|ing)? (?:her|his) mouth|muffled|quietly|whisper|silent/i;
+  const INTIMACY_STEALTH_EXPOSED_RE = /열린\s*문|문이\s*열|반쯤\s*열|잠그지\s*않|커튼(?:이|을)?\s*열|불이\s*켜|훤히|탁\s*트인|노출|들킬|open door|ajar|unlocked|unlatched|curtain open|in plain sight|exposed/i;
+  const INTIMACY_STEALTH_HIDDEN_RE = /문(?:을|이)?\s*(?:잠그|잠갔|잠긴|걸어\s*잠)|자물쇠|방음|커튼(?:을|이)?\s*(?:치|쳐|내리|닫)|어둠|그늘|숨(?:어|은)|구석|사각지대|밀실|locked door|soundproof|curtain drawn|hidden|secluded|blind spot/i;
+  const computeIntimacyExternalReaction = (recent = {}, scene = {}) => {
+    const input = text(recent.latestUser || '');
+    const messages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
+      .map(message => text(message?.content || ''))
+      .filter(Boolean);
+    if (messages.length && input && messages[messages.length - 1].trim() === input.trim()) messages.pop();
+    const window = messages.slice(-INTIMACY_RECENT_WINDOW);
+    const windowJoined = [...window].reverse().join('\n');
+    const combined = [input, ...window].filter(Boolean).join('\n');
+
+    let matchedPlace = null;
+    for (const [id, label, crowdDelta, spaceType, pattern] of INTIMACY_EXTERNAL_PLACES) {
+      if (pattern.test(input)) { matchedPlace = { id, label, crowdDelta, spaceType }; break; }
+    }
+    if (!matchedPlace) {
+      for (const [id, label, crowdDelta, spaceType, pattern] of INTIMACY_EXTERNAL_PLACES) {
+        if (pattern.test(windowJoined)) { matchedPlace = { id, label, crowdDelta, spaceType }; break; }
+      }
+    }
+    const place = matchedPlace || { id: 'unspecified', label: '미지정 공간', crowdDelta: 0, spaceType: 'private' };
+
+    let crowdMod = 0;
+    const factors = [];
+    if (place.crowdDelta !== 0) factors.push(`장소(${place.label} ${place.crowdDelta > 0 ? `+${place.crowdDelta}` : place.crowdDelta})`);
+    if (INTIMACY_CROWD_HIGH_RE.test(combined)) { crowdMod += 25; factors.push('혼잡(+25)'); }
+    if (INTIMACY_CROWD_NEARBY_RE.test(combined)) { crowdMod += 25; factors.push('주변 기척·동거인(+25)'); }
+    if (INTIMACY_CROWD_LOW_RE.test(combined)) { crowdMod -= 25; factors.push('한적함(-25)'); }
+
+    let loudnessMod = 0;
+    if (INTIMACY_LOUD_HIGH_RE.test(combined)) { loudnessMod += 35; factors.push('큰 소란(+35)'); }
+    if (INTIMACY_LOUD_LOW_RE.test(combined)) { loudnessMod -= 25; factors.push('소리 억제(-25)'); }
+    if (scene?.phase === 'climax') { loudnessMod += 15; factors.push('절정 호흡·신음(+15)'); }
+    else if (scene?.phase === 'intercourse') { loudnessMod += 10; factors.push('성교 움직임(+10)'); }
+
+    let stealthMod = 0;
+    if (INTIMACY_STEALTH_EXPOSED_RE.test(combined)) { stealthMod += 30; factors.push('노출·개방(+30)'); }
+    if (INTIMACY_STEALTH_HIDDEN_RE.test(combined)) { stealthMod -= 25; factors.push('은밀·잠금(-25)'); }
+
+    const rawScore = INTIMACY_EXTERNAL_BASE_SCORE + place.crowdDelta + crowdMod + loudnessMod + stealthMod;
+    const score = Math.max(0, Math.min(INTIMACY_EXTERNAL_MAX_SCORE, rawScore));
+    const noticeChance = Math.max(5, Math.min(98, Math.round(score / 2)));
+    const scopeKey = compact(Runtime.activeScopeKey || '', 256);
+    const priorAssistant = window[window.length - 1] || '';
+    const roll = relsimSeedRoll([scopeKey, 'intimacy_ext', stableDraftHash(input), stableDraftHash(priorAssistant)].join('|'));
+    const noticed = roll < noticeChance;
+    const riskBand = score >= 160 ? 'critical' : score >= 120 ? 'high' : score >= 80 ? 'moderate' : 'low';
+    return {
+      baseScore: INTIMACY_EXTERNAL_BASE_SCORE,
+      score,
+      maxScore: INTIMACY_EXTERNAL_MAX_SCORE,
+      noticeChance,
+      roll,
+      noticed,
+      riskBand,
+      place: place.label,
+      spaceType: place.spaceType,
+      breakdown: { place: place.crowdDelta, crowding: crowdMod, loudness: loudnessMod, stealth: stealthMod },
+      factors
+    };
+  };
   const INTIMACY_RECENT_WINDOW = 4;
   // Where the encounter stands: the current input leads when it shows the act (it may start a
   // second round after a climax); otherwise the latest response that shows it.
@@ -28475,11 +28592,13 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const scene = intimacyScene(recent);
     const cards = intimacyCardsForScope(compact(Runtime.activeScopeKey || '', 512));
     const gauges = computeIntimacyParticipantGauges(recent, cards);
-    if (!scene.engaged && !gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0)) return { scene, cards, gauges, text: '' };
+    const externalReaction = scene.engaged ? computeIntimacyExternalReaction(recent, scene) : null;
+    if (!scene.engaged && !gauges.some(g => g.climaxGauge > 0 || g.ejaculationGauge > 0)) return { scene, cards, gauges, externalReaction: null, text: '' };
     return {
       scene,
       cards,
       gauges,
+      externalReaction,
       text: compact([
         `Phase now: ${scene.phase} (${INTIMACY_PHASE_LABELS[scene.phase]}), read from the ${scene.source}.`,
         scene.source === 'current input' && scene.previousPhase !== 'none' && scene.previousPhase !== scene.phase
@@ -28492,19 +28611,26 @@ Begin directly with the in-world response and finish the complete same-turn draf
         gauges.length
           ? `CLIMAX & EJACULATION GAUGES (0–100; 100 triggers climax/ejaculation; decays when unstimulated):\n${gauges.map(g => g.line).join('\n')}`
           : '',
+        externalReaction
+          ? [
+              `EXTERNAL REACTION (외부반응 — THIRD-PARTY NOTICE; applies in public, semi-public, AND private spaces):`,
+              `- Place: ${externalReaction.place} (${externalReaction.spaceType}) · Notice score: ${externalReaction.score}/${externalReaction.maxScore} (base ${externalReaction.baseScore}; ${externalReaction.factors.length ? externalReaction.factors.join(', ') : 'no extra modifiers'}) · Notice chance: ${externalReaction.noticeChance}% · Risk: ${externalReaction.riskBand.toUpperCase()}`,
+              `- Verdict: ${externalReaction.noticed ? 'NOTICED THIS TURN — a third party outside the act notices (sound, movement, silhouette, ajar door, etc.). Portray their reaction according to who they are and the situation (direct interference, indirect interference, or ignoring/unbothered).' : 'NOT YET NOTICED — no third party discovers them this turn; keep any tension subtle without forcing discovery.'}`
+            ].join('\n')
+          : '',
         'These readings come from keywords. When the scene says otherwise, the scene wins.',
         cards.length
           ? `PREFERENCE CARDS (saved for this chat; treat as established character facts):\n${cards.map(card => `- ${intimacyCardLine(card)}`).join('\n')}`
           : 'PREFERENCE CARDS: none saved for this chat yet.'
-      ].filter(Boolean).join('\n'), 4200)
+      ].filter(Boolean).join('\n'), 4600)
     };
   };
   const INTIMACY_STAGE_DUTY = Object.freeze({
-    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further.',
-    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, and voice stay their own and fit the relationship, the limits on record, and their preference card, and that nobody turns into a generic body.',
-    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, and that clothing, posture, points of contact, and fluids carry over from the previous turn.',
+    shadow_act: 'SHADOW: write the current phase on the page, beat by beat (contact, pressure, rhythm, friction, breath, sound, wetness, voice), never summarizing or cutting away. Advance at most one phase this turn unless the input itself goes further. If EXTERNAL REACTION says NOTICED THIS TURN, stage a third party noticing through a concrete sensory channel and reacting in character.',
+    aide_character: 'Character AIDE: check that each participant’s desire, hesitation, arousal, and voice stay their own and fit the relationship, the limits on record, and their preference card, and that nobody turns into a generic body. If a third party notices (EXTERNAL REACTION), ensure their reaction (direct interference, indirect interference, or ignoring) fits that character’s personality, role, and relationship.',
+    aide_world: 'World AIDE: check that the position is physically possible for these bodies in this place, that clothing, posture, points of contact, and fluids carry over from the previous turn, and that any third-party notice in EXTERNAL REACTION uses a physically valid sensory channel (sound, sightline, ajar/unlocked door, proximity).',
     aide_plot: 'Plot AIDE: check the pacing across phases: no jump to climax, no premature aftercare, no ending that closes an encounter the input left open.',
-    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks; a participant acts against their preference card without a reason in the scene; or a participant loses their own voice. Return edits: [] when the draft already fits, and say so in analysis.summary.'
+    aide_intimacy: 'Intimacy AIDE: read the verification notes, then settle this turn’s readings: the phase, the position, and each participant’s arousal and state. Write a preference profile for each participant who has no card yet. Patch the draft only where the act is summarized, skipped, or faded out; anatomy or physiology is wrong; a position is impossible or changes without a transition; continuity breaks; a participant acts against their preference card without a reason in the scene; a participant loses their own voice; or an EXTERNAL REACTION notice/non-notice or third-party reaction contradicts the scene or character. Return edits: [] when the draft already fits, and say so in analysis.summary.'
   });
   const intimacyOutputKind = (stageName, settings = {}) => {
     if (!intimacyStageActive(settings)) return '';
@@ -28552,6 +28678,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
       '- Use the reference notes below for anatomy and physiology. Do not write an impossible body: no instant lubrication without arousal, no endless male erection after ejaculation without a refractory period, no position the bodies or the place cannot hold.',
       '- Every participant is an adult. Consent, hesitation, refusal, and limits in the scene stay hard facts; this block never supplies them.',
       '- Body state on record (injury, illness, pregnancy, fatigue) still applies inside the act.',
+      'EXTERNAL REACTION (외부반응):',
+      '- Applies in public/semi-public places (library, park, restroom, corridor, transit, cafe, etc.) AND in private spaces (rooms, homes, dorms, hotels via thin walls, ajar doors, housemates, or visitors).',
+      gate === 'staging'
+        ? '- Scene-staging RP mode: do not invent a new third-party interruption unless the input states one; render only the exposure/stealth atmosphere already in the scene.'
+        : packet.externalReaction?.noticed
+          ? [
+              '- Verdict is NOTICED THIS TURN: a third party outside the act notices through a plausible sensory channel (sound, silhouette, ajar/unlocked door, movement).',
+              '- Their reaction MUST vary by who they are (personality, relationship to the participants, role, disposition) and the situation: (1) Direct interference (직접 훼방 — knocking/opening the door, confronting, scolding, separating them, calling staff/security), (2) Indirect interference (간접 훼방 — pointed cough, heavy footsteps, flicking lights, lingering outside, subtle warning/message), or (3) Ignore / unbothered (무시·신경 안 씀 — pretending not to notice, quietly slipping away, putting on headphones, closing the door silently).',
+              gate === 'novel' ? '' : '- RP mode: external reaction applies only to third parties and the environment; never decide the persona’s reaction.'
+            ].filter(Boolean).join('\n')
+          : '- Verdict is NOT YET NOTICED: no third party discovers them this turn. If the notice score is 100 or higher, keep subtle exposure/stealth tension natural without forcing discovery or a fake cliffhanger interruption.',
       `STAGE DUTY: ${duty}`,
       `INTIMACY PACKET:\n${packet.text}`,
       `REFERENCE NOTES:\n${intimacyReferenceFor(packet.scene)}`,
@@ -28559,7 +28696,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}\nAn "adjust" note names something to repair; an "uncertain" note means do not assert it. Do not overrule a note without evidence from your own duty.`
         : '',
       outputKind === 'check'
-        ? 'OUTPUT: add a top-level "intimacy_check" array with one item per problem or confirmation about the encounter in this draft, judged only from your own duty. Item fields: aspect (phase, position, anatomy, continuity, voice, pacing, or preference); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
+        ? 'OUTPUT: add a top-level "intimacy_check" array with one item per problem or confirmation about the encounter in this draft, judged only from your own duty. Item fields: aspect (phase, position, anatomy, continuity, voice, pacing, preference, or external_reaction); verdict (confirm, adjust, or uncertain); claim; reason. Use an empty array when there is nothing to note.'
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
@@ -28569,7 +28706,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ].filter(Boolean).join('\n');
   };
   const INTIMACY_VERDICTS = Object.freeze(['confirm', 'adjust', 'uncertain']);
-  const INTIMACY_ASPECTS = Object.freeze(['phase', 'position', 'anatomy', 'continuity', 'voice', 'pacing', 'preference']);
+  const INTIMACY_ASPECTS = Object.freeze(['phase', 'position', 'anatomy', 'continuity', 'voice', 'pacing', 'preference', 'external_reaction']);
   const INTIMACY_MAX_READINGS = 6;
   const intimacyJsonProperties = (stageName, settings = {}) => {
     const kind = intimacyOutputKind(stageName, settings);
@@ -29082,19 +29219,25 @@ Begin directly with the in-world response and finish the complete same-turn draf
     return fromScene ? { date: fromScene, source: 'recent scene' } : { date: null, source: '' };
   };
   const RELSIM_ACT_SIGNALS = Object.freeze({
-    confession: /고백|좋아해|좋아한다고|사랑해|사귀(?:자|어\s*줘|어\s*줄래|고\s*싶|어\s*볼래)|(?:여자|남자)\s*친구가?\s*(?:돼|되어)|연인이\s*(?:돼|되어)|confess|\bi love you\b|go out with me|be my (?:girlfriend|boyfriend)/i,
-    proposal: /청혼|프러포즈|프로포즈|결혼(?:하자|해\s*줘|해\s*줄래|해\s*주겠)|반지를?\s*(?:내밀|건네|꺼내)|marry me|\bpropos/i,
-    reunion: /다시\s*(?:시작|만나|사귀|돌아)|돌아와\s*(?:줘|줄래)|재결합|우리\s*다시|get back together|start over/i,
-    date: /데이트|\bdate\b|놀러\s*가자|같이\s*가자/i,
-    event: /선물|이벤트|서프라이즈|깜짝|surprise|\bgift\b/i
+    confession: /고백(?:하|한|합|했|해|할|을|이|\s|$)|(?:널|너를|너가|네가|당신을|당신이|오빠를|형을|누나를|언니를|선배를|그대를)\s*(?:진짜|정말|진심으로|많이|오래전부터)?\s*(?:좋아해|좋아한다|사랑해|사랑한다)|좋아한다고\s*(?:말|전|고백|밝)|사랑한다고\s*(?:말|전|고백|밝)|사귀(?:자|어\s*줘|어\s*줄래|고\s*싶|어\s*볼래|어\s*줄)|(?:여자|남자)\s*친구가?\s*(?:돼|되어)|연인이\s*(?:돼|되어)|내\s*(?:사람|연인)이\s*(?:돼|되어)|confess|\bi love you\b|go out with me|be my (?:girlfriend|boyfriend)/i,
+    proposal: /청혼|프러포즈|프로포즈|결혼(?:하자|해\s*줘|해\s*줄래|해\s*주겠|해\s*줄)|반지를?\s*(?:내밀|건네|꺼내|끼워)|marry me|\bpropos(?:e|ed|ing|al)\b/i,
+    reunion: /다시\s*(?:시작|만나|사귀|돌아와)|돌아와\s*(?:줘|줄래)|재결합|우리\s*다시\s*(?:사귀|시작|만나)|get back together|start over together/i,
+    date: /데이트|\bdate\b|놀러\s*가자|같이\s*(?:놀러|보러|먹으러|산책|가자|갈래)|영화\s*보러|저녁\s*같이|약속\s*잡/i,
+    event: /선물|이벤트|서프라이즈|깜짝|꽃다발|케이크|기념일|생일\s*(?:축하|파티|챙)|surprise|\bgift\b|\bpresent\b/i
   });
   const relsimActsInText = value => Object.entries(RELSIM_ACT_SIGNALS).filter(([, re]) => re.test(String(value || ''))).map(([act]) => act);
 
   // ---- Verdicts: conditional, rolled and fixed before SHADOW drafts ----
   const RELSIM_ACTS_BY_STATUS = Object.freeze({
-    friend: ['confession'], more_than_friend: ['confession'], less_than_friend: ['confession'],
-    broken_up: ['reunion'], engagement_broken: ['reunion'], divorced: ['reunion'],
-    lovers: ['proposal', 'date', 'event'], engaged: ['date', 'event'], married: ['date', 'event']
+    friend: ['confession', 'date', 'event'],
+    more_than_friend: ['confession', 'date', 'event'],
+    less_than_friend: ['confession', 'date', 'event'],
+    broken_up: ['reunion', 'date', 'event'],
+    engagement_broken: ['reunion', 'date', 'event'],
+    divorced: ['reunion', 'date', 'event'],
+    lovers: ['proposal', 'date', 'event'],
+    engaged: ['date', 'event'],
+    married: ['date', 'event']
   });
   const RELSIM_REUNION_TO = Object.freeze({ broken_up: 'lovers', engagement_broken: 'engaged', divorced: 'married' });
   const RELSIM_BASE = Object.freeze({
@@ -29104,6 +29247,72 @@ Begin directly with the in-world response and finish the complete same-turn draf
   });
   // Disposition toward the persona bounds an NPC's answer to the persona (draft values).
   const RELSIM_DISPOSITION_BOUNDS = Object.freeze({ hostile: [0, 5], dislike: [0, 15], acquaintance: [5, 40], like: [20, 75], affection: [50, 95] });
+  const RELSIM_MEMORY_REL_POS = Object.freeze([
+    ['신뢰', 4, /신뢰|믿음|믿고|의지|trust(?:ed|s|ing)?/i],
+    ['비밀공유', 4, /비밀을?\s*(?:공유|털어놓|말해|나누)|속마음을?\s*털어놓|confid(?:e|ed|ing)|shared secret/i],
+    ['약속이행', 4, /약속을?\s*(?:지키|지켰|지켜)|챙겨\s*주|챙겨줬|kept (?:a |the )?promise/i],
+    ['보호·도움', 4, /도와\s*주|도와줬|구해\s*주|구해줬|지켜\s*주|지켜줬|saved|protected/i],
+    ['친밀·유대', 4, /가까워졌|가까워진|친밀|유대|손을?\s*(?:잡|맞잡)|안아\s*주|안아줬|함께\s*보낸\s*시간|화해|용서|grew closer|held hands|reconcil/i]
+  ]);
+  const RELSIM_MEMORY_REL_NEG = Object.freeze([
+    ['배신·거짓말', -5, /배신|거짓말|속였|속이|betray|lied/i],
+    ['다툼·갈등', -5, /싸웠|다퉜|다툼|갈등|냉전|언쟁|argument|fight/i],
+    ['약속파기', -5, /약속을?\s*(?:어기|어겼|잊|깨)|바람맞|broke (?:a |the )?promise/i],
+    ['거리감·거절', -5, /거리를?\s*두|피하|밀어냈|선(?:을)?\s*긋|거절했|차였|오해|pushed away|distant|rejected|misunderstanding/i]
+  ]);
+  const RELSIM_MEMORY_EMO_POS = Object.freeze([
+    ['설렘·수줍음', 4, /설레|두근|얼굴이?\s*붉|수줍|볼이?\s*붉|blush|heart rac/i],
+    ['따뜻함·미소', 4, /따뜻|다정|부드럽게\s*웃|환하게\s*웃|미소\s*지|warmth|smiled softly/i],
+    ['그리움·기다림', 4, /보고\s*싶|그리워|그립|기다렸|missed (?:him|her|you)/i],
+    ['고마움·감동', 4, /고마워|고맙|감사|감동|기뻐|행복|touched|grateful|happy/i],
+    ['애정·안도', 4, /아끼|소중|애정|안도|편안|cherish|fond|affection/i]
+  ]);
+  const RELSIM_MEMORY_EMO_NEG = Object.freeze([
+    ['분노·짜증', -5, /화가?\s*나|분노|짜증|노려보|화냈|angry|annoyed|furious/i],
+    ['냉담', -5, /차갑|냉담|싸늘|무표정|쌀쌀|cold|icily/i],
+    ['서운·실망', -5, /서운|섭섭|실망|씁쓸|상처\s*받|hurt|disappointed/i],
+    ['경계·불안', -5, /경계|의심|불안|긴장|거부감|혐오|질투|wary|suspicious|jealous|disgust/i]
+  ]);
+  const relsimMemorySignals = (recent = {}, settings = {}, names = []) => {
+    const libLines = String(libEvidenceWithoutMarkers(settings) || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(line => line && !/^\[?(?:GRADIA EXTERNAL EVIDENCE|LIBRA|HAYAKU|FLASHBACK|MEMORY|STORY ARC)/i.test(line));
+    const recentLines = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice(-6) : [])
+      .map(msg => text(msg?.content || ''))
+      .filter(Boolean);
+    const input = text(recent.latestUser || '');
+    const allLines = [...libLines, ...recentLines, ...(input ? [input] : [])];
+    const targetNames = (Array.isArray(names) ? names : []).filter(name => name && !relsimIsPersona(name));
+    const matchedLines = targetNames.length
+      ? allLines.filter(line => targetNames.some(name => line.includes(name) || extensionSamePerson(line, name)))
+      : [];
+    const corpus = (matchedLines.length ? matchedLines : allLines).join('\n');
+    if (!corpus) return { relDelta: 0, emoDelta: 0, relTags: [], emoTags: [] };
+
+    let relSum = 0;
+    const relTags = [];
+    for (const [tag, w, re] of RELSIM_MEMORY_REL_POS) {
+      if (re.test(corpus)) { relSum += w; relTags.push(`+${tag}`); }
+    }
+    for (const [tag, w, re] of RELSIM_MEMORY_REL_NEG) {
+      if (re.test(corpus)) { relSum += w; relTags.push(`-${tag}`); }
+    }
+    let emoSum = 0;
+    const emoTags = [];
+    for (const [tag, w, re] of RELSIM_MEMORY_EMO_POS) {
+      if (re.test(corpus)) { emoSum += w; emoTags.push(`+${tag}`); }
+    }
+    for (const [tag, w, re] of RELSIM_MEMORY_EMO_NEG) {
+      if (re.test(corpus)) { emoSum += w; emoTags.push(`-${tag}`); }
+    }
+    return {
+      relDelta: Math.max(-20, Math.min(16, relSum)),
+      emoDelta: Math.max(-20, Math.min(16, emoSum)),
+      relTags,
+      emoTags
+    };
+  };
   const relsimSeedRoll = seed => {
     let hash = 2166136261;
     for (let i = 0; i < seed.length; i += 1) { hash ^= seed.charCodeAt(i); hash = Math.imul(hash, 16777619); }
@@ -29115,12 +29324,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const row = entry.npcs.find(item => item.name === name || extensionSamePerson(item.name, name));
     return row?.level || entry.default || '';
   };
-  const relsimPercent = ({ act, status, pair, responder, actor, profile, scene, settings }) => {
+  const relsimPercent = ({ act, status, pair, responder, actor, profile, scene, settings, memorySignals }) => {
     const factors = [];
     const base = typeof RELSIM_BASE[act] === 'number' ? RELSIM_BASE[act] : (RELSIM_BASE[act]?.[status] ?? 40);
     let percent = base;
     const add = (delta, label) => { if (!delta) return; percent += delta; factors.push(`${label} ${delta > 0 ? '+' : ''}${delta}`); };
     if (pair.grievance) add(-10 * pair.grievance * (profile?.loveStyles?.includes('mania') ? 1.5 : 1), `서운함 ${pair.grievance}`);
+    if (memorySignals?.relDelta) add(memorySignals.relDelta, `기억 관계신호(${memorySignals.relTags.join('·')})`);
+    if (memorySignals?.emoDelta) add(memorySignals.emoDelta, `기억 감정신호(${memorySignals.emoTags.join('·')})`);
     if (scene.place && profile) {
       if (profile.places.liked.includes(scene.place)) add(10, `선호 장소(${relsimLabel(RELSIM_PLACES, scene.place)})`);
       if (profile.places.disliked.includes(scene.place)) add(-15, `비선호 장소(${relsimLabel(RELSIM_PLACES, scene.place)})`);
@@ -29185,24 +29396,30 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (gate === 'staging') return { verdicts: [], scene: {} };
     const sceneText = relsimSceneText(recent);
     const combined = `${sceneText.last}\n${sceneText.input}`;
+    const inputActs = new Set(relsimActsInText(sceneText.input));
+    const inputDateKind = relsimFirstMatch(RELSIM_DATES, sceneText.input);
+    const inputEventKind = relsimFirstMatch(RELSIM_EVENTS, sceneText.input);
+    if (inputDateKind) inputActs.add('date');
+    if (inputEventKind) inputActs.add('event');
     const scene = {
       place: relsimFirstMatch(RELSIM_PLACES, sceneText.input) || relsimFirstMatch(RELSIM_PLACES, sceneText.last),
       time: relsimSceneTime(recent, settings),
-      dateKind: relsimFirstMatch(RELSIM_DATES, combined),
-      eventKind: relsimFirstMatch(RELSIM_EVENTS, combined),
-      acts: relsimActsInText(sceneText.input)
+      dateKind: inputDateKind || relsimFirstMatch(RELSIM_DATES, combined),
+      eventKind: inputEventKind || relsimFirstMatch(RELSIM_EVENTS, combined),
+      acts: Array.from(inputActs)
     };
     const inScene = relsimInScene(recent);
     const out = [];
     for (const card of relsimCards(settings, scopeKey)) {
       const pair = relsimPairState(chat, card);
       if (!pair.status || !inScene(card.from) || !inScene(card.to)) continue;
+      const memorySignals = relsimMemorySignals(recent, settings, [card.from, card.to]);
       for (const act of RELSIM_ACTS_BY_STATUS[pair.status] || []) {
         for (const [actor, responder] of relsimDirections(card, gate)) {
           const profile = relsimProfileFor(scopeKey, responder);
-          const { percent, base, factors } = relsimPercent({ act, status: pair.status, pair, responder, actor, profile, scene, settings });
+          const { percent, base, factors } = relsimPercent({ act, status: pair.status, pair, responder, actor, profile, scene, settings, memorySignals });
           const roll = relsimSeedRoll([scopeKey, relsimPairId(card), act, normalizeContinuityAlias(actor), identity.inputHash, identity.priorAssistantHash].join('|'));
-          out.push({ pairId: relsimPairId(card), act, actor, responder, status: pair.status, base, percent, roll, success: roll < percent, factors, expected: scene.acts.includes(act) });
+          out.push({ pairId: relsimPairId(card), act, actor, responder, status: pair.status, base, percent, roll, success: roll < percent, factors, memorySignals, expected: scene.acts.includes(act) });
         }
       }
     }
@@ -29373,6 +29590,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         readings
       ].filter(Boolean).join('\n');
     }
+    const activeVerdicts = prepared.verdicts.filter(item => item.expected);
     return [
       '[RELATIONSHIP SIMULATOR (관계 시뮬레이터)]',
       'This block supports romance narrative and depiction: make each relationship felt in gestures, timing, and what each person notices about the other. Where a relationship act happens, its outcome below is fixed; how it is shown comes from the responder’s lore and preference card.',
@@ -29390,7 +29608,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
       depiction.length
         ? `DEPICTION (let the reader feel it through gestures and timing; never narrate these labels):\n${depiction.map(line => `- ${line}`).join('\n')}\n- A date or event is a lived scene: the place in sensory detail, small gestures, what each one notices about the other. A liked place or plan visibly pleases; a disliked one shows in posture and patience before words.`
         : '',
-      prepared.verdicts.length ? `FIXED OUTCOMES (this turn):\n${prepared.verdicts.map(relsimVerdictLine).join('\n')}` : '',
+      activeVerdicts.length
+        ? `FIXED OUTCOMES (this turn — matched to detected act(s) only):\n${activeVerdicts.map(relsimVerdictLine).join('\n')}`
+        : 'ACTIVE RELATIONSHIP EVENTS THIS TURN: none detected. Do NOT treat ordinary conversation or unrelated beats as a confession, proposal, reunion, date, or event; leave "relationship_events" empty unless an explicit relationship act clearly occurs in the draft.',
       prepared.occasions.length
         ? `OCCASIONS:\n${prepared.occasions.map(relsimOccasionLine).join('\n')}\nLet a due occasion surface inside the current scene (a reminder, a hint, the partner bringing it up) — never by breaking off a crisis. One that passed unmarked hurts the partner: show it the way their sulk and lore say.`
         : '',
@@ -29747,6 +29967,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!added.length) return [];
     store.npcDisposition = { ...store.npcDisposition, [scopeKey]: loreList };
     saveLoreCards().catch(error => warn('[lore cards save failed]', error));
+    if (Gui.app) renderNpcDispositionPanel(Gui.app);
     return added;
   };
   const recordNpcDispositionOutput = (_ledger, stageName, parsed = {}, settings = {}) => {
@@ -30010,7 +30231,65 @@ Begin directly with the in-world response and finish the complete same-turn draf
     );
   };
 
+  const buildShadowPreviousRecord = (recent = {}, settings = {}) => {
+    const rawLib = libEvidenceWithoutMarkers(settings);
+    const libFacts = [];
+    let libChars = 0;
+    for (const rawLine of String(rawLib || '').split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || /^\[?(?:GRADIA EXTERNAL EVIDENCE|LIBRA|HAYAKU|FLASHBACK|MEMORY|STORY ARC)/i.test(line)) continue;
+      const cleaned = compact(line.replace(/^[-*•]\s*/, ''), 180);
+      if (!cleaned) continue;
+      if (libChars + cleaned.length > 900 || libFacts.length >= 10) break;
+      libFacts.push(cleaned);
+      libChars += cleaned.length;
+    }
+
+    const currentInput = text(submittedCurrentInput(recent) || '').trim();
+    const visible = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice() : [];
+    if (visible.length && currentInput && text(visible[visible.length - 1]?.content || '').trim() === currentInput) {
+      visible.pop();
+    }
+    const recentEvents = [];
+    let recentChars = 0;
+    for (const msg of visible.slice(-8)) {
+      const role = String(msg?.role || '').toLowerCase();
+      const speaker = role === 'user' ? 'User' : role === 'assistant' || role === 'char' ? 'Assistant' : (msg?.role || 'Scene');
+      const body = compact(text(msg?.content || ''), 240);
+      if (!body) continue;
+      const entry = `${speaker}: ${body}`;
+      if (recentChars + entry.length > 1100) break;
+      recentEvents.push(entry);
+      recentChars += entry.length;
+    }
+    if (!recentEvents.length) {
+      const earlier = compactRecentTurnsTail(recent.earlierTurnsText || '', 700);
+      if (earlier) recentEvents.push(earlier);
+      const prevUser = compact(previousUserInputForPrompt(recent) || '', 220);
+      if (prevUser) recentEvents.push(`User: ${prevUser}`);
+      const terminal = compact(recent.terminalVisibleScene || recent.inputAssistTerminalVisibleScene || recent.sceneAnchor || '', 320);
+      if (terminal) recentEvents.push(`Assistant (latest): ${terminal}`);
+    }
+
+    const hasContent = libFacts.length > 0 || recentEvents.length > 0;
+    if (!hasContent) return { hasContent: false, libFacts: [], recentEvents: [], text: '' };
+    const lines = [
+      '[PREVIOUS — LIB + 최근 챗 종합 사건 기록 (과거 사실 기준선)]',
+      '- 아래는 Shadow Act 시작 전에 LIB 기억과 최근 완료 챗을 합쳐 정리한 과거 사실이다. 충돌 시 최근 완료 챗이 오래된 LIB 기억보다 우선한다.',
+      '- 과거 사건의 행위자·결과·순서를 바꾸거나, 일어나지 않은 일을 기정사실로 언급하지 마라.',
+      ...(libFacts.length ? ['LIB 기억 핵심:', ...libFacts.map(item => `- ${item}`)] : []),
+      ...(recentEvents.length ? ['최근 챗 경과 (시간순):', ...recentEvents.map(item => `- ${item}`)] : [])
+    ];
+    return {
+      hasContent: true,
+      libFacts,
+      recentEvents,
+      text: compact(lines.join('\n'), 2200)
+    };
+  };
+
   const buildShadowActDraftUserPrompt = (recent, settings, creativeInstructions) => {
+    const previousRecord = buildShadowPreviousRecord(recent, settings);
     const systemContext = compact(recent.systemContext || '', 4000) || '(별도 시스템/개발자 메시지 없음)';
     const recentChat = compactRecentTurnsTail(recent.earlierTurnsText || '', 2200) || '(그보다 앞선 완료 RP 턴 없음)';
     const previousUserInput = previousUserInputForPrompt(recent);
@@ -30021,6 +30300,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const lorebookContext = referencePacketBlockForPrompt(recent) || '(활성 로어북/캐릭터/페르소나 참조 없음 또는 접근 불가)';
     const othersInfo = compact(recent.othersInfo || '', 2500) || '(Others Info / 보조 패킷 없음)';
     return [
+      ...(previousRecord.hasContent ? [previousRecord.text, ''] : []),
       '[현재 입력 관련 정본·인물 참조 / 선택된 로어 섹션 원문을 실제 장면 작성에 사용]',
       lorebookContext,
       '',
@@ -30203,6 +30483,19 @@ Begin directly with the in-world response and finish the complete same-turn draf
   const buildConstraintBlock = (ledger, consumerStageName = '') => {
     if (!ledger) return '';
     const parts = [];
+    const prevRec = isPlainObject(ledger.previousRecord) ? ledger.previousRecord : null;
+    if (prevRec && (prevRec.what_happened?.length || prevRec.ongoing_consequences?.length || prevRec.do_not_misremember?.length || prevRec.text)) {
+      const prevLines = prevRec.what_happened?.length || prevRec.ongoing_consequences?.length || prevRec.do_not_misremember?.length
+        ? compactAnalysisDomain({
+            ...(prevRec.what_happened?.length ? { what_happened: prevRec.what_happened } : {}),
+            ...(prevRec.ongoing_consequences?.length ? { ongoing_consequences: prevRec.ongoing_consequences } : {}),
+            ...(prevRec.do_not_misremember?.length ? { do_not_misremember: prevRec.do_not_misremember } : {})
+          }, 1600)
+        : compact(prevRec.text || '', 1600);
+      if (prevLines) {
+        parts.push(`[PREVIOUS — CONFIRMED PAST RECORD (LIB + RECENT CHAT, READ ONLY)]\nDo not misstate, swap actors on, or contradict these established past events:\n${prevLines}`);
+      }
+    }
     const shadowDesign = shadowDesignProjectionForAide(ledger.shadowDesign, consumerStageName);
     if (shadowDesign) {
       const storyAuthorPlan = isPlainObject(shadowDesign.storyAuthorPlan) ? shadowDesign.storyAuthorPlan : {};
@@ -30335,6 +30628,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const roleLines = ({
       shadow_act: [
         'ROLE: SHADOW ACT — analysis phase before first-draft writing.',
+        'INTERNAL PASS 0 — PREVIOUS (BEFORE PASS 1): synthesize the supplied LIB memory evidence and recent completed chat into domain.previous (what_happened, ongoing_consequences, do_not_misremember). Recent completed chat outranks older LIB memory when they differ. Never swap actors, reverse chronology, or treat unoccurred/refused proposals as past facts.',
         ...CAUSAL_REALISM_LINES,
         isAuthorDirectedDraftMode(settings)
           ? 'PLAYER-CONTROLLED ANALYSIS OVERRIDE: the Current Submitted User Input is already the complete user-character contribution for this turn. Analysis must map that contribution and plan only NPC/world reactions, never additional user behavior.'
@@ -30483,6 +30777,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? 'Design the first same-turn draft. Do not search for or invent a CURRENT_SAME_TURN_DRAFT.'
         : 'Your own domain analysis is mandatory and independent. Missing notes from AIDEs that have not run yet are not an error.',
       '',
+      ...(stageName === 'shadow_act' ? (() => { const prev = buildShadowPreviousRecord(recent, settings); return prev.hasContent ? [prev.text, ''] : []; })() : []),
       referencePacketBlockForPrompt(recent)
         ? analysisSourceBlock('Current-input Relevant Canon and Character Context - prioritized source text', referencePacketBlockForPrompt(recent))
         : '',
@@ -30556,6 +30851,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : null;
     const shadowDomainRemainder = stageName === 'shadow_act' && isPlainObject(analysis?.domain)
       ? Object.fromEntries(Object.entries(analysis.domain).filter(([key]) => ![
+          'previous',
           'story_author_plan',
           'storyAuthorPlan',
           'director_brief',
@@ -30564,8 +30860,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
       : null;
     const domainBlock = stageName === 'shadow_act' && shadowPlanning?.hasContent
       ? [
-          `[STORY AUTHOR PLAN]\n${compactAnalysisDomain(shadowPlanning.storyAuthorPlan, 3600)}`,
-          `[DIRECTOR BRIEF]\n${compactAnalysisDomain(shadowPlanning.directorBrief, 3600)}`,
+          shadowPlanning.hasPreviousRecord
+            ? `[PREVIOUS — CONFIRMED PAST RECORD (LIB + RECENT CHAT)]\n${compactAnalysisDomain(shadowPlanning.previousRecord, 2200)}`
+            : '',
+          shadowPlanning.hasStoryAuthorPlan
+            ? `[STORY AUTHOR PLAN]\n${compactAnalysisDomain(shadowPlanning.storyAuthorPlan, 3600)}`
+            : '',
+          shadowPlanning.hasDirectorBrief
+            ? `[DIRECTOR BRIEF]\n${compactAnalysisDomain(shadowPlanning.directorBrief, 3600)}`
+            : '',
           isPlainObject(shadowDomainRemainder) && Object.keys(shadowDomainRemainder).length
             ? `[OTHER DOMAIN NOTES]\n${compactAnalysisDomain(shadowDomainRemainder, 2600)}`
             : ''
@@ -30658,6 +30961,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
 
   const shadowPlanningFromDomain = value => {
     const domain = isPlainObject(value) ? value : {};
+    const rawPrevious = normalizeAnalysisDomainValue(domain.previous || {}, 0);
     const rawStoryAuthorPlan = normalizeAnalysisDomainValue(
       domain.story_author_plan || domain.storyAuthorPlan || {},
       0
@@ -30666,6 +30970,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       domain.director_brief || domain.directorBrief || {},
       0
     );
+    const prevObj = isPlainObject(rawPrevious) ? rawPrevious : {};
     const story = isPlainObject(rawStoryAuthorPlan) ? rawStoryAuthorPlan : {};
     const director = isPlainObject(rawDirectorBrief) ? rawDirectorBrief : {};
     const compactPlanningObject = object => Object.fromEntries(Object.entries(object).filter(([, item]) => (
@@ -30673,6 +30978,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       && item !== ''
       && (!Array.isArray(item) || item.length > 0)
     )));
+    const safePreviousRecord = compactPlanningObject({
+      what_happened: normalizeStringArray(prevObj.what_happened || prevObj.whatHappened, 16, 360),
+      ongoing_consequences: normalizeStringArray(prevObj.ongoing_consequences || prevObj.ongoingConsequences, 12, 360),
+      do_not_misremember: normalizeStringArray(prevObj.do_not_misremember || prevObj.doNotMisremember, 12, 360)
+    });
     const safeStoryAuthorPlan = compactPlanningObject({
       scene_purpose: compact(story.scene_purpose || story.scenePurpose || '', 700),
       primary_tension: compact(story.primary_tension || story.primaryTension || '', 700),
@@ -30691,12 +31001,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
       pacing_instructions: normalizeStringArray(director.pacing_instructions || director.pacingInstructions || director.pacing, 12, 420),
       ending_requirement: compact(director.ending_requirement || director.endingRequirement || '', 700)
     });
+    const hasPreviousRecord = Object.keys(safePreviousRecord).length > 0;
+    const hasStoryAuthorPlan = Object.keys(safeStoryAuthorPlan).length > 0;
+    const hasDirectorBrief = Object.keys(safeDirectorBrief).length > 0;
     return {
+      previousRecord: safePreviousRecord,
       storyAuthorPlan: safeStoryAuthorPlan,
       directorBrief: safeDirectorBrief,
-      hasStoryAuthorPlan: Object.keys(safeStoryAuthorPlan).length > 0,
-      hasDirectorBrief: Object.keys(safeDirectorBrief).length > 0,
-      hasContent: Object.keys(safeStoryAuthorPlan).length > 0 || Object.keys(safeDirectorBrief).length > 0
+      hasPreviousRecord,
+      hasStoryAuthorPlan,
+      hasDirectorBrief,
+      hasContent: hasPreviousRecord || hasStoryAuthorPlan || hasDirectorBrief
     };
   };
 
@@ -30789,7 +31104,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
       relationshipPairs: Array.isArray(parsed.relationship_pairs) ? parsed.relationship_pairs : [],
       relationshipProfiles: Array.isArray(parsed.relationship_profiles) ? parsed.relationship_profiles : [],
       relationshipLibStatus: Array.isArray(parsed.relationship_lib_status) ? parsed.relationship_lib_status : [],
-      dispositionProfiles: Array.isArray(parsed.disposition_profiles) ? parsed.disposition_profiles : [],
+      dispositionProfiles: Array.isArray(parsed.disposition_profiles)
+        ? parsed.disposition_profiles
+        : Array.isArray(parsed.dispositionProfiles)
+          ? parsed.dispositionProfiles
+          : Array.isArray(parsed.domain?.disposition_profiles)
+            ? parsed.domain.disposition_profiles
+            : Array.isArray(parsed.domain?.dispositionProfiles)
+              ? parsed.domain.dispositionProfiles
+              : [],
       knowledgeCheck: Array.isArray(parsed.knowledge_check) ? parsed.knowledge_check : [],
       knowledgeLeaks: Array.isArray(parsed.knowledge_leaks) ? parsed.knowledge_leaks : [],
       knowledgeKept: Array.isArray(parsed.knowledge_kept) ? parsed.knowledge_kept : [],
@@ -31689,7 +32012,9 @@ Begin directly with the in-world response and finish the complete same-turn draf
     'The recovered prose must contain no refusal, apology, option list, question to the user, or mention of writing, drafting, or the pipeline. Do not use recovery for a real scene with local defects; patch those normally. This recovery does not authorize an extra model call.'
   ].filter(Boolean).join('\n');
 
-  const aidePatchJsonContract = (stageName, dedicatedAnalysis = false) => `Return one valid JSON object only:
+  const aidePatchJsonContract = (stageName, dedicatedAnalysis = false, settings = {}) => {
+    const extraFields = extraJsonContractLinesForStage(stageName, settings);
+    return `Return one valid JSON object only:
 {
   "schema": "${SERIAL_DRAFT_PATCH_SCHEMA}",
   "stage": "${stageName}",
@@ -31712,10 +32037,11 @@ Begin directly with the in-world response and finish the complete same-turn draf
       "content": "replacement or inserted RP prose; use an empty string for delete",
       "reason": "short domain-specific reason"
     }
-  ]
+  ]${extraFields}
 }
 ${dedicatedAnalysis ? 'The dedicated analysis is already supplied. Do not repeat or replace it in analysis, domain, rewrite_directives, do_not_reveal, pov_limits, or beats; keep those fields compact as shown and spend the output on exact edits.' : ''}
 Use edits: [] when the current draft already satisfies this stage. Focus edits on the highest-priority corrections (maximum ${DRAFT_PATCH_MAX_EDITS} edits). Never emit an insert or replacement whose normalized prose exactly matches any CURRENT SAME-TURN DRAFT block. For ordinary edits, never return the complete draft or unchanged paragraphs. Only the guarded replace_draft operation may contain a complete new candidate. Never return markdown fences, commentary, or prose outside the JSON object.`;
+  };
 
   const formatAnalysisTransferForPatch = (value, maxChars = 5200) => {
     if (!isPlainObject(value)) return '';
@@ -31835,7 +32161,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       aideShadowDesignReadOnlyContract(stageName, settings),
       buildNsfwGuidanceBlock(settings, 'patch'),
       customDirection ? `[USER CREATIVE INSTRUCTION — ${STAGE_DEF_MAP[stageName]?.label || stageName} ONLY]\n${customDirection}` : '',
-      aidePatchJsonContract(stageName, !!dedicatedAnalysis)
+      aidePatchJsonContract(stageName, !!dedicatedAnalysis, settings)
     ].filter(Boolean);
     const system = compilePromptSpec({
       phase: 'patch',
@@ -31855,7 +32181,7 @@ Use edits: [] when the current draft already satisfies this stage. Focus edits o
       ],
       skillGuidance: stageSkillBlockForPrompt(recent, 'patch', settings),
       optionalCriteria: '',
-      outputContract: aidePatchJsonContract(stageName, !!dedicatedAnalysis),
+      outputContract: aidePatchJsonContract(stageName, !!dedicatedAnalysis, settings),
       successCriteria: 'Return the smallest sufficient paragraph patch. Insert new prose only when a concrete current-domain need remains unresolved, and never duplicate an existing draft block.',
       finalReminder: `Return the compact ${stageName} patch JSON now.`
     }, resolvePresetForPromptCompiler(settings, stageName)).text;
@@ -43783,14 +44109,23 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     recordExtensionAideOutputs(ledger, 'shadow_act', current?.twoCallAnalysis, settings);
     const shadowPlanning = shadowPlanningFromDomain(shadowAnalysis?.domain || {});
     rememberScenePurpose(shadowEnv.recent, shadowPlanning.storyAuthorPlan?.scene_purpose, 'shadow_act');
+    const codePreviousRecord = buildShadowPreviousRecord(shadowEnv.recent, shadowEnv.settings);
+    if (shadowPlanning.hasPreviousRecord) {
+      ledger.previousRecord = shadowPlanning.previousRecord;
+    } else if (codePreviousRecord.hasContent) {
+      ledger.previousRecord = { text: codePreviousRecord.text };
+    }
     if (shadowPlanning.hasContent) {
       ledger.shadowDesign = {
+        ...(shadowPlanning.hasPreviousRecord ? { previousRecord: shadowPlanning.previousRecord } : {}),
         storyAuthorPlan: shadowPlanning.storyAuthorPlan,
         directorBrief: shadowPlanning.directorBrief,
         runId: shadowEnv.recent?.runLineage?.runId || '',
         currentInputHash: shadowEnv.recent?.runLineage?.currentInputHash || ''
       };
       if (!activeLibEvidenceRun) Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
+    } else if (ledger.previousRecord && !activeLibEvidenceRun) {
+      Runtime.analysisLedger = { ...ledger, __sequence: [...(ledger.__sequence || [])] };
     }
 
     const aideStageEnabled = (stageName) => {
@@ -54502,11 +54837,12 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
       return cloneJson(store.romancePrefs[scopeKey]);
     },
     debugRelationshipSimRoll(seed = '') { return relsimSeedRoll(String(seed)); },
-    async debugRelationshipSimPrepare({ recent = {}, settings = null } = {}) {
+    async debugRelationshipSimPrepare({ recent = {}, settings = null, libEvidence = '' } = {}) {
       await loadRelationshipState();
       const live = settings || await loadSettings();
+      const scoped = libEvidence ? { ...live, [LIB_EVIDENCE_CONTEXT]: { block: libEvidence } } : live;
       Runtime.relsimRun = null;
-      const prepared = relsimPrepare(recent, live);
+      const prepared = relsimPrepare(recent, scoped);
       return cloneJson({ verdicts: prepared.verdicts, occasions: prepared.occasions.map(({ card, ...rest }) => rest), scene: prepared.scene, identity: prepared.identity });
     },
     debugIntimacyPacket({ recent = {}, characterName = '', personaName = '', scopeKey = '', profileGenders = null } = {}) {
@@ -54518,6 +54854,10 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     },
     debugIntimacyStageBlock({ stageName = 'aide_character', recent = {}, settings = {} } = {}) {
       return intimacyStageBlock(stageName, recent, settings, {});
+    },
+    debugShadowPrevious({ recent = {}, settings = {}, libEvidence = '' } = {}) {
+      const scoped = libEvidence ? { ...settings, [LIB_EVIDENCE_CONTEXT]: { block: libEvidence } } : settings;
+      return buildShadowPreviousRecord(recent, scoped);
     },
     debugIntimacyRecord({ stageName = 'aide_character', parsed = {}, settings = {} } = {}) {
       const ledger = {};

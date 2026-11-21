@@ -314,3 +314,47 @@ test('missing present NPCs stay listed under MISSING DISPOSITION CARDS after ano
   await f.wait(() => !f.host.plugin.debugGuiStateInfo().dirty, 'saved');
   assert.equal(String((await f.host.plugin.getRuntimeSettings()).npc_disposition_auto), 'false');
 });
+
+test('aide_character patch JSON contract explicitly includes disposition_profiles and accepts nested domain.disposition_profiles', async t => {
+  const LORE_CARDS_KEY = 'serial_gradation_agents_for_rp:lore_cards:v1';
+  const storedDispCards = f => {
+    const raw = f.values.get(LORE_CARDS_KEY) ?? f.local.get(LORE_CARDS_KEY);
+    if (!raw) return {};
+    return (typeof raw === 'string' ? JSON.parse(raw) : raw).cards?.npcDisposition || {};
+  };
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  f.controls.onModel = (_idx, body) => {
+    const sys = systemOf(body);
+    const stage = stageOf(body);
+    if (sys.includes('serial_gradation_agents_for_rp_draft_patch_v1')) {
+      const domain = stage === 'aide_character'
+        ? { disposition_profiles: [{ name: '준호', level: 'like', note: '우호적으로 대한다', basis: '로어상 오랜 지인' }] }
+        : {};
+      f.controls.output = JSON.stringify({
+        schema: 'serial_gradation_agents_for_rp_draft_patch_v1',
+        stage,
+        ok: true,
+        analysis: { summary: 'checked', constraints: [], risks: [] },
+        domain,
+        rewrite_directives: [],
+        do_not_reveal: [],
+        pov_limits: [],
+        beats: [],
+        edits: []
+      });
+    } else {
+      f.controls.output = '준호가 고개를 끄덕였다.';
+    }
+  };
+  await configure(f);
+  await runTurn(f, '준호에게 인사를 건넨다.');
+
+  const charPrompt = systemOf(f.prompts.find(item => stageOf(item) === 'aide_character'));
+  assert.match(charPrompt, /"disposition_profiles":\s*\[\{"name":/);
+
+  const rows = Object.values(storedDispCards(f)).flat();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, '준호');
+  assert.equal(rows[0].level, 'like');
+  assert.equal(rows[0].origin, 'lore');
+});

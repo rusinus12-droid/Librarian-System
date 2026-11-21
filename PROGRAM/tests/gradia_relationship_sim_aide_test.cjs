@@ -275,3 +275,66 @@ test('places, dates, and events stay world-neutral, support rich categories, and
   assert.deepEqual(card.events.liked, ['handmade_keepsake', 'home_cooked_meal', 'surprise_waiting', 'night_sky_outing']);
   assert.deepEqual(card.events.disliked, ['call_relay']);
 });
+
+test('non-confession turns do not inject confession verdicts; date and event are distinguished accurately', async t => {
+  const { f } = await start(t, { pair: { status: 'more_than_friend' } });
+
+  // Casual conversation ("커피 좋아해?") must NOT trigger confession
+  await runTurn(f, '커피 좋아해? 오늘 날씨 정말 좋다.');
+  const casualSys = hostSystem(f);
+  assert.doesNotMatch(casualSys, /FIXED OUTCOMES/);
+  assert.doesNotMatch(casualSys, /makes a confession \(고백\)/);
+  assert.match(casualSys, /ACTIVE RELATIONSHIP EVENTS THIS TURN: none detected/);
+
+  // A date turn for a friend/more_than_friend pair detects date, not confession
+  await runTurn(f, '이번 주말에 같이 영화 보러 데이트 갈래?');
+  const dateSys = hostSystem(f);
+  assert.match(dateSys, /FIXED OUTCOMES \(this turn — matched to detected act\(s\) only\):/);
+  assert.match(dateSys, /makes a date \(데이트\) toward 준호/);
+  assert.doesNotMatch(dateSys, /makes a confession \(고백\)/);
+
+  // An event turn detects event, not confession
+  await runTurn(f, '준호에게 몰래 준비한 깜짝 선물을 건넨다.');
+  const eventSys = hostSystem(f);
+  assert.match(eventSys, /makes a event \(이벤트\) toward 준호/);
+  assert.doesNotMatch(eventSys, /makes a confession \(고백\)/);
+});
+
+test('memory relationship and emotion signals adjust event success probability', async t => {
+  const { f } = await start(t, { pair: { status: 'friend' } });
+  const baseInput = '준호에게 좋아한다고 고백한다.';
+  const basePrep = await f.host.plugin.debugRelationshipSimPrepare({
+    recent: {
+      latestUser: baseInput,
+      visibleMessages: [{ role: 'assistant', content: '준호가 고개를 들었다.' }],
+      runLineage: { runId: 'mem-base', currentInputHash: '', priorAssistantHash: '' }
+    }
+  });
+  const baseConfess = basePrep.verdicts.find(v => v.act === 'confession');
+
+  const posPrep = await f.host.plugin.debugRelationshipSimPrepare({
+    libEvidence: '[GRADIA EXTERNAL EVIDENCE]\n- 준호는 페르소나를 깊이 신뢰하고 비밀을 공유했다.\n- 준호는 페르소나를 볼 때마다 설레며 따뜻하게 웃었다.',
+    recent: {
+      latestUser: baseInput,
+      visibleMessages: [{ role: 'assistant', content: '준호가 다정하게 미소 지었다.' }],
+      runLineage: { runId: 'mem-pos', currentInputHash: '', priorAssistantHash: '' }
+    }
+  });
+  const posConfess = posPrep.verdicts.find(v => v.act === 'confession');
+  assert.ok(posConfess.percent > baseConfess.percent, `positive memory signals raise chance (${posConfess.percent} > ${baseConfess.percent})`);
+  assert.ok(posConfess.factors.some(item => item.includes('기억 관계신호')));
+  assert.ok(posConfess.factors.some(item => item.includes('기억 감정신호')));
+
+  const negPrep = await f.host.plugin.debugRelationshipSimPrepare({
+    libEvidence: '[GRADIA EXTERNAL EVIDENCE]\n- 준호는 페르소나의 거짓말에 배신감을 느끼고 크게 다퉜다.\n- 준호는 페르소나를 차갑고 냉담하게 경계했다.',
+    recent: {
+      latestUser: baseInput,
+      visibleMessages: [{ role: 'assistant', content: '준호가 화가 나서 거리를 두었다.' }],
+      runLineage: { runId: 'mem-neg', currentInputHash: '', priorAssistantHash: '' }
+    }
+  });
+  const negConfess = negPrep.verdicts.find(v => v.act === 'confession');
+  assert.ok(negConfess.percent < baseConfess.percent, `negative memory signals lower chance (${negConfess.percent} < ${baseConfess.percent})`);
+  assert.ok(negConfess.factors.some(item => item.includes('기억 관계신호')));
+  assert.ok(negConfess.factors.some(item => item.includes('기억 감정신호')));
+});
