@@ -27268,11 +27268,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
   const liveRecoveryEvidenceForRecord = (record, scope, snapshotInput = null) => {
     if (!scope?.confident || scope.chatMessagesAvailable !== true) return null;
     const snapshot = objectish(snapshotInput) && Array.isArray(snapshotInput.conversationPairs) ? snapshotInput : authoritativeChatSnapshot(scope.chatMessages, scope);
-    const pair = ensureArray(snapshot?.conversationPairs).find(candidate => (
+    const pairs = ensureArray(snapshot?.conversationPairs);
+    const pair = pairs.find(candidate => (
       Number(candidate?.pairIndex || 0) === Number(record?.pairIndex || 0)
       && (!record?.userHash || candidate?.userHash === record.userHash)
       && (!record?.assistantHash || candidate?.assistantVisibleHash === record.assistantHash)
       && (!record?.assistantMessageIdHash || candidate?.assistantMessageIdHash === record.assistantMessageIdHash)
+    )) || pairs.find(candidate => (
+      Number(candidate?.pairIndex || 0) === Number(record?.pairIndex || 0)
+      && Boolean(record?.assistantMessageIdHash)
+      && candidate?.assistantMessageIdHash === record.assistantMessageIdHash
+      && (!record?.userMessageIdHash || candidate?.userMessageIdHash === record.userMessageIdHash)
+      && hayakuSameTurnSource(record, candidate)
     )) || null;
     return pair ? recoveryEvidenceForAuthoritativePair(scope, pair) : null;
   };
@@ -27295,7 +27302,19 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     }
     const liveEvidence = liveRecoveryEvidenceForRecord(record, scope);
     const liveVerificationRequired = scope?.confident === true && scope?.chatMessagesAvailable === true;
-    if (liveEvidence && (liveEvidence.userHash !== record.userHash || liveEvidence.assistantHash !== record.assistantHash)) {
+    const sameLiveTurnSource = Boolean(
+      liveEvidence
+      && record.assistantMessageIdHash
+      && liveEvidence.assistantMessageIdHash === record.assistantMessageIdHash
+      && (!record.userMessageIdHash || liveEvidence.userMessageIdHash === record.userMessageIdHash)
+      && hayakuSameTurnSource(record, {
+        userHash: liveEvidence.userHash,
+        assistantVisibleHash: liveEvidence.assistantHash,
+        userMessageIdHash: liveEvidence.userMessageIdHash,
+        assistantMessageIdHash: liveEvidence.assistantMessageIdHash
+      })
+    );
+    if (liveEvidence && !sameLiveTurnSource && (liveEvidence.userHash !== record.userHash || liveEvidence.assistantHash !== record.assistantHash)) {
       return { ok: false, durable: false, reason: 'recovery_evidence_live_hash_mismatch', completeness: record.evidenceCompleteness };
     }
     // The visible chat already holds this exact turn (identity and hashes match), so
@@ -27403,13 +27422,43 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       const record = normalizeRecoveryVaultRecord(raw, scopeKey);
       if (!record || record.inheritedSessionHistory === true || record.permanentSessionHistory === true) return record;
       const owner = recoveryDebtOwnerForRecord(record, snapshot, worldline);
-      const ownerStatus = recoveryDebtWorldlineStatus(owner?.status || '');
+      let ownerStatus = recoveryDebtWorldlineStatus(owner?.status || '');
       const exactPair = ensureArray(snapshot?.conversationPairs).find(pair => (
         Number(pair?.pairIndex || 0) === Number(record.pairIndex || 0)
         && (!record.userHash || !pair?.userHash || record.userHash === pair.userHash)
         && (!record.assistantHash || !pair?.assistantVisibleHash || record.assistantHash === pair.assistantVisibleHash)
         && (!record.assistantMessageIdHash || !pair?.assistantMessageIdHash || record.assistantMessageIdHash === pair.assistantMessageIdHash)
       )) || null;
+      const turnPair = exactPair || ensureArray(snapshot?.conversationPairs).find(pair => (
+        Number(pair?.pairIndex || 0) === Number(record.pairIndex || 0)
+      )) || null;
+      let nextUserHash = record.userHash;
+      let nextAssistantHash = record.assistantHash;
+      if (ownerStatus === 'active' && turnPair && !exactPair) {
+        const siblingExactRecordExists = ensureArray(vault.records).some(other => (
+          other
+          && other.recordId !== record.recordId
+          && other.inheritedSessionHistory !== true
+          && other.permanentSessionHistory !== true
+          && Number(other.pairIndex || 0) === Number(record.pairIndex || 0)
+          && (!other.userHash || !turnPair.userHash || other.userHash === turnPair.userHash)
+          && (!other.assistantHash || !turnPair.assistantVisibleHash || other.assistantHash === turnPair.assistantVisibleHash)
+          && (!other.assistantMessageIdHash || !turnPair.assistantMessageIdHash || other.assistantMessageIdHash === turnPair.assistantMessageIdHash)
+        ));
+        if (siblingExactRecordExists) {
+          ownerStatus = 'superseded';
+        } else if (
+          record.assistantMessageIdHash
+          && turnPair.assistantMessageIdHash === record.assistantMessageIdHash
+          && (!record.userMessageIdHash || turnPair.userMessageIdHash === record.userMessageIdHash)
+          && hayakuSameTurnSource(record, turnPair)
+        ) {
+          nextUserHash = compact(turnPair.userHash || record.userHash || '', 96);
+          nextAssistantHash = compact(turnPair.assistantVisibleHash || record.assistantHash || '', 96);
+        } else {
+          ownerStatus = 'superseded';
+        }
+      }
       // Discharging a debt means "this turn is genuinely covered again", and only
       // exact coverage can establish that. Loose packet-hash presence is NOT
       // discharge authority: a turn can hold an invalid, stale or unbound packet
@@ -27440,6 +27489,8 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const next = normalizeRecoveryVaultRecord({
         ...record,
+        userHash: nextUserHash,
+        assistantHash: nextAssistantHash,
         ownerTurnNodeId: owner?.turnNodeId || record.ownerTurnNodeId || '',
         logicalTurnId: owner?.logicalTurnId || record.logicalTurnId || '',
         variantId: owner?.variantId || record.variantId || '',
@@ -27707,10 +27758,18 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       .filter(record => !targetDebtId || record.recordId === targetDebtId)
       .filter(record => !targetPairIndex || Number(record.pairIndex || 0) === targetPairIndex)
       .filter(record => explicitRetry || Number(record.repairAttempts || 0) < RECOVERY_DEBT_MAX_AUTO_ATTEMPTS);
+    const livePairsByTurn = new Map(ensureArray(snapshot?.conversationPairs).map(pair => [Number(pair?.pairIndex || 0), pair]));
+    const exactMatchRank = record => {
+      const pair = livePairsByTurn.get(Number(record?.pairIndex || 0));
+      if (!pair) return 1;
+      return record.userHash === pair.userHash && record.assistantHash === pair.assistantVisibleHash ? 0 : 1;
+    };
     const eligibleRecords = repairableRecords
       .filter(record => !recoveryDebtLeaseIsActive(record, checkedAt))
       .filter(record => explicitRetry || Number(record.nextRepairAt || 0) <= checkedAt)
-      .sort((a, b) => Number(a.pairIndex || 0) - Number(b.pairIndex || 0) || Number(a.createdAt || 0) - Number(b.createdAt || 0));
+      .sort((a, b) => Number(a.pairIndex || 0) - Number(b.pairIndex || 0)
+        || exactMatchRank(a) - exactMatchRank(b)
+        || Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0));
     const futureRetryTimes = repairableRecords
       .map(record => Math.max(0, Number(record.nextRepairAt || 0) || 0))
       .filter(value => value > checkedAt);
@@ -28109,7 +28168,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       }
       const durableRecord = sidecar.record;
       const vault = await loadRecoveryVault(scopeKey, { force: true });
-      const records = ensureArray(vault.records).filter(existing => existing?.recordId !== durableRecord.recordId);
+      const records = ensureArray(vault.records)
+        .filter(existing => existing?.recordId !== durableRecord.recordId)
+        .map(existing => {
+          if (!existing || existing.inheritedSessionHistory === true || existing.permanentSessionHistory === true) return existing;
+          if (Number(existing.pairIndex || 0) !== Number(durableRecord.pairIndex || 0)) return existing;
+          if (existing.worldlineStatus !== 'active' && !RECOVERY_DEBT_ACTIVE_STATUSES.has(existing.status)) return existing;
+          return normalizeRecoveryVaultRecord({
+            ...existing,
+            worldlineStatus: 'superseded',
+            status: 'superseded',
+            repairLease: null,
+            updatedAt: now()
+          }, scopeKey);
+        });
       records.push(durableRecord);
       const result = await writeRecoveryVaultDirect(scopeKey, { ...vault, records }, reason);
       if (result.durable === true) {
@@ -28257,6 +28329,21 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
           && RECOVERY_DEBT_ACTIVE_STATUSES.has(previous.status)
           && previous.evidenceCompleteness === 'complete_sidecar'
           && previous.evidenceManifest?.manifestHash === durableRecord.evidenceManifest?.manifestHash;
+        for (const [otherId, otherRecord] of byId.entries()) {
+          if (otherId === id || !otherRecord) continue;
+          if (otherRecord.inheritedSessionHistory === true || otherRecord.permanentSessionHistory === true) continue;
+          if (Number(otherRecord.pairIndex || 0) !== Number(durableRecord.pairIndex || 0)) continue;
+          if (otherRecord.worldlineStatus === 'active' || RECOVERY_DEBT_ACTIVE_STATUSES.has(otherRecord.status)) {
+            byId.set(otherId, normalizeRecoveryVaultRecord({
+              ...otherRecord,
+              worldlineStatus: 'superseded',
+              status: 'superseded',
+              repairLease: null,
+              updatedAt: now()
+            }, scope.key));
+            changed = true;
+          }
+        }
         if (sameEvidence) {
           activated.push(previous);
           continue;

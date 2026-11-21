@@ -198,6 +198,68 @@ const assertOtherAxCalls = runtime => {
     await coldStartRuntime.dispose();
   }
 
+  // Tag-filter multi-shard regression: when a missing turn was scanned before and after
+  // sourceInputControls tag filter changes, older stale debt shards sharing ownerTurnNodeId
+  // must be superseded and manual/incremental recovery must verify against the current live turn.
+  const filterShardRuntime = await createHayakuRuntime({
+    autoRepair: false,
+    messages: [
+      user('flt-u1', 'I enter the workshop.'),
+      assistant('flt-a1', hiddenPacketMessage('Alice entered the workshop.', createValidPacket({ turn: 1, subject: 'Alice', scene: 'workshop', summary: 'Alice entered the workshop.' }))),
+      user('flt-u2', 'I turn the brass valve.'),
+      assistant('flt-a2', '◈CG_MARKER◈\nAlice turned the brass valve and steam began flowing through the blue pipe.\n[LBDATA]\nmeta:1\n[/LBDATA]')
+    ]
+  });
+  try {
+    // 1. Scan before tag filters are added -> creates initial debt shard with unfiltered assistantHash
+    const preFilterStatus = await filterShardRuntime.hayaku.recovery.status({ includeDebts: true, refreshDebts: true });
+    assert.deepEqual(Array.from(preFilterStatus.debt.coverage.missingTurns || []), [2]);
+    const preVault = await filterShardRuntime.hayaku._test.loadRecoveryVault(preFilterStatus.scopeKey, { force: true });
+    const oldDebt = Array.from(preVault.records || []).find(r => Number(r.pairIndex) === 2 && r.worldlineStatus === 'active');
+    assert.ok(oldDebt, 'pre-filter debt shard should exist');
+
+    // 2. Add custom tag filter for [LBDATA] and inline pattern for ◈...◈
+    // Also inject a pre-existing stale active debt shard with an older createdAt and the same ownerTurnNodeId
+    // to simulate an existing vault that already accumulated multiple active shards for the same turn before this fix.
+    const staleLegacyShard = {
+      ...oldDebt,
+      recordId: 'debt:2:h640000000000001',
+      assistantHash: 'h640000000000001',
+      createdAt: Math.max(1, Number(oldDebt.createdAt || Date.now()) - 100000),
+      updatedAt: Math.max(1, Number(oldDebt.updatedAt || Date.now()) - 100000),
+      worldlineStatus: 'active',
+      status: 'deterministic_fallback'
+    };
+    await filterShardRuntime.hayaku._test.writeRecoveryVaultDirect(preFilterStatus.scopeKey, {
+      ...preVault,
+      records: [staleLegacyShard, ...Array.from(preVault.records || [])]
+    }, 'inject_legacy_stale_shard');
+
+    await filterShardRuntime.hayaku.setSourceEditRules({
+      tagRules: [{ tag: 'LBDATA', enabled: true }],
+      inlineRules: [{ open: '◈', close: '◈', enabled: true }]
+    });
+
+    // 3. Repair turn 2 after filter changes: must NOT fail with recovery_evidence_live_pair_unavailable
+    filterShardRuntime.setLlmResponder(async () => ({
+      type: 'success',
+      result: 'Result:\n' + JSON.stringify(groundedRecoveryEnvelope('Alice turned the brass valve and steam began flowing through the blue pipe.'))
+    }));
+    const repairedAfterFilter = await filterShardRuntime.hayaku.recovery.repairSelected({
+      targetTurns: [2]
+    });
+    assert.equal(repairedAfterFilter.ok, true, `expected repair after tag filter change to succeed, got: ${JSON.stringify(repairedAfterFilter)}`);
+    assert.equal(repairedAfterFilter.repaired, 1);
+
+    const postVault = await filterShardRuntime.hayaku._test.loadRecoveryVault(preFilterStatus.scopeKey, { force: true });
+    const remainingActiveT2 = Array.from(postVault.records || []).filter(r => Number(r.pairIndex) === 2 && r.worldlineStatus === 'active');
+    assert.equal(remainingActiveT2.length, 0, 'all stale and current T2 debt shards must be superseded or discharged');
+    const postInspect = await filterShardRuntime.hayaku._test.inspectRecoveryDebtsForNativeRepair({ includeEvidence: true, limit: 8 });
+    assert.equal(Array.from(postInspect.debts || []).length, 0, 'turn 2 debt must be discharged after tag-filter recovery');
+  } finally {
+    await filterShardRuntime.dispose();
+  }
+
   console.log('PASS hayaku_native_otherax_recovery_runtime_test');
 })().catch(error => {
   console.error(error);
