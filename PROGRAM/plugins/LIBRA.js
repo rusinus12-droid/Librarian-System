@@ -67041,6 +67041,30 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         + Math.ceil(role.length / 4)
         + profile.overhead;
     };
+    const computeContextCutterRecallReserve = (settings, tokenizerName = 'tiktoken', maxContext = 40000) => {
+      const profile = CONTEXT_CUTTER_PROFILES[tokenizerName] || CONTEXT_CUTTER_PROFILES.tiktoken;
+      const sharedBudget = memorySuiteRecallBudget('libra');
+      const useShared = Boolean(sharedBudget && sharedBudget.enabled === true && Number(sharedBudget.totalChars) > 0);
+      const wrapperChars = UNIFIED_CLASSIC_HEADER.length + UNIFIED_CLASSIC_FOOTER.length + (useShared ? 1200 : 2);
+      const configuredChars = useShared
+        ? Math.max(0, Number(sharedBudget.totalChars || 0))
+        : Math.max(0, Number(settings?.recallMaxChars || RECALL_MAX_DYNAMIC_CHARS));
+      const reserveChars = configuredChars + wrapperChars;
+      const blendedCharsPerRawToken = (profile.cjkCharsPerToken * 0.7) + (profile.latinCharsPerToken * 0.3);
+      const rawTokens = Math.ceil(reserveChars / Math.max(1, blendedCharsPerRawToken));
+      const estimatedTokens = Math.ceil(rawTokens * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
+      const reserveTokens = Math.min(Math.floor(maxContext * 0.8), Math.max(500, estimatedTokens));
+      const ratioTargetTokens = Math.floor(maxContext * (1 - Math.floor(clamp(settings?.contextCutterTrimPercent, 5, 80, 30)) / 100));
+      const reserveTargetTokens = Math.max(Math.floor(maxContext * 0.2), maxContext - reserveTokens);
+      return {
+        source: useShared ? 'shared_recall_budget' : 'libra_recall_budget',
+        configuredChars,
+        reserveChars,
+        reserveTokens,
+        ratioTargetTokens,
+        targetTokens: Math.min(ratioTargetTokens, reserveTargetTokens)
+      };
+    };
     const normalizeContextCutterState = (raw, scopeKey = '') => {
       const src = isPlainObject(raw) && raw.schema === CONTEXT_CUTTER_SCHEMA ? raw : {};
       const seen = new Set();
@@ -67060,6 +67084,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         estimatedTokensBefore: Math.max(0, Number(src.estimatedTokensBefore || 0) || 0),
         estimatedTokensAfter: Math.max(0, Number(src.estimatedTokensAfter || 0) || 0),
         targetTokens: Math.max(0, Number(src.targetTokens || 0) || 0),
+        recallReserveTokens: Math.max(0, Number(src.recallReserveTokens || 0) || 0),
+        recallReserveChars: Math.max(0, Number(src.recallReserveChars || 0) || 0),
+        recallReserveSource: string(src.recallReserveSource || ''),
         trimmedThisTurn: src.trimmedThisTurn === true,
         updatedAt: string(src.updatedAt || '')
       };
@@ -67164,7 +67191,8 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
       }
       const estimatedTokensBefore = Math.ceil(rawTotalAll * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
       let currentTokens = Math.ceil(rawTotalKept * CONTEXT_CUTTER_TOKEN_MULTIPLIER);
-      const targetTokens = Math.floor(maxContext * (1 - trimPercent / 100));
+      const reservePlan = computeContextCutterRecallReserve(settings, tokenizer, maxContext);
+      const targetTokens = reservePlan.targetTokens;
       let trimmedThisTurn = false;
 
       if (currentTokens > maxContext) {
@@ -67199,6 +67227,9 @@ const stampMemoryEngineDecision = (result, decision, extra = {}) => {
         estimatedTokensBefore,
         estimatedTokensAfter: currentTokens,
         targetTokens,
+        recallReserveTokens: reservePlan.reserveTokens,
+        recallReserveChars: reservePlan.reserveChars,
+        recallReserveSource: reservePlan.source,
         trimmedThisTurn,
         updatedAt: nowIso()
       };
@@ -78597,6 +78628,7 @@ const createGradiaPluginRead = (function createGradiaPluginRead(options) {
     getContextCutterState: scopeKey => getContextCutterState(scopeKey),
     resetContextCutterState: scopeKey => resetContextCutterState(scopeKey),
     applyContextCutter: (messages, options) => applyLibraContextCutter(messages, options),
+    computeContextCutterRecallReserve: (settingsInput, tokenizerName, maxContext) => computeContextCutterRecallReserve(settingsInput, tokenizerName, maxContext),
       readySourceRules: () => libraSourceInput.ready(),
       disposeSourceRules: () => libraSourceInput.dispose(),
       getEmbeddingSettings: () => clone(state.embeddingSettings || DEFAULT_EMBEDDING),
@@ -90356,6 +90388,8 @@ buildRecallBudgetCard(),
   const scopeKey=String(LibraMemoryCore.peekSnapshot()?.scope?.scopeKey||'');
   const cutterState=LibraMemoryCore.getContextCutterState?.(scopeKey)||{removedIds:[],omittedCount:0,estimatedTokensAfter:0};
   const removedTotal=Array.isArray(cutterState.removedIds)?cutterState.removedIds.length:0;
+  const reservePlan=LibraMemoryCore.computeContextCutterRecallReserve?.(settings,settings.contextCutterTokenizer,settings.contextCutterMaxTokens)||{source:'libra_recall_budget',configuredChars:settings.recallMaxChars,reserveTokens:0,targetTokens:Math.floor(settings.contextCutterMaxTokens*(1-settings.contextCutterTrimPercent/100))};
+  const reserveLabel=reservePlan.source==='shared_recall_budget'?'기억 주입 공통 예산':'리콜 예산';
   return card('컨텍스트 자동 정리','하이파 미사용 환경에서 오래된 채팅 메시지를 요청 컨텍스트에서 일괄 제외해 기억 주입 여유 공간과 프롬프트 캐시 안정성을 확보합니다. 제외된 과거 대화는 LIBRA 장기기억 리콜이 대신 보완합니다.',[
     guiEl('div',{class:'stack',dataset:{contextCutterSettings:'true'}},[
       memoryToggle('contextCutterEnabled','컨텍스트 자동 정리 사용'),
@@ -90371,6 +90405,7 @@ buildRecallBudgetCard(),
           guiEl('option',{value:'deepseek',selected:settings.contextCutterTokenizer==='deepseek',text:'DeepSeek'})
         ]))
       ]),
+      guiEl('p',{class:'hint',dataset:{contextCutterReserve:'true'},text:`예산 연동: 현재 ${reserveLabel}(${Number(reservePlan.configuredChars||0).toLocaleString()}자 · 래퍼 포함 약 ${Number(reservePlan.reserveTokens||0).toLocaleString()} 토큰)이 항상 들어갈 수 있도록 정리 목표 상한을 ${Number(reservePlan.targetTokens||0).toLocaleString()} 토큰 이하로 자동 보장합니다.`}),
       guiEl('div',{class:'cluster',style:{justifyContent:'space-between',paddingTop:'4px'}},[
         guiEl('span',{class:'hint',dataset:{contextCutterStatus:'true'},text:removedTotal>0?`현재 채팅 누적 제외 메시지 ${removedTotal.toLocaleString()}개 · 최근 요청 제외 ${Number(cutterState.omittedCount||0).toLocaleString()}개 (추정 ${Number(cutterState.estimatedTokensAfter||0).toLocaleString()} 토큰)`:'현재 채팅에서 제외된 메시지가 없습니다.'}),
         guiEl('button',{class:'btn btn--sm',type:'button',dataset:{contextCutterReset:'true'},text:'현재 채팅 제외 상태 초기화',disabled:removedTotal===0,onClick:async()=>{await LibraMemoryCore.resetContextCutterState?.(scopeKey);queueGuiNavigationRender();}})
