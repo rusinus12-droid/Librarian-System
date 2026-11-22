@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-22T13:58:18.632Z",
+  "generatedAt": "2026-11-22T13:59:55.959Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "086874b4fe1f66d2498cb649a876277b799b37523fc5baca26f7bf969b1ce5ed",
+      "sha256": "fa6e7e32c73d247651e73299322d669d7514289486224065a802891ac684171d",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,8 +4340,8 @@
       "bytes": 3982697
     },
     "plugins/GRADIA.js": {
-      "sha256": "2a831944e3434fac0bfe392153e0d7da84564f79c3671a05422801226f76ed7a",
-      "bytes": 4147734
+      "sha256": "53541ad14f74f4578d54b03ca6e5700591a1c03bace7dfa108249e0225dc8a4d",
+      "bytes": 4150812
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919",
@@ -6756,8 +6756,8 @@
       "bytes": 14818
     },
     "tests/gradia_intimacy_aide_test.cjs": {
-      "sha256": "9a736e204c7c94040bdea50804d53faaea2313079639551718a4e65ea3cf32a2",
-      "bytes": 29443
+      "sha256": "fab84151f6eb0482098d69e3ae6a8ad1e0c6b5fbb440463ee7d1b3bdfbc0846b",
+      "bytes": 30919
     },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",

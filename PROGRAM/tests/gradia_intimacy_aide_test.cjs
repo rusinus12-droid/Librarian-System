@@ -549,3 +549,31 @@ test('cross-sentence pronoun-bridged foreplay ("남성기 ... 그것을 감싸�
   assert.equal(nonSexual.scene.engaged, false, 'non-sexual prose must not engage intimacy');
   assert.equal(nonSexual.scene.phase, 'none');
 });
+
+test('신체 반응(body_responses)은 이름·부위가 있는 항목만 남고 알 수 없는 부위는 버린다', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  await f.host.plugin.debugIntimacyLoadCards();
+  f.host.plugin.debugSetActiveScope('s', '하준');
+  const settings = {
+    enableIntimacyAide: true, enableCharacterAide: true, aideStageOrder: ['aide_character'],
+    mode: 'normal', nsfwGuidanceEnabled: true, nsfwMode: 'direct', writingMode: 'rp'
+  };
+  const rec = f.host.plugin.debugIntimacyRecord({
+    stageName: 'aide_character',
+    settings,
+    parsed: {
+      intimacyReadings: [{ participant: '세라', phase: 'foreplay', position: '', summary: '가슴이 예민해 숨이 가빠짐' }],
+      intimacyBodyResponses: [
+        { name: '세라', zone: 'breasts_nipples', physical: '숨이 끊기고 유두가 단단해진다', reaction: '하준의 손목을 붙잡는다' },
+        { name: '', zone: 'breasts_nipples', physical: '이름 없음', reaction: '' },
+        { name: '세라', zone: 'made_up_zone', physical: '알 수 없는 부위', reaction: '' }
+      ]
+    }
+  });
+  const stored = rec.readings?.bodyResponses || [];
+  assert.equal(stored.length, 1, '이름·부위가 있는 항목만 남는다');
+  assert.equal(stored[0].name, '세라');
+  assert.equal(stored[0].zone, 'breasts_nipples');
+  assert.match(stored[0].physical, /숨이 끊기고/);
+  assert.match(stored[0].reaction, /손목/);
+});

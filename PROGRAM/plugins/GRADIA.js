@@ -24769,6 +24769,7 @@ section[data-plugin-chat-panel="${id}"]{padding:0!important;border:0!important;b
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
       intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
+      intimacyBodyResponses: Array.isArray(parsed.intimacy_body_responses) ? parsed.intimacy_body_responses : [],
       intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
       relationshipCheck: Array.isArray(parsed.relationship_check) ? parsed.relationship_check : [],
       relationshipEvents: Array.isArray(parsed.relationship_events) ? parsed.relationship_events : [],
@@ -30171,6 +30172,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : outputKind === 'readings'
           ? [
             'OUTPUT: add a top-level "intimacy_readings" array, one item per participant in the encounter, with fields participant (name), phase (none, foreplay, intercourse, climax, or afterplay), position (the position, or empty), and summary (one short line: arousal and state at the end of this response).',
+            'Also add a top-level "intimacy_body_responses" array. For every participant who was physically stimulated this response, write one item: name, zone (the body-part id that was stimulated), physical (the immediate bodily change: breath, muscle tension, wetness, flush, tremble, oversensitivity), reaction (what it makes them do or say next — a hand stopping, a sound, pulling in or away). A body that was touched changes; a response that says nothing about the body is not a response. Do not write responses for people who were not touched this turn, and never attribute a response to the person who gave the touch instead of the person who received it.',
             `Also add a top-level "intimacy_profiles" array with one item per participant in the encounter who has no preference card above OR whose card above still lacks gender or has all-zero zoneStats${gate === 'novel' ? '' : ' (never the persona)'}; empty when every participant already has a populated card. Estimate each profile from the character’s lore (personality, history, relationships, stated tastes in the character card, lorebook, and memory evidence) and the scene so far; where lore is silent, infer from personality and say so in basis. Fields: name; gender ("female", "male", or ""); liked_positions and disliked_positions (position names, comma separated, may be empty); sensitive_zones and dull_zones (erogenous body parts from lore/personality, comma separated — e.g., 입술, 귀, 목덜미, 쇄골, 가슴, 유두, 복부, 허리, 골반, 엉덩이, 허벅지, 음핵, 질내, 자궁구, 귀두, 음경, 후구 — sensitive_zones multiply stimulation, dull_zones reduce it); zone_defaults (array of { zone, sensitivity, development } for relevant zones from [${INTIMACY_BODY_PARTS.map(p => p[0]).join(', ')}], sensitivity -100..+100 and development 0..100 estimated from lore experience/personality — inexperienced/guarded starts near development 0–15); foreplay_stance, intercourse_stance, afterplay_stance (likes, neutral, dislikes, or unknown); foreplay_style, intercourse_style, afterplay_style (one or two sentences each: how they lead or go along with that phase, and which kinds of it they like and dislike); basis (the lore it rests on). A saved profile becomes a lasting card for this chat.`
           ].join('\n')
           : ''
@@ -30187,6 +30189,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const stance = { type: 'string', enum: [...INTIMACY_STANCES] };
       return {
         intimacy_readings: { type: 'array', items: closedJsonObject({ participant: str, phase: { type: 'string', enum: [...INTIMACY_PHASES] }, position: str, summary: str }) },
+        intimacy_body_responses: { type: 'array', items: closedJsonObject({ name: str, zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, physical: str, reaction: str }) },
         intimacy_profiles: { type: 'array', items: closedJsonObject({ name: str, gender: { type: 'string', enum: ['female', 'male', ''] }, liked_positions: str, disliked_positions: str, sensitive_zones: str, dull_zones: str, zone_defaults: { type: 'array', items: closedJsonObject({ zone: { type: 'string', enum: INTIMACY_BODY_PARTS.map(p => p[0]) }, sensitivity: { type: 'integer' }, development: { type: 'integer' } }) }, foreplay_stance: stance, foreplay_style: str, intercourse_stance: stance, intercourse_style: str, afterplay_stance: stance, afterplay_style: str, basis: str }) }
       };
     }
@@ -30198,6 +30201,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     claim: compact(item?.claim || '', 240),
     reason: compact(item?.reason || '', 240)
   })).filter(item => item.claim).slice(0, 8);
+  // 자극을 받은 쪽의 신체 반응. 게이지·패널이 이 기록을 근거로 움직인다.
+  const INTIMACY_MAX_BODY_RESPONSES = 8;
+  const intimacyBodyResponseZone = value => {
+    const zone = compact(value || '', 60);
+    return INTIMACY_BODY_PARTS.some(([id]) => id === zone) ? zone : '';
+  };
+  const normalizeIntimacyBodyResponses = value => (Array.isArray(value) ? value : []).map(item => ({
+    name: compact(item?.name || item?.participant || '', 80),
+    zone: intimacyBodyResponseZone(item?.zone),
+    physical: compact(item?.physical || '', 200),
+    reaction: compact(item?.reaction || '', 200)
+  })).filter(item => item.name && item.zone && (item.physical || item.reaction)).slice(0, INTIMACY_MAX_BODY_RESPONSES);
   const normalizeIntimacyReadings = value => (Array.isArray(value) ? value : []).map(item => ({
     participant: compact(item?.participant || '', 80),
     phase: INTIMACY_PHASES.includes(item?.phase) ? item.phase : 'none',
@@ -30215,7 +30230,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (intimacyOutputKind(stageName, settings) !== 'readings') return;
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const readings = normalizeIntimacyReadings(parsed?.intimacyReadings);
-    if (scopeKey) Runtime.intimacyReadings[scopeKey] = { at: Date.now(), readings };
+    const bodyResponses = normalizeIntimacyBodyResponses(parsed?.intimacyBodyResponses);
+    if (scopeKey) Runtime.intimacyReadings[scopeKey] = { at: Date.now(), readings, bodyResponses };
     if (scopeKey) {
       recordIntimacyProfiles(scopeKey, parsed?.intimacyProfiles, settings);
       // Apply current-turn zone development immediately & reroll-safely on turn completion,
@@ -30236,6 +30252,14 @@ Begin directly with the in-world response and finish the complete same-turn draf
         const deltas = {};
         for (const [zId, dVal] of Object.entries(rawDeltas)) {
           if (intimacyZoneAllowedForGender(zId, resolvedGender)) deltas[zId] = dVal;
+        }
+        // AIDE 가 "이 사람의 이 부위가 반응했다"고 선언하면 그 부위를 그 사람에게 적립한다.
+        // 본문 정규식 추측보다 우선한다(귀속 반전의 재발 방지).
+        const declaredResponses = (Runtime.intimacyReadings?.[scopeKey]?.bodyResponses || [])
+          .filter(item => item.name && (item.name === g.name || extensionSamePerson(item.name, g.name)))
+          .filter(item => intimacyZoneAllowedForGender(item.zone, resolvedGender));
+        for (const item of declaredResponses) {
+          if (!deltas[item.zone]) deltas[item.zone] = { dev: 3, sens: 3 };
         }
         if (reading?.summary) {
           const matchedFromReading = intimacyMatchedBodyParts(reading.summary)
@@ -34441,6 +34465,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       worldReadings: Array.isArray(parsed.world_readings) ? parsed.world_readings : [],
       intimacyCheck: Array.isArray(parsed.intimacy_check) ? parsed.intimacy_check : [],
       intimacyReadings: Array.isArray(parsed.intimacy_readings) ? parsed.intimacy_readings : [],
+      intimacyBodyResponses: Array.isArray(parsed.intimacy_body_responses) ? parsed.intimacy_body_responses : [],
       intimacyProfiles: Array.isArray(parsed.intimacy_profiles) ? parsed.intimacy_profiles : [],
       relationshipCheck: Array.isArray(parsed.relationship_check) ? parsed.relationship_check : [],
       relationshipEvents: Array.isArray(parsed.relationship_events) ? parsed.relationship_events : [],
@@ -54397,11 +54422,17 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     const readingBox = app.querySelector('[data-intimacy-readings]');
     if (readingBox) {
       const readings = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.readings || []) : [];
+      const bodyResponses = scopeKey ? (Runtime.intimacyReadings?.[scopeKey]?.bodyResponses || []) : [];
       const telemetryRows = intimacyTelemetryNotes(scopeKey);
       const hasSettledGauge = !!(scopeKey && (Object.keys(Runtime.intimacyGauges?.[scopeKey]?.settled || {}).length || (Runtime.intimacyGauges?.[scopeKey]?.pending || []).length || Runtime.intimacyTelemetry?.[scopeKey]?.gauges?.length));
+      const zoneLabel = zoneId => (INTIMACY_BODY_PARTS.find(([id]) => id === zoneId)?.[1] || zoneId || '').split(' (')[0];
       const allIntimacyRows = [
         ...telemetryRows.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: item.title }), guiEl('p', { text: item.body })])),
         ...readings.map(item => guiEl('div', { class: 'note' }, [guiEl('b', { text: `${forcedBondPersonLabel(item.participant)} · ${INTIMACY_PHASE_LABELS[item.phase] || item.phase}${item.position ? ` · ${item.position}` : ''}` }), guiEl('p', { text: item.summary })])),
+        ...bodyResponses.map(item => guiEl('div', { class: 'note' }, [
+          guiEl('b', { text: `신체 반응 · ${forcedBondPersonLabel(item.name)} · ${zoneLabel(item.zone)}` }),
+          guiEl('p', { text: [item.physical, item.reaction].filter(Boolean).join(' → ') })
+        ])),
         ...(hasSettledGauge ? [guiEl('div', { class: 'cluster' }, [guiEl('button', { class: 'btn btn--sm', type: 'button', text: '게이지 초기화', dataset: { intimacyAction: 'reset-gauges' } })])] : [])
       ];
       readingBox.replaceChildren(...(allIntimacyRows.length
