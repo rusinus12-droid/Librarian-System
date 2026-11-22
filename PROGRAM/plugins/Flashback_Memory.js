@@ -32508,6 +32508,7 @@ function mountMemorySuiteSourcePreviewList(host, config) {
 const MEMORY_SUITE_SOURCE_RULE_SYNC_CHANNEL='memory_suite_source_rules_v1';
 const MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA='memory-suite.source-rules-sync.v1';
 const MEMORY_SUITE_SOURCE_RULE_PEERS=Object.freeze({libra:'libra',hayaku:'hayaku_locator_continuity',flashback:'flashback_memory'});
+const MEMORY_SUITE_SOURCE_RULE_READERS=Object.freeze({gradia:'serial_gradation_agents_for_rp'});
 const MEMORY_SUITE_SOURCE_RULE_LABELS=Object.freeze({libra:'LIBRA',hayaku:'HAYAKU',flashback:'Flashback'});
 function createMemorySuiteSourceRuleSync(config) {
   const owner=config.owner,self=MEMORY_SUITE_SOURCE_RULE_PEERS[owner];
@@ -32525,9 +32526,12 @@ function createMemorySuiteSourceRuleSync(config) {
   const handler=async(message,metadata={})=>{
     if(disposed||!message||typeof message!=='object'||message.schema!==MEMORY_SUITE_SOURCE_RULE_SYNC_SCHEMA||typeof message.id!=='string'||message.id.length>160)return;
     const sender=String(metadata?.sender||'');
-    if(!Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)||sender===self)return;
+    const isPeer=Object.values(MEMORY_SUITE_SOURCE_RULE_PEERS).includes(sender)&&sender!==self;
+    const isReader=Object.values(MEMORY_SUITE_SOURCE_RULE_READERS).includes(sender);
+    if(!isPeer&&!isReader)return;
     if(message.kind==='response'){const record=pending.get(message.id);if(!record||record.target!==sender)return;pending.delete(message.id);clearTimeout(record.timer);record.resolve(message.error?{ok:false,error:String(message.error)}:{ok:true,result:message.result||{}});return;}
     if(message.kind!=='request')return;
+    if(isReader&&message.action!=='describe')return;
     try{
       await config.policy.ready();
       if(message.action==='describe')return void reply(sender,message,{owner,rules:memorySuiteSourceRules(owner)||null,effective:fingerprint(effective())});

@@ -196,3 +196,43 @@ test('previous schema and pass run in shadow_act heavyweight analysis and feed r
   assert.match(card.textContent, /PREVIOUS \(과거 종합\)/);
   assert.match(card.textContent, /서연은 잃어버렸던 도서관 열쇠를 이미 찾아 책상 위에 두었다\./);
 });
+
+test('debugShadowPrevious strips presentation/inlay/wrapper tags and emits memory guardrails', async t => {
+  const f = await fixture(t, { writingMode: 'rp', unified: false });
+  const prev = f.host.plugin.debugShadowPrevious({
+    libEvidence: '[GRADIA EXTERNAL EVIDENCE]\n- 민아는 <thoughts>비밀</thoughts>열쇠를 건넸다.',
+    recent: {
+      latestUser: '문을 열어보자.',
+      visibleMessages: [
+        { role: 'user', content: '열쇠는 어디 있지?' },
+        {
+          role: 'assistant',
+          content: '## 볼륨 5: 이름 붙이기\n### 챕터 18: 셋이라는 수\n#### Chatindex: 100\n<img cmd="Soyeon_casual_shocked">\n<lb-xnai id="s1">{{inlay::abc}}</lb-xnai>\n소연이 고개를 끄덕이며 열쇠를 내밀었다.'
+        },
+        { role: 'user', content: '문을 열어보자.' }
+      ]
+    }
+  });
+  assert.equal(prev.hasContent, true);
+  assert.doesNotMatch(prev.text, /<img|<lb-xnai|inlay::|Chatindex|볼륨 5|챕터 18|<thoughts>/);
+  assert.match(prev.text, /소연이 고개를 끄덕이며 열쇠를 내밀었다\./);
+  assert.match(prev.text, /진행 중 상태·미해결 조건 \(진행 가드\):/);
+  assert.match(prev.text, /기억 가드레일 \(오기억·혼동 금지\):/);
+
+  await f.host.plugin.saveRuntimeSettings({
+    ...await f.host.plugin.getRuntimeSettings(),
+    source_ignored_tags: ['status']
+  });
+  await f.host.plugin.listProviderPresets();
+  const prevCustom = f.host.plugin.debugShadowPrevious({
+    recent: {
+      latestUser: '대화를 이어간다.',
+      visibleMessages: [
+        { role: 'assistant', content: '<status>HP:100</status>\n소연이 미소 지었다.' },
+        { role: 'user', content: '대화를 이어간다.' }
+      ]
+    }
+  });
+  assert.doesNotMatch(prevCustom.text, /HP:100|<status>/);
+  assert.match(prevCustom.text, /소연이 미소 지었다\./);
+});

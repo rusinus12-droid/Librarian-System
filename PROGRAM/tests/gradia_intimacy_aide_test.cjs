@@ -135,10 +135,39 @@ test('a profile from the host becomes a stored card that later turns follow and 
   wireModel(f, '민아는 숨을 몰아쉬었다.', { [HOST]: { intimacy_readings: [], intimacy_profiles: [profile('민아', '기승위')] } });
   await runTurn(f, '허리를 천천히 움직인다.');
   const system = systemOf(f.prompts.find(body => stageOf(body) === HOST));
-  assert.match(system, /PREFERENCE CARDS \(saved for this chat; treat as established character facts\):\n- 민아: positions liked: 정상위; disliked: 후배위\. foreplay: likes — 길고 느린 키스로 시작하길 원한다\./);
+  assert.match(system, /PREFERENCE CARDS \(saved for this chat; treat as established character facts\):\n- 민아: positions liked: 정상위; disliked: 후배위\. erogenous sensitivity — [^\n]+ foreplay: likes — 길고 느린 키스로 시작하길 원한다\./);
   const after = Object.values(storedCards(f)).flat();
   assert.equal(after.length, 1);
   assert.equal(after[0].likedPositions, '정상위');
+});
+
+test('gender-separated gauges: female shows climax only, male shows ejaculation only, and gauges carry across turns', async t => {
+  const f = await start(t, {}, true);
+  await runTurn(f, '민아의 음핵을 손가락으로 부드럽게 문지른다.');
+  const sys1 = systemOf(f.prompts.find(body => stageOf(body) === HOST));
+  assert.match(sys1, /민아:.*절정 수치\(climax\):/);
+  assert.doesNotMatch(sys1, /민아:.*사정 수치\(ejaculation\)/);
+
+  f.chat.message.push({ role: 'char', chatId: 'a1', data: '민아가 숨을 헐떡이며 허리를 떨었다.' });
+  await runTurn(f, '계속해서 민아의 음핵을 강하게 자극한다.');
+  const sys2 = systemOf(f.prompts.filter(body => stageOf(body) === HOST).at(-1));
+  assert.match(sys2, /민아:.*절정 수치\(climax\):/);
+  assert.doesNotMatch(sys2, /민아:.*사정 수치\(ejaculation\)/);
+
+  // When the encounter is resolved (!scene.engaged and no stimulation), persisted gauges clear
+  const pEnded = f.host.plugin.debugIntimacyPacket({
+    characterName: '민아', personaName: '하준',
+    profileGenders: { 민아: 'female' },
+    recent: {
+      latestUser: '옷을 챙겨 입고 카페 밖으로 걸어 나온다.',
+      visibleMessages: [
+        { role: 'assistant', content: '민아가 숨을 헐떡이며 허리를 떨었다.' },
+        { role: 'assistant', content: '둘은 옷을 정리하고 방을 나섰다.' }
+      ]
+    }
+  });
+  assert.equal(pEnded.scene.engaged, false);
+  assert.equal(pEnded.gauges.length, 0);
 });
 
 test('the enabled flag survives a settings round trip', async t => {
