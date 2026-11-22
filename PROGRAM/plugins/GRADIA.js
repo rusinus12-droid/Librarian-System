@@ -28536,7 +28536,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         values
       };
     }).filter(Boolean).slice(-4);
-    return { settled, pending };
+    return { settled, pending, idleTurns: Math.max(0, Number(raw.idleTurns) || 0) };
   };
   const normalizeIntimacyGaugeMap = value => {
     const parsed = typeof value === 'string' ? (() => { try { return JSON.parse(value); } catch { return {}; } })() : value;
@@ -28567,7 +28567,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (!scopeKey) return null;
     if (!Runtime.intimacyGauges) Runtime.intimacyGauges = {};
     if (!Runtime.intimacyGauges[scopeKey] && create) {
-      Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [] };
+      Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [], idleTurns: 0 };
     }
     return Runtime.intimacyGauges[scopeKey] || null;
   };
@@ -28612,15 +28612,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
   ].join(' ');
   const INTIMACY_PASSIVE_DECAY_CLIMAX = 16;
   const INTIMACY_PASSIVE_DECAY_EJACULATION = 18;
+  const INTIMACY_IDLE_CLEAR_TURNS = 3;
+  const INTIMACY_RESOLVED_RE = /(?:옷을?\s*(?:다\s*)?(?:챙겨\s*)?(?:입고|입었|입으며|걸치고|정리하고)|(?:방|모텔|호텔|침실|카페|집)\s*(?:을|를|에서)?\s*(?:나섰|나왔|나갔|떠났|걸어\s*나)|밖으로\s*(?:나섰|나왔|나갔|걸어)|각자\s*(?:돌아갔|헤어졌)|다음\s*날\s*(?:아침|이\s*되|이\s*밝)|날이\s*밝|아침이\s*되|got\s+dressed\s+and\s+left|walked\s+out|next\s+morning)/i;
   const computeIntimacyParticipantGauges = (recent = {}, cards = [], scene = null) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
     const input = text(recent.latestUser || '');
     const inputHasStim = INTIMACY_BODY_PARTS.some(([, , , , pattern]) => pattern.test(input));
-    if (scene && !scene.engaged && !inputHasStim) {
+    const explicitExit = !!(scene && !scene.engaged && !inputHasStim && INTIMACY_RESOLVED_RE.test(input));
+    if (explicitExit) {
       if (scopeKey && Runtime.intimacyGauges?.[scopeKey]) {
         const cur = Runtime.intimacyGauges[scopeKey];
-        if (Object.keys(cur.settled || {}).length || (cur.pending || []).length) {
-          Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [] };
+        if (Object.keys(cur.settled || {}).length || (cur.pending || []).length || cur.idleTurns) {
+          Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [], idleTurns: 0 };
           void saveIntimacyCards().catch(() => {});
         }
       }
@@ -28628,6 +28631,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     }
     const settleInfo = scopeKey ? intimacySettleGauges(scopeKey, recent) : null;
     const settledMap = settleInfo?.chat?.settled || {};
+    if (scene && !scene.engaged && !inputHasStim) {
+      const hasNonZeroSettled = Object.values(settledMap).some(v => (v?.climax || 0) > 0 || (v?.ejaculation || 0) > 0);
+      if (!hasNonZeroSettled) return [];
+      if (settleInfo?.chat) {
+        settleInfo.chat.idleTurns = (settleInfo.chat.idleTurns || 0) + 1;
+        if (settleInfo.chat.idleTurns >= INTIMACY_IDLE_CLEAR_TURNS) {
+          Runtime.intimacyGauges[scopeKey] = { settled: {}, pending: [], idleTurns: 0 };
+          void saveIntimacyCards().catch(() => {});
+          return [];
+        }
+      }
+    } else if (settleInfo?.chat && (scene?.engaged || inputHasStim)) {
+      settleInfo.chat.idleTurns = 0;
+    }
     const messages = (Array.isArray(recent.visibleMessages) ? recent.visibleMessages : [])
       .map(message => text(message?.content || ''))
       .filter(Boolean);

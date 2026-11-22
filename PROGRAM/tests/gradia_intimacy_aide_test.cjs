@@ -154,7 +154,23 @@ test('gender-separated gauges: female shows climax only, male shows ejaculation 
   assert.match(sys2, /민아:.*절정 수치\(climax\):/);
   assert.doesNotMatch(sys2, /민아:.*사정 수치\(ejaculation\)/);
 
-  // When the encounter is resolved (!scene.engaged and no stimulation), persisted gauges clear
+  // 1-turn quiet dialogue pause (!scene.engaged, no explicit exit) preserves settled gauge with gentle decay
+  const pPause = f.host.plugin.debugIntimacyPacket({
+    characterName: '민아', personaName: '하준',
+    profileGenders: { 민아: 'female' },
+    recent: {
+      latestUser: '잠시 숨을 고르며 민아의 눈을 바라본다.',
+      previousTurnUser: '계속해서 민아의 음핵을 강하게 자극한다.',
+      visibleMessages: [
+        { role: 'assistant', content: '민아가 숨을 헐떡이며 허리를 떨었다.' },
+        { role: 'assistant', content: '잠시 숨소리가 잦아든다.' }
+      ]
+    }
+  });
+  const gPause = pPause.gauges.find(g => g.name === '민아');
+  assert.ok(gPause && gPause.climaxGauge > 0 && gPause.carriedFromSettled, 'brief pause preserves settled gauge');
+
+  // Explicit encounter exit clears persisted gauges
   const pEnded = f.host.plugin.debugIntimacyPacket({
     characterName: '민아', personaName: '하준',
     profileGenders: { 민아: 'female' },
