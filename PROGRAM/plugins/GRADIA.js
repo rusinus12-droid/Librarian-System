@@ -27561,7 +27561,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
     // Light / subtle contact.
     ['light', '가벼운 접촉·속삭임·살짝 스치기', /속삭(?:이|이며)|작은\s*목소리|살짝\s*(?:건드|만지|스치|닿)|조심스레|가만히\s*(?:만지|손을\s*대)|이마(?:에)?\s*입(?:을)?\s*맞|볼에\s*입(?:을)?\s*맞|whisper|brush(?:ed|ing)? against|lightly touch|forehead kiss/i, 12]
   ]);
-  const bodyStateSleepReport = (name, mine, recent, scopeKey) => {
+  // 완료된 각성 = 잠든 사람 쪽의 상태 서술(눈을 뜬다/깨어난다/일어나 앉는다) 또는 완료형으로
+  // 깨운 행동. "깨우려 한다·깨우고 있다" 같은 시도 표현은 확정으로 보지 않는다.
+  const BODY_STATE_SLEEP_DONE_WAKE_RE = /(?:눈을\s*(?:뜨|뜬|떴|떠)|깨어났|깨어나|깨어난|일어나\s*앉|몸을\s*일으|깨웠|깨워\s*냈|깨버렸|깼다|woke (?:her|him) up|woke up|awakened|opened (?:her|his) eyes)/i;
+  const BODY_STATE_SLEEP_WAKE_ATTEMPT_RE = /(?:깨우려|깨우려고|깨우고|깨울|깨우는\s*중|시도|보려|try(?:ing)? to wake|attempt)/i;
+  const BODY_STATE_SLEEP_DONE_ONSET_RE = /(?:잠(?:이)?\s*(?:들었|들어|든|든다)|잠들었|잠들어|잠든\s*채|곯아떨어|골아떨어|fell asleep|dozed off)/i;
+  const bodyStateSleepState = scopeKey => {
+    if (!scopeKey) return null;
+    if (!Runtime.bodyStateSleep[scopeKey]) Runtime.bodyStateSleep[scopeKey] = { at: 0, items: [], people: {} };
+    if (!Runtime.bodyStateSleep[scopeKey].people) Runtime.bodyStateSleep[scopeKey].people = {};
+    return Runtime.bodyStateSleep[scopeKey];
+  };
+  const bodyStateSleepReport = (name, mine, recent, scopeKey, settings = {}) => {
     const messages = (Array.isArray(recent?.visibleMessages) ? recent.visibleMessages : [])
       .map(message => text(message?.content || ''))
       .filter(Boolean);
@@ -27572,65 +27583,121 @@ Begin directly with the in-world response and finish the complete same-turn draf
       .flatMap(msg => forcedBondSentences(msg))
       .filter(line => bodyStateLineMentions(line, name));
     const checkLines = characterLines.length ? characterLines : mine.filter(entry => entry.source === 'recent').slice(-6).map(entry => entry.line);
+    const sleepStore = bodyStateSleepState(scopeKey);
+    const clockDay = (() => { try { return bodyStateStoryClock(settings)?.day ?? null; } catch (_) { return null; } })();
+    // A completed act written by the player is a fact, not a probability: a declared waking ends
+    // the sleep state with no roll, and a declared falling-asleep starts it even if the wording
+    // has already left the recent-message window.
+    const inputSentences = forcedBondSentences(input);
+    if (inputSentences.some(sentence => bodyStateLineMentions(sentence, name)
+      && BODY_STATE_SLEEP_DONE_WAKE_RE.test(sentence)
+      && !BODY_STATE_SLEEP_WAKE_ATTEMPT_RE.test(sentence))) {
+      if (sleepStore?.people) delete sleepStore.people[name];
+      return null;
+    }
+    const declaresSleep = inputSentences.some(sentence => bodyStateLineMentions(sentence, name) && BODY_STATE_SLEEP_DONE_ONSET_RE.test(sentence));
     let lastSleepIdx = -1;
     let lastWakeIdx = -1;
     checkLines.forEach((line, idx) => {
       if (BODY_STATE_SLEEP_ONSET_RE.test(line)) lastSleepIdx = idx;
       if (BODY_STATE_SLEEP_WAKE_RE.test(line)) lastWakeIdx = idx;
     });
-    if (lastSleepIdx < 0 || lastWakeIdx > lastSleepIdx) return null;
-    const sleepContext = [...mine.slice(-8).map(entry => entry.line), ...recentWindow].join('\n');
-    let depth = 100;
-    if (BODY_STATE_DEEP_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 145;
-    else if (BODY_STATE_LIGHT_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 75;
-    const aids = [];
-    let aidMultiplier = 1;
-    for (const [pattern, label, addDepth, mult] of BODY_STATE_SLEEP_AID_FACTORS) {
-      if (pattern.test(sleepContext)) {
-        depth += addDepth;
-        aidMultiplier *= mult;
-        aids.push(`${label} (+${addDepth})`);
+    if (declaresSleep) {
+      lastSleepIdx = Math.max(lastSleepIdx, 0);
+      lastWakeIdx = -1;
+    }
+    // Sleeping does not stop existing when the onset line scrolls out of the window: carry the
+    // remembered state for this scope, dropping it only when a wake is seen or the story day moves on.
+    let carried = null;
+    if (lastSleepIdx < 0 || lastWakeIdx > lastSleepIdx) {
+      const stored = sleepStore?.people?.[name];
+      const sameDay = stored && (stored.storyDay === null || stored.storyDay === undefined || clockDay === null || stored.storyDay === clockDay);
+      if (stored && sameDay && Number(stored.depth) > 0) carried = stored;
+      else {
+        if (sleepStore?.people) delete sleepStore.people[name];
+        return null;
       }
     }
-    const priorScenesAfterSleep = recentWindow.slice(-4);
-    let repeatCount = 0;
-    let priorAccumulatedStimulus = 0;
-    let priorSoothingShift = 0;
-    for (const sceneText of priorScenesAfterSleep) {
-      if (BODY_STATE_SLEEP_WAKE_RE.test(sceneText)) {
-        repeatCount = 0;
-        priorAccumulatedStimulus = 0;
-        priorSoothingShift = 0;
-        continue;
+    // Only this character's own lines count as sleep-aid evidence: someone else's drink in the
+    // same room must not deepen this person's sleep.
+    const sleepContext = [...mine.slice(-8).map(entry => entry.line), ...characterLines].join('\n');
+    let depth = carried ? Number(carried.depth) : 100;
+    const aids = [...(carried?.aids || [])];
+    let aidMultiplier = Number(carried?.aidMultiplier) || 1;
+    if (!carried) {
+      if (BODY_STATE_DEEP_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 145;
+      else if (BODY_STATE_LIGHT_SLEEP_RE.test(checkLines.slice(lastSleepIdx).join('\n'))) depth = 75;
+      for (const [pattern, label, addDepth, mult] of BODY_STATE_SLEEP_AID_FACTORS) {
+        if (pattern.test(sleepContext)) {
+          depth += addDepth;
+          aidMultiplier *= mult;
+          aids.push(`${label} (+${addDepth})`);
+        }
       }
-      const matched = BODY_STATE_SLEEP_INTERACTIONS.find(([, , pattern]) => pattern.test(sceneText));
-      if (!matched) continue;
-      if (matched[0] === 'soothing') {
-        priorSoothingShift += 20;
-      } else {
-        repeatCount += 1;
-        priorAccumulatedStimulus += Math.round(matched[3] * 0.45);
+      const priorScenesAfterSleep = recentWindow.slice(-4);
+      let repeatCount = 0;
+      let priorAccumulatedStimulus = 0;
+      let priorSoothingShift = 0;
+      for (const sceneText of priorScenesAfterSleep) {
+        if (BODY_STATE_SLEEP_WAKE_RE.test(sceneText)) {
+          repeatCount = 0;
+          priorAccumulatedStimulus = 0;
+          priorSoothingShift = 0;
+          continue;
+        }
+        const matched = BODY_STATE_SLEEP_INTERACTIONS.find(([, , pattern]) => pattern.test(sceneText));
+        if (!matched) continue;
+        if (matched[0] === 'soothing') {
+          priorSoothingShift += 20;
+        } else {
+          repeatCount += 1;
+          priorAccumulatedStimulus += Math.round(matched[3] * 0.45);
+        }
       }
+      depth = Math.max(50, Math.min(200, depth + priorSoothingShift - priorAccumulatedStimulus));
     }
-    depth = Math.max(50, Math.min(200, depth + priorSoothingShift - priorAccumulatedStimulus));
+    const remember = (nextDepth, verdict) => {
+      if (sleepStore?.people) sleepStore.people[name] = { depth: Math.round(nextDepth), aidMultiplier, aids, storyDay: clockDay, verdict, at: Date.now() };
+    };
+    const carriedNote = carried ? ' (carried from the earlier turn — still asleep)' : '';
+    const repeatCountForBonus = (() => {
+      let count = 0;
+      for (const sceneText of recentWindow.slice(-4)) {
+        if (BODY_STATE_SLEEP_WAKE_RE.test(sceneText)) { count = 0; continue; }
+        const matched = BODY_STATE_SLEEP_INTERACTIONS.find(([, , pattern]) => pattern.test(sceneText));
+        if (matched && matched[0] !== 'soothing') count += 1;
+      }
+      return count;
+    })();
+    const priorStimulusForBonus = (() => {
+      let sum = 0;
+      for (const sceneText of recentWindow.slice(-4)) {
+        if (BODY_STATE_SLEEP_WAKE_RE.test(sceneText)) { sum = 0; continue; }
+        const matched = BODY_STATE_SLEEP_INTERACTIONS.find(([, , pattern]) => pattern.test(sceneText));
+        if (matched && matched[0] !== 'soothing') sum += Math.round(matched[3] * 0.45);
+      }
+      return sum;
+    })();
     const actionSource = input || recentWindow[recentWindow.length - 1] || '';
     const currentInteractions = BODY_STATE_SLEEP_INTERACTIONS.filter(([, , pattern]) => pattern.test(actionSource));
     if (!currentInteractions.length) {
       const stageLabel = depth >= 160 ? 'deep sleep (깊은 숙면)' : depth >= 115 ? 'sound sleep (숙면)' : depth >= 85 ? 'normal sleep (일반 수면)' : 'light sleep (선잠·각성 임박)';
-      return `  sleep state: asleep — depth ${depth}/200 (${stageLabel}${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''}); no direct waking stimulus this turn → stays asleep`;
+      remember(depth, 'asleep');
+      return `  sleep state: asleep — depth ${depth}/200 (${stageLabel}${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote}; no direct waking stimulus this turn → stays asleep`;
     }
     const soothingOnly = currentInteractions.every(([kind]) => kind === 'soothing');
     if (soothingOnly) {
       const nextDepth = Math.min(200, depth + 20);
-      return `  sleep state: asleep — soothing interaction (${currentInteractions.map(([, label]) => label).join(', ')}) deepens sleep (${depth} → ${nextDepth}/200${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''}) → wake chance 0.0% → STAYS DEEPLY ASLEEP (fixed verdict: breathing grows slower and more even)`;
+      remember(nextDepth, 'deepened');
+      return `  sleep state: asleep — soothing interaction (${currentInteractions.map(([, label]) => label).join(', ')}) deepens sleep (${depth} → ${nextDepth}/200${aids.length ? `; sleep aids: ${aids.join(', ')}` : ''})${carriedNote} → wake chance 0.0% → STAYS DEEPLY ASLEEP (fixed verdict: breathing grows slower and more even)`;
     }
     const activeInteractions = currentInteractions.filter(([kind]) => kind !== 'soothing');
     const primary = activeInteractions.reduce((best, cur) => (cur[3] > best[3] ? cur : best), activeInteractions[0]);
     const extraStimulus = activeInteractions.filter(item => item !== primary).reduce((sum, item) => sum + Math.round(item[3] * 0.4), 0);
     const rawStimulus = primary[3] + extraStimulus;
-    const turnCount = repeatCount + 1;
+    const turnCount = repeatCountForBonus + 1;
     const proximityBonus = depth < 100 ? Math.round((100 - depth) * 0.45) : 0;
-    const repeatBonus = repeatCount > 0 ? repeatCount * 14 + Math.min(24, Math.round(priorAccumulatedStimulus * 0.35)) : 0;
+    const repeatBonus = repeatCountForBonus > 0 ? repeatCountForBonus * 14 + Math.min(24, Math.round(priorStimulusForBonus * 0.35)) : 0;
     const totalStimulus = rawStimulus + repeatBonus + proximityBonus;
     const effectiveDepth = Math.max(25, depth - totalStimulus);
     const rawChance = (totalStimulus / Math.max(55, depth)) * aidMultiplier;
@@ -27644,12 +27711,15 @@ Begin directly with the in-world response and finish the complete same-turn draf
       proximityBonus > 0 ? `near-wake bonus +${proximityBonus}` : '',
       aids.length ? `sleep aids: ${aids.join(', ')} (wake resistance ×${aidMultiplier.toFixed(2)})` : ''
     ].filter(Boolean).join(', ');
-    const outcomeText = wakes
-      ? 'WAKES UP THIS TURN (fixed verdict: show the NPC stirring and waking from the interaction)'
-      : effectiveDepth <= 75
-        ? `STAYS ASLEEP — NEAR WAKING (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; show eyelids fluttering, a muffled stir or hitched breath, on the verge of waking if touched again)`
-        : `STAYS ASLEEP (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; does not wake from this interaction)`;
-    return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}] → wake chance ${(chance * 100).toFixed(1)}% → ${outcomeText}`;
+    if (wakes) {
+      if (sleepStore?.people) delete sleepStore.people[name];
+      return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}]${carriedNote} → wake chance ${(chance * 100).toFixed(1)}% → WAKES UP THIS TURN (fixed verdict: show the NPC stirring and waking from the interaction)`;
+    }
+    remember(effectiveDepth, 'asleep');
+    const outcomeText = effectiveDepth <= 75
+      ? `STAYS ASLEEP — NEAR WAKING (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; show eyelids fluttering, a muffled stir or hitched breath, on the verge of waking if touched again)`
+      : `STAYS ASLEEP (fixed verdict: depth drops ${depth} → ${effectiveDepth}/200; does not wake from this interaction)`;
+    return `  sleep state: asleep (depth ${depth}/200) + interaction [${bonusNotes}]${carriedNote} → wake chance ${(chance * 100).toFixed(1)}% → ${outcomeText}`;
   };
   // A time named for another day or as a span edge ("내일 아침", "아침부터", "tomorrow morning") is not
   // the scene's present. Live run 2026-11-15: "내일 아침 비가 그치면" in a night scene made the packet say
@@ -27961,7 +28031,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
       const cues = BODY_STATE_BASELINE_CUES.filter(([pattern]) => mine.slice(-6).some(entry => entry.source === 'recent' && pattern.test(entry.line)));
       if (cues.length) lines.push(`  scene condition this turn: ${cues.map(([, label, signs]) => `${label} → ${signs}`).join('; ')}`);
       if (gate !== 'staging') {
-        const sleepLine = bodyStateSleepReport(name, mine, context.recent, scopeKey);
+        const sleepLine = bodyStateSleepReport(name, mine, context.recent, scopeKey, settings);
         if (sleepLine) {
           lines.push(sleepLine);
           if (Array.isArray(context.sleepItems)) context.sleepItems.push({ name, line: sleepLine.trim() });
@@ -27990,7 +28060,10 @@ Begin directly with the in-world response and finish the complete same-turn draf
       present: scenePeople.some(person => extensionSamePerson(person, name === FORCED_BOND_PERSONA ? Runtime.activePersonaName : name))
         || (name !== FORCED_BOND_PERSONA && !!cardPerson && extensionSamePerson(name, cardPerson))
     })).filter(Boolean);
-    if (scopeKey) Runtime.bodyStateSleep[scopeKey] = { at: Date.now(), items: sleepItems };
+    if (scopeKey) {
+      // people[] 는 인물별 지속 수면 상태다 — 스냅샷으로 덮어써 지우지 않는다.
+      Runtime.bodyStateSleep[scopeKey] = { ...(Runtime.bodyStateSleep[scopeKey] || {}), at: Date.now(), items: sleepItems };
+    }
     const libHits = entries.some(entry => entry.source === 'LIB');
     return compact([
       clock ? `Story clock (LIBRA): day ${clock.day}${clock.estimated ? ' (estimated)' : ''}${clock.timeOfDay ? ` · ${clock.timeOfDay}` : ''}${clock.date ? ` · ${clock.date}` : ''}.` : '',

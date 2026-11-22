@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-22T14:16:08.091Z",
+  "generatedAt": "2026-11-22T14:18:02.561Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "7eb5cb335751bf64df30fcf595d6aa99422e0da24bbd0df49d76d5d65666c85e",
+      "sha256": "ecef8a5c14510070110046d1140b8fbf73b1c49367b8a3e2f1f6a650d29975e7",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4340,8 +4340,8 @@
       "bytes": 3982697
     },
     "plugins/GRADIA.js": {
-      "sha256": "d5b9b892c6426e09f981e4068f1e732a1ed7c664231ea0d3e8164fade9b54c26",
-      "bytes": 4158598
+      "sha256": "d8c3125e49dcc29299b1f09b4e58b783e51bbcfd97f40d73aeb289a1a9fc19b2",
+      "bytes": 4163368
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
       "sha256": "d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919",
@@ -7186,6 +7186,10 @@
     "tests/gradia/settings-backup.test.cjs": {
       "sha256": "7dd6926cc06b1900403289cf1140dddfee96b535227bef3207541a093bf1398c",
       "bytes": 11398
+    },
+    "tests/gradia/sleep-state-continuity.test.cjs": {
+      "sha256": "e3111ebeacb19efecaff11dd80b993593a33664a723e6846049ef7475770821a",
+      "bytes": 3857
     },
     "tests/gradia/suite-inventory.json": {
       "sha256": "0641443b82efde646d711e91b04d0686d762c6cca05be588257922074165e77b",
