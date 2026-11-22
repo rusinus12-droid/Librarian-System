@@ -26781,9 +26781,12 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     if (outcome.state !== 'fulfilled') throw recoveryVaultFailure(outcome, 'recovery_vault_write', key);
     let readback = await readRecoveryVaultValue(key);
     if (JSON.stringify(readback) !== serialized) {
-      // Retry once after brief settle in case host storage flush has asynchronous latency
-      await new Promise(resolve => setTimeout(resolve, 50));
-      readback = await readRecoveryVaultValue(key);
+      // Retry briefly in case host storage flush has asynchronous latency
+      for (const delayMs of [50, 150]) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        readback = await readRecoveryVaultValue(key);
+        if (JSON.stringify(readback) === serialized) break;
+      }
       if (JSON.stringify(readback) !== serialized) throw new Error('recovery_vault_readback_mismatch:' + key);
     }
   };
@@ -26819,55 +26822,65 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
       throw error;
     }
   };
+  const recoveryVaultWriteLocks = new Map();
+  const withRecoveryVaultWriteLock = (scopeKey, task) => {
+    const prev = recoveryVaultWriteLocks.get(scopeKey) || Promise.resolve();
+    const run = prev.catch(() => {}).then(task);
+    const tail = run.finally(() => { if (recoveryVaultWriteLocks.get(scopeKey) === tail) recoveryVaultWriteLocks.delete(scopeKey); });
+    recoveryVaultWriteLocks.set(scopeKey, tail);
+    return run;
+  };
   const writeRecoveryVaultDirect = async (scopeOrKey, value, reason = 'update', options = {}) => {
     const scopeKey=compact(objectish(scopeOrKey)?scopeOrKey.key:scopeOrKey,196);
     if (!scopeKey) return {durable:false,saved:false,reason:'scope_unavailable',records:0};
-    const normalized=normalizeRecoveryVault(value,scopeKey);normalized.pluginVersion=PLUGIN_VERSION;normalized.updatedAt=now();
-    normalized.records=normalizeRecoveryVault({...normalized,records:pruneRecoveryVaultRecords(normalized.records)},scopeKey).records;
-    const key=recoveryVaultKeyForScope(scopeKey);
-    try {
-      const previous=await readRecoveryVaultValue(key);if(previous)validateRecoveryVaultIndex(previous,scopeKey);
-      if(options.partial===true && previous?.storageFormat!==RECOVERY_VAULT_STORAGE_FORMAT){
-        const rows=new Map(normalizeRecoveryVault(previous,scopeKey).records.map(r=>[r.recordId,r]));
-        for(const id of ensureArray(options.removeDebtIds))rows.delete(String(id));
-        for(const row of normalized.records)rows.set(row.recordId,row);normalized.records=[...rows.values()];
+    return withRecoveryVaultWriteLock(scopeKey, async () => {
+      const normalized=normalizeRecoveryVault(value,scopeKey);normalized.pluginVersion=PLUGIN_VERSION;normalized.updatedAt=now();
+      normalized.records=normalizeRecoveryVault({...normalized,records:pruneRecoveryVaultRecords(normalized.records)},scopeKey).records;
+      const key=recoveryVaultKeyForScope(scopeKey);
+      try {
+        const previous=await readRecoveryVaultValue(key);if(previous)validateRecoveryVaultIndex(previous,scopeKey);
+        if(options.partial===true && previous?.storageFormat!==RECOVERY_VAULT_STORAGE_FORMAT){
+          const rows=new Map(normalizeRecoveryVault(previous,scopeKey).records.map(r=>[r.recordId,r]));
+          for(const id of ensureArray(options.removeDebtIds))rows.delete(String(id));
+          for(const row of normalized.records)rows.set(row.recordId,row);normalized.records=[...rows.values()];
+        }
+        const oldRefs=new Map(ensureArray(previous?.debtRefs).map(r=>[r.recordId,r]));
+        const refs=new Map(options.partial===true && previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT ? oldRefs:[]);
+        for(const id of ensureArray(options.removeDebtIds))refs.delete(String(id));
+        let debtWrites=0;
+        for(const record of normalized.records){
+          const payloadHash=stableHash64(JSON.stringify([record]));
+          const debtKey=key+'::debt:'+stableHash64(record.recordId)+':'+payloadHash;
+          const ref={recordId:record.recordId,pairIndex:record.pairIndex,key:debtKey};
+          if(oldRefs.get(record.recordId)?.key===debtKey)validateRecoveryVaultShard(await readRecoveryVaultValue(debtKey),ref,scopeKey);
+          else {await writeVerifiedRecoveryVaultValue(debtKey,{schema:RECOVERY_VAULT_SCHEMA,version:RECOVERY_VAULT_VERSION,storagePart:'debt',scopeKey,recordId:record.recordId,payloadHash,records:[record]});debtWrites++;}
+          refs.set(record.recordId,ref);
+        }
+        const debtRefs=[...refs.values()].sort((a,b)=>Number(a.pairIndex)-Number(b.pairIndex)||a.recordId.localeCompare(b.recordId));
+        const active=new Set(debtRefs.map(r=>r.key));
+        const retired=new Map(ensureArray(previous?.retiredDebtRefs).map(r=>[r.key,r]));
+        for(const ref of oldRefs.values())if(!active.has(ref.key))retired.set(ref.key,{key:ref.key,retiredAt:now()});
+        const expired=[...retired.values()].filter(r=>!active.has(r.key) && Number(r.retiredAt)>0 && Number(r.retiredAt)<now()-Math.max(30000,RECOVERY_VAULT_CACHE_TTL_MS*2));
+        const index={...normalized,records:[],storageFormat:RECOVERY_VAULT_STORAGE_FORMAT,debtRefs,
+          retiredDebtRefs:[...retired.values()].filter(r=>!active.has(r.key)&&!expired.includes(r)),
+          legacyMigratedAt:previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT?(previous.legacyMigratedAt||0):(previous?now():0)};
+        // Atomic root publication occurs only after all new debt snapshots read back.
+        await writeVerifiedRecoveryVaultValue(key,index);
+        Memory.recoveryVaultCache.delete(scopeKey);
+        if(!options.partial)Memory.recoveryVaultCache.set(scopeKey,{at:now(),vault:normalized});
+        Memory.recoveryVaultStats.writes++;Memory.recoveryVaultStats.lastError='';Memory.recoveryVaultStats.storedRecords=debtRefs.length;
+        Memory.recoveryVaultStats.storedChars=normalized.records.reduce((n,r)=>n+recoveryVaultRecordTextChars(r),0);
+        Memory.lastRecoveryVault={at:now(),scopeKey,reason,durable:true,records:debtRefs.length,debtWrites};
+        // Retired snapshots only. Interrupted new snapshots may remain as harmless
+        // orphans; neither errors nor cleanup delete the old committed graph.
+        for(const ref of expired)if(text(ref.key).startsWith(key+'::debt:'))await RisuCompat.removeStorageItem(ref.key).catch(()=>false);
+        return {...Memory.lastRecoveryVault,saved:true,storageKey:key,storageFormat:RECOVERY_VAULT_STORAGE_FORMAT};
+      } catch(error){
+        Memory.recoveryVaultCache.delete(scopeKey);Memory.recoveryVaultStats.failures++;Memory.recoveryVaultStats.lastError=compact(error?.message||error,240);
+        const failed={durable:false,saved:false,scopeKey,reason:'recovery_vault_write_failed',error:Memory.recoveryVaultStats.lastError,code:error?.code||'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',stage:error?.stage||'recovery_vault_write'};
+        Memory.lastRecoveryVault={at:now(),...failed};pushOperationLog('recovery_vault:write_failed',Memory.lastRecoveryVault,'error');return failed;
       }
-      const oldRefs=new Map(ensureArray(previous?.debtRefs).map(r=>[r.recordId,r]));
-      const refs=new Map(options.partial===true && previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT ? oldRefs:[]);
-      for(const id of ensureArray(options.removeDebtIds))refs.delete(String(id));
-      let debtWrites=0;
-      for(const record of normalized.records){
-        const payloadHash=stableHash64(JSON.stringify([record]));
-        const debtKey=key+'::debt:'+stableHash64(record.recordId)+':'+payloadHash;
-        const ref={recordId:record.recordId,pairIndex:record.pairIndex,key:debtKey};
-        if(oldRefs.get(record.recordId)?.key===debtKey)validateRecoveryVaultShard(await readRecoveryVaultValue(debtKey),ref,scopeKey);
-        else {await writeVerifiedRecoveryVaultValue(debtKey,{schema:RECOVERY_VAULT_SCHEMA,version:RECOVERY_VAULT_VERSION,storagePart:'debt',scopeKey,recordId:record.recordId,payloadHash,records:[record]});debtWrites++;}
-        refs.set(record.recordId,ref);
-      }
-      const debtRefs=[...refs.values()].sort((a,b)=>Number(a.pairIndex)-Number(b.pairIndex)||a.recordId.localeCompare(b.recordId));
-      const active=new Set(debtRefs.map(r=>r.key));
-      const retired=new Map(ensureArray(previous?.retiredDebtRefs).map(r=>[r.key,r]));
-      for(const ref of oldRefs.values())if(!active.has(ref.key))retired.set(ref.key,{key:ref.key,retiredAt:now()});
-      const expired=[...retired.values()].filter(r=>!active.has(r.key) && Number(r.retiredAt)>0 && Number(r.retiredAt)<now()-Math.max(30000,RECOVERY_VAULT_CACHE_TTL_MS*2));
-      const index={...normalized,records:[],storageFormat:RECOVERY_VAULT_STORAGE_FORMAT,debtRefs,
-        retiredDebtRefs:[...retired.values()].filter(r=>!active.has(r.key)&&!expired.includes(r)),
-        legacyMigratedAt:previous?.storageFormat===RECOVERY_VAULT_STORAGE_FORMAT?(previous.legacyMigratedAt||0):(previous?now():0)};
-      // Atomic root publication occurs only after all new debt snapshots read back.
-      await writeVerifiedRecoveryVaultValue(key,index);
-      Memory.recoveryVaultCache.delete(scopeKey);
-      if(!options.partial)Memory.recoveryVaultCache.set(scopeKey,{at:now(),vault:normalized});
-      Memory.recoveryVaultStats.writes++;Memory.recoveryVaultStats.lastError='';Memory.recoveryVaultStats.storedRecords=debtRefs.length;
-      Memory.recoveryVaultStats.storedChars=normalized.records.reduce((n,r)=>n+recoveryVaultRecordTextChars(r),0);
-      Memory.lastRecoveryVault={at:now(),scopeKey,reason,durable:true,records:debtRefs.length,debtWrites};
-      // Retired snapshots only. Interrupted new snapshots may remain as harmless
-      // orphans; neither errors nor cleanup delete the old committed graph.
-      for(const ref of expired)if(text(ref.key).startsWith(key+'::debt:'))await RisuCompat.removeStorageItem(ref.key).catch(()=>false);
-      return {...Memory.lastRecoveryVault,saved:true,storageKey:key,storageFormat:RECOVERY_VAULT_STORAGE_FORMAT};
-    } catch(error){
-      Memory.recoveryVaultCache.delete(scopeKey);Memory.recoveryVaultStats.failures++;Memory.recoveryVaultStats.lastError=compact(error?.message||error,240);
-      const failed={durable:false,saved:false,scopeKey,reason:'recovery_vault_write_failed',error:Memory.recoveryVaultStats.lastError,code:error?.code||'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',stage:error?.stage||'recovery_vault_write'};
-      Memory.lastRecoveryVault={at:now(),...failed};pushOperationLog('recovery_vault:write_failed',Memory.lastRecoveryVault,'error');return failed;
-    }
+    });
   };
   const recoveryEvidenceManifestHash = value => stableHash64(JSON.stringify({
     schema: value?.schema || '',
@@ -27745,6 +27758,20 @@ const MemorySuiteStorageBridge = createMemorySuiteStorageBridge({
     ledger=bindStorageLedgerToSnapshot({...ledger,worldline},snapshot,worldline).ledger;
     const exactCoverage=exactHayakuTurnCoverage(snapshot,ledger,scope.key);
     const lifecycle = await reconcileRecoveryVaultWorldlineLifecycleDirect(scope, snapshot, worldline, { force: true, reason: 'hayaku_native_debt_inspect',coverage:exactCoverage });
+    if (lifecycle?.durable === false) {
+      return {
+        ok: false,
+        durable: false,
+        available: false,
+        reason: lifecycle.reason || 'recovery_vault_write_failed',
+        error: lifecycle.error || '',
+        code: lifecycle.code || 'HAYAKU_RECOVERY_VAULT_STORAGE_FAILED',
+        stage: lifecycle.stage || 'recovery_vault_write',
+        scopeKey: scope.key,
+        debts: [],
+        coverage: exactCoverage
+      };
+    }
     lifecycle.activeRecords=lifecycle.activeRecords.filter(r=>exactCoverage.missingTurns.includes(Number(r.pairIndex)));
     const targetDebtId = compact(payload?.debtId || '', 196);
     const targetPairIndex = Math.max(0, Number(payload?.targetPairIndex || ensureArray(payload?.targetTurns)[0] || 0) || 0);

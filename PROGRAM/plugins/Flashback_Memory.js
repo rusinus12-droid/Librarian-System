@@ -31081,7 +31081,7 @@ const MemorySuiteSnapshotCache = (() => {
       protectedSourceLive=preserveFlashbackCanonicalPairs(scope,normalizedObservedLive,loaded.records,storedWorldline);
       const protectedTarget = protectPendingGenerationWorldlineTarget(
         scope,
-        normalizedObservedLive,
+        protectedSourceLive,
         loaded.records,
         storedWorldline,
         options.protectedPending || null
@@ -33815,11 +33815,17 @@ const MemorySuiteHealthRecovery = (() => {
     const ids = nativeIds(source?.sourceMessageIds);
     const pairIndex = Math.max(0, Number(source?.pairIndex || source?.turnIndex || 0) || 0);
     if (!rawDigest || !pairIndex) return null;
+    const recordIdsMatch = (recordIds = []) => {
+      const recNative = nativeIds(recordIds);
+      if (!ids.length) return recNative.length === 0;
+      const recSet = new Set(recNative);
+      return ids.every(id => recSet.has(id));
+    };
     return groups.find(group => group.complete !== false
       && Math.max(0, Number(group.pairIndex || group.turnIndex || 0) || 0) === pairIndex
       && group.records.length > 0
       && group.records.every(record => text(record?.metadata?.sourceRawDigest || '') === rawDigest)
-      && group.records.every(record => safeStringify(nativeIds(record?.sourceMessageIds)) === safeStringify(ids))) || null;
+      && group.records.every(record => recordIdsMatch(record?.sourceMessageIds))) || null;
   };
   const diffLiveChatSourcesAgainstRecords = (sources = [], records = [], options = {}) => {
     const groups = responseGroupsForWorldline(records);
