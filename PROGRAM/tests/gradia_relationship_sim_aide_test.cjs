@@ -99,9 +99,10 @@ test('it runs inside 인물 AIDE with depiction lines and a fixed outcome for th
   assert.match(system, /keep it secret: careful distance in front of others/);
   assert.match(system, /준호 holds the lead \(자존심\)/);
   assert.match(system, /준호 loves the 유희적 사랑 way: light flirting and jokes/);
-  assert.match(system, /- \[bond-junho\] If .+ makes a confession \(고백\) toward 준호 this turn, 준호 (accepts — agrees to be lovers|turns it down — the answer is no for now)\. The current input shows this act\./);
+  assert.match(system, /- \[bond-junho\] ATTEMPT: .+ \(고백\) · verdict: (SUCCESS|FAILURE) · REQUIRED THIS TURN: show 준호 (accepts — agrees to be lovers|turns it down — the answer is no for now)/);
+  assert.match(system, /Every REQUIRED THIS TURN beat above must be visible in the draft/);
   // RP: the NPC's own confession to the persona is not rolled (the persona's answer is the user's).
-  assert.doesNotMatch(system, /If 준호 makes a confession/);
+  assert.doesNotMatch(system, /ATTEMPT: 준호 says out loud/);
   assert.match(system, /RP mode: never make the persona confess, propose/);
   assert.doesNotMatch(system, /\d+%/, 'no percentages in the prompt');
   assert.ok(f.prompts.some(body => !stageOf(body).startsWith('aide_') && textOf(body).includes('STAGE DUTY: SHADOW: let the DEPICTION lines shape')), 'SHADOW gets the same block before drafting');
@@ -218,7 +219,7 @@ test('scene-staging RP rolls nothing; prose mode skips the stage; Novel rolls bo
   assert.ok(prose.prompts.every(body => !textOf(body).includes(BLOCK)));
   const { f: novel } = await start(t, { settings: { writing_mode: 'novel' }, pair: { status: 'friend' } });
   await runTurn(novel, '준호에게 고백한다.');
-  assert.match(hostSystem(novel), /If 준호 makes a confession \(고백\) toward/);
+  assert.match(hostSystem(novel), /ATTEMPT: .+ \(고백\)/);
 });
 
 test('the enabled flag survives a settings round trip', async t => {
@@ -285,21 +286,21 @@ test('non-confession turns do not inject confession verdicts; date and event are
   await runTurn(f, '커피 좋아해? 오늘 날씨 정말 좋다.');
   const casualSys = hostSystem(f);
   assert.doesNotMatch(casualSys, /FIXED OUTCOMES/);
-  assert.doesNotMatch(casualSys, /makes a confession \(고백\)/);
+  assert.doesNotMatch(casualSys, /\(고백\) · verdict:/);
   assert.match(casualSys, /ACTIVE RELATIONSHIP EVENTS THIS TURN: none detected/);
 
   // A date turn for a friend/more_than_friend pair detects date, not confession
   await runTurn(f, '이번 주말에 같이 영화 보러 데이트 갈래?');
   const dateSys = hostSystem(f);
   assert.match(dateSys, /FIXED OUTCOMES \(this turn — matched to detected act\(s\) only\):/);
-  assert.match(dateSys, /makes a date \(데이트\) toward 준호/);
-  assert.doesNotMatch(dateSys, /makes a confession \(고백\)/);
+  assert.match(dateSys, /ATTEMPT: .+ \(데이트\) · verdict:/);
+  assert.doesNotMatch(dateSys, /\(고백\) · verdict:/);
 
   // An event turn detects event, not confession
   await runTurn(f, '준호에게 몰래 준비한 깜짝 선물을 건넨다.');
   const eventSys = hostSystem(f);
-  assert.match(eventSys, /makes a event \(이벤트\) toward 준호/);
-  assert.doesNotMatch(eventSys, /makes a confession \(고백\)/);
+  assert.match(eventSys, /ATTEMPT: .+ \(이벤트\) · verdict:/);
+  assert.doesNotMatch(eventSys, /\(고백\) · verdict:/);
 });
 
 test('memory relationship and emotion signals adjust event success probability', async t => {

@@ -26845,6 +26845,27 @@ Begin directly with the in-world response and finish the complete same-turn draf
     stage_push: '관계 단계 전이 시도',
     absent_contact: '부재 인물 접촉·등장 계기'
   });
+  const forcedBondBeatIntent = (beatType, from, to, extra = {}) => {
+    switch (beatType) {
+      case 'emotional_shift': return `show ${to}'s feeling toward ${from} shifting in one concrete gesture (a pause, a softened answer, a flinch)`;
+      case 'relational_action': return `show ${from} doing one concrete thing for ${to} (a hand, a small service, an intervention)`;
+      case 'stage_push': return extra.stagePush
+        ? `show a concrete step that moves the bond ${extra.stagePush.from}→${extra.stagePush.to}`
+        : 'show one concrete step that changes the bond stage';
+      case 'absent_contact': return 'show a concrete contact from someone who is not in the scene (a message, a trace, a stated arrival cause)';
+      default: return `show one concrete act of the ${beatType} beat`;
+    }
+  };
+  const forcedBondRollLine = (sim, label, offScene = false) => {
+    const from = forcedBondDisplayName(sim.from), to = forcedBondDisplayName(sim.to);
+    const beat = FORCED_BOND_BEAT_LABELS[sim.beatType] || sim.beatType;
+    const intent = forcedBondBeatIntent(sim.beatType, from, to, { stagePush: sim.stagePush });
+    const push = sim.stagePush
+      ? ` · stage push ${sim.stagePush.from}→${sim.stagePush.to}: ${sim.stagePush.success ? 'ALLOWED' : 'HOLD'} (${sim.stagePush.roll}/100 vs ${sim.stagePush.chance}%)`
+      : '';
+    return `- ${label}: ${from} ↔ ${to} · ROLL ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · beat: ${beat}${push}`
+      + ` · REQUIRED THIS TURN: ${intent}${offScene ? ' (off scene — a trace, never a full scene)' : ''}`;
+  };
   const forcedBondRomanticallyCharged = card => (card?.tones || []).some(t => ['affection', 'jealousy'].includes(t));
   const computeForcedBondSimulator = (recent = {}, settings = {}, onSceneCards = []) => {
     const scopeKey = compact(Runtime.activeScopeKey || '', 512);
@@ -27019,18 +27040,18 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? [
             '[BOND SIMULATOR (억결 확률 판정)]',
             sim.main
-              ? `- Main Bond Roll: ${forcedBondDisplayName(sim.main.from)} ↔ ${forcedBondDisplayName(sim.main.to)} (${sim.main.roll}/100 < ${sim.main.chance}%) → TRIGGERED · Beat: ${FORCED_BOND_BEAT_LABELS[sim.main.beatType] || sim.main.beatType}${sim.main.stagePush ? ` · Stage push (${sim.main.stagePush.from}→${sim.main.stagePush.to}): ${sim.main.stagePush.success ? 'ALLOWED' : 'HOLD'} (${sim.main.stagePush.roll}/100 vs ${sim.main.stagePush.chance}%)` : ''}`
+              ? forcedBondRollLine(sim.main, 'Main Bond Roll')
               : '- Main Bond Roll: QUIET TURN (do not force a big bond move without scene cause).',
             sim.ripple
-              ? `- Ripple Bond Roll: ${forcedBondDisplayName(sim.ripple.from)} ↔ ${forcedBondDisplayName(sim.ripple.to)} (${sim.ripple.roll}/100 < ${sim.ripple.chance}%) → TRIGGERED (${FORCED_BOND_BEAT_LABELS[sim.ripple.beatType] || sim.ripple.beatType}).`
+              ? forcedBondRollLine(sim.ripple, 'Ripple Bond Roll')
               : '',
             sim.offScene
-              ? `- Off-Scene NPC↔NPC Bond Roll: ${forcedBondDisplayName(sim.offScene.from)} ↔ ${forcedBondDisplayName(sim.offScene.to)} (${sim.offScene.roll}/100 < ${sim.offScene.chance}%) → TRIGGERED (${FORCED_BOND_BEAT_LABELS[sim.offScene.beatType] || sim.offScene.beatType}). Record in bond_readings if an indirect trace or off-scene shift applies.`
+              ? forcedBondRollLine(sim.offScene, 'Off-Scene NPC↔NPC Bond Roll', true) + ' Record it in bond_readings when you surface it.'
               : '',
             recentBondHistory.length
               ? `- Recent Persistent Bond History:\n${recentBondHistory.map(h => `  • [turn ${h.turn}] ${forcedBondDisplayName(h.from)}↔${forcedBondDisplayName(h.to)}${h.offScene ? ' (장면 밖)' : ''}: ${h.summary}`).join('\n')}`
               : ''
-          ].filter(Boolean).join('\n')
+          ].filter(Boolean).join('\n') + '\n- Every REQUIRED THIS TURN beat must be visible in the draft; when the scene makes it impossible, say so in bond_readings instead of dropping it silently.'
         : '',
       cards.length ? `BONDS AND EVIDENCE:\n${forcedBondEvidencePacket(recent, settings, cards)}` : 'BONDS: no user card and no other person in the scene this turn. Do not invent a person.',
       priorChecks.length ? `VERIFICATION NOTES FROM EARLIER STAGES (this run):\n${priorChecks.join('\n')}` : '',
@@ -28523,7 +28544,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         : sim.suppressed === 'due_movement_active'
           ? 'Simulator status: deferred because an established movement above is already due this turn.'
           : sim.triggered
-            ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). Weave at most one subtle, indirect trace early or mid-scene consistent with their lore/personality without hijacking the scene or ending the turn.`
+            ? `Dice roll: ${sim.roll}/100 < ${sim.chance}% → TRIGGERED · Actor: ${sim.actor}${sim.companion ? ` (with ${sim.companion})` : ''} · Channel: ${sim.actionType.label} (${sim.actionType.hint}). REQUIRED THIS TURN: one visible trace of it early or mid-scene, consistent with their lore/personality — at most one, subtle, without hijacking the scene or ending the turn. If the turn cannot carry it, say why in world_readings instead of dropping it.`
             : `Dice roll: ${sim.roll}/100 >= ${sim.chance}% → QUIET TURN (surface no random off-scene ripple this turn).`
     ] : [];
     return compact([
@@ -31164,7 +31185,32 @@ Begin directly with the in-world response and finish the complete same-turn draf
     pair.lead ? `lead: ${forcedBondDisplayName(pair.lead)}${pair.leadReasons.length ? ` (${relsimLabels(RELSIM_LEAD_REASONS, pair.leadReasons)})` : ''}` : '',
     pair.mood ? `mood ${pair.mood > 0 ? '+' : ''}${pair.mood}/100 (${relsimMoodBand(pair.mood).label})${pair.moodCause ? ` — ${pair.moodCause}` : ''}` : ''
   ].filter(Boolean).join('; ').replace('; ', ': ');
-  const relsimVerdictLine = verdict => `- [${verdict.pairId}] If ${forcedBondDisplayName(verdict.actor)} makes a ${verdict.act} (${RELSIM_ACT_LABELS[verdict.act]}) toward ${forcedBondDisplayName(verdict.responder)} this turn, ${forcedBondDisplayName(verdict.responder)} ${RELSIM_OUTCOME_TEXT[verdict.act][verdict.success ? 0 : 1]}.${verdict.expected ? ' The current input shows this act.' : ''}`;
+  // What the roll is actually about: a concrete act, a legible verdict, and the beat the draft
+  // owes. Without the intent an "if X acts" line says nothing about what happens; without the
+  // required beat a fixed outcome could be dodged without a trace.
+  const RELSIM_ACT_INTENT = Object.freeze({
+    confession: name => `${name} says out loud what they feel`,
+    reunion: name => `${name} asks to try again`,
+    proposal: name => `${name} proposes`,
+    date: name => `${name} takes them out for a date`,
+    event: name => `${name} stages a gift, a surprise, or an occasion`,
+    intimate: name => `${name} draws them into the act itself`,
+    care_hospital: name => `${name} stays and cares for them`,
+    conflict_reconcile: name => `${name} makes the first step toward peace`,
+    confide_secret: name => `${name} tells them the thing kept hidden`
+  });
+  const relsimVerdictLine = verdict => {
+    const actor = forcedBondDisplayName(verdict.actor);
+    const responder = forcedBondDisplayName(verdict.responder);
+    // 확률·굴림 수치는 프롬프트에 넣지 않는다(모델이 숫자를 성과로 착각한다 — `no percentages` 계약).
+    // 수치는 readings/GUI 가 보여 주고, 프롬프트는 시도·판정·요구 전개만 전달한다.
+    const intent = (RELSIM_ACT_INTENT[verdict.act] || (name => `${name} acts on the relationship`))(actor);
+    const beat = `${responder} ${RELSIM_OUTCOME_TEXT[verdict.act][verdict.success ? 0 : 1]}`;
+    return `- [${verdict.pairId}] ATTEMPT: ${intent} (${RELSIM_ACT_LABELS[verdict.act]})`
+      + ` · verdict: ${verdict.success ? 'SUCCESS' : 'FAILURE'}`
+      + ` · REQUIRED THIS TURN: show ${beat}`
+      + (verdict.expected ? ' · the current input already contains this act' : '');
+  };
   const relsimOccasionLine = item => `- [${item.pairId}:${item.id}] ${item.label} (${item.dueText}) — ${item.phase === 'soon' ? `in ${item.until} day(s)` : item.phase === 'today' ? 'today' : 'already passed without being marked'}.`;
   // Depiction help (user direction 2026-11-19: the point is to support romance narrative and
   // depiction). Each line turns the stored relationship into what the prose should show.
@@ -31272,7 +31318,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
         ? `DEPICTION (let the reader feel it through gestures and timing; never narrate these labels):\n${depiction.map(line => `- ${line}`).join('\n')}\n- A date or event is a lived scene: the place in sensory detail, small gestures, what each one notices about the other. A liked place or plan visibly pleases; a disliked one shows in posture and patience before words.`
         : '',
       activeVerdicts.length
-        ? `FIXED OUTCOMES (this turn — matched to detected act(s) only):\n${activeVerdicts.map(relsimVerdictLine).join('\n')}`
+        ? `FIXED OUTCOMES (this turn — matched to detected act(s) only):\n${activeVerdicts.map(relsimVerdictLine).join('\n')}\n- Every REQUIRED THIS TURN beat above must be visible in the draft: the responder's answer as written (accepted or refused), not merely implied. If the draft cannot show one, say why in analysis.summary instead of silently dropping it.`
         : 'ACTIVE RELATIONSHIP EVENTS THIS TURN: none detected. Do NOT treat ordinary conversation or unrelated beats as a confession, proposal, reunion, date, or event; leave "relationship_events" empty unless an explicit relationship act clearly occurs in the draft.',
       prepared.occasions.length
         ? `OCCASIONS:\n${prepared.occasions.map(relsimOccasionLine).join('\n')}\nLet a due occasion surface inside the current scene (a reminder, a hint, the partner bringing it up) — never by breaking off a crisis. One that passed unmarked hurts the partner: show it the way their sulk and lore say.`
@@ -54081,7 +54127,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
     if (sim.triggered) {
       return [{
         title: `세계 시뮬레이터 · 발동 (주사위 ${sim.roll}/100 < ${sim.chance}%)`,
-        body: `인물: ${forcedBondPersonLabel(sim.actor)}${sim.companion ? ` · 동행: ${forcedBondPersonLabel(sim.companion)}` : ''} · ${sim.actionType?.label || ''} · ${pool}`
+        body: `인물: ${forcedBondPersonLabel(sim.actor)}${sim.companion ? ` · 동행: ${forcedBondPersonLabel(sim.companion)}` : ''} · ${sim.actionType?.label || ''}${sim.actionType?.hint ? ` (${sim.actionType.hint})` : ''} · 요구 전개: 이번 턴 본문에 이 움직임의 흔적 한 줄이 드러나야 함 · ${pool}`
       }];
     }
     return [{ title: `세계 시뮬레이터 · 정적 턴 (주사위 ${sim.roll}/100 ≥ ${sim.chance}%)`, body: pool }];
@@ -54428,14 +54474,43 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
   // ===================== 관계 시뮬레이터 panel (이 채팅) =====================
   // Pair state and preference cards are saved at once, outside the GUI settings save, like the
   // 정사 cards: a run may change them while the settings window is open.
+  // 패널에는 "무엇을 굴렸고 무엇이 요구되는지"를 한국어로 적는다. 판정 숫자만 있으면
+  // 무엇을 성공한 것인지 알 수 없다.
+  const RELSIM_ACT_INTENT_KO = Object.freeze({
+    confession: (a, b) => `${a}가 ${b}에게 마음을 말로 꺼낸다`,
+    reunion: (a, b) => `${a}가 ${b}에게 다시 시작하자고 청한다`,
+    proposal: (a, b) => `${a}가 ${b}에게 청혼한다`,
+    date: (a, b) => `${a}가 ${b}를 데이트에 데리고 나간다`,
+    event: (a, b) => `${a}가 ${b}를 위한 이벤트를 연다`,
+    intimate: (a, b) => `${a}가 ${b}를 정사로 끌어들인다`,
+    care_hospital: (a, b) => `${a}가 ${b}를 간병한다`,
+    conflict_reconcile: (a, b) => `${a}가 ${b}에게 먼저 화해를 청한다`,
+    confide_secret: (a, b) => `${a}가 ${b}에게 숨긴 것을 털어놓는다`
+  });
+  const forcedBondBeatIntentKo = (beatType, from, to, extra = {}) => {
+    switch (beatType) {
+      case 'emotional_shift': return `${to}의 ${from}에 대한 감정이 몸짓으로 드러난다`;
+      case 'relational_action': return `${from}이 ${to}에게 구체적인 행동을 한다`;
+      case 'stage_push': return extra.stagePush
+        ? `관계 단계가 ${extra.stagePush.from}→${extra.stagePush.to}로 넘어가는 장면이 나온다`
+        : '관계 단계를 바꾸는 구체적 계기가 나온다';
+      case 'absent_contact': return '장면 밖 인물의 접촉(연락·흔적·도착 계기)이 드러난다';
+      default: return `${from}↔${to} 사이의 ${beatType} 비트가 장면에 나온다`;
+    }
+  };
   const relsimReadingNotes = scopeKey => {
     const reading = scopeKey ? Runtime.relationshipSimReadings?.[scopeKey] : null;
     if (!reading) return [];
     const activeVerdicts = (reading.verdicts || []).filter(item => item.expected);
-    const rows = activeVerdicts.map(item => ({
-      title: `${forcedBondPersonLabel(item.actor)} → ${forcedBondPersonLabel(item.responder)} · ${RELSIM_ACT_LABELS[item.act] || item.act} · 입력에 있음`,
-      body: `${item.success ? '성공' : '실패'} (${item.percent}%, 굴림 ${item.roll})${item.factors?.length ? ` · ${item.factors.join(', ')}` : ''}`
-    }));
+    const rows = activeVerdicts.map(item => {
+      const from = forcedBondPersonLabel(item.actor), to = forcedBondPersonLabel(item.responder);
+      const intent = (RELSIM_ACT_INTENT_KO[item.act] || ((a, b) => `${a}가 ${b}에게 관계 행동을 한다`))(from, to);
+      const beat = `${to} ${RELSIM_OUTCOME_TEXT[item.act] ? RELSIM_OUTCOME_TEXT[item.act][item.success ? 0 : 1] : ''}`;
+      return {
+        title: `${from} → ${to} · ${RELSIM_ACT_LABELS[item.act] || item.act} · 입력에 있음`,
+        body: `시도: ${intent} · ${item.success ? '성공' : '실패'} (${item.percent}%, 굴림 ${item.roll}) · 요구 전개: ${beat}`
+      };
+    });
     for (const item of reading.events || []) rows.push({ title: `일어난 일 · ${RELSIM_ACT_LABELS[item.act] || item.act}`, body: `${item.summary || ''}${item.outcomeShown ? '' : ' (판정 결과가 드러나지 않아 기록하지 않음)'}` });
     for (const item of reading.occasions || []) rows.push({ title: `${item.label} · ${item.dueText}`, body: item.phase === 'soon' ? `${item.until}일 남음` : item.phase === 'today' ? '오늘' : '챙기지 않고 지남' });
     const session = reading.scene?.activeSession;
@@ -54453,7 +54528,7 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         for (const r of triggered) {
           rows.push({
             title: `억결 시뮬레이터 · ${forcedBondPersonLabel(r.from)} ↔ ${forcedBondPersonLabel(r.to)}${r.offScene ? ' (장면 밖)' : ''}`,
-            body: `발동 (${r.roll}/100 < ${r.chance}%) · ${FORCED_BOND_BEAT_LABELS[r.beatType] || r.beatType}${r.stagePush ? ` · 단계 전이(${r.stagePush.from}→${r.stagePush.to}): ${r.stagePush.success ? '성공' : '유지'}` : ''}`
+            body: `행동: ${forcedBondBeatIntentKo(r.beatType, forcedBondPersonLabel(r.from), forcedBondPersonLabel(r.to), { stagePush: r.stagePush })} · 발동 (${r.roll}/100 < ${r.chance}%) · ${FORCED_BOND_BEAT_LABELS[r.beatType] || r.beatType}${r.stagePush ? ` · 단계 전이(${r.stagePush.from}→${r.stagePush.to}): ${r.stagePush.success ? '성공' : '유지'}` : ''} · 요구 전개: 위 행동이 본문에 드러나야 함`
           });
         }
       }

@@ -11,6 +11,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./fixtures/gradia_input_writer_unified_fixture.cjs');
 
+const pickReading = r => ({ movement: r.movement, status: r.status, summary: r.summary });
 const STAGE = 'aide_world_dynamics';
 // User decision 2026-11-17: 세계 동역학 is a sub-AIDE of 세계관 AIDE and settles its readings in
 // that stage's call. HOST is the stage that carries it in these fixtures.
@@ -352,7 +353,8 @@ test('checkers return world_check and later stages read the notes; readings stay
   assert.match(systemOf(f.prompts.find(body => stageOf(body) === 'aide_plot')), /\[aide_character\] 영주의 병사 파견: adjust/, 'Plot AIDE, running last, also sees the note');
 
   const state = f.host.plugin.debugWorldDynamicsState();
-  assert.deepEqual(plain(state.readings?.readings), [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }]);
+  // 읽기 레코드는 스키마 기본값까지 정규화해 보관하므로 서술 필드만 비교한다.
+  assert.deepEqual(plain(state.readings?.readings).map(pickReading), [{ movement: '영주의 병사 파견', status: 'held', summary: '하루째 이동 중, 민아는 아직 모름' }]);
   const added = [...new Set([...f.values.keys(), ...f.local.keys()].map(String))].filter(key => !keysBefore.has(key));
   assert.deepEqual(added.filter(key => /world.?dynamics|world_read|world_check/i.test(key)), [], 'no reading or note is persisted');
   for (const [key, value] of [...f.values, ...f.local]) {
@@ -373,7 +375,7 @@ test('malformed notes and readings are dropped or normalized, never passed along
   const own = systemOf(f.prompts.find(body => stageOf(body) === HOST));
   assert.match(own, /- \[aide_character\] 소문: uncertain — the rumor reached the gate/, 'an unknown verdict becomes uncertain');
   assert.doesNotMatch(own, /no movement named/, 'a note without a movement is dropped');
-  assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
+  assert.deepEqual(plain(f.host.plugin.debugWorldDynamicsState().readings?.readings).map(pickReading), [{ movement: '소문', status: 'held', summary: '성문까지 퍼짐' }]);
 });
 
 test('with the stage off no other stage is asked for world_check', async t => {
