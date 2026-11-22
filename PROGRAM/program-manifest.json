@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-22T06:39:14.054Z",
+  "generatedAt": "2026-11-22T13:14:02.410Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "12468649f36d1793db65e7b0ab4bfa6b3d4530bb3ceaaf644a988584d637e8eb",
+      "sha256": "7a4e56031f33450f847173dad35f198a07bd4a8c4e4c7f487133b5e98d79ce82",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -4336,24 +4336,24 @@
       "bytes": 4723
     },
     "plugins/Flashback_Memory.js": {
-      "sha256": "442b0d7a92eaabe9d46479895f0ce97ef744fcc49018e1b7976d0663356aa84d",
-      "bytes": 3981142
+      "sha256": "b7a8cab4d879df4cb84a26696c329ee6bddd1cb39f6937315e18b7507fe473d8",
+      "bytes": 3982697
     },
     "plugins/GRADIA.js": {
-      "sha256": "db27d0bbc35bd55141bf2e7e9773aea3ea6a43dc8f8c82b75602655b901e89ba",
-      "bytes": 4047354
+      "sha256": "e55c24938727aabaaaeda3a2789e18866f3a11b2387e87f04bb18f5af4d7ff4c",
+      "bytes": 4139484
     },
     "plugins/HAYAKU_Locator_Continuity.js": {
-      "sha256": "cbc58573172100bdeafcfbf9691804c7ac9279652013efd955159a6cb08d818e",
-      "bytes": 4430394
+      "sha256": "d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919",
+      "bytes": 4432876
     },
     "plugins/LIA_Persona_Linker.js": {
       "sha256": "9f8306df5c9498103e3a75988d544d6cd7219cda338ba74ea347ba76ccffd8f2",
       "bytes": 860851
     },
     "plugins/LIBRA.js": {
-      "sha256": "9ec9207c09f5dd8ddc0f90fa07f93bf9f299b1b7b9ceff3d275cb8a9e5c69a6c",
-      "bytes": 6981313
+      "sha256": "cdd4ee79003ab1d60c89e3daf3adac67563110c0eecd709f40fb9c8fc461d130",
+      "bytes": 6984090
     },
     "plugins/RETRACE.js": {
       "sha256": "69e927f9ffcc68bca435b946ea4468757fd53df93091f80b2d5c1228d1bc682c",
@@ -4584,8 +4584,8 @@
       "bytes": 6321
     },
     "server/core/flashback-scope-health.cjs": {
-      "sha256": "3df0d80e37aac23ed1ad5d5e2fb486247ca550106afd1199577dfaa30f21e048",
-      "bytes": 9570
+      "sha256": "f2557eeab669e8eeed56a5fed66cbf80f258db435dd455f34fd809cdf418d97f",
+      "bytes": 10162
     },
     "server/core/flashback-server-repair.cjs": {
       "sha256": "e8b5847ebb25e1d773e3826cc182a5ca452dfce7edd21c227f6ddf5c80fac1db",
@@ -6571,6 +6571,10 @@
       "sha256": "17b3d021a9c53024dbaf048f783bb67cffc939c2e984622be5db002770fa9770",
       "bytes": 8059
     },
+    "tests/flashback_source_rules_preserve_captured_turn_test.cjs": {
+      "sha256": "8be5492bfad74c6e49f687bb549cb7842d952acad5c7ab628df7e88df0ad3b77",
+      "bytes": 3094
+    },
     "tests/flashback_sparse_projection_cache_test.cjs": {
       "sha256": "5fdaa89b0135434804d4790c425eef4f52e737de8691b43e67bf31d6a7d6369e",
       "bytes": 9819
@@ -6635,6 +6639,10 @@
       "sha256": "ffe84f14c234581fba9ef99afb11d2a8110e3e89e26d95d1783566675b258d33",
       "bytes": 8863
     },
+    "tests/flashback_worldline_pending_reroll_preserves_canonical_test.cjs": {
+      "sha256": "c07b0dc494a0458afc836e913b6303e5c55e0cdc4397252fa43b9b710bd6c845",
+      "bytes": 4828
+    },
     "tests/flashback_worldline_preparation_reads_test.cjs": {
       "sha256": "f57c80a685741cf801699f11a574d1a441593935ee50dc7899c74a5501ddb760",
       "bytes": 2622
@@ -6688,8 +6696,8 @@
       "bytes": 7298
     },
     "tests/gradia_body_state_aide_test.cjs": {
-      "sha256": "19671b8c8e37d7f55b5af2eeee25a2ae0d097a1dda190486aa8acbec212e6bfb",
-      "bytes": 47684
+      "sha256": "cb5480c992df69aa13ef70c0af9805f04b52dc73d025ddcaeab46a04c05a8e45",
+      "bytes": 47705
     },
     "tests/gradia_causal_realism_test.cjs": {
       "sha256": "015a4f2b24e62ed3a5b96bc919798f52f112fc88cf2e3b7dd07e7e97a8e8b36c",
@@ -6708,8 +6716,8 @@
       "bytes": 23237
     },
     "tests/gradia_forced_bond_aide_test.cjs": {
-      "sha256": "8f779826ba402414aefde06f7002e52d8eeeda12ea9334514b85aa266ee44964",
-      "bytes": 24396
+      "sha256": "e1666cb8853ff43cabcaa4063dc4fe8e0e0a6a69d484361c5ebb13f026793fdd",
+      "bytes": 24436
     },
     "tests/gradia_four_plugin_chain_order_test.cjs": {
       "sha256": "8719ffac0c36604c3e1699ec5f5f52bef5de73f74625b505e9b3d70f96918ef7",
@@ -6728,8 +6736,8 @@
       "bytes": 2764
     },
     "tests/gradia_gui_scope_pages_test.cjs": {
-      "sha256": "30078dfac6ad03b99174f124affb7df52407859be057be52ebe976a417b4c41a",
-      "bytes": 12223
+      "sha256": "ec09ad24f82b2a121d921747159b95ff7297d2ab0b792ff462b6386de6ad8b56",
+      "bytes": 12240
     },
     "tests/gradia_hayaku_opening_failure_test.cjs": {
       "sha256": "23d56b18fe143373817248763025da913400eff556c2444aed0ea3f2132c4ad4",
@@ -6748,8 +6756,8 @@
       "bytes": 14818
     },
     "tests/gradia_intimacy_aide_test.cjs": {
-      "sha256": "7e211557e21750790858cc79033edad578cb133d50c657fa038de142472cfd21",
-      "bytes": 27713
+      "sha256": "9a736e204c7c94040bdea50804d53faaea2313079639551718a4e65ea3cf32a2",
+      "bytes": 29443
     },
     "tests/gradia_legacy_hosting_retirement_test.cjs": {
       "sha256": "112a451b396ab02f7e6ba11dc675db5ee90d5608d249710853d2e43889318479",
@@ -6860,8 +6868,8 @@
       "bytes": 8098
     },
     "tests/gradia_rp_pacing_prompt_test.cjs": {
-      "sha256": "7a62128ae6c3466ba449b04deb2922a7ef126445e72bb1435ad1f65b711f27f2",
-      "bytes": 6324
+      "sha256": "bb3b767727f66a7144adda24c315c9a6eec41fa3a3ab4a26fe7a3465bbcb235c",
+      "bytes": 8357
     },
     "tests/gradia_scene_fixation_test.cjs": {
       "sha256": "291251f22c8bde73dbf178205ecf6b1a36d74e0860843709269411cced69290c",
@@ -6907,13 +6915,21 @@
       "sha256": "8ce8741c73d37bd0170ba546ffe29939b5f39756c49d0e703556d1b817997605",
       "bytes": 17402
     },
+    "tests/gradia_unified_bond_relsim_and_dialogue_test.cjs": {
+      "sha256": "7e188b8e7b1c553998fb3347dacbf7fb0bc8f04e431a3dde945e99f6482fef39",
+      "bytes": 8404
+    },
     "tests/gradia_work_scale_gui_test.cjs": {
       "sha256": "e39c45b904a862a3adf3d4ea3eb9a852cdc65ac4b4f671d5062b773862735a51",
       "bytes": 8753
     },
     "tests/gradia_world_dynamics_aide_test.cjs": {
-      "sha256": "b0354aee0a1a7fbebce0ee2c0917a17cd76cee758bdcaef8da9e09b678a7877c",
-      "bytes": 27345
+      "sha256": "0ff5b7bbeae9a7b03e59d04b498db4117848bec7e46326f1f5d65c95b6782f12",
+      "bytes": 30746
+    },
+    "tests/gradia_world_sim_and_intimacy_fixes_test.cjs": {
+      "sha256": "e0f4e7f8163e7f8de019897f292bf986b3e2d973fb20193adee109b1fea1a761",
+      "bytes": 12861
     },
     "tests/gradia_writing_mode_authority_test.cjs": {
       "sha256": "11566d0ea8d94ea0ea947ccab52989f825708ec6b3634938b438fd0d0060cc2c",
@@ -6924,12 +6940,12 @@
       "bytes": 1462
     },
     "tests/gradia/aide-full-draft-recovery.test.cjs": {
-      "sha256": "e13f4eade5c5f4373802de39ae06d5debe9d5b302e6f99835a9d913b3723b597",
+      "sha256": "7431bcfb2b2b1623cb83715249457db148f57d25b4a23b83c07e9e4034447b90",
       "bytes": 31532
     },
     "tests/gradia/aide-reasoning-patch.test.cjs": {
-      "sha256": "5074f83eea4835d02251552e1c39b9df68534743acd613833d473b1434e659e4",
-      "bytes": 22276
+      "sha256": "deda69080b96eeff71b6ac9fe32ef706bfa0eb86b049e36265a66007d27d4727",
+      "bytes": 22297
     },
     "tests/gradia/author-note-all-stages.test.cjs": {
       "sha256": "77ddeede255504bf53aeb68d0b4829c688b048dfa6c772598ae3b51334bd6530",
@@ -6955,6 +6971,10 @@
       "sha256": "e8758e870b07d3f82c509a86b7e010549964bccd2d3a89b43162183c4b4c0fdc",
       "bytes": 1967
     },
+    "tests/gradia/dialogue-aide.test.cjs": {
+      "sha256": "ede617aa303b38dc99ec0084c2db543d0fdef6102f7f4f3d2c5b382ac763b26f",
+      "bytes": 6776
+    },
     "tests/gradia/draft-archive-gui.test.cjs": {
       "sha256": "632d81d0aab3229445d3f1e0a31839c4f7a75007a5e53a92db5b111ab6fc45e4",
       "bytes": 9627
@@ -6968,8 +6988,8 @@
       "bytes": 5262
     },
     "tests/gradia/evidence-bridge.test.cjs": {
-      "sha256": "417de87135792c20b73816a5ac6ee2c304182d54c458b81ab0b2bce85e56db29",
-      "bytes": 65668
+      "sha256": "5718b8d170e3ce667cc24fbe5f56894be735d915c232a513ea9111aef38f16d7",
+      "bytes": 66331
     },
     "tests/gradia/evidence-budget-builder-v2.test.cjs": {
       "sha256": "82424d94c7aa50130fad8423d09b0819baf96b0e1084ed6a71766ecb742d6fdb",
@@ -7088,8 +7108,8 @@
       "bytes": 5664
     },
     "tests/gradia/native-host-id-binding.test.cjs": {
-      "sha256": "b78d1ffb3b3dae9335e3eb1a78b9b9f5c4605563222003a141e182bc336e823b",
-      "bytes": 43522
+      "sha256": "ee8f7c908dacc36d96ce9eba38a06c6912095babed825dec3c390f7b105f20c5",
+      "bytes": 44553
     },
     "tests/gradia/native-projection-v2.test.cjs": {
       "sha256": "c4a90523bf5343c2abc01f3be076edb9650fdc6561022ad2acebd330732c2b67",
@@ -7156,8 +7176,8 @@
       "bytes": 11398
     },
     "tests/gradia/suite-inventory.json": {
-      "sha256": "d85c1a69461ffd2a8849f5382d0e554ded0b0d7a97e21e85c9b032803caa792a",
-      "bytes": 1949
+      "sha256": "0641443b82efde646d711e91b04d0686d762c6cca05be588257922074165e77b",
+      "bytes": 1979
     },
     "tests/gradia/turn-eligibility.test.cjs": {
       "sha256": "3d3ff9717f7e8569471da822f8cf1ec345165c8610853d50578de2c27cee3ea0",
@@ -7718,6 +7738,10 @@
     "tests/hayaku_recovery_storage_latency_runtime_test.cjs": {
       "sha256": "df5cd817ec03a4ac51d3b809b96dbf2b21e1bfd988a2a3018790a6bd60ee8e82",
       "bytes": 5340
+    },
+    "tests/hayaku_recovery_vault_concurrent_write_test.cjs": {
+      "sha256": "9aa296a5c9cd0cf0d627adf1e1df49457ea397c1234f891f59f27bf8f331640a",
+      "bytes": 2536
     },
     "tests/hayaku_recovery_vault_shards_runtime_test.cjs": {
       "sha256": "37ea6aa1837cd45b938c2e753778efd5ccfc566666047a7cde585d1a8ef2e9b1",
@@ -12200,8 +12224,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "af5bccfd9de4a97cb9fba49e28be3bc1456a5c413c553a56e7945689fa265615",
-      "bytes": 62323
+      "sha256": "373035fc03081f3cfcdb25bdd5a612f3644fc50815e8f7c765e6e34e3be9eba3",
+      "bytes": 62510
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",

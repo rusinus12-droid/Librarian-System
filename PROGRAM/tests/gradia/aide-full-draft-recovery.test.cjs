@@ -109,7 +109,7 @@ test('the AIDE patch call is sized for a whole-draft replacement, not just a few
  const patchBodies=f=>f.prompts.filter(body=>body.messages.some(row=>row.role==='system'&&/Return the compact aide_\w+ patch JSON/.test(String(row.content||''))));
  const budgetOf=body=>body.max_tokens??body.max_completion_tokens;
  for(const mode of ['lightweight','heavyweight']){
-  const draftCall=mode==='heavyweight'?2:1;
+  const draftCall=mode==='heavyweight'?3:1;
   // 초안이 프리셋 상한보다 크면 상한까지 올라간다(예전에는 편집용 1,800에 묶여 있었다).
   const long=await fixture({server:true,unbound:true,mode,modelContent:(n,body,normal)=>n===draftCall?LONG_SCENE:normal});
   const longRun=await long.run();assert.equal(longRun.ok,true,String(longRun.reason));
@@ -243,7 +243,7 @@ test('real pipeline refuses a stale whole-source hash without a format retry or 
 for(const mode of ['heavyweight','evidence_bound'])test(mode+' recovery keeps the existing call plan and delivery guards',async()=>{
  const heavy=mode==='heavyweight';
  const f=await fixture({server:heavy,unbound:heavy,mode:heavy?'heavyweight':'lightweight',modelContent:(n,body,normal)=>{
-   if(n===(heavy?2:1))return BROKEN;
+   if(n===(heavy?3:1))return BROKEN;
    const system=body.messages.filter(row=>row.role==='system').map(row=>row.content).join('\n');
    const stage=system.match(/Return the compact (aide_\w+) patch JSON/)?.[1];
    if(stage!=='aide_character')return normal;
@@ -251,7 +251,7 @@ for(const mode of ['heavyweight','evidence_bound'])test(mode+' recovery keeps th
    return JSON.stringify(envelope(stage,user.match(/input_draft_hash:\s*([0-9a-f]{8})/)[1]));
  }});
  const result=await f.run();assert.equal(result.ok,true);assert.ok(result.injection.includes(SCENE));
- assert.equal(f.prompts.length,heavy?8:4);if(!heavy){assert.equal(f.recalls,1);await result.finalizeHandoff();}
+ assert.equal(f.prompts.length,heavy?9:4);if(!heavy){assert.equal(f.recalls,1);await result.finalizeHandoff();}
  if(heavy)assert.ok(f.prompts.some(body=>body.messages.some(row=>row.role==='system'&&row.content.includes('name the unusable class, the required scene beats, and the ending boundary'))));
  result.closeEvidence();
 });

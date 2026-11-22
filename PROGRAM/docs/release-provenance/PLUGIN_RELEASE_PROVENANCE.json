@@ -285,18 +285,18 @@
     "plugins": {
       "flashback": {
         "version": "2.2.0",
-        "sha256": "442b0d7a92eaabe9d46479895f0ce97ef744fcc49018e1b7976d0663356aa84d",
-        "bytes": 3981142
+        "sha256": "b7a8cab4d879df4cb84a26696c329ee6bddd1cb39f6937315e18b7507fe473d8",
+        "bytes": 3982697
       },
       "hayaku": {
         "version": "4.2.0",
-        "sha256": "cbc58573172100bdeafcfbf9691804c7ac9279652013efd955159a6cb08d818e",
-        "bytes": 4430394
+        "sha256": "d2c837fe57b4963bcb858bfd154126e9b5ee374b21dfcb83c2181198a7e82919",
+        "bytes": 4432876
       },
       "libra": {
         "version": "3.2.0",
-        "sha256": "9ec9207c09f5dd8ddc0f90fa07f93bf9f299b1b7b9ceff3d275cb8a9e5c69a6c",
-        "bytes": 6981313
+        "sha256": "cdd4ee79003ab1d60c89e3daf3adac67563110c0eecd709f40fb9c8fc461d130",
+        "bytes": 6984090
       },
       "lia": {
         "version": "0.32.0",
@@ -310,8 +310,8 @@
       },
       "gradia": {
         "version": "1.3.0",
-        "sha256": "db27d0bbc35bd55141bf2e7e9773aea3ea6a43dc8f8c82b75602655b901e89ba",
-        "bytes": 4047354
+        "sha256": "e55c24938727aabaaaeda3a2789e18866f3a11b2387e87f04bb18f5af4d7ff4c",
+        "bytes": 4139484
       }
     },
     "note": "Generated from current readable Source plugin bytes. This unpublished source candidate is not a published archive, deployment, or live-host/model execution receipt. Historical records and anomalies are preserved; prior candidate bytes are backed up separately.",

@@ -19246,7 +19246,17 @@ ${passage.text || ''}`, 420));
     const contextTokens = clampInt(preset?.context_window, 0, 4000000, 0)
       || clampInt(preset?.catalog_context_window, 0, 4000000, 0)
       || estimateModelContextTokens(preset) || 0;
-    const contextOutputCap = contextTokens ? Math.max(1024, Math.floor(contextTokens * 0.35)) : 0;
+    // An Ollama route states its own num_ctx, and the evidence gate measures against
+    // min(declared, num_ctx). Budgeting the output from the declared window alone reserved
+    // the whole 32k num_ctx for output and left no room for a single evidence item
+    // (measured: evidence dropped, LIB_READ_PAYLOAD_CHANGED in the Ollama admission test).
+    // Cap the output share by the context the request will actually be measured against.
+    const ollamaRoute = modeForProvider(canonicalProvider(preset?.provider || 'custom')) === 'ollama_native'
+      || libOllamaServedRoute(canonicalProvider(preset?.provider || 'custom'), preset?.url);
+    const effectiveContextTokens = ollamaRoute
+      ? (contextTokens ? Math.min(contextTokens, ollamaContextWindowTokens(preset)) : ollamaContextWindowTokens(preset))
+      : contextTokens;
+    const contextOutputCap = effectiveContextTokens ? Math.max(1024, Math.floor(effectiveContextTokens * 0.35)) : 0;
     const draftSafetyCap = Math.min(32768, Math.max(8192, Math.ceil(draftChars / Math.min(1.7, charsPerToken)) + 2048));
     const reasoningDraftCap = reasoningActive
       ? Math.min(32768, Math.max(draftSafetyCap, visibleWanted + reasoningHeadroom))
@@ -33418,8 +33428,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
   const buildPreviousStagePrompt = (recent = {}, settings = {}) => {
     const sourceRules = gradiaEffectiveSourceRules(settings);
-    const rawLib = libEvidenceWithoutMarkers(settings);
-    const filteredLib = gradiaProjectSourceText(rawLib, sourceRules);
     const currentInput = text(submittedCurrentInput(recent) || '').trim();
     const visible = Array.isArray(recent.visibleMessages) ? recent.visibleMessages.slice() : [];
     if (visible.length && currentInput && text(visible[visible.length - 1]?.content || '').trim() === currentInput) {
@@ -33448,7 +33456,6 @@ function mountMemorySuiteReanalysisReview(container,config) {
 
     const user = [
       `[CURRENT SUBMITTED USER INPUT]\n${currentInput || '(없음)'}`,
-      filteredLib ? `\n[LIB MEMORY EVIDENCE — FILTERED]\n${trimAtSentenceBoundary(filteredLib, 2200)}` : '',
       recentTurns ? `\n[RECENT COMPLETED CHAT — FILTERED]\n${recentTurns}` : ''
     ].filter(Boolean).join('\n');
 
@@ -33472,7 +33479,7 @@ function mountMemorySuiteReanalysisReview(container,config) {
       await reportPipelineStageProgress('previous', 'analysis');
       const result = await callLLMWithPreset(
         settings,
-        'shadow_act',
+        'previous',
         prompts.system,
         prompts.user,
         {
