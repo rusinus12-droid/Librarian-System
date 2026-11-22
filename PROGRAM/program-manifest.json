@@ -1,7 +1,7 @@
 {
   "schema": "memory-suite.program-package.v1",
   "packageVersion": "1.4.0",
-  "generatedAt": "2026-11-22T05:15:21.290Z",
+  "generatedAt": "2026-11-22T06:39:14.054Z",
   "server": {
     "version": "1.4.0",
     "protocol": {
@@ -3924,7 +3924,7 @@
       "bytes": 3839
     },
     "docs/release-provenance/PLUGIN_RELEASE_PROVENANCE.json": {
-      "sha256": "7b13d11371090b526138e17e2e6531f3f6111959d08736a1e113e54bdbc90ec2",
+      "sha256": "12468649f36d1793db65e7b0ab4bfa6b3d4530bb3ceaaf644a988584d637e8eb",
       "bytes": 11829
     },
     "docs/release-provenance/RECALL_SCALING_PROFILE_20261116.md": {
@@ -6876,8 +6876,8 @@
       "bytes": 2665
     },
     "tests/gradia_shadow_previous_test.cjs": {
-      "sha256": "2678024ad124dc9768311facb0245b42178c32cfbed15636f076dce3419d8a2f",
-      "bytes": 18480
+      "sha256": "48b65bb1ac7ece000033dc4b448b087dc55adb1781b8c4fb58366aa29841e7af",
+      "bytes": 18694
     },
     "tests/gradia_suite_test.cjs": {
       "sha256": "a60bb0371478b585e295d545bd7d2dece1fa1e93e5407afdd4e5d8ad64410399",
@@ -12200,8 +12200,8 @@
       "bytes": 2971
     },
     "tools/build_distribution.cjs": {
-      "sha256": "2502a684ba7f95420f805e885b9b0a56c0a4f4d70a12ac9fb6d788f259dceb76",
-      "bytes": 62072
+      "sha256": "af5bccfd9de4a97cb9fba49e28be3bc1456a5c413c553a56e7945689fa265615",
+      "bytes": 62323
     },
     "tools/build_offline_candidate.cjs": {
       "sha256": "03243f33e1c7da9cf43478df6d287b7a955866aef9530478550243fec753a360",

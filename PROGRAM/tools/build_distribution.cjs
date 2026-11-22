@@ -180,7 +180,10 @@ const RELEASE_SMOKE_TESTS = Object.freeze([
   'remote_update_updater_external_target_test.cjs',
   'remote_update_real_server_runtime_test.cjs',
   'updater_refresh_runtime_test.cjs',
-  'memory_injection_presentation_v1_test.cjs'
+  // The graph-based memory injection presentation suite retired with the memory graph
+  // (0faa72b0). Its successor is the retirement contract, which asserts the retired
+  // surfaces are gone and the direct-search reader is the only remaining path.
+  'libra_graph_retirement_contract_test.cjs'
 ]);
 const PRIVATE_DATA_PATTERN = /(?:^|\/)(?:runtime-token\.txt|compute-(?:signing|pairing)-key\.txt|remote-access-key\.txt|scope-catalog(?:\.[^/]*)?\.json|[^/]+\.(?:sqlite(?:-(?:wal|shm))?|db|jsonl|log))(?:$|\/)/i;
 // Accepted synthetic source fixtures only; never a general SQLite/private-data exception.
