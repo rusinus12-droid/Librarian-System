@@ -24,18 +24,21 @@ for(const multiPipelineMode of ['lightweight','heavyweight']){
  test(`novel prompts carry no RP contract (${multiPipelineMode})`,async()=>{
   for(const novelDraftMode of ['classic','input_inclusive']){
    const {prompts,injection}=await draft('novel',novelDraftMode,multiPipelineMode);
-   assert.equal(prompts.length,multiPipelineMode==='heavyweight'?8:4);
-   prompts.forEach((prompt,index)=>{assert.ok(!RP.test(prompt),`${novelDraftMode} call ${index}: ${(prompt.match(new RegExp('.{0,80}('+RP.source+').{0,40}'))||[''])[0]}`);assert.ok(NOVEL.test(prompt));});
+   assert.equal(prompts.length,multiPipelineMode==='heavyweight'?9:4);
+   // The standalone PREVIOUS stage prompt carries neither writing-mode contract; only pipeline calls do.
+   const pipeline=multiPipelineMode==='heavyweight'?prompts.slice(1):prompts;
+   pipeline.forEach((prompt,index)=>{assert.ok(!RP.test(prompt),`${novelDraftMode} call ${index}: ${(prompt.match(new RegExp('.{0,80}('+RP.source+').{0,40}'))||[''])[0]}`);assert.ok(NOVEL.test(prompt));});
    const variant=novelDraftMode==='classic'?/NOVEL \/ CLASSIC|NOVEL CLASSIC MODE/:/INPUT-INCLUSIVE/;
-   prompts.forEach(prompt=>assert.ok(variant.test(prompt),novelDraftMode+' variant'));
+   pipeline.forEach(prompt=>assert.ok(variant.test(prompt),novelDraftMode+' variant'));
    assert.ok(injection&&!RP.test(injection));
   }
  });
  test(`RP prompts carry no Novel contract (${multiPipelineMode})`,async()=>{
   const {prompts,injection}=await draft('rp','input_inclusive',multiPipelineMode);
-  assert.equal(prompts.length,multiPipelineMode==='heavyweight'?8:4);
-  prompts.forEach((prompt,index)=>{assert.ok(!NOVEL.test(prompt),'call '+index);assert.ok(RP.test(prompt));});
+  assert.equal(prompts.length,multiPipelineMode==='heavyweight'?9:4);
+  const pipeline=multiPipelineMode==='heavyweight'?prompts.slice(1):prompts;
+  pipeline.forEach((prompt,index)=>{assert.ok(!NOVEL.test(prompt),'call '+index);assert.ok(RP.test(prompt));});
   assert.ok(injection&&RP.test(injection)&&!NOVEL.test(injection));
-  const shadowPrompt=prompts.find(prompt=>/LENGTH AND BEAT CONTRACT/.test(prompt));assert.match(shadowPrompt,/at most \d+ characters/,'RP length is a ceiling');assert.doesNotMatch(shadowPrompt,/Configured draft range/);
+  const shadowPrompt=pipeline.find(prompt=>/LENGTH AND BEAT CONTRACT/.test(prompt));assert.match(shadowPrompt,/at most \d+ characters/,'RP length is a ceiling');assert.doesNotMatch(shadowPrompt,/Configured draft range/);
  });
 }

@@ -13,7 +13,8 @@ test('input manager scope/confirmation fields and the on/off choices are gone',a
     const doc=f.doc;
     assert.equal(doc.querySelector('#q-input'),null,'quick setup no longer offers an input on/off choice');
     const steps=[...doc.querySelectorAll('[data-page="home"] .q-step .q-step__no')].map(n=>n.textContent.trim());
-    assert.deepEqual(steps,['1','2','3','4'],`quick setup steps are renumbered: ${steps}`);
+    // PREVIOUS 기억 재해석 단계가 추가되어 단계 수는 5개이고, 번호는 화면 순서대로 1..N 이어야 한다.
+    assert.deepEqual(steps,['1','2','3','4','5'],`quick setup steps are renumbered: ${steps}`);
     await f.plugin.debugNavigateGui('pipeline','flow');
     await sleep(30);
     assert.equal(doc.querySelector('#inp-mode'),null,'the stage panel no longer offers the same choice');

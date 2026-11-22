@@ -56,8 +56,11 @@ for(const mode of ['lightweight','heavyweight'])for(const bianca of [false,true]
       nsfw_mode:'off',nsfw_guidance_enabled:'false'});
     const out=await f.h.hooks.beforeRequest([{role:'user',messageId:'u-current',
       content:'The narrow maintenance opening has room for only one hand. Her left hand is still inside, holding the latch. Continue without resetting that position.'}],'model');
-    assert.equal(f.prompts.length,mode==='heavyweight'?8:4,'the condition adds no model calls');
-    for(const [index,body] of f.prompts.entries()){
+    // The standalone PREVIOUS stage runs before SHADOW in heavyweight mode and carries no
+    // draft/AIDE condition, so it is counted but not checked here.
+    assert.equal(f.prompts.length,mode==='heavyweight'?9:4,'the condition adds no model calls');
+    const pipelinePrompts=mode==='heavyweight'?f.prompts.slice(1):f.prompts;
+    for(const [index,body] of pipelinePrompts.entries()){
       const text=JSON.stringify(body);
       assert.equal(text.split(ANATOMY).length-1,1,`call ${index} receives the shared condition once`);
       for(const anchor of FEASIBILITY_ANCHORS)assert.ok(text.includes(anchor),`call ${index}: ${anchor}`);

@@ -29441,8 +29441,8 @@ Begin directly with the in-world response and finish the complete same-turn draf
     ['breasts_nipples', '가슴·유두 (breasts/nipples)', 18, 8, /유두|젖꼭지|(?:가슴|젖가슴|유방|유륜)(?:을|를|에|이|의)?[^\n.?!]{0,20}(?:만지|만졌|움켜|주무르|주물|핥|빨|꼬집|비비|문지|얹|애무|감싸|누르|스치)|nipple|breast|fondl(?:e|ed|ing)/i],
     ['abdomen_waist', '복부·허리·등 (abdomen/waist/back)', 10, 7, /(?:배|복부|아랫배|배꼽|허리|옆구리|등줄기|척추)(?:을|를|에|를)?[^\n.?!]{0,18}(?:쓸|쓰다듬|만지|감싸|핥|입맞|키스|쥐|움켜|문지)|waist|abdomen|lower belly|spine|back/i],
     ['hips_buttocks', '골반·엉덩이 (hips/buttocks)', 12, 10, /(?:골반|엉덩이|둔부|꼬리뼈)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|주무르|움켜|잡|더듬|문지|때리|찰싹)|hips|buttocks|butt\b/i],
-    ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞)|inner thigh|thighs|groin/i],
-    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:여성기|보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|비벼|비볐|감싸|감쌌|핥|빨|자극|눌|튕)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
+    ['inner_thighs', '허벅지 안쪽·사타구니 (inner thighs/groin)', 13, 10, /(?:허벅지|안쪽\s*허벅지|사타구니|서혜부)(?:을|를|에)?[^\n.?!]{0,18}(?:만지|만졌|쓸어|쓰다듬|벌리|벌렸|주무르|더듬|문지|핥|입맞|애무)|inner thigh|thighs|groin/i],
+    ['clitoris_vulva', '음핵·외음부 (clitoris/vulva)', 28, 0, /클리토리스|음핵|클리|(?:여성기|보지|외음부|음순|비소)(?:을|를|에|의)?[^\n.?!]{0,18}(?:만지|만졌|문지|비비|비벼|비볐|감싸|감쌌|핥|빨|자극|눌|튕|애무)|커닐링구스|쿤닐|cunnilingus|clit(?:oris)?|vulva/i],
     ['vaginal_canal', '질내·G스팟 (vaginal canal/G-spot)', 30, 26, /삽입|질\s*안|질내|보지\s*(?:안|속)|내벽|질벽|지스팟|G스팟|(?:안|속)(?:에|으로)\s*박|박아\s*(?:넣|대|주)|쑤셔|쑤시|피스톤|손가락(?:을|이)?\s*(?:넣|밀어\s*넣|집어\s*넣)|허리(?:를|가)?\s*(?:[가-힣]{1,4}\s*){0,2}(?:흔들|흔드|움직|쳐|치|박|튕)|penetrat|thrust|inside her|g-spot|fingering/i],
     ['cervix', '자궁구·심부 (cervix/deep)', 26, 22, /자궁구|자궁\s*입구|가장\s*깊은\s*곳|깊숙이\s*(?:찌르|찔러|닿|박|밀어)|cervix|deep thrust/i],
     ['penis_glans', '귀두·소대 (glans/frenulum)', 0, 32, /귀두|소대|요도구|(?:남성기|자지|음경|성기|페니스|육봉|양물)(?:의)?\s*(?:끝|머리|귀두)|펠라(?:티오|치오)?|오럴|사까시|파이즈리|가슴으로\s*끼우|fellatio|blowjob|glans|frenulum/i],
@@ -29723,6 +29723,44 @@ Begin directly with the in-world response and finish the complete same-turn draf
   };
   const INTIMACY_FEMALE_ONLY_ZONES = new Set(['clitoris_vulva', 'vaginal_canal', 'cervix']);
   const INTIMACY_MALE_ONLY_ZONES = new Set(['penis_glans', 'penis_shaft_scrotum']);
+  // Who a body part belongs to. A zone named in one sentence belongs to the person whose name
+  // owns it ("하연의 외음부"), not to everyone present: crediting every participant made the
+  // actor's gauge rise for the part the other person received.
+  // Returns Map<zoneId, Set<ownerName>> where '' means the clause named no owner.
+  const intimacyBodyPartOwners = (value, names = []) => {
+    const out = new Map();
+    const body = String(value || '');
+    if (!body) return out;
+    const people = Array.from(new Set((names || []).filter(Boolean)));
+    for (const clause of body.split(/(?<=[.!?。！？\n])/)) {
+      const positions = [];
+      for (const name of people) {
+        let from = 0;
+        let at = clause.indexOf(name, from);
+        while (at >= 0) { positions.push({ name, at }); from = at + name.length; at = clause.indexOf(name, from); }
+      }
+      for (const [id, , , , pattern] of INTIMACY_BODY_PARTS) {
+        const re = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
+        let match;
+        while ((match = re.exec(clause))) {
+          const before = positions.filter(item => item.at + item.name.length <= match.index)
+            .sort((left, right) => right.at - left.at);
+          const nearest = before[0];
+          let owner = '';
+          if (nearest) {
+            const between = clause.slice(nearest.at + nearest.name.length, match.index);
+            if (between.length <= 28 && /의/.test(between)) owner = nearest.name;
+          }
+          if (!out.has(id)) out.set(id, new Set());
+          out.get(id).add(owner);
+          if (re.lastIndex === match.index) re.lastIndex += 1;
+        }
+      }
+    }
+    // A sole participant whose clause named no owner keeps the zone as their own body.
+    if (people.length === 1) for (const owners of out.values()) if (owners.has('')) owners.add(people[0]);
+    return out;
+  };
   const intimacyZoneAllowedForGender = (zoneId, gender) => {
     if (gender === 'male') return !INTIMACY_FEMALE_ONLY_ZONES.has(zoneId);
     if (gender === 'female') return !INTIMACY_MALE_ONLY_ZONES.has(zoneId);
@@ -29738,7 +29776,7 @@ Begin directly with the in-world response and finish the complete same-turn draf
     const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const shortName = name.length >= 3 && /^[가-힣]+$/.test(name) ? name.slice(1) : '';
     const namePat = shortName ? `(?:${escaped}|${shortName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})` : escaped;
-    const maleCue = new RegExp(`${namePat}[^\\n.?!]{0,60}(?:남성기|자지|음경|페니스|고환|귀두|허리춤|그의\\s*(?:하체|몸|허벅지|음경|허리))`);
+    const maleCue = new RegExp(`${namePat}[^\\n.?!]{0,60}(?:남성기|자지|음경|페니스|고환|귀두|그의\\s*(?:하체|몸|허벅지|음경))`);
     const femaleCue = new RegExp(`${namePat}[^\\n.?!]{0,60}(?:여성기|보지|음핵|클리토리스|질내|유두|그녀의|그녀가|그녀는)`);
     const isMale = maleCue.test(texts);
     const isFemale = femaleCue.test(texts);
@@ -29746,11 +29784,20 @@ Begin directly with the in-world response and finish the complete same-turn draf
     if (isFemale && !isMale) return 'female';
     return '';
   };
+  const intimacyNormalizeGender = value => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (['male', 'm', '남', '남성', 'man', 'boy'].includes(raw)) return 'male';
+    if (['female', 'f', '여', '여성', 'woman', 'girl'].includes(raw)) return 'female';
+    if (raw === 'penis' || raw === 'male_anatomy') return 'male';
+    if (raw === 'vulva' || raw === 'female_anatomy') return 'female';
+    return '';
+  };
   const intimacyResolveGender = (name, card = null, recent = {}) => (
-    card?.gender
-    || card?.anatomyView
-    || bodyStateProfileGender(name)
-    || inferGenderFromIntimacyText(name, recent)
+    intimacyNormalizeGender(card?.gender)
+    || intimacyNormalizeGender(card?.anatomyView)
+    || intimacyNormalizeGender(bodyStateProfileGender(name))
+    || intimacyNormalizeGender(inferGenderFromIntimacyText(name, recent))
     || ''
   );
   const computeIntimacyParticipantGauges = (recent = {}, cards = [], scene = null) => {
@@ -29842,7 +29889,17 @@ Begin directly with the in-world response and finish the complete same-turn draf
         const isCurrentTurn = stepIdx === steps.length - 1 && !!input;
         const boosters = intimacySensitivityOf(stepText);
         const boosterMult = boosters.length ? 1.35 : 1.0;
+        // Only the body part this character owns accrues on their gauge. A zone named for
+        // someone else in the same sentence ("소연이 하연의 외음부를") belongs to that person.
+        const zoneOwners = intimacyBodyPartOwners(stepText, names);
+        const ownsZone = id => {
+          const owners = zoneOwners.get(id);
+          if (!owners || !owners.size) return true;
+          if (owners.has(name)) return true;
+          return Array.from(owners).every(owner => !owner);
+        };
         const matchedParts = intimacyMatchedBodyParts(stepText)
+          .filter(([id]) => ownsZone(id))
           .filter(([id, , baseC, baseE]) => intimacyZoneAllowedForGender(id, gender) && (showClimax ? baseC > 0 : baseE > 0));
         if (!isCurrentTurn) {
           if (showClimax && INTIMACY_CLIMAX_RESET_RE.test(stepText)) climaxGauge = 15;
@@ -53199,6 +53256,10 @@ const createMemorySuiteStorageBridge = (rawOptions = {}) => {
         ])
       ]);
       weightStep.after(prevStep);
+      // The inserted PREVIOUS step is a real step, so the visible numbers stay 1..N for the
+      // rendered set instead of leaving a separator where a number belongs.
+      [...app.querySelectorAll('[data-page="home"] .q-step .q-step__no')]
+        .forEach((node, index) => { node.textContent = String(index + 1); });
     }
     mockupSetChoice(app.querySelector('#q-previous'), PREVIOUS_STAGE_MODES.indexOf(normalizePreviousStageMode(runtime.previousStageMode)));
     const profileIndex = ({ fast: 0, balanced: 1, quality: 2 })[normalizeChoice(runtime.quickProfile || 'custom', QUICK_PROFILE_IDS, 'custom')] ?? -1;
